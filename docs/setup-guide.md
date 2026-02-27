@@ -21,7 +21,7 @@ Complete guide for setting up the GitHub repository, Azure Static Web App, CI/CD
 ## 1. Prerequisites
 
 | Tool / Account | Purpose |
-|---|---|
+| --- | --- |
 | **GitHub account** | Source control and CI/CD |
 | **Azure subscription** | Hosting via Azure Static Web Apps (free tier works) |
 | **Genesys Cloud org** | OAuth client + API access |
@@ -69,7 +69,7 @@ git push -u origin main
 3. Fill in:
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | **Subscription** | Your Azure subscription |
 | **Resource group** | Create new or use existing (e.g. `rg-genesys-admin`) |
 | **Name** | `genesys-admin-app` |
@@ -77,21 +77,21 @@ git push -u origin main
 | **Region** | West Europe (or closest to your users) |
 | **Source** | **GitHub** |
 
-4. Click **Sign in with GitHub** and authorise Azure to access your repos
-5. Select:
+1. Click **Sign in with GitHub** and authorise Azure to access your repos
+2. Select:
    - **Organisation:** your GitHub user/org
    - **Repository:** `genesys-admin-app`
    - **Branch:** `main`
-6. **Build Details:**
+3. **Build Details:**
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | **Build Preset** | Custom |
 | **App location** | `/` |
 | **Api location** | *(leave empty)* |
 | **Output location** | *(leave empty)* |
 
-7. Click **Review + Create** → **Create**
+1. Click **Review + Create** → **Create**
 
 > **What happens next:** Azure automatically creates a GitHub Actions workflow file (`.github/workflows/azure-static-web-apps-*.yml`) and commits it to your repo. Every push to `main` will deploy automatically.
 
@@ -99,7 +99,7 @@ git push -u origin main
 
 After deployment completes (1–2 minutes), go to the Static Web App resource in Azure Portal. Copy the **URL** — it looks like:
 
-```
+```text
 https://happy-sky-abc123.azurestaticapps.net
 ```
 
@@ -120,7 +120,7 @@ Azure creates the workflow automatically in step 3. Here's what it does and how 
 
 ### Workflow file location
 
-```
+```text
 .github/workflows/azure-static-web-apps-*.yml
 ```
 
@@ -203,22 +203,22 @@ This ensures that deep-linking (e.g. refreshing on a page) always loads `index.h
 4. Fill in:
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | **App Name** | Genesys Admin Tool |
 | **Grant Type** | Token Implicit Grant (Browser) |
 | **Authorized redirect URIs** | `https://YOUR-SWA-URL.azurestaticapps.net` |
 
 > **Important:** Use the exact Static Web App URL from step 3. No trailing slash.
 
-5. Click **Save**
-6. Copy the **Client ID** — you'll need it for `config.js`
+1. Click **Save**
+2. Copy the **Client ID** — you'll need it for `config.js`
 
 ### Required OAuth Scopes / Roles
 
 For the initial Actions feature, the OAuth client's role needs at minimum:
 
 | Permission | Purpose |
-|---|---|
+| --- | --- |
 | `user:readonly` | Fetch `/users/me` for auth verification |
 
 Add more scopes later as features are built (e.g. `processautomation`, `architect`, etc.).
@@ -271,7 +271,7 @@ After pushing the config update:
 ## 8. Verification Checklist
 
 | # | Check | Expected |
-|---|---|---|
+| --- | --- | --- |
 | 1 | GitHub Actions workflow runs | ✅ Green check on Actions tab |
 | 2 | Static Web App URL loads | Shows login redirect |
 | 3 | OAuth login completes | Redirects back to app |
@@ -317,7 +317,7 @@ After pushing the config update:
 
 ## Project Structure
 
-```
+```text
 genesys-admin-app/
 ├── index.html                    App shell (entry point)
 ├── staticwebapp.config.json      SPA routing fallback
