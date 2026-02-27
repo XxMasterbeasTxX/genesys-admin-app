@@ -4,7 +4,7 @@
   "private": true,
   "description": "Azure Functions API for Genesys Admin Tool",
   "dependencies": {
-    "@azure/identity": "^4.0.0",
+    "@azure/identity": "~3.4.2",
     "@azure/keyvault-secrets": "^4.8.0"
   }
 }
