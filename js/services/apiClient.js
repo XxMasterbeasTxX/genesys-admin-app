@@ -65,7 +65,8 @@ export function createApiClient(getToken) {
     if (resp.status === 204) return null;
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      const err = new Error(`Proxy ${method} ${path} → ${resp.status}`);
+      const detail = json.error || json.message || "";
+      const err = new Error(`Proxy ${method} ${path} → ${resp.status}${detail ? ": " + detail : ""}`);
       err.status = resp.status;
       err.body = json;
       throw err;

@@ -120,7 +120,10 @@ export async function submitAnalyticsJob(api, orgId, interval, body = {}) {
     "/api/v2/analytics/conversations/details/jobs",
     { body: { interval, ...body } }
   );
-  if (!resp.jobId) throw new Error("No jobId returned from analytics jobs API");
+  if (!resp.jobId) {
+    const detail = resp.error || resp.message || JSON.stringify(resp);
+    throw new Error(`Analytics job submission failed: ${detail}`);
+  }
   return resp.jobId;
 }
 
