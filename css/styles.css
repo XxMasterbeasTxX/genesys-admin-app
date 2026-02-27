@@ -468,6 +468,102 @@ body {
   margin: 0;
 }
 
+/* ── Move Interactions ──────────────────────────────────── */
+.mi-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.mi-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mi-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mi-queue-group {
+  min-width: 280px;
+  flex: 1;
+}
+.mi-queue-search {
+  width: 100%;
+  margin-bottom: 4px;
+}
+.mi-queue-select {
+  width: 100%;
+}
+.mi-media-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.mi-checkbox {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.mi-checkbox input[type="checkbox"] {
+  accent-color: #3b82f6;
+}
+.mi-date {
+  width: 160px;
+}
+.mi-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mi-btn-move {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+.mi-btn-move:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+.mi-status {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.mi-status--success { color: #34d399; }
+.mi-status--error   { color: #f87171; }
+.mi-progress-wrap {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.06);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.mi-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: #3b82f6;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.mi-table-wrap {
+  overflow: auto;
+  max-height: 50vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.mi-table { font-size: 12px; }
+.mi-mono { font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace; font-size: 11px; }
+.mi-ok   { color: #34d399; font-weight: 600; }
+.mi-fail { color: #f87171; font-weight: 600; }
+.mi-cancel { color: var(--muted); font-style: italic; }
+
 /* ══════════════════════════════════════════════════════════
    Light theme
    ══════════════════════════════════════════════════════════ */
@@ -539,4 +635,9 @@ body {
   .is-row-alt:hover { background: rgba(0,0,0,0.06); }
   .is-row-selected { background: rgba(59,130,246,0.1) !important; }
   .is-filter-tag { background: rgba(59,130,246,0.1); color: #2563eb; border-color: rgba(59,130,246,0.2); }
+
+  /* Move Interactions - light overrides */
+  .mi-progress-wrap { background: rgba(0,0,0,0.06); }
+  .mi-btn-move { background: rgba(239,68,68,0.08); color: #dc2626; border-color: rgba(239,68,68,0.2); }
+  .mi-btn-move:hover { background: rgba(239,68,68,0.15); }
 }

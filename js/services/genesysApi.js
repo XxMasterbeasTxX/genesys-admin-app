@@ -244,6 +244,77 @@ export async function disconnectConversation(api, orgId, conversationId) {
     `/api/v2/conversations/${conversationId}/disconnect`);
 }
 
+/**
+ * Run the synchronous analytics conversation details query.
+ *
+ * This is different from the async jobs API — it returns results
+ * immediately but with a 31-day limit and no participant attributes.
+ * Good for finding currently-active conversations in a queue.
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {Object}   body           Full query body.
+ * @param {Object}   [opts]
+ * @param {number}   [opts.maxPages=10]  Max pages to fetch.
+ * @param {Function} [opts.onProgress]   Called with (fetchedSoFar).
+ * @returns {Promise<Object[]>}  All conversation objects.
+ */
+export async function queryConversationDetails(api, orgId, body, opts = {}) {
+  const { maxPages = 10, onProgress } = opts;
+  const all = [];
+
+  for (let page = 1; page <= maxPages; page++) {
+    const pageBody = {
+      ...body,
+      paging: { ...(body.paging || {}), pageSize: 100, pageNumber: page },
+    };
+
+    const resp = await api.proxyGenesys(orgId, "POST",
+      "/api/v2/analytics/conversations/details/query",
+      { body: pageBody });
+
+    const convs = resp.conversations || [];
+    all.push(...convs);
+    if (onProgress) onProgress(all.length);
+
+    if (convs.length < 100) break;
+  }
+
+  return all;
+}
+
+/**
+ * Get a single conversation's full details (participants, media, state).
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {string} conversationId
+ * @returns {Promise<Object>}  Full conversation object.
+ */
+export async function getConversation(api, orgId, conversationId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/conversations/${conversationId}`);
+}
+
+/**
+ * Blind-transfer (replace) a participant to a different queue.
+ *
+ * Uses POST /api/v2/conversations/{id}/participants/{pid}/replace
+ * with TransferToQueueRequest body.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {string} conversationId
+ * @param {string} participantId
+ * @param {string} destQueueId
+ * @returns {Promise<Object|null>}
+ */
+export async function replaceParticipantQueue(api, orgId, conversationId, participantId, destQueueId) {
+  return api.proxyGenesys(orgId, "POST",
+    `/api/v2/conversations/${conversationId}/participants/${participantId}/replace`,
+    { body: { queueId: destQueueId } });
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Users
 // ─────────────────────────────────────────────────────────────────────
