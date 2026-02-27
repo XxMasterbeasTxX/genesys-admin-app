@@ -10,7 +10,7 @@ const { getGenesysToken } = require("../lib/genesysAuth");
  *
  * The function:
  *   1. Looks up the customer metadata
- *   2. Retrieves Client ID + Secret from Azure Key Vault
+ *   2. Reads Client ID + Secret from app settings (process.env)
  *   3. Gets (or reuses cached) Genesys OAuth token via Client Credentials
  *   4. Makes the API call to Genesys Cloud
  *   5. Returns the result
