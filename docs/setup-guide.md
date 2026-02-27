@@ -1,6 +1,6 @@
 # Genesys Admin Tool — Setup & Deployment Guide
 
-Complete guide for setting up the GitHub repository, Azure Static Web App, CI/CD with GitHub Actions, and Genesys Cloud OAuth.
+Complete guide for deploying the Genesys Admin Tool to a new Azure subscription. Covers Azure Static Web App, Azure Functions API, Azure Key Vault, Genesys Cloud OAuth, and CI/CD via GitHub Actions.
 
 ---
 
@@ -12,9 +12,16 @@ Complete guide for setting up the GitHub repository, Azure Static Web App, CI/CD
 4. [GitHub Actions CI/CD (automatic)](#4-github-actions-cicd-automatic)
 5. [Create a Genesys Cloud OAuth Client](#5-create-a-genesys-cloud-oauth-client)
 6. [Update config.js](#6-update-configjs)
-7. [First Deployment](#7-first-deployment)
-8. [Verification Checklist](#8-verification-checklist)
-9. [Troubleshooting](#9-troubleshooting)
+7. [Create Azure Key Vault](#7-create-azure-key-vault)
+8. [Add Customer Secrets to Key Vault](#8-add-customer-secrets-to-key-vault)
+9. [Enable Managed Identity](#9-enable-managed-identity)
+10. [Grant Key Vault Access](#10-grant-key-vault-access)
+11. [Configure App Settings](#11-configure-app-settings)
+12. [Update customers.json](#12-update-customersjson)
+13. [First Deployment](#13-first-deployment)
+14. [Verification Checklist](#14-verification-checklist)
+15. [Day-to-Day Operations](#15-day-to-day-operations)
+16. [Troubleshooting](#16-troubleshooting)
 
 ---
 
@@ -73,7 +80,7 @@ git push -u origin main
 | **Subscription** | Your Azure subscription |
 | **Resource group** | Create new or use existing (e.g. `rg-genesys-admin`) |
 | **Name** | `genesys-admin-app` |
-| **Plan type** | Free |
+| **Plan type** | **Standard** ($9/month — required for Managed Identity) |
 | **Region** | West Europe (or closest to your users) |
 | **Source** | **GitHub** |
 
@@ -88,8 +95,8 @@ git push -u origin main
 | --- | --- |
 | **Build Preset** | Custom |
 | **App location** | `/` |
-| **Api location** | *(leave empty)* |
-| **Output location** | *(leave empty)* |
+| **Api location** | `api` |
+| **Output location** | `.` |
 
 1. Click **Review + Create** → **Create**
 
@@ -257,7 +264,170 @@ GitHub Actions will deploy automatically within ~60 seconds.
 
 ---
 
-## 7. First Deployment
+## 7. Create Azure Key Vault
+
+The Key Vault securely stores all customer Genesys Cloud credentials (Client IDs and Client Secrets).
+
+### Azure Portal — Create Key Vault
+
+1. Search **"Key vaults"** → click **Create**
+2. Fill in:
+
+| Field | Value |
+| --- | --- |
+| **Subscription** | Same as your Static Web App |
+| **Resource group** | Same as your Static Web App |
+| **Key vault name** | e.g. `genesys-admin-kv` (must be globally unique) |
+| **Region** | Same region as your Static Web App |
+| **Pricing tier** | Standard |
+
+1. Click **Next: Access configuration**
+2. Set **Permission model** to **Azure role-based access control (recommended)**
+3. Click **Review + create** → **Create**
+
+### Azure CLI alternative — Create Key Vault
+
+```bash
+az keyvault create \
+  --name genesys-admin-kv \
+  --resource-group rg-genesys-admin \
+  --location westeurope
+```
+
+---
+
+## 8. Add Customer Secrets to Key Vault
+
+Each customer requires exactly 2 secrets. The naming convention is:
+
+```text
+genesys-<customer-id>-client-id
+genesys-<customer-id>-client-secret
+```
+
+Where `<customer-id>` matches the `id` field in `api/lib/customers.json`.
+
+### Give yourself access first
+
+1. Key Vault → **Access control (IAM)** → **+ Add role assignment**
+2. Role: **Key Vault Secrets Officer**
+3. Assign to: your own user account
+
+### Add secrets via Azure CLI (recommended for bulk import)
+
+```bash
+az keyvault secret set --vault-name genesys-admin-kv \
+  --name "genesys-acme-client-id" --value "your-client-id-here"
+
+az keyvault secret set --vault-name genesys-admin-kv \
+  --name "genesys-acme-client-secret" --value "your-client-secret-here"
+```
+
+### Add secrets via Azure Portal
+
+Key Vault → **Secrets** → **+ Generate/Import** → fill in Name and Secret value → **Create**
+
+Repeat for every customer (2 secrets each).
+
+---
+
+## 9. Enable Managed Identity
+
+Managed Identity allows the Static Web App to authenticate to Key Vault without any passwords in code.
+
+> **Note:** This requires the **Standard plan** ($9/month). Free tier does not support Managed Identity.
+
+### Azure Portal — Enable Managed Identity
+
+1. Azure Portal → **Static Web Apps** → your app
+2. Left menu → **Identity**
+3. **System assigned** tab → flip **Status** to **On**
+4. Click **Save** → confirm **Yes**
+
+### Azure CLI alternative
+
+```bash
+az staticwebapp identity assign --name genesys-admin-app \
+  --resource-group rg-genesys-admin
+```
+
+Note the **Object (principal) ID** that appears — needed for the next step.
+
+---
+
+## 10. Grant Key Vault Access
+
+Grant the Managed Identity permission to read secrets from Key Vault.
+
+### Azure Portal
+
+1. Key Vault → **Access control (IAM)** → **+ Add role assignment**
+2. Role: **Key Vault Secrets User**
+3. Assign access to: **Managed identity**
+4. Select members: your Static Web App's managed identity
+5. **Review + assign**
+
+### Azure CLI alternative
+
+```bash
+# Get the principal ID
+PRINCIPAL_ID=$(az staticwebapp show --name genesys-admin-app \
+  --resource-group rg-genesys-admin --query "identity.principalId" -o tsv)
+
+# Assign the role
+az role assignment create \
+  --role "Key Vault Secrets User" \
+  --assignee-object-id $PRINCIPAL_ID \
+  --assignee-principal-type ServicePrincipal \
+  --scope /subscriptions/<SUB_ID>/resourceGroups/<RG>/providers/Microsoft.KeyVault/vaults/genesys-admin-kv
+```
+
+---
+
+## 11. Configure App Settings
+
+Set the Key Vault name as an environment variable so the Azure Functions API knows which vault to connect to.
+
+### Azure Portal — Configure App Settings
+
+Static Web App → **Configuration** → **Application settings** → **+ Add**
+
+| Name | Value |
+| --- | --- |
+| `KEY_VAULT_NAME` | `genesys-admin-kv` |
+
+### Azure CLI alternative — Set App Settings
+
+```bash
+az staticwebapp appsettings set --name genesys-admin-app \
+  --resource-group rg-genesys-admin \
+  --setting-names "KEY_VAULT_NAME=genesys-admin-kv"
+```
+
+---
+
+## 12. Update customers.json
+
+Edit `api/lib/customers.json` with all customer orgs. This file contains **metadata only** (no secrets):
+
+```json
+[
+  { "id": "acme",    "name": "Acme Corp",   "region": "mypurecloud.de" },
+  { "id": "contoso", "name": "Contoso Ltd", "region": "mypurecloud.ie" }
+]
+```
+
+| Field | Description |
+| --- | --- |
+| `id` | Unique identifier — must match Key Vault secret naming (`genesys-<id>-client-id`) |
+| `name` | Display name shown in the org selector dropdown |
+| `region` | Genesys Cloud region (`mypurecloud.de`, `mypurecloud.ie`, `mypurecloud.com`, etc.) |
+
+Commit and push to deploy.
+
+---
+
+## 13. First Deployment
 
 After pushing the config update:
 
@@ -268,7 +438,7 @@ After pushing the config update:
 
 ---
 
-## 8. Verification Checklist
+## 14. Verification Checklist
 
 | # | Check | Expected |
 | --- | --- | --- |
@@ -276,13 +446,49 @@ After pushing the config update:
 | 2 | Static Web App URL loads | Shows login redirect |
 | 3 | OAuth login completes | Redirects back to app |
 | 4 | Header shows user name | `Auth: ok · Your Name` |
-| 5 | Nav menu shows "Actions" | Collapsible group with "Overview" leaf |
-| 6 | Actions Overview page loads | Shows welcome message with your name |
-| 7 | Theme adapts | Dark/light matches OS setting |
+| 5 | Org selector dropdown appears | Lists all customers from `customers.json` |
+| 6 | `/api/customers` endpoint works | Returns JSON array of customers |
+| 7 | Selecting a customer updates the page | Page shows active customer name |
+| 8 | Nav menu shows "Actions" | Collapsible group with "Overview" leaf |
+| 9 | Theme adapts | Dark/light matches OS setting |
 
 ---
 
-## 9. Troubleshooting
+## 15. Day-to-Day Operations
+
+### Adding a new customer
+
+1. Add 2 secrets to Key Vault:
+   ```bash
+   az keyvault secret set --vault-name genesys-admin-kv \
+     --name "genesys-<id>-client-id" --value "..."
+   az keyvault secret set --vault-name genesys-admin-kv \
+     --name "genesys-<id>-client-secret" --value "..."
+   ```
+2. Add an entry to `api/lib/customers.json`
+3. Commit and push — the new customer appears in the dropdown after deployment
+
+### Rotating a customer's credentials
+
+1. Update the 2 secrets in Key Vault (same secret names, new values)
+2. The API will pick up the new values within 10 minutes (cache TTL) or after a function restart
+
+### Removing a customer
+
+1. Remove the entry from `api/lib/customers.json`
+2. Commit and push
+3. Optionally delete the 2 secrets from Key Vault
+
+### Adding a new feature page
+
+1. Create the page module in `js/pages/` (e.g. `js/pages/actions/triggers.js`)
+2. Register the route in `js/pageRegistry.js`
+3. Add a nav entry in `js/navConfig.js`
+4. Commit, push — GitHub Actions deploys automatically
+
+---
+
+## 16. Troubleshooting
 
 ### Login redirects in a loop
 
@@ -313,6 +519,47 @@ After pushing the config update:
 - **Cause:** `config.js` still has placeholder values
 - **Fix:** Update `oauthClientId` and `oauthRedirectUri` with real values from steps 3 and 5
 
+### Org selector shows "Failed to load customers"
+
+- **Cause:** The `/api/customers` endpoint is not deployed or erroring
+- **Fix:** Check that `api_location: "api"` is set in the GitHub Actions workflow file. Visit `/api/customers` directly in the browser to see the error.
+
+### Proxy returns "Credentials not configured for ..."
+
+- **Cause:** Key Vault secrets are missing or named incorrectly
+- **Fix:** Verify that secrets `genesys-<customer-id>-client-id` and `genesys-<customer-id>-client-secret` exist in Key Vault, and that the `<customer-id>` matches `customers.json`
+
+### Proxy returns "KEY_VAULT_NAME environment variable is not set"
+
+- **Cause:** The app setting was not configured
+- **Fix:** Add `KEY_VAULT_NAME` in Static Web App → Configuration → Application settings (see step 11)
+
+### Proxy returns "Access denied" or 403 from Key Vault
+
+- **Cause:** Managed Identity does not have the correct role on Key Vault
+- **Fix:** Verify the Static Web App's Managed Identity has the **Key Vault Secrets User** role on the Key Vault (see step 10). Role assignments can take up to 5 minutes to propagate.
+
+---
+
+## Architecture Overview
+
+```text
+Browser (SPA)                    Azure Static Web App (Standard)
+┌─────────────┐                 ┌──────────────────────────────┐
+│  Frontend   │───── /api/* ───▶│  Azure Functions (managed)   │
+│  (JS SPA)   │                 │    ├─ GET /api/customers     │
+│             │                 │    └─ POST /api/genesys-proxy│
+│  Org select │                 │         │                    │
+│  dropdown   │                 │         │ Managed Identity   │
+└─────────────┘                 └─────────┼────────────────────┘
+                                          │
+                                   ┌──────▼───────┐
+                                   │  Azure Key   │
+                                   │  Vault       │
+                                   │  (secrets)   │
+                                   └──────────────┘
+```
+
 ---
 
 ## Project Structure
@@ -321,10 +568,11 @@ After pushing the config update:
 genesys-admin-app/
 ├── index.html                    App shell (entry point)
 ├── staticwebapp.config.json      SPA routing fallback
+├── .gitignore                    Ignores local.settings.json and node_modules
 ├── css/
 │   └── styles.css                Core layout + theme
 ├── js/
-│   ├── app.js                    Entry point (auth + router bootstrap)
+│   ├── app.js                    Entry point (auth + router + org selector)
 │   ├── config.js                 Environment configuration
 │   ├── nav.js                    Recursive nav tree renderer
 │   ├── navConfig.js              Navigation menu definition
@@ -340,20 +588,24 @@ genesys-admin-app/
 │   │   └── actions/
 │   │       └── overview.js       Actions overview page
 │   └── services/
-│       ├── apiClient.js          Genesys Cloud API wrapper
-│       └── authService.js        OAuth 2.0 PKCE authentication
+│       ├── apiClient.js          Genesys Cloud API wrapper + proxy client
+│       ├── authService.js        OAuth 2.0 PKCE authentication
+│       ├── customerService.js    Fetches customer list from /api/customers
+│       └── orgContext.js         Selected org state management
+├── api/                          Azure Functions backend (auto-deployed)
+│   ├── host.json                 Functions host configuration
+│   ├── package.json              API dependencies
+│   ├── local.settings.json       Local dev settings (git-ignored)
+│   ├── customers/
+│   │   ├── function.json         HTTP trigger binding
+│   │   └── index.js              GET /api/customers → customer metadata
+│   ├── genesys-proxy/
+│   │   ├── function.json         HTTP trigger binding
+│   │   └── index.js              POST /api/genesys-proxy → proxied API calls
+│   └── lib/
+│       ├── customers.json        Customer metadata (id, name, region)
+│       ├── genesysAuth.js        Client Credentials token cache per org
+│       └── keyVaultClient.js     Azure Key Vault secret reader
 └── docs/
     └── setup-guide.md            This file
 ```
-
----
-
-## Adding New Features
-
-When you add a new page:
-
-1. Create the page module in `js/pages/` (e.g. `js/pages/actions/triggers.js`)
-2. Register the route in `js/pageRegistry.js`
-3. Add a nav entry in `js/navConfig.js`
-4. Add any new OAuth scopes to `config.js` and the Genesys OAuth client
-5. Commit, push — GitHub Actions deploys automatically
