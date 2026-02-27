@@ -1,0 +1,313 @@
+/* ══════════════════════════════════════════════════════════
+   Genesys Admin Tool — Core Styles
+   Dark-first + automatic light-mode via prefers-color-scheme
+   ══════════════════════════════════════════════════════════ */
+
+:root {
+  --bg: #0b0f14;
+  --panel: #111824;
+  --panel-2: #0f1621;
+  --text: #e7eef7;
+  --muted: #93a4b8;
+  --border: rgba(255,255,255,0.08);
+  --shadow: 0 10px 30px rgba(0,0,0,0.35);
+  --radius: 14px;
+  --pad: 14px;
+  --nav-w: 240px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ── App shell ────────────────────────────────────────── */
+.app-shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent);
+}
+
+.brand { display: flex; gap: 10px; align-items: center; }
+.brand-mark {
+  width: 36px; height: 36px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+}
+.brand-title { font-weight: 650; }
+.brand-subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.pill {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--muted);
+}
+
+.app-body {
+  display: grid;
+  grid-template-columns: var(--nav-w) 1fr;
+  min-height: 0;
+}
+
+.app-nav {
+  padding: 12px;
+  border-right: 1px solid var(--border);
+  background: var(--panel-2);
+  overflow: auto;
+}
+
+/* ── Nested nav tree ──────────────────────────────────── */
+.nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-group > .nav-list {
+  display: none;
+  padding-left: 12px;
+}
+
+.nav-group.open > .nav-list {
+  display: block;
+}
+
+.nav-folder {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nav-folder:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--border);
+}
+
+.nav-chevron {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+  font-size: 14px;
+  transition: transform 0.15s ease;
+}
+
+.nav-group.open > .nav-folder .nav-chevron {
+  transform: rotate(90deg);
+}
+
+.nav-leaf {
+  display: block;
+  padding: 7px 10px 7px 28px;
+  border-radius: 10px;
+  color: var(--text);
+  text-decoration: none;
+  border: 1px solid transparent;
+  font-size: 13px;
+}
+
+.nav-leaf:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--border);
+}
+
+.nav-leaf.active {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.14);
+}
+
+.app-main {
+  padding: 16px;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* ── Card ─────────────────────────────────────────────── */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--pad);
+}
+
+/* ── Typography ───────────────────────────────────────── */
+.h1 { font-size: 20px; margin: 0 0 8px; }
+.p  { color: var(--muted); margin: 0; line-height: 1.45; }
+.hr { height: 1px; background: var(--border); margin: 14px 0; border: 0; }
+
+.kv {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 8px 12px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.kv .k { color: var(--muted); }
+.kv .v { color: var(--text); word-break: break-word; }
+
+/* ── Buttons ─────────────────────────────────────────── */
+.btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.btn:hover { background: rgba(255,255,255,0.10); }
+.btn-sm { font-size: 12px; padding: 4px 8px; }
+
+/* ── Tables (generic) ─────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.data-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.data-table tr:last-child td { border-bottom: none; }
+
+/* ── Multi-select dropdown ────────────────────────────── */
+.ms-dropdown { position: relative; display: inline-block; }
+.ms-dropdown__trigger {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  min-width: 160px;
+  text-align: left;
+}
+.ms-dropdown__trigger:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.ms-dropdown__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  z-index: 100;
+  padding: 6px;
+}
+.ms-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ms-dropdown__item:hover { background: rgba(255,255,255,0.04); }
+.ms-dropdown__item--all { border-bottom: 1px solid var(--border); margin-bottom: 4px; padding-bottom: 8px; }
+.ms-dropdown__item input[type="checkbox"] { accent-color: #3b82f6; }
+
+/* ── Input fields ─────────────────────────────────────── */
+.input {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.input::placeholder { color: var(--muted); }
+
+/* ══════════════════════════════════════════════════════════
+   Light theme
+   ══════════════════════════════════════════════════════════ */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc;
+    --panel: #ffffff;
+    --panel-2: #f1f5f9;
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: rgba(0,0,0,0.10);
+    --shadow: 0 10px 30px rgba(0,0,0,0.08);
+  }
+
+  /* App shell / header */
+  .app-header {
+    background: linear-gradient(180deg, rgba(0,0,0,0.02), transparent);
+  }
+  .brand-mark {
+    background: rgba(0,0,0,0.05);
+  }
+  .pill {
+    background: rgba(0,0,0,0.04);
+  }
+
+  /* Navigation */
+  .nav-folder:hover {
+    background: rgba(0,0,0,0.04);
+  }
+  .nav-leaf:hover {
+    background: rgba(0,0,0,0.04);
+  }
+  .nav-leaf.active {
+    background: rgba(0,0,0,0.06);
+    border-color: rgba(0,0,0,0.12);
+  }
+
+  /* Buttons */
+  .btn {
+    background: rgba(0,0,0,0.05);
+  }
+  .btn:hover {
+    background: rgba(0,0,0,0.08);
+  }
+
+  /* Multi-select */
+  .ms-dropdown__item:hover {
+    background: rgba(0,0,0,0.04);
+  }
+}
