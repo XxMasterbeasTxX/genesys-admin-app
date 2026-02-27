@@ -9,12 +9,12 @@
  *   2. Create a module that exports: async function render(ctx) → HTMLElement
  *   3. Add an entry below pointing to that module
  */
-import { render as renderPlaceholder } from "./pages/placeholder.js";
+import { renderPlaceholder } from "./pages/placeholder.js";
 
 const registry = {
   // ── Actions ───────────────────────────────────────────
   "/actions/overview": (ctx) =>
-    import("./pages/actions/overview.js").then((m) => m.render(ctx)),
+    import("./pages/actions/overview.js").then((m) => m.default(ctx)),
 };
 
 /**
