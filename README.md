@@ -12,7 +12,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 ## Architecture
 
-```
+```text
 Browser (SPA)                    Azure Static Web App (Standard)
 ┌─────────────┐                 ┌──────────────────────────────┐
 │  Frontend   │───── /api/* ───▶│  Azure Functions (managed)   │
@@ -48,7 +48,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
 
 ## Project Structure
 
-```
+```text
 genesys-admin-app/
 ├── index.html                    App shell
 ├── staticwebapp.config.json      SPA routing config
@@ -80,15 +80,19 @@ genesys-admin-app/
 ## Quick Start (local development)
 
 1. Serve the frontend with any static file server:
+
    ```bash
    npx serve .
    ```
+
 2. For the API, install and use the [Azure Static Web Apps CLI](https://github.com/Azure/static-web-apps-cli):
+
    ```bash
    npm install -g @azure/static-web-apps-cli
    cd api && npm install && cd ..
    swa start . --api-location api
    ```
+
 3. Log in to Azure CLI (`az login`) for local Key Vault access
 
 ## Deployment
@@ -105,14 +109,18 @@ See [docs/setup-guide.md](docs/setup-guide.md) for the complete step-by-step dep
 ## Adding a New Customer
 
 1. Add 2 secrets to Azure Key Vault:
-   ```
+
+   ```text
    genesys-<id>-client-id
    genesys-<id>-client-secret
    ```
+
 2. Add an entry to `api/lib/customers.json`:
+
    ```json
    { "id": "<id>", "name": "Customer Name", "region": "mypurecloud.de" }
    ```
+
 3. Commit and push
 
 ## Adding a New Feature Page
@@ -123,6 +131,7 @@ See [docs/setup-guide.md](docs/setup-guide.md) for the complete step-by-step dep
 4. Commit and push
 
 Pages receive `{ route, me, api, orgContext }` and can call customer APIs via:
+
 ```javascript
 const data = await api.proxyGenesys(orgContext.get(), "GET", "/api/v2/...");
 ```

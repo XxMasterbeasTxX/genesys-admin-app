@@ -344,7 +344,7 @@ Managed Identity allows the Static Web App to authenticate to Key Vault without 
 3. **System assigned** tab → flip **Status** to **On**
 4. Click **Save** → confirm **Yes**
 
-### Azure CLI alternative
+### Azure CLI alternative — Grant Key Vault Access
 
 ```bash
 az staticwebapp identity assign --name genesys-admin-app \
@@ -396,7 +396,7 @@ Static Web App → **Configuration** → **Application settings** → **+ Add**
 | --- | --- |
 | `KEY_VAULT_NAME` | `genesys-admin-kv` |
 
-### Azure CLI alternative — Set App Settings
+### Azure CLI alternative — Configure App Settings
 
 ```bash
 az staticwebapp appsettings set --name genesys-admin-app \

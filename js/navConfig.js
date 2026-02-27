@@ -14,6 +14,7 @@ export const NAV_TREE = [
     enabled: true,
     children: [
       { label: "Overview", path: "overview", enabled: true },
+      { label: "Interaction Search", path: "interaction-search", enabled: true },
     ],
   },
 ];

@@ -1,0 +1,382 @@
+/**
+ * Genesys Cloud API service layer.
+ *
+ * Centralises all Genesys API call patterns so page modules never
+ * need to know raw endpoint paths or pagination mechanics.
+ *
+ * Every function takes `api` (the apiClient) and `orgId` as the
+ * first two arguments, keeping the module stateless.
+ *
+ * Usage in a page:
+ *   import * as gc from "../../services/genesysApi.js";
+ *   const users = await gc.fetchAllPages(api, orgId, "/api/v2/users");
+ *   const convs = await gc.searchConversations(api, orgId, { ... });
+ */
+import { sleep } from "../utils.js";
+
+// ─────────────────────────────────────────────────────────────────────
+// Generic pagination helpers
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch all pages of a paginated Genesys endpoint (pageNumber style).
+ *
+ * Most Genesys list endpoints return:
+ *   { entities: [...], pageCount, pageNumber, pageSize, total }
+ *
+ * @param {Object}   api          apiClient instance.
+ * @param {string}   orgId        Customer org id.
+ * @param {string}   path         API path, e.g. "/api/v2/users".
+ * @param {Object}   [opts]
+ * @param {Object}   [opts.query]        Extra query params (merged with pageNumber/pageSize).
+ * @param {number}   [opts.pageSize=100] Items per page.
+ * @param {string}   [opts.entitiesKey="entities"] Key containing the array in each response.
+ * @param {Function} [opts.onProgress]   Called with (fetchedSoFar, totalEstimate).
+ * @returns {Promise<Object[]>}  All entities concatenated.
+ */
+export async function fetchAllPages(api, orgId, path, opts = {}) {
+  const {
+    query: extraQuery = {},
+    pageSize = 100,
+    entitiesKey = "entities",
+    onProgress,
+  } = opts;
+
+  let page = 1;
+  let all = [];
+  let total = null;
+
+  while (true) {
+    const query = { ...extraQuery, pageSize: String(pageSize), pageNumber: String(page) };
+    const resp = await api.proxyGenesys(orgId, "GET", path, { query });
+
+    const items = resp[entitiesKey] || [];
+    all = all.concat(items);
+
+    if (total === null) total = resp.total ?? null;
+    if (onProgress) onProgress(all.length, total);
+
+    // No more pages?
+    if (items.length < pageSize || page >= (resp.pageCount ?? page)) break;
+    page++;
+  }
+
+  return all;
+}
+
+/**
+ * Fetch all results from a cursor-paginated Genesys endpoint.
+ *
+ * @param {Object}   api           apiClient instance.
+ * @param {string}   orgId         Customer org id.
+ * @param {string}   path          API path.
+ * @param {Object}   [opts]
+ * @param {Object}   [opts.query]        Extra query params.
+ * @param {string}   [opts.itemsKey]     Key containing the array (auto-detected if omitted).
+ * @param {Function} [opts.onProgress]   Called with (fetchedSoFar).
+ * @returns {Promise<Object[]>}  All items concatenated.
+ */
+export async function fetchAllCursor(api, orgId, path, opts = {}) {
+  const { query: extraQuery = {}, itemsKey, onProgress } = opts;
+
+  let all = [];
+  let cursor = null;
+
+  while (true) {
+    const query = { ...extraQuery };
+    if (cursor) query.cursor = cursor;
+
+    const resp = await api.proxyGenesys(orgId, "GET", path, { query });
+
+    // Auto-detect the array key (e.g. "conversations", "entities", "results")
+    const key = itemsKey || Object.keys(resp).find((k) => Array.isArray(resp[k])) || "entities";
+    const items = resp[key] || [];
+    all = all.concat(items);
+
+    if (onProgress) onProgress(all.length);
+
+    cursor = resp.cursor || null;
+    if (!cursor) break;
+  }
+
+  return all;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Analytics — Conversation search (async jobs API)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Submit an async analytics conversation details job.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {string} interval  ISO 8601 interval, e.g. "2026-02-20T00:00:00Z/2026-02-27T23:59:59Z".
+ * @param {Object} [body]    Additional job body fields (filters, etc.).
+ * @returns {Promise<string>} jobId
+ */
+export async function submitAnalyticsJob(api, orgId, interval, body = {}) {
+  const resp = await api.proxyGenesys(orgId, "POST",
+    "/api/v2/analytics/conversations/details/jobs",
+    { body: { interval, ...body } }
+  );
+  if (!resp.jobId) throw new Error("No jobId returned from analytics jobs API");
+  return resp.jobId;
+}
+
+/**
+ * Poll an analytics job until it reaches FULFILLED (or FAILED/timeout).
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {string}   jobId
+ * @param {Object}   [opts]
+ * @param {number}   [opts.pollIntervalMs=2000]
+ * @param {number}   [opts.maxWaitSeconds=300]
+ * @param {Function} [opts.onPoll]  Called each poll with (elapsedSeconds).
+ * @returns {Promise<void>}  Resolves when FULFILLED.
+ */
+export async function pollAnalyticsJob(api, orgId, jobId, opts = {}) {
+  const {
+    pollIntervalMs = 2000,
+    maxWaitSeconds = 300,
+    onPoll,
+  } = opts;
+
+  const start = Date.now();
+
+  while (true) {
+    await sleep(pollIntervalMs);
+    const elapsed = (Date.now() - start) / 1000;
+    if (elapsed > maxWaitSeconds) {
+      throw new Error(`Analytics job timed out after ${maxWaitSeconds}s`);
+    }
+
+    const resp = await api.proxyGenesys(orgId, "GET",
+      `/api/v2/analytics/conversations/details/jobs/${jobId}`);
+
+    if (onPoll) onPoll(elapsed);
+
+    if (resp.state === "FULFILLED") return;
+    if (resp.state === "FAILED") {
+      throw new Error(`Analytics job failed: ${resp.errorMessage || "Unknown error"}`);
+    }
+  }
+}
+
+/**
+ * Fetch all results from a completed analytics job (cursor pagination).
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {string}   jobId
+ * @param {Object}   [opts]
+ * @param {Function} [opts.onProgress]  Called with (fetchedSoFar).
+ * @returns {Promise<Object[]>}  All conversation objects.
+ */
+export async function fetchAnalyticsJobResults(api, orgId, jobId, opts = {}) {
+  return fetchAllCursor(api, orgId,
+    `/api/v2/analytics/conversations/details/jobs/${jobId}/results`,
+    { itemsKey: "conversations", ...opts }
+  );
+}
+
+/**
+ * High-level: search conversations by date interval.
+ *
+ * Submits an async job, polls until complete, fetches all results.
+ * Uses the async jobs API because it's the only path that returns
+ * participant attributes (the sync query returns WithoutAttributes).
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {Object}   opts
+ * @param {string}   opts.interval       ISO 8601 interval.
+ * @param {Object}   [opts.jobBody]      Extra job body fields.
+ * @param {Function} [opts.onStatus]     Called with (statusMessage).
+ * @param {Function} [opts.onProgress]   Called with (progressPercent 0–100).
+ * @returns {Promise<Object[]>}  All conversations.
+ */
+export async function searchConversations(api, orgId, opts = {}) {
+  const { interval, jobBody, onStatus, onProgress } = opts;
+
+  if (onStatus) onStatus("Submitting analytics job…");
+  if (onProgress) onProgress(5);
+
+  const jobId = await submitAnalyticsJob(api, orgId, interval, jobBody);
+
+  if (onStatus) onStatus("Waiting for job to complete…");
+  await pollAnalyticsJob(api, orgId, jobId, {
+    onPoll: (elapsed) => {
+      if (onProgress) onProgress(10 + Math.min(elapsed / 300 * 40, 40));
+    },
+  });
+
+  if (onStatus) onStatus("Fetching results…");
+  const conversations = await fetchAnalyticsJobResults(api, orgId, jobId, {
+    onProgress: (n) => {
+      if (onStatus) onStatus(`Fetching results… (${n} so far)`);
+      if (onProgress) onProgress(50 + Math.min(n % 500 / 10, 45));
+    },
+  });
+
+  if (onProgress) onProgress(100);
+  return conversations;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Conversations — Actions
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Force-disconnect a single conversation.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {string} conversationId
+ * @returns {Promise<Object|null>}
+ */
+export async function disconnectConversation(api, orgId, conversationId) {
+  return api.proxyGenesys(orgId, "POST",
+    `/api/v2/conversations/${conversationId}/disconnect`);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Users
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch all users (with optional expand fields).
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {Object}   [opts]
+ * @param {string[]} [opts.expand]  e.g. ["authorization","dateLastLogin"]
+ * @param {string}   [opts.state]   e.g. "any" (default: active only)
+ * @param {Function} [opts.onProgress]
+ * @returns {Promise<Object[]>}
+ */
+export async function fetchAllUsers(api, orgId, opts = {}) {
+  const { expand = [], state, onProgress } = opts;
+  const query = {};
+  if (expand.length) query.expand = expand.join(",");
+  if (state) query.state = state;
+  return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress });
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Routing — Queues, Skills, Wrapup codes
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all routing queues. */
+export async function fetchAllQueues(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/routing/queues", opts);
+}
+
+/** Fetch all routing skills. */
+export async function fetchAllSkills(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/routing/skills", opts);
+}
+
+/** Fetch all wrapup codes. */
+export async function fetchAllWrapupCodes(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/routing/wrapupcodes", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Architect — Flows, Schedules, DataTables
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all flows. */
+export async function fetchAllFlows(api, orgId, opts = {}) {
+  const query = { deleted: "false", ...(opts.query || {}) };
+  return fetchAllPages(api, orgId, "/api/v2/flows", { ...opts, query });
+}
+
+/** Fetch all schedules. */
+export async function fetchAllSchedules(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/architect/schedules", opts);
+}
+
+/** Fetch all schedule groups. */
+export async function fetchAllScheduleGroups(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/architect/schedulegroups", opts);
+}
+
+/** Fetch all data tables. */
+export async function fetchAllDataTables(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/flows/datatables", opts);
+}
+
+/** Fetch rows from a data table. */
+export async function fetchDataTableRows(api, orgId, tableId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    `/api/v2/flows/datatables/${tableId}/rows`, opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Telephony — Sites, DIDs, Phones
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all sites. */
+export async function fetchAllSites(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    "/api/v2/telephony/providers/edges/sites", opts);
+}
+
+/** Fetch all DID pools. */
+export async function fetchAllDidPools(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    "/api/v2/telephony/providers/edges/didpools", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Integrations / Data Actions
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all data actions. */
+export async function fetchAllDataActions(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/integrations/actions", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// External Contacts
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all external contacts (cursor-paginated in newer API versions). */
+export async function fetchAllExternalContacts(api, orgId, opts = {}) {
+  return fetchAllCursor(api, orgId, "/api/v2/externalcontacts/contacts", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// GDPR
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Search GDPR subjects.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {string} searchType  NAME | ADDRESS | PHONE | EMAIL
+ * @param {string} searchValue
+ * @returns {Promise<Object>}
+ */
+export async function searchGdprSubjects(api, orgId, searchType, searchValue) {
+  return api.proxyGenesys(orgId, "GET", "/api/v2/gdpr/subjects", {
+    query: { searchType, searchValue },
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Groups / Divisions
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all groups. */
+export async function fetchAllGroups(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/groups", opts);
+}
+
+/** Fetch all divisions. */
+export async function fetchAllDivisions(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/authorization/divisions", opts);
+}
