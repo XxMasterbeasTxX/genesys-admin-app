@@ -7,12 +7,11 @@ export const CONFIG = {
   appName: "Genesys Admin Tool",
 
   // OAuth Client Application (Authorization Code + PKCE)
-  // TODO: Replace with a new PKCE client ID for the admin app
-  oauthClientId: "REPLACE_ME",
+  // Shared with customer app — admin SWA URL added as redirect URI
+  oauthClientId: "3b89b95c-d658-463e-9280-30a5bd7f4c2c",
 
   // Must match the Azure Static Web App URL exactly
-  // TODO: Replace after creating the SWA
-  oauthRedirectUri: "https://REPLACE_ME.azurestaticapps.net",
+  oauthRedirectUri: "https://red-wave-0cb77561e.6.azurestaticapps.net",
 
   // OIDC scopes — API permissions are controlled by the OAuth client roles.
   oauthScopes: ["openid", "profile", "email"],
