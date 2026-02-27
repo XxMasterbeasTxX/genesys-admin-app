@@ -12,6 +12,8 @@ import {
   scheduleTokenRefresh,
 } from "./services/authService.js";
 import { createApiClient } from "./services/apiClient.js";
+import { orgContext } from "./services/orgContext.js";
+import { fetchCustomers } from "./services/customerService.js";
 
 function setHeader({ authText }) {
   document.getElementById("brandTitle").textContent = CONFIG.appName;
@@ -47,6 +49,28 @@ function renderFatalError(message) {
   // --- API client ---
   const api = createApiClient(getValidAccessToken);
 
+  // --- Load customer list & wire org selector ---
+  const orgSelectEl = document.getElementById("orgSelect");
+  try {
+    const customers = await fetchCustomers();
+    orgContext.setCustomers(customers);
+
+    orgSelectEl.innerHTML = `<option value="">Select customer…</option>`
+      + customers.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.region)})</option>`).join("");
+    orgSelectEl.disabled = false;
+
+    // Restore previous selection if still valid
+    const prev = orgContext.get();
+    if (prev) orgSelectEl.value = prev;
+  } catch (err) {
+    console.error("Failed to load customers:", err);
+    orgSelectEl.innerHTML = `<option value="">⚠ Failed to load customers</option>`;
+  }
+
+  orgSelectEl.addEventListener("change", () => {
+    orgContext.set(orgSelectEl.value || null);
+  });
+
   // --- Session monitoring ---
   scheduleTokenRefresh({
     onExpiringSoon: (secsLeft) => {
@@ -72,7 +96,7 @@ function renderFatalError(message) {
       if (route === "/") return renderWelcomePage();
 
       const loader = getPageLoader(route);
-      if (loader) return loader({ route, me: res.me, api });
+      if (loader) return loader({ route, me: res.me, api, orgContext });
 
       // Folder prefix? Redirect to its first leaf.
       const firstLeaf = getFirstLeafUnder(route);
@@ -85,6 +109,9 @@ function renderFatalError(message) {
     },
     onRouteChanged: (route) => nav.updateActive(route),
   });
+
+  // Re-render current page when customer org changes
+  orgContext.onChange(() => router.render());
 
   router.start();
 })().catch((err) => {

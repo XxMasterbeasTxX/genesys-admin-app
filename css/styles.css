@@ -51,6 +51,51 @@ body {
 .brand-title { font-weight: 650; }
 .brand-subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
+/* ── Org selector ─────────────────────────────────────── */
+.org-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.org-select {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 32px 7px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.06)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2393a4b8'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  color: var(--text);
+  cursor: pointer;
+  min-width: 200px;
+  max-width: 320px;
+  transition: border-color 0.15s;
+}
+
+.org-select:hover {
+  border-color: rgba(255,255,255,0.20);
+}
+
+.org-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.25);
+}
+
+.org-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.org-select option {
+  background: var(--panel);
+  color: var(--text);
+}
+
 .pill {
   font-size: 12px;
   padding: 6px 10px;
@@ -284,6 +329,20 @@ body {
   }
   .pill {
     background: rgba(0,0,0,0.04);
+  }
+
+  /* Org selector */
+  .org-select {
+    background: rgba(0,0,0,0.04)
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2364748b'/%3E%3C/svg%3E")
+      no-repeat right 10px center;
+  }
+  .org-select:hover {
+    border-color: rgba(0,0,0,0.20);
+  }
+  .org-select option {
+    background: var(--panel);
+    color: var(--text);
   }
 
   /* Navigation */

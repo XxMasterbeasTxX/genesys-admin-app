@@ -1,0 +1,10 @@
+{
+  "name": "genesys-admin-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Azure Functions API for Genesys Admin Tool",
+  "dependencies": {
+    "@azure/identity": "^4.0.0",
+    "@azure/keyvault-secrets": "^4.8.0"
+  }
+}

@@ -1,0 +1,6 @@
+# Azure Functions local settings (contains local dev secrets)
+api/local.settings.json
+
+# Node modules
+api/node_modules/
+node_modules/
