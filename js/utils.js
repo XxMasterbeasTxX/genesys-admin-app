@@ -77,213 +77,55 @@ export function generateCsv(rows, columns) {
   return [header, ...body].join("\n");
 }
 
-// ── Excel (.xlsx) ───────────────────────────────────────────────────
+// ── Excel (.xlsx) export via SheetJS + download.html ────────────────
 
 /**
- * Escape a string for XML content.
- */
-function xmlEscape(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/**
- * Generate a minimal .xlsx file (as a Blob) from row objects.
+ * Build and download an .xlsx workbook using the SheetJS library.
  *
- * Uses the SpreadsheetML (XML-based) format wrapped in a ZIP via the
- * built-in CompressionStream API (available in modern browsers).
- * No external dependencies.
+ * The app runs inside a Genesys Cloud iframe where direct blob
+ * downloads are blocked. We encode the file as base64 and open
+ * download.html in a new tab, which handles the actual save.
  *
- * @param {Object[]} rows      Array of row objects.
- * @param {{ key: string, label: string }[]} columns  Column definitions.
- * @returns {Promise<Blob>}  The .xlsx Blob.
+ * @param {Array<{ name: string, rows: Object[], columns: { key: string, label: string, wch?: number }[] }>} sheets
+ *   One or more sheets to include in the workbook.
+ * @param {string} filename  Suggested filename (e.g. "Report_2026-02-27.xlsx").
  */
-export async function generateXlsx(rows, columns) {
-  // Build the sheet XML
-  const sheetRows = [];
-
-  // Header row
-  const headerCells = columns.map(
-    (c) => `<c t="inlineStr"><is><t>${xmlEscape(c.label)}</t></is></c>`
-  ).join("");
-  sheetRows.push(`<row>${headerCells}</row>`);
-
-  // Data rows
-  for (const r of rows) {
-    const cells = columns.map((c) => {
-      const v = r[c.key] ?? "";
-      return `<c t="inlineStr"><is><t>${xmlEscape(v)}</t></is></c>`;
-    }).join("");
-    sheetRows.push(`<row>${cells}</row>`);
+export function exportXlsx(sheets, filename) {
+  if (typeof XLSX === "undefined") {
+    throw new Error("Excel library not loaded. Please reload the page.");
   }
 
-  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<sheetData>${sheetRows.join("")}</sheetData>
-</worksheet>`;
+  const wb = XLSX.utils.book_new();
 
-  const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
-</workbook>`;
+  for (const sheet of sheets) {
+    // Map rows from { key: value } to { label: value } for readable headers
+    const data = sheet.rows.map((r) => {
+      const obj = {};
+      for (const col of sheet.columns) {
+        obj[col.label] = r[col.key] ?? "";
+      }
+      return obj;
+    });
 
-  const workbookRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-</Relationships>`;
+    const ws = XLSX.utils.json_to_sheet(data);
 
-  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-</Types>`;
+    // Apply column widths if specified
+    if (sheet.columns.some((c) => c.wch)) {
+      ws["!cols"] = sheet.columns.map((c) => ({ wch: c.wch || 15 }));
+    }
 
-  const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`;
-
-  // Build ZIP manually (store-only, no compression — simple & reliable)
-  const files = [
-    { path: "[Content_Types].xml", data: contentTypesXml },
-    { path: "_rels/.rels", data: relsXml },
-    { path: "xl/workbook.xml", data: workbookXml },
-    { path: "xl/_rels/workbook.xml.rels", data: workbookRelsXml },
-    { path: "xl/worksheets/sheet1.xml", data: sheetXml },
-  ];
-
-  return buildZipBlob(files);
-}
-
-/**
- * Build a ZIP blob from an array of { path, data } entries (store-only).
- * Uses DataView for byte-level control — no external libs required.
- */
-function buildZipBlob(files) {
-  const encoder = new TextEncoder();
-  const entries = files.map((f) => ({
-    path: encoder.encode(f.path),
-    data: encoder.encode(f.data),
-  }));
-
-  // Calculate sizes
-  let offset = 0;
-  const localHeaders = [];
-  for (const e of entries) {
-    const headerSize = 30 + e.path.length;
-    localHeaders.push({ offset, headerSize });
-    offset += headerSize + e.data.length;
-  }
-  const centralStart = offset;
-
-  let centralSize = 0;
-  for (const e of entries) {
-    centralSize += 46 + e.path.length;
-  }
-  const totalSize = centralStart + centralSize + 22; // +22 for EOCD
-
-  const buf = new ArrayBuffer(totalSize);
-  const view = new DataView(buf);
-  const u8 = new Uint8Array(buf);
-  let pos = 0;
-
-  // CRC-32 table
-  const crcTable = new Uint32Array(256);
-  for (let i = 0; i < 256; i++) {
-    let c = i;
-    for (let j = 0; j < 8; j++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
-    crcTable[i] = c;
-  }
-  function crc32(data) {
-    let crc = 0xFFFFFFFF;
-    for (let i = 0; i < data.length; i++) crc = crcTable[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
-    return (crc ^ 0xFFFFFFFF) >>> 0;
+    XLSX.utils.book_append_sheet(wb, ws, sheet.name || "Sheet1");
   }
 
-  // Write local file headers + data
-  for (let i = 0; i < entries.length; i++) {
-    const e = entries[i];
-    const crc = crc32(e.data);
-    entries[i].crc = crc;
+  // Encode as base64 and open download helper
+  const b64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+  const helperUrl = new URL("download.html", document.baseURI);
+  helperUrl.hash = encodeURIComponent(filename) + "|" + b64;
 
-    view.setUint32(pos, 0x04034B50, true); pos += 4; // signature
-    view.setUint16(pos, 20, true); pos += 2;         // version needed
-    view.setUint16(pos, 0, true); pos += 2;          // flags
-    view.setUint16(pos, 0, true); pos += 2;          // compression (store)
-    view.setUint16(pos, 0, true); pos += 2;          // mod time
-    view.setUint16(pos, 0, true); pos += 2;          // mod date
-    view.setUint32(pos, crc, true); pos += 4;        // crc32
-    view.setUint32(pos, e.data.length, true); pos += 4; // compressed size
-    view.setUint32(pos, e.data.length, true); pos += 4; // uncompressed size
-    view.setUint16(pos, e.path.length, true); pos += 2; // filename length
-    view.setUint16(pos, 0, true); pos += 2;          // extra field length
-    u8.set(e.path, pos); pos += e.path.length;
-    u8.set(e.data, pos); pos += e.data.length;
+  const popup = window.open(helperUrl.href, "_blank");
+  if (!popup) {
+    throw new Error("Pop-up blocked. Please allow pop-ups for this site and try again.");
   }
-
-  // Write central directory
-  for (let i = 0; i < entries.length; i++) {
-    const e = entries[i];
-    view.setUint32(pos, 0x02014B50, true); pos += 4; // signature
-    view.setUint16(pos, 20, true); pos += 2;         // version made by
-    view.setUint16(pos, 20, true); pos += 2;         // version needed
-    view.setUint16(pos, 0, true); pos += 2;          // flags
-    view.setUint16(pos, 0, true); pos += 2;          // compression
-    view.setUint16(pos, 0, true); pos += 2;          // mod time
-    view.setUint16(pos, 0, true); pos += 2;          // mod date
-    view.setUint32(pos, e.crc, true); pos += 4;      // crc32
-    view.setUint32(pos, e.data.length, true); pos += 4;
-    view.setUint32(pos, e.data.length, true); pos += 4;
-    view.setUint16(pos, e.path.length, true); pos += 2;
-    view.setUint16(pos, 0, true); pos += 2;          // extra field length
-    view.setUint16(pos, 0, true); pos += 2;          // comment length
-    view.setUint16(pos, 0, true); pos += 2;          // disk number
-    view.setUint16(pos, 0, true); pos += 2;          // internal attrs
-    view.setUint32(pos, 0, true); pos += 4;          // external attrs
-    view.setUint32(pos, localHeaders[i].offset, true); pos += 4;
-    u8.set(e.path, pos); pos += e.path.length;
-  }
-
-  // End of central directory
-  view.setUint32(pos, 0x06054B50, true); pos += 4;
-  view.setUint16(pos, 0, true); pos += 2;   // disk number
-  view.setUint16(pos, 0, true); pos += 2;   // central dir disk
-  view.setUint16(pos, entries.length, true); pos += 2;
-  view.setUint16(pos, entries.length, true); pos += 2;
-  view.setUint32(pos, centralSize, true); pos += 4;
-  view.setUint32(pos, centralStart, true); pos += 4;
-  view.setUint16(pos, 0, true); // comment length
-
-  return new Blob([buf], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-}
-
-// ── File download ───────────────────────────────────────────────────
-
-/**
- * Trigger a file download in the browser.
- *
- * @param {string}       filename  Suggested filename.
- * @param {string|Blob}  content   File content (string or Blob).
- * @param {string}       [mime]    MIME type (ignored when content is a Blob).
- */
-export function downloadFile(filename, content, mime = "text/csv;charset=utf-8;") {
-  const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 /** Generate a timestamped filename, e.g. "Prefix_2026-02-27T14-30-00". */

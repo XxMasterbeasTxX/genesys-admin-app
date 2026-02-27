@@ -9,7 +9,7 @@
  * Supports CSV export and copy-to-clipboard.
  */
 import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr,
-         generateXlsx, downloadFile, timestampedFilename } from "../../utils.js";
+         exportXlsx, timestampedFilename } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 
 // ── Column definitions (page-specific) ──────────────────────────────
@@ -382,19 +382,31 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   $clearBtn.addEventListener("click", clearResults);
 
   // ── Export buttons ──────────────────────────────────
-  $exportBtn.addEventListener("click", async () => {
+  $exportBtn.addEventListener("click", () => {
     if (!rows.length) return;
-    const blob = await generateXlsx(rows, COLUMNS);
-    downloadFile(timestampedFilename("InteractionSearch", "xlsx"), blob);
-    setStatus(STATUS.exported(rows.length), "success");
+    try {
+      exportXlsx(
+        [{ name: "Interactions", rows, columns: COLUMNS }],
+        timestampedFilename("InteractionSearch", "xlsx"),
+      );
+      setStatus(STATUS.exported(rows.length), "success");
+    } catch (err) {
+      setStatus(STATUS.error(err.message), "error");
+    }
   });
 
-  $exportPdBtn.addEventListener("click", async () => {
+  $exportPdBtn.addEventListener("click", () => {
     if (!conversations.length) return;
-    const pdRows = toParticipantDataRows(conversations);
-    const blob = await generateXlsx(pdRows, PD_COLUMNS);
-    downloadFile(timestampedFilename("ParticipantData", "xlsx"), blob);
-    setStatus(STATUS.exported(pdRows.length), "success");
+    try {
+      const pdRows = toParticipantDataRows(conversations);
+      exportXlsx(
+        [{ name: "Participant Data", rows: pdRows, columns: PD_COLUMNS }],
+        timestampedFilename("ParticipantData", "xlsx"),
+      );
+      setStatus(STATUS.exported(pdRows.length), "success");
+    } catch (err) {
+      setStatus(STATUS.error(err.message), "error");
+    }
   });
 
   // ── SEARCH ──────────────────────────────────────────

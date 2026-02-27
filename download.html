@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Export Download</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0;
+           display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .box { text-align: center; max-width: 500px; }
+    .box p { font-size: 1.1rem; margin-bottom: 1.5rem; }
+    .box .sub { color: #888; font-size: 0.85rem; margin-top: 1rem; }
+    .dl-btn { display: inline-block; padding: 14px 32px; font-size: 1.1rem; font-weight: 600;
+              color: #fff; background: #22c55e; border: none; border-radius: 8px;
+              cursor: pointer; text-decoration: none; transition: background 0.2s; }
+    .dl-btn:hover { background: #16a34a; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <p id="msg">Your file is ready</p>
+    <button id="dlBtn" class="dl-btn" style="display:none"></button>
+    <p class="sub" id="sub"></p>
+  </div>
+  <script>
+    (function () {
+      var msgEl = document.getElementById("msg");
+      var subEl = document.getElementById("sub");
+      var btnEl = document.getElementById("dlBtn");
+
+      try {
+        var hash = location.hash.substring(1);
+        var sep = hash.indexOf("|");
+        if (!hash || sep < 0) { msgEl.textContent = "No export data found."; return; }
+
+        var fileName = decodeURIComponent(hash.substring(0, sep));
+        var b64 = hash.substring(sep + 1);
+
+        // Decode base64
+        var raw = atob(b64);
+        var bytes = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        var mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        var blob = new Blob([bytes], { type: mime });
+
+        // Clear hash for privacy
+        history.replaceState(null, "", location.pathname);
+
+        msgEl.textContent = "Click the button to save your file:";
+        btnEl.textContent = "\u2B07 Save " + fileName;
+        btnEl.style.display = "inline-block";
+        subEl.textContent = "You can close this tab after downloading.";
+
+        btnEl.addEventListener("click", async function () {
+          try {
+            // Primary: File System Access API (native Save As dialog)
+            if (window.showSaveFilePicker) {
+              var handle = await window.showSaveFilePicker({
+                suggestedName: fileName,
+                types: [{ description: "Excel Workbook", accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] } }]
+              });
+              var writable = await handle.createWritable();
+              await writable.write(blob);
+              await writable.close();
+              msgEl.textContent = "\u2705 Saved: " + fileName;
+              btnEl.style.display = "none";
+              var countdown = 3;
+              subEl.textContent = "Closing in " + countdown + "s\u2026";
+              var timer = setInterval(function () {
+                countdown--;
+                if (countdown <= 0) { clearInterval(timer); window.close(); }
+                else { subEl.textContent = "Closing in " + countdown + "s\u2026"; }
+              }, 1000);
+              return;
+            }
+          } catch (e) {
+            if (e.name === "AbortError") { return; } // user cancelled
+            console.warn("showSaveFilePicker failed, trying fallback:", e);
+          }
+
+          // Fallback: blob URL <a> click
+          try {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement("a");
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+            msgEl.textContent = "Download started: " + fileName;
+          } catch (e2) {
+            msgEl.textContent = "Download failed: " + e2.message;
+          }
+        });
+
+      } catch (err) {
+        msgEl.textContent = "Error: " + err.message;
+        console.error("Download helper error:", err);
+      }
+    })();
+  </script>
+</body>
+</html>
