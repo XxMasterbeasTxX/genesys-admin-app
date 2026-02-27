@@ -9,7 +9,7 @@
  * Supports CSV export and copy-to-clipboard.
  */
 import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr,
-         generateCsv, downloadFile, timestampedFilename } from "../../utils.js";
+         generateXlsx, downloadFile, timestampedFilename } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 
 // ── Column definitions (page-specific) ──────────────────────────────
@@ -39,7 +39,7 @@ const STATUS = {
   foundFiltered:   (n, total) => `Found ${n} of ${total} conversations matching filters.`,
   noResults:       "No conversations found for the selected date range.",
   noFilterMatch:   (total) => `${total} conversations fetched, but none matched the filters.`,
-  exported:        (n) => `Exported ${n} rows to CSV.`,
+  exported:        (n) => `Exported ${n} rows to Excel.`,
   error:           (msg) => `Error: ${msg}`,
 };
 
@@ -180,10 +180,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     <!-- Action buttons -->
     <div class="is-actions">
       <button class="btn" id="isSearchBtn">Search</button>
-      <button class="btn" id="isExportBtn" disabled>Export CSV</button>
+      <button class="btn" id="isExportBtn" disabled>Export Excel</button>
       <button class="btn" id="isExportPdBtn" disabled>Export Participant Data</button>
       <button class="btn" id="isClearBtn">Clear Results</button>
     </div>
+
+    <!-- Hint -->
+    <div class="is-hint">Tip: Right-click a row to copy the Conversation ID to clipboard.</div>
 
     <!-- Status -->
     <div class="is-status" id="isStatus">${STATUS.ready}</div>
@@ -235,14 +238,27 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       return;
     }
     $filterTags.innerHTML = pdFilters.map((f, i) =>
-      `<span class="is-filter-tag">${escapeHtml(f.key)} = ${escapeHtml(f.value)}
+      `<span class="is-filter-tag" data-idx="${i}" title="Click to edit">
+        <span class="is-filter-tag-text">${escapeHtml(f.key)} = ${escapeHtml(f.value)}</span>
         <button class="is-filter-tag-remove" data-idx="${i}">&times;</button>
        </span>`
     ).join("");
     $filterTags.querySelectorAll(".is-filter-tag-remove").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
         pdFilters.splice(Number(btn.dataset.idx), 1);
         renderFilterTags();
+      });
+    });
+    $filterTags.querySelectorAll(".is-filter-tag").forEach((tag) => {
+      tag.addEventListener("click", () => {
+        const idx = Number(tag.dataset.idx);
+        const f = pdFilters[idx];
+        $pdKey.value = f.key;
+        $pdValue.value = f.value;
+        pdFilters.splice(idx, 1);
+        renderFilterTags();
+        $pdKey.focus();
       });
     });
   }
@@ -366,16 +382,18 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   $clearBtn.addEventListener("click", clearResults);
 
   // ── Export buttons ──────────────────────────────────
-  $exportBtn.addEventListener("click", () => {
+  $exportBtn.addEventListener("click", async () => {
     if (!rows.length) return;
-    downloadFile(timestampedFilename("InteractionSearch"), generateCsv(rows, COLUMNS));
+    const blob = await generateXlsx(rows, COLUMNS);
+    downloadFile(timestampedFilename("InteractionSearch", "xlsx"), blob);
     setStatus(STATUS.exported(rows.length), "success");
   });
 
-  $exportPdBtn.addEventListener("click", () => {
+  $exportPdBtn.addEventListener("click", async () => {
     if (!conversations.length) return;
     const pdRows = toParticipantDataRows(conversations);
-    downloadFile(timestampedFilename("ParticipantData"), generateCsv(pdRows, PD_COLUMNS));
+    const blob = await generateXlsx(pdRows, PD_COLUMNS);
+    downloadFile(timestampedFilename("ParticipantData", "xlsx"), blob);
     setStatus(STATUS.exported(pdRows.length), "success");
   });
 
