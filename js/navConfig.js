@@ -17,15 +17,7 @@ export const NAV_TREE = [
       { label: "Move Interactions", path: "move", enabled: true },
     ],
   },
-  {
-    label: "Conversations",
-    path: "conversations",
-    enabled: true,
-    children: [
-      { label: "Move Interactions", path: "move", enabled: false },
-    ],
-  },
-];
+  ];
 
 /** Collect all leaf routes from enabled nodes only. */
 export function getLeafRoutes(nodes = NAV_TREE, parentPath = "") {

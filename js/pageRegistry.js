@@ -15,10 +15,8 @@ const registry = {
   // ── Actions ───────────────────────────────────────────
   "/actions/interaction-search": (ctx) =>
     import("./pages/actions/interactionSearch.js").then((m) => m.default(ctx)),
-
-  // ── Conversations ────────────────────────────────────
-  "/conversations/move": (ctx) =>
-    import("./pages/conversations/moveInteractions.js").then((m) => m.default(ctx)),
+  "/actions/move": (ctx) =>
+    import("./pages/actions/moveInteractions.js").then((m) => m.default(ctx)),
 };
 
 /**
