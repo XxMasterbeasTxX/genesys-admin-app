@@ -59,9 +59,8 @@ function renderFatalError(message) {
       + customers.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.region)})</option>`).join("");
     orgSelectEl.disabled = false;
 
-    // Restore previous selection if still valid
-    const prev = orgContext.get();
-    if (prev) orgSelectEl.value = prev;
+    // Always start fresh — no auto-selected org
+    orgContext.clear();
   } catch (err) {
     console.error("Failed to load customers:", err);
     orgSelectEl.innerHTML = `<option value="">⚠ Failed to load customers</option>`;
@@ -112,6 +111,11 @@ function renderFatalError(message) {
 
   // Re-render current page when customer org changes
   orgContext.onChange(() => router.render());
+
+  // Always start at the welcome page — clear any leftover hash
+  if (window.location.hash) {
+    history.replaceState(null, "", window.location.pathname);
+  }
 
   router.start();
 })().catch((err) => {

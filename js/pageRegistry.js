@@ -13,8 +13,6 @@ import { renderPlaceholder } from "./pages/placeholder.js";
 
 const registry = {
   // ── Actions ───────────────────────────────────────────
-  "/actions/overview": (ctx) =>
-    import("./pages/actions/overview.js").then((m) => m.default(ctx)),
   "/actions/interaction-search": (ctx) =>
     import("./pages/actions/interactionSearch.js").then((m) => m.default(ctx)),
 };
