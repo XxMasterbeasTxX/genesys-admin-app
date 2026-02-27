@@ -1,5 +1,4 @@
 const customers = require("../lib/customers.json");
-const { getKeyVaultSecret } = require("../lib/keyVaultClient");
 const { getGenesysToken } = require("../lib/genesysAuth");
 
 /**
@@ -51,11 +50,10 @@ module.exports = async function (context, req) {
       return;
     }
 
-    // --- Get credentials from Key Vault ---
-    const clientId = await getKeyVaultSecret(`genesys-${customerId}-client-id`);
-    const clientSecret = await getKeyVaultSecret(
-      `genesys-${customerId}-client-secret`
-    );
+    // --- Get credentials from app settings (resolved via Key Vault references) ---
+    const envKey = `GENESYS_${customerId.replace(/-/g, "_").toUpperCase()}`;
+    const clientId = process.env[`${envKey}_CLIENT_ID`];
+    const clientSecret = process.env[`${envKey}_CLIENT_SECRET`];
 
     if (!clientId || !clientSecret) {
       context.res = {
