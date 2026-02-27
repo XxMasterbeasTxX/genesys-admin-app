@@ -14,6 +14,7 @@ export const NAV_TREE = [
     enabled: true,
     children: [
       { label: "Interaction Search", path: "interaction-search", enabled: true },
+      { label: "Move Interactions", path: "move", enabled: true },
     ],
   },
   {
@@ -21,7 +22,7 @@ export const NAV_TREE = [
     path: "conversations",
     enabled: true,
     children: [
-      { label: "Move Interactions", path: "move", enabled: true },
+      { label: "Move Interactions", path: "move", enabled: false },
     ],
   },
 ];

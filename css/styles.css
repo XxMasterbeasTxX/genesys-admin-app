@@ -4,6 +4,7 @@
    ══════════════════════════════════════════════════════════ */
 
 :root {
+  color-scheme: dark;
   --bg: #0b0f14;
   --panel: #111824;
   --panel-2: #0f1621;
@@ -569,6 +570,7 @@ body {
    ══════════════════════════════════════════════════════════ */
 @media (prefers-color-scheme: light) {
   :root {
+    color-scheme: light;
     --bg: #f8fafc;
     --panel: #ffffff;
     --panel-2: #f1f5f9;
