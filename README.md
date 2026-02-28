@@ -11,6 +11,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division selection
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
+- **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration, save drafts, validate, publish, and run inline tests
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
 
@@ -96,7 +97,8 @@ genesys-admin-app/
 │   │       │   ├── copySingleOrg.js     Copy table within same org
 │   │       │   └── copyBetweenOrgs.js   Copy table between orgs
 │   │       └── dataactions/
-│   │           └── copyBetweenOrgs.js   Copy data action between orgs
+│   │           ├── copyBetweenOrgs.js   Copy data action between orgs
+│   │           └── edit.js              Edit / test existing data actions
 │   └── services/
 │       ├── apiClient.js          HTTP client + Genesys proxy wrapper
 │       ├── authService.js        OAuth 2.0 PKCE authentication

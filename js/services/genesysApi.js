@@ -449,6 +449,54 @@ export async function createDataActionDraft(api, orgId, body) {
     "/api/v2/integrations/actions/drafts", { body });
 }
 
+/** Fetch all action drafts (actions that exist only as drafts). */
+export async function fetchAllDataActionDrafts(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/integrations/actions/drafts", opts);
+}
+
+/** Get the draft of an existing action. */
+export async function getDataActionDraft(api, orgId, actionId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/integrations/actions/${actionId}/draft`,
+    { query: { expand: "contract", includeConfig: "true" } });
+}
+
+/** Create a new draft from an existing published action. */
+export async function createDraftFromAction(api, orgId, actionId) {
+  return api.proxyGenesys(orgId, "POST",
+    `/api/v2/integrations/actions/${actionId}/draft`);
+}
+
+/** Update (patch) an existing draft. */
+export async function patchDataActionDraft(api, orgId, actionId, body) {
+  return api.proxyGenesys(orgId, "PATCH",
+    `/api/v2/integrations/actions/${actionId}/draft`, { body });
+}
+
+/** Validate draft configuration. */
+export async function validateDataActionDraft(api, orgId, actionId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/integrations/actions/${actionId}/draft/validation`);
+}
+
+/** Publish a draft (makes it the active action). */
+export async function publishDataActionDraft(api, orgId, actionId, body = {}) {
+  return api.proxyGenesys(orgId, "POST",
+    `/api/v2/integrations/actions/${actionId}/draft/publish`, { body });
+}
+
+/** Test a published action with input parameters. */
+export async function testDataAction(api, orgId, actionId, body) {
+  return api.proxyGenesys(orgId, "POST",
+    `/api/v2/integrations/actions/${actionId}/test`, { body });
+}
+
+/** Test a draft action with input parameters. */
+export async function testDataActionDraft(api, orgId, actionId, body) {
+  return api.proxyGenesys(orgId, "POST",
+    `/api/v2/integrations/actions/${actionId}/draft/test`, { body });
+}
+
 /** Fetch all integrations. Filter by type via opts.query.integrationType. */
 export async function fetchAllIntegrations(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/integrations", opts);

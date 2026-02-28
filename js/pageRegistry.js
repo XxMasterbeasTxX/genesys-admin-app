@@ -15,6 +15,8 @@ const registry = {
   // ── Actions › Data Actions ────────────────────────────
   "/actions/dataactions/copy-between": (ctx) =>
     import("./pages/actions/dataactions/copyBetweenOrgs.js").then((m) => m.default(ctx)),
+  "/actions/dataactions/edit": (ctx) =>
+    import("./pages/actions/dataactions/edit.js").then((m) => m.default(ctx)),
 
   // ── Actions › Data Tables ─────────────────────────────
   "/actions/datatables/copy-between": (ctx) =>

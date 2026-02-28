@@ -9,6 +9,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division and optional row copy
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
+- **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration, inline testing
 
 ---
 
@@ -482,7 +483,8 @@ After pushing the config update:
 | 13 | Data Tables — Copy (Single Org) | Tables, divisions load; copy structure + rows succeeds |
 | 14 | Data Tables — Copy between Orgs | Source/dest selectors; copy with division + rows succeeds |
 | 15 | Data Actions — Copy between Orgs | Source/dest selectors; integration mapping; copy succeeds |
-| 16 | Theme adapts | Dark/light matches OS setting |
+| 16 | Data Actions — Edit | Load actions; filter/search; edit name/category; save/validate/publish; test |
+| 17 | Theme adapts | Dark/light matches OS setting |
 
 ---
 
