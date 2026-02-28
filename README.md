@@ -4,15 +4,24 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 ## What it does
 
+### Features
+
 - **Org selector** — Pick any customer org from a dropdown; all pages use that org
 - **Interaction Search** — Search conversations by date range, filter by participant data, view details, export to Excel (.xlsx)
+- **Move Interactions** — Move conversations between queues with media type filtering and date range controls
+- **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
+- **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division selection
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
+
+### Platform
+
 - **Secure credential storage** — Customer Client IDs/Secrets managed in Azure Key Vault, delivered to the backend via encrypted app settings
 - **Proxied API calls** — All Genesys API calls go through an Azure Functions backend that handles authentication
-- **Centralized API service** — Shared `genesysApi.js` module with helpers for analytics, users, queues, flows, and more
+- **Centralized API service** — Shared `genesysApi.js` module with helpers for analytics, users, queues, flows, data tables, divisions, and more
 - **OAuth PKCE login** — Team members authenticate via Genesys Cloud (your own org)
 - **Welcome page** — App always starts on a clean welcome screen; no page or org is pre-selected
 - **Dark/light theme** — Adapts to OS preference automatically
+- **Iframe-safe Excel export** — Uses SheetJS with a helper page for reliable downloads inside Genesys Cloud iframes
 
 ## Architecture
 
@@ -59,6 +68,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
 ```text
 genesys-admin-app/
 ├── index.html                    App shell
+├── download.html                 Iframe-safe file download helper
 ├── staticwebapp.config.json      SPA routing + Node 18 runtime config
 ├── css/styles.css                Styles (dark + light theme)
 ├── js/
@@ -69,6 +79,8 @@ genesys-admin-app/
 │   ├── pageRegistry.js           Route → page loader map
 │   ├── router.js                 Hash-based SPA router
 │   ├── utils.js                  Shared utilities (formatting, Excel export, etc.)
+│   ├── lib/
+│   │   └── xlsx.full.min.js      SheetJS library for Excel export
 │   ├── components/
 │   │   └── multiSelect.js        Reusable multi-select dropdown
 │   ├── pages/
@@ -76,7 +88,11 @@ genesys-admin-app/
 │   │   ├── notfound.js           404 page
 │   │   ├── placeholder.js        Generic "coming soon" stub
 │   │   └── actions/
-│   │       └── interactionSearch.js  Interaction Search page
+│   │       ├── interactionSearch.js  Interaction Search page
+│   │       ├── moveInteractions.js   Move Interactions between queues
+│   │       └── datatables/
+│   │           ├── copySingleOrg.js     Copy table within same org
+│   │           └── copyBetweenOrgs.js   Copy table between orgs
 │   └── services/
 │       ├── apiClient.js          HTTP client + Genesys proxy wrapper
 │       ├── authService.js        OAuth 2.0 PKCE authentication

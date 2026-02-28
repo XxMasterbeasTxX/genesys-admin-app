@@ -19,7 +19,7 @@ export const NAV_TREE = [
         enabled: true,
         children: [
           { label: "Copy - Single Org", path: "copy-single", enabled: true },
-          { label: "Copy between Orgs", path: "copy-between", enabled: true },
+          { label: "Copy - Between Orgs", path: "copy-between", enabled: true },
         ],
       },
       { label: "Interaction Search", path: "interaction-search", enabled: true },

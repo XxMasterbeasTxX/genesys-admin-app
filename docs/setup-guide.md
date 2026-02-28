@@ -2,6 +2,13 @@
 
 Complete guide for deploying the Genesys Admin Tool to a new Azure subscription. Covers Azure Static Web App, Azure Functions API, Azure Key Vault, Genesys Cloud OAuth, and CI/CD via GitHub Actions.
 
+## Current features
+
+- **Interaction Search** — Search conversations by date range, filter by participant data, view details, export to Excel
+- **Move Interactions** — Move conversations between queues with media type and date filters
+- **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
+- **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division and optional row copy
+
 ---
 
 ## Table of Contents
@@ -467,10 +474,13 @@ After pushing the config update:
 | 6 | Org selector dropdown appears | Lists all customers from `customers.json` |
 | 7 | `/api/customers` endpoint works | Returns JSON array of customers |
 | 8 | Selecting a customer updates the page | Page responds to org change |
-| 9 | Nav menu shows "Actions" | Collapsible group with "Interaction Search" leaf |
+| 9 | Nav menu shows "Actions" | Collapsible group with sub-items |
 | 10 | Interaction Search works | Date range search returns conversations |
 | 11 | Excel export works | Downloads `.xlsx` file |
-| 12 | Theme adapts | Dark/light matches OS setting |
+| 12 | Move Interactions works | Queue selectors load, preview and move succeed |
+| 13 | Data Tables — Copy (Single Org) | Tables, divisions load; copy structure + rows succeeds |
+| 14 | Data Tables — Copy between Orgs | Source/dest selectors; copy with division + rows succeeds |
+| 15 | Theme adapts | Dark/light matches OS setting |
 
 ---
 
@@ -604,6 +614,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
 ```text
 genesys-admin-app/
 ├── index.html                    App shell (entry point)
+├── download.html                 Iframe-safe file download helper
 ├── staticwebapp.config.json      SPA routing fallback + Node 18 runtime
 ├── .gitignore                    Ignores local.settings.json and node_modules
 ├── css/
@@ -616,6 +627,8 @@ genesys-admin-app/
 │   ├── pageRegistry.js           Route → page-loader map
 │   ├── router.js                 Hash-based SPA router
 │   ├── utils.js                  Shared utilities (formatting, Excel export, etc.)
+│   ├── lib/
+│   │   └── xlsx.full.min.js      SheetJS library for Excel export
 │   ├── components/
 │   │   └── multiSelect.js        Reusable multi-select dropdown
 │   ├── pages/
@@ -623,7 +636,11 @@ genesys-admin-app/
 │   │   ├── notfound.js           404 page
 │   │   ├── placeholder.js        Generic "coming soon" stub
 │   │   └── actions/
-│   │       └── interactionSearch.js  Interaction Search page
+│   │       ├── interactionSearch.js    Interaction Search page
+│   │       ├── moveInteractions.js     Move Interactions between queues
+│   │       └── datatables/
+│   │           ├── copySingleOrg.js    Copy data table within same org
+│   │           └── copyBetweenOrgs.js  Copy data table between orgs
 │   └── services/
 │       ├── apiClient.js          HTTP client + Genesys proxy wrapper
 │       ├── authService.js        OAuth 2.0 PKCE authentication
