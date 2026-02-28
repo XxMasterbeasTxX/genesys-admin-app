@@ -54,6 +54,11 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
   el.innerHTML = `
     <h2>Data Tables — Copy between Orgs</h2>
 
+    <p class="page-desc">
+      Copy a data table structure (and optionally its rows) from one customer
+      org to another. Select a target division in the destination org.
+    </p>
+
     <div class="dt-controls">
       <!-- Source org -->
       <div class="dt-control-group">

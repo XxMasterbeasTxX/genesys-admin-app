@@ -54,6 +54,12 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
   el.innerHTML = `
     <h2>Data Actions — Copy between Orgs</h2>
 
+    <p class="page-desc">
+      Copy a data action (contract + configuration) from one customer org
+      to another. Select a target integration in the destination org.
+      The action can be created as published or as a draft.
+    </p>
+
     <div class="dt-controls">
       <!-- Source org -->
       <div class="dt-control-group">

@@ -49,7 +49,7 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
     <h1 class="h1">Phones — WebRTC — Create</h1>
     <hr class="hr">
 
-    <p class="wc-desc">
+    <p class="page-desc">
       Creates WebRTC phones for all users in the organization. Users with a
       <strong>collaborate</strong>-only license are automatically skipped.
       Users who already have a WebRTC phone are also skipped.

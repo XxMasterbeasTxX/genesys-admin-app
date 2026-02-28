@@ -98,7 +98,7 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
   const org = orgContext?.getDetails?.();
   if (!org) {
     el.innerHTML = `
-      <h1 class="h1">Conversations — Move Interactions</h1>
+      <h1 class="h1">Move Interactions</h1>
       <hr class="hr">
       <p class="p">Please select a customer org from the dropdown above.</p>`;
     return el;
@@ -113,8 +113,14 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
 
   // ── Build UI ────────────────────────────────────────
   el.innerHTML = `
-    <h1 class="h1">Conversations — Move Interactions</h1>
+    <h1 class="h1">Move Interactions</h1>
     <hr class="hr">
+
+    <p class="page-desc">
+      Transfer active interactions from one queue to another. Supports media
+      type filtering and date range controls. Preview matching conversations
+      before executing the move.
+    </p>
 
     <!-- Queue selectors -->
     <div class="mi-controls">

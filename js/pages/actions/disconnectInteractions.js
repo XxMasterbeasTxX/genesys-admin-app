@@ -79,7 +79,7 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
   const org = orgContext?.getDetails?.();
   if (!org) {
     el.innerHTML = `
-      <h1 class="h1">Conversations — Disconnect Interactions</h1>
+      <h1 class="h1">Disconnect Interactions</h1>
       <hr class="hr">
       <p class="p">Please select a customer org from the dropdown above.</p>`;
     return el;
@@ -95,8 +95,14 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
 
   // ── Build UI ────────────────────────────────────────
   el.innerHTML = `
-    <h1 class="h1">Conversations — Disconnect Interactions</h1>
+    <h1 class="h1">Disconnect Interactions</h1>
     <hr class="hr">
+
+    <p class="page-desc">
+      Force-disconnect stuck or orphaned conversations. Choose between
+      disconnecting a single conversation, multiple IDs, or emptying an
+      entire queue. Supports media type and date range filters.
+    </p>
 
     <!-- Warning banner -->
     <div class="di-warning">

@@ -43,6 +43,12 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
   el.innerHTML = `
     <h2>Data Tables — Copy (Single Org)</h2>
 
+    <p class="page-desc">
+      Copy a data table (structure + optionally rows) within the same org.
+      Choose a source table, enter a new name, select a division, and
+      optionally include data rows in the copy.
+    </p>
+
     <div class="dt-controls">
       <!-- Step 1: Source table -->
       <div class="dt-control-group">

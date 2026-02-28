@@ -53,6 +53,12 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
   el.innerHTML = `
     <h2>Data Actions — Edit</h2>
 
+    <p class="page-desc">
+      View, edit, and test existing data actions. Filter by name, category,
+      integration, or status. Edit contract fields, save drafts, validate,
+      publish, and run inline tests with custom input parameters.
+    </p>
+
     <div class="dt-controls">
       <!-- Org picker -->
       <div class="dt-control-group">

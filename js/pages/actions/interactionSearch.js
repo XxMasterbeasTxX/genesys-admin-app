@@ -142,7 +142,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const org = orgContext?.getDetails?.();
   if (!org) {
     el.innerHTML = `
-      <h1 class="h1">Actions — Interaction Search</h1>
+      <h1 class="h1">Interaction Search</h1>
       <hr class="hr">
       <p class="p">Please select a customer org from the dropdown above.</p>`;
     return el;
@@ -160,8 +160,14 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const weekAgo = daysAgoStr(7);
 
   el.innerHTML = `
-    <h1 class="h1">Actions — Interaction Search</h1>
+    <h1 class="h1">Interaction Search</h1>
     <hr class="hr">
+
+    <p class="page-desc">
+      Search conversation records by date range with optional participant data
+      attribute filters. Results are displayed in a sortable table with
+      click-to-expand details. Export results to Excel or copy to clipboard.
+    </p>
 
     <!-- Controls row -->
     <div class="is-controls">

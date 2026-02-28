@@ -1023,7 +1023,7 @@ body {
 /* ══════════════════════════════════════════════════════════
    WebRTC Create page  (wc-* prefix)
    ══════════════════════════════════════════════════════════ */
-.wc-desc {
+.page-desc {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
