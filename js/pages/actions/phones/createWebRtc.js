@@ -20,8 +20,8 @@
  *   POST /api/v2/telephony/providers/edges/phones
  *   GET  /api/v2/authorization/divisions
  */
-import { escapeHtml, formatDateTime, sleep, exportXlsx, timestampedFilename } from "../../utils.js";
-import * as gc from "../../services/genesysApi.js";
+import { escapeHtml, formatDateTime, sleep, exportXlsx, timestampedFilename } from "../../../utils.js";
+import * as gc from "../../../services/genesysApi.js";
 
 // ── Page renderer ───────────────────────────────────────────────────
 
