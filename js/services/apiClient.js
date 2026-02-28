@@ -31,7 +31,8 @@ export function createApiClient(getToken) {
 
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      const err = new Error(`API ${method} ${path} → ${resp.status}`);
+      const detail = json.message || json.error || json.messageWithParams || "";
+      const err = new Error(detail || `API ${method} ${path} → ${resp.status}`);
       err.status = resp.status;
       err.body = json;
       throw err;
@@ -65,8 +66,9 @@ export function createApiClient(getToken) {
     if (resp.status === 204) return null;
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      const detail = json.error || json.message || "";
-      const err = new Error(`Proxy ${method} ${path} → ${resp.status}${detail ? ": " + detail : ""}`);
+      // Extract the cleanest error message from the Genesys response
+      const detail = json.message || json.error || json.messageWithParams || "";
+      const err = new Error(detail || `Proxy ${method} ${path} → ${resp.status}`);
       err.status = resp.status;
       err.body = json;
       throw err;

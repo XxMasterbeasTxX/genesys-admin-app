@@ -168,14 +168,28 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     $progressBar.style.width = "0%";
   }
 
+  /** Extract properties from a JSON schema, handling nested structures. */
+  function extractSchemaProps(schema) {
+    if (!schema) return null;
+    // Direct properties
+    if (schema.properties && Object.keys(schema.properties).length) {
+      return schema.properties;
+    }
+    // Nested under items (array wrapper)
+    if (schema.items?.properties && Object.keys(schema.items.properties).length) {
+      return schema.items.properties;
+    }
+    return null;
+  }
+
   /** Build a table preview of input/output contract schemas. */
   function buildContractPreview(contract) {
     if (!contract) return "<em>No contract</em>";
     const sections = [];
 
     // Input schema
-    const inputProps = contract.input?.inputSchema?.properties;
-    if (inputProps && Object.keys(inputProps).length) {
+    const inputProps = extractSchemaProps(contract.input?.inputSchema);
+    if (inputProps) {
       const rows = Object.entries(inputProps).map(([key, def], i) =>
         `<tr><td>${i + 1}</td><td>${escapeHtml(def.title || key)}</td><td>${escapeHtml(def.type || "string")}</td></tr>`
       ).join("");
@@ -187,8 +201,8 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     }
 
     // Output (success) schema
-    const outputProps = contract.output?.successSchema?.properties;
-    if (outputProps && Object.keys(outputProps).length) {
+    const outputProps = extractSchemaProps(contract.output?.successSchema);
+    if (outputProps) {
       const rows = Object.entries(outputProps).map(([key, def], i) =>
         `<tr><td>${i + 1}</td><td>${escapeHtml(def.title || key)}</td><td>${escapeHtml(def.type || "string")}</td></tr>`
       ).join("");
