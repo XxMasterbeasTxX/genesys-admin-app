@@ -8,6 +8,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Move Interactions** — Move conversations between queues with media type and date filters
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division and optional row copy
+- **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping
 
 ---
 
@@ -480,7 +481,8 @@ After pushing the config update:
 | 12 | Move Interactions works | Queue selectors load, preview and move succeed |
 | 13 | Data Tables — Copy (Single Org) | Tables, divisions load; copy structure + rows succeeds |
 | 14 | Data Tables — Copy between Orgs | Source/dest selectors; copy with division + rows succeeds |
-| 15 | Theme adapts | Dark/light matches OS setting |
+| 15 | Data Actions — Copy between Orgs | Source/dest selectors; integration mapping; copy succeeds |
+| 16 | Theme adapts | Dark/light matches OS setting |
 
 ---
 
@@ -638,9 +640,11 @@ genesys-admin-app/
 │   │   └── actions/
 │   │       ├── interactionSearch.js    Interaction Search page
 │   │       ├── moveInteractions.js     Move Interactions between queues
-│   │       └── datatables/
-│   │           ├── copySingleOrg.js    Copy data table within same org
-│   │           └── copyBetweenOrgs.js  Copy data table between orgs
+│   │       ├── datatables/
+│   │       │   ├── copySingleOrg.js    Copy data table within same org
+│   │       │   └── copyBetweenOrgs.js  Copy data table between orgs
+│   │       └── dataactions/
+│   │           └── copyBetweenOrgs.js  Copy data action between orgs
 │   └── services/
 │       ├── apiClient.js          HTTP client + Genesys proxy wrapper
 │       ├── authService.js        OAuth 2.0 PKCE authentication

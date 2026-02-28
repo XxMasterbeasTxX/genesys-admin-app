@@ -22,6 +22,14 @@ export const NAV_TREE = [
           { label: "Copy - Between Orgs", path: "copy-between", enabled: true },
         ],
       },
+      {
+        label: "Data Actions",
+        path: "dataactions",
+        enabled: true,
+        children: [
+          { label: "Copy - Between Orgs", path: "copy-between", enabled: true },
+        ],
+      },
       { label: "Interaction Search", path: "interaction-search", enabled: true },
       { label: "Move Interactions", path: "move", enabled: true },
     ],

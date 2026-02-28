@@ -18,6 +18,10 @@ const registry = {
   "/actions/datatables/copy-between": (ctx) =>
     import("./pages/actions/datatables/copyBetweenOrgs.js").then((m) => m.default(ctx)),
 
+  // ── Actions › Data Actions ────────────────────────────
+  "/actions/dataactions/copy-between": (ctx) =>
+    import("./pages/actions/dataactions/copyBetweenOrgs.js").then((m) => m.default(ctx)),
+
   // ── Actions ───────────────────────────────────────────
   "/actions/interaction-search": (ctx) =>
     import("./pages/actions/interactionSearch.js").then((m) => m.default(ctx)),

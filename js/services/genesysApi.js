@@ -430,6 +430,24 @@ export async function fetchAllDataActions(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/integrations/actions", opts);
 }
 
+/** Fetch a single data action with full contract and config. */
+export async function getDataAction(api, orgId, actionId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/integrations/actions/${actionId}`,
+    { query: { expand: "contract", includeConfig: "true" } });
+}
+
+/** Create a published data action. Body: { name, category, integrationId, contract, config }. */
+export async function createDataAction(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST",
+    "/api/v2/integrations/actions", { body });
+}
+
+/** Fetch all integrations. Filter by type via opts.query.integrationType. */
+export async function fetchAllIntegrations(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/integrations", opts);
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // External Contacts
 // ─────────────────────────────────────────────────────────────────────
