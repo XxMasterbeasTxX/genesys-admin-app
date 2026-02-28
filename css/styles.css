@@ -566,6 +566,141 @@ body {
 .mi-cancel { color: var(--muted); font-style: italic; }
 
 /* ══════════════════════════════════════════════════════════
+   Disconnect Interactions  (di-* prefix)
+   ══════════════════════════════════════════════════════════ */
+.di-warning {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  color: #f59e0b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.di-warning-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.di-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.di-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.di-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.di-mode-group {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+.di-radio {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.di-radio input[type="radio"] {
+  accent-color: #f59e0b;
+}
+.di-textarea {
+  resize: vertical;
+  font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  font-size: 12px;
+}
+.di-queue-group {
+  min-width: 280px;
+  flex: 1;
+  max-width: 400px;
+}
+.di-queue-search {
+  width: 100%;
+  margin-bottom: 4px;
+}
+.di-queue-select {
+  width: 100%;
+}
+.di-media-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.di-checkbox {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.di-checkbox input[type="checkbox"] {
+  accent-color: #3b82f6;
+}
+.di-date {
+  width: 160px;
+}
+.di-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.di-btn-disconnect {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+.di-btn-disconnect:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+.di-status {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.di-status--success { color: #34d399; }
+.di-status--error   { color: #f87171; }
+.di-progress-wrap {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.06);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.di-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: #3b82f6;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.di-table-wrap {
+  overflow: auto;
+  max-height: 50vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.di-table { font-size: 12px; }
+.di-mono { font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace; font-size: 11px; }
+.di-ok   { color: #34d399; font-weight: 600; }
+.di-fail { color: #f87171; font-weight: 600; }
+.di-skip { color: #f59e0b; font-weight: 600; }
+.di-cancel { color: var(--muted); font-style: italic; }
+
+/* ══════════════════════════════════════════════════════════
    Data Tables pages  (dt-* prefix)
    ══════════════════════════════════════════════════════════ */
 .dt-controls {
@@ -792,6 +927,12 @@ body {
   .mi-progress-wrap { background: rgba(0,0,0,0.06); }
   .mi-btn-move { background: rgba(239,68,68,0.08); color: #dc2626; border-color: rgba(239,68,68,0.2); }
   .mi-btn-move:hover { background: rgba(239,68,68,0.15); }
+
+  /* Disconnect Interactions - light overrides */
+  .di-progress-wrap { background: rgba(0,0,0,0.06); }
+  .di-btn-disconnect { background: rgba(239,68,68,0.08); color: #dc2626; border-color: rgba(239,68,68,0.2); }
+  .di-btn-disconnect:hover { background: rgba(239,68,68,0.15); }
+  .di-warning { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.2); color: #b45309; }
 
   /* Data Tables - light overrides */
   .dt-progress-wrap { background: rgba(0,0,0,0.06); }

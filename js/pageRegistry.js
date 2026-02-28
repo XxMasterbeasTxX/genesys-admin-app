@@ -29,6 +29,8 @@ const registry = {
     import("./pages/actions/interactionSearch.js").then((m) => m.default(ctx)),
   "/interactions/move": (ctx) =>
     import("./pages/actions/moveInteractions.js").then((m) => m.default(ctx)),
+  "/interactions/disconnect": (ctx) =>
+    import("./pages/actions/disconnectInteractions.js").then((m) => m.default(ctx)),
 };
 
 /**

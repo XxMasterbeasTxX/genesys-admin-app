@@ -6,6 +6,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 
 - **Interaction Search** — Search conversations by date range, filter by participant data, view details, export to Excel
 - **Move Interactions** — Move conversations between queues with media type and date filters
+- **Disconnect Interactions** — Force-disconnect stuck/orphaned conversations by ID or empty a queue, with media type and date filters
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division and optional row copy
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
@@ -484,7 +485,8 @@ After pushing the config update:
 | 14 | Data Tables — Copy between Orgs | Source/dest selectors; copy with division + rows succeeds |
 | 15 | Data Actions — Copy between Orgs | Source/dest selectors; integration mapping; copy succeeds |
 | 16 | Data Actions — Edit | Load actions; filter/search; edit name/category; save/validate/publish; test |
-| 17 | Theme adapts | Dark/light matches OS setting |
+| 17 | Disconnect Interactions | Single/multiple/queue modes; media type + date filters; disconnect succeeds |
+| 18 | Theme adapts | Dark/light matches OS setting |
 
 ---
 

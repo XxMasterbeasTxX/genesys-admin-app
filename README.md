@@ -8,6 +8,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 - **Interaction Search** — Search conversations by date range, filter by participant data, view details, export to Excel (.xlsx)
 - **Move Interactions** — Move conversations between queues with media type filtering and date range controls
+- **Disconnect Interactions** — Force-disconnect stuck/orphaned conversations by ID or empty an entire queue, with media type and date filters
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division selection
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
