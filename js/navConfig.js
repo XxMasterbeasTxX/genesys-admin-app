@@ -13,6 +13,15 @@ export const NAV_TREE = [
     path: "actions",
     enabled: true,
     children: [
+      {
+        label: "Data Tables",
+        path: "datatables",
+        enabled: true,
+        children: [
+          { label: "Copy - Single Org", path: "copy-single", enabled: true },
+          { label: "Copy between Orgs", path: "copy-between", enabled: true },
+        ],
+      },
       { label: "Interaction Search", path: "interaction-search", enabled: true },
       { label: "Move Interactions", path: "move", enabled: true },
     ],

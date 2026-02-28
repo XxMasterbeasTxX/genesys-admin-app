@@ -377,12 +377,29 @@ export async function fetchAllScheduleGroups(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/architect/schedulegroups", opts);
 }
 
-/** Fetch all data tables. */
+/** Fetch all data tables. Pass opts.query.expand = "schema" for full schema. */
 export async function fetchAllDataTables(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/flows/datatables", opts);
 }
 
-/** Fetch rows from a data table. */
+/** Fetch a single data table by ID (includes schema when expand=schema). */
+export async function getDataTable(api, orgId, tableId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/flows/datatables/${tableId}`, { query: { expand: "schema" } });
+}
+
+/** Create a new data table. Body: { name, schema, division? }. */
+export async function createDataTable(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/flows/datatables", { body });
+}
+
+/** Insert a single row into a data table. */
+export async function createDataTableRow(api, orgId, tableId, row) {
+  return api.proxyGenesys(orgId, "POST",
+    `/api/v2/flows/datatables/${tableId}/rows`, { body: row });
+}
+
+/** Fetch rows from a data table. Add query.showbrief = "false" for full rows. */
 export async function fetchDataTableRows(api, orgId, tableId, opts = {}) {
   return fetchAllPages(api, orgId,
     `/api/v2/flows/datatables/${tableId}/rows`, opts);

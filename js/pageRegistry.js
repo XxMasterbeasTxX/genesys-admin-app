@@ -12,6 +12,12 @@
 import { renderPlaceholder } from "./pages/placeholder.js";
 
 const registry = {
+  // ── Actions › Data Tables ─────────────────────────────
+  "/actions/datatables/copy-single": (ctx) =>
+    import("./pages/actions/datatables/copySingleOrg.js").then((m) => m.default(ctx)),
+  "/actions/datatables/copy-between": (ctx) =>
+    import("./pages/actions/datatables/copyBetweenOrgs.js").then((m) => m.default(ctx)),
+
   // ── Actions ───────────────────────────────────────────
   "/actions/interaction-search": (ctx) =>
     import("./pages/actions/interactionSearch.js").then((m) => m.default(ctx)),

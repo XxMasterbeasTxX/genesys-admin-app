@@ -579,10 +579,10 @@ Based on usefulness, complexity, and quick wins:
 
 1. **Interaction Search** — high daily use, async job + detail pane
 2. **Disconnect Conversations** — very useful day-to-day action
-2. **Export DataTable Values** — commonly needed
-3. **Add/Update DataTable Values** — commonly needed
-4. **Export Users + Roles** — high visibility report
-5. **Copy DataTable** — useful utility
+3. **Export DataTable Values** — commonly needed
+4. **Add/Update DataTable Values** — commonly needed
+5. **Export Users + Roles** — high visibility report
+6. **Copy DataTable** — useful utility
 
 ### Larger Features (build later)
 
