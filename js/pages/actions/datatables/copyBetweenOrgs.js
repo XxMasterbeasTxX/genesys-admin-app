@@ -1,7 +1,7 @@
 /**
  * Actions › Data Tables › Copy between Orgs
  *
- * Copies a data table structure (schema only, no rows) from one
+ * Copies a data table structure (and optionally rows) from one
  * customer org to another.
  *
  * Flow:
@@ -9,10 +9,10 @@
  *   2. Fetch data tables from source org (with schema)
  *   3. User selects a source table
  *   4. User enters new table name (validated in dest org)
- *   5. Create new table in destination org with source schema
+ *   5. User selects target division in dest org
+ *   6. Optionally copies data rows from source → new table
  *
- * Note: Division IDs are org-specific and are NOT copied across orgs.
- * The new table is created in the destination org's default (Home) division.
+ * Note: Division IDs are org-specific — user picks a dest division.
  */
 import { escapeHtml } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
@@ -20,10 +20,12 @@ import * as gc from "../../../services/genesysApi.js";
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {
   ready:       "Select source and destination orgs to begin.",
-  loadingSrc:  "Loading tables from source org…",
+  loadingSrc:  "Loading tables and divisions…",
   validating:  "Validating name in destination org…",
   creating:    "Creating table in destination org…",
-  done:        (name, dest) => `✓ Table "${name}" created in ${dest}.`,
+  fetchingRows:"Fetching source rows…",
+  copyingRows: (n, total) => `Copying row ${n} of ${total}…`,
+  done:        (name, dest, rows) => `✓ Table "${name}" created in ${dest}${rows ? ` with ${rows} rows` : ""}.`,
   noTables:    "No data tables found in source org.",
   error:       (msg) => `Error: ${msg}`,
 };
@@ -84,11 +86,28 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
         <label class="dt-label">New Table Name (in destination)</label>
         <input class="dt-input" id="dtNewName" type="text" placeholder="Enter new table name…" disabled />
       </div>
+
+      <!-- Division in destination -->
+      <div class="dt-control-group">
+        <label class="dt-label">Division (in destination)</label>
+        <select class="dt-select" id="dtDivision" disabled>
+          <option value="">Load tables first…</option>
+        </select>
+      </div>
+
+      <!-- Copy data toggle -->
+      <div class="dt-control-group dt-toggle-row">
+        <label class="dt-label">Copy data (rows)</label>
+        <label class="dt-toggle">
+          <input type="checkbox" id="dtCopyData" disabled />
+          <span class="dt-toggle-slider"></span>
+        </label>
+      </div>
     </div>
 
     <!-- Actions -->
     <div class="dt-actions">
-      <button class="btn" id="dtCopyBtn" disabled>Copy Structure</button>
+      <button class="btn" id="dtCopyBtn" disabled>Copy Table</button>
     </div>
 
     <!-- Progress -->
@@ -110,6 +129,8 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
   const $infoCols     = el.querySelector("#dtInfoCols");
   const $schemaPreview= el.querySelector("#dtSchemaPreview");
   const $newName      = el.querySelector("#dtNewName");
+  const $division     = el.querySelector("#dtDivision");
+  const $copyData     = el.querySelector("#dtCopyData");
   const $copyBtn      = el.querySelector("#dtCopyBtn");
   const $progress     = el.querySelector("#dtProgress");
   const $progressBar  = el.querySelector("#dtProgressBar");
@@ -117,6 +138,7 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
 
   let tables = [];      // source tables
   let destTables = [];  // destination table names (for uniqueness check)
+  let divisions = [];   // destination divisions
 
   // ── Helpers ──────────────────────────────────────────
   function setStatus(msg, type = "") {
@@ -179,6 +201,10 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
     $sourceInfo.hidden = true;
     $newName.disabled = true;
     $newName.value = "";
+    $division.innerHTML = `<option value="">Load tables first…</option>`;
+    $division.disabled = true;
+    $copyData.checked = false;
+    $copyData.disabled = true;
     $copyBtn.disabled = true;
   }
 
@@ -193,21 +219,33 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
       $loadBtn.disabled = true;
       $sourceSelect.disabled = true;
 
-      // Fetch source tables (with schema) and dest table names in parallel
-      const [srcRaw, destRaw] = await Promise.all([
+      // Fetch source tables (with schema), dest table names, and dest divisions in parallel
+      const [srcRaw, destRaw, divs] = await Promise.all([
         gc.fetchAllDataTables(api, srcOrgId, { query: { expand: "schema" } }),
         gc.fetchAllDataTables(api, destOrgId),
+        gc.fetchAllDivisions(api, destOrgId),
       ]);
 
       destTables = destRaw.map(t => t.name.toLowerCase());
 
-      tables = srcRaw.map(t => ({
-        id: t.id,
-        name: t.name,
-        division: t.division?.name ?? "Unknown",
-        columnCount: countSchemaColumns(t.schema),
-        schema: t.schema,
-      }));
+      divisions = (divs || []).sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      $division.innerHTML = divisions.map(d =>
+        `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`
+      ).join("");
+      $division.disabled = false;
+
+      tables = srcRaw.map(t => {
+        let rowCount = 0;
+        return {
+          id: t.id,
+          name: t.name,
+          division: t.division?.name ?? "Unknown",
+          columnCount: countSchemaColumns(t.schema),
+          schema: t.schema,
+          rowCount,
+        };
+      });
 
       tables.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
@@ -224,6 +262,7 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
         ).join("");
       $sourceSelect.disabled = false;
       $newName.disabled = false;
+      $copyData.disabled = false;
       $loadBtn.disabled = false;
       setStatus("Tables loaded. Select a source table.");
     } catch (err) {
@@ -271,6 +310,8 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
     $loadBtn.disabled = true;
     $sourceSelect.disabled = true;
     $newName.disabled = true;
+    $division.disabled = true;
+    $copyData.disabled = true;
     $copyBtn.disabled = true;
 
     try {
@@ -296,16 +337,44 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
       schemaClone.additionalProperties = false;
       delete schemaClone.$id;
 
-      // Don't copy division — let dest use its default
       const body = { name: newName, schema: schemaClone };
 
-      // 3. Create table in destination
-      setProgress(70);
-      await gc.createDataTable(api, destOrgId, body);
-      setProgress(100);
+      // Attach selected division
+      const divId = $division.value;
+      if (divId) {
+        body.division = { id: divId };
+      }
 
+      // 3. Create table in destination
+      setProgress(50);
+      const newTable = await gc.createDataTable(api, destOrgId, body);
+      setProgress(60);
+
+      // 4. Optionally copy rows
+      let copiedRows = 0;
+      if ($copyData.checked) {
+        setStatus(STATUS.fetchingRows);
+        const rows = await gc.fetchDataTableRows(api, srcOrgId, sourceId, {
+          query: { showbrief: "false" },
+        });
+        setProgress(70);
+
+        const total = rows.length;
+        if (total > 0) {
+          for (let i = 0; i < total; i++) {
+            setStatus(STATUS.copyingRows(i + 1, total));
+            const row = { ...rows[i] };
+            delete row.selfUri;
+            await gc.createDataTableRow(api, destOrgId, newTable.id, row);
+            copiedRows++;
+            setProgress(70 + Math.round(30 * (i + 1) / total));
+          }
+        }
+      }
+
+      setProgress(100);
       const destName = customers.find(c => c.id === destOrgId)?.name ?? destOrgId;
-      setStatus(STATUS.done(newName, destName), "success");
+      setStatus(STATUS.done(newName, destName, copiedRows || null), "success");
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
     } finally {
@@ -321,6 +390,8 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
     if (tables.length) {
       $sourceSelect.disabled = false;
       $newName.disabled = false;
+      $division.disabled = false;
+      $copyData.disabled = false;
     }
     $copyBtn.disabled = !$sourceSelect.value;
   }

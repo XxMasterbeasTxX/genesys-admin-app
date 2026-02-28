@@ -58,6 +58,14 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
         <input class="dt-input" id="dtNewName" type="text" placeholder="Enter new table name…" disabled />
       </div>
 
+      <!-- Division -->
+      <div class="dt-control-group">
+        <label class="dt-label">Division</label>
+        <select class="dt-select" id="dtDivision" disabled>
+          <option value="">Loading…</option>
+        </select>
+      </div>
+
       <!-- Copy data toggle -->
       <div class="dt-control-group dt-toggle-row">
         <label class="dt-label">Copy data (rows)</label>
@@ -89,13 +97,15 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
   const $infoCols     = el.querySelector("#dtInfoCols");
   const $infoRows     = el.querySelector("#dtInfoRows");
   const $newName      = el.querySelector("#dtNewName");
+  const $division     = el.querySelector("#dtDivision");
   const $copyData     = el.querySelector("#dtCopyData");
   const $copyBtn      = el.querySelector("#dtCopyBtn");
   const $progress     = el.querySelector("#dtProgress");
   const $progressBar  = el.querySelector("#dtProgressBar");
   const $status       = el.querySelector("#dtStatus");
 
-  let tables = [];  // { id, name, division, columnCount, rowCount, schema }
+  let tables = [];     // { id, name, division, columnCount, rowCount, schema }
+  let divisions = [];  // { id, name }
 
   // ── Helpers ──────────────────────────────────────────
   function setStatus(msg, type = "") {
@@ -129,9 +139,18 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
       setStatus(STATUS.loading);
       $sourceSelect.disabled = true;
 
-      const raw = await gc.fetchAllDataTables(api, orgId, {
-        query: { expand: "schema" },
-      });
+      // Fetch tables and divisions in parallel
+      const [raw, divs] = await Promise.all([
+        gc.fetchAllDataTables(api, orgId, { query: { expand: "schema" } }),
+        gc.fetchAllDivisions(api, orgId),
+      ]);
+
+      divisions = (divs || []).sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      $division.innerHTML = divisions.map(d =>
+        `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`
+      ).join("");
+      $division.disabled = false;
 
       // Enrich with row counts (quick HEAD-style fetch, 1 row per table)
       tables = [];
@@ -208,6 +227,7 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
     // Disable controls
     $sourceSelect.disabled = true;
     $newName.disabled = true;
+    $division.disabled = true;
     $copyData.disabled = true;
     $copyBtn.disabled = true;
 
@@ -232,6 +252,12 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
       delete schemaClone.$id;
 
       const body = { name: newName, schema: schemaClone };
+
+      // Attach selected division
+      const divId = $division.value;
+      if (divId) {
+        body.division = { id: divId };
+      }
 
       // 3. Create table
       setProgress(25);
@@ -275,6 +301,7 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
   function enableControls() {
     $sourceSelect.disabled = false;
     $newName.disabled = false;
+    $division.disabled = false;
     $copyData.disabled = false;
     $copyBtn.disabled = !$sourceSelect.value;
   }
