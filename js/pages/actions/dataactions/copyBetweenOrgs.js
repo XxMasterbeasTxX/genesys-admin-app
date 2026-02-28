@@ -1,5 +1,5 @@
 /**
- * Actions › Data Actions › Copy between Orgs
+ * Data Actions › Copy - Between Orgs
  *
  * Copies a data action (contract + config) from one customer org
  * to another.
@@ -14,6 +14,13 @@
  *
  * Note: Integration IDs are org-specific — user picks a dest integration.
  * Credentials on the target integration must be configured separately.
+ *
+ * API endpoints:
+ *   GET  /api/v2/integrations/actions            — list data actions
+ *   GET  /api/v2/integrations/actions/{id}        — get full action detail
+ *   GET  /api/v2/integrations                     — list integrations
+ *   POST /api/v2/integrations/actions             — create published action
+ *   POST /api/v2/integrations/actions/drafts      — create action as draft
  */
 import { escapeHtml } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";

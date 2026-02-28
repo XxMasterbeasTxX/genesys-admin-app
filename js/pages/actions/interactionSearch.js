@@ -1,12 +1,21 @@
 /**
- * Actions › Interaction Search
+ * Interactions › Search
  *
  * Searches Genesys conversation records by date range with optional
  * participant data attribute filters. Uses the async Analytics Jobs API
  * (only path that returns participant attributes).
  *
- * Results display in a table with click-to-expand detail pane.
- * Supports CSV export and copy-to-clipboard.
+ * Flow:
+ *   1. User selects date range and optional attribute filters
+ *   2. Submit async analytics job for the interval
+ *   3. Poll until job completes, then fetch all result pages
+ *   4. Display results in sortable table with click-to-expand detail
+ *   5. Export to Excel or copy to clipboard
+ *
+ * API endpoints:
+ *   POST /api/v2/analytics/conversations/details/jobs          — submit async job
+ *   GET  /api/v2/analytics/conversations/details/jobs/{id}     — poll job status
+ *   GET  /api/v2/analytics/conversations/details/jobs/{id}/results — fetch results
  */
 import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr,
          exportXlsx, timestampedFilename } from "../../utils.js";

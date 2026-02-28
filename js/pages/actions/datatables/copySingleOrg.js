@@ -1,5 +1,5 @@
 /**
- * Actions › Data Tables › Copy - Single Org
+ * Data Tables › Copy - Single Org
  *
  * Copies a data table (structure + optionally rows) within the
  * currently-selected customer org.
@@ -10,6 +10,13 @@
  *   3. User enters a new name and toggles "Copy data"
  *   4. Create new table with the source schema
  *   5. Optionally copy every row from source → new table
+ *
+ * API endpoints:
+ *   GET  /api/v2/flows/datatables                — list data tables
+ *   GET  /api/v2/authorization/divisions          — list divisions
+ *   POST /api/v2/flows/datatables                 — create data table
+ *   GET  /api/v2/flows/datatables/{id}/rows       — fetch rows
+ *   POST /api/v2/flows/datatables/{id}/rows       — insert row
  */
 import { escapeHtml } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";

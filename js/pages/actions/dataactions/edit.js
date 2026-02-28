@@ -1,5 +1,5 @@
 /**
- * Actions › Data Actions › Edit
+ * Data Actions › Edit
  *
  * Open an existing data action, view/edit its properties, and test it.
  *
@@ -9,6 +9,19 @@
  *   3. Select an action → show detail (info + contract preview)
  *   4. Edit name, category, contract fields
  *   5. Test (published or draft), Save Draft, Validate, Publish
+ *
+ * API endpoints:
+ *   GET   /api/v2/integrations/actions                      — list published actions
+ *   GET   /api/v2/integrations/actions/drafts                — list draft actions
+ *   GET   /api/v2/integrations                               — list integrations
+ *   GET   /api/v2/integrations/actions/{id}                  — get published action
+ *   GET   /api/v2/integrations/actions/{id}/draft             — get action draft
+ *   POST  /api/v2/integrations/actions/{id}/draft             — create draft from published
+ *   PATCH /api/v2/integrations/actions/{id}/draft             — update draft
+ *   GET   /api/v2/integrations/actions/{id}/draft/validation  — validate draft
+ *   POST  /api/v2/integrations/actions/{id}/draft/publish     — publish draft
+ *   POST  /api/v2/integrations/actions/{id}/test              — test published action
+ *   POST  /api/v2/integrations/actions/{id}/draft/test        — test draft action
  */
 import { escapeHtml } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";

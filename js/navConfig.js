@@ -9,28 +9,21 @@
  */
 export const NAV_TREE = [
   {
-    label: "Actions",
-    path: "actions",
+    label: "Data Actions",
+    path: "dataactions",
     enabled: true,
     children: [
-      {
-        label: "Data Actions",
-        path: "dataactions",
-        enabled: true,
-        children: [
-          { label: "Copy - Between Orgs", path: "copy-between", enabled: true },
-          { label: "Edit", path: "edit", enabled: true },
-        ],
-      },
-      {
-        label: "Data Tables",
-        path: "datatables",
-        enabled: true,
-        children: [
-          { label: "Copy - Between Orgs", path: "copy-between", enabled: true },
-          { label: "Copy - Single Org", path: "copy-single", enabled: true },
-        ],
-      },
+      { label: "Copy - Between Orgs", path: "copy-between", enabled: true },
+      { label: "Edit", path: "edit", enabled: true },
+    ],
+  },
+  {
+    label: "Data Tables",
+    path: "datatables",
+    enabled: true,
+    children: [
+      { label: "Copy - Between Orgs", path: "copy-between", enabled: true },
+      { label: "Copy - Single Org", path: "copy-single", enabled: true },
     ],
   },
   {

@@ -1,5 +1,5 @@
 /**
- * Interactions › Disconnect Interactions
+ * Interactions › Disconnect
  *
  * Force-disconnect stuck/orphaned conversations. Three modes:
  *   1. Single ID   — disconnect one conversation
@@ -8,10 +8,11 @@
  *
  * Includes media type and date range filters.
  *
- * API flow:
- *   GET  /api/v2/conversations/{id}               — fetch details (filters)
- *   POST /api/v2/conversations/{id}/disconnect     — disconnect
- *   POST /api/v2/analytics/conversations/details/query — queue scan
+ * API endpoints:
+ *   GET  /api/v2/conversations/{id}                        — fetch conversation details
+ *   POST /api/v2/conversations/{id}/disconnect              — force-disconnect
+ *   POST /api/v2/analytics/conversations/details/query      — queue scan (active convos)
+ *   GET  /api/v2/routing/queues                             — list queues
  */
 import { escapeHtml, formatDateTime, sleep } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";

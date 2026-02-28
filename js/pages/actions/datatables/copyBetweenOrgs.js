@@ -1,5 +1,5 @@
 /**
- * Actions › Data Tables › Copy between Orgs
+ * Data Tables › Copy - Between Orgs
  *
  * Copies a data table structure (and optionally rows) from one
  * customer org to another.
@@ -13,6 +13,13 @@
  *   6. Optionally copies data rows from source → new table
  *
  * Note: Division IDs are org-specific — user picks a dest division.
+ *
+ * API endpoints:
+ *   GET  /api/v2/flows/datatables                — list data tables
+ *   GET  /api/v2/authorization/divisions          — list divisions
+ *   POST /api/v2/flows/datatables                 — create data table
+ *   GET  /api/v2/flows/datatables/{id}/rows       — fetch rows
+ *   POST /api/v2/flows/datatables/{id}/rows       — insert row
  */
 import { escapeHtml } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";

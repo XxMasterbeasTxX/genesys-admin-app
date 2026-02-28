@@ -1,5 +1,5 @@
 /**
- * Conversations › Move Interactions
+ * Interactions › Move
  *
  * Transfers active interactions from one queue to another with optional
  * media type and date filtering. Supports preview (count) and move modes.
@@ -8,6 +8,12 @@
  *   1. Sync analytics query → find active conversations in source queue
  *   2. GET each conversation → identify ACD participant in source queue
  *   3. POST replace → blind-transfer to destination queue
+ *
+ * API endpoints:
+ *   POST /api/v2/analytics/conversations/details/query                        — find active conversations
+ *   GET  /api/v2/conversations/{id}                                           — get conversation details
+ *   POST /api/v2/conversations/{id}/participants/{participantId}/replace       — transfer to dest queue
+ *   GET  /api/v2/routing/queues                                               — list queues
  */
 import { escapeHtml, formatDateTime, sleep } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
