@@ -15,6 +15,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration, save drafts, validate, publish, and run inline tests
 - **WebRTC Phones — Create** — Bulk-create WebRTC phones for all licensed users in a site, skipping collaborate licenses and existing phones, with Excel log export
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
+- **Top-level menu groups** — Data Actions, Data Tables, Interactions, and Phones each have their own top-level nav section
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
 
 ### Platform

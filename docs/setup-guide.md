@@ -478,7 +478,7 @@ After pushing the config update:
 | 6 | Org selector dropdown appears | Lists all customers from `customers.json` |
 | 7 | `/api/customers` endpoint works | Returns JSON array of customers |
 | 8 | Selecting a customer updates the page | Page responds to org change |
-| 9 | Nav menu shows "Actions" and "Interactions" | Two collapsible groups, items sorted alphabetically |
+| 9 | Nav menu shows top-level groups | "Data Actions", "Data Tables", "Interactions", "Phones" — items sorted alphabetically |
 | 10 | Interaction Search works | Date range search returns conversations |
 | 11 | Excel export works | Downloads `.xlsx` file |
 | 12 | Move Interactions works | Queue selectors load, preview and move succeed |
