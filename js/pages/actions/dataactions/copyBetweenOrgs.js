@@ -25,7 +25,7 @@ const STATUS = {
   fetching:    "Fetching full action config…",
   validating:  "Validating name in destination org…",
   creating:    "Creating action in destination org…",
-  done:        (name, dest) => `✓ Action "${name}" created in ${dest}.`,
+  done:        (name, dest, published) => `✓ Action "${name}" created in ${dest} as ${published ? "published" : "draft"}.`,
   noActions:   "No data actions found in source org.",
   noInteg:     "No compatible integration found in destination org.",
   error:       (msg) => `Error: ${msg}`,
@@ -102,6 +102,15 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
           <option value="">Load actions first…</option>
         </select>
       </div>
+
+      <!-- Publish toggle -->
+      <div class="dt-control-group dt-toggle-row">
+        <label class="dt-label">Publish immediately</label>
+        <label class="dt-toggle">
+          <input type="checkbox" id="daPublish" disabled />
+          <span class="dt-toggle-slider"></span>
+        </label>
+      </div>
     </div>
 
     <!-- Actions -->
@@ -132,6 +141,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
   const $newName       = el.querySelector("#daNewName");
   const $category      = el.querySelector("#daCategory");
   const $integration   = el.querySelector("#daIntegration");
+  const $publish       = el.querySelector("#daPublish");
   const $copyBtn       = el.querySelector("#daCopyBtn");
   const $progress      = el.querySelector("#daProgress");
   const $progressBar   = el.querySelector("#daProgressBar");
@@ -228,6 +238,8 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     $category.value = "";
     $integration.innerHTML = `<option value="">Load actions first…</option>`;
     $integration.disabled = true;
+    $publish.checked = false;
+    $publish.disabled = true;
     $copyBtn.disabled = true;
   }
 
@@ -278,6 +290,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       $sourceSelect.disabled = false;
       $newName.disabled = false;
       $category.disabled = false;
+      $publish.disabled = false;
       $loadBtn.disabled = false;
       setStatus("Actions loaded. Select a source action.");
     } catch (err) {
@@ -375,6 +388,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     $newName.disabled = true;
     $category.disabled = true;
     $integration.disabled = true;
+    $publish.disabled = true;
     $copyBtn.disabled = true;
 
     try {
@@ -407,13 +421,18 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
         config: full.config,
       };
 
-      // 3. Create action in destination
+      // 3. Create action in destination (draft or published)
       setProgress(70);
-      await gc.createDataAction(api, destOrgId, body);
+      const usePublish = $publish.checked;
+      if (usePublish) {
+        await gc.createDataAction(api, destOrgId, body);
+      } else {
+        await gc.createDataActionDraft(api, destOrgId, body);
+      }
       setProgress(100);
 
       const destName = customers.find(c => c.id === destOrgId)?.name ?? destOrgId;
-      setStatus(STATUS.done(newName, destName), "success");
+      setStatus(STATUS.done(newName, destName, usePublish), "success");
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
     } finally {
@@ -430,6 +449,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       $sourceSelect.disabled = false;
       $newName.disabled = false;
       $category.disabled = false;
+      $publish.disabled = false;
     }
     if ($integration.querySelector("option[value]")?.value) {
       $integration.disabled = false;

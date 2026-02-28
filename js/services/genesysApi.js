@@ -443,6 +443,12 @@ export async function createDataAction(api, orgId, body) {
     "/api/v2/integrations/actions", { body });
 }
 
+/** Create a data action as draft. Body: { name, category, integrationId, contract, config }. */
+export async function createDataActionDraft(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST",
+    "/api/v2/integrations/actions/drafts", { body });
+}
+
 /** Fetch all integrations. Filter by type via opts.query.integrationType. */
 export async function fetchAllIntegrations(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/integrations", opts);
