@@ -8,7 +8,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Move Interactions** — Move conversations between queues with media type and date filters
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division and optional row copy
-- **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping
+- **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
 
 ---
 
@@ -475,7 +475,7 @@ After pushing the config update:
 | 6 | Org selector dropdown appears | Lists all customers from `customers.json` |
 | 7 | `/api/customers` endpoint works | Returns JSON array of customers |
 | 8 | Selecting a customer updates the page | Page responds to org change |
-| 9 | Nav menu shows "Actions" | Collapsible group with sub-items |
+| 9 | Nav menu shows "Actions" and "Interactions" | Two collapsible groups, items sorted alphabetically |
 | 10 | Interaction Search works | Date range search returns conversations |
 | 11 | Excel export works | Downloads `.xlsx` file |
 | 12 | Move Interactions works | Queue selectors load, preview and move succeed |
@@ -624,7 +624,7 @@ genesys-admin-app/
 ├── js/
 │   ├── app.js                    Entry point (auth, router, org selector)
 │   ├── config.js                 Environment configuration (OAuth, region)
-│   ├── nav.js                    Recursive nav tree renderer (respects enabled flag)
+│   ├── nav.js                    Recursive nav tree renderer (alphabetical sorting)
 │   ├── navConfig.js              Navigation menu definition (enable/disable nodes)
 │   ├── pageRegistry.js           Route → page-loader map
 │   ├── router.js                 Hash-based SPA router

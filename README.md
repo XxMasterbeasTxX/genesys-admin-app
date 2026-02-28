@@ -6,17 +6,18 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 ### Features
 
-- **Org selector** — Pick any customer org from a dropdown; all pages use that org
 - **Interaction Search** — Search conversations by date range, filter by participant data, view details, export to Excel (.xlsx)
 - **Move Interactions** — Move conversations between queues with media type filtering and date range controls
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division selection
-- **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping
+- **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
+- **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
 
 ### Platform
 
 - **Secure credential storage** — Customer Client IDs/Secrets managed in Azure Key Vault, delivered to the backend via encrypted app settings
+- **Org selector** — Pick any customer org from a dropdown; all pages use that org
 - **Proxied API calls** — All Genesys API calls go through an Azure Functions backend that handles authentication
 - **Centralized API service** — Shared `genesysApi.js` module with helpers for analytics, users, queues, flows, data tables, data actions, integrations, divisions, and more
 - **OAuth PKCE login** — Team members authenticate via Genesys Cloud (your own org)
@@ -75,7 +76,7 @@ genesys-admin-app/
 ├── js/
 │   ├── app.js                    App entry point (auth, routing, org selector)
 │   ├── config.js                 OAuth & region config
-│   ├── nav.js                    Sidebar navigation renderer
+│   ├── nav.js                    Sidebar navigation renderer (alphabetical sorting)
 │   ├── navConfig.js              Navigation tree definition
 │   ├── pageRegistry.js           Route → page loader map
 │   ├── router.js                 Hash-based SPA router
