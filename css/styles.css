@@ -945,6 +945,13 @@ body {
   .ed-test-summary { color: #2563eb; }
   .ed-btn-test { background: rgba(59,130,246,0.08); color: #2563eb; border-color: rgba(59,130,246,0.2); }
   .ed-btn-test:hover { background: rgba(59,130,246,0.15); }
+
+  /* WebRTC Create - light overrides */
+  .wc-progress-wrap { background: rgba(0,0,0,0.06); }
+  .wc-btn-run { background: rgba(34,197,94,0.08); color: #16a34a; border-color: rgba(34,197,94,0.2); }
+  .wc-btn-run:hover { background: rgba(34,197,94,0.15); }
+  .wc-btn-download { background: rgba(59,130,246,0.08); color: #2563eb; border-color: rgba(59,130,246,0.2); }
+  .wc-btn-download:hover { background: rgba(59,130,246,0.15); }
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1011,4 +1018,91 @@ body {
 }
 .ed-btn-test:hover {
   background: rgba(59,130,246,0.22);
+}
+
+/* ══════════════════════════════════════════════════════════
+   WebRTC Create page  (wc-* prefix)
+   ══════════════════════════════════════════════════════════ */
+.wc-desc {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+  max-width: 600px;
+}
+.wc-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.wc-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wc-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.wc-site-select {
+  min-width: 280px;
+  max-width: 400px;
+}
+.wc-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.wc-btn-run {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #4ade80;
+}
+.wc-btn-run:hover {
+  background: rgba(34, 197, 94, 0.2);
+}
+.wc-status {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.wc-status--success { color: #34d399; }
+.wc-status--error   { color: #f87171; }
+.wc-progress-wrap {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.06);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.wc-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: #22c55e;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.wc-summary {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+  max-width: 600px;
+}
+.wc-download {
+  margin-bottom: 10px;
+}
+.wc-btn-download {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.25);
+  color: #60a5fa;
+}
+.wc-btn-download:hover {
+  background: rgba(59, 130, 246, 0.22);
 }

@@ -421,6 +421,35 @@ export async function fetchAllDidPools(api, orgId, opts = {}) {
     "/api/v2/telephony/providers/edges/didpools", opts);
 }
 
+/** Fetch all phone base settings. */
+export async function fetchAllPhoneBaseSettings(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    "/api/v2/telephony/providers/edges/phonebasesettings", opts);
+}
+
+/** Get a single phone base setting by ID (includes lines). */
+export async function getPhoneBaseSetting(api, orgId, id) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/telephony/providers/edges/phonebasesettings/${id}`);
+}
+
+/** Fetch all phones (paginated). */
+export async function fetchAllPhones(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    "/api/v2/telephony/providers/edges/phones", opts);
+}
+
+/** Create a phone. */
+export async function createPhone(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST",
+    "/api/v2/telephony/providers/edges/phones", { body });
+}
+
+/** Fetch all licensed users (paginated). */
+export async function fetchAllLicenseUsers(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/license/users", opts);
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Integrations / Data Actions
 // ─────────────────────────────────────────────────────────────────────

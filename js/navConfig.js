@@ -38,9 +38,24 @@ export const NAV_TREE = [
     path: "interactions",
     enabled: true,
     children: [
-      { label: "Disconnect Interactions", path: "disconnect", enabled: true },
-      { label: "Interaction Search", path: "search", enabled: true },
-      { label: "Move Interactions", path: "move", enabled: true },
+      { label: "Disconnect", path: "disconnect", enabled: true },
+      { label: "Search", path: "search", enabled: true },
+      { label: "Move", path: "move", enabled: true },
+    ],
+  },
+  {
+    label: "Phones",
+    path: "phones",
+    enabled: true,
+    children: [
+      {
+        label: "WebRTC",
+        path: "webrtc",
+        enabled: true,
+        children: [
+          { label: "Create", path: "create", enabled: true },
+        ],
+      },
     ],
   },
 ];

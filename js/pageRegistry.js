@@ -31,6 +31,10 @@ const registry = {
     import("./pages/actions/moveInteractions.js").then((m) => m.default(ctx)),
   "/interactions/disconnect": (ctx) =>
     import("./pages/actions/disconnectInteractions.js").then((m) => m.default(ctx)),
+
+  // ── Phones ─────────────────────────────────────────
+  "/phones/webrtc/create": (ctx) =>
+    import("./pages/actions/phones/createWebRtc.js").then((m) => m.default(ctx)),
 };
 
 /**
