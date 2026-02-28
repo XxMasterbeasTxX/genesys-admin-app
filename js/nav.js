@@ -39,7 +39,12 @@ function buildList(nodes, parentPath) {
   const ul = document.createElement("ul");
   ul.className = "nav-list";
 
-  for (const node of nodes) {
+  // Sort nodes alphabetically by label
+  const sorted = [...nodes].sort((a, b) =>
+    a.label.localeCompare(b.label, undefined, { sensitivity: "base" })
+  );
+
+  for (const node of sorted) {
     // Skip disabled nodes
     if (node.enabled === false) continue;
 

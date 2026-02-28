@@ -14,15 +14,6 @@ export const NAV_TREE = [
     enabled: true,
     children: [
       {
-        label: "Data Tables",
-        path: "datatables",
-        enabled: true,
-        children: [
-          { label: "Copy - Single Org", path: "copy-single", enabled: true },
-          { label: "Copy - Between Orgs", path: "copy-between", enabled: true },
-        ],
-      },
-      {
         label: "Data Actions",
         path: "dataactions",
         enabled: true,
@@ -30,11 +21,27 @@ export const NAV_TREE = [
           { label: "Copy - Between Orgs", path: "copy-between", enabled: true },
         ],
       },
-      { label: "Interaction Search", path: "interaction-search", enabled: true },
+      {
+        label: "Data Tables",
+        path: "datatables",
+        enabled: true,
+        children: [
+          { label: "Copy - Between Orgs", path: "copy-between", enabled: true },
+          { label: "Copy - Single Org", path: "copy-single", enabled: true },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Interactions",
+    path: "interactions",
+    enabled: true,
+    children: [
+      { label: "Interaction Search", path: "search", enabled: true },
       { label: "Move Interactions", path: "move", enabled: true },
     ],
   },
-  ];
+];
 
 /** Collect all leaf routes from enabled nodes only. */
 export function getLeafRoutes(nodes = NAV_TREE, parentPath = "") {

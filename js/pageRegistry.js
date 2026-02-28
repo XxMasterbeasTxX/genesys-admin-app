@@ -12,20 +12,20 @@
 import { renderPlaceholder } from "./pages/placeholder.js";
 
 const registry = {
-  // ── Actions › Data Tables ─────────────────────────────
-  "/actions/datatables/copy-single": (ctx) =>
-    import("./pages/actions/datatables/copySingleOrg.js").then((m) => m.default(ctx)),
-  "/actions/datatables/copy-between": (ctx) =>
-    import("./pages/actions/datatables/copyBetweenOrgs.js").then((m) => m.default(ctx)),
-
   // ── Actions › Data Actions ────────────────────────────
   "/actions/dataactions/copy-between": (ctx) =>
     import("./pages/actions/dataactions/copyBetweenOrgs.js").then((m) => m.default(ctx)),
 
-  // ── Actions ───────────────────────────────────────────
-  "/actions/interaction-search": (ctx) =>
+  // ── Actions › Data Tables ─────────────────────────────
+  "/actions/datatables/copy-between": (ctx) =>
+    import("./pages/actions/datatables/copyBetweenOrgs.js").then((m) => m.default(ctx)),
+  "/actions/datatables/copy-single": (ctx) =>
+    import("./pages/actions/datatables/copySingleOrg.js").then((m) => m.default(ctx)),
+
+  // ── Interactions ─────────────────────────────────────
+  "/interactions/search": (ctx) =>
     import("./pages/actions/interactionSearch.js").then((m) => m.default(ctx)),
-  "/actions/move": (ctx) =>
+  "/interactions/move": (ctx) =>
     import("./pages/actions/moveInteractions.js").then((m) => m.default(ctx)),
 };
 
