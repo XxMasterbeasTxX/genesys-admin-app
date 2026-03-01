@@ -74,11 +74,7 @@ export default function renderTrusteeExport({ route, me, api }) {
 
     <div id="teTableWrap" style="display:none"></div>
 
-    <div class="wc-summary" id="teSummary" style="display:none"></div>
-
-    <div class="wc-download" id="teDownload" style="display:none">
-      <button class="btn wc-btn-download" id="teDownloadBtn">Download Excel</button>
-    </div>`;
+    <div class="wc-summary" id="teSummary" style="display:none"></div>`;
 
   // ── DOM refs ──────────────────────────────────────────
   const $exportBtn   = el.querySelector("#teExportBtn");
@@ -88,8 +84,6 @@ export default function renderTrusteeExport({ route, me, api }) {
   const $progressBar = el.querySelector("#teProgressBar");
   const $tableWrap   = el.querySelector("#teTableWrap");
   const $summary     = el.querySelector("#teSummary");
-  const $download    = el.querySelector("#teDownload");
-  const $downloadBtn = el.querySelector("#teDownloadBtn");
 
   // ── Helpers ───────────────────────────────────────────
   function setStatus(msg, type) {
@@ -99,6 +93,48 @@ export default function renderTrusteeExport({ route, me, api }) {
   function showProgress(pct) {
     $progressW.style.display = "";
     $progressBar.style.width = `${pct}%`;
+  }
+
+  /** Build and trigger Excel download. */
+  function downloadExcel(byTrusteeOrg, customerNames) {
+    const sheets = [];
+    for (const trusteeOrg of Object.keys(byTrusteeOrg).sort()) {
+      const users = byTrusteeOrg[trusteeOrg].sort((a, b) => a.name.localeCompare(b.name));
+      const activeCols = customerNames.filter(cn => users.some(u => u.orgs[cn]));
+
+      const rows = users.map(u => {
+        const row = { Name: u.name, Email: u.email };
+        for (const cn of activeCols) {
+          row[cn] = u.orgs[cn] === true;
+        }
+        return row;
+      });
+
+      sheets.push({ name: trusteeOrg.slice(0, 31), rows });
+    }
+
+    if (sheets.length === 0) return;
+
+    const wb = XLSX.utils.book_new();
+    for (const sheet of sheets) {
+      const ws = XLSX.utils.json_to_sheet(sheet.rows);
+      const colCount = Object.keys(sheet.rows[0] || {}).length;
+      ws["!cols"] = Array.from({ length: colCount }, (_, i) => ({
+        wch: i < 2 ? 25 : 14,
+      }));
+      XLSX.utils.book_append_sheet(wb, ws, sheet.name);
+    }
+
+    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([buf], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = timestampedFilename("trustee_export", "xlsx");
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // ── Export logic ──────────────────────────────────────
@@ -111,7 +147,6 @@ export default function renderTrusteeExport({ route, me, api }) {
     $tableWrap.style.display = "none";
     $tableWrap.innerHTML = "";
     $summary.style.display = "none";
-    $download.style.display = "none";
 
     // Data: { (trusteeOrgDisplay, email) → { name, email, trusteeOrg, orgs: { orgName: true } } }
     const usersMap = new Map();
@@ -248,7 +283,8 @@ export default function renderTrusteeExport({ route, me, api }) {
           users.some(u => u.orgs[cn])
         );
 
-        html += `<h2 class="te-sheet-title">${escapeHtml(trusteeOrg)}</h2>`;
+        html += `<details class="te-details" open>`;
+        html += `<summary class="te-sheet-title">${escapeHtml(trusteeOrg)} <span class="te-user-count">${users.length} users</span></summary>`;
         html += `<div class="te-table-scroll"><table class="te-table">`;
         html += `<thead><tr><th>Name</th><th>Email</th>`;
         for (const cn of activeCols) {
@@ -264,7 +300,7 @@ export default function renderTrusteeExport({ route, me, api }) {
           }
           html += `</tr>`;
         }
-        html += `</tbody></table></div>`;
+        html += `</tbody></table></div></details>`;
       }
 
       $tableWrap.innerHTML = html;
@@ -274,53 +310,9 @@ export default function renderTrusteeExport({ route, me, api }) {
       $summary.style.display = "";
 
       setStatus("Done.", "success");
-      $download.style.display = "";
 
-      // 5. Excel download handler
-      $downloadBtn.onclick = () => {
-        const sheets = [];
-        for (const trusteeOrg of Object.keys(byTrusteeOrg).sort()) {
-          const users = byTrusteeOrg[trusteeOrg].sort((a, b) => a.name.localeCompare(b.name));
-          const activeCols = customerNames.filter(cn => users.some(u => u.orgs[cn]));
-
-          const rows = users.map(u => {
-            const row = { Name: u.name, Email: u.email };
-            for (const cn of activeCols) {
-              row[cn] = u.orgs[cn] === true;
-            }
-            return row;
-          });
-
-          sheets.push({ name: trusteeOrg.slice(0, 31), rows });
-        }
-
-        if (sheets.length === 0) return;
-
-        // Build workbook with multiple sheets
-        const wb = XLSX.utils.book_new();
-        for (const sheet of sheets) {
-          const ws = XLSX.utils.json_to_sheet(sheet.rows);
-
-          // Style True/False cells (set column widths)
-          const colCount = Object.keys(sheet.rows[0] || {}).length;
-          ws["!cols"] = Array.from({ length: colCount }, (_, i) => ({
-            wch: i < 2 ? 25 : 14,
-          }));
-
-          XLSX.utils.book_append_sheet(wb, ws, sheet.name);
-        }
-
-        const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-        const blob = new Blob([buf], {
-          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = timestampedFilename("trustee_export", "xlsx");
-        a.click();
-        URL.revokeObjectURL(url);
-      };
+      // 5. Auto-download Excel
+      downloadExcel(byTrusteeOrg, customerNames);
 
     } catch (err) {
       setStatus(`Export failed: ${err.message}`, "error");

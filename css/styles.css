@@ -982,6 +982,8 @@ body {
   .te-btn-cancel:hover { background: rgba(239,68,68,0.15); }
   .te-cell-yes { background: rgba(34,197,94,0.08); color: #16a34a; }
   .te-cell-no { background: rgba(239,68,68,0.06); color: #dc2626; }
+  .te-details { background: var(--panel); border-color: var(--border); }
+  .te-user-count { background: rgba(0,0,0,0.06); }
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1245,6 +1247,38 @@ body {
   font-weight: 600;
   color: var(--text);
   margin: 16px 0 8px;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+.te-sheet-title::-webkit-details-marker { display: none; }
+.te-sheet-title::before {
+  content: "▶";
+  font-size: 10px;
+  transition: transform 0.2s ease;
+  color: var(--text-secondary);
+}
+.te-details[open] > .te-sheet-title::before {
+  transform: rotate(90deg);
+}
+.te-details {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 12px 8px;
+  margin-bottom: 12px;
+  background: var(--panel);
+}
+.te-user-count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.06);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: auto;
 }
 .te-table-scroll {
   overflow-x: auto;
