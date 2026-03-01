@@ -1,9 +1,11 @@
 /**
- * Scheduled Export Runner — Timer-triggered Azure Function.
+ * Scheduled Export Runner — HTTP-triggered Azure Function.
  *
- * Fires every 5 minutes. For each enabled schedule whose time is due,
- * it runs the corresponding export handler, builds the Excel file,
- * and emails the result via Mailjet.
+ * Called by a GitHub Actions cron workflow every 5 minutes via POST.
+ * Protected by a shared secret (SCHEDULE_RUNNER_KEY env var).
+ *
+ * For each enabled schedule whose time is due, it runs the corresponding
+ * export handler, builds the Excel file, and emails the result via Mailjet.
  *
  * Schedule evaluation:
  *   - daily:   runs once per day at scheduleTime (UTC)
@@ -18,20 +20,53 @@
 const store = require("../lib/scheduleStore");
 const { getHandler } = require("../lib/exportHandlers");
 
-module.exports = async function (context) {
+module.exports = async function (context, req) {
+  // ── Verify shared secret ──────────────────────────────
+  const expectedKey = process.env.SCHEDULE_RUNNER_KEY;
+  if (!expectedKey) {
+    context.res = {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+      body: { error: "SCHEDULE_RUNNER_KEY not configured" },
+    };
+    return;
+  }
+
+  const providedKey =
+    req.headers["x-runner-key"] ||
+    (req.query && req.query.key) ||
+    (req.body && req.body.key);
+
+  if (providedKey !== expectedKey) {
+    context.res = {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+      body: { error: "Invalid runner key" },
+    };
+    return;
+  }
+
   context.log("Scheduled runner triggered at", new Date().toISOString());
+
+  const json = (status, body) => ({
+    status,
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
 
   let schedules;
   try {
     schedules = await store.listAll();
   } catch (err) {
     context.log.error("Failed to load schedules:", err.message);
+    context.res = json(500, { error: "Failed to load schedules: " + err.message });
     return;
   }
 
   const enabled = schedules.filter((s) => s.enabled);
   if (!enabled.length) {
     context.log("No enabled schedules. Exiting.");
+    context.res = json(200, { message: "No enabled schedules", ran: 0 });
     return;
   }
 
@@ -40,16 +75,20 @@ module.exports = async function (context) {
 
   if (!dueSchedules.length) {
     context.log(`${enabled.length} enabled schedules, none due right now.`);
+    context.res = json(200, { message: "No schedules due", enabled: enabled.length, ran: 0 });
     return;
   }
 
   context.log(`${dueSchedules.length} schedule(s) due. Processing…`);
+  const results = [];
 
   for (const schedule of dueSchedules) {
-    await runExport(context, schedule);
+    const result = await runExport(context, schedule);
+    results.push(result);
   }
 
   context.log("Scheduled runner complete.");
+  context.res = json(200, { message: "Runner complete", ran: results.length, results });
 };
 
 // ── Due check ───────────────────────────────────────────
@@ -102,7 +141,7 @@ async function runExport(context, schedule) {
       lastStatus: "error",
       lastError: `No handler for exportType: ${exportType}`,
     });
-    return;
+    return { id, exportType, status: "error", error: "No handler" };
   }
 
   // 1. Run the export
@@ -116,7 +155,7 @@ async function runExport(context, schedule) {
       lastStatus: "error",
       lastError: err.message,
     });
-    return;
+    return { id, exportType, status: "error", error: err.message };
   }
 
   if (!result.success) {
@@ -126,16 +165,17 @@ async function runExport(context, schedule) {
       lastStatus: "error",
       lastError: result.error || "Export returned failure",
     });
-    return;
+    return { id, exportType, status: "error", error: result.error };
   }
 
   // 2. Send email with the result
   const emailError = await sendResultEmail(context, schedule, result);
 
   // 3. Update run status
+  const finalStatus = emailError ? "email-failed" : "success";
   await store.updateRunStatus(id, {
     lastRun: new Date().toISOString(),
-    lastStatus: emailError ? "email-failed" : "success",
+    lastStatus: finalStatus,
     lastError: emailError || null,
   });
 
@@ -144,6 +184,8 @@ async function runExport(context, schedule) {
       ? `Export OK but email failed: ${emailError}`
       : `Export + email OK for ${exportLabel}`
   );
+
+  return { id, exportType, status: finalStatus, error: emailError || null };
 }
 
 // ── Email via Mailjet ───────────────────────────────────
