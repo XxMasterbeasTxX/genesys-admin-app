@@ -10,7 +10,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division and optional row copy
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
-- **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration, inline testing
+- **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration. Edit name, category, request config (URL template, method, body, headers) and response config (translation map, success template) for any action; edit input/output contract schemas for draft-only actions. Save drafts, validate, publish, and run inline tests.
 - **WebRTC Phones — Create** — Bulk-create WebRTC phones for all licensed users in a site, with Excel log export
 - **WebRTC Phones — Change Site** — Move selected WebRTC phones from one site to another using a searchable multi-select picker, with progress tracking and Excel log export
 - **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets and styled formatting
@@ -619,7 +619,7 @@ After pushing the config update:
 | 13 | Data Tables — Copy (Single Org) | Tables, divisions load; copy structure + rows succeeds |
 | 14 | Data Tables — Copy between Orgs | Source/dest selectors; copy with division + rows succeeds |
 | 15 | Data Actions — Copy between Orgs | Source/dest selectors; integration mapping; copy succeeds |
-| 16 | Data Actions — Edit | Load actions; filter/search; edit name/category; save/validate/publish; test |
+| 16 | Data Actions — Edit | Load actions; filter/search; published action: edit name/category + request/response config, save draft; draft-only action: also edit input/output contract schemas; validate/publish; test |
 | 17 | Disconnect Interactions | Single/multiple/queue modes; media type + date filters; disconnect succeeds |
 | 18 | WebRTC Phones — Create | Site selector; bulk create runs; summary shows counts; Excel download works |
 | 19 | WebRTC Phones — Change Site | From/To site selectors; Load Phones; searchable multi-select; Move runs; Excel download works |
