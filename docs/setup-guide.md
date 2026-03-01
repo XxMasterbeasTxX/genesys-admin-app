@@ -14,6 +14,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **WebRTC Phones — Create** — Bulk-create WebRTC phones for all licensed users in a site, with Excel log export
 - **WebRTC Phones — Change Site** — Move selected WebRTC phones from one site to another using a searchable multi-select picker, with progress tracking and Excel log export
 - **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets and styled formatting
+- **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, "All Scheduled Exports" overview.
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant)
 
 ---
@@ -33,10 +34,11 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 11. [Configure App Settings](#11-configure-app-settings)
 12. [Update customers.json](#12-update-customersjson)
 13. [Configure Mailjet Email](#13-configure-mailjet-email)
-14. [First Deployment](#14-first-deployment)
-15. [Verification Checklist](#15-verification-checklist)
-16. [Day-to-Day Operations](#16-day-to-day-operations)
-17. [Troubleshooting](#17-troubleshooting)
+14. [Configure Scheduled Exports](#14-configure-scheduled-exports)
+15. [First Deployment](#15-first-deployment)
+16. [Verification Checklist](#16-verification-checklist)
+17. [Day-to-Day Operations](#17-day-to-day-operations)
+18. [Troubleshooting](#18-troubleshooting)
 
 ---
 
@@ -509,7 +511,81 @@ az staticwebapp appsettings set --name genesys-admin-app \
 
 ---
 
-## 14. First Deployment
+## 14. Configure Scheduled Exports
+
+Scheduled exports let users automate any export (e.g. Trustee) on a daily, weekly, or monthly schedule with email delivery. The system uses Azure Table Storage for schedule data, and a GitHub Actions cron workflow to trigger the server-side runner every 5 minutes.
+
+### 14a. Create an Azure Storage Account
+
+1. Azure Portal → **Create a resource** → search **Storage account** → **Create**
+2. Fill in:
+
+| Field | Value |
+| --- | --- |
+| **Subscription** | Same as your Static Web App |
+| **Resource group** | Same as your Static Web App |
+| **Storage account name** | e.g. `genesysadminstorage` (globally unique, lowercase, no hyphens) |
+| **Region** | Same as your Static Web App |
+| **Performance** | Standard |
+| **Redundancy** | LRS (Locally-redundant) is fine |
+
+3. Click **Review + create** → **Create**
+4. After creation, go to the storage account → **Access keys** → click **Show** on key1 → copy the **Connection string**
+
+### 14b. Add Storage connection string to SWA app settings
+
+```bash
+az staticwebapp appsettings set --name genesys-admin-app \
+  --resource-group rg-genesys-admin \
+  --setting-names "AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=..."
+```
+
+Or via Azure Portal: Static Web App → **Configuration** → **Application settings** → **+ Add**
+
+| Setting | Value |
+| --- | --- |
+| `AZURE_STORAGE_CONNECTION_STRING` | The full connection string from step 14a |
+
+### 14c. Generate a shared secret for the runner
+
+Generate any random string (e.g. a UUID) to protect the scheduled-runner endpoint:
+
+```bash
+# Example: generate a UUID
+python -c "import uuid; print(uuid.uuid4())"
+```
+
+Add this value to **both** locations:
+
+1. **Azure SWA app setting:** `SCHEDULE_RUNNER_KEY` = `<your-secret>`
+2. **GitHub repository secret:** `SCHEDULE_RUNNER_KEY` = `<your-secret>` (same value)
+
+### 14d. Add GitHub repository secrets
+
+Go to your GitHub repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
+
+| Secret name | Value |
+| --- | --- |
+| `SCHEDULE_RUNNER_KEY` | The shared secret from step 14c |
+| `SWA_URL` | Your Static Web App URL (e.g. `https://happy-sky-abc123.azurestaticapps.net`) |
+
+### 14e. How it works
+
+1. A GitHub Actions workflow (`.github/workflows/scheduled-runner.yml`) runs every 5 minutes via cron
+2. It POSTs to `/api/scheduled-runner` with the shared secret in the `x-runner-key` header
+3. The Azure Function verifies the secret, loads enabled schedules from Azure Table Storage, checks which are due (in Danish time — Europe/Copenhagen, CET/CEST)
+4. For each due schedule, it runs the export server-side using client credentials, builds the Excel file, and emails it via Mailjet
+5. Catch-up logic: if a run is missed (GitHub Actions delays), the next cycle picks it up. Only one run per schedule per day.
+
+### 14f. Test the runner
+
+1. Go to GitHub → **Actions** → **Scheduled Export Runner** workflow
+2. Click **Run workflow** → **Run workflow** (manual trigger)
+3. Check the workflow log — it should show HTTP 200 and the response body
+
+---
+
+## 15. First Deployment
 
 After pushing the config update:
 
@@ -521,7 +597,7 @@ After pushing the config update:
 
 ---
 
-## 15. Verification Checklist
+## 16. Verification Checklist
 
 | # | Check | Expected |
 | --- | --- | --- |
@@ -546,11 +622,15 @@ After pushing the config update:
 | 19 | WebRTC Phones — Change Site | From/To site selectors; Load Phones; searchable multi-select; Move runs; Excel download works |
 | 20 | Trustee Export | Export button scans all orgs; progress bar; matrix table displays; Excel download with styled formatting and per-trustee sheets |
 | 21 | Email notification | Trustee export with email enabled sends attachment to recipients via Mailjet |
-| 22 | Theme adapts | Dark/light matches OS setting |
+| 22 | Scheduled export creation | Toggle automation on Trustee page; create daily/weekly/monthly schedule with recipients |
+| 23 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; edit/delete restricted to owner + admin |
+| 24 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
+| 25 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
+| 26 | Theme adapts | Dark/light matches OS setting |
 
 ---
 
-## 16. Day-to-Day Operations
+## 17. Day-to-Day Operations
 
 ### Adding a new customer
 
@@ -602,7 +682,7 @@ After pushing the config update:
 
 ---
 
-## 17. Troubleshooting
+## 18. Troubleshooting
 
 ### Login redirects in a loop
 
@@ -661,6 +741,34 @@ After pushing the config update:
   2. Ensure `MAILJET_FROM_EMAIL` uses an address on the verified domain
   3. Confirm API Key and Secret Key are correct
 
+### Scheduled runner returns 403
+
+- **Cause:** `SCHEDULE_RUNNER_KEY` mismatch between GitHub secret and Azure app setting
+- **Fix:** Ensure the value is identical in both GitHub repo → Settings → Secrets (`SCHEDULE_RUNNER_KEY`) and Azure SWA → Configuration → Application settings (`SCHEDULE_RUNNER_KEY`)
+
+### Scheduled runner returns 500 "SCHEDULE_RUNNER_KEY not configured"
+
+- **Cause:** The `SCHEDULE_RUNNER_KEY` app setting is missing from Azure SWA
+- **Fix:** Add `SCHEDULE_RUNNER_KEY` to Static Web App → Configuration → Application settings
+
+### Scheduled runner returns 500 "Failed to load schedules"
+
+- **Cause:** `AZURE_STORAGE_CONNECTION_STRING` is missing or invalid
+- **Fix:** Verify the connection string in Static Web App → Configuration → Application settings. Copy it fresh from Storage Account → Access keys.
+
+### Scheduled exports not firing
+
+- **Cause:** GitHub Actions cron workflow may be disabled or delayed
+- **Fix:**
+  1. Go to GitHub → Actions → check if "Scheduled Export Runner" is enabled (GitHub auto-disables cron workflows on inactive repos)
+  2. GitHub cron can be delayed up to 15-20 minutes — the catch-up logic ensures exports still run
+  3. Manually trigger the workflow to verify it works
+
+### Schedule not picked up despite being due
+
+- **Cause:** Schedule time is in the future (Danish time), or it already ran today
+- **Fix:** Check the schedule's `lastRun` in the Scheduled Exports overview. The runner uses Europe/Copenhagen time — verify the schedule time is in the past for today.
+
 ---
 
 ## Architecture Overview
@@ -671,20 +779,27 @@ Browser (SPA)                    Azure Static Web App (Standard)
 │  Frontend   │───── /api/* ───▶│  Azure Functions (Node 18)   │
 │  (JS SPA)   │                 │    ├─ GET /api/customers     │
 │             │                 │    ├─ POST /api/genesys-proxy│
-│  Org select │                 │    └─ POST /api/send-email   │──▶ Mailjet API
-│  dropdown   │                 │         │                    │    (EU servers)
-└─────────────┘                 └─────────┼────────────────────┘
-                                          │
-                                  Encrypted app settings
-                                  (GENESYS_<ORG>_CLIENT_ID/SECRET)
-                                  (MAILJET_API_KEY / SECRET_KEY)
-                                          │
-                                   ┌──────▼───────┐
-                                   │  Azure Key   │
-                                   │  Vault       │
-                                   │  (source of  │
-                                   │   truth)     │
-                                   └──────────────┘
+│  Org select │                 │    ├─ POST /api/send-email   │──▶ Mailjet API
+│  dropdown   │                 │    ├─ * /api/schedules       │    (EU servers)
+└─────────────┘                 │    └─ POST /api/scheduled-   │
+                                │         runner               │
+ GitHub Actions (cron)          └────┬─────────────────────────┘
+┌─────────────┐                      │
+│ Every 5 min │── POST /api/ ───────▶│
+│ scheduled-  │   scheduled-runner   │
+│ runner.yml  │                      │
+└─────────────┘              Encrypted app settings
+                             (GENESYS_<ORG>_CLIENT_ID/SECRET)
+                             (MAILJET_API_KEY / SECRET_KEY)
+                             (AZURE_STORAGE_CONNECTION_STRING)
+                             (SCHEDULE_RUNNER_KEY)
+                                     │
+                              ┌──────▼───────┐   ┌──────────────┐
+                              │  Azure Key   │   │ Azure Table  │
+                              │  Vault       │   │ Storage      │
+                              │  (source of  │   │ (schedules)  │
+                              │   truth)     │   │              │
+                              └──────────────┘   └──────────────┘
 ```
 
 ---
@@ -699,6 +814,10 @@ genesys-admin-app/
 ├── .gitignore                    Ignores local.settings.json and node_modules
 ├── css/
 │   └── styles.css                Core layout + dark/light theme
+├── .github/
+│   └── workflows/
+│       ├── azure-static-web-apps-*.yml   SWA CI/CD (auto-generated)
+│       └── scheduled-runner.yml          Cron trigger for scheduled exports
 ├── js/
 │   ├── app.js                    Entry point (auth, router, org selector)
 │   ├── config.js                 Environment configuration (OAuth, region)
@@ -710,7 +829,8 @@ genesys-admin-app/
 │   ├── lib/
 │   │   └── xlsx.bundle.js        xlsx-js-style library (SheetJS + cell styling)
 │   ├── components/
-│   │   └── multiSelect.js        Reusable multi-select dropdown
+│   │   ├── multiSelect.js        Reusable multi-select dropdown
+│   │   └── schedulePanel.js      Reusable automation schedule panel
 │   ├── pages/
 │   │   ├── welcome.js            Welcome / landing page
 │   │   ├── notfound.js           404 page
@@ -726,8 +846,9 @@ genesys-admin-app/
 │   │   │   ├── move.js              Move Interactions between queues
 │   │   │   └── disconnect.js        Force-disconnect conversations
 │   │   ├── export/
+│   │   │   ├── scheduledExports.js   All Scheduled Exports overview
 │   │   │   └── users/
-│   │   │       └── trustee.js       Trustee access matrix export
+│   │   │       └── trustee.js       Trustee access matrix export + automation
 │   │   └── phones/
 │   │       └── webrtc/
 │   │           ├── changeSite.js     Change site for WebRTC phones
@@ -738,7 +859,8 @@ genesys-admin-app/
 │       ├── customerService.js    Fetches customer list from /api/customers
 │       ├── emailService.js       Centralized email service (Mailjet via /api/send-email)
 │       ├── genesysApi.js         Centralized Genesys Cloud API service
-│       └── orgContext.js         Selected org state management
+│       ├── orgContext.js         Selected org state management
+│       └── scheduleService.js    Schedule CRUD API wrappers
 ├── api/                          Azure Functions backend (auto-deployed)
 │   ├── host.json                 Functions host configuration
 │   ├── package.json              API dependencies
@@ -752,9 +874,19 @@ genesys-admin-app/
 │   ├── send-email/
 │   │   ├── function.json         HTTP trigger binding
 │   │   └── index.js              POST /api/send-email → Mailjet email sending
+│   ├── schedules/
+│   │   ├── function.json         HTTP trigger binding
+│   │   └── index.js              CRUD /api/schedules → schedule management
+│   ├── scheduled-runner/
+│   │   ├── function.json         HTTP trigger binding (POST)
+│   │   └── index.js              POST /api/scheduled-runner → export execution
 │   └── lib/
 │       ├── customers.json        Customer metadata (id, name, region)
-│       └── genesysAuth.js        Client Credentials token cache per org
+│       ├── genesysAuth.js        Client Credentials token cache per org
+│       ├── scheduleStore.js      Azure Table Storage CRUD for schedules
+│       ├── exportHandlers.js     Export type → handler registry
+│       └── exports/
+│           └── trustee.js        Server-side trustee export handler
 └── docs/
     ├── setup-guide.md            This file
     └── conversion-reference.md   Python → JS migration reference
