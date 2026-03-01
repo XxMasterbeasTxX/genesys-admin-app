@@ -19,6 +19,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Last Login Export** — Export user login data with license information for a selected org. One row per user-license combination, optional inactivity filter (months), collapsible preview with per-column filters, styled Excel matching the Python tool output. Supports per-org scheduled automation.
 - **All Groups Export** — Export all users (active, inactive, and deleted) with their group memberships for a selected org. One row per user-group combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool output. Supports per-org scheduled automation.
 - **All Roles Export** — Export all users (active, inactive, and deleted) with their role assignments for a selected org. One row per user-role combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool output. Supports per-org scheduled automation.
+- **Filtered on Role(s) Export** — Export active users filtered by one or more roles. Roles are loaded dynamically per org; one row per user with boolean columns for each selected role. Supports per-org scheduled automation with role selection stored in the schedule config.
 - **Scheduled Exports** — Automate any export on a daily, weekly, or monthly schedule with email delivery. Per-export automation toggle, reusable schedule panel with org selector and custom config fields, "All Scheduled Exports" overview page. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic ensures missed runs are retried. All times in Danish time (Europe/Copenhagen, CET/CEST).
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant). Centralized email service reusable by any page.
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
@@ -131,6 +132,7 @@ genesys-admin-app/
 │   │   │   └── users/
 │   │   │       ├── allGroups.js     All Groups export + per-org automation
 │   │   │       ├── allRoles.js      All Roles export + per-org automation
+│   │   │       ├── filteredRoles.js  Filtered on Role(s) export + dynamic role picker
 │   │   │       ├── lastLogin.js      Last Login export + per-org automation
 │   │   │       └── trustee.js       Trustee access matrix export + automation
 │   │   └── phones/
@@ -159,6 +161,7 @@ genesys-admin-app/
 │       └── exports/
 │           ├── allGroups.js      Server-side All Groups export handler
 │           ├── allRoles.js       Server-side All Roles export handler
+│           ├── filteredRoles.js  Server-side Filtered on Role(s) export handler
 │           ├── lastLogin.js      Server-side Last Login export handler
 │           └── trustee.js        Server-side trustee export handler
 └── docs/
@@ -172,7 +175,7 @@ The app supports automated, server-side export execution with email delivery.
 
 ### How it works
 
-1. **Schedule creation** — On any export page with automation enabled (e.g. Trustee, Last Login, All Roles, All Groups), toggle on automation and configure a daily/weekly/monthly schedule with email recipients. Per-org exports (Last Login, All Roles, All Groups) include an org selector in the schedule form; Last Login also has an inactivity filter.
+1. **Schedule creation** — On any export page with automation enabled (e.g. Trustee, Last Login, All Roles, All Groups, Filtered on Role(s)), toggle on automation and configure a daily/weekly/monthly schedule with email recipients. Per-org exports include an org selector in the schedule form; Filtered on Role(s) also shows a dynamic role picker; Last Login also has an inactivity filter.
 2. **GitHub Actions cron** — A workflow runs every 5 minutes and POSTs to `/api/scheduled-runner` with a shared secret
 3. **Server-side execution** — The Azure Function checks Azure Table Storage for due schedules, runs the export using client credentials, and emails the result via Mailjet
 4. **Catch-up logic** — If a run is missed (GitHub Actions delays), the next cycle picks it up automatically. Only one run per schedule per day.

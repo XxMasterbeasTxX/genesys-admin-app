@@ -585,6 +585,18 @@ export async function fetchAllDivisions(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/authorization/divisions", opts);
 }
 
+/** Fetch all authorization roles (for role picker and filtered export). */
+export async function fetchAllAuthorizationRoles(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/authorization/roles", opts);
+}
+
+/** Get authorization grants (roles) for a specific user. Returns grants[]. */
+export async function getUserGrants(api, orgId, userId) {
+  const resp = await api.proxyGenesys(orgId, "GET",
+    `/api/v2/authorization/subjects/${userId}`);
+  return resp.grants || [];
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Org Authorization — Trustees
 // ─────────────────────────────────────────────────────────────────────

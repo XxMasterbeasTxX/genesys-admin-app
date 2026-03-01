@@ -17,6 +17,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Last Login Export** — Export user login data with license information for a selected org. One row per user-license combination, optional inactivity filter, collapsible preview with per-column filters, styled Excel matching the Python tool. Supports per-org scheduled automation.
 - **All Groups Export** — Export all users (active, inactive, and deleted) with their group memberships for a selected org. One row per user-group combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool. Supports per-org scheduled automation.
 - **All Roles Export** — Export all users (active, inactive, and deleted) with their role assignments for a selected org. One row per user-role combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool. Supports per-org scheduled automation.
+- **Filtered on Role(s) Export** — Export active users filtered by one or more selected roles. One row per user with dynamic boolean columns (True/False) for each chosen role. Roles are loaded dynamically per org; the schedule form includes a role picker. Supports per-org scheduled automation with role selection stored in `exportConfig`.
 - **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, org selector for per-org exports, "All Scheduled Exports" overview.
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant)
 
@@ -635,6 +636,9 @@ After pushing the config update:
 | 29 | Scheduled export creation | Toggle automation on Trustee page; create daily/weekly/monthly schedule with recipients |
 | 30 | Last Login scheduled export creation | Toggle automation on Last Login page; org selector and inactivity filter shown in schedule form; schedule saved with exportConfig |
 | 31 | All Roles scheduled export creation | Toggle automation on All Roles page; org selector shown in schedule form; schedule saved with exportConfig |
+| 35 | Filtered on Role(s) Export | Select org; load roles; pick ≥1 role; export runs (active users only); collapsible preview; Excel with Name, Email, Division + boolean role columns; sheet "User Roles" |
+| 36 | Filtered on Role(s) email | Filtered on Role(s) export with email enabled sends attachment to recipients via Mailjet |
+| 37 | Filtered on Role(s) scheduled export | Toggle automation; role picker loads dynamically per org; schedule saved with exportConfig.roles; Config column shown in schedule list |
 | 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
 | 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
 | 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
@@ -862,6 +866,7 @@ genesys-admin-app/
 │   │   │   └── users/
 │   │   │       ├── allGroups.js     All Groups export + per-org automation
 │   │   │       ├── allRoles.js      All Roles export + per-org automation
+│   │   │       ├── filteredRoles.js  Filtered on Role(s) export + dynamic role picker
 │   │   │       ├── lastLogin.js      Last Login export + per-org automation
 │   │   │       └── trustee.js       Trustee access matrix export + automation
 │   │   └── phones/
@@ -903,6 +908,7 @@ genesys-admin-app/
 │       └── exports/
 │           ├── allGroups.js      Server-side All Groups export handler
 │           ├── allRoles.js       Server-side All Roles export handler
+│           ├── filteredRoles.js  Server-side Filtered on Role(s) export handler
 │           ├── lastLogin.js      Server-side Last Login export handler
 │           └── trustee.js        Server-side trustee export handler
 └── docs/

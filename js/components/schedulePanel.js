@@ -78,6 +78,7 @@ export function buildScheduleForm(opts) {
   const isEdit = !!s;
   const requiresOrg = opts.requiresOrg || false;
   const extraConfigFields = opts.extraConfigFields || [];
+  const dynamicOrgFields = opts.dynamicOrgFields || null;
 
   // Get org list and existing config
   const customers = requiresOrg ? orgContext.getCustomers() : [];
@@ -97,6 +98,10 @@ export function buildScheduleForm(opts) {
           ).join("")}
         </select>
       </div>` : "";
+
+  // Dynamic fields slot — populated asynchronously based on org selection
+  const dynamicFieldsSlotHtml = dynamicOrgFields ? `
+      <div class="sp-form-group sp-form-wide" id="spDynamicFieldsSlot" style="display:none"></div>` : "";
 
   // Build extra config fields HTML
   const extraFieldsHtml = extraConfigFields.map(f => `
@@ -193,6 +198,63 @@ export function buildScheduleForm(opts) {
     $dayMonthGrp.style.display = $type.value === "monthly" ? "" : "none";
   });
 
+  // ── Dynamic org fields (e.g. role multi-select) ─────────────────────
+  const $dofSlot = dynamicOrgFields ? form.querySelector("#spDynamicFieldsSlot") : null;
+  let dynamicLoading = false;
+  let dynamicLoaded = false;
+
+  async function loadDynamicFields(orgId, existingValues = {}) {
+    if (!dynamicOrgFields || !orgId || !$dofSlot) return;
+    $dofSlot.style.display = "";
+    $dofSlot.innerHTML = `<span class="sp-form-hint">Loading options…</span>`;
+    dynamicLoading = true;
+    dynamicLoaded = false;
+    try {
+      const fieldDefs = await dynamicOrgFields(orgId);
+      dynamicLoading = false;
+      dynamicLoaded = true;
+      $dofSlot.innerHTML = fieldDefs.map(f => {
+        const prevVals = existingValues[f.key] || [];
+        const boxes = f.options.map(o =>
+          `<label class="sp-checkbox-item"><input type="checkbox" data-dof-key="${escapeHtml(f.key)}" value="${escapeHtml(o)}"${prevVals.includes(o) ? " checked" : ""}> ${escapeHtml(o)}</label>`
+        ).join("");
+        return `
+          <div class="sp-dynamic-field">
+            <label class="sp-form-label">${escapeHtml(f.label)}</label>
+            <div class="sp-checkbox-controls">
+              <button type="button" class="btn btn-sm sp-chk-all" data-dof-key="${escapeHtml(f.key)}">All</button>
+              <button type="button" class="btn btn-sm sp-chk-none" data-dof-key="${escapeHtml(f.key)}">None</button>
+            </div>
+            <div class="sp-checkbox-scroll">${boxes}</div>
+          </div>`;
+      }).join("");
+      $dofSlot.querySelectorAll(".sp-chk-all").forEach(btn => {
+        btn.addEventListener("click", () =>
+          $dofSlot.querySelectorAll(`input[data-dof-key="${btn.dataset.dofKey}"]`)
+            .forEach(cb => { cb.checked = true; }));
+      });
+      $dofSlot.querySelectorAll(".sp-chk-none").forEach(btn => {
+        btn.addEventListener("click", () =>
+          $dofSlot.querySelectorAll(`input[data-dof-key="${btn.dataset.dofKey}"]`)
+            .forEach(cb => { cb.checked = false; }));
+      });
+    } catch (err) {
+      dynamicLoading = false;
+      $dofSlot.innerHTML = `<span class="sp-form-hint sp-form-hint--error">Failed to load: ${escapeHtml(err.message)}</span>`;
+    }
+  }
+
+  if (dynamicOrgFields && requiresOrg) {
+    const $orgSelDyn = form.querySelector("#spOrgSelect");
+    if ($orgSelDyn) {
+      $orgSelDyn.addEventListener("change", () => loadDynamicFields($orgSelDyn.value, {}));
+      // Auto-load in edit mode with pre-checked saved values
+      if (isEdit && existingConfig.orgId) {
+        loadDynamicFields(existingConfig.orgId, existingConfig);
+      }
+    }
+  }
+
   // ── Status helper ─────────────────────────────────────
   const $status = form.querySelector("#spFormStatus");
   function setFormStatus(msg, type) {
@@ -228,7 +290,19 @@ export function buildScheduleForm(opts) {
       }
       data.exportConfig = config;
     }
-
+      // Collect dynamic org field checkboxes (e.g. roles multi-select)
+      if ($dofSlot) {
+        const checkedByKey = {};
+        $dofSlot.querySelectorAll('input[type="checkbox"][data-dof-key]').forEach(cb => {
+          const k = cb.dataset.dofKey;
+          if (!checkedByKey[k]) checkedByKey[k] = [];
+          if (cb.checked) checkedByKey[k].push(cb.value);
+        });
+        if (Object.keys(checkedByKey).length > 0) {
+          if (!data.exportConfig) data.exportConfig = {};
+          Object.assign(data.exportConfig, checkedByKey);
+        }
+      }
     return data;
   }
 
@@ -236,6 +310,13 @@ export function buildScheduleForm(opts) {
   function validate(data) {
     if (requiresOrg && (!data.exportConfig || !data.exportConfig.orgId)) {
       return "Please select an organisation";
+    }
+    if (dynamicOrgFields) {
+      if (dynamicLoading) return "Options are still loading, please wait";
+      if (dynamicLoaded) {
+        const anyChecked = [...($dofSlot?.querySelectorAll('input[type="checkbox"][data-dof-key]') || [])].some(cb => cb.checked);
+        if (!anyChecked) return "Please select at least one option";
+      }
     }
     if (!data.scheduleTime) return "Time is required";
     if (!data.emailRecipients) return "At least one email recipient is required";
@@ -297,7 +378,7 @@ export function buildScheduleForm(opts) {
  * @param {Array}   [opts.extraConfigFields] Extra config fields for the form
  * @returns {HTMLElement}
  */
-export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, extraConfigFields }) {
+export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, extraConfigFields, dynamicOrgFields, configSummary }) {
   const el = document.createElement("div");
   el.className = "sp-section";
 
@@ -334,11 +415,13 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
     }
 
     const hasOrg = filtered.some(s => s.exportConfig?.orgName);
+    const hasConfig = !!configSummary && filtered.some(s => s.exportConfig);
 
     let html = `<table class="data-table sp-table">
       <thead><tr>
         <th>Schedule</th>
         ${hasOrg ? "<th>Organisation</th>" : ""}
+        ${hasConfig ? "<th>Config</th>" : ""}
         <th>Recipients</th>
         <th>Enabled</th>
         <th>Created by</th>
@@ -350,6 +433,7 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
       html += `<tr>
         <td>${escapeHtml(describeSchedule(s))}</td>
         ${hasOrg ? `<td>${escapeHtml(s.exportConfig?.orgName || "—")}</td>` : ""}
+        ${hasConfig ? `<td>${escapeHtml(configSummary(s.exportConfig || {}) || "—")}</td>` : ""}
         <td class="sp-cell-email">${escapeHtml(s.emailRecipients)}</td>
         <td>${s.enabled
           ? `<span class="sp-badge sp-badge--on">On</span>`
