@@ -1,33 +1,35 @@
 /**
- * Export › Users — Last Login
+ * Export › Users — All Groups
  *
- * Exports user login data with license information for the selected
- * Genesys Cloud org. Supports optional filtering by login inactivity.
+ * Exports all users (active, inactive, and deleted) with their group
+ * memberships for the selected org. One row per user-group combination.
+ * Users with no groups appear as a single row with an empty Group field.
+ * The same Index is shared across all group rows for the same user.
  *
  * Flow:
- *   1. Fetch all license assignments (GET /api/v2/license/users)
- *   2. Fetch all active users with division + dateLastLogin
- *   3. Optionally filter by months of inactivity
- *   4. Build one row per user-license combination
- *   5. Display as HTML table + downloadable Excel
+ *   1. Fetch all groups → build groupId → groupName lookup map
+ *   2. Fetch all users with expand=groups,team,dateLastLogin (state=any)
+ *   3. Build one row per user-group combination
+ *   4. Display as collapsible HTML table + downloadable Excel
  *
- * Matches the Python script: GUI_Users_Export_LastLogin.py
+ * Matches the Python script: GUI_Users_Export_All_Groups.py
  */
 import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
-import { sendEmail, validateRecipients } from "../../../services/emailService.js";
+import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
 
 // ── Automation ──────────────────────────────────────────
 const AUTOMATION_ENABLED = true;
-const AUTOMATION_EXPORT_TYPE = "lastLogin";
-const AUTOMATION_EXPORT_LABEL = "Users Last Login";
+const AUTOMATION_EXPORT_TYPE = "allGroups";
+const AUTOMATION_EXPORT_LABEL = "Users All Groups";
 
 // ── Columns (matching Python) ───────────────────────────
-const HEADERS = ["Index", "Name", "Email", "Division", "Date Last Login", "License"];
+// Note: Python uses "eMail" and "LastLogin" (not "Email" / "Date Last Login")
+const HEADERS = ["Index", "Name", "eMail", "Division", "Active", "LastLogin", "WorkTeam", "Group"];
 
-/** Format a dateLastLogin value. */
+/** Format a dateLastLogin value to Danish locale. */
 function formatLastLogin(dateStr) {
   if (!dateStr) return "Never";
   try {
@@ -42,60 +44,60 @@ function formatLastLogin(dateStr) {
 }
 
 /**
- * Build rows: one row per user-license combination.
- * Users with multiple licenses → multiple rows.
- * Users with no licenses → one row with empty license.
+ * Build rows: one row per user-group combination.
+ * Users with multiple groups → multiple rows with the same Index.
+ * Users with no groups → one row with an empty Group field.
  */
-function buildRows(users, licenseMap) {
+function buildRows(users, groupMap) {
   const rows = [];
-  for (const user of users) {
-    const name = user.name || "N/A";
-    const email = user.email || "N/A";
-    const division = user.division?.name || "Unknown";
-    const lastLogin = formatLastLogin(user.dateLastLogin);
+  let userIndex = 1;
 
-    const licenses = licenseMap.get(user.id);
-    if (licenses && licenses.length > 0) {
-      for (const lic of licenses.sort()) {
-        rows.push({ name, email, division, lastLogin, license: lic });
+  for (const user of users) {
+    const name      = user.name  || "n/a";
+    const email     = user.email || "n/a";
+    const division  = user.division?.name || "n/a";
+    const active    = user.state || "n/a";
+    const lastLogin = formatLastLogin(user.dateLastLogin);
+    const workTeam  = user.team?.name || "";
+
+    // Groups: user.groups[] contains {id} objects — look up names in groupMap
+    const groupNames = [];
+    if (user.groups?.length) {
+      for (const g of user.groups) {
+        const name = groupMap.get(g.id);
+        if (name) groupNames.push(name);
+      }
+    }
+
+    if (groupNames.length > 0) {
+      for (const group of groupNames) {
+        rows.push({ index: userIndex, name, email, division, active, lastLogin, workTeam, group });
       }
     } else {
-      rows.push({ name, email, division, lastLogin, license: "" });
+      rows.push({ index: userIndex, name, email, division, active, lastLogin, workTeam, group: "" });
     }
+
+    userIndex++;
   }
+
   return rows;
 }
 
 /**
- * Optionally filter users by inactivity period.
- * If filterMonths <= 0, returns all users.
- * If filterMonths > 0, only users who haven't logged in for X months (or never).
- */
-function filterByInactivity(users, filterMonths) {
-  if (!filterMonths || filterMonths <= 0) return users;
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - filterMonths);
-  return users.filter(u => {
-    if (!u.dateLastLogin) return true; // never logged in
-    const d = new Date(u.dateLastLogin);
-    return d < cutoff;
-  });
-}
-
-/**
  * Build styled Excel workbook matching Python formatting.
+ * Sheet name: "Users Groups Export"
  */
 function buildWorkbook(rows) {
   const wsData = [HEADERS];
-  rows.forEach((r, i) => {
-    wsData.push([i + 1, r.name, r.email, r.division, r.lastLogin, r.license]);
-  });
-  return buildStyledWorkbook(wsData, "Users Last Login Export");
+  for (const r of rows) {
+    wsData.push([r.index, r.name, r.email, r.division, r.active, r.lastLogin, r.workTeam, r.group]);
+  }
+  return buildStyledWorkbook(wsData, "Users Groups Export");
 }
 
 // ── Page renderer ───────────────────────────────────────────────────
 
-export default function renderLastLoginExport({ route, me, api, orgContext }) {
+export default function renderAllGroupsExport({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -103,55 +105,49 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
   let cancelled = false;
 
   el.innerHTML = `
-    <h1 class="h1">Export — Users — Last Login</h1>
+    <h1 class="h1">Export — Users — All Groups</h1>
     <hr class="hr">
     <p class="page-desc">
-      Exports user login data with license information for the selected org.
-      One row per user-license combination. Optionally filter to only show
-      users inactive for a given number of months.
+      Exports all users (active, inactive, and deleted) with their group
+      memberships for the selected org. One row per user-group combination.
+      Users with no groups appear as a single row with an empty Group field.
     </p>
 
     <div class="te-actions">
-      <div class="ll-filter-group">
-        <label for="llFilterMonths">Filter inactive (months):</label>
-        <input type="number" id="llFilterMonths" class="sp-form-input ll-filter-input"
-               min="0" value="0" placeholder="0 = no filter">
-        <span class="sp-form-hint">0 = show all users</span>
-      </div>
-      <button class="btn te-btn-export" id="llExportBtn">Export Last Login</button>
-      <button class="btn te-btn-cancel" id="llCancelBtn" style="display:none">Cancel</button>
+      <button class="btn te-btn-export" id="agExportBtn">Export All Groups</button>
+      <button class="btn te-btn-cancel" id="agCancelBtn" style="display:none">Cancel</button>
     </div>
 
-    <div class="te-status" id="llStatus"></div>
+    <div class="te-status" id="agStatus"></div>
 
-    <div class="te-progress-wrap" id="llProgressWrap" style="display:none">
-      <div class="te-progress-bar" id="llProgressBar"></div>
+    <div class="te-progress-wrap" id="agProgressWrap" style="display:none">
+      <div class="te-progress-bar" id="agProgressBar"></div>
     </div>
 
-    <div id="llTableWrap" style="display:none"></div>
+    <div id="agTableWrap" style="display:none"></div>
 
-    <div class="wc-summary" id="llSummary" style="display:none"></div>
+    <div class="wc-summary" id="agSummary" style="display:none"></div>
 
-    <div id="llDownload" style="display:none">
-      <button class="btn te-btn-export" id="llDownloadBtn">Download Excel</button>
+    <div id="agDownload" style="display:none">
+      <button class="btn te-btn-export" id="agDownloadBtn">Download Excel</button>
     </div>
 
     <div class="em-section">
       <label class="em-toggle">
-        <input type="checkbox" id="llEmailChk">
+        <input type="checkbox" id="agEmailChk">
         <span>Send email with export</span>
       </label>
 
-      <div class="em-fields" id="llEmailFields" style="display:none">
+      <div class="em-fields" id="agEmailFields" style="display:none">
         <div class="em-field">
-          <label class="em-label" for="llEmailTo">Recipients</label>
-          <input type="text" class="em-input" id="llEmailTo"
+          <label class="em-label" for="agEmailTo">Recipients</label>
+          <input type="text" class="em-input" id="agEmailTo"
                  placeholder="user@example.com, user2@example.com">
           <span class="em-hint">Separate multiple addresses with , or ;</span>
         </div>
         <div class="em-field">
-          <label class="em-label" for="llEmailBody">Message (optional)</label>
-          <textarea class="em-textarea" id="llEmailBody" rows="3"
+          <label class="em-label" for="agEmailBody">Message (optional)</label>
+          <textarea class="em-textarea" id="agEmailBody" rows="3"
                     placeholder="Leave empty for default message"></textarea>
         </div>
       </div>
@@ -165,36 +161,24 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
       exportLabel: AUTOMATION_EXPORT_LABEL,
       me,
       requiresOrg: true,
-      extraConfigFields: [
-        {
-          key: "filterMonths",
-          label: "Inactive months filter",
-          type: "number",
-          min: 0,
-          default: 0,
-          placeholder: "0 = no filter",
-          hint: "0 = export all users",
-        },
-      ],
     });
     el.appendChild(schedulePanel);
   }
 
   // ── References ────────────────────────────────────────
-  const $btn      = el.querySelector("#llExportBtn");
-  const $cancel   = el.querySelector("#llCancelBtn");
-  const $status   = el.querySelector("#llStatus");
-  const $progWrap = el.querySelector("#llProgressWrap");
-  const $progBar  = el.querySelector("#llProgressBar");
-  const $table    = el.querySelector("#llTableWrap");
-  const $summary  = el.querySelector("#llSummary");
-  const $dlWrap   = el.querySelector("#llDownload");
-  const $dlBtn    = el.querySelector("#llDownloadBtn");
-  const $emailChk = el.querySelector("#llEmailChk");
-  const $emailFld = el.querySelector("#llEmailFields");
-  const $emailTo  = el.querySelector("#llEmailTo");
-  const $emailBody = el.querySelector("#llEmailBody");
-  const $filterIn = el.querySelector("#llFilterMonths");
+  const $btn       = el.querySelector("#agExportBtn");
+  const $cancel    = el.querySelector("#agCancelBtn");
+  const $status    = el.querySelector("#agStatus");
+  const $progWrap  = el.querySelector("#agProgressWrap");
+  const $progBar   = el.querySelector("#agProgressBar");
+  const $table     = el.querySelector("#agTableWrap");
+  const $summary   = el.querySelector("#agSummary");
+  const $dlWrap    = el.querySelector("#agDownload");
+  const $dlBtn     = el.querySelector("#agDownloadBtn");
+  const $emailChk  = el.querySelector("#agEmailChk");
+  const $emailFld  = el.querySelector("#agEmailFields");
+  const $emailTo   = el.querySelector("#agEmailTo");
+  const $emailBody = el.querySelector("#agEmailBody");
 
   let lastWorkbook = null;
   let lastFilename = null;
@@ -224,60 +208,46 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
     setStatus("Starting export…");
     setProgress(0);
 
-    const filterMonths = parseInt($filterIn.value, 10) || 0;
-
     try {
-      // Phase 1: Fetch license data (0–33%)
-      setStatus("Fetching license data…");
+      // Phase 1: Fetch all groups to build ID → name map (0–15%)
+      setStatus("Fetching groups…");
       setProgress(5);
-      const licenseUsers = await gc.fetchAllLicenseUsers(api, org.id, {
-        onProgress: (n) => setProgress(5 + Math.min((n / 500) * 28, 28)),
-      });
+      const allGroups = await gc.fetchAllPages(api, org.id, "/api/v2/groups");
       if (cancelled) return;
+      const groupMap = new Map(allGroups.map(g => [g.id, g.name]));
+      setProgress(15);
 
-      // Build license map: userId → [licenseNames]
-      const licenseMap = new Map();
-      for (const lu of licenseUsers) {
-        licenseMap.set(lu.id, lu.licenses || []);
-      }
-      setProgress(33);
-
-      // Phase 2: Fetch user data (34–66%)
-      setStatus("Fetching user data…");
+      // Phase 2: Fetch all users with groups + team + dateLastLogin (16–75%)
+      setStatus("Fetching users and group memberships…");
       const allUsers = await gc.fetchAllUsers(api, org.id, {
-        expand: ["division", "dateLastLogin"],
-        state: "active",
-        onProgress: (n) => setProgress(34 + Math.min((n / 500) * 32, 32)),
+        expand: ["groups", "team", "dateLastLogin"],
+        state: "any",
+        onProgress: (n) => setProgress(16 + Math.min((n / 500) * 59, 59)),
       });
       if (cancelled) return;
-      setProgress(66);
-
-      // Phase 3: Filter (67–75%)
-      setStatus("Processing data…");
-      const filtered = filterByInactivity(allUsers, filterMonths);
       setProgress(75);
 
-      // Phase 4: Build rows + Excel (76–100%)
-      setStatus("Building Excel…");
-      const rows = buildRows(filtered, licenseMap);
+      // Phase 3: Build rows (76–85%)
+      setStatus("Processing group memberships…");
+      const rows = buildRows(allUsers, groupMap);
       setProgress(85);
 
+      // Phase 4: Build Excel (86–100%)
+      setStatus("Building Excel…");
       const wb = buildWorkbook(rows);
       setProgress(95);
 
-      const fname = timestampedFilename(`LastLogin_${org.name.replace(/\s+/g, "_")}`, "xlsx");
+      const fname = timestampedFilename(`AllGroups_${org.name.replace(/\s+/g, "_")}`, "xlsx");
       lastWorkbook = wb;
       lastFilename = fname;
 
-      // Show preview table
+      // Show preview table (collapsed by default)
       renderPreviewTable(rows);
       $table.style.display = "";
 
       // Summary
       const uniqueUsers = new Set(rows.map(r => r.email)).size;
-      $summary.textContent =
-        `${uniqueUsers} users, ${rows.length} rows (incl. license duplicates)` +
-        (filterMonths > 0 ? ` — filtered: inactive ≥ ${filterMonths} months` : "");
+      $summary.textContent = `${uniqueUsers} users, ${rows.length} rows (incl. group duplicates)`;
       $summary.style.display = "";
 
       // Download button
@@ -285,7 +255,7 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
 
       setProgress(100);
 
-      // 6. Send email if enabled
+      // Send email if enabled
       if ($emailChk.checked && $emailTo.value.trim()) {
         setStatus("Sending email…");
         try {
@@ -294,7 +264,7 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
 
           const result = await sendEmail(api, {
             recipients: $emailTo.value,
-            subject: `Last Login Export — ${org.name} — ${new Date().toISOString().replace("T", " ").slice(0, 19)}`,
+            subject: `All Groups Export — ${org.name} — ${new Date().toISOString().replace("T", " ").slice(0, 19)}`,
             body: $emailBody.value,
             attachment: {
               filename: fname,
@@ -353,7 +323,7 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
 
   // ── Preview table with column filters ──────────────────
   function renderPreviewTable(rows) {
-    const KEYS = ["index", "name", "email", "division", "lastLogin", "license"];
+    const KEYS = ["index", "name", "email", "division", "active", "lastLogin", "workTeam", "group"];
 
     let html = `<details class="te-details">`;
     html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${rows.length} rows</span></summary>`;
@@ -362,23 +332,25 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
     html += `</tr><tr class="ll-filter-row">`;
     KEYS.forEach((k, i) => {
       if (i === 0) {
-        html += `<th></th>`; // no filter for index
+        html += `<th></th>`; // no filter for Index column
       } else {
         html += `<th><input type="text" class="ll-col-filter" data-col="${i}" placeholder="Filter…"></th>`;
       }
     });
     html += `</tr></thead><tbody>`;
 
-    rows.forEach((r, i) => {
+    for (const r of rows) {
       html += `<tr>
-        <td>${i + 1}</td>
+        <td>${r.index}</td>
         <td>${escapeHtml(r.name)}</td>
         <td>${escapeHtml(r.email)}</td>
         <td>${escapeHtml(r.division)}</td>
+        <td>${escapeHtml(r.active)}</td>
         <td>${escapeHtml(r.lastLogin)}</td>
-        <td>${escapeHtml(r.license)}</td>
+        <td>${escapeHtml(r.workTeam)}</td>
+        <td>${escapeHtml(r.group)}</td>
       </tr>`;
-    });
+    }
 
     html += `</tbody></table></div>`;
     html += `</details>`;
@@ -408,7 +380,6 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
         if (match) visible++;
       });
 
-      // Update count in summary
       const countEl = $table.querySelector(".te-user-count");
       if (countEl) {
         const total = allRows.length;

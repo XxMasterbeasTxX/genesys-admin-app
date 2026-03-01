@@ -47,6 +47,7 @@ export const NAV_TREE = [
         path: "users",
         enabled: true,
         children: [
+          { label: "All Groups", path: "all-groups", enabled: true },
           { label: "All Roles", path: "all-roles", enabled: true },
           { label: "Last Login", path: "last-login", enabled: true },
           { label: "Trustee", path: "trustee", enabled: true },

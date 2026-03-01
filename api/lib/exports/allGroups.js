@@ -1,7 +1,7 @@
 /**
- * Server-side Users All Roles export.
+ * Server-side Users All Groups export.
  *
- * Mirrors the browser-side logic in js/pages/export/users/allRoles.js
+ * Mirrors the browser-side logic in js/pages/export/users/allGroups.js
  * but runs headless via client credentials — no browser required.
  *
  * Requires `schedule.exportConfig.orgId` to specify which org to export.
@@ -14,7 +14,8 @@ const { getGenesysToken } = require("../genesysAuth");
 const XLSX = require("xlsx-js-style");
 const { buildStyledWorkbook } = require("../excelStyles");
 
-const HEADERS = ["Index", "Name", "Email", "Division", "Active", "Date Last Login", "Role"];
+// Note: Python uses "eMail" and "LastLogin" (not "Email" / "Date Last Login")
+const HEADERS = ["Index", "Name", "eMail", "Division", "Active", "LastLogin", "WorkTeam", "Group"];
 
 // ── Helpers ─────────────────────────────────────────────
 
@@ -101,42 +102,50 @@ async function execute(context, schedule) {
     return { success: false, error: `Unknown org: ${orgId}` };
   }
 
-  context.log(`All Roles export for ${customer.name} (${orgId})`);
+  context.log(`All Groups export for ${customer.name} (${orgId})`);
 
   try {
-    // Fetch all users with authorization + dateLastLogin (state=any includes inactive/deleted)
-    context.log("Fetching all users with role assignments…");
+    // Phase 1: Fetch all groups to build ID → name lookup map
+    context.log("Phase 1: Fetching all groups…");
+    const allGroupsRaw = await genesysGetAllPages(orgId, "/api/v2/groups", 500);
+    const groupMap = new Map(allGroupsRaw.map(g => [g.id, g.name]));
+    context.log(`Fetched ${allGroupsRaw.length} groups`);
+
+    // Phase 2: Fetch all users with groups + team + dateLastLogin (state=any)
+    context.log("Phase 2: Fetching all users with group memberships…");
     const allUsers = await genesysGetAllPages(
       orgId,
-      "/api/v2/users?state=any&expand=authorization,dateLastLogin",
+      "/api/v2/users?state=any&expand=groups,team,dateLastLogin",
       500
     );
     context.log(`Fetched ${allUsers.length} users`);
 
-    // Build rows: one per user-role combination
+    // Phase 3: Build rows — one per user-group combination
     const rows = [];
     let userIndex = 1;
 
     for (const user of allUsers) {
-      const name      = user.name || "N/A";
-      const email     = user.email || "N/A";
-      const division  = user.division?.name || "N/A";
-      const active    = user.state || "N/A";
+      const name      = user.name  || "n/a";
+      const email     = user.email || "n/a";
+      const division  = user.division?.name || "n/a";
+      const active    = user.state || "n/a";
       const lastLogin = formatLastLogin(user.dateLastLogin);
+      const workTeam  = user.team?.name || "";
 
-      const roleNames = [];
-      if (user.authorization?.roles?.length) {
-        for (const role of user.authorization.roles) {
-          if (role.name) roleNames.push(role.name);
+      const groupNames = [];
+      if (user.groups?.length) {
+        for (const g of user.groups) {
+          const gName = groupMap.get(g.id);
+          if (gName) groupNames.push(gName);
         }
       }
 
-      if (roleNames.length > 0) {
-        for (const role of roleNames) {
-          rows.push({ index: userIndex, name, email, division, active, lastLogin, role });
+      if (groupNames.length > 0) {
+        for (const group of groupNames) {
+          rows.push({ index: userIndex, name, email, division, active, lastLogin, workTeam, group });
         }
       } else {
-        rows.push({ index: userIndex, name, email, division, active, lastLogin, role: "" });
+        rows.push({ index: userIndex, name, email, division, active, lastLogin, workTeam, group: "" });
       }
 
       userIndex++;
@@ -144,17 +153,17 @@ async function execute(context, schedule) {
 
     context.log(`Built ${rows.length} rows from ${allUsers.length} users`);
 
-    // Build Excel workbook
+    // Phase 4: Build Excel
     const wsData = [HEADERS];
     for (const r of rows) {
-      wsData.push([r.index, r.name, r.email, r.division, r.active, r.lastLogin, r.role]);
+      wsData.push([r.index, r.name, r.email, r.division, r.active, r.lastLogin, r.workTeam, r.group]);
     }
-    const wb = buildStyledWorkbook(wsData, "Users Roles Export");
+    const wb = buildStyledWorkbook(wsData, "Users Groups Export");
 
     // Convert to base64
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
     const base64 = Buffer.from(buf).toString("base64");
-    const filename = timestampedFilename(`AllRoles_${customer.name.replace(/\s+/g, "_")}`, "xlsx");
+    const filename = timestampedFilename(`AllGroups_${customer.name.replace(/\s+/g, "_")}`, "xlsx");
 
     const uniqueUsers = new Set(rows.map((r) => r.email)).size;
     const summary = `${customer.name}: ${uniqueUsers} users, ${rows.length} rows`;
@@ -167,7 +176,7 @@ async function execute(context, schedule) {
       summary,
     };
   } catch (err) {
-    context.log.error(`All Roles export error: ${err.message}`);
+    context.log.error(`All Groups export error: ${err.message}`);
     return { success: false, error: err.message };
   }
 }

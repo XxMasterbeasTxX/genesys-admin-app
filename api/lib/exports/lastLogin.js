@@ -13,41 +13,7 @@
 const customers = require("../customers.json");
 const { getGenesysToken } = require("../genesysAuth");
 const XLSX = require("xlsx-js-style");
-
-// ── Excel style constants (matching Python formatting) ──────────────
-const STYLE_HEADER = {
-  fill:      { fgColor: { rgb: "366092" } },
-  font:      { bold: true, sz: 11, color: { rgb: "FFFFFF" }, name: "Calibri" },
-  alignment: { horizontal: "center", vertical: "center" },
-  border:    {
-    top:    { style: "thin", color: { rgb: "D3D3D3" } },
-    bottom: { style: "thin", color: { rgb: "D3D3D3" } },
-    left:   { style: "thin", color: { rgb: "D3D3D3" } },
-    right:  { style: "thin", color: { rgb: "D3D3D3" } },
-  },
-};
-
-const STYLE_ROW_EVEN = {
-  fill:      { fgColor: { rgb: "F2F2F2" } },
-  alignment: { horizontal: "left", vertical: "center" },
-  border:    {
-    top:    { style: "thin", color: { rgb: "D3D3D3" } },
-    bottom: { style: "thin", color: { rgb: "D3D3D3" } },
-    left:   { style: "thin", color: { rgb: "D3D3D3" } },
-    right:  { style: "thin", color: { rgb: "D3D3D3" } },
-  },
-};
-
-const STYLE_ROW_ODD = {
-  fill:      { fgColor: { rgb: "FFFFFF" } },
-  alignment: { horizontal: "left", vertical: "center" },
-  border:    {
-    top:    { style: "thin", color: { rgb: "D3D3D3" } },
-    bottom: { style: "thin", color: { rgb: "D3D3D3" } },
-    left:   { style: "thin", color: { rgb: "D3D3D3" } },
-    right:  { style: "thin", color: { rgb: "D3D3D3" } },
-  },
-};
+const { buildStyledWorkbook } = require("../excelStyles");
 
 const HEADERS = ["Index", "Name", "Email", "Division", "Date Last Login", "License"];
 
@@ -192,43 +158,11 @@ async function execute(context, schedule) {
     context.log(`Built ${rows.length} rows from ${filtered.length} users`);
 
     // Phase 5: Build Excel
-    const wb = XLSX.utils.book_new();
     const wsData = [HEADERS];
     rows.forEach((r, i) => {
       wsData.push([i + 1, r.name, r.email, r.division, r.lastLogin, r.license]);
     });
-
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-    // Header styles
-    for (let c = 0; c < HEADERS.length; c++) {
-      const addr = XLSX.utils.encode_cell({ r: 0, c });
-      if (ws[addr]) ws[addr].s = STYLE_HEADER;
-    }
-
-    // Data styles: alternating rows
-    for (let r = 0; r < rows.length; r++) {
-      const style = (r + 1) % 2 === 0 ? STYLE_ROW_EVEN : STYLE_ROW_ODD;
-      for (let c = 0; c < HEADERS.length; c++) {
-        const addr = XLSX.utils.encode_cell({ r: r + 1, c });
-        if (ws[addr]) ws[addr].s = style;
-      }
-    }
-
-    // Column widths
-    const colWidths = HEADERS.map((h, i) => {
-      let maxLen = h.length;
-      for (const row of wsData.slice(1)) {
-        const val = String(row[i] ?? "");
-        if (val.length > maxLen) maxLen = val.length;
-      }
-      return { wch: Math.min(maxLen + 2, 50) };
-    });
-    ws["!cols"] = colWidths;
-    ws["!views"] = [{ state: "frozen", ySplit: 1 }];
-    ws["!autofilter"] = { ref: ws["!ref"] };
-
-    XLSX.utils.book_append_sheet(wb, ws, "Users Last Login Export");
+    const wb = buildStyledWorkbook(wsData, "Users Last Login Export");
 
     // Convert to base64
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "buffer" });

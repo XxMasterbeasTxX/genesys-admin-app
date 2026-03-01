@@ -17,46 +17,12 @@ import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
+import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
 
 // ── Automation ──────────────────────────────────────────
 const AUTOMATION_ENABLED = true;
 const AUTOMATION_EXPORT_TYPE = "allRoles";
 const AUTOMATION_EXPORT_LABEL = "Users All Roles";
-
-// ── Excel style constants (matching Python openpyxl formatting) ─────
-const STYLE_HEADER = {
-  fill:      { fgColor: { rgb: "366092" } },
-  font:      { bold: true, sz: 11, color: { rgb: "FFFFFF" }, name: "Calibri" },
-  alignment: { horizontal: "center", vertical: "center" },
-  border: {
-    top:    { style: "thin", color: { rgb: "D3D3D3" } },
-    bottom: { style: "thin", color: { rgb: "D3D3D3" } },
-    left:   { style: "thin", color: { rgb: "D3D3D3" } },
-    right:  { style: "thin", color: { rgb: "D3D3D3" } },
-  },
-};
-
-const STYLE_ROW_EVEN = {
-  fill:      { fgColor: { rgb: "F2F2F2" } },
-  alignment: { horizontal: "left", vertical: "center" },
-  border: {
-    top:    { style: "thin", color: { rgb: "D3D3D3" } },
-    bottom: { style: "thin", color: { rgb: "D3D3D3" } },
-    left:   { style: "thin", color: { rgb: "D3D3D3" } },
-    right:  { style: "thin", color: { rgb: "D3D3D3" } },
-  },
-};
-
-const STYLE_ROW_ODD = {
-  fill:      { fgColor: { rgb: "FFFFFF" } },
-  alignment: { horizontal: "left", vertical: "center" },
-  border: {
-    top:    { style: "thin", color: { rgb: "D3D3D3" } },
-    bottom: { style: "thin", color: { rgb: "D3D3D3" } },
-    left:   { style: "thin", color: { rgb: "D3D3D3" } },
-    right:  { style: "thin", color: { rgb: "D3D3D3" } },
-  },
-};
 
 // ── Columns (matching Python) ───────────────────────────
 const HEADERS = ["Index", "Name", "Email", "Division", "Active", "Date Last Login", "Role"];
@@ -117,50 +83,11 @@ function buildRows(users) {
  * Sheet name: "Users Roles Export"
  */
 function buildWorkbook(rows) {
-  const XLSX = window.XLSX;
-  const wb = XLSX.utils.book_new();
-
   const wsData = [HEADERS];
   for (const r of rows) {
     wsData.push([r.index, r.name, r.email, r.division, r.active, r.lastLogin, r.role]);
   }
-
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-  // Header styles
-  for (let c = 0; c < HEADERS.length; c++) {
-    const addr = XLSX.utils.encode_cell({ r: 0, c });
-    if (ws[addr]) ws[addr].s = STYLE_HEADER;
-  }
-
-  // Data styles: alternating rows
-  for (let r = 0; r < rows.length; r++) {
-    const style = (r + 1) % 2 === 0 ? STYLE_ROW_EVEN : STYLE_ROW_ODD;
-    for (let c = 0; c < HEADERS.length; c++) {
-      const addr = XLSX.utils.encode_cell({ r: r + 1, c });
-      if (ws[addr]) ws[addr].s = style;
-    }
-  }
-
-  // Auto-adjust column widths (max 50, padding +2)
-  const colWidths = HEADERS.map((h, i) => {
-    let maxLen = h.length;
-    for (const row of wsData.slice(1)) {
-      const val = String(row[i] ?? "");
-      if (val.length > maxLen) maxLen = val.length;
-    }
-    return { wch: Math.min(maxLen + 2, 50) };
-  });
-  ws["!cols"] = colWidths;
-
-  // Freeze header row
-  ws["!views"] = [{ state: "frozen", ySplit: 1 }];
-
-  // Auto-filter
-  ws["!autofilter"] = { ref: ws["!ref"] };
-
-  XLSX.utils.book_append_sheet(wb, ws, "Users Roles Export");
-  return wb;
+  return buildStyledWorkbook(wsData, "Users Roles Export");
 }
 
 // ── Page renderer ───────────────────────────────────────────────────
