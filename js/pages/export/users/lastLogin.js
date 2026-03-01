@@ -375,16 +375,14 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
   $dlBtn.addEventListener("click", () => {
     if (!lastWorkbook) return;
     const XLSX = window.XLSX;
-    const wbout = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([wbout], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = lastFilename;
-    a.click();
-    URL.revokeObjectURL(url);
+    const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
+    const helperUrl = new URL("download.html", document.baseURI);
+    helperUrl.hash = encodeURIComponent(lastFilename) + "|" + b64;
+
+    const popup = window.open(helperUrl.href, "_blank");
+    if (!popup) {
+      setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
+    }
   });
 
   // ── Email toggle ──────────────────────────────────────
