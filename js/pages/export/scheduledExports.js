@@ -85,7 +85,7 @@ export default function renderScheduledExports({ route, me }) {
           : `<span class="sp-badge sp-badge--off">Off</span>`}</td>
         <td>${escapeHtml(s.createdByName || s.createdBy)}</td>
         <td>${s.lastRun
-          ? `<span class="${s.lastStatus === "success" ? "se-ok" : "se-fail"}">${escapeHtml(s.lastRun.replace("T", " ").slice(0, 19))}</span>`
+          ? `<span class="${s.lastStatus === "success" ? "se-ok" : "se-fail"}">${escapeHtml(new Date(s.lastRun).toLocaleString("da-DK", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }))}</span>`
           : `<span class="se-none">Never</span>`}</td>
         <td>${editable
           ? `<button class="btn btn-sm sp-btn-edit" data-id="${s.id}">Edit</button>`
