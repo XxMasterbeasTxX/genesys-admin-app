@@ -118,6 +118,7 @@ export function buildScheduleForm(opts) {
     <h4 class="sp-form-title">${isEdit ? "Edit Schedule" : "New Schedule"}</h4>
     <div class="sp-form-grid">
       ${orgSelectorHtml}
+      ${dynamicFieldsSlotHtml}
       ${extraFieldsHtml}
       <div class="sp-form-group">
         <label class="sp-form-label" for="spSchedType">Schedule</label>
