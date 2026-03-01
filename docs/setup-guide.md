@@ -14,7 +14,8 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **WebRTC Phones — Create** — Bulk-create WebRTC phones for all licensed users in a site, with Excel log export
 - **WebRTC Phones — Change Site** — Move selected WebRTC phones from one site to another using a searchable multi-select picker, with progress tracking and Excel log export
 - **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets and styled formatting
-- **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, "All Scheduled Exports" overview.
+- **Last Login Export** — Export user login data with license information for a selected org. One row per user-license combination, optional inactivity filter, collapsible preview with per-column filters, styled Excel matching the Python tool. Supports per-org scheduled automation.
+- **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, org selector for per-org exports, "All Scheduled Exports" overview.
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant)
 
 ---
@@ -622,11 +623,14 @@ After pushing the config update:
 | 19 | WebRTC Phones — Change Site | From/To site selectors; Load Phones; searchable multi-select; Move runs; Excel download works |
 | 20 | Trustee Export | Export button scans all orgs; progress bar; matrix table displays; Excel download with styled formatting and per-trustee sheets |
 | 21 | Email notification | Trustee export with email enabled sends attachment to recipients via Mailjet |
-| 22 | Scheduled export creation | Toggle automation on Trustee page; create daily/weekly/monthly schedule with recipients |
-| 23 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; edit/delete restricted to owner + admin |
-| 24 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
-| 25 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
-| 26 | Theme adapts | Dark/light matches OS setting |
+| 22 | Last Login Export | Select org; export runs; collapsible preview table with column filters; Excel download with styled formatting |
+| 23 | Last Login email | Last Login export with email enabled sends attachment to recipients via Mailjet |
+| 24 | Scheduled export creation | Toggle automation on Trustee page; create daily/weekly/monthly schedule with recipients |
+| 25 | Last Login scheduled export creation | Toggle automation on Last Login page; org selector and inactivity filter shown in schedule form; schedule saved with exportConfig |
+| 26 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
+| 27 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
+| 28 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
+| 29 | Theme adapts | Dark/light matches OS setting |
 
 ---
 
@@ -848,6 +852,7 @@ genesys-admin-app/
 │   │   ├── export/
 │   │   │   ├── scheduledExports.js   All Scheduled Exports overview
 │   │   │   └── users/
+│   │   │       ├── lastLogin.js      Last Login export + per-org automation
 │   │   │       └── trustee.js       Trustee access matrix export + automation
 │   │   └── phones/
 │   │       └── webrtc/
@@ -886,6 +891,7 @@ genesys-admin-app/
 │       ├── scheduleStore.js      Azure Table Storage CRUD for schedules
 │       ├── exportHandlers.js     Export type → handler registry
 │       └── exports/
+│           ├── lastLogin.js      Server-side Last Login export handler
 │           └── trustee.js        Server-side trustee export handler
 └── docs/
     ├── setup-guide.md            This file
