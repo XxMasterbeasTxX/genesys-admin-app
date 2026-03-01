@@ -22,8 +22,8 @@
  *   POST /api/v2/integrations/actions             — create published action
  *   POST /api/v2/integrations/actions/drafts      — create action as draft
  */
-import { escapeHtml } from "../../../utils.js";
-import * as gc from "../../../services/genesysApi.js";
+import { escapeHtml } from "../../utils.js";
+import * as gc from "../../services/genesysApi.js";
 
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {

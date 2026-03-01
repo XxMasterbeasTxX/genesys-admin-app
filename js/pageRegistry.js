@@ -14,23 +14,23 @@ import { renderPlaceholder } from "./pages/placeholder.js";
 const registry = {
   // ── Data Actions ──────────────────────────────────────
   "/dataactions/copy-between": (ctx) =>
-    import("./pages/actions/dataactions/copyBetweenOrgs.js").then((m) => m.default(ctx)),
+    import("./pages/dataactions/copyBetweenOrgs.js").then((m) => m.default(ctx)),
   "/dataactions/edit": (ctx) =>
-    import("./pages/actions/dataactions/edit.js").then((m) => m.default(ctx)),
+    import("./pages/dataactions/edit.js").then((m) => m.default(ctx)),
 
   // ── Data Tables ───────────────────────────────────────
   "/datatables/copy-between": (ctx) =>
-    import("./pages/actions/datatables/copyBetweenOrgs.js").then((m) => m.default(ctx)),
+    import("./pages/datatables/copyBetweenOrgs.js").then((m) => m.default(ctx)),
   "/datatables/copy-single": (ctx) =>
-    import("./pages/actions/datatables/copySingleOrg.js").then((m) => m.default(ctx)),
+    import("./pages/datatables/copySingleOrg.js").then((m) => m.default(ctx)),
 
   // ── Interactions ─────────────────────────────────────
   "/interactions/search": (ctx) =>
-    import("./pages/actions/interactionSearch.js").then((m) => m.default(ctx)),
+    import("./pages/interactions/search.js").then((m) => m.default(ctx)),
   "/interactions/move": (ctx) =>
-    import("./pages/actions/moveInteractions.js").then((m) => m.default(ctx)),
+    import("./pages/interactions/move.js").then((m) => m.default(ctx)),
   "/interactions/disconnect": (ctx) =>
-    import("./pages/actions/disconnectInteractions.js").then((m) => m.default(ctx)),
+    import("./pages/interactions/disconnect.js").then((m) => m.default(ctx)),
 
   // ── Export ─────────────────────────────────────────
   "/export/users/trustee": (ctx) =>
@@ -38,9 +38,9 @@ const registry = {
 
   // ── Phones ─────────────────────────────────────────
   "/phones/webrtc/change-site": (ctx) =>
-    import("./pages/actions/phones/changeSite.js").then((m) => m.default(ctx)),
+    import("./pages/phones/webrtc/changeSite.js").then((m) => m.default(ctx)),
   "/phones/webrtc/create": (ctx) =>
-    import("./pages/actions/phones/createWebRtc.js").then((m) => m.default(ctx)),
+    import("./pages/phones/webrtc/createWebRtc.js").then((m) => m.default(ctx)),
 };
 
 /**

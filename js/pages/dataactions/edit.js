@@ -23,8 +23,8 @@
  *   POST  /api/v2/integrations/actions/{id}/test              — test published action
  *   POST  /api/v2/integrations/actions/{id}/draft/test        — test draft action
  */
-import { escapeHtml } from "../../../utils.js";
-import * as gc from "../../../services/genesysApi.js";
+import { escapeHtml } from "../../utils.js";
+import * as gc from "../../services/genesysApi.js";
 
 // ── Status helpers ──────────────────────────────────────────────────
 const STATUS = {

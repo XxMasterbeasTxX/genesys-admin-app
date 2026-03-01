@@ -21,8 +21,8 @@
  *   GET  /api/v2/flows/datatables/{id}/rows       — fetch rows
  *   POST /api/v2/flows/datatables/{id}/rows       — insert row
  */
-import { escapeHtml } from "../../../utils.js";
-import * as gc from "../../../services/genesysApi.js";
+import { escapeHtml } from "../../utils.js";
+import * as gc from "../../services/genesysApi.js";
 
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {
