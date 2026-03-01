@@ -215,14 +215,19 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
         <input type="checkbox" id="llEmailChk">
         <span>Send email with export</span>
       </label>
-      <div id="llEmailFields" style="display:none">
-        <input class="em-input" id="llEmailTo" type="text"
-               placeholder="user@example.com, user2@example.com">
-        <input class="em-input" id="llEmailSubject" type="text"
-               placeholder="Subject">
-        <textarea class="em-input" id="llEmailBody" rows="3"
-                  placeholder="Optional message body"></textarea>
-        <button class="btn te-btn-export" id="llEmailBtn" disabled>Send Email</button>
+
+      <div class="em-fields" id="llEmailFields" style="display:none">
+        <div class="em-field">
+          <label class="em-label" for="llEmailTo">Recipients</label>
+          <input type="text" class="em-input" id="llEmailTo"
+                 placeholder="user@example.com, user2@example.com">
+          <span class="em-hint">Separate multiple addresses with , or ;</span>
+        </div>
+        <div class="em-field">
+          <label class="em-label" for="llEmailBody">Message (optional)</label>
+          <textarea class="em-textarea" id="llEmailBody" rows="3"
+                    placeholder="Leave empty for default message"></textarea>
+        </div>
       </div>
     </div>
   `;
@@ -261,7 +266,8 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
   const $dlBtn    = el.querySelector("#llDownloadBtn");
   const $emailChk = el.querySelector("#llEmailChk");
   const $emailFld = el.querySelector("#llEmailFields");
-  const $emailBtn = el.querySelector("#llEmailBtn");
+  const $emailTo  = el.querySelector("#llEmailTo");
+  const $emailBody = el.querySelector("#llEmailBody");
   const $filterIn = el.querySelector("#llFilterMonths");
 
   let lastWorkbook = null;
@@ -352,7 +358,36 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
       $dlWrap.style.display = "";
 
       setProgress(100);
-      setStatus(`Export complete — ${org.name}`, "success");
+
+      // 6. Send email if enabled
+      if ($emailChk.checked && $emailTo.value.trim()) {
+        setStatus("Sending email…");
+        try {
+          const XLSX = window.XLSX;
+          const xlsxB64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+
+          const result = await sendEmail(api, {
+            recipients: $emailTo.value,
+            subject: `Last Login Export — ${org.name} — ${new Date().toISOString().replace("T", " ").slice(0, 19)}`,
+            body: $emailBody.value,
+            attachment: {
+              filename: fname,
+              base64: xlsxB64,
+              mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            },
+          });
+
+          if (result.success) {
+            setStatus(`Done. Email sent to: ${$emailTo.value.trim()}`, "success");
+          } else {
+            setStatus(`Export completed but email failed: ${result.error}`, "error");
+          }
+        } catch (emailErr) {
+          setStatus(`Export completed but email failed: ${emailErr.message}`, "error");
+        }
+      } else {
+        setStatus(`Export complete — ${org.name}`, "success");
+      }
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
@@ -389,44 +424,6 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
   $emailChk.addEventListener("change", () => {
     $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
-
-  $emailBtn.addEventListener("click", async () => {
-    if (!lastWorkbook) return;
-
-    const to = el.querySelector("#llEmailTo").value.trim();
-    const subject = el.querySelector("#llEmailSubject").value.trim();
-    const body = el.querySelector("#llEmailBody").value.trim();
-
-    const { valid, error: valErr } = validateRecipients(to);
-    if (!valid) { setStatus(valErr, "error"); return; }
-
-    const XLSX = window.XLSX;
-    const wbout = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-
-    $emailBtn.disabled = true;
-    $emailBtn.textContent = "Sending…";
-    try {
-      await sendEmail({
-        to, subject: subject || lastFilename,
-        body: body || "Users Last Login export attached.",
-        attachments: [{
-          filename: lastFilename,
-          content: wbout,
-          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        }],
-      });
-      setStatus("Email sent.", "success");
-    } catch (err) {
-      setStatus(`Email failed: ${err.message}`, "error");
-    } finally {
-      $emailBtn.disabled = false;
-      $emailBtn.textContent = "Send Email";
-    }
-  });
-
-  // Enable email send button when any workbook is ready
-  const enableEmailBtn = () => { $emailBtn.disabled = !lastWorkbook; };
-  el.querySelector("#llEmailTo").addEventListener("input", enableEmailBtn);
 
   // ── Preview table with column filters ──────────────────
   function renderPreviewTable(rows) {
