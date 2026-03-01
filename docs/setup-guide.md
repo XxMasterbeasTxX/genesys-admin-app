@@ -656,7 +656,7 @@ After pushing the config update:
 ### Email sending fails with Mailjet API error
 
 - **Cause:** Sender domain not verified, or API credentials incorrect
-- **Fix:** 
+- **Fix:**
   1. Verify your domain in Mailjet dashboard (SPF + DKIM both green)
   2. Ensure `MAILJET_FROM_EMAIL` uses an address on the verified domain
   3. Confirm API Key and Secret Key are correct

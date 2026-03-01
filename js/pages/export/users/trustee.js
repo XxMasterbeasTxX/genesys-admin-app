@@ -23,6 +23,12 @@ import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { fetchCustomers } from "../../../services/customerService.js";
 import { sendEmail, validateRecipients } from "../../../services/emailService.js";
+import { createSchedulePanel } from "../../../components/schedulePanel.js";
+
+// ── Automation: set to false to hide the schedule panel on this page ─
+const AUTOMATION_ENABLED = true;
+const AUTOMATION_EXPORT_TYPE = "trustee";
+const AUTOMATION_EXPORT_LABEL = "Trustee Access Matrix";
 
 // ── Known trustee org name variations → our internal customer id ────
 const TRUSTEE_NAME_MAP = {
@@ -228,6 +234,16 @@ export default function renderTrusteeExport({ route, me, api }) {
   $emailChk.addEventListener("change", () => {
     $emailFields.style.display = $emailChk.checked ? "" : "none";
   });
+
+  // ── Automation panel ──────────────────────────────────
+  if (AUTOMATION_ENABLED) {
+    const schedulePanel = createSchedulePanel({
+      exportType: AUTOMATION_EXPORT_TYPE,
+      exportLabel: AUTOMATION_EXPORT_LABEL,
+      me,
+    });
+    el.appendChild(schedulePanel);
+  }
 
   // ── Helpers ───────────────────────────────────────────
   function setStatus(msg, type) {

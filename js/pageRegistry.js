@@ -33,6 +33,8 @@ const registry = {
     import("./pages/interactions/disconnect.js").then((m) => m.default(ctx)),
 
   // ── Export ─────────────────────────────────────────
+  "/export/scheduled": (ctx) =>
+    import("./pages/export/scheduledExports.js").then((m) => m.default(ctx)),
   "/export/users/trustee": (ctx) =>
     import("./pages/export/users/trustee.js").then((m) => m.default(ctx)),
 

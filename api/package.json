@@ -3,5 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Azure Functions API for Genesys Admin Tool",
-  "dependencies": {}
+  "dependencies": {
+    "@azure/data-tables": "^13.3.0"
+  }
 }

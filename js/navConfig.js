@@ -41,6 +41,7 @@ export const NAV_TREE = [
     path: "export",
     enabled: true,
     children: [
+      { label: "Scheduled Exports", path: "scheduled", enabled: true },
       {
         label: "Users",
         path: "users",

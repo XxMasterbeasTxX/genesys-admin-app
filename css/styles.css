@@ -988,6 +988,19 @@ body {
   /* Email UI */
   .em-fields { background: var(--panel); border-color: var(--border); }
   .em-input, .em-textarea { background: #fff; border-color: var(--border); }
+
+  /* Schedule Panel / Scheduled Exports - light overrides */
+  .sp-badge--on { background: rgba(34, 197, 94, 0.1); color: #16a34a; }
+  .sp-badge--off { background: rgba(239, 68, 68, 0.08); color: #dc2626; }
+  .sp-btn-new { background: rgba(59, 130, 246, 0.08); color: #2563eb; border-color: rgba(59, 130, 246, 0.2); }
+  .sp-btn-new:hover { background: rgba(59, 130, 246, 0.15); }
+  .sp-form { background: var(--panel-2); }
+  .sp-form-select, .sp-form-input, .sp-form-textarea { background: #fff; }
+  .sp-toggle-slider { background: rgba(0, 0, 0, 0.15); }
+  .sp-btn-save { background: rgba(34, 197, 94, 0.08); color: #16a34a; border-color: rgba(34, 197, 94, 0.2); }
+  .sp-btn-save:hover { background: rgba(34, 197, 94, 0.15); }
+  .sp-btn-del { background: rgba(239, 68, 68, 0.08); color: #dc2626; border-color: rgba(239, 68, 68, 0.2); }
+  .sp-btn-del:hover { background: rgba(239, 68, 68, 0.15); }
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1385,3 +1398,250 @@ body {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ══════════════════════════════════════════════════════════
+   Schedule Panel + Scheduled Exports  (sp-* / se-* prefix)
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Panel section (on export pages) ──────────────────── */
+.sp-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.sp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.sp-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.sp-empty {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 0;
+}
+.sp-status {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sp-status--success { color: #34d399; }
+.sp-status--error   { color: #f87171; }
+
+/* ── Schedule table ───────────────────────────────────── */
+.sp-table {
+  margin-bottom: 8px;
+}
+.sp-cell-email {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Badges ───────────────────────────────────────────── */
+.sp-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sp-badge--on {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+.sp-badge--off {
+  background: rgba(239, 68, 68, 0.10);
+  color: #f87171;
+}
+
+/* ── Buttons ──────────────────────────────────────────── */
+.sp-btn-new {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.25);
+  color: #60a5fa;
+}
+.sp-btn-new:hover {
+  background: rgba(59, 130, 246, 0.22);
+}
+.sp-btn-edit {
+  font-size: 12px;
+}
+
+/* ── Form ─────────────────────────────────────────────── */
+.sp-form {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.sp-form-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--text);
+}
+.sp-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+}
+.sp-form-wide {
+  grid-column: 1 / -1;
+}
+.sp-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sp-form-toggle-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.sp-form-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.sp-form-select,
+.sp-form-input {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.sp-form-textarea {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.sp-form-select:focus,
+.sp-form-input:focus,
+.sp-form-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+.sp-form-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Toggle switch (reusable) */
+.sp-toggle {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+}
+.sp-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.sp-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  transition: background 0.25s;
+}
+.sp-toggle-slider::before {
+  content: "";
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.25s;
+}
+.sp-toggle input:checked + .sp-toggle-slider {
+  background: #3b82f6;
+}
+.sp-toggle input:checked + .sp-toggle-slider::before {
+  transform: translateX(18px);
+}
+
+/* Form status */
+.sp-form-status {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 8px;
+  min-height: 18px;
+}
+.sp-form-status--success { color: #34d399; }
+.sp-form-status--error   { color: #f87171; }
+
+/* Form actions */
+.sp-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.sp-btn-save {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #4ade80;
+}
+.sp-btn-save:hover {
+  background: rgba(34, 197, 94, 0.2);
+}
+.sp-btn-cancel {
+  /* uses default .btn */
+}
+.sp-btn-del {
+  margin-left: auto;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #f87171;
+}
+.sp-btn-del:hover {
+  background: rgba(239, 68, 68, 0.22);
+}
+
+/* ── Scheduled Exports overview page ──────────────────── */
+.se-status {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.se-status--success { color: #34d399; }
+.se-status--error   { color: #f87171; }
+
+.se-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.se-table {
+  font-size: 13px;
+}
+.se-cell-email {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.se-ok   { color: #34d399; }
+.se-fail { color: #f87171; }
+.se-none { color: var(--muted); font-style: italic; }
