@@ -119,10 +119,70 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
         </div>
       </div>
 
-      <!-- Contract preview -->
-      <div class="dt-info" style="max-width:550px;margin-top:8px">
+      <!-- Config: Request -->
+      <details class="ed-config-section" style="max-width:700px;margin-top:14px">
+        <summary class="ed-config-summary">Request Config</summary>
+        <div class="dt-controls" style="margin-top:10px">
+          <div class="dt-control-group">
+            <label class="dt-label">Request Type</label>
+            <select class="dt-select" id="edReqType" style="max-width:200px">
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+            </select>
+          </div>
+          <div class="dt-control-group">
+            <label class="dt-label">URL Template</label>
+            <input class="dt-input" id="edReqUrl" type="text" style="max-width:700px" />
+          </div>
+          <div class="dt-control-group">
+            <label class="dt-label">Request Body Template</label>
+            <textarea class="dt-input" id="edReqTemplate" rows="8" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
+          </div>
+          <div class="dt-control-group">
+            <label class="dt-label">Headers (JSON)</label>
+            <textarea class="dt-input" id="edReqHeaders" rows="4" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
+          </div>
+        </div>
+      </details>
+
+      <!-- Config: Response -->
+      <details class="ed-config-section" style="max-width:700px;margin-top:8px">
+        <summary class="ed-config-summary">Response Config</summary>
+        <div class="dt-controls" style="margin-top:10px">
+          <div class="dt-control-group">
+            <label class="dt-label">Translation Map (JSON)</label>
+            <textarea class="dt-input" id="edRespTransMap" rows="6" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
+          </div>
+          <div class="dt-control-group">
+            <label class="dt-label">Translation Map Defaults (JSON)</label>
+            <textarea class="dt-input" id="edRespTransMapDefaults" rows="4" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
+          </div>
+          <div class="dt-control-group">
+            <label class="dt-label">Success Template</label>
+            <textarea class="dt-input" id="edRespSuccessTemplate" rows="6" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
+          </div>
+        </div>
+      </details>
+
+      <!-- Contract: read-only preview for published; editable JSON for draft-only -->
+      <div id="edContractPreviewWrap" style="max-width:700px;margin-top:14px">
         <div class="dt-info-row"><span class="dt-info-key">Contract:</span></div>
         <div class="dt-schema" id="edContractPreview"></div>
+      </div>
+
+      <div id="edContractEditWrap" hidden style="max-width:700px;margin-top:14px">
+        <div class="dt-info-row" style="margin-bottom:6px"><span class="dt-info-key">Contract (editable — draft only):</span></div>
+        <div class="dt-control-group">
+          <label class="dt-label">Input Schema (JSON)</label>
+          <textarea class="dt-input" id="edInputSchema" rows="12" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
+        </div>
+        <div class="dt-control-group" style="margin-top:8px">
+          <label class="dt-label">Output Success Schema (JSON)</label>
+          <textarea class="dt-input" id="edOutputSchema" rows="12" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
+        </div>
       </div>
 
       <!-- Action buttons -->
@@ -185,8 +245,19 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
   const $infoVersion   = el.querySelector("#edInfoVersion");
   const $name          = el.querySelector("#edName");
   const $category      = el.querySelector("#edCategory");
-  const $contractPrev  = el.querySelector("#edContractPreview");
-  const $saveBtn       = el.querySelector("#edSaveBtn");
+  const $contractPrev      = el.querySelector("#edContractPreview");
+  const $contractPrevWrap  = el.querySelector("#edContractPreviewWrap");
+  const $contractEditWrap  = el.querySelector("#edContractEditWrap");
+  const $reqType           = el.querySelector("#edReqType");
+  const $reqUrl            = el.querySelector("#edReqUrl");
+  const $reqTemplate       = el.querySelector("#edReqTemplate");
+  const $reqHeaders        = el.querySelector("#edReqHeaders");
+  const $respTransMap      = el.querySelector("#edRespTransMap");
+  const $respTransMapDef   = el.querySelector("#edRespTransMapDefaults");
+  const $respSuccessTempl  = el.querySelector("#edRespSuccessTemplate");
+  const $inputSchema       = el.querySelector("#edInputSchema");
+  const $outputSchema      = el.querySelector("#edOutputSchema");
+  const $saveBtn           = el.querySelector("#edSaveBtn");
   const $validateBtn   = el.querySelector("#edValidateBtn");
   const $publishBtn    = el.querySelector("#edPublishBtn");
   const $testTarget    = el.querySelector("#edTestTarget");
@@ -226,6 +297,13 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
   function integType(id) {
     const integ = integrations.find(i => i.id === id);
     return integ?.integrationType?.id || "unknown";
+  }
+
+  /** Safely parse a JSON textarea value; returns fallback on empty or invalid JSON. */
+  function parseJsonField(val, fallback = {}) {
+    const trimmed = (val || "").trim();
+    if (!trimmed) return fallback;
+    try { return JSON.parse(trimmed); } catch { return fallback; }
   }
 
   /** Extract properties from a JSON schema, handling nested structures. */
@@ -465,8 +543,34 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
       $name.value = detail.name || "";
       $category.value = detail.category || "";
 
-      // Contract preview
-      $contractPrev.innerHTML = buildContractPreview(detail.contract);
+      // Config: request
+      const req = detail.config?.request || {};
+      $reqType.value     = req.requestType || "GET";
+      $reqUrl.value      = req.requestUrlTemplate || "";
+      $reqTemplate.value = req.requestTemplate || "";
+      $reqHeaders.value  = req.headers && Object.keys(req.headers).length
+        ? JSON.stringify(req.headers, null, 2) : "";
+
+      // Config: response
+      const resp = detail.config?.response || {};
+      $respTransMap.value    = resp.translationMap && Object.keys(resp.translationMap).length
+        ? JSON.stringify(resp.translationMap, null, 2) : "";
+      $respTransMapDef.value = resp.translationMapDefaults && Object.keys(resp.translationMapDefaults).length
+        ? JSON.stringify(resp.translationMapDefaults, null, 2) : "";
+      $respSuccessTempl.value = resp.successTemplate || "";
+
+      // Contract: editable JSON for draft-only; read-only preview for published
+      const isDraftOnly = item.status === "Draft";
+      $contractPrevWrap.hidden = isDraftOnly;
+      $contractEditWrap.hidden = !isDraftOnly;
+      if (isDraftOnly) {
+        $inputSchema.value  = detail.contract?.input?.inputSchema
+          ? JSON.stringify(detail.contract.input.inputSchema, null, 2) : "";
+        $outputSchema.value = detail.contract?.output?.successSchema
+          ? JSON.stringify(detail.contract.output.successSchema, null, 2) : "";
+      } else {
+        $contractPrev.innerHTML = buildContractPreview(detail.contract);
+      }
 
       // Test inputs from input contract
       buildTestInputFields(detail.contract);
@@ -512,11 +616,33 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
       }
 
       // Patch the draft
+      const actionItem = allActions.find(a => a.id === id);
       const patchBody = {
         name: $name.value.trim(),
         category: $category.value.trim(),
         version: selectedFull.version || 1,
+        config: {
+          request: {
+            requestType:        $reqType.value,
+            requestUrlTemplate: $reqUrl.value.trim(),
+            requestTemplate:    $reqTemplate.value,
+            headers:            parseJsonField($reqHeaders.value),
+          },
+          response: {
+            translationMap:         parseJsonField($respTransMap.value),
+            translationMapDefaults: parseJsonField($respTransMapDef.value),
+            successTemplate:        $respSuccessTempl.value,
+          },
+        },
       };
+
+      // Include contract only for draft-only actions
+      if (actionItem?.status === "Draft") {
+        patchBody.contract = {
+          input:  { inputSchema:   parseJsonField($inputSchema.value) },
+          output: { successSchema: parseJsonField($outputSchema.value) },
+        };
+      }
 
       const updated = await gc.patchDataActionDraft(api, $org.value, id, patchBody);
       selectedFull = updated;
