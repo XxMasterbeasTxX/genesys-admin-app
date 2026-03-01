@@ -465,6 +465,7 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
       canDelete: existing ? canEditSchedule(existing, me) : false,
       requiresOrg,
       extraConfigFields,
+      dynamicOrgFields,
       onSave: async (formData) => {
         if (existing) {
           await updateSchedule(existing.id, {
