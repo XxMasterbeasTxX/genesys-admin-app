@@ -19,8 +19,9 @@
  */
 
 const handlers = {
-  trustee: () => require("./exports/trustee"),
+  allRoles: () => require("./exports/allRoles"),
   lastLogin: () => require("./exports/lastLogin"),
+  trustee: () => require("./exports/trustee"),
 };
 
 /**
