@@ -15,6 +15,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **WebRTC Phones — Change Site** — Move selected WebRTC phones from one site to another using a searchable multi-select picker, with progress tracking and Excel log export
 - **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets and styled formatting
 - **Last Login Export** — Export user login data with license information for a selected org. One row per user-license combination, optional inactivity filter, collapsible preview with per-column filters, styled Excel matching the Python tool. Supports per-org scheduled automation.
+- **All Groups Export** — Export all users (active, inactive, and deleted) with their group memberships for a selected org. One row per user-group combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool. Supports per-org scheduled automation.
 - **All Roles Export** — Export all users (active, inactive, and deleted) with their role assignments for a selected org. One row per user-role combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool. Supports per-org scheduled automation.
 - **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, org selector for per-org exports, "All Scheduled Exports" overview.
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant)
@@ -626,15 +627,18 @@ After pushing the config update:
 | 21 | Email notification | Trustee export with email enabled sends attachment to recipients via Mailjet |
 | 22 | Last Login Export | Select org; export runs; collapsible preview table with column filters; Excel download with styled formatting |
 | 23 | Last Login email | Last Login export with email enabled sends attachment to recipients via Mailjet |
-| 24 | All Roles Export | Select org; export runs (state=any); collapsible preview with column filters; Excel with Index, Name, Email, Division, Active, Date Last Login, Role |
-| 25 | All Roles email | All Roles export with email enabled sends attachment to recipients via Mailjet |
-| 26 | Scheduled export creation | Toggle automation on Trustee page; create daily/weekly/monthly schedule with recipients |
-| 27 | Last Login scheduled export creation | Toggle automation on Last Login page; org selector and inactivity filter shown in schedule form; schedule saved with exportConfig |
-| 28 | All Roles scheduled export creation | Toggle automation on All Roles page; org selector shown in schedule form; schedule saved with exportConfig |
-| 29 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
-| 30 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
-| 31 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
-| 32 | Theme adapts | Dark/light matches OS setting |
+| 24 | All Groups Export | Select org; export runs (state=any); collapsible preview with column filters; Excel with Index, Name, eMail, Division, Active, LastLogin, WorkTeam, Group |
+| 25 | All Groups email | All Groups export with email enabled sends attachment to recipients via Mailjet |
+| 26 | All Groups scheduled export creation | Toggle automation on All Groups page; org selector shown in schedule form; schedule saved with exportConfig |
+| 27 | All Roles Export | Select org; export runs (state=any); collapsible preview with column filters; Excel with Index, Name, Email, Division, Active, Date Last Login, Role |
+| 28 | All Roles email | All Roles export with email enabled sends attachment to recipients via Mailjet |
+| 29 | Scheduled export creation | Toggle automation on Trustee page; create daily/weekly/monthly schedule with recipients |
+| 30 | Last Login scheduled export creation | Toggle automation on Last Login page; org selector and inactivity filter shown in schedule form; schedule saved with exportConfig |
+| 31 | All Roles scheduled export creation | Toggle automation on All Roles page; org selector shown in schedule form; schedule saved with exportConfig |
+| 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
+| 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
+| 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
+| 35 | Theme adapts | Dark/light matches OS setting |
 
 ---
 
@@ -856,6 +860,7 @@ genesys-admin-app/
 │   │   ├── export/
 │   │   │   ├── scheduledExports.js   All Scheduled Exports overview
 │   │   │   └── users/
+│   │   │       ├── allGroups.js     All Groups export + per-org automation
 │   │   │       ├── allRoles.js      All Roles export + per-org automation
 │   │   │       ├── lastLogin.js      Last Login export + per-org automation
 │   │   │       └── trustee.js       Trustee access matrix export + automation
@@ -896,6 +901,7 @@ genesys-admin-app/
 │       ├── scheduleStore.js      Azure Table Storage CRUD for schedules
 │       ├── exportHandlers.js     Export type → handler registry
 │       └── exports/
+│           ├── allGroups.js      Server-side All Groups export handler
 │           ├── allRoles.js       Server-side All Roles export handler
 │           ├── lastLogin.js      Server-side Last Login export handler
 │           └── trustee.js        Server-side trustee export handler
