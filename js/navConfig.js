@@ -47,7 +47,7 @@ export const NAV_TREE = [
         enabled: true,
         children: [
           { label: "Change Site", path: "change-site", enabled: true },
-          { label: "Create", path: "create", enabled: true },
+          { label: "Create WebRTC", path: "create", enabled: true },
         ],
       },
     ],
