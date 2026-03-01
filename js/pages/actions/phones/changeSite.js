@@ -245,8 +245,11 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
         const now = new Date().toISOString().replace("T", " ").slice(0, 19);
 
         try {
+          // Fetch the full phone object (list endpoint may omit webRtcUser)
+          const fullPhone = await gc.getPhone(api, orgId, phone.id);
+
           // Build updated phone body with new site
-          const updatedPhone = { ...phone, site: { id: toId, name: toSite.name } };
+          const updatedPhone = { ...fullPhone, site: { id: toId, name: toSite.name } };
           // Remove read-only / server-generated fields that cause 400 errors
           delete updatedPhone.status;
           delete updatedPhone.statusSummary;

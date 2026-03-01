@@ -445,6 +445,12 @@ export async function createPhone(api, orgId, body) {
     "/api/v2/telephony/providers/edges/phones", { body });
 }
 
+/** Get a single phone by ID (full object including webRtcUser). */
+export async function getPhone(api, orgId, phoneId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/telephony/providers/edges/phones/${phoneId}`);
+}
+
 /** Update a phone (full PUT — requires the complete phone object). */
 export async function updatePhone(api, orgId, phoneId, body) {
   return api.proxyGenesys(orgId, "PUT",
