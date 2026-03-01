@@ -1236,6 +1236,28 @@ body {
   padding: 4px 8px;
   font-size: 13px;
 }
+.ll-filter-row th {
+  padding: 4px 6px;
+  background: var(--panel-2);
+}
+.ll-col-filter {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+.ll-col-filter:focus {
+  border-color: #3b82f6;
+}
+.ll-col-filter::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
 .te-btn-export {
   background: rgba(59, 130, 246, 0.12);
   border-color: rgba(59, 130, 246, 0.25);
