@@ -205,4 +205,28 @@ function canEdit(schedule, userEmail) {
   );
 }
 
-module.exports = { listAll, getById, create, update, remove, canEdit, ADMIN_EMAIL };
+// ── Run tracking ────────────────────────────────────────
+
+/**
+ * Update the last-run status fields of a schedule.
+ * Used by the scheduled runner after executing an export.
+ */
+async function updateRunStatus(id, { lastRun, lastStatus, lastError }) {
+  await ensureTable();
+  const client = getClient();
+  const existing = await getById(id);
+  if (!existing) return null;
+
+  const updated = {
+    ...existing,
+    lastRun: lastRun || new Date().toISOString(),
+    lastStatus: lastStatus || "unknown",
+    lastError: lastError || null,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await client.updateEntity(scheduleToEntity(updated), "Replace");
+  return updated;
+}
+
+module.exports = { listAll, getById, create, update, remove, canEdit, updateRunStatus, ADMIN_EMAIL };
