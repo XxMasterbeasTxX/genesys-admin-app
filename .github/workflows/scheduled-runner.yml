@@ -12,13 +12,16 @@ jobs:
     steps:
       - name: Call scheduled-runner endpoint
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" \
+          response=$(curl -s -w "\n%{http_code}" \
             -X POST \
             -H "Content-Type: application/json" \
             -H "x-runner-key: ${{ secrets.SCHEDULE_RUNNER_KEY }}" \
             "${{ secrets.SWA_URL }}/api/scheduled-runner")
-          echo "HTTP status: $response"
-          if [ "$response" -ge 500 ]; then
-            echo "::error::Runner returned $response"
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | sed '$d')
+          echo "HTTP status: $http_code"
+          echo "Response: $body"
+          if [ "$http_code" -ge 500 ]; then
+            echo "::error::Runner returned $http_code"
             exit 1
           fi
