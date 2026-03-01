@@ -445,6 +445,12 @@ export async function createPhone(api, orgId, body) {
     "/api/v2/telephony/providers/edges/phones", { body });
 }
 
+/** Update a phone (full PUT — requires the complete phone object). */
+export async function updatePhone(api, orgId, phoneId, body) {
+  return api.proxyGenesys(orgId, "PUT",
+    `/api/v2/telephony/providers/edges/phones/${phoneId}`, { body });
+}
+
 /** Fetch all licensed users (paginated). */
 export async function fetchAllLicenseUsers(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/license/users", opts);

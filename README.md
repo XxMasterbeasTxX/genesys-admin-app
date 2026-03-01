@@ -14,6 +14,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
 - **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration, save drafts, validate, publish, and run inline tests
 - **WebRTC Phones — Create** — Bulk-create WebRTC phones for all licensed users in a site, skipping collaborate licenses and existing phones, with Excel log export
+- **WebRTC Phones — Change Site** — Move selected WebRTC phones from one site to another using a searchable multi-select phone picker, with progress tracking and Excel log export
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
 - **Top-level menu groups** — Data Actions, Data Tables, Interactions, and Phones each have their own top-level nav section
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
@@ -104,6 +105,7 @@ genesys-admin-app/
 │   │       │   ├── copyBetweenOrgs.js   Copy data action between orgs
 │   │       │   └── edit.js              Edit / test existing data actions
 │   │       └── phones/
+│   │           ├── changeSite.js         Change site for WebRTC phones
 │   │           └── createWebRtc.js      Bulk-create WebRTC phones
 │   └── services/
 │       ├── apiClient.js          HTTP client + Genesys proxy wrapper

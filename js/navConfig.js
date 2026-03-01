@@ -46,6 +46,7 @@ export const NAV_TREE = [
         path: "webrtc",
         enabled: true,
         children: [
+          { label: "Change Site", path: "change-site", enabled: true },
           { label: "Create", path: "create", enabled: true },
         ],
       },

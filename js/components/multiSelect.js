@@ -20,10 +20,11 @@
 /**
  * @param {Object}   opts
  * @param {string}   opts.placeholder  Text when nothing is selected.
+ * @param {boolean}  [opts.searchable] Show a search/filter input at the top.
  * @param {Function} [opts.onChange]    Called with Set<string> of selected IDs.
  * @returns {{ el: HTMLElement, setItems, getSelected, setSelected, setEnabled }}
  */
-export function createMultiSelect({ placeholder = "Select…", onChange }) {
+export function createMultiSelect({ placeholder = "Select…", searchable = false, onChange }) {
   // ── Outer wrapper ──────────────────────────────────────
   const wrapper = document.createElement("div");
   wrapper.className = "ms-dropdown";
@@ -38,6 +39,15 @@ export function createMultiSelect({ placeholder = "Select…", onChange }) {
   const panel = document.createElement("div");
   panel.className = "ms-dropdown__panel";
   panel.hidden = true;
+
+  // Search input (optional)
+  const searchInput = document.createElement("input");
+  searchInput.type = "text";
+  searchInput.className = "ms-dropdown__search";
+  searchInput.placeholder = "Search…";
+  if (searchable) {
+    panel.append(searchInput);
+  }
 
   // "Select All" row
   const allRow = document.createElement("label");
@@ -58,6 +68,22 @@ export function createMultiSelect({ placeholder = "Select…", onChange }) {
   let items = [];            // [{ id, label }]
   let selected = new Set();  // Set<id>
   let isOpen = false;
+  let searchTerm = "";       // current filter text
+
+  // ── Search filtering ───────────────────────────────────
+  function getVisibleItems() {
+    if (!searchTerm) return items;
+    const q = searchTerm.toLowerCase();
+    return items.filter(it => it.label.toLowerCase().includes(q));
+  }
+
+  searchInput.addEventListener("input", () => {
+    searchTerm = searchInput.value.trim();
+    renderList();
+  });
+
+  // Prevent panel close when clicking inside search
+  searchInput.addEventListener("pointerdown", (e) => e.stopPropagation());
 
   // ── Open / close ───────────────────────────────────────
   trigger.addEventListener("click", (e) => {
@@ -70,6 +96,12 @@ export function createMultiSelect({ placeholder = "Select…", onChange }) {
     isOpen = true;
     panel.hidden = false;
     wrapper.classList.add("ms-dropdown--open");
+    if (searchable) {
+      searchInput.value = "";
+      searchTerm = "";
+      renderList();
+      requestAnimationFrame(() => searchInput.focus());
+    }
     // Close on outside click
     requestAnimationFrame(() =>
       document.addEventListener("pointerdown", onOutsideClick, { once: true }),
@@ -96,7 +128,8 @@ export function createMultiSelect({ placeholder = "Select…", onChange }) {
   // ── Render items ───────────────────────────────────────
   function renderList() {
     listEl.innerHTML = "";
-    for (const item of items) {
+    const visible = getVisibleItems();
+    for (const item of visible) {
       const label = document.createElement("label");
       label.className = "ms-dropdown__item";
       const cb = document.createElement("input");
@@ -121,19 +154,23 @@ export function createMultiSelect({ placeholder = "Select…", onChange }) {
 
   // ── "Select All" logic ─────────────────────────────────
   allCb.addEventListener("change", () => {
+    const visible = getVisibleItems();
     if (allCb.checked) {
-      items.forEach((it) => selected.add(it.id));
+      visible.forEach((it) => selected.add(it.id));
     } else {
-      selected.clear();
+      visible.forEach((it) => selected.delete(it.id));
     }
     renderList();
     onChange?.(new Set(selected));
   });
 
   function syncAllCheckbox() {
-    allCb.checked = items.length > 0 && selected.size === items.length;
+    const visible = getVisibleItems();
+    const visibleSelected = visible.filter(it => selected.has(it.id)).length;
+    allCb.checked = visible.length > 0 && visibleSelected === visible.length;
     allCb.indeterminate =
-      selected.size > 0 && selected.size < items.length;
+      visibleSelected > 0 && visibleSelected < visible.length;
+    allSpan.textContent = searchTerm ? `Select all matching (${visible.length})` : "Select all";
   }
 
   // ── Trigger text ───────────────────────────────────────

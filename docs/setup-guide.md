@@ -12,6 +12,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
 - **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration, inline testing
 - **WebRTC Phones — Create** — Bulk-create WebRTC phones for all licensed users in a site, with Excel log export
+- **WebRTC Phones — Change Site** — Move selected WebRTC phones from one site to another using a searchable multi-select picker, with progress tracking and Excel log export
 
 ---
 
@@ -488,7 +489,8 @@ After pushing the config update:
 | 16 | Data Actions — Edit | Load actions; filter/search; edit name/category; save/validate/publish; test |
 | 17 | Disconnect Interactions | Single/multiple/queue modes; media type + date filters; disconnect succeeds |
 | 18 | WebRTC Phones — Create | Site selector; bulk create runs; summary shows counts; Excel download works |
-| 19 | Theme adapts | Dark/light matches OS setting |
+| 19 | WebRTC Phones — Change Site | From/To site selectors; Load Phones; searchable multi-select; Move runs; Excel download works |
+| 20 | Theme adapts | Dark/light matches OS setting |
 
 ---
 
