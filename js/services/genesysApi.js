@@ -584,3 +584,31 @@ export async function fetchAllGroups(api, orgId, opts = {}) {
 export async function fetchAllDivisions(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/authorization/divisions", opts);
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Org Authorization — Trustees
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch trustees for a customer org (orgs that have been granted access). */
+export async function fetchTrustees(api, orgId) {
+  const resp = await api.proxyGenesys(orgId, "GET",
+    "/api/v2/orgauthorization/trustees");
+  return resp.entities || [];
+}
+
+/** Fetch groups granted to a specific trustee in a customer org. */
+export async function fetchTrusteeGroups(api, orgId, trusteeOrgId) {
+  const resp = await api.proxyGenesys(orgId, "GET",
+    `/api/v2/orgauthorization/trustees/${trusteeOrgId}/groups`);
+  return resp.entities || [];
+}
+
+/** Fetch members of a group (in the trustee org). */
+export async function fetchGroupMembers(api, orgId, groupId, opts = {}) {
+  return fetchAllPages(api, orgId, `/api/v2/groups/${groupId}/members`, opts);
+}
+
+/** Fetch a single user by ID (for fallback name/email lookup). */
+export async function getUser(api, orgId, userId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/users/${userId}`);
+}

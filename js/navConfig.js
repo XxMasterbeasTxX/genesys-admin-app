@@ -37,6 +37,21 @@ export const NAV_TREE = [
     ],
   },
   {
+    label: "Export",
+    path: "export",
+    enabled: true,
+    children: [
+      {
+        label: "Users",
+        path: "users",
+        enabled: true,
+        children: [
+          { label: "Trustee", path: "trustee", enabled: true },
+        ],
+      },
+    ],
+  },
+  {
     label: "Phones",
     path: "phones",
     enabled: true,

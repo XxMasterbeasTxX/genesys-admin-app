@@ -15,8 +15,9 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration, save drafts, validate, publish, and run inline tests
 - **WebRTC Phones — Create** — Bulk-create WebRTC phones for all licensed users in a site, skipping collaborate licenses and existing phones, with Excel log export
 - **WebRTC Phones — Change Site** — Move selected WebRTC phones from one site to another using a searchable multi-select phone picker, with progress tracking and Excel log export
+- **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
-- **Top-level menu groups** — Data Actions, Data Tables, Interactions, and Phones each have their own top-level nav section
+- **Top-level menu groups** — Data Actions, Data Tables, Export, Interactions, and Phones each have their own top-level nav section
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
 
 ### Platform
@@ -107,6 +108,9 @@ genesys-admin-app/
 │   │       └── phones/
 │   │           ├── changeSite.js         Change site for WebRTC phones
 │   │           └── createWebRtc.js      Bulk-create WebRTC phones
+│   └── pages/export/
+│       └── users/
+│           └── trustee.js           Trustee access matrix export
 │   └── services/
 │       ├── apiClient.js          HTTP client + Genesys proxy wrapper
 │       ├── authService.js        OAuth 2.0 PKCE authentication

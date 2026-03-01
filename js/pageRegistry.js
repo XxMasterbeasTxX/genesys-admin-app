@@ -32,6 +32,10 @@ const registry = {
   "/interactions/disconnect": (ctx) =>
     import("./pages/actions/disconnectInteractions.js").then((m) => m.default(ctx)),
 
+  // ── Export ─────────────────────────────────────────
+  "/export/users/trustee": (ctx) =>
+    import("./pages/export/users/trustee.js").then((m) => m.default(ctx)),
+
   // ── Phones ─────────────────────────────────────────
   "/phones/webrtc/change-site": (ctx) =>
     import("./pages/actions/phones/changeSite.js").then((m) => m.default(ctx)),
