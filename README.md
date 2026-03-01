@@ -17,6 +17,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **WebRTC Phones — Change Site** — Move selected WebRTC phones from one site to another using a searchable multi-select phone picker, with progress tracking and Excel log export
 - **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets and styled formatting matching the Python tool output
 - **Last Login Export** — Export user login data with license information for a selected org. One row per user-license combination, optional inactivity filter (months), collapsible preview with per-column filters, styled Excel matching the Python tool output. Supports per-org scheduled automation.
+- **All Roles Export** — Export all users (active, inactive, and deleted) with their role assignments for a selected org. One row per user-role combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool output. Supports per-org scheduled automation.
 - **Scheduled Exports** — Automate any export on a daily, weekly, or monthly schedule with email delivery. Per-export automation toggle, reusable schedule panel with org selector and custom config fields, "All Scheduled Exports" overview page. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic ensures missed runs are retried. All times in Danish time (Europe/Copenhagen, CET/CEST).
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant). Centralized email service reusable by any page.
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
@@ -127,6 +128,7 @@ genesys-admin-app/
 │   │   ├── export/
 │   │   │   ├── scheduledExports.js   All Scheduled Exports overview
 │   │   │   └── users/
+│   │   │       ├── allRoles.js      All Roles export + per-org automation
 │   │   │       ├── lastLogin.js      Last Login export + per-org automation
 │   │   │       └── trustee.js       Trustee access matrix export + automation
 │   │   └── phones/
@@ -153,6 +155,7 @@ genesys-admin-app/
 │       ├── scheduleStore.js      Azure Table Storage CRUD for schedules
 │       ├── exportHandlers.js     Export type → handler registry
 │       └── exports/
+│           ├── allRoles.js       Server-side All Roles export handler
 │           ├── lastLogin.js      Server-side Last Login export handler
 │           └── trustee.js        Server-side trustee export handler
 └── docs/
@@ -166,7 +169,7 @@ The app supports automated, server-side export execution with email delivery.
 
 ### How it works
 
-1. **Schedule creation** — On any export page with automation enabled (e.g. Trustee, Last Login), toggle on automation and configure a daily/weekly/monthly schedule with email recipients. Per-org exports (like Last Login) include an org selector and custom config fields in the schedule form.
+1. **Schedule creation** — On any export page with automation enabled (e.g. Trustee, Last Login, All Roles), toggle on automation and configure a daily/weekly/monthly schedule with email recipients. Per-org exports (Last Login, All Roles) include an org selector in the schedule form; Last Login also has an inactivity filter.
 2. **GitHub Actions cron** — A workflow runs every 5 minutes and POSTs to `/api/scheduled-runner` with a shared secret
 3. **Server-side execution** — The Azure Function checks Azure Table Storage for due schedules, runs the export using client credentials, and emails the result via Mailjet
 4. **Catch-up logic** — If a run is missed (GitHub Actions delays), the next cycle picks it up automatically. Only one run per schedule per day.
