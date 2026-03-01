@@ -118,25 +118,23 @@ function isDue(schedule, now) {
   const dk = getDenmarkTime(now);
   const [hh, mm] = (schedule.scheduleTime || "08:00").split(":").map(Number);
 
-  // The timer fires every 5 minutes. We consider a schedule "due" if
-  // the current 5-minute window contains the scheduled time AND it
-  // hasn't already run in the current period.
-
-  // Check if current DK time is within ~5min past the scheduled time
+  // Is the scheduled time already past for today (DK)?
   const scheduleMins = hh * 60 + mm;
   const nowMins = dk.hour * 60 + dk.minute;
-  const diff = nowMins - scheduleMins;
-  if (diff < 0 || diff >= 5) return false;
+  if (nowMins < scheduleMins) return false; // Not yet time
 
-  // Check schedule type (using DK day/date)
+  // Is today the right day for this schedule type?
   if (schedule.scheduleType === "weekly") {
     if (dk.weekday !== schedule.scheduleDayOfWeek) return false;
   } else if (schedule.scheduleType === "monthly") {
     if (dk.day !== schedule.scheduleDayOfMonth) return false;
   }
-  // daily: no extra day check needed
+  // daily: every day is the right day
 
-  // Avoid double-runs: check if lastRun is already today (DK date)
+  // Has it already run in the current period (DK date)?
+  // This prevents double-runs AND acts as catch-up: if the runner
+  // was delayed or missed the exact window, the next cycle will
+  // still pick it up — as long as it hasn't run today yet.
   if (schedule.lastRun) {
     const lastRunDk = getDenmarkTime(new Date(schedule.lastRun));
     if (lastRunDk.dateStr === dk.dateStr) return false;
