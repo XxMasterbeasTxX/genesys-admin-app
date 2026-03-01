@@ -13,7 +13,8 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration, inline testing
 - **WebRTC Phones — Create** — Bulk-create WebRTC phones for all licensed users in a site, with Excel log export
 - **WebRTC Phones — Change Site** — Move selected WebRTC phones from one site to another using a searchable multi-select picker, with progress tracking and Excel log export
-- **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets
+- **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets and styled formatting
+- **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant)
 
 ---
 
@@ -31,10 +32,11 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 10. [Grant Key Vault Access](#10-grant-key-vault-access)
 11. [Configure App Settings](#11-configure-app-settings)
 12. [Update customers.json](#12-update-customersjson)
-13. [First Deployment](#13-first-deployment)
-14. [Verification Checklist](#14-verification-checklist)
-15. [Day-to-Day Operations](#15-day-to-day-operations)
-16. [Troubleshooting](#16-troubleshooting)
+13. [Configure Mailjet Email](#13-configure-mailjet-email)
+14. [First Deployment](#14-first-deployment)
+15. [Verification Checklist](#15-verification-checklist)
+16. [Day-to-Day Operations](#16-day-to-day-operations)
+17. [Troubleshooting](#17-troubleshooting)
 
 ---
 
@@ -46,6 +48,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 | **Azure subscription** | Hosting via Azure Static Web Apps (free tier works) |
 | **Genesys Cloud org** | OAuth client + API access |
 | **Git** installed locally | Push code to GitHub |
+| **Mailjet account** | Email sending (free tier: 200 emails/day) |
 
 ---
 
@@ -456,7 +459,57 @@ Commit and push to deploy.
 
 ---
 
-## 13. First Deployment
+## 13. Configure Mailjet Email
+
+The app sends email notifications (e.g. trustee export results) via [Mailjet](https://www.mailjet.com/) — a French, EU-based email API provider (GDPR-compliant).
+
+### Create a Mailjet account
+
+1. Go to [app.mailjet.com/signup](https://app.mailjet.com/signup) and create a free account
+2. Free tier allows 200 emails/day, 6,000/month
+
+### Verify your sender domain
+
+1. In Mailjet, go to **Account Settings** → **Sender domains & addresses**
+2. Add your domain (e.g. `versatech.nu`)
+3. Add the required DNS records at your domain registrar:
+   - **SPF**: Add `include:spf.mailjet.com` to your existing SPF TXT record
+   - **DKIM**: Add the DKIM TXT record provided by Mailjet (host: `mailjet._domainkey`)
+4. Verify both records are green in the Mailjet dashboard
+
+### Get API credentials
+
+1. In Mailjet, go to **Account Settings** → **REST API** → **API Key Management**
+2. Copy your **API Key** and **Secret Key**
+
+### Set Azure app settings
+
+```bash
+az staticwebapp appsettings set --name genesys-admin-app \
+  --setting-names \
+  "MAILJET_API_KEY=your-api-key" \
+  "MAILJET_SECRET_KEY=your-secret-key" \
+  "MAILJET_FROM_EMAIL=noreply@yourdomain.com" \
+  "MAILJET_FROM_NAME=Genesys Admin App"
+```
+
+| Setting | Description |
+| --- | --- |
+| `MAILJET_API_KEY` | Mailjet API public key |
+| `MAILJET_SECRET_KEY` | Mailjet API secret key |
+| `MAILJET_FROM_EMAIL` | Sender address (must be on verified domain) |
+| `MAILJET_FROM_NAME` | Display name for the sender |
+
+### How it works
+
+- Frontend calls `POST /api/send-email` with recipients, subject, body, and optional base64 attachment
+- The Azure Function authenticates to Mailjet's v3.1 Send API using Basic auth
+- Email is sent from the configured sender address
+- The email service (`js/services/emailService.js`) is a centralized module — any page can import and use it
+
+---
+
+## 14. First Deployment
 
 After pushing the config update:
 
@@ -468,7 +521,7 @@ After pushing the config update:
 
 ---
 
-## 14. Verification Checklist
+## 15. Verification Checklist
 
 | # | Check | Expected |
 | --- | --- | --- |
@@ -480,7 +533,7 @@ After pushing the config update:
 | 6 | Org selector dropdown appears | Lists all customers from `customers.json` |
 | 7 | `/api/customers` endpoint works | Returns JSON array of customers |
 | 8 | Selecting a customer updates the page | Page responds to org change |
-| 9 | Nav menu shows top-level groups | "Data Actions", "Data Tables", "Interactions", "Phones" — items sorted alphabetically |
+| 9 | Nav menu shows top-level groups | "Data Actions", "Data Tables", "Export", "Interactions", "Phones" — items sorted alphabetically |
 | 10 | Interaction Search works | Date range search returns conversations |
 | 11 | Excel export works | Downloads `.xlsx` file |
 | 12 | Move Interactions works | Queue selectors load, preview and move succeed |
@@ -491,12 +544,13 @@ After pushing the config update:
 | 17 | Disconnect Interactions | Single/multiple/queue modes; media type + date filters; disconnect succeeds |
 | 18 | WebRTC Phones — Create | Site selector; bulk create runs; summary shows counts; Excel download works |
 | 19 | WebRTC Phones — Change Site | From/To site selectors; Load Phones; searchable multi-select; Move runs; Excel download works |
-| 20 | Trustee Export | Export button scans all orgs; progress bar; matrix table displays; Excel download with per-trustee sheets |
-| 21 | Theme adapts | Dark/light matches OS setting |
+| 20 | Trustee Export | Export button scans all orgs; progress bar; matrix table displays; Excel download with styled formatting and per-trustee sheets |
+| 21 | Email notification | Trustee export with email enabled sends attachment to recipients via Mailjet |
+| 22 | Theme adapts | Dark/light matches OS setting |
 
 ---
 
-## 15. Day-to-Day Operations
+## 16. Day-to-Day Operations
 
 ### Adding a new customer
 
@@ -541,14 +595,14 @@ After pushing the config update:
 
 ### Adding a new feature page
 
-1. Create the page module in `js/pages/` (e.g. `js/pages/actions/triggers.js`)
+1. Create the page module in `js/pages/<category>/` (folder should mirror the nav tree, e.g. `js/pages/interactions/myFeature.js`)
 2. Register the route in `js/pageRegistry.js`
 3. Add a nav entry in `js/navConfig.js`
 4. Commit, push — GitHub Actions deploys automatically
 
 ---
 
-## 16. Troubleshooting
+## 17. Troubleshooting
 
 ### Login redirects in a loop
 
@@ -594,6 +648,19 @@ After pushing the config update:
 - **Cause:** The client credentials are invalid or expired
 - **Fix:** Verify the Client ID and Secret in Genesys Cloud. Update both Key Vault secrets and the corresponding SWA app settings.
 
+### Email sending fails with "Email service not configured"
+
+- **Cause:** Mailjet app settings are missing
+- **Fix:** Ensure `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILJET_FROM_EMAIL`, and `MAILJET_FROM_NAME` are set in Azure Static Web App → Configuration → Application settings
+
+### Email sending fails with Mailjet API error
+
+- **Cause:** Sender domain not verified, or API credentials incorrect
+- **Fix:** 
+  1. Verify your domain in Mailjet dashboard (SPF + DKIM both green)
+  2. Ensure `MAILJET_FROM_EMAIL` uses an address on the verified domain
+  3. Confirm API Key and Secret Key are correct
+
 ---
 
 ## Architecture Overview
@@ -603,13 +670,14 @@ Browser (SPA)                    Azure Static Web App (Standard)
 ┌─────────────┐                 ┌──────────────────────────────┐
 │  Frontend   │───── /api/* ───▶│  Azure Functions (Node 18)   │
 │  (JS SPA)   │                 │    ├─ GET /api/customers     │
-│             │                 │    └─ POST /api/genesys-proxy│
-│  Org select │                 │         │                    │
-│  dropdown   │                 │         │ reads process.env  │
+│             │                 │    ├─ POST /api/genesys-proxy│
+│  Org select │                 │    └─ POST /api/send-email   │──▶ Mailjet API
+│  dropdown   │                 │         │                    │    (EU servers)
 └─────────────┘                 └─────────┼────────────────────┘
                                           │
                                   Encrypted app settings
                                   (GENESYS_<ORG>_CLIENT_ID/SECRET)
+                                  (MAILJET_API_KEY / SECRET_KEY)
                                           │
                                    ┌──────▼───────┐
                                    │  Azure Key   │
@@ -640,25 +708,35 @@ genesys-admin-app/
 │   ├── router.js                 Hash-based SPA router
 │   ├── utils.js                  Shared utilities (formatting, Excel export, etc.)
 │   ├── lib/
-│   │   └── xlsx.full.min.js      SheetJS library for Excel export
+│   │   └── xlsx.bundle.js        xlsx-js-style library (SheetJS + cell styling)
 │   ├── components/
 │   │   └── multiSelect.js        Reusable multi-select dropdown
 │   ├── pages/
 │   │   ├── welcome.js            Welcome / landing page
 │   │   ├── notfound.js           404 page
 │   │   ├── placeholder.js        Generic "coming soon" stub
-│   │   └── actions/
-│   │       ├── interactionSearch.js    Interaction Search page
-│   │       ├── moveInteractions.js     Move Interactions between queues
-│   │       ├── datatables/
-│   │       │   ├── copySingleOrg.js    Copy data table within same org
-│   │       │   └── copyBetweenOrgs.js  Copy data table between orgs
-│   │       └── dataactions/
-│   │           └── copyBetweenOrgs.js  Copy data action between orgs
+│   │   ├── dataactions/
+│   │   │   ├── copyBetweenOrgs.js   Copy data action between orgs
+│   │   │   └── edit.js              Edit / test existing data actions
+│   │   ├── datatables/
+│   │   │   ├── copySingleOrg.js     Copy table within same org
+│   │   │   └── copyBetweenOrgs.js   Copy table between orgs
+│   │   ├── interactions/
+│   │   │   ├── search.js            Interaction Search page
+│   │   │   ├── move.js              Move Interactions between queues
+│   │   │   └── disconnect.js        Force-disconnect conversations
+│   │   ├── export/
+│   │   │   └── users/
+│   │   │       └── trustee.js       Trustee access matrix export
+│   │   └── phones/
+│   │       └── webrtc/
+│   │           ├── changeSite.js     Change site for WebRTC phones
+│   │           └── createWebRtc.js  Bulk-create WebRTC phones
 │   └── services/
 │       ├── apiClient.js          HTTP client + Genesys proxy wrapper
 │       ├── authService.js        OAuth 2.0 PKCE authentication
 │       ├── customerService.js    Fetches customer list from /api/customers
+│       ├── emailService.js       Centralized email service (Mailjet via /api/send-email)
 │       ├── genesysApi.js         Centralized Genesys Cloud API service
 │       └── orgContext.js         Selected org state management
 ├── api/                          Azure Functions backend (auto-deployed)
@@ -671,6 +749,9 @@ genesys-admin-app/
 │   ├── genesys-proxy/
 │   │   ├── function.json         HTTP trigger binding
 │   │   └── index.js              POST /api/genesys-proxy → proxied API calls
+│   ├── send-email/
+│   │   ├── function.json         HTTP trigger binding
+│   │   └── index.js              POST /api/send-email → Mailjet email sending
 │   └── lib/
 │       ├── customers.json        Customer metadata (id, name, region)
 │       └── genesysAuth.js        Client Credentials token cache per org

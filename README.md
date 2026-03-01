@@ -15,7 +15,8 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration, save drafts, validate, publish, and run inline tests
 - **WebRTC Phones — Create** — Bulk-create WebRTC phones for all licensed users in a site, skipping collaborate licenses and existing phones, with Excel log export
 - **WebRTC Phones — Change Site** — Move selected WebRTC phones from one site to another using a searchable multi-select phone picker, with progress tracking and Excel log export
-- **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets
+- **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets and styled formatting matching the Python tool output
+- **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant). Centralized email service reusable by any page.
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
 - **Top-level menu groups** — Data Actions, Data Tables, Export, Interactions, and Phones each have their own top-level nav section
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
@@ -29,7 +30,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **OAuth PKCE login** — Team members authenticate via Genesys Cloud (your own org)
 - **Welcome page** — App always starts on a clean welcome screen; no page or org is pre-selected
 - **Dark/light theme** — Adapts to OS preference automatically
-- **Iframe-safe Excel export** — Uses SheetJS with a helper page for reliable downloads inside Genesys Cloud iframes
+- **Iframe-safe Excel export** — Uses SheetJS (xlsx-js-style) with a helper page for reliable downloads inside Genesys Cloud iframes, with full cell styling support
 
 ## Architecture
 
@@ -38,13 +39,14 @@ Browser (SPA)                    Azure Static Web App (Standard)
 ┌─────────────┐                 ┌──────────────────────────────┐
 │  Frontend   │───── /api/* ───▶│  Azure Functions (Node 18)   │
 │  (JS SPA)   │                 │    ├─ GET /api/customers     │
-│             │                 │    └─ POST /api/genesys-proxy│
-│  Org select │                 │         │                    │
-│  dropdown   │                 │         │ reads process.env  │
+│             │                 │    ├─ POST /api/genesys-proxy│
+│  Org select │                 │    └─ POST /api/send-email   │──▶ Mailjet API
+│  dropdown   │                 │         │                    │    (EU servers)
 └─────────────┘                 └─────────┼────────────────────┘
                                           │
                                   Encrypted app settings
                                   (GENESYS_<ORG>_CLIENT_ID/SECRET)
+                                  (MAILJET_API_KEY / SECRET_KEY)
                                           │
                                    ┌──────▼───────┐
                                    │  Azure Key   │
@@ -69,6 +71,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
 | Secrets | Azure Key Vault |
 | Auth (team) | Genesys Cloud OAuth 2.0 PKCE |
 | Auth (customers) | OAuth 2.0 Client Credentials (via backend) |
+| Email | Mailjet v3.1 Send API (EU, GDPR-compliant) |
 | CI/CD | GitHub Actions |
 
 ## Project Structure
@@ -88,38 +91,41 @@ genesys-admin-app/
 │   ├── router.js                 Hash-based SPA router
 │   ├── utils.js                  Shared utilities (formatting, Excel export, etc.)
 │   ├── lib/
-│   │   └── xlsx.full.min.js      SheetJS library for Excel export
+│   │   └── xlsx.bundle.js        xlsx-js-style library (SheetJS + cell styling)
 │   ├── components/
 │   │   └── multiSelect.js        Reusable multi-select dropdown
 │   ├── pages/
 │   │   ├── welcome.js            Welcome / landing page
 │   │   ├── notfound.js           404 page
 │   │   ├── placeholder.js        Generic "coming soon" stub
-│   │   └── actions/
-│   │       ├── interactionSearch.js  Interaction Search page
-│   │       ├── moveInteractions.js   Move Interactions between queues
-│   │       ├── disconnectInteractions.js  Force-disconnect conversations
-│   │       ├── datatables/
-│   │       │   ├── copySingleOrg.js     Copy table within same org
-│   │       │   └── copyBetweenOrgs.js   Copy table between orgs
-│   │       ├── dataactions/
-│   │       │   ├── copyBetweenOrgs.js   Copy data action between orgs
-│   │       │   └── edit.js              Edit / test existing data actions
-│   │       └── phones/
-│   │           ├── changeSite.js         Change site for WebRTC phones
-│   │           └── createWebRtc.js      Bulk-create WebRTC phones
-│   └── pages/export/
-│       └── users/
-│           └── trustee.js           Trustee access matrix export
+│   │   ├── dataactions/
+│   │   │   ├── copyBetweenOrgs.js   Copy data action between orgs
+│   │   │   └── edit.js              Edit / test existing data actions
+│   │   ├── datatables/
+│   │   │   ├── copySingleOrg.js     Copy table within same org
+│   │   │   └── copyBetweenOrgs.js   Copy table between orgs
+│   │   ├── interactions/
+│   │   │   ├── search.js            Interaction Search page
+│   │   │   ├── move.js              Move Interactions between queues
+│   │   │   └── disconnect.js        Force-disconnect conversations
+│   │   ├── export/
+│   │   │   └── users/
+│   │   │       └── trustee.js       Trustee access matrix export
+│   │   └── phones/
+│   │       └── webrtc/
+│   │           ├── changeSite.js     Change site for WebRTC phones
+│   │           └── createWebRtc.js  Bulk-create WebRTC phones
 │   └── services/
 │       ├── apiClient.js          HTTP client + Genesys proxy wrapper
 │       ├── authService.js        OAuth 2.0 PKCE authentication
 │       ├── customerService.js    Customer list loader
+│       ├── emailService.js       Centralized email service (Mailjet via /api/send-email)
 │       ├── genesysApi.js         Centralized Genesys Cloud API service
 │       └── orgContext.js         Selected org state management
 ├── api/                          Azure Functions backend
 │   ├── customers/                GET /api/customers
 │   ├── genesys-proxy/            POST /api/genesys-proxy
+│   ├── send-email/               POST /api/send-email (Mailjet)
 │   └── lib/
 │       ├── customers.json        Customer metadata (15 orgs)
 │       └── genesysAuth.js        Client Credentials token cache per org
@@ -154,6 +160,7 @@ See [docs/setup-guide.md](docs/setup-guide.md) for the complete step-by-step dep
 - Azure Key Vault setup
 - Managed Identity + RBAC configuration
 - Customer credential import
+- Mailjet email service configuration
 - GitHub Actions CI/CD
 - Genesys Cloud OAuth client setup
 
@@ -186,7 +193,7 @@ See [docs/setup-guide.md](docs/setup-guide.md) for the complete step-by-step dep
 
 ## Adding a New Feature Page
 
-1. Create a page module in `js/pages/`
+1. Create a page module in `js/pages/<category>/` (folder should mirror the nav tree)
 2. Register the route in `js/pageRegistry.js`
 3. Add a nav entry in `js/navConfig.js`
 4. Commit and push
