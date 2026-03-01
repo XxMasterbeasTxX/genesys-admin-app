@@ -7,10 +7,10 @@
  * For each enabled schedule whose time is due, it runs the corresponding
  * export handler, builds the Excel file, and emails the result via Mailjet.
  *
- * Schedule evaluation:
- *   - daily:   runs once per day at scheduleTime (UTC)
- *   - weekly:  runs once per week on scheduleDayOfWeek at scheduleTime (UTC)
- *   - monthly: runs once per month on scheduleDayOfMonth at scheduleTime (UTC)
+ * Schedule evaluation (all times in Europe/Copenhagen — CET/CEST):
+ *   - daily:   runs once per day at scheduleTime
+ *   - weekly:  runs once per week on scheduleDayOfWeek at scheduleTime
+ *   - monthly: runs once per month on scheduleDayOfMonth at scheduleTime
  *
  * A schedule is considered "due" if:
  *   1. It is enabled
@@ -93,35 +93,53 @@ module.exports = async function (context, req) {
 
 // ── Due check ───────────────────────────────────────────
 
+function getDenmarkTime(date) {
+  // Get current time components in Europe/Copenhagen (CET/CEST)
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Copenhagen",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    weekday: "short", hour12: false,
+  }).formatToParts(date);
+
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return {
+    year: Number(get("year")),
+    month: Number(get("month")),
+    day: Number(get("day")),
+    hour: Number(get("hour")),
+    minute: Number(get("minute")),
+    weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(get("weekday")),
+    dateStr: `${get("year")}-${get("month")}-${get("day")}`,
+  };
+}
+
 function isDue(schedule, now) {
+  const dk = getDenmarkTime(now);
   const [hh, mm] = (schedule.scheduleTime || "08:00").split(":").map(Number);
-  const utcH = now.getUTCHours();
-  const utcM = now.getUTCMinutes();
 
   // The timer fires every 5 minutes. We consider a schedule "due" if
   // the current 5-minute window contains the scheduled time AND it
   // hasn't already run in the current period.
 
-  // Check if current time is within ~5min past the scheduled time
+  // Check if current DK time is within ~5min past the scheduled time
   const scheduleMins = hh * 60 + mm;
-  const nowMins = utcH * 60 + utcM;
+  const nowMins = dk.hour * 60 + dk.minute;
   const diff = nowMins - scheduleMins;
   if (diff < 0 || diff >= 5) return false;
 
-  // Check schedule type
+  // Check schedule type (using DK day/date)
   if (schedule.scheduleType === "weekly") {
-    if (now.getUTCDay() !== schedule.scheduleDayOfWeek) return false;
+    if (dk.weekday !== schedule.scheduleDayOfWeek) return false;
   } else if (schedule.scheduleType === "monthly") {
-    if (now.getUTCDate() !== schedule.scheduleDayOfMonth) return false;
+    if (dk.day !== schedule.scheduleDayOfMonth) return false;
   }
   // daily: no extra day check needed
 
-  // Avoid double-runs: check if lastRun is already today (for this time window)
+  // Avoid double-runs: check if lastRun is already today (DK date)
   if (schedule.lastRun) {
-    const lastRun = new Date(schedule.lastRun);
-    const lastRunDate = lastRun.toISOString().slice(0, 10);
-    const nowDate = now.toISOString().slice(0, 10);
-    if (lastRunDate === nowDate) return false; // Already ran today
+    const lastRunDk = getDenmarkTime(new Date(schedule.lastRun));
+    if (lastRunDk.dateStr === dk.dateStr) return false;
   }
 
   return true;

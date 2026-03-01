@@ -90,7 +90,7 @@ export function buildScheduleForm(opts) {
       </div>
 
       <div class="sp-form-group">
-        <label class="sp-form-label" for="spTime">Time (UTC)</label>
+        <label class="sp-form-label" for="spTime">Time (Danish time)</label>
         <input  class="sp-form-input" id="spTime" type="time"
                 value="${s?.scheduleTime || "08:00"}">
       </div>
