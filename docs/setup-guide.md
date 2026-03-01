@@ -520,14 +520,14 @@ Scheduled exports let users automate any export (e.g. Trustee) on a daily, weekl
 1. Azure Portal → **Create a resource** → search **Storage account** → **Create**
 2. Fill in:
 
-| Field | Value |
-| --- | --- |
-| **Subscription** | Same as your Static Web App |
-| **Resource group** | Same as your Static Web App |
-| **Storage account name** | e.g. `genesysadminstorage` (globally unique, lowercase, no hyphens) |
-| **Region** | Same as your Static Web App |
-| **Performance** | Standard |
-| **Redundancy** | LRS (Locally-redundant) is fine |
+    | Field | Value |
+    | --- | --- |
+    | **Subscription** | Same as your Static Web App |
+    | **Resource group** | Same as your Static Web App |
+    | **Storage account name** | e.g. `genesysadminstorage` (globally unique, lowercase, no hyphens) |
+    | **Region** | Same as your Static Web App |
+    | **Performance** | Standard |
+    | **Redundancy** | LRS (Locally-redundant) is fine |
 
 3. Click **Review + create** → **Create**
 4. After creation, go to the storage account → **Access keys** → click **Show** on key1 → copy the **Connection string**

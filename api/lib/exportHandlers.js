@@ -4,7 +4,7 @@
  * Maps exportType strings to handler modules.
  * Each handler must export:
  *
- *   async function execute(context) → {
+ *   async function execute(context, schedule) → {
  *     success: boolean,
  *     filename: string,
  *     base64: string,          // base64-encoded file content
@@ -20,6 +20,7 @@
 
 const handlers = {
   trustee: () => require("./exports/trustee"),
+  lastLogin: () => require("./exports/lastLogin"),
 };
 
 /**

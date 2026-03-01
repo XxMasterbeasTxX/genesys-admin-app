@@ -35,6 +35,8 @@ const registry = {
   // ── Export ─────────────────────────────────────────
   "/export/scheduled": (ctx) =>
     import("./pages/export/scheduledExports.js").then((m) => m.default(ctx)),
+  "/export/users/last-login": (ctx) =>
+    import("./pages/export/users/lastLogin.js").then((m) => m.default(ctx)),
   "/export/users/trustee": (ctx) =>
     import("./pages/export/users/trustee.js").then((m) => m.default(ctx)),
 

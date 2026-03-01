@@ -19,6 +19,7 @@ import {
   updateSchedule,
   deleteSchedule,
 } from "../services/scheduleService.js";
+import { orgContext } from "../services/orgContext.js";
 
 // ── Constants ───────────────────────────────────────────
 export const ADMIN_EMAIL = "thva@tdc.dk";
@@ -63,23 +64,56 @@ export function canEditSchedule(schedule, me) {
 /**
  * Build a schedule form DOM element.
  * @param {Object}  opts
- * @param {Object}  [opts.existing]    Existing schedule to edit (null = new)
- * @param {Function} opts.onSave      (formData) => void
- * @param {Function} opts.onCancel    () => void
- * @param {Function} [opts.onDelete]  (id) => void — shown only when editing
- * @param {boolean} [opts.canDelete]  Whether to show the delete button
+ * @param {Object}  [opts.existing]       Existing schedule to edit (null = new)
+ * @param {Function} opts.onSave         (formData) => void
+ * @param {Function} opts.onCancel       () => void
+ * @param {Function} [opts.onDelete]     (id) => void — shown only when editing
+ * @param {boolean} [opts.canDelete]     Whether to show the delete button
+ * @param {boolean} [opts.requiresOrg]   Show org selector in form
+ * @param {Array}   [opts.extraConfigFields] Extra fields to add to exportConfig
  * @returns {HTMLElement}
  */
 export function buildScheduleForm(opts) {
   const s = opts.existing;
   const isEdit = !!s;
+  const requiresOrg = opts.requiresOrg || false;
+  const extraConfigFields = opts.extraConfigFields || [];
+
+  // Get org list and existing config
+  const customers = requiresOrg ? orgContext.getCustomers() : [];
+  const existingConfig = s?.exportConfig || {};
 
   const form = document.createElement("div");
   form.className = "sp-form";
 
+  // Build org selector HTML if needed
+  const orgSelectorHtml = requiresOrg ? `
+      <div class="sp-form-group sp-form-wide">
+        <label class="sp-form-label" for="spOrgSelect">Organisation</label>
+        <select class="sp-form-select" id="spOrgSelect">
+          <option value="">— Select org —</option>
+          ${customers.map(c =>
+            `<option value="${escapeHtml(c.id)}" data-name="${escapeHtml(c.name)}"${existingConfig.orgId === c.id ? " selected" : ""}>${escapeHtml(c.name)}</option>`
+          ).join("")}
+        </select>
+      </div>` : "";
+
+  // Build extra config fields HTML
+  const extraFieldsHtml = extraConfigFields.map(f => `
+      <div class="sp-form-group">
+        <label class="sp-form-label" for="spExtra_${f.key}">${escapeHtml(f.label)}</label>
+        <input class="sp-form-input" id="spExtra_${f.key}" type="${f.type || "number"}"
+               value="${escapeHtml(String(existingConfig[f.key] ?? f.default ?? ""))}"
+               ${f.min != null ? `min="${f.min}"` : ""} ${f.max != null ? `max="${f.max}"` : ""}
+               placeholder="${escapeHtml(f.placeholder || "")}">
+        ${f.hint ? `<span class="sp-form-hint">${escapeHtml(f.hint)}</span>` : ""}
+      </div>`).join("");
+
   form.innerHTML = `
     <h4 class="sp-form-title">${isEdit ? "Edit Schedule" : "New Schedule"}</h4>
     <div class="sp-form-grid">
+      ${orgSelectorHtml}
+      ${extraFieldsHtml}
       <div class="sp-form-group">
         <label class="sp-form-label" for="spSchedType">Schedule</label>
         <select class="sp-form-select" id="spSchedType">
@@ -168,7 +202,7 @@ export function buildScheduleForm(opts) {
 
   // ── Collect form data ─────────────────────────────────
   function getFormData() {
-    return {
+    const data = {
       scheduleType: $type.value,
       scheduleTime: form.querySelector("#spTime").value,
       scheduleDayOfWeek: $type.value === "weekly"
@@ -179,10 +213,30 @@ export function buildScheduleForm(opts) {
       emailMessage: form.querySelector("#spMessage").value.trim(),
       enabled: form.querySelector("#spEnabled").checked,
     };
+
+    // Build exportConfig if org selector or extra fields are present
+    if (requiresOrg || extraConfigFields.length > 0) {
+      const config = {};
+      if (requiresOrg) {
+        const $orgSel = form.querySelector("#spOrgSelect");
+        config.orgId = $orgSel.value;
+        config.orgName = $orgSel.selectedOptions[0]?.dataset?.name || "";
+      }
+      for (const f of extraConfigFields) {
+        const val = form.querySelector(`#spExtra_${f.key}`).value;
+        config[f.key] = f.type === "number" ? (parseInt(val, 10) || f.default || 0) : val;
+      }
+      data.exportConfig = config;
+    }
+
+    return data;
   }
 
   // ── Validation ────────────────────────────────────────
   function validate(data) {
+    if (requiresOrg && (!data.exportConfig || !data.exportConfig.orgId)) {
+      return "Please select an organisation";
+    }
     if (!data.scheduleTime) return "Time is required";
     if (!data.emailRecipients) return "At least one email recipient is required";
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -236,12 +290,14 @@ export function buildScheduleForm(opts) {
  * Create a self-contained schedule panel for an export page.
  *
  * @param {Object} opts
- * @param {string} opts.exportType   e.g. "trustee"
- * @param {string} opts.exportLabel  e.g. "Trustee Access Matrix"
- * @param {Object} opts.me           Genesys user { email, name }
+ * @param {string} opts.exportType       e.g. "trustee"
+ * @param {string} opts.exportLabel      e.g. "Trustee Access Matrix"
+ * @param {Object} opts.me               Genesys user { email, name }
+ * @param {boolean} [opts.requiresOrg]   Show org selector when creating schedule
+ * @param {Array}   [opts.extraConfigFields] Extra config fields for the form
  * @returns {HTMLElement}
  */
-export function createSchedulePanel({ exportType, exportLabel, me }) {
+export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, extraConfigFields }) {
   const el = document.createElement("div");
   el.className = "sp-section";
 
@@ -277,9 +333,12 @@ export function createSchedulePanel({ exportType, exportLabel, me }) {
       return;
     }
 
+    const hasOrg = filtered.some(s => s.exportConfig?.orgName);
+
     let html = `<table class="data-table sp-table">
       <thead><tr>
         <th>Schedule</th>
+        ${hasOrg ? "<th>Organisation</th>" : ""}
         <th>Recipients</th>
         <th>Enabled</th>
         <th>Created by</th>
@@ -290,6 +349,7 @@ export function createSchedulePanel({ exportType, exportLabel, me }) {
       const editable = canEditSchedule(s, me);
       html += `<tr>
         <td>${escapeHtml(describeSchedule(s))}</td>
+        ${hasOrg ? `<td>${escapeHtml(s.exportConfig?.orgName || "—")}</td>` : ""}
         <td class="sp-cell-email">${escapeHtml(s.emailRecipients)}</td>
         <td>${s.enabled
           ? `<span class="sp-badge sp-badge--on">On</span>`
@@ -319,6 +379,8 @@ export function createSchedulePanel({ exportType, exportLabel, me }) {
     const form = buildScheduleForm({
       existing,
       canDelete: existing ? canEditSchedule(existing, me) : false,
+      requiresOrg,
+      extraConfigFields,
       onSave: async (formData) => {
         if (existing) {
           await updateSchedule(existing.id, {

@@ -163,7 +163,7 @@ async function runExport(context, schedule) {
   // 1. Run the export
   let result;
   try {
-    result = await handler.execute(context);
+    result = await handler.execute(context, schedule);
   } catch (err) {
     context.log.error(`Export handler threw: ${err.message}`);
     await store.updateRunStatus(id, {

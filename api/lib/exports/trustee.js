@@ -182,10 +182,11 @@ function buildTrusteeWorkbook(byTrusteeOrg, customerNames) {
 /**
  * Execute the trustee export server-side.
  *
- * @param {Object} context  Azure Functions context (for logging)
+ * @param {Object} context   Azure Functions context (for logging)
+ * @param {Object} [schedule] Schedule object (unused by trustee, included for interface compat)
  * @returns {Object} { success, filename, base64, mimeType, summary, error? }
  */
-async function execute(context) {
+async function execute(context, schedule) {
   const log = context?.log || console;
 
   try {

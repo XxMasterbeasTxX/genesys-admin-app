@@ -60,11 +60,14 @@ export default function renderScheduledExports({ route, me }) {
       return (a.createdAt || "").localeCompare(b.createdAt || "");
     });
 
+    const hasOrg = sorted.some(s => s.exportConfig?.orgName);
+
     let html = `
       <div class="se-table-wrap">
         <table class="data-table se-table">
           <thead><tr>
             <th>Export</th>
+            ${hasOrg ? "<th>Organisation</th>" : ""}
             <th>Schedule</th>
             <th>Recipients</th>
             <th>Enabled</th>
@@ -78,6 +81,7 @@ export default function renderScheduledExports({ route, me }) {
       const editable = canEditSchedule(s, me);
       html += `<tr data-id="${s.id}">
         <td>${escapeHtml(s.exportLabel || s.exportType)}</td>
+        ${hasOrg ? `<td>${escapeHtml(s.exportConfig?.orgName || "—")}</td>` : ""}
         <td>${escapeHtml(describeSchedule(s))}</td>
         <td class="se-cell-email">${escapeHtml(s.emailRecipients)}</td>
         <td>${s.enabled

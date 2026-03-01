@@ -1221,6 +1221,20 @@ body {
   display: flex;
   gap: 8px;
   margin-bottom: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.ll-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+.ll-filter-input {
+  width: 80px;
+  padding: 4px 8px;
+  font-size: 13px;
 }
 .te-btn-export {
   background: rgba(59, 130, 246, 0.12);
