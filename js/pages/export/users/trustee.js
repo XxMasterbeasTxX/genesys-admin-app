@@ -19,7 +19,7 @@
  *   GET /api/v2/groups/{groupId}/members
  *   GET /api/v2/users/{id}
  */
-import { escapeHtml, exportXlsx, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { fetchCustomers } from "../../../services/customerService.js";
 import { sendEmail, validateRecipients } from "../../../services/emailService.js";
@@ -34,12 +34,119 @@ const TRUSTEE_NAME_MAP = {
   "netdesign":    "test-ie",
 };
 
+// ── Trustee org display name → Excel sheet name suffix ──────────────
+const TRUSTEE_SHEET_SUFFIX = {
+  "Netdesign DE": "DE",
+  "Netdesign":    "IE",
+};
+
 /** Normalise a trustee org name for display. */
 function normaliseTrusteeOrg(name) {
   const lower = (name || "").toLowerCase();
   if (lower.includes("netdesign de")) return "Netdesign DE";
   if (lower === "netdesign") return "Netdesign";
   return name;
+}
+
+/** Get Excel sheet name for a trustee org (matches Python format). */
+function getTrusteeSheetName(trusteeOrg) {
+  const suffix = TRUSTEE_SHEET_SUFFIX[trusteeOrg] || trusteeOrg;
+  return `Trustee Org - ${suffix}`;
+}
+
+// ── Excel style constants (matching Python openpyxl formatting) ─────
+const STYLE_HEADER = {
+  fill:      { fgColor: { rgb: "366092" } },
+  font:      { bold: true, sz: 11, color: { rgb: "FFFFFF" } },
+  alignment: { horizontal: "center", vertical: "center" },
+  border:    {
+    top:    { style: "thin", color: { rgb: "000000" } },
+    bottom: { style: "thin", color: { rgb: "000000" } },
+    left:   { style: "thin", color: { rgb: "000000" } },
+    right:  { style: "thin", color: { rgb: "000000" } },
+  },
+};
+
+const STYLE_TRUE = {
+  fill:      { fgColor: { rgb: "C6EFCE" } },
+  font:      { color: { rgb: "006100" } },
+  alignment: { horizontal: "center", vertical: "center" },
+};
+
+const STYLE_FALSE = {
+  fill:      { fgColor: { rgb: "FFC7CE" } },
+  font:      { color: { rgb: "9C0006" } },
+  alignment: { horizontal: "center", vertical: "center" },
+};
+
+/**
+ * Build a styled XLSX workbook matching the Python trustee export format.
+ *
+ * @param {Object} byTrusteeOrg  { "Netdesign DE": [{ name, email, orgs }] }
+ * @param {string[]} customerNames  Sorted list of all customer org names.
+ * @returns {Object} XLSX workbook object.
+ */
+function buildTrusteeWorkbook(byTrusteeOrg, customerNames) {
+  const wb = XLSX.utils.book_new();
+
+  for (const trusteeOrg of Object.keys(byTrusteeOrg).sort()) {
+    const users = byTrusteeOrg[trusteeOrg].sort((a, b) => a.name.localeCompare(b.name));
+
+    // Only include org columns where at least one user has access
+    const activeCols = customerNames.filter(cn => users.some(u => u.orgs[cn]));
+
+    // Build header row
+    const headers = ["Name", "Email", ...activeCols];
+
+    // Build data rows
+    const rows = users.map(u => {
+      const row = [u.name, u.email];
+      for (const cn of activeCols) row.push(u.orgs[cn] === true);
+      return row;
+    });
+
+    // Create worksheet from array of arrays (header + data)
+    const wsData = [headers, ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // ── Apply header styles ──────────────────────────────
+    for (let c = 0; c < headers.length; c++) {
+      const addr = XLSX.utils.encode_cell({ r: 0, c });
+      if (ws[addr]) ws[addr].s = STYLE_HEADER;
+    }
+
+    // ── Apply data cell styles ───────────────────────────
+    for (let r = 0; r < rows.length; r++) {
+      for (let c = 2; c < headers.length; c++) {  // columns after Name, Email
+        const addr = XLSX.utils.encode_cell({ r: r + 1, c });
+        if (ws[addr]) {
+          ws[addr].s = ws[addr].v === true ? STYLE_TRUE : STYLE_FALSE;
+        }
+      }
+    }
+
+    // ── Auto-adjust column widths (text length + 2, max 50) ──
+    const colWidths = headers.map((h, i) => {
+      let maxLen = h.length;
+      for (const row of rows) {
+        const val = String(row[i] ?? "");
+        if (val.length > maxLen) maxLen = val.length;
+      }
+      return { wch: Math.min(maxLen + 2, 50) };
+    });
+    ws["!cols"] = colWidths;
+
+    // ── Freeze panes: header row + first two columns (C2) ──
+    ws["!views"] = [{ state: "frozen", xSplit: 2, ySplit: 1 }];
+
+    // ── Auto-filter on header row ──
+    ws["!autofilter"] = { ref: ws["!ref"] };
+
+    // Sheet name: "Trustee Org - DE" / "Trustee Org - IE"
+    XLSX.utils.book_append_sheet(wb, ws, getTrusteeSheetName(trusteeOrg).slice(0, 31));
+  }
+
+  return wb;
 }
 
 // ── Page renderer ───────────────────────────────────────────────────
@@ -132,35 +239,10 @@ export default function renderTrusteeExport({ route, me, api }) {
     $progressBar.style.width = `${pct}%`;
   }
 
-  /** Build and trigger Excel download. */
+  /** Build and trigger Excel download (styled). */
   function downloadExcel(byTrusteeOrg, customerNames) {
-    const sheets = [];
-    for (const trusteeOrg of Object.keys(byTrusteeOrg).sort()) {
-      const users = byTrusteeOrg[trusteeOrg].sort((a, b) => a.name.localeCompare(b.name));
-      const activeCols = customerNames.filter(cn => users.some(u => u.orgs[cn]));
-
-      const rows = users.map(u => {
-        const row = { Name: u.name, Email: u.email };
-        for (const cn of activeCols) {
-          row[cn] = u.orgs[cn] === true;
-        }
-        return row;
-      });
-
-      sheets.push({ name: trusteeOrg.slice(0, 31), rows });
-    }
-
-    if (sheets.length === 0) return;
-
-    const wb = XLSX.utils.book_new();
-    for (const sheet of sheets) {
-      const ws = XLSX.utils.json_to_sheet(sheet.rows);
-      const colCount = Object.keys(sheet.rows[0] || {}).length;
-      ws["!cols"] = Array.from({ length: colCount }, (_, i) => ({
-        wch: i < 2 ? 25 : 14,
-      }));
-      XLSX.utils.book_append_sheet(wb, ws, sheet.name);
-    }
+    const wb = buildTrusteeWorkbook(byTrusteeOrg, customerNames);
+    if (!wb.SheetNames.length) return;
 
     const b64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
     const filename = timestampedFilename("trustee_export", "xlsx");
@@ -354,21 +436,8 @@ export default function renderTrusteeExport({ route, me, api }) {
       if ($emailChk.checked && $emailTo.value.trim()) {
         setStatus("Sending email…");
         try {
-          // Build the Excel as base64 for attachment
-          const wb2 = XLSX.utils.book_new();
-          for (const tOrg of Object.keys(byTrusteeOrg).sort()) {
-            const tUsers = byTrusteeOrg[tOrg].sort((a, b) => a.name.localeCompare(b.name));
-            const tCols = customerNames.filter(cn => tUsers.some(u => u.orgs[cn]));
-            const tRows = tUsers.map(u => {
-              const r = { Name: u.name, Email: u.email };
-              for (const cn of tCols) r[cn] = u.orgs[cn] === true;
-              return r;
-            });
-            const ws2 = XLSX.utils.json_to_sheet(tRows);
-            const cc = Object.keys(tRows[0] || {}).length;
-            ws2["!cols"] = Array.from({ length: cc }, (_, i) => ({ wch: i < 2 ? 25 : 14 }));
-            XLSX.utils.book_append_sheet(wb2, ws2, tOrg.slice(0, 31));
-          }
+          // Build the styled Excel as base64 for attachment
+          const wb2 = buildTrusteeWorkbook(byTrusteeOrg, customerNames);
           const xlsxB64 = XLSX.write(wb2, { bookType: "xlsx", type: "base64" });
           const xlsxName = timestampedFilename("trustee_export", "xlsx");
 
