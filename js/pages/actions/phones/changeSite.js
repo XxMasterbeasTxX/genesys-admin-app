@@ -193,6 +193,7 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
       }
 
       // Populate the multi-select
+      phoneSelect.setPlaceholder("Select phones\u2026");
       phoneSelect.setItems(
         phonesAtSource.map(p => ({
           id: p.id,

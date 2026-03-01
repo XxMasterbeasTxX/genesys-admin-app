@@ -228,5 +228,11 @@ export function createMultiSelect({ placeholder = "Select…", searchable = fals
       trigger.disabled = !on;
       if (!on) close();
     },
+
+    /** Update the placeholder text shown when nothing is selected. */
+    setPlaceholder(text) {
+      placeholder = text;
+      if (!selected.size) trigger.textContent = placeholder;
+    },
   };
 }
