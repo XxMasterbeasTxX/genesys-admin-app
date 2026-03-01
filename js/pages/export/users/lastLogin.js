@@ -314,7 +314,7 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
       setStatus("Fetching user data…");
       const allUsers = await gc.fetchAllUsers(api, org.id, {
         expand: ["division", "dateLastLogin"],
-        state: "any",
+        state: "active",
         onProgress: (n) => setProgress(34 + Math.min((n / 500) * 32, 32)),
       });
       if (cancelled) return;
@@ -433,7 +433,9 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
     const maxPreview = 500;
     const show = rows.slice(0, maxPreview);
 
-    let html = `<table class="data-table"><thead><tr>`;
+    let html = `<details class="te-details">`;
+    html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${rows.length} rows</span></summary>`;
+    html += `<div class="te-table-scroll"><table class="data-table"><thead><tr>`;
     for (const h of HEADERS) html += `<th>${escapeHtml(h)}</th>`;
     html += `</tr></thead><tbody>`;
 
@@ -448,10 +450,11 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
       </tr>`;
     });
 
-    html += `</tbody></table>`;
+    html += `</tbody></table></div>`;
     if (rows.length > maxPreview) {
       html += `<p class="sp-form-hint">Showing first ${maxPreview} of ${rows.length} rows</p>`;
     }
+    html += `</details>`;
     $table.innerHTML = html;
   }
 
