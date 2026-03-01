@@ -1,33 +1,14 @@
 /**
  * Centralized Email Service
  *
- * Sends outbound emails via the Genesys Cloud Email API through the
- * existing proxy backend.  Any page that needs to send email should
+ * Sends outbound emails via the Mailjet API through the Azure Function
+ * backend (/api/send-email).  Any page that needs to send email should
  * import `sendEmail` and `validateRecipients` from this module.
  *
- * Flow:
- *   1. POST /api/v2/conversations/emails        → create outbound draft
- *   2. POST …/messages/draft/attachments         → upload file (optional)
- *   3. PATCH …/messages/draft                    → set body & send
- *
- * Configuration:
- *   Org:   Netdesign DE  ("demo")
- *   Queue: 97f48c1f-0b3b-4495-af91-fa58c93dea4b
- *   From:  genesysadmintool@netdesignde.mypurecloud.de
+ * Sender identity and Mailjet credentials are configured server-side
+ * via Azure app settings (MAILJET_API_KEY, MAILJET_SECRET_KEY,
+ * MAILJET_FROM_EMAIL, MAILJET_FROM_NAME).
  */
-
-// ── Config ──────────────────────────────────────────────────────────
-
-const EMAIL_ORG_ID   = "demo";
-const EMAIL_QUEUE_ID = "97f48c1f-0b3b-4495-af91-fa58c93dea4b";
-const EMAIL_FROM     = "genesysadmintool@netdesignde.mypurecloud.de";
-const EMAIL_FROM_NAME = "Genesys Admin App";
-
-const DEFAULT_BODY =
-  "Please find the attached export.\n\n" +
-  "Generated: {timestamp}\n\n" +
-  "Best regards,\n" +
-  "Genesys Admin App";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -66,77 +47,49 @@ export function validateRecipients(str) {
 // ── Main send function ──────────────────────────────────────────────
 
 /**
- * Send an outbound email via Genesys Cloud.
+ * Send an outbound email via Mailjet (through /api/send-email).
  *
- * @param {Object} api              apiClient instance (needs proxyGenesys).
+ * @param {Object} _api             Unused — kept for backward compatibility.
  * @param {Object} opts
  * @param {string} opts.recipients   Comma / semicolon separated emails.
  * @param {string} opts.subject      Email subject line.
- * @param {string} [opts.body]       Custom message body (falls back to default).
+ * @param {string} [opts.body]       Custom message body (falls back to server default).
  * @param {Object} [opts.attachment] Optional file to attach.
  * @param {string} opts.attachment.filename   e.g. "trustee_export_2026-03-01.xlsx"
  * @param {string} opts.attachment.base64     Base64-encoded file content.
  * @param {string} opts.attachment.mimeType   e.g. "application/vnd.openxmlformats-…"
  * @returns {Promise<{ success: boolean, error?: string }>}
  */
-export async function sendEmail(api, { recipients, subject, body, attachment }) {
+export async function sendEmail(_api, { recipients, subject, body, attachment }) {
   try {
-    const recipientList = validateRecipients(recipients);
+    // Validate on the client side first (fast feedback)
+    validateRecipients(recipients);
 
-    // Build email body text
-    const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19);
-    const textBody = (body && body.trim())
-      ? body.trim()
-      : DEFAULT_BODY.replace("{timestamp}", timestamp);
+    const payload = { recipients, subject };
 
-    // 1. Create outbound email conversation (draft)
-    const conversation = await api.proxyGenesys(EMAIL_ORG_ID, "POST",
-      "/api/v2/conversations/emails", {
-        body: {
-          queueId:     EMAIL_QUEUE_ID,
-          toAddress:   recipientList[0],
-          toName:      recipientList[0],
-          fromAddress: EMAIL_FROM,
-          fromName:    EMAIL_FROM_NAME,
-          subject:     subject,
-          direction:   "OUTBOUND",
-        },
-      });
-
-    const conversationId = conversation.id;
-    if (!conversationId) {
-      return { success: false, error: "Failed to create email conversation — no ID returned." };
+    if (body && body.trim()) {
+      payload.body = body.trim();
     }
 
-    // 2. Upload attachment (if provided)
     if (attachment) {
-      try {
-        await api.proxyGenesys(EMAIL_ORG_ID, "POST",
-          `/api/v2/conversations/emails/${conversationId}/messages/draft/attachments`, {
-            body: {
-              __fileUpload: {
-                fileName:     attachment.filename,
-                fileBase64:   attachment.base64,
-                fileMimeType: attachment.mimeType,
-              },
-            },
-          });
-      } catch (uploadErr) {
-        console.warn("Attachment upload failed, sending email without attachment:", uploadErr);
-        // Continue — email will be sent without the attachment
-      }
+      payload.attachment = {
+        filename: attachment.filename,
+        base64:   attachment.base64,
+        mimeType: attachment.mimeType,
+      };
     }
 
-    // 3. Send the email by patching the draft
-    await api.proxyGenesys(EMAIL_ORG_ID, "PATCH",
-      `/api/v2/conversations/emails/${conversationId}/messages/draft`, {
-        body: {
-          to:       recipientList.map((email) => ({ email })),
-          from:     { email: EMAIL_FROM, name: EMAIL_FROM_NAME },
-          subject:  subject,
-          textBody: textBody,
-        },
-      });
+    const res = await fetch("/api/send-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      return { success: false, error: data.error || `Server returned ${res.status}` };
+    }
 
     return { success: true };
   } catch (err) {
