@@ -22,6 +22,7 @@
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { fetchCustomers } from "../../../services/customerService.js";
+import { sendEmail, validateRecipients } from "../../../services/emailService.js";
 
 // ── Known trustee org name variations → our internal customer id ────
 const TRUSTEE_NAME_MAP = {
@@ -78,6 +79,27 @@ export default function renderTrusteeExport({ route, me, api }) {
 
     <div id="teDownload" style="display:none">
       <button class="btn te-btn-export" id="teDownloadBtn">Download Excel</button>
+    </div>
+
+    <div class="em-section">
+      <label class="em-toggle">
+        <input type="checkbox" id="teEmailChk">
+        <span>Send email with export</span>
+      </label>
+
+      <div class="em-fields" id="teEmailFields" style="display:none">
+        <div class="em-field">
+          <label class="em-label" for="teEmailTo">Recipients</label>
+          <input type="text" class="em-input" id="teEmailTo"
+                 placeholder="user@example.com, user2@example.com">
+          <span class="em-hint">Separate multiple addresses with , or ;</span>
+        </div>
+        <div class="em-field">
+          <label class="em-label" for="teEmailBody">Message (optional)</label>
+          <textarea class="em-textarea" id="teEmailBody" rows="3"
+                    placeholder="Leave empty for default message"></textarea>
+        </div>
+      </div>
     </div>`;
 
   // ── DOM refs ──────────────────────────────────────────
@@ -90,6 +112,15 @@ export default function renderTrusteeExport({ route, me, api }) {
   const $summary     = el.querySelector("#teSummary");
   const $download    = el.querySelector("#teDownload");
   const $downloadBtn = el.querySelector("#teDownloadBtn");
+  const $emailChk    = el.querySelector("#teEmailChk");
+  const $emailFields = el.querySelector("#teEmailFields");
+  const $emailTo     = el.querySelector("#teEmailTo");
+  const $emailBody   = el.querySelector("#teEmailBody");
+
+  // Toggle email fields visibility
+  $emailChk.addEventListener("change", () => {
+    $emailFields.style.display = $emailChk.checked ? "" : "none";
+  });
 
   // ── Helpers ───────────────────────────────────────────
   function setStatus(msg, type) {
@@ -315,11 +346,54 @@ export default function renderTrusteeExport({ route, me, api }) {
       $summary.textContent = `Users: ${allUsers.length}  •  Orgs scanned: ${totalOrgs}  •  Trustee orgs: ${Object.keys(byTrusteeOrg).length}`;
       $summary.style.display = "";
 
-      setStatus("Done.", "success");
-
       // 5. Show download button
       $download.style.display = "";
       $downloadBtn.onclick = () => downloadExcel(byTrusteeOrg, customerNames);
+
+      // 6. Send email if enabled
+      if ($emailChk.checked && $emailTo.value.trim()) {
+        setStatus("Sending email…");
+        try {
+          // Build the Excel as base64 for attachment
+          const wb2 = XLSX.utils.book_new();
+          for (const tOrg of Object.keys(byTrusteeOrg).sort()) {
+            const tUsers = byTrusteeOrg[tOrg].sort((a, b) => a.name.localeCompare(b.name));
+            const tCols = customerNames.filter(cn => tUsers.some(u => u.orgs[cn]));
+            const tRows = tUsers.map(u => {
+              const r = { Name: u.name, Email: u.email };
+              for (const cn of tCols) r[cn] = u.orgs[cn] === true;
+              return r;
+            });
+            const ws2 = XLSX.utils.json_to_sheet(tRows);
+            const cc = Object.keys(tRows[0] || {}).length;
+            ws2["!cols"] = Array.from({ length: cc }, (_, i) => ({ wch: i < 2 ? 25 : 14 }));
+            XLSX.utils.book_append_sheet(wb2, ws2, tOrg.slice(0, 31));
+          }
+          const xlsxB64 = XLSX.write(wb2, { bookType: "xlsx", type: "base64" });
+          const xlsxName = timestampedFilename("trustee_export", "xlsx");
+
+          const result = await sendEmail(api, {
+            recipients: $emailTo.value,
+            subject: `Trustee Export — ${new Date().toISOString().replace("T", " ").slice(0, 19)}`,
+            body: $emailBody.value,
+            attachment: {
+              filename: xlsxName,
+              base64: xlsxB64,
+              mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            },
+          });
+
+          if (result.success) {
+            setStatus(`Done. Email sent to: ${$emailTo.value.trim()}`, "success");
+          } else {
+            setStatus(`Export completed but email failed: ${result.error}`, "error");
+          }
+        } catch (emailErr) {
+          setStatus(`Export completed but email failed: ${emailErr.message}`, "error");
+        }
+      } else {
+        setStatus("Done.", "success");
+      }
 
     } catch (err) {
       setStatus(`Export failed: ${err.message}`, "error");

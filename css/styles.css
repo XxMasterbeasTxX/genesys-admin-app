@@ -984,6 +984,10 @@ body {
   .te-cell-no { background: rgba(239,68,68,0.06); color: #dc2626; }
   .te-details { background: var(--panel); border-color: var(--border); }
   .te-user-count { background: rgba(0,0,0,0.06); }
+
+  /* Email UI */
+  .em-fields { background: var(--panel); border-color: var(--border); }
+  .em-input, .em-textarea { background: #fff; border-color: var(--border); }
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1315,4 +1319,69 @@ body {
 .te-cell-no {
   background: rgba(239, 68, 68, 0.08);
   color: #f87171;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Centralized Email UI  (em-* prefix)
+   ══════════════════════════════════════════════════════════ */
+.em-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.em-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.em-toggle input[type="checkbox"] {
+  accent-color: #3b82f6;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+.em-fields {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.em-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.em-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.em-input,
+.em-textarea {
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: inherit;
+  resize: vertical;
+}
+.em-input:focus,
+.em-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+.em-hint {
+  font-size: 11px;
+  color: var(--muted);
 }

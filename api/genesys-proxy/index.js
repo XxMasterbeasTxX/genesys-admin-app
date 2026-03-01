@@ -83,12 +83,23 @@ module.exports = async function (context, req) {
       method: method.toUpperCase(),
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
       },
     };
 
-    if (body && !["GET", "DELETE"].includes(method.toUpperCase())) {
-      fetchOpts.body = JSON.stringify(body);
+    // Support binary file uploads via __fileUpload in body
+    if (body && body.__fileUpload) {
+      const { fileName, fileBase64, fileMimeType } = body.__fileUpload;
+      const fileBuffer = Buffer.from(fileBase64, "base64");
+      const blob = new Blob([fileBuffer], { type: fileMimeType });
+      const formData = new FormData();
+      formData.append("file", blob, fileName);
+      fetchOpts.body = formData;
+      // Let fetch set Content-Type with correct multipart boundary
+    } else {
+      fetchOpts.headers["Content-Type"] = "application/json";
+      if (body && !["GET", "DELETE"].includes(method.toUpperCase())) {
+        fetchOpts.body = JSON.stringify(body);
+      }
     }
 
     const genesysResp = await fetch(url, fetchOpts);
