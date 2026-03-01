@@ -74,7 +74,11 @@ export default function renderTrusteeExport({ route, me, api }) {
 
     <div id="teTableWrap" style="display:none"></div>
 
-    <div class="wc-summary" id="teSummary" style="display:none"></div>`;
+    <div class="wc-summary" id="teSummary" style="display:none"></div>
+
+    <div id="teDownload" style="display:none">
+      <button class="btn te-btn-export" id="teDownloadBtn">Download Excel</button>
+    </div>`;
 
   // ── DOM refs ──────────────────────────────────────────
   const $exportBtn   = el.querySelector("#teExportBtn");
@@ -84,6 +88,8 @@ export default function renderTrusteeExport({ route, me, api }) {
   const $progressBar = el.querySelector("#teProgressBar");
   const $tableWrap   = el.querySelector("#teTableWrap");
   const $summary     = el.querySelector("#teSummary");
+  const $download    = el.querySelector("#teDownload");
+  const $downloadBtn = el.querySelector("#teDownloadBtn");
 
   // ── Helpers ───────────────────────────────────────────
   function setStatus(msg, type) {
@@ -125,16 +131,15 @@ export default function renderTrusteeExport({ route, me, api }) {
       XLSX.utils.book_append_sheet(wb, ws, sheet.name);
     }
 
-    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([buf], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = timestampedFilename("trustee_export", "xlsx");
-    a.click();
-    URL.revokeObjectURL(url);
+    const b64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+    const filename = timestampedFilename("trustee_export", "xlsx");
+    const helperUrl = new URL("download.html", document.baseURI);
+    helperUrl.hash = encodeURIComponent(filename) + "|" + b64;
+
+    const popup = window.open(helperUrl.href, "_blank");
+    if (!popup) {
+      throw new Error("Pop-up blocked. Please allow pop-ups for this site and try again.");
+    }
   }
 
   // ── Export logic ──────────────────────────────────────
@@ -147,6 +152,7 @@ export default function renderTrusteeExport({ route, me, api }) {
     $tableWrap.style.display = "none";
     $tableWrap.innerHTML = "";
     $summary.style.display = "none";
+    $download.style.display = "none";
 
     // Data: { (trusteeOrgDisplay, email) → { name, email, trusteeOrg, orgs: { orgName: true } } }
     const usersMap = new Map();
@@ -283,7 +289,7 @@ export default function renderTrusteeExport({ route, me, api }) {
           users.some(u => u.orgs[cn])
         );
 
-        html += `<details class="te-details" open>`;
+        html += `<details class="te-details">`;
         html += `<summary class="te-sheet-title">${escapeHtml(trusteeOrg)} <span class="te-user-count">${users.length} users</span></summary>`;
         html += `<div class="te-table-scroll"><table class="te-table">`;
         html += `<thead><tr><th>Name</th><th>Email</th>`;
@@ -311,8 +317,9 @@ export default function renderTrusteeExport({ route, me, api }) {
 
       setStatus("Done.", "success");
 
-      // 5. Auto-download Excel
-      downloadExcel(byTrusteeOrg, customerNames);
+      // 5. Show download button
+      $download.style.display = "";
+      $downloadBtn.onclick = () => downloadExcel(byTrusteeOrg, customerNames);
 
     } catch (err) {
       setStatus(`Export failed: ${err.message}`, "error");
