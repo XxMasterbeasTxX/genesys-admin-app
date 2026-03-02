@@ -23,6 +23,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **License Consumption Export** — Export per-user licence consumption for a selected org. Fixed columns: Name, Email, Division. One boolean column per licence (or a single column when filtered to a specific licence). Licences are loaded dynamically via `/api/v2/license/definitions`; optionally filter to a single licence. Sheet: "User Licenses". Supports per-org scheduled automation with licence filter stored in the schedule config.
 - **Roles Export (Single Org)** — Export all authorization roles for a selected org with accurate member counts (active org users only). Columns: Name, Description, Members. Supports per-org scheduled automation.
 - **Roles Export (All Orgs)** — Export roles for all configured orgs in a single multi-sheet workbook (one sheet per org). Accurate member counts, on-demand only.
+- **Documentation Export** — Generate a full Genesys Cloud configuration export for a selected org, mirroring the Python `Export_All.py` output. Produces up to 42 alphabetically sorted configuration sheets (Agent Copilots, DID Numbers, Flows, Queues, Users, OAuth clients, Outbound, etc.) plus a styled Index cover sheet with table of contents and clickable hyperlinks. A second workbook containing all DataTable contents (one sheet per table with its rows, plus an Index cover sheet showing row counts) is bundled as a ZIP when present. Export can take 5–10 minutes for large orgs.
 - **Scheduled Exports** — Automate any export on a daily, weekly, or monthly schedule with email delivery. Per-export automation toggle, reusable schedule panel with org selector and custom config fields, "All Scheduled Exports" overview page. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic ensures missed runs are retried. All times in Danish time (Europe/Copenhagen, CET/CEST).
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant). Centralized email service reusable by any page.
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
@@ -134,6 +135,8 @@ genesys-admin-app/
 │   │   │   ├── scheduledExports.js   All Scheduled Exports overview
 │   │   │   ├── licenses/
 │   │   │   │   └── consumption.js   License Consumption export + per-org automation
+│   │   │   ├── documentation/
+│   │   │   │   └── create.js        Documentation export (full config workbook + DataTables ZIP)
 │   │   │   ├── roles/
 │   │   │   │   ├── allOrgs.js       Roles export — all orgs, multi-sheet workbook
 │   │   │   │   └── singleOrg.js     Roles export — single org + automation
@@ -169,6 +172,7 @@ genesys-admin-app/
 │       └── exports/
 │           ├── allGroups.js         Server-side All Groups export handler
 │           ├── allRoles.js          Server-side All Roles export handler
+│           ├── documentation.js     Server-side Documentation export (42 sheets + DataTables workbook)
 │           ├── filteredRoles.js     Server-side Filtered on Role(s) export handler
 │           ├── licensesConsumption.js Server-side License Consumption export handler
 │           ├── rolesSingleOrg.js    Server-side Roles Single Org export handler

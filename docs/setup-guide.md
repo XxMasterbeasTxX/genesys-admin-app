@@ -21,6 +21,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **License Consumption Export** — Export per-user licence consumption for a selected org. Fixed columns: Name, Email, Division. One boolean column per licence (or a single column when filtered to a specific licence). Licences are loaded dynamically via `/api/v2/license/definitions`; the schedule form includes a licence filter. Sheet: "User Licenses". Supports per-org scheduled automation with licence filter stored in `exportConfig`.
 - **Roles Export (Single Org)** — Export all authorization roles for a selected org with accurate member counts (active org users only). Columns: Name, Description, Members. Supports per-org scheduled automation.
 - **Roles Export (All Orgs)** — Export roles for all configured orgs in a single multi-sheet workbook (one sheet per org). Accurate member counts, on-demand only.
+- **Documentation Export** — Generate a full Genesys Cloud configuration export for a selected org, mirroring the Python `Export_All.py` output. Produces up to 42 alphabetically sorted configuration sheets (Agent Copilots, DID Numbers, Flows, Queues, Users, OAuth clients, Outbound, and more) plus a styled Index cover sheet with table of contents and clickable hyperlinks. A second workbook containing all DataTable contents (one alphabetically sorted sheet per table with its rows, plus an Index cover sheet showing row counts per table) is bundled alongside the main workbook as a ZIP when present. Export can take 5–10 minutes for large orgs.
 - **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, org selector for per-org exports, "All Scheduled Exports" overview.
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant)
 
@@ -650,6 +651,7 @@ After pushing the config update:
 | 43 | License Consumption Export | Select org; click Load Licenses; licence definitions loaded into dropdown; choose "All Licenses" or a specific licence; export runs; collapsible preview with column filters on Name/Email/Division; Excel with Name, Email, Division + boolean licence columns; sheet "User Licenses" |
 | 44 | License Consumption email | License Consumption export with email enabled sends attachment to recipients via Mailjet |
 | 45 | License Consumption scheduled export | Toggle automation; licence filter picker loads dynamically per org; schedule saved with exportConfig.licenseFilter; Config column shown in schedule list |
+| 46 | Documentation Export | Select org; click Generate Documentation; spinner shown during fetch (5–10 min); main workbook downloaded as XLSX (or ZIP when DataTables present); main workbook has Index cover sheet + up to 42 alphabetically sorted config sheets; DataTables workbook has Index cover sheet (with row counts) + one alphabetically sorted sheet per data table |
 | 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
 | 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
 | 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
@@ -876,6 +878,8 @@ genesys-admin-app/
 │   │   │   ├── scheduledExports.js   All Scheduled Exports overview
 │   │   │   ├── licenses/
 │   │   │   │   └── consumption.js   License Consumption export + per-org automation
+│   │   │   ├── documentation/
+│   │   │   │   └── create.js        Documentation export (full config workbook + DataTables ZIP)
 │   │   │   ├── roles/
 │   │   │   │   ├── allOrgs.js       Roles export — all orgs, multi-sheet workbook
 │   │   │   │   └── singleOrg.js     Roles export — single org + automation
@@ -924,6 +928,7 @@ genesys-admin-app/
 │       └── exports/
 │           ├── allGroups.js         Server-side All Groups export handler
 │           ├── allRoles.js          Server-side All Roles export handler
+│           ├── documentation.js     Server-side Documentation export (42 sheets + DataTables workbook)
 │           ├── filteredRoles.js     Server-side Filtered on Role(s) export handler
 │           ├── licensesConsumption.js Server-side License Consumption export handler
 │           ├── rolesSingleOrg.js    Server-side Roles Single Org export handler
