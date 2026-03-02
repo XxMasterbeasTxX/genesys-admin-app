@@ -51,6 +51,8 @@ const registry = {
     import("./pages/export/licenses/consumption.js").then((m) => m.default(ctx)),
   "/export/users/trustee": (ctx) =>
     import("./pages/export/users/trustee.js").then((m) => m.default(ctx)),
+  "/export/documentation/create": (ctx) =>
+    import("./pages/export/documentation/create.js").then((m) => m.default(ctx)),
 
   // ── Phones ─────────────────────────────────────────
   "/phones/webrtc/change-site": (ctx) =>

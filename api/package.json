@@ -5,6 +5,7 @@
   "description": "Azure Functions API for Genesys Admin Tool",
   "dependencies": {
     "@azure/data-tables": "^13.3.0",
+    "jszip": "^3.10.1",
     "xlsx-js-style": "^1.2.0"
   }
 }

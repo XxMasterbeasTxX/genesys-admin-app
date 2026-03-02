@@ -39,7 +39,24 @@
         var raw = atob(b64);
         var bytes = new Uint8Array(raw.length);
         for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-        var mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+        // Detect MIME type from file extension
+        var ext = fileName.split(".").pop().toLowerCase();
+        var mimeMap = {
+          xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          zip:  "application/zip",
+          csv:  "text/csv",
+          pdf:  "application/pdf",
+        };
+        var mime = mimeMap[ext] || "application/octet-stream";
+
+        // File picker accepts config per extension
+        var pickerTypes = [{
+          description: ext === "zip" ? "ZIP Archive" : "Excel Workbook",
+          accept: {},
+        }];
+        pickerTypes[0].accept[mime] = ["." + ext];
+
         var blob = new Blob([bytes], { type: mime });
 
         // Clear hash for privacy
@@ -56,7 +73,7 @@
             if (window.showSaveFilePicker) {
               var handle = await window.showSaveFilePicker({
                 suggestedName: fileName,
-                types: [{ description: "Excel Workbook", accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] } }]
+                types: pickerTypes,
               });
               var writable = await handle.createWritable();
               await writable.write(blob);

@@ -60,6 +60,14 @@ export const NAV_TREE = [
         ],
       },
       {
+        label: "Documentation",
+        path: "documentation",
+        enabled: true,
+        children: [
+          { label: "Create", path: "create", enabled: true },
+        ],
+      },
+      {
         label: "Users",
         path: "users",
         enabled: true,

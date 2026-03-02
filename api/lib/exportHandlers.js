@@ -26,6 +26,7 @@ const handlers = {
   rolesSingleOrg: () => require("./exports/rolesSingleOrg"),
   lastLogin: () => require("./exports/lastLogin"),
   trustee: () => require("./exports/trustee"),
+  documentation:          () => require("./exports/documentation"),
 };
 
 /**
