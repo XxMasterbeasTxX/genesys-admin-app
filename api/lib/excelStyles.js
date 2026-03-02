@@ -63,7 +63,8 @@ function buildStyledWorkbook(wsData, sheetName) {
   // Header styles
   for (let c = 0; c < headers.length; c++) {
     const addr = XLSX.utils.encode_cell({ r: 0, c });
-    if (ws[addr]) ws[addr].s = STYLE_HEADER;
+    if (!ws[addr]) ws[addr] = { t: "s", v: "" };
+    ws[addr].s = STYLE_HEADER;
   }
 
   // Data styles: alternating rows
@@ -71,7 +72,8 @@ function buildStyledWorkbook(wsData, sheetName) {
     const style = (r + 1) % 2 === 0 ? STYLE_ROW_EVEN : STYLE_ROW_ODD;
     for (let c = 0; c < headers.length; c++) {
       const addr = XLSX.utils.encode_cell({ r: r + 1, c });
-      if (ws[addr]) ws[addr].s = style;
+      if (!ws[addr]) ws[addr] = { t: "s", v: "" };
+      ws[addr].s = style;
     }
   }
 
@@ -118,7 +120,8 @@ function addStyledSheet(wb, wsData, sheetName) {
     const style = (r + 1) % 2 === 0 ? STYLE_ROW_EVEN : STYLE_ROW_ODD;
     for (let c = 0; c < headers.length; c++) {
       const addr = XLSX.utils.encode_cell({ r: r + 1, c });
-      if (ws[addr]) ws[addr].s = style;
+      if (!ws[addr]) ws[addr] = { t: "s", v: "" };
+      ws[addr].s = style;
     }
   }
 

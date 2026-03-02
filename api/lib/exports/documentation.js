@@ -551,10 +551,12 @@ async function fetchDIDPools(region, token) {
 
 async function fetchDIDNumbers(region, token) {
   const headers = ["Number","Assigned","Assignee","Assignee Type"];
-  const dids = await genesysGetAllPages(region, token, "/api/v2/telephony/providers/edges/dids", 100);
+  const dids = await genesysGetAllPages(region, token, "/api/v2/telephony/providers/edges/didpools/dids?type=ASSIGNED_AND_UNASSIGNED", 100);
   const rows = dids.map((d) => [
-    d.phoneNumber || "", d.assigned ?? "",
-    d.owner?.name || "", d.ownerType || "",
+    d.number || d.phoneNumber || "",
+    d.assigned ?? false,
+    d.owner?.name || "",
+    d.ownerType || "",
   ]);
   return { headers, rows };
 }
@@ -1066,7 +1068,7 @@ async function fetchSites(region, token) {
 async function fetchAgentCopilots(region, token) {
   const copilotsHeaders = [
     "Assistant Name","Assistant ID","State","Queue Name","Media Types",
-    "Copilot Enabled","Language","NLU Engine Type","Live On Queue",
+    "Copilot Enabled","Default Language","NLU Engine Type","Live On Queue",
     "NLU Domain ID","Intent Confidence Threshold","Transcription Vendor",
     "Knowledge Vendor","Knowledge Base IDs","Rules Count","Fallback Enabled",
   ];
@@ -1080,10 +1082,16 @@ async function fetchAgentCopilots(region, token) {
   const assistantsResp = await genesysGet(region, token, "/api/v2/assistants?pageSize=100&expand=copilot");
   const assistants = assistantsResp.entities || [];
 
-  // Queue assignments from /api/v2/assistants/queues.
-  // Each entity returned is: { id: <queueId>, name: <queueName>,
-  //   assistant: { id: <assistantId> }, mediaTypes: [...] }
-  let assignmentMap = {}; // assistantId → [{ queueName, mediaTypes }]
+  // Queue name lookup — resolve queue IDs to names (same approach as Python)
+  let queueLookup = {};
+  try {
+    const allQueues = await genesysGetAllPages(region, token, "/api/v2/routing/queues", 100);
+    for (const q of allQueues) queueLookup[q.id] = q.name;
+  } catch (_) { /* skip */ }
+
+  // Queue assignments from /api/v2/assistants/queues
+  // Each entity: { id: <queueId>, assistant: { id: <assistantId> }, mediaTypes: [...] }
+  let assignmentMap = {}; // assistantId → [{ queueId, mediaTypes }]
   try {
     const assignResp = await genesysGet(region, token, "/api/v2/assistants/queues?pageSize=500");
     for (const entry of (assignResp.entities || [])) {
@@ -1091,7 +1099,7 @@ async function fetchAgentCopilots(region, token) {
       if (!aid) continue;
       if (!assignmentMap[aid]) assignmentMap[aid] = [];
       assignmentMap[aid].push({
-        queueName:  entry.name || entry.id || "No Queue Assignment",
+        queueId:    entry.id,
         mediaTypes: joinArr(entry.mediaTypes || []),
       });
     }
@@ -1122,34 +1130,31 @@ async function fetchAgentCopilots(region, token) {
     const fallback = ruleConfig.fallback || {};
 
     // Queue assignments — default to one "no assignment" row for unassigned assistants
-    const assignments = assignmentMap[a.id] || [{ queueName: "No Queue Assignment", mediaTypes: "" }];
+    const assignments = assignmentMap[a.id] || [{ queueId: null, mediaTypes: "" }];
 
-    // Language expansion: use copilot.languages[] when present, else [defaultLanguage] or [""]
-    const languages = Array.isArray(copilot.languages) && copilot.languages.length > 0
-      ? copilot.languages
-      : [copilot.defaultLanguage || ""];
-
-    // 1 row per queue × language combination
+    // One row per queue assignment (matches Python — no language expansion)
     for (const assign of assignments) {
-      for (const lang of languages) {
-        copilotsRows.push([
-          a.name  || "", a.id || "",
-          a.state || "",
-          assign.queueName,
-          assign.mediaTypes,
-          copilot.enabled ?? "",
-          lang,
-          copilot.nluEngineType || "", // nluEngineType is directly on copilot, not inside nluConfig
-          copilot.liveOnQueue   ?? "",
-          nluDomainId,
-          nluConfig.intentConfidenceThreshold ?? "",
-          transConfig.vendorName   || "",
-          knowledgeCfg.vendorName  || "",
-          kbIds,
-          rules.length,
-          fallback.enabled ?? "",
-        ]);
-      }
+      const queueName = assign.queueId
+        ? (queueLookup[assign.queueId] || "No Queue Assignment")
+        : "No Queue Assignment";
+
+      copilotsRows.push([
+        a.name  || "", a.id || "",
+        a.state || "",
+        queueName,
+        assign.mediaTypes,
+        copilot.enabled ?? "",
+        copilot.defaultLanguage || "",
+        copilot.nluEngineType || "",
+        copilot.liveOnQueue   ?? "",
+        nluDomainId,
+        nluConfig.intentConfidenceThreshold ?? "",
+        transConfig.vendorName   || "",
+        knowledgeCfg.vendorName  || "",
+        kbIds,
+        rules.length,
+        fallback.enabled ?? "",
+      ]);
     }
 
     // Rules sheet — doubly-nested: ruleOuter.rule contains conditions/actions;
@@ -1901,6 +1906,8 @@ async function execute(context, schedule) {
         // No data: omit the sheet entirely and exclude from the index
         return;
       }
+      // Sort rows alphabetically by first column (Name) to match Python output
+      rows.sort((a, b) => String(a[0] || "").localeCompare(String(b[0] || ""), undefined, { sensitivity: "base" }));
       addStyledSheet(wb, [headers, ...rows], safeSheet(name));
       inventory.push({ name, status: "data" });
     }
