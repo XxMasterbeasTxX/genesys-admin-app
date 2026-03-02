@@ -1796,6 +1796,9 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
     addStyledSheet(dtWb, wsData, sheetName);
   }
 
+  // Sort data table sheets alphabetically
+  dtWb.SheetNames.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
   return dtWb;
 }
 
