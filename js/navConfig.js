@@ -43,6 +43,15 @@ export const NAV_TREE = [
     children: [
       { label: "Scheduled Exports", path: "scheduled", enabled: true },
       {
+        label: "Roles",
+        path: "roles",
+        enabled: true,
+        children: [
+          { label: "All Orgs", path: "all-orgs", enabled: true },
+          { label: "Single Org", path: "single-org", enabled: true },
+        ],
+      },
+      {
         label: "Users",
         path: "users",
         enabled: true,

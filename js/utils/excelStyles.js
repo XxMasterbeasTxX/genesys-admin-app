@@ -94,3 +94,46 @@ export function buildStyledWorkbook(wsData, sheetName) {
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   return wb;
 }
+
+/**
+ * Add a styled sheet to an existing workbook (for multi-sheet exports).
+ * Applies the same Python-matching formatting as buildStyledWorkbook.
+ *
+ * @param {Object}  wb        - Existing XLSX workbook (mutated in place).
+ * @param {Array[]} wsData    - Array of arrays; wsData[0] must be the header row.
+ * @param {string}  sheetName - Worksheet tab name (max 31 chars, no special chars).
+ */
+export function addStyledSheet(wb, wsData, sheetName) {
+  const XLSX = window.XLSX;
+  const headers  = wsData[0];
+  const dataRows = wsData.slice(1);
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  for (let c = 0; c < headers.length; c++) {
+    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws[addr]) ws[addr].s = STYLE_HEADER;
+  }
+
+  for (let r = 0; r < dataRows.length; r++) {
+    const style = (r + 1) % 2 === 0 ? STYLE_ROW_EVEN : STYLE_ROW_ODD;
+    for (let c = 0; c < headers.length; c++) {
+      const addr = XLSX.utils.encode_cell({ r: r + 1, c });
+      if (ws[addr]) ws[addr].s = style;
+    }
+  }
+
+  ws["!cols"] = headers.map((h, i) => {
+    let maxLen = h.length;
+    for (const row of dataRows) {
+      const val = String(row[i] ?? "");
+      if (val.length > maxLen) maxLen = val.length;
+    }
+    return { wch: Math.min(maxLen + 2, 50) };
+  });
+
+  ws["!views"] = [{ state: "frozen", ySplit: 1 }];
+  ws["!autofilter"] = { ref: ws["!ref"] };
+
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+}

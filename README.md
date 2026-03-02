@@ -20,6 +20,8 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **All Groups Export** — Export all users (active, inactive, and deleted) with their group memberships for a selected org. One row per user-group combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool output. Supports per-org scheduled automation.
 - **All Roles Export** — Export all users (active, inactive, and deleted) with their role assignments for a selected org. One row per user-role combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool output. Supports per-org scheduled automation.
 - **Filtered on Role(s) Export** — Export active users filtered by one or more roles. Roles are loaded dynamically per org; one row per user with boolean columns for each selected role. Supports per-org scheduled automation with role selection stored in the schedule config.
+- **Roles Export (Single Org)** — Export all authorization roles for a selected org with accurate member counts (active org users only). Columns: Name, Description, Members. Supports per-org scheduled automation.
+- **Roles Export (All Orgs)** — Export roles for all configured orgs in a single multi-sheet workbook (one sheet per org). Accurate member counts, on-demand only.
 - **Scheduled Exports** — Automate any export on a daily, weekly, or monthly schedule with email delivery. Per-export automation toggle, reusable schedule panel with org selector and custom config fields, "All Scheduled Exports" overview page. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic ensures missed runs are retried. All times in Danish time (Europe/Copenhagen, CET/CEST).
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant). Centralized email service reusable by any page.
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
@@ -129,6 +131,9 @@ genesys-admin-app/
 │   │   │   └── disconnect.js        Force-disconnect conversations
 │   │   ├── export/
 │   │   │   ├── scheduledExports.js   All Scheduled Exports overview
+│   │   │   ├── roles/
+│   │   │   │   ├── allOrgs.js       Roles export — all orgs, multi-sheet workbook
+│   │   │   │   └── singleOrg.js     Roles export — single org + automation
 │   │   │   └── users/
 │   │   │       ├── allGroups.js     All Groups export + per-org automation
 │   │   │       ├── allRoles.js      All Roles export + per-org automation
@@ -162,6 +167,7 @@ genesys-admin-app/
 │           ├── allGroups.js      Server-side All Groups export handler
 │           ├── allRoles.js       Server-side All Roles export handler
 │           ├── filteredRoles.js  Server-side Filtered on Role(s) export handler
+│           ├── rolesSingleOrg.js Server-side Roles Single Org export handler
 │           ├── lastLogin.js      Server-side Last Login export handler
 │           └── trustee.js        Server-side trustee export handler
 └── docs/

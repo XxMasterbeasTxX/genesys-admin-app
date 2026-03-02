@@ -35,6 +35,10 @@ const registry = {
   // ── Export ─────────────────────────────────────────
   "/export/scheduled": (ctx) =>
     import("./pages/export/scheduledExports.js").then((m) => m.default(ctx)),
+  "/export/roles/all-orgs": (ctx) =>
+    import("./pages/export/roles/allOrgs.js").then((m) => m.default(ctx)),
+  "/export/roles/single-org": (ctx) =>
+    import("./pages/export/roles/singleOrg.js").then((m) => m.default(ctx)),
   "/export/users/all-groups": (ctx) =>
     import("./pages/export/users/allGroups.js").then((m) => m.default(ctx)),
   "/export/users/all-roles": (ctx) =>

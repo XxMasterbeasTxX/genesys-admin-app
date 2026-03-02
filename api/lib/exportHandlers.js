@@ -22,6 +22,7 @@ const handlers = {
   allGroups: () => require("./exports/allGroups"),
   allRoles: () => require("./exports/allRoles"),
   filteredRoles: () => require("./exports/filteredRoles"),
+  rolesSingleOrg: () => require("./exports/rolesSingleOrg"),
   lastLogin: () => require("./exports/lastLogin"),
   trustee: () => require("./exports/trustee"),
 };

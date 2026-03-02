@@ -590,6 +590,14 @@ export async function fetchAllAuthorizationRoles(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/authorization/roles", opts);
 }
 
+/**
+ * Fetch all users assigned to a specific role (includes inactive/deleted/external).
+ * Used for accurate member count: intersect result with active org users.
+ */
+export async function fetchRoleUsers(api, orgId, roleId, opts = {}) {
+  return fetchAllPages(api, orgId, `/api/v2/authorization/roles/${roleId}/users`, opts);
+}
+
 /** Get authorization grants (roles) for a specific user. Returns grants[]. */
 export async function getUserGrants(api, orgId, userId) {
   const resp = await api.proxyGenesys(orgId, "GET",
