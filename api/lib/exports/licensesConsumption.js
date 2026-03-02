@@ -81,7 +81,9 @@ async function genesysGetAllPages(customerId, path, pageSize = 100) {
 async function execute(context, schedule) {
   const config        = schedule?.exportConfig || {};
   const orgId         = config.orgId;
-  const licenseFilter = config.licenseFilter || ALL_LICENSES;
+  // Normalize: schedule panel may store as array (legacy) or string
+  let licenseFilter   = config.licenseFilter || ALL_LICENSES;
+  if (Array.isArray(licenseFilter)) licenseFilter = licenseFilter[0] || ALL_LICENSES;
 
   if (!orgId) {
     return { success: false, error: "No orgId specified in export config" };

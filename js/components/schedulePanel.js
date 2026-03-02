@@ -215,6 +215,21 @@ export function buildScheduleForm(opts) {
       dynamicLoading = false;
       dynamicLoaded = true;
       $dofSlot.innerHTML = fieldDefs.map(f => {
+        if (f.singleSelect) {
+          // Single-select: render a <select> dropdown
+          const prevVal = Array.isArray(existingValues[f.key])
+            ? (existingValues[f.key][0] || "")
+            : (existingValues[f.key] || "");
+          const optHtml = f.options.map(o =>
+            `<option value="${escapeHtml(o)}"${prevVal === o ? " selected" : ""}>${escapeHtml(o)}</option>`
+          ).join("");
+          return `
+            <div class="sp-dynamic-field">
+              <label class="sp-form-label">${escapeHtml(f.label)}</label>
+              <select class="sp-form-select" data-dof-key="${escapeHtml(f.key)}">${optHtml}</select>
+            </div>`;
+        }
+        // Multi-select: render checkboxes (default)
         const prevVals = existingValues[f.key] || [];
         const boxes = f.options.map(o =>
           `<label class="sp-checkbox-item"><input type="checkbox" data-dof-key="${escapeHtml(f.key)}" value="${escapeHtml(o)}"${prevVals.includes(o) ? " checked" : ""}> ${escapeHtml(o)}</label>`
@@ -303,6 +318,11 @@ export function buildScheduleForm(opts) {
           if (!data.exportConfig) data.exportConfig = {};
           Object.assign(data.exportConfig, checkedByKey);
         }
+        // Collect dynamic org field single-select dropdowns
+        $dofSlot.querySelectorAll('select[data-dof-key]').forEach(sel => {
+          if (!data.exportConfig) data.exportConfig = {};
+          data.exportConfig[sel.dataset.dofKey] = sel.value;
+        });
       }
     return data;
   }
@@ -315,8 +335,16 @@ export function buildScheduleForm(opts) {
     if (dynamicOrgFields) {
       if (dynamicLoading) return "Options are still loading, please wait";
       if (dynamicLoaded) {
-        const anyChecked = [...($dofSlot?.querySelectorAll('input[type="checkbox"][data-dof-key]') || [])].some(cb => cb.checked);
-        if (!anyChecked) return "Please select at least one option";
+        const hasCheckboxes = !!$dofSlot?.querySelector('input[type="checkbox"][data-dof-key]');
+        const hasSelects    = !!$dofSlot?.querySelector('select[data-dof-key]');
+        if (hasCheckboxes) {
+          const anyChecked = [...($dofSlot.querySelectorAll('input[type="checkbox"][data-dof-key]'))].some(cb => cb.checked);
+          if (!anyChecked) return "Please select at least one option";
+        }
+        if (hasSelects) {
+          const allFilled = [...($dofSlot.querySelectorAll('select[data-dof-key]'))].every(sel => sel.value !== "");
+          if (!allFilled) return "Please select an option";
+        }
       }
     }
     if (!data.scheduleTime) return "Time is required";

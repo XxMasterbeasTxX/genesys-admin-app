@@ -198,9 +198,10 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
           a.localeCompare(b, undefined, { sensitivity: "base" })
         );
         return [{
-          key:     "licenseFilter",
-          label:   "License filter",
-          options: [ALL_LICENSES, ...ids],
+          key:          "licenseFilter",
+          label:        "License filter",
+          singleSelect: true,
+          options:      [ALL_LICENSES, ...ids],
         }];
       },
       configSummary: (cfg) => cfg.licenseFilter || ALL_LICENSES,
