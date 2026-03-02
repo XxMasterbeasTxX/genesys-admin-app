@@ -1258,6 +1258,131 @@ body {
   color: var(--muted);
   opacity: 0.6;
 }
+
+/* ── Column dropdown filters (cf-*) ──────────────────────────────────────── */
+.cf-th {
+  position: relative;
+  vertical-align: middle;
+}
+.cf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+}
+.cf-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.cf-btn--active {
+  border-color: #3b82f6;
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.12);
+}
+.cf-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
+.cf-caret {
+  font-size: 7px;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+.cf-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 300;
+  min-width: 190px;
+  max-width: 280px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 7px;
+  display: none;
+}
+.cf-dropdown.open {
+  display: block;
+}
+.cf-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  margin-bottom: 5px;
+  outline: none;
+}
+.cf-search:focus {
+  border-color: #3b82f6;
+}
+.cf-search::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+.cf-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 5px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+.cf-action-btn {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+}
+.cf-action-btn:hover {
+  text-decoration: underline;
+}
+.cf-list {
+  max-height: 190px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cf-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.cf-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.cf-item input[type="checkbox"] {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.cf-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
 .te-btn-export {
   background: rgba(59, 130, 246, 0.12);
   border-color: rgba(59, 130, 246, 0.25);

@@ -20,6 +20,7 @@ import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
+import { attachColumnFilters } from "../../../utils/columnFilter.js";
 
 // ── Automation ──────────────────────────────────────────
 const AUTOMATION_ENABLED = true;
@@ -371,7 +372,7 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
     $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
 
-  // ── Preview table ─────────────────────────────────────
+  // ── Preview table with dropdown column filters ──────────
   function renderPreviewTable(rows, roles) {
     const headers = [...FIXED_HEADERS, ...roles];
     const FIXED_COUNT = FIXED_HEADERS.length;
@@ -381,14 +382,7 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
     html += `<div class="te-table-scroll"><table class="data-table ll-preview-table"><thead><tr>`;
     for (const h of headers) html += `<th>${escapeHtml(h)}</th>`;
     html += `</tr><tr class="ll-filter-row">`;
-    headers.forEach((_, i) => {
-      // Only text filters for the fixed columns (Name/Email/Division)
-      if (i < FIXED_COUNT) {
-        html += `<th><input type="text" class="ll-col-filter" data-col="${i}" placeholder="Filter…"></th>`;
-      } else {
-        html += `<th></th>`;
-      }
-    });
+    for (let i = 0; i < headers.length; i++) html += `<th></th>`;
     html += `</tr></thead><tbody>`;
 
     for (const r of rows) {
@@ -403,38 +397,12 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
     html += `</tbody></table></div></details>`;
     $tableWrap.innerHTML = html;
 
-    // Column filters (fixed columns only)
-    const tbody = $tableWrap.querySelector("tbody");
-    const allTrs = Array.from(tbody.querySelectorAll("tr"));
-    const filterInputs = $tableWrap.querySelectorAll(".ll-col-filter");
-
-    function applyFilters() {
-      const filters = {};
-      filterInputs.forEach(inp => {
-        const v = inp.value.trim().toLowerCase();
-        if (v) filters[inp.dataset.col] = v;
-      });
-      let visible = 0;
-      allTrs.forEach(tr => {
-        const cells = tr.querySelectorAll("td");
-        let match = true;
-        for (const [col, term] of Object.entries(filters)) {
-          if (!(cells[col]?.textContent || "").toLowerCase().includes(term)) {
-            match = false; break;
-          }
-        }
-        tr.style.display = match ? "" : "none";
-        if (match) visible++;
-      });
-      const countEl = $tableWrap.querySelector(".te-user-count");
-      if (countEl) {
-        const total = allTrs.length;
-        countEl.textContent = Object.keys(filters).length
-          ? `${visible} / ${total} users` : `${total} users`;
-      }
-    }
-
-    filterInputs.forEach(inp => inp.addEventListener("input", applyFilters));
+    // Dropdown filters for fixed columns (Name, Email, Division) only
+    attachColumnFilters($tableWrap, {
+      filterCols: Array.from({ length: FIXED_COUNT }, (_, i) => i),
+      countEl: $tableWrap.querySelector(".te-user-count"),
+      totalLabel: "users",
+    });
   }
 
   return el;

@@ -39,10 +39,15 @@ function buildList(nodes, parentPath) {
   const ul = document.createElement("ul");
   ul.className = "nav-list";
 
-  // Sort nodes alphabetically by label
-  const sorted = [...nodes].sort((a, b) =>
-    a.label.localeCompare(b.label, undefined, { sensitivity: "base" })
-  );
+  // Sort alphabetically; pin items with path "scheduled" to the bottom
+  const nonScheduled = nodes.filter(n => n.path !== "scheduled");
+  const scheduled    = nodes.filter(n => n.path === "scheduled");
+  const sorted = [
+    ...nonScheduled.sort((a, b) =>
+      a.label.localeCompare(b.label, undefined, { sensitivity: "base" })
+    ),
+    ...scheduled,
+  ];
 
   for (const node of sorted) {
     // Skip disabled nodes

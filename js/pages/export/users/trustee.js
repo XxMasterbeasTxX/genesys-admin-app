@@ -24,6 +24,7 @@ import * as gc from "../../../services/genesysApi.js";
 import { fetchCustomers } from "../../../services/customerService.js";
 import { sendEmail, validateRecipients } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
+import { attachColumnFilters } from "../../../utils/columnFilter.js";
 
 // ── Automation: set to false to hide the schedule panel on this page ─
 const AUTOMATION_ENABLED = true;
@@ -420,11 +421,14 @@ export default function renderTrusteeExport({ route, me, api }) {
 
         html += `<details class="te-details">`;
         html += `<summary class="te-sheet-title">${escapeHtml(trusteeOrg)} <span class="te-user-count">${users.length} users</span></summary>`;
-        html += `<div class="te-table-scroll"><table class="te-table">`;
+        html += `<div class="te-table-scroll"><table class="te-table data-table ll-preview-table">`;
         html += `<thead><tr><th>Name</th><th>Email</th>`;
         for (const cn of activeCols) {
           html += `<th>${escapeHtml(cn)}</th>`;
         }
+        html += `</tr>`;
+        html += `<tr class="ll-filter-row"><th></th><th></th>`;
+        for (const cn of activeCols) html += `<th></th>`;
         html += `</tr></thead><tbody>`;
 
         for (const u of users) {
@@ -439,6 +443,12 @@ export default function renderTrusteeExport({ route, me, api }) {
       }
 
       $tableWrap.innerHTML = html;
+
+      // Attach dropdown filters for Name + Email columns on each trustee-org block
+      $tableWrap.querySelectorAll(".te-details").forEach(detailsEl => {
+        const countEl = detailsEl.querySelector(".te-user-count");
+        attachColumnFilters(detailsEl, { filterCols: [0, 1], countEl, totalLabel: "users" });
+      });
       $tableWrap.style.display = "";
 
       $summary.textContent = `Users: ${allUsers.length}  •  Orgs scanned: ${totalOrgs}  •  Trustee orgs: ${Object.keys(byTrusteeOrg).length}`;

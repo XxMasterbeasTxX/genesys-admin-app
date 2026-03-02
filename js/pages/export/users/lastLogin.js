@@ -18,6 +18,7 @@ import * as gc from "../../../services/genesysApi.js";
 import { sendEmail, validateRecipients } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
+import { attachColumnFilters } from "../../../utils/columnFilter.js";
 
 // ── Automation ──────────────────────────────────────────
 const AUTOMATION_ENABLED = true;
@@ -351,22 +352,14 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
     $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
 
-  // ── Preview table with column filters ──────────────────
+  // ── Preview table with dropdown column filters ──────────
   function renderPreviewTable(rows) {
-    const KEYS = ["index", "name", "email", "division", "lastLogin", "license"];
-
     let html = `<details class="te-details">`;
     html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${rows.length} rows</span></summary>`;
     html += `<div class="te-table-scroll"><table class="data-table ll-preview-table"><thead><tr>`;
     for (const h of HEADERS) html += `<th>${escapeHtml(h)}</th>`;
     html += `</tr><tr class="ll-filter-row">`;
-    KEYS.forEach((k, i) => {
-      if (i === 0) {
-        html += `<th></th>`; // no filter for index
-      } else {
-        html += `<th><input type="text" class="ll-col-filter" data-col="${i}" placeholder="Filter…"></th>`;
-      }
-    });
+    for (let i = 0; i < HEADERS.length; i++) html += `<th></th>`;
     html += `</tr></thead><tbody>`;
 
     rows.forEach((r, i) => {
@@ -380,45 +373,14 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
       </tr>`;
     });
 
-    html += `</tbody></table></div>`;
-    html += `</details>`;
+    html += `</tbody></table></div></details>`;
     $table.innerHTML = html;
 
-    // Wire up column filter inputs
-    const tbody = $table.querySelector("tbody");
-    const allRows = Array.from(tbody.querySelectorAll("tr"));
-    const filterInputs = $table.querySelectorAll(".ll-col-filter");
-
-    function applyFilters() {
-      const filters = {};
-      filterInputs.forEach(inp => {
-        const v = inp.value.trim().toLowerCase();
-        if (v) filters[inp.dataset.col] = v;
-      });
-
-      let visible = 0;
-      allRows.forEach(tr => {
-        const cells = tr.querySelectorAll("td");
-        let match = true;
-        for (const [col, term] of Object.entries(filters)) {
-          const text = (cells[col]?.textContent || "").toLowerCase();
-          if (!text.includes(term)) { match = false; break; }
-        }
-        tr.style.display = match ? "" : "none";
-        if (match) visible++;
-      });
-
-      // Update count in summary
-      const countEl = $table.querySelector(".te-user-count");
-      if (countEl) {
-        const total = allRows.length;
-        countEl.textContent = Object.keys(filters).length
-          ? `${visible} / ${total} rows`
-          : `${total} rows`;
-      }
-    }
-
-    filterInputs.forEach(inp => inp.addEventListener("input", applyFilters));
+    attachColumnFilters($table, {
+      skipCols: [0],
+      countEl: $table.querySelector(".te-user-count"),
+      totalLabel: "rows",
+    });
   }
 
   return el;

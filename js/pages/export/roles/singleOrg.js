@@ -18,6 +18,7 @@ import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
+import { attachColumnFilters } from "../../../utils/columnFilter.js";
 
 // ── Automation ──────────────────────────────────────────
 const AUTOMATION_ENABLED = true;
@@ -261,15 +262,13 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
     $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
 
-  // ── Preview table (pre-collapsed) ────────────────────
+  // ── Preview table with dropdown column filters ──────────
   function renderPreviewTable(rows) {
     let html = `<details class="te-details">`;
     html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${rows.length} roles</span></summary>`;
     html += `<div class="te-table-scroll"><table class="data-table ll-preview-table"><thead>`;
     html += `<tr>${HEADERS.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr>`;
-    html += `<tr class="ll-filter-row">${HEADERS.map((_, i) =>
-      `<th><input type="text" class="ll-col-filter" data-col="${i}" placeholder="Filter…"></th>`
-    ).join("")}</tr>`;
+    html += `<tr class="ll-filter-row">${HEADERS.map(() => `<th></th>`).join("")}</tr>`;
     html += `</thead><tbody>`;
     for (const r of rows) {
       html += `<tr>
@@ -281,34 +280,11 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
     html += `</tbody></table></div></details>`;
     $tableWrap.innerHTML = html;
 
-    const tbody = $tableWrap.querySelector("tbody");
-    const allTrs = Array.from(tbody.querySelectorAll("tr"));
-    const filterInputs = $tableWrap.querySelectorAll(".ll-col-filter");
-
-    function applyFilters() {
-      const filters = {};
-      filterInputs.forEach(inp => {
-        const v = inp.value.trim().toLowerCase();
-        if (v) filters[inp.dataset.col] = v;
-      });
-      let visible = 0;
-      allTrs.forEach(tr => {
-        const cells = tr.querySelectorAll("td");
-        let match = true;
-        for (const [col, term] of Object.entries(filters)) {
-          if (!(cells[col]?.textContent || "").toLowerCase().includes(term)) { match = false; break; }
-        }
-        tr.style.display = match ? "" : "none";
-        if (match) visible++;
-      });
-      const countEl = $tableWrap.querySelector(".te-user-count");
-      if (countEl) {
-        countEl.textContent = Object.keys(filters).length
-          ? `${visible} / ${rows.length} roles` : `${rows.length} roles`;
-      }
-    }
-
-    filterInputs.forEach(inp => inp.addEventListener("input", applyFilters));
+    attachColumnFilters($tableWrap, {
+      filterCols: [0, 1, 2],
+      countEl: $tableWrap.querySelector(".te-user-count"),
+      totalLabel: "roles",
+    });
   }
 
   return el;

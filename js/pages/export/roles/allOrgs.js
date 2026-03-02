@@ -18,6 +18,7 @@ import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { addStyledSheet } from "../../../utils/excelStyles.js";
+import { attachColumnFilters } from "../../../utils/columnFilter.js";
 import { orgContext } from "../../../services/orgContext.js";
 
 const HEADERS = ["Name", "Description", "Members"];
@@ -266,9 +267,10 @@ export default function renderRolesAllOrgs({ route, me, api }) {
         </summary>
         <div class="te-table-scroll">
           <table class="data-table ll-preview-table">
-            <thead><tr>
-              ${HEADERS.map(h => `<th>${escapeHtml(h)}</th>`).join("")}
-            </tr></thead>
+            <thead>
+              <tr>${HEADERS.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr>
+              <tr class="ll-filter-row">${HEADERS.map(() => `<th></th>`).join("")}</tr>
+            </thead>
             <tbody>
               ${rows.map(row => `
                 <tr>
@@ -281,6 +283,13 @@ export default function renderRolesAllOrgs({ route, me, api }) {
         </div>
       </details>`;
     $tableWrap.appendChild(block);
+
+    const countEl = block.querySelector(".te-user-count");
+    attachColumnFilters(block, {
+      filterCols: [0, 1, 2],
+      countEl,
+      totalLabel: "roles",
+    });
   }
 
   function appendErrorBlock(org, errMsg) {
