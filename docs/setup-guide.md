@@ -18,6 +18,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **All Groups Export** — Export all users (active, inactive, and deleted) with their group memberships for a selected org. One row per user-group combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool. Supports per-org scheduled automation.
 - **All Roles Export** — Export all users (active, inactive, and deleted) with their role assignments for a selected org. One row per user-role combination (shared Index per user), collapsible preview with per-column filters, styled Excel matching the Python tool. Supports per-org scheduled automation.
 - **Filtered on Role(s) Export** — Export active users filtered by one or more selected roles. One row per user with dynamic boolean columns (True/False) for each chosen role. Roles are loaded dynamically per org; the schedule form includes a role picker. Supports per-org scheduled automation with role selection stored in `exportConfig`.
+- **License Consumption Export** — Export per-user licence consumption for a selected org. Fixed columns: Name, Email, Division. One boolean column per licence (or a single column when filtered to a specific licence). Licences are loaded dynamically via `/api/v2/license/definitions`; the schedule form includes a licence filter. Sheet: "User Licenses". Supports per-org scheduled automation with licence filter stored in `exportConfig`.
 - **Roles Export (Single Org)** — Export all authorization roles for a selected org with accurate member counts (active org users only). Columns: Name, Description, Members. Supports per-org scheduled automation.
 - **Roles Export (All Orgs)** — Export roles for all configured orgs in a single multi-sheet workbook (one sheet per org). Accurate member counts, on-demand only.
 - **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, org selector for per-org exports, "All Scheduled Exports" overview.
@@ -646,6 +647,9 @@ After pushing the config update:
 | 40 | Roles Single Org scheduled export | Toggle automation on Roles Single Org page; org selector shown in schedule form; schedule saved with exportConfig |
 | 41 | Roles All Orgs Export | Runs on-demand; one sheet per org in a single workbook; accurate member counts; per-org collapsible preview |
 | 42 | Roles All Orgs email | Roles All Orgs export with email enabled sends multi-sheet attachment to recipients via Mailjet |
+| 43 | License Consumption Export | Select org; click Load Licenses; licence definitions loaded into dropdown; choose "All Licenses" or a specific licence; export runs; collapsible preview with column filters on Name/Email/Division; Excel with Name, Email, Division + boolean licence columns; sheet "User Licenses" |
+| 44 | License Consumption email | License Consumption export with email enabled sends attachment to recipients via Mailjet |
+| 45 | License Consumption scheduled export | Toggle automation; licence filter picker loads dynamically per org; schedule saved with exportConfig.licenseFilter; Config column shown in schedule list |
 | 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
 | 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
 | 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
@@ -870,6 +874,8 @@ genesys-admin-app/
 │   │   │   └── disconnect.js        Force-disconnect conversations
 │   │   ├── export/
 │   │   │   ├── scheduledExports.js   All Scheduled Exports overview
+│   │   │   ├── licenses/
+│   │   │   │   └── consumption.js   License Consumption export + per-org automation
 │   │   │   ├── roles/
 │   │   │   │   ├── allOrgs.js       Roles export — all orgs, multi-sheet workbook
 │   │   │   │   └── singleOrg.js     Roles export — single org + automation
@@ -916,12 +922,13 @@ genesys-admin-app/
 │       ├── scheduleStore.js      Azure Table Storage CRUD for schedules
 │       ├── exportHandlers.js     Export type → handler registry
 │       └── exports/
-│           ├── allGroups.js      Server-side All Groups export handler
-│           ├── allRoles.js       Server-side All Roles export handler
-│           ├── filteredRoles.js  Server-side Filtered on Role(s) export handler
-│           ├── rolesSingleOrg.js Server-side Roles Single Org export handler
-│           ├── lastLogin.js      Server-side Last Login export handler
-│           └── trustee.js        Server-side trustee export handler
+│           ├── allGroups.js         Server-side All Groups export handler
+│           ├── allRoles.js          Server-side All Roles export handler
+│           ├── filteredRoles.js     Server-side Filtered on Role(s) export handler
+│           ├── licensesConsumption.js Server-side License Consumption export handler
+│           ├── rolesSingleOrg.js    Server-side Roles Single Org export handler
+│           ├── lastLogin.js         Server-side Last Login export handler
+│           └── trustee.js           Server-side trustee export handler
 └── docs/
     ├── setup-guide.md            This file
     └── conversion-reference.md   Python → JS migration reference
