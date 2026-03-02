@@ -47,6 +47,8 @@ const registry = {
     import("./pages/export/users/filteredRoles.js").then((m) => m.default(ctx)),
   "/export/users/last-login": (ctx) =>
     import("./pages/export/users/lastLogin.js").then((m) => m.default(ctx)),
+  "/export/licenses/consumption": (ctx) =>
+    import("./pages/export/licenses/consumption.js").then((m) => m.default(ctx)),
   "/export/users/trustee": (ctx) =>
     import("./pages/export/users/trustee.js").then((m) => m.default(ctx)),
 

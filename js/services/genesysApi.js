@@ -462,6 +462,13 @@ export async function fetchAllLicenseUsers(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/license/users", opts);
 }
 
+/** Fetch all license definitions (non-paginated flat list of {id} objects). */
+export async function fetchLicenseDefinitions(api, orgId) {
+  const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/license/definitions");
+  // API returns a flat array directly (not wrapped in .entities)
+  return Array.isArray(resp) ? resp : (resp.entities || []);
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Integrations / Data Actions
 // ─────────────────────────────────────────────────────────────────────

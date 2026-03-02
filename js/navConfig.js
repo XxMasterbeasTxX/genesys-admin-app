@@ -52,6 +52,14 @@ export const NAV_TREE = [
         ],
       },
       {
+        label: "Licenses",
+        path: "licenses",
+        enabled: true,
+        children: [
+          { label: "Consumption", path: "consumption", enabled: true },
+        ],
+      },
+      {
         label: "Users",
         path: "users",
         enabled: true,
