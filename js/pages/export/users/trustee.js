@@ -443,7 +443,7 @@ export default function renderTrusteeExport({ route, me, api }) {
       // Attach dropdown filters for Name + Email columns on each trustee-org block
       $tableWrap.querySelectorAll(".te-details").forEach(detailsEl => {
         const countEl = detailsEl.querySelector(".te-user-count");
-        attachColumnFilters(detailsEl, { filterCols: [0, 1], countEl, totalLabel: "users" });
+        attachColumnFilters(detailsEl, { countEl, totalLabel: "users" });
       });
       $tableWrap.style.display = "";
 

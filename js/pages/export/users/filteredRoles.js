@@ -397,9 +397,8 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
     html += `</tbody></table></div></details>`;
     $tableWrap.innerHTML = html;
 
-    // Dropdown filters for fixed columns (Name, Email, Division) only
+    // Dropdown filters on all columns (Name, Email, Division + role booleans)
     attachColumnFilters($tableWrap, {
-      filterCols: Array.from({ length: FIXED_COUNT }, (_, i) => i),
       countEl: $tableWrap.querySelector(".te-user-count"),
       totalLabel: "users",
     });
