@@ -357,31 +357,48 @@ async function fetchQueues(region, token) {
       return "";
     };
 
-    const scriptNames = Object.values(q.defaultScripts || {})
-      .map((s) => scriptMap[s.id] || s.id).join(", ");
+    // Default scripts: "mediaType: scriptName; ..."
+    const scriptStr = Object.entries(q.defaultScripts || {})
+      .filter(([, s]) => s && s.id && scriptMap[s.id])
+      .map(([type, s]) => `${type}: ${scriptMap[s.id]}`)
+      .join("; ");
+
+    // Outbound email: combine route.pattern @ domain.id
+    let outboundEmail = "";
+    const obe = q.outboundEmailAddress;
+    if (obe) {
+      const routePattern = obe.route?.pattern || "";
+      const domainId = obe.domain?.id || "";
+      if (routePattern && domainId) outboundEmail = `${routePattern}@${domainId}`;
+      else if (domainId) outboundEmail = domainId;
+      else if (routePattern) outboundEmail = routePattern;
+    }
+
+    // Outbound messaging addresses
+    const obm = q.outboundMessagingAddresses;
 
     return [
       q.id, q.name, q.description || "", q.division?.name || "",
       q.memberCount ?? "", q.userMemberCount ?? "", q.joinedMemberCount ?? "",
       q.skillEvaluationMethod || "", q.scoringMethod || "",
       q.autoAnswerOnly ?? "", q.suppressInQueueCallRecording ?? "",
-      q.acwSettings?.timeoutMs ? Math.round(q.acwSettings.timeoutMs / 1000) : "",
+      q.acwSettings?.timeoutMs ? msToSecs(q.acwSettings.timeoutMs) : "",
       q.acwSettings?.wrapupPrompt || "",
       ms("call","alerting"), ms("call","slDur"), ms("call","slPct"),
       ms("chat","alerting"), ms("chat","slDur"), ms("chat","slPct"),
       ms("email","alerting"), ms("email","slDur"), ms("email","slPct"),
       ms("message","alerting"), ms("message","slDur"), ms("message","slPct"),
       ms("callback","alerting"), ms("callback","slDur"), ms("callback","slPct"),
-      q.callbackSettings?.callbackMode || "",
-      q.callbackSettings?.enableAutoDialAndEnd ?? "",
-      q.outboundEmailAddress?.name || "",
-      q.smsAddress?.name || "",
-      q.whatsAppRecipient?.name || "",
-      q.openMessaging?.name || "",
+      q.mediaSettings?.callback?.mode || "",
+      q.mediaSettings?.callback?.enableAutoDialAndEnd ?? "",
+      outboundEmail,
+      obm?.smsAddress?.name || "",
+      obm?.whatsAppRecipient?.name || "",
+      obm?.openMessagingRecipient?.name || "",
       q.queueFlow?.name || "",
       q.emailInQueueFlow?.name || "",
       q.messageInQueueFlow?.name || "",
-      scriptNames,
+      scriptStr,
       q.routingRules?.length ?? 0,
       q.whisperPrompt?.name || "",
       q.onHoldPrompt?.name || "",
@@ -411,14 +428,14 @@ async function fetchUsers(region, token) {
   const rows = users.map((u) => {
     const skills    = (u.skills  || []).map((s) => s.name).join(", ");
     const languages = (u.languages || []).map((l) => l.name).join(", ");
-    const stationId = u.station?.id;
+    const stationId = u.station?.effectiveStation?.id;
     const station   = stationId ? (stationMap[stationId] || stationId) : "";
 
     return [
       u.id, u.name, u.email,
       u.division?.name || "",
-      u.addresses?.find((a) => a.type === "WORK")?.address || "",
-      u.primaryAvailabilityStatus?.extension || u.id || "",
+      u.addresses?.find((a) => a.type === "PHONE")?.display || "",
+      u.username || "",
       u.title || "", u.department || "",
       station, skills, languages,
     ];
@@ -454,10 +471,10 @@ async function fetchWrapupCodes(region, token) {
 async function fetchTriggers(region, token) {
   const headers = ["Name","Topic Name","Target Type","Flow Name","Enabled"];
 
-  // Build flow id → name map
+  // Build flow id → name map (include deleted flows for trigger lookups)
   let flowMap = {};
   try {
-    const flows = await genesysGetAllPages(region, token, "/api/v2/flows?deleted=false", 100);
+    const flows = await genesysGetAllPages(region, token, "/api/v2/flows", 100);
     for (const f of flows) flowMap[f.id] = f.name;
   } catch (_) { /* skip */ }
 
@@ -466,8 +483,8 @@ async function fetchTriggers(region, token) {
 
   const rows = triggers.map((t) => {
     const flowId = t.target?.id;
-    const flowName = flowId ? (flowMap[flowId] || flowId) : "";
-    return [t.name, t.topicName || "", t.target?.type || "", flowName, t.enabled ?? ""];
+    const flowName = flowId ? (flowMap[flowId] || "") : "";
+    return [t.name, t.topicName || "", t.target?.type || "", flowName, t.enabled != null ? String(t.enabled) : ""];
   });
 
   return { headers, rows };
@@ -553,30 +570,143 @@ async function fetchPolicies(region, token) {
   ];
   const policies = await genesysGetAllPages(region, token, "/api/v2/recording/mediaretentionpolicies", 100);
 
+  // Build queue and wrapup-code lookups (like Python)
+  let queueLookup = {};
+  try {
+    const queues = await genesysGetAllPages(region, token, "/api/v2/routing/queues", 100);
+    for (const q of queues) queueLookup[q.id] = q.name;
+  } catch (_) { /* skip */ }
+
+  let wrapupLookup = {};
+  try {
+    const codes = await genesysGetAllPages(region, token, "/api/v2/routing/wrapupcodes", 100);
+    for (const c of codes) wrapupLookup[c.id] = c.name;
+  } catch (_) { /* skip */ }
+
   const rows = policies.map((p) => {
-    const conds = p.conditions || {};
-    const acts  = p.actions   || {};
+    const mp = p.mediaPolicies || {};
+    const activeMedia = [];
+    let hasCall = false, hasEmail = false, hasChat = false, hasMessage = false;
+
+    const retentionActions = new Set();
+    const retentionDaysList = [];
+    const archiveDaysList = [];
+    let hasRetentionDuration = false;
+    const retentionNotesParts = [];
+
+    let hasEvaluations = false;
+    let hasSurveys = false;
+    let surveyCount = 0;
+    let evaluatorCount = 0;
+
+    const targetQueues = new Set();
+    let targetUsersCount = 0;
+    const targetWrapupCodes = new Set();
+    const directionsSet = new Set();
+
+    // Process a single media sub-policy (call, email, chat, message)
+    const processMediaPolicy = (subPolicy, mediaName) => {
+      if (!subPolicy) return false;
+
+      const actions = subPolicy.actions;
+      if (actions) {
+        if (actions.retainRecording) retentionActions.add("Retain");
+        if (actions.deleteRecording) retentionActions.add("Delete");
+        if (actions.alwaysDelete)    retentionActions.add("Always Delete");
+
+        if (actions.retentionDuration) {
+          hasRetentionDuration = true;
+          const rd = actions.retentionDuration;
+          if (rd.deleteRetention?.days)  retentionDaysList.push([mediaName, rd.deleteRetention.days]);
+          if (rd.archiveRetention?.days) archiveDaysList.push([mediaName, rd.archiveRetention.days]);
+        }
+
+        if (actions.assignEvaluations || actions.assignMeteredEvaluations || actions.assignMeteredAssignmentByAgent) {
+          hasEvaluations = true;
+          if (actions.assignMeteredEvaluations) {
+            for (const evalObj of actions.assignMeteredEvaluations) {
+              if (evalObj.evaluators) evaluatorCount += evalObj.evaluators.length;
+            }
+          }
+        }
+
+        if (actions.assignSurveys?.length) {
+          hasSurveys = true;
+          surveyCount += actions.assignSurveys.length;
+        }
+      }
+
+      const conditions = subPolicy.conditions;
+      if (conditions) {
+        if (conditions.forQueues) {
+          for (const q of conditions.forQueues) {
+            if (q.id) targetQueues.add(queueLookup[q.id] || q.id);
+          }
+        }
+        if (conditions.forUsers) targetUsersCount += conditions.forUsers.length;
+        if (conditions.wrapupCodes) {
+          for (const w of conditions.wrapupCodes) {
+            if (w.id) targetWrapupCodes.add(wrapupLookup[w.id] || w.id);
+          }
+        }
+        if (conditions.directions) {
+          for (const d of conditions.directions) directionsSet.add(d);
+        }
+      }
+
+      return true;
+    };
+
+    if (processMediaPolicy(mp.callPolicy,    "Call"))    { hasCall    = true; activeMedia.push("Call"); }
+    if (processMediaPolicy(mp.emailPolicy,   "Email"))   { hasEmail   = true; activeMedia.push("Email"); }
+    if (processMediaPolicy(mp.chatPolicy,    "Chat"))    { hasChat    = true; activeMedia.push("Chat"); }
+    if (processMediaPolicy(mp.messagePolicy, "Message")) { hasMessage = true; activeMedia.push("Message"); }
+
+    // Aggregate retention days — if all same show number, else put details in notes
+    let retentionDays = "";
+    if (retentionDaysList.length) {
+      const uniqueDays = new Set(retentionDaysList.map(([, d]) => d));
+      if (uniqueDays.size === 1) {
+        retentionDays = [...uniqueDays][0];
+      } else {
+        for (const [media, days] of retentionDaysList) retentionNotesParts.push(`${media}: ${days} days delete`);
+      }
+    }
+
+    let archiveDays = "";
+    if (archiveDaysList.length) {
+      const uniqueDays = new Set(archiveDaysList.map(([, d]) => d));
+      if (uniqueDays.size === 1) {
+        archiveDays = [...uniqueDays][0];
+      } else {
+        for (const [media, days] of archiveDaysList) retentionNotesParts.push(`${media}: ${days} days archive`);
+      }
+    }
+
+    const retentionNotes   = retentionNotesParts.join("; ");
+    const targetQueuesStr  = targetQueues.size       ? [...targetQueues].sort().join(", ") : "All";
+    const targetUsersStr   = targetUsersCount > 0    ? `${targetUsersCount} users` : "";
+    const targetWrapupStr  = targetWrapupCodes.size  ? [...targetWrapupCodes].sort().join(", ") : "";
+    const directionsStr    = directionsSet.size      ? [...directionsSet].sort().join(", ") : "";
+
     return [
       p.id, p.name, p.description || "",
-      p.enabled ?? "",
-      joinArr(p.mediaPolicies ? Object.keys(p.mediaPolicies) : []),
-      p.mediaPolicies?.call ? "Yes" : "",
-      p.mediaPolicies?.email ? "Yes" : "",
-      p.mediaPolicies?.chat ? "Yes" : "",
-      p.mediaPolicies?.message ? "Yes" : "",
-      acts.retentionDuration?.archiveAction?.storageMedium?.storageService || acts.retentionDuration?.deleteAction?.name || "",
-      acts.retentionDuration?.cloudStorageDays ?? "",
-      acts.retentionDuration?.archiveDays ?? "",
-      acts.retentionDuration ? "Yes" : "No",
-      p.policyNotes || "",
-      acts.assignEvaluations?.length ? "Yes" : "No",
-      acts.assignSurveys?.length    ? "Yes" : "No",
-      acts.assignSurveys?.length  ?? 0,
-      acts.assignEvaluations?.length ?? 0,
-      joinArr(conds.queues,       "name"),
-      joinArr(conds.users,        "name"),
-      joinArr(conds.wrapupCodes,  "name"),
-      joinArr(conds.directions),
+      p.enabled ?? false,
+      activeMedia.join(", "),
+      hasCall, hasEmail, hasChat, hasMessage,
+      [...retentionActions].sort().join(", "),
+      retentionDays,
+      archiveDays,
+      hasRetentionDuration,
+      retentionNotes,
+      hasEvaluations,
+      hasSurveys,
+      surveyCount,
+      evaluatorCount,
+      targetQueuesStr,
+      targetUsersStr,
+      targetWrapupStr,
+      directionsStr,
     ];
   });
 
@@ -594,16 +724,14 @@ async function fetchDBSchemas(region, token) {
   const rows = [];
   for (const table of tables) {
     const props = table.schema?.properties || {};
-    let order = 0;
     for (const [pName, pDef] of Object.entries(props)) {
-      if (pName === "key") continue; // skip internal key field
       rows.push([
         table.name,
         table.division?.name || "",
         pName,
         pDef.title || "",
         pDef.type  || "",
-        order++,
+        pDef.displayOrder ?? "",
       ]);
     }
   }
@@ -629,19 +757,23 @@ async function fetchFlows(region, token) {
   const headers = ["Name","Division","Description","Type","Active","Created By","Date Created","Version","Secure","Virtual Agent","Agentic Virtual Agent"];
   const flows = await genesysGetAllPages(region, token, "/api/v2/flows?deleted=false", 100);
 
-  const rows = flows.map((f) => [
-    f.name,
-    f.division?.name || "",
-    f.description || "",
-    f.type || "",
-    f.active ?? "",
-    f.createdBy?.name || "",
-    f.creationDate ? f.creationDate.slice(0, 10) : "",
-    f.publishedVersion?.version ?? "",
-    f.secure ?? "",
-    f.virtualAgentEnabled ?? "",
-    f.agenticVirtualAgentEnabled ?? "",
-  ]);
+  const rows = flows.map((f) => {
+    const pv = f.publishedVersion;
+    const dc = pv?.dateCreated;
+    return [
+      f.name,
+      f.division?.name || "",
+      f.description || "",
+      f.type || "",
+      f.active != null ? (f.active ? "True" : "False") : "",
+      pv?.createdBy?.name || "",
+      dc ? formatTs(new Date(dc)) : "",
+      pv?.name || "",
+      pv?.secure != null ? (pv.secure ? "True" : "False") : "",
+      f.virtualAgentEnabled != null ? (f.virtualAgentEnabled ? "True" : "False") : "",
+      f.agenticVirtualAgentEnabled != null ? (f.agenticVirtualAgentEnabled ? "True" : "False") : "",
+    ];
+  });
 
   return { headers, rows };
 }
@@ -649,7 +781,12 @@ async function fetchFlows(region, token) {
 async function fetchMessageRouting(region, token) {
   const headers = ["Name","Type","Flow","Active"];
   const items = await genesysGetAllPages(region, token, "/api/v2/routing/message/recipients", 100);
-  const rows = items.map((r) => [r.name, r.messagingAddressType || "", r.flow?.name || "", r.active ?? ""]);
+  const rows = items.map((r) => [
+    r.name,
+    r.messengerType || "",
+    r.flow?.name || "",
+    r.flow?.active != null ? (r.flow.active ? "True" : "False") : "",
+  ]);
   return { headers, rows };
 }
 
@@ -659,21 +796,21 @@ async function fetchMessengerConfigurations(region, token) {
     "Messenger Enabled","Cobrowse Enabled","Journey Events Enabled",
     "Authentication Enabled","Headless Mode Enabled","Support Center Enabled","Position Alignment",
   ];
-  const resp = await genesysGet(region, token, "/api/v2/webdeployments/configurations");
+  const resp = await genesysGet(region, token, "/api/v2/webdeployments/configurations?showOnlyPublished=true");
   const items = resp.entities || [];
 
   const rows = items.map((c) => [
     c.name, c.description || "",
     c.version || "", c.status || "",
-    joinArr(c.supportedContent?.supportedLanguages || c.languages || []),
+    joinArr(c.languages || []),
     c.defaultLanguage || "",
-    c.messenger?.enabled ?? "",
-    c.cobrowse?.enabled  ?? "",
-    c.journeyEvents?.enabled ?? "",
-    c.authentication?.enabled ?? "",
-    c.headlessMode?.enabled ?? "",
-    c.supportCenter?.enabled ?? "",
-    c.messenger?.styles?.primaryColor ? (c.messenger.position?.alignment || "") : (c.position?.alignment || ""),
+    c.messenger?.enabled != null ? (c.messenger.enabled ? "True" : "False") : "",
+    c.cobrowse?.enabled != null ? (c.cobrowse.enabled ? "True" : "False") : "",
+    c.journeyEvents?.enabled != null ? (c.journeyEvents.enabled ? "True" : "False") : "",
+    c.authenticationSettings?.enabled != null ? (c.authenticationSettings.enabled ? "True" : "False") : "",
+    c.headlessMode?.enabled != null ? (c.headlessMode.enabled ? "True" : "False") : "",
+    c.supportCenter ? "True" : "False",
+    c.position?.alignment || "",
   ]);
 
   return { headers, rows };
@@ -687,9 +824,9 @@ async function fetchMessengerDeployments(region, token) {
   const rows = items.map((d) => [
     d.name, d.description || "", d.status || "",
     d.configuration?.name || "",
-    d.configuration?.version || "",
+    d.configuration?.version != null ? String(d.configuration.version) : "",
     d.flow?.name || "",
-    d.allowAllDomains ?? "",
+    d.allowAllDomains != null ? (d.allowAllDomains ? "True" : "False") : "",
     d.supportedContent?.id || "",
   ]);
 
@@ -700,10 +837,12 @@ async function fetchSchedules(region, token) {
   const headers = ["ID","Name","Description","Division","State","Start","End","Recurrence Rule"];
   const items = await genesysGetAllPages(region, token, "/api/v2/architect/schedules", 100);
 
+  const fmtDt = (v) => { if (!v) return ""; try { const d = new Date(v); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`; } catch(_) { return String(v); } };
+
   const rows = items.map((s) => [
     s.id, s.name, s.description || "",
     s.division?.name || "", s.state || "",
-    s.start || "", s.end || "", s.rrule || "",
+    fmtDt(s.start), fmtDt(s.end), s.rrule || "",
   ]);
 
   return { headers, rows };
@@ -731,14 +870,13 @@ async function fetchUserPrompts(region, token) {
   const rows = [];
   for (const p of prompts) {
     const resources = p.resources || [];
-    if (resources.length === 0) {
-      rows.push([p.name, "", "", "", ""]);
-    } else {
+    if (resources.length > 0) {
       for (const r of resources) {
         rows.push([
           p.name,
-          r.language || "", r.durationSeconds ?? "",
-          r.ttsEnabled ?? "",
+          r.language || "",
+          r.durationSeconds ?? "",
+          r.ttsString ? true : false,
           r.ttsString || "",
         ]);
       }
@@ -764,42 +902,75 @@ async function fetchEmail(region, token) {
   const inbound  = inboundResp.status  === "fulfilled" ? (inboundResp.value.entities  || inboundResp.value  || []) : [];
   const outbound = outboundResp.status === "fulfilled" ? (outboundResp.value.entities || outboundResp.value || []) : [];
 
-  // Build domain rows
+  // Build domain rows — differentiate Genesys Cloud vs Custom vs Campaigns
   const domainRows = [
-    ...inbound.map((d)  => [d.id || d.name, d.mxRecordStatus || "", "Inbound"]),
-    ...outbound.map((d) => [d.id || d.name, "",                      "Outbound"]),
+    ...inbound.map((d)  => [d.id || d.name, d.mxRecordStatus || "", d.subDomain ? "Genesys Cloud Domain" : "Custom Domain"]),
+    ...outbound.map((d) => [d.id || d.name, "",                      "Campaigns/Agentless"]),
   ];
 
-  // Fetch routes per inbound domain in parallel
+  // Signature cache: canned response id → name
+  const sigCache = {};
+  const resolveSignature = async (sig) => {
+    if (!sig) return "";
+    const cid = sig.cannedResponseId;
+    if (!cid) return "";
+    if (sigCache[cid] !== undefined) return sigCache[cid];
+    try {
+      const resp = await genesysGet(region, token, `/api/v2/responsemanagement/responses/${cid}`);
+      sigCache[cid] = resp.name || cid;
+    } catch (_) {
+      sigCache[cid] = cid;
+    }
+    return sigCache[cid];
+  };
+
+  // Fetch routes per inbound domain
   const addrRows = [];
-  await Promise.allSettled(
-    inbound.map(async (domain) => {
-      try {
-        const routes = await genesysGetAllPages(
-          region, token,
-          `/api/v2/routing/email/domains/${domain.id}/routes`,
-          100
-        );
-        for (const r of routes) {
-          addrRows.push([
-            `${r.pattern}@${domain.id}`,
-            domain.id,
-            r.fromName || "",
-            r.queue?.name || "",
-            r.flow?.name  || "",
-            r.spamFlow?.name || "",
-            r.autoRecieveEmail ?? "",
-            r.priority ?? "",
-            r.language || "",
-            r.autoBcc || "",
-            r.replyEmailAddress?.address || "",
-            joinArr(r.skills, "name"),
-            r.signature || "",
-          ]);
+  for (const domain of inbound) {
+    try {
+      const routes = await genesysGetAllPages(
+        region, token,
+        `/api/v2/routing/email/domains/${domain.id}/routes`,
+        100
+      );
+      for (const r of routes) {
+        const sigName = await resolveSignature(r.signature);
+
+        // Reply-to: construct pattern@domain like Python
+        let replyTo = "";
+        const rea = r.replyEmailAddress;
+        if (rea) {
+          const rp = rea.route?.pattern || "";
+          const rd = rea.domain?.id || "";
+          if (rp && rd) replyTo = `${rp}@${rd}`;
+          else if (rd) replyTo = rd;
+          else if (rp) replyTo = rp;
         }
-      } catch (_) { /* skip domain */ }
-    })
-  );
+
+        // Auto BCC: array of email addresses
+        let autoBccStr = "";
+        if (Array.isArray(r.autoBcc) && r.autoBcc.length) {
+          autoBccStr = r.autoBcc.map((b) => (typeof b === "string" ? b : b.email || String(b))).join(", ");
+        }
+
+        addrRows.push([
+          `${r.pattern || "unknown"}@${domain.id}`,
+          domain.id,
+          r.fromName || "",
+          r.queue?.name || "",
+          r.flow?.name  || "",
+          r.spamFlow?.name || "",
+          r.allowMultipleActions ?? false,
+          r.priority ?? "",
+          r.language?.name || "",
+          autoBccStr,
+          replyTo,
+          joinArr(r.skills, "name"),
+          sigName,
+        ]);
+      }
+    } catch (_) { /* skip domain */ }
+  }
 
   return {
     domains: { headers: domainHeaders, rows: domainRows },
@@ -827,8 +998,8 @@ async function fetchSites(region, token) {
       site.location?.name || "",
       site.mediaModel || "",
       mediaRegions,
-      site.primarySites?.length ? site.primarySites[0].name : (site.coreSite ? "Yes" : "No"),
-      site.managed ?? "",
+      site.coreSite ? "True" : "False",
+      site.managed != null ? (site.managed ? "True" : "False") : "",
       site.state || "",
       (site.edges || []).length,
       0, // placeholder, filled below
@@ -847,7 +1018,7 @@ async function fetchSites(region, token) {
           site.name,
           r.name, r.id,
           r.description || "",
-          r.enabled ?? "",
+          r.enabled != null ? (r.enabled ? "True" : "False") : "",
           r.state || "",
           r.distribution || "",
           joinArr(r.classificationTypes || []),
@@ -864,16 +1035,21 @@ async function fetchSites(region, token) {
       const planList = Array.isArray(plans) ? plans : (plans.entities || []);
 
       for (const np of planList) {
-        const numbers   = joinArr(np.numbers || []);
-        const digitLen  = np.digitLength ? `${np.digitLength.start}-${np.digitLength.end}` : "";
+        const numbersStr = (np.numbers || []).map((n) => n.start || "").join(", ");
+        let digitLen = "";
+        if (np.digitLength) {
+          digitLen = np.digitLength.start && np.digitLength.end
+            ? `${np.digitLength.start}-${np.digitLength.end}`
+            : String(np.digitLength.start || "");
+        }
         planRows.push([
           site.name,
           np.name, np.classification || "",
           np.matchType || "",
-          np.position ?? "",
+          np.priority ?? "",
           np.state || "",
-          numbers, digitLen,
-          np.matchFormat || "",
+          numbersStr, digitLen,
+          np.match || "",
           np.normalizedFormat || "",
         ]);
       }
@@ -890,7 +1066,7 @@ async function fetchSites(region, token) {
 async function fetchAgentCopilots(region, token) {
   const copilotsHeaders = [
     "Assistant Name","Assistant ID","State","Queue Name","Media Types",
-    "Copilot Enabled","Default Language","NLU Engine Type","Live On Queue",
+    "Copilot Enabled","Language","NLU Engine Type","Live On Queue",
     "NLU Domain ID","Intent Confidence Threshold","Transcription Vendor",
     "Knowledge Vendor","Knowledge Base IDs","Rules Count","Fallback Enabled",
   ];
@@ -899,12 +1075,15 @@ async function fetchAgentCopilots(region, token) {
     "Condition Type","Condition Values","Action Type","Action Attributes","Participant Role",
   ];
 
-  // Raw API call for assistants with copilot expanded
+  // Raw API call for assistants with copilot expanded.
+  // Must be raw (not SDK) so participantRoles and other fields are not stripped.
   const assistantsResp = await genesysGet(region, token, "/api/v2/assistants?pageSize=100&expand=copilot");
   const assistants = assistantsResp.entities || [];
 
-  // Queue assignments: { assistantId → [{queueId, mediaTypes}] }
-  let assignmentMap = {};
+  // Queue assignments from /api/v2/assistants/queues.
+  // Each entity returned is: { id: <queueId>, name: <queueName>,
+  //   assistant: { id: <assistantId> }, mediaTypes: [...] }
+  let assignmentMap = {}; // assistantId → [{ queueName, mediaTypes }]
   try {
     const assignResp = await genesysGet(region, token, "/api/v2/assistants/queues?pageSize=500");
     for (const entry of (assignResp.entities || [])) {
@@ -912,53 +1091,91 @@ async function fetchAgentCopilots(region, token) {
       if (!aid) continue;
       if (!assignmentMap[aid]) assignmentMap[aid] = [];
       assignmentMap[aid].push({
-        queueId:    entry.queue?.id   || "",
-        queueName:  entry.queue?.name || entry.queue?.id || "",
+        queueName:  entry.name || entry.id || "No Queue Assignment",
         mediaTypes: joinArr(entry.mediaTypes || []),
       });
     }
-  } catch (_) { /* skip */ }
+  } catch (_) { /* skip — unassigned assistants still appear, just with no queue */ }
 
   const copilotsRows = [];
   const rulesRows    = [];
 
   for (const a of assistants) {
-    const copilot     = a.copilot || {};
-    const assignments = assignmentMap[a.id] || [{ queueId: "", queueName: "", mediaTypes: "" }];
-    const rules       = copilot.ruleEngineConfig?.rules || [];
-    const kbIds       = joinArr(copilot.knowledgeBases || [], "id");
+    const copilot        = a.copilot                  || {};
+    const nluConfig      = copilot.nluConfig           || {};
+    const ruleConfig     = copilot.ruleEngineConfig    || {};
+    const transConfig    = a.transcriptionConfig       || {}; // lives on assistant, not copilot
+    const knowledgeCfg   = a.knowledgeSuggestionConfig || {}; // lives on assistant, not copilot
 
+    // NLU Domain ID is a nested object: nluConfig.domain.id
+    const nluDomainId = (typeof nluConfig.domain === "object")
+      ? (nluConfig.domain?.id || "")
+      : (nluConfig.domain    || "");
+
+    // Knowledge base IDs from assistant.knowledgeSuggestionConfig.knowledgeBases[]
+    const kbIds = (knowledgeCfg.knowledgeBases || [])
+      .map((kb) => (typeof kb === "object" ? kb.id : kb) || "")
+      .filter(Boolean)
+      .join(", ");
+
+    const rules    = ruleConfig.rules   || [];
+    const fallback = ruleConfig.fallback || {};
+
+    // Queue assignments — default to one "no assignment" row for unassigned assistants
+    const assignments = assignmentMap[a.id] || [{ queueName: "No Queue Assignment", mediaTypes: "" }];
+
+    // Language expansion: use copilot.languages[] when present, else [defaultLanguage] or [""]
+    const languages = Array.isArray(copilot.languages) && copilot.languages.length > 0
+      ? copilot.languages
+      : [copilot.defaultLanguage || ""];
+
+    // 1 row per queue × language combination
     for (const assign of assignments) {
-      copilotsRows.push([
-        a.name, a.id,
-        a.state || "",
-        assign.queueName,
-        assign.mediaTypes,
-        copilot.enabled ?? "",
-        copilot.defaultLanguageCode || "",
-        copilot.nluConfig?.nluEngineType || "",
-        copilot.liveOnQueue ?? "",
-        copilot.nluConfig?.nluDomainId || "",
-        copilot.nluConfig?.intentConfidenceThreshold ?? "",
-        copilot.transcriptionConfig?.vendor || "",
-        copilot.knowledgeConfig?.vendor || "",
-        kbIds,
-        rules.length,
-        copilot.ruleEngineConfig?.fallback?.enabled ?? "",
-      ]);
+      for (const lang of languages) {
+        copilotsRows.push([
+          a.name  || "", a.id || "",
+          a.state || "",
+          assign.queueName,
+          assign.mediaTypes,
+          copilot.enabled ?? "",
+          lang,
+          copilot.nluEngineType || "", // nluEngineType is directly on copilot, not inside nluConfig
+          copilot.liveOnQueue   ?? "",
+          nluDomainId,
+          nluConfig.intentConfidenceThreshold ?? "",
+          transConfig.vendorName   || "",
+          knowledgeCfg.vendorName  || "",
+          kbIds,
+          rules.length,
+          fallback.enabled ?? "",
+        ]);
+      }
     }
 
-    for (const rule of rules) {
-      const condVals = joinArr(rule.condition?.values || []);
-      const actionAttrs = rule.action?.attributes
-        ? Object.entries(rule.action.attributes).map(([k,v]) => `${k}=${v}`).join("; ")
-        : "";
+    // Rules sheet — doubly-nested: ruleOuter.rule contains conditions/actions;
+    // participantRoles is at ruleOuter level (preserved by raw API call).
+    for (const ruleOuter of rules) {
+      const ruleInner  = ruleOuter.rule  || {};
+      const conditions = ruleInner.conditions || [];
+      const actions    = ruleInner.actions    || [];
+
+      const condTypes = conditions.map((c) => c.conditionType || "").join(", ");
+      const condVals  = conditions.flatMap((c) => c.conditionValues || []).join(", ");
+
+      const actTypes = actions.map((a) => a.actionType || "").join(", ");
+      const actAttrs = actions.flatMap((a) => {
+        const attrs = a.attributes || {};
+        return Object.entries(attrs).map(([k, v]) => `${k}:${v}`);
+      }).join(", ");
+
+      const participantRoles = joinArr(ruleOuter.participantRoles || []);
+
       rulesRows.push([
-        a.name, a.id,
-        rule.id || "", rule.enabled ?? "",
-        rule.condition?.type || "", condVals,
-        rule.action?.type    || "", actionAttrs,
-        rule.action?.participantRole || "",
+        a.name || "", a.id || "",
+        ruleOuter.id || "", ruleOuter.enabled ?? "",
+        condTypes, condVals,
+        actTypes, actAttrs,
+        participantRoles,
       ]);
     }
   }
@@ -1001,8 +1218,8 @@ async function fetchOAuthClients(region, token) {
       c.state || "",
       c.accessTokenValiditySeconds ?? "",
       grantType,
-      userMap[c.createdBy?.id] || c.createdBy?.id || "",
-      userMap[c.modifiedBy?.id] || c.modifiedBy?.id || "",
+      c.createdBy?.id ? (userMap[c.createdBy.id] || "Unknown") : "",
+      c.modifiedBy?.id ? (userMap[c.modifiedBy.id] || "Unknown") : "",
     ];
 
     if (grantType === "CLIENT-CREDENTIALS") {
@@ -1013,22 +1230,22 @@ async function fetchOAuthClients(region, token) {
         for (const rd of roles) {
           byGrant["CLIENT-CREDENTIALS"].push([
             ...base,
-            roleMap[rd.roleId] || rd.roleId || "",
-            divMap[rd.divisionId] || rd.divisionId || "",
+            roleMap[rd.roleId] || "Unknown Role",
+            divMap[rd.divisionId] || "Unknown Division",
           ]);
         }
       }
     } else {
       const validGrants = ["CODE","TOKEN","SAML2-BEARER","PASSWORD"];
-      const targetGrant = validGrants.includes(grantType) ? grantType : "CODE";
+      if (!validGrants.includes(grantType)) continue; // skip unknown grant types
       const scopes      = c.scope || [];
       const redirects   = joinArr(c.registeredRedirectUri || []);
 
       if (scopes.length === 0) {
-        byGrant[targetGrant].push([...base, "", redirects]);
+        byGrant[grantType].push([...base, "", redirects]);
       } else {
         for (const scope of scopes) {
-          byGrant[targetGrant].push([...base, scope, redirects]);
+          byGrant[grantType].push([...base, scope, redirects]);
         }
       }
     }
@@ -1057,7 +1274,14 @@ async function fetchOBCampaigns(region, token) {
   const campaigns = await genesysGetAllPages(region, token, "/api/v2/outbound/campaigns", 100);
 
   const rows = campaigns.map((c) => {
-    const cs = (c.contactSorts || [])[0] || {};
+    const cs = c.contactSort || {};
+    const contactSorts = c.contactSorts || [];
+    const contactSortsStr = contactSorts.length
+      ? contactSorts.map((s) => `${s.fieldName || ""} ${s.direction || ""} (numeric: ${s.numeric ?? ""})`).join(" | ")
+      : "";
+    const dynQueue = c.dynamicContactQueueingSettings || {};
+    const dynLine  = c.dynamicLineBalancingSettings || {};
+    const diag     = c.diagnosticsSettings || {};
     return [
       c.name,
       c.contactList?.name || "",
@@ -1065,7 +1289,7 @@ async function fetchOBCampaigns(region, token) {
       c.dialingMode || "",
       c.script?.name || "",
       c.site?.name   || "",
-      c.abandonRate?.percentage ?? "",
+      c.abandonRate ?? "",
       joinArr(c.dncLists, "name"),
       c.callAnalysisResponseSet?.name || "",
       c.callerName   || "",
@@ -1076,19 +1300,19 @@ async function fetchOBCampaigns(region, token) {
       c.previewTimeOutSeconds          ?? "",
       c.singleNumberPreview            ?? "",
       c.alwaysRunning                  ?? "",
-      cs.field     || "",
+      cs.fieldName || "",
       cs.direction || "",
       cs.numeric   ?? "",
-      c.contactSorts?.length > 1 ? JSON.stringify(c.contactSorts) : "",
+      contactSortsStr,
       c.noAnswerTimeout      ?? "",
       c.priority             ?? "",
       joinArr(c.contactListFilters, "name"),
       c.division?.name || "",
-      c.dynamicQueueSort           ?? "",
-      c.dynamicQueueFilter?.name   || "",
-      c.callbackAutoAnswer         ?? "",
-      c.dynamicLineBalancingEnabled ?? "",
-      c.alertingAgent?.enabled ?? "",
+      dynQueue.sort   ?? "",
+      dynQueue.filter ?? "",
+      c.callbackAutoAnswer ?? "",
+      dynLine.enabled ?? "",
+      diag.reportLowMaxCallsPerAgentAlert ?? "",
       c.preciseDialingEnabled  ?? "",
     ];
   });
@@ -1108,9 +1332,8 @@ async function fetchOBAttemptLimits(region, token) {
   const items = await genesysGetAllPages(region, token, "/api/v2/outbound/attemptlimits", 100);
 
   const rows = items.map((a) => {
-    const recalls = {};
-    for (const r of (a.recallEntries || [])) recalls[r.type?.toUpperCase()] = r;
-    const re = (type, field) => recalls[type]?.[field] ?? "";
+    const recalls = a.recallEntries || {};
+    const re = (type, field) => (recalls[type] || {})[field] ?? "";
 
     return [
       a.name, a.id,
@@ -1118,10 +1341,10 @@ async function fetchOBAttemptLimits(region, token) {
       a.resetPeriod || "",
       a.maxAttemptsPerContact ?? "",
       a.maxAttemptsPerNumber  ?? "",
-      re("ANSWERING_MACHINE","maxAttempts"), re("ANSWERING_MACHINE","minutesBetweenAttempts"),
-      re("BUSY",             "maxAttempts"), re("BUSY",             "minutesBetweenAttempts"),
-      re("FAX",              "maxAttempts"), re("FAX",              "minutesBetweenAttempts"),
-      re("NO_ANSWER",        "maxAttempts"), re("NO_ANSWER",        "minutesBetweenAttempts"),
+      re("answeringMachine","nbrAttempts"), re("answeringMachine","minutesBetweenAttempts"),
+      re("busy",            "nbrAttempts"), re("busy",            "minutesBetweenAttempts"),
+      re("fax",             "nbrAttempts"), re("fax",             "minutesBetweenAttempts"),
+      re("noAnswer",        "nbrAttempts"), re("noAnswer",        "minutesBetweenAttempts"),
     ];
   });
 
@@ -1175,7 +1398,14 @@ async function fetchOBCallAnalysis(region, token) {
 
   const rows = items.map((c) => {
     const r  = c.responses || {};
-    const rv = (key) => r[key]?.name || r[key] || "";
+    const rv = (key) => {
+      const reaction = r[key];
+      if (!reaction) return "";
+      if (typeof reaction !== "object") return String(reaction);
+      const rt = reaction.reactionType || "";
+      if (rt === "transfer_flow" && reaction.name) return `${rt}: ${reaction.name}`;
+      return rt;
+    };
     return [
       c.name, c.id,
       c.beepDetectionEnabled         ?? "",
@@ -1208,16 +1438,102 @@ async function fetchOBCampaignRules(region, token) {
   const items = await genesysGetAllPages(region, token, "/api/v2/outbound/campaignrules", 100);
 
   const rows = items.map((r) => {
+    const sep = ", ";
     const entities    = r.campaignRuleEntities || {};
     const campaigns   = entities.campaigns   || [];
     const sequences   = entities.sequences   || [];
 
+    // Conditions - Old Format
     const oldConds    = r.campaignRuleConditions || [];
-    const condGroups  = r.conditionGroups        || [];
-    const allConds    = [...oldConds, ...condGroups.flatMap((g) => g.conditions || [])];
+    const oldCondCount = oldConds.length;
 
-    const actions     = r.campaignRuleActions || [];
-    const totalTargets = actions.reduce((n, a) => n + (a.targets?.length || 0), 0);
+    // Conditions - New Format (conditionGroups)
+    const condGroups  = r.conditionGroups || [];
+    const newCondCount = condGroups.length;
+
+    // Total conditions
+    let totalCondCount = oldCondCount;
+    for (const g of condGroups) totalCondCount += (g.conditions || []).length;
+
+    // Extract condition types & details
+    const condTypes = new Set();
+    const condDetails = [];
+
+    // From old format
+    for (const cond of oldConds) {
+      const ct = cond.conditionType || "";
+      if (ct) condTypes.add(ct);
+      const params = cond.parameters || {};
+      const op = params.operator || "";
+      const val = params.value || "";
+      if (ct && op && val) condDetails.push(`${ct}: ${op} ${val}`);
+    }
+
+    // From new format (conditionGroups)
+    condGroups.forEach((group, gi) => {
+      const groupMatchAny = group.matchAnyConditions ?? false;
+      const groupLogic = groupMatchAny ? "OR" : "AND";
+      const groupConds = group.conditions || [];
+      const groupDetails = [];
+      for (const cond of groupConds) {
+        const ct = cond.conditionType || "";
+        if (ct) condTypes.add(ct);
+        const params = cond.parameters || {};
+        const op = params.operator || "";
+        const val = params.value || "";
+        if (ct && op && val) groupDetails.push(`${ct}: ${op} ${val}`);
+      }
+      if (groupDetails.length) {
+        condDetails.push(`Group ${gi + 1} (${groupLogic}): ${sep}${groupDetails.join(sep)}`);
+      }
+    });
+
+    const condTypesStr = [...condTypes].sort().join(sep);
+    const condDetailsStr = condDetails.join(sep);
+
+    // Actions
+    const actions = r.campaignRuleActions || [];
+    const actionTypes = new Set();
+    const actionDetails = [];
+    let totalTargets = 0;
+    let useTriggeringEntity = false;
+
+    for (const action of actions) {
+      const at = action.actionType || "";
+      if (at) actionTypes.add(at);
+
+      const ae = action.campaignRuleActionEntities || {};
+      const aCamps = ae.campaigns || [];
+      const aSeqs  = ae.sequences || [];
+      const useTrig = ae.useTriggeringEntity ?? false;
+      if (useTrig) useTriggeringEntity = true;
+
+      totalTargets += aCamps.length + aSeqs.length;
+
+      const targets = [
+        ...aCamps.map((c) => c.name || ""),
+        ...aSeqs.map((s)  => s.name || ""),
+      ];
+      if (targets.length) {
+        actionDetails.push(`${at}: ${targets.join(sep)}`);
+      } else if (useTrig) {
+        actionDetails.push(`${at}: triggering entity`);
+      } else {
+        actionDetails.push(at);
+      }
+    }
+
+    const actionTypesStr = [...actionTypes].sort().join(sep);
+    const actionDetailsStr = actionDetails.join(sep);
+
+    // Execution Settings
+    const execSettings = r.executionSettings || {};
+    const execFrequency = execSettings.frequency || "";
+    const execMode = "";
+
+    // Rule Notes from campaignRuleProcessing
+    const processing = r.campaignRuleProcessing || "";
+    const ruleNotes = processing ? `Processing: ${processing}` : "";
 
     return [
       r.name, r.id,
@@ -1225,22 +1541,22 @@ async function fetchOBCampaignRules(region, token) {
       r.timeZoneId  || "",
       r.matchAnyConditions ?? "",
       campaigns.length,
-      campaigns.map((c) => c.name).join(", "),
+      campaigns.map((c) => c.name).join(sep),
       sequences.length,
-      sequences.map((s) => s.name).join(", "),
-      oldConds.length,
-      condGroups.length,
-      allConds.length,
-      allConds.map((c) => c.type).join(", "),
-      allConds.map((c) => `${c.type}:${c.value ?? ""}`).join("; "),
+      sequences.map((s) => s.name).join(sep),
+      oldCondCount,
+      newCondCount,
+      totalCondCount,
+      condTypesStr,
+      condDetailsStr,
       actions.length,
       totalTargets,
-      actions.map((a) => a.actionType || a.type).join(", "),
-      actions.map((a) => (a.targets || []).map((t) => t.name).join("|") || (a.parameters ? JSON.stringify(a.parameters) : "")).join("; "),
-      r.useTriggeringEntity  ?? "",
-      r.executionFrequency   ?? "",
-      r.executionMode        || "",
-      r.notes                || "",
+      actionTypesStr,
+      actionDetailsStr,
+      useTriggeringEntity,
+      execFrequency,
+      execMode,
+      ruleNotes,
     ];
   });
 
@@ -1257,11 +1573,11 @@ async function fetchOBContactListFilters(region, token) {
 
   const rows = [];
   for (const f of items) {
-    const base = [f.name, f.id, f.contactList?.name || "", f.filterType || ""];
+    const base = [f.name, f.id, f.contactList?.name || "", f.contactListFilterType || "", f.filterType || ""];
     const clauses = f.clauses || [];
 
     if (clauses.length === 0) {
-      rows.push([...base, f.filterType || "", "", "", "", "", "", "", ""]);
+      rows.push([...base, "", "", "", "", "", "", ""]);
       continue;
     }
 
@@ -1276,7 +1592,7 @@ async function fetchOBContactListFilters(region, token) {
           ...base,
           ci + 1,
           clause.filterType || "",
-          pred.column        || "",
+          pred.columnName    || "",
           pred.columnType    || "",
           pred.operator      || "",
           pred.value         ?? "",
@@ -1297,17 +1613,39 @@ async function fetchOBContactLists(region, token) {
   ];
   const items = await genesysGetAllPages(region, token, "/api/v2/outbound/contactlists", 100);
 
+  const fmtCols = (cols, timeKey) => {
+    if (!cols || !cols.length) return "";
+    return cols.map((c) => {
+      const n = c.columnName || "";
+      const t = c.type || "";
+      const tc = c[timeKey] || "";
+      return tc ? `${n} (${t}, ${tc})` : `${n} (${t})`;
+    }).join("; ");
+  };
+
+  const fmtSpecs = (specs) => {
+    if (!specs || !specs.length) return "";
+    return specs.map((s) => {
+      const cn = s.columnName || "";
+      const dt = s.columnDataType || "";
+      const details = [];
+      if (s.maxLength) details.push(`maxLength=${s.maxLength}`);
+      if (s.min != null || s.max != null) details.push(`range=${s.min ?? ""}-${s.max ?? ""}`);
+      return details.length ? `${cn}: ${dt} (${details.join(", ")})` : `${cn}: ${dt}`;
+    }).join("; ");
+  };
+
   const rows = items.map((l) => [
     l.name, l.id,
     l.division?.name || "",
     joinArr(l.columnNames || []),
-    joinArr((l.phoneColumns || []).map((c) => c.columnName || c.name)),
-    joinArr((l.emailColumns || []).map((c) => c.columnName || c.name)),
-    joinArr((l.whatsAppColumns || []).map((c) => c.columnName || c.name)),
+    fmtCols(l.phoneColumns, "callableTimeColumn"),
+    fmtCols(l.emailColumns, "contactableTimeColumn"),
+    fmtCols(l.whatsAppColumns, "contactableTimeColumn"),
     l.attemptLimits?.name || "",
     l.automaticTimeZoneMapping ?? "",
-    l.columnDataTypeSpecifications ? JSON.stringify(l.columnDataTypeSpecifications) : "",
-    l.trimString ?? "",
+    fmtSpecs(l.columnDataTypeSpecifications || []),
+    l.trimWhitespace ?? "",
   ]);
 
   return { headers, rows };
@@ -1321,16 +1659,41 @@ async function fetchOBContactListTemplates(region, token) {
   ];
   const items = await genesysGetAllPages(region, token, "/api/v2/outbound/contactlisttemplates", 100);
 
+  const fmtCols = (cols) => {
+    if (!cols || !cols.length) return "";
+    return cols.map((c) => {
+      const n = c.columnName || "";
+      const t = c.type || "";
+      const tc = c.callableTimeColumn || c.contactableTimeColumn || "";
+      return tc ? `${n} (${t}, ${tc})` : `${n} (${t})`;
+    }).join("; ");
+  };
+
+  const fmtSpecs = (specs) => {
+    if (!specs || !specs.length) return "";
+    return specs.map((s) => {
+      const cn = s.columnName || "";
+      const dt = s.columnDataType || "";
+      const details = [];
+      if (dt === "TEXT" && s.maxLength) details.push(`maxLength=${s.maxLength}`);
+      if (dt === "NUMERIC") {
+        if (s.min != null) details.push(`min=${s.min}`);
+        if (s.max != null) details.push(`max=${s.max}`);
+      }
+      return details.length ? `${cn}: ${dt} (${details.join(", ")})` : `${cn}: ${dt}`;
+    }).join("; ");
+  };
+
   const rows = items.map((t) => [
     t.name, t.id,
     joinArr(t.columnNames || []),
-    joinArr((t.phoneColumns      || []).map((c) => c.columnName || c.name)),
-    joinArr((t.emailColumns      || []).map((c) => c.columnName || c.name)),
-    joinArr((t.whatsAppColumns   || []).map((c) => c.columnName || c.name)),
+    fmtCols(t.phoneColumns      || []),
+    fmtCols(t.emailColumns      || []),
+    fmtCols(t.whatsAppColumns   || []),
     t.attemptLimits?.name || "",
     t.automaticTimeZoneMapping ?? "",
-    t.columnDataTypeSpecifications ? JSON.stringify(t.columnDataTypeSpecifications) : "",
-    t.trimString ?? "",
+    fmtSpecs(t.columnDataTypeSpecifications || []),
+    t.trimWhitespace ?? "",
     t.previewModeColumnName || "",
     joinArr(t.previewModeAcceptedValues || []),
   ]);
@@ -1347,9 +1710,28 @@ async function fetchOBSettings(region, token) {
   ];
   const s = await genesysGet(region, token, "/api/v2/outbound/settings");
 
-  const windows = (s.automaticTimeZoneMapping?.callableWindows || [])
-    .map((w) => `${w.earliest}-${w.latest}`).join(", ");
-  const countries = joinArr(s.automaticTimeZoneMapping?.supportedCountries || []);
+  const fmtWindows = (atzm) => {
+    if (!atzm || !atzm.callableWindows) return "";
+    return (atzm.callableWindows || []).map((w) => {
+      const parts = [];
+      if (w.mapped) {
+        const e = w.mapped.earliestCallableTime || "";
+        const l = w.mapped.latestCallableTime || "";
+        if (e && l) parts.push(`Mapped: ${e}-${l}`);
+      }
+      if (w.unmapped) {
+        const e = w.unmapped.earliestCallableTime || "";
+        const l = w.unmapped.latestCallableTime || "";
+        const tz = w.unmapped.timeZoneId || "";
+        if (e && l) parts.push(tz ? `Unmapped: ${e}-${l} (${tz})` : `Unmapped: ${e}-${l}`);
+      }
+      return parts.join(", ");
+    }).filter(Boolean).join("; ");
+  };
+
+  const atzm = s.automaticTimeZoneMapping || {};
+  const windows = fmtWindows(atzm);
+  const countries = joinArr(atzm.supportedCountries || []);
 
   const rows = [[
     s.maxCallsPerAgent             ?? "",
@@ -1510,13 +1892,17 @@ async function execute(context, schedule) {
   const addSheet = (name, result) => {
     const data = val(result);
     if (data.error) {
-      // Add an error placeholder sheet
+      // Error: include a placeholder sheet and show ERROR in the index
       addStyledSheet(wb, [["Error"], [data.error]], safeSheet(name));
       inventory.push({ name, status: "error" });
     } else {
       const { headers, rows } = data;
+      if (rows.length === 0) {
+        // No data: omit the sheet entirely and exclude from the index
+        return;
+      }
       addStyledSheet(wb, [headers, ...rows], safeSheet(name));
-      inventory.push({ name, status: rows.length > 0 ? "data" : "skip" });
+      inventory.push({ name, status: "data" });
     }
   };
 
@@ -1601,6 +1987,13 @@ async function execute(context, schedule) {
   addSheet("User Prompts",  promptsR);
   addSheet("Users",         usersR);
   addSheet("Wrapup Codes",  wrapupR);
+
+  // Sort sheets alphabetically — controls tab order in the Excel file.
+  // Index is inserted at position 0 after sorting, so it is not included here.
+  wb.SheetNames.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+  // Sort inventory to match the sorted sheet order for the cover-sheet table of contents.
+  inventory.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
   // Insert cover sheet at position 0
   buildCoverSheet(wb, customer.name, tsStr, inventory);
