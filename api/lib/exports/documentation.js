@@ -287,7 +287,6 @@ function buildCoverSheet(wb, orgName, tsStr, inventory) {
   // Rows 11+: inventory
   inventory.forEach((item, idx) => {
     const row   = 11 + idx;
-    const desc  = SHEET_DESCRIPTIONS[item.name] || "";
 
     // Column A – hyperlink
     const linkStyle = {
@@ -312,7 +311,8 @@ function buildCoverSheet(wb, orgName, tsStr, inventory) {
     }
     setCell(`B${row}`, statusText, statusStyle);
 
-    // Column C – description
+    // Column C – description (item.desc takes priority over the global lookup)
+    const desc  = item.desc !== undefined ? item.desc : (SHEET_DESCRIPTIONS[item.name] || "");
     setCell(`C${row}`, desc, {
       font:      { sz: 10, name: "Calibri" },
       alignment: { horizontal: "left", vertical: "center" },
@@ -1780,6 +1780,7 @@ async function fetchOBSettings(region, token) {
 
 async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
   const dtWb = XLSX.utils.book_new();
+  const dtInventory = [];
 
   const tables = await genesysGetAllPages(
     region, token,
@@ -1814,10 +1815,15 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
     ];
 
     addStyledSheet(dtWb, wsData, sheetName);
+    dtInventory.push({ name: sheetName, status: "data", desc: `${allRows.length} row${allRows.length !== 1 ? "s" : ""}` });
   }
 
   // Sort data table sheets alphabetically
   dtWb.SheetNames.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+  // Sort inventory to match sheet order, then insert index at position 0
+  dtInventory.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  buildCoverSheet(dtWb, orgName, tsStr, dtInventory);
 
   return dtWb;
 }
