@@ -103,16 +103,11 @@ async function execute(context, schedule) {
     context.log(`Fetched ${licenseUsers.length} licence-user records`);
 
     // Build map: userId → Set<licenceId>
-    // The API may return { user: { id }, licenses } or { id, licenses } — handle both
+    // The API returns { user: { id }, licenses } — entry.user.id is the key
     const licenseMap = new Map();
     for (const entry of licenseUsers) {
       const userId = entry.user?.id || entry.id;
       if (userId) licenseMap.set(userId, new Set(entry.licenses || []));
-    }
-    context.log(`License map built: ${licenseMap.size} user entries`);
-    if (licenseUsers.length > 0) {
-      const sample = licenseUsers[0];
-      context.log(`Sample entry keys: ${Object.keys(sample).join(", ")} — user?.id=${sample.user?.id} — id=${sample.id} — licenses count=${(sample.licenses||[]).length}`);
     }
 
     // Step 2: fetch all users with division expansion (paginated)
