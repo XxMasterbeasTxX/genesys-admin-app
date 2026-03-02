@@ -156,6 +156,26 @@ async function genesysGetAllPages(region, token, path, pageSize = 100) {
   return all;
 }
 
+/**
+ * Fetch all pages of a cursor-paginated Genesys endpoint (uses nextUri, max pageSize 200).
+ * Used for endpoints like /api/v2/assistants and /api/v2/assistants/queues.
+ */
+async function genesysGetAllPagesCursor(region, token, path, pageSize = 200) {
+  let all      = [];
+  const sep    = path.includes("?") ? "&" : "?";
+  let nextPath = `${path}${sep}pageSize=${pageSize}`;
+  while (nextPath) {
+    const resp  = await genesysGet(region, token, nextPath);
+    const items = resp.entities || [];
+    all         = all.concat(items);
+    // nextUri can be a full URL or a path — extract just the path portion
+    const raw   = resp.nextUri || null;
+    if (!raw) break;
+    nextPath = raw.startsWith("http") ? new URL(raw).pathname + new URL(raw).search : raw;
+  }
+  return all;
+}
+
 /** Safely get a nested value by dot-path, returning fallback on any miss. */
 function get(obj, path, fallback = "") {
   const parts = path.split(".");
@@ -1077,10 +1097,9 @@ async function fetchAgentCopilots(region, token) {
     "Condition Type","Condition Values","Action Type","Action Attributes","Participant Role",
   ];
 
-  // Raw API call for assistants with copilot expanded.
-  // Must be raw (not SDK) so participantRoles and other fields are not stripped.
-  const assistantsResp = await genesysGet(region, token, "/api/v2/assistants?pageSize=100&expand=copilot");
-  const assistants = assistantsResp.entities || [];
+  // /api/v2/assistants uses cursor-based pagination (nextUri), max pageSize 200.
+  // Must use raw HTTP (not SDK) so participantRoles and other fields are preserved.
+  const assistants = await genesysGetAllPagesCursor(region, token, "/api/v2/assistants?expand=copilot");
 
   // Queue name lookup — resolve queue IDs to names (same approach as Python)
   let queueLookup = {};
@@ -1089,12 +1108,13 @@ async function fetchAgentCopilots(region, token) {
     for (const q of allQueues) queueLookup[q.id] = q.name;
   } catch (_) { /* skip */ }
 
-  // Queue assignments from /api/v2/assistants/queues
+  // Queue assignments from /api/v2/assistants/queues.
+  // This endpoint also uses cursor-based pagination (nextUri), max pageSize 200.
   // Each entity: { id: <queueId>, assistant: { id: <assistantId> }, mediaTypes: [...] }
   let assignmentMap = {}; // assistantId → [{ queueId, mediaTypes }]
   try {
-    const assignResp = await genesysGet(region, token, "/api/v2/assistants/queues?pageSize=500");
-    for (const entry of (assignResp.entities || [])) {
+    const allAssignments = await genesysGetAllPagesCursor(region, token, "/api/v2/assistants/queues");
+    for (const entry of allAssignments) {
       const aid = entry.assistant?.id;
       if (!aid) continue;
       if (!assignmentMap[aid]) assignmentMap[aid] = [];
@@ -1103,7 +1123,7 @@ async function fetchAgentCopilots(region, token) {
         mediaTypes: joinArr(entry.mediaTypes || []),
       });
     }
-  } catch (_) { /* skip — unassigned assistants still appear, just with no queue */ }
+  } catch (_) { /* skip — unassigned assistants still appear with no queue */ }
 
   const copilotsRows = [];
   const rulesRows    = [];
