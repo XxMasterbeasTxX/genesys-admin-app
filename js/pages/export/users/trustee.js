@@ -25,6 +25,7 @@ import { fetchCustomers } from "../../../services/customerService.js";
 import { sendEmail, validateRecipients } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
+import { STYLE_HEADER, STYLE_ROW_EVEN, STYLE_ROW_ODD } from "../../../utils/excelStyles.js";
 
 // ── Automation: set to false to hide the schedule panel on this page ─
 const AUTOMATION_ENABLED = true;
@@ -61,19 +62,8 @@ function getTrusteeSheetName(trusteeOrg) {
   return `Trustee Org - ${suffix}`;
 }
 
-// ── Excel style constants (matching Python openpyxl formatting) ─────
-const STYLE_HEADER = {
-  fill:      { fgColor: { rgb: "366092" } },
-  font:      { bold: true, sz: 11, color: { rgb: "FFFFFF" } },
-  alignment: { horizontal: "center", vertical: "center" },
-  border:    {
-    top:    { style: "thin", color: { rgb: "000000" } },
-    bottom: { style: "thin", color: { rgb: "000000" } },
-    left:   { style: "thin", color: { rgb: "000000" } },
-    right:  { style: "thin", color: { rgb: "000000" } },
-  },
-};
-
+// ── Trustee-specific boolean cell styles ────────────────────────────────────
+// STYLE_HEADER, STYLE_ROW_EVEN, STYLE_ROW_ODD come from the shared excelStyles module.
 const STYLE_TRUE = {
   fill:      { fgColor: { rgb: "C6EFCE" } },
   font:      { color: { rgb: "006100" } },
@@ -116,17 +106,23 @@ function buildTrusteeWorkbook(byTrusteeOrg, customerNames) {
     const wsData = [headers, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-    // ── Apply header styles ──────────────────────────────
+    // ── Apply header styles ────────────────────────────────────
     for (let c = 0; c < headers.length; c++) {
       const addr = XLSX.utils.encode_cell({ r: 0, c });
       if (ws[addr]) ws[addr].s = STYLE_HEADER;
     }
 
-    // ── Apply data cell styles ───────────────────────────
+    // ── Apply data cell styles ───────────────────────────────────
     for (let r = 0; r < rows.length; r++) {
-      for (let c = 2; c < headers.length; c++) {  // columns after Name, Email
+      const rowStyle = r % 2 === 0 ? STYLE_ROW_EVEN : STYLE_ROW_ODD;
+      for (let c = 0; c < headers.length; c++) {
         const addr = XLSX.utils.encode_cell({ r: r + 1, c });
-        if (ws[addr]) {
+        if (!ws[addr]) continue;
+        if (c < 2) {
+          // Name and Email: shared alternating row style
+          ws[addr].s = rowStyle;
+        } else {
+          // Boolean org-access columns: green (true) or red (false)
           ws[addr].s = ws[addr].v === true ? STYLE_TRUE : STYLE_FALSE;
         }
       }
