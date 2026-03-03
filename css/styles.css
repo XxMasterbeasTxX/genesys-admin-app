@@ -343,6 +343,21 @@ body {
 .is-date {
   width: 160px;
 }
+.is-queue-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+.is-queue-search {
+  width: 200px;
+}
+.is-queue-select {
+  width: 200px;
+}
+.is-select {
+  width: 160px;
+}
 .is-pd-group {
   flex: 1;
   min-width: 280px;

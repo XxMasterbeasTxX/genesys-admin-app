@@ -154,6 +154,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   let rows = [];           // flattened rows for display
   let selectedIdx = -1;
   let abortCtrl = null;    // AbortController for cancelling
+  let queues    = [];      // all queues from org
+  let divisions = [];      // all divisions from org
 
   // ── Build UI ────────────────────────────────────────
   const today = todayStr();
@@ -179,6 +181,29 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <label class="is-label">Date To</label>
         <input type="date" class="input is-date" id="isDateTo" value="${today}">
       </div>
+      <div class="is-control-group is-queue-group">
+        <label class="is-label">Queue</label>
+        <input type="text" class="input is-queue-search" id="isQueueSearch" placeholder="Search queues…" disabled>
+        <select class="input is-queue-select" id="isQueue" disabled>
+          <option value="">Loading queues…</option>
+        </select>
+      </div>
+      <div class="is-control-group">
+        <label class="is-label">Media Type</label>
+        <select class="input is-select" id="isMediaType">
+          <option value="">All</option>
+          <option value="voice">Voice</option>
+          <option value="email">Email</option>
+          <option value="callback">Callback</option>
+          <option value="message">Message</option>
+        </select>
+      </div>
+      <div class="is-control-group">
+        <label class="is-label">Division</label>
+        <select class="input is-select" id="isDivision" disabled>
+          <option value="">Loading divisions…</option>
+        </select>
+      </div>
       <div class="is-control-group is-pd-group">
         <label class="is-label">Participant Data Filter</label>
         <div class="is-pd-inputs">
@@ -187,7 +212,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
           <button class="btn btn-sm" id="isPdAdd">Add</button>
           <button class="btn btn-sm" id="isPdClear">Clear All</button>
         </div>
-        <div class="is-pd-hint">Filters applied client-side. Conversation matches if ANY participant has ALL key/value pairs.</div>
+        <div class="is-pd-hint">Queue, Media, and Division filters are server-side. Participant Data is client-side.</div>
         <div class="is-filter-tags" id="isFilterTags"></div>
       </div>
     </div>
@@ -231,6 +256,10 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   // ── DOM refs ────────────────────────────────────────
   const $dateFrom     = el.querySelector("#isDateFrom");
   const $dateTo       = el.querySelector("#isDateTo");
+  const $queueSearch  = el.querySelector("#isQueueSearch");
+  const $queue        = el.querySelector("#isQueue");
+  const $mediaType    = el.querySelector("#isMediaType");
+  const $division     = el.querySelector("#isDivision");
   const $pdKey        = el.querySelector("#isPdKey");
   const $pdValue      = el.querySelector("#isPdValue");
   const $pdAdd        = el.querySelector("#isPdAdd");
@@ -245,6 +274,21 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $progressBar  = el.querySelector("#isProgressBar");
   const $tbody        = el.querySelector("#isTbody");
   const $detail       = el.querySelector("#isDetailContent");
+
+  // ── Queue search / filter ──────────────────────────
+  function populateQueueSelect(filterText = "") {
+    const lower = filterText.toLowerCase();
+    const filtered = lower
+      ? queues.filter(q => q.name.toLowerCase().includes(lower))
+      : queues;
+    const prev = $queue.value;
+    $queue.innerHTML = `<option value="">— All queues —</option>`
+      + filtered.map(q =>
+        `<option value="${escapeHtml(q.id)}">${escapeHtml(q.name)}</option>`
+      ).join("");
+    if (prev && filtered.some(q => q.id === prev)) $queue.value = prev;
+  }
+  $queueSearch.addEventListener("input", () => populateQueueSelect($queueSearch.value));
 
   // ── Filter tag management ───────────────────────────
   function renderFilterTags() {
@@ -447,10 +491,26 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     const orgId = orgContext.get();
 
     try {
+      // Build server-side filter body
+      const jobBody = {};
+      const segmentPredicates = [];
+      const queueId   = $queue.value;
+      const mediaVal  = $mediaType.value;
+      const divisionId = $division.value;
+      if (queueId)  segmentPredicates.push({ dimension: "queueId",   value: queueId });
+      if (mediaVal) segmentPredicates.push({ dimension: "mediaType", value: mediaVal });
+      if (segmentPredicates.length) {
+        jobBody.segmentFilters = [{ type: "and", predicates: segmentPredicates }];
+      }
+      if (divisionId) {
+        jobBody.conversationFilters = [{ type: "and", predicates: [{ dimension: "divisionId", value: divisionId }] }];
+      }
+
       // Use the centralized genesysApi service for the full search flow
       const interval = buildInterval(dateFrom, dateTo);
       const allConvs = await gc.searchConversations(api, orgId, {
         interval,
+        jobBody: Object.keys(jobBody).length ? jobBody : undefined,
         onStatus: (msg) => setStatus(msg),
         onProgress: (pct) => showProgress(pct),
       });
@@ -495,6 +555,36 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       setTimeout(hideProgress, 800);
     }
   });
+
+  // ── Load queues + divisions on mount ──────────────
+  (async () => {
+    try {
+      const orgId = orgContext.get();
+      [queues, divisions] = await Promise.all([
+        gc.fetchAllQueues(api, orgId),
+        gc.fetchAllDivisions(api, orgId),
+      ]);
+      queues.sort((a, b) => a.name.localeCompare(b.name));
+      divisions.sort((a, b) => a.name.localeCompare(b.name));
+
+      populateQueueSelect();
+      $queue.disabled = false;
+      $queueSearch.disabled = false;
+
+      $division.innerHTML = `<option value="">— All divisions —</option>`
+        + divisions.map(d =>
+          `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`
+        ).join("");
+      $division.disabled = false;
+    } catch (err) {
+      console.error("Failed to load queues/divisions:", err.message);
+      $queue.innerHTML = `<option value="">— All queues —</option>`;
+      $queue.disabled = false;
+      $queueSearch.disabled = false;
+      $division.innerHTML = `<option value="">— All divisions —</option>`;
+      $division.disabled = false;
+    }
+  })();
 
   return el;
 }
