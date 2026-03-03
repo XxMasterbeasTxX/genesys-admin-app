@@ -27,10 +27,14 @@ const MEDIA_TYPES = [
   { id: "message",  label: "Message" },
 ];
 
+/** Number of 31-day intervals to scan backwards (≈ 6 months). */
+const SCAN_INTERVALS = 6;
+const INTERVAL_DAYS  = 31;
+
 const STATUS = {
   ready:      "Ready. Select source and destination queues.",
   loading:    "Loading queues…",
-  scanning:   "Scanning for active conversations…",
+  scanning:   (i, n) => `Scanning interval ${i} of ${n}…`,
   inspecting: (n, total) => `Inspecting conversation ${n} of ${total}…`,
   previewed:  (n, media) => `Preview: ${n} interaction${n !== 1 ? "s" : ""} found (${media}).`,
   moving:     (n, total) => `Moving ${n} of ${total}…`,
@@ -345,34 +349,55 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     const { srcId, mediaTypes, olderThan, newerThan } = params;
     const orgId = orgContext.get();
 
-    // Step 1: Analytics query — active convs in source queue (last 31 days)
+    // Step 1: Analytics query — active convs in source queue (6 × 31-day windows)
     const now = new Date();
-    const start = new Date(now.getTime() - 31 * 86_400_000);
-    const interval = `${start.toISOString()}/${now.toISOString()}`;
+    const seen = new Set();
+    const rawConvIds = [];
 
-    setStatus(STATUS.scanning);
-    showProgress(10);
+    for (let i = 0; i < SCAN_INTERVALS; i++) {
+      if (cancelled) break;
 
-    const analyticsBody = {
-      interval,
-      order: "desc",
-      orderBy: "conversationStart",
-      segmentFilters: [{
-        type: "and",
-        predicates: [{ dimension: "queueId", value: srcId }],
-      }],
-      conversationFilters: [{
-        type: "and",
-        predicates: [{ dimension: "conversationEnd", operator: "notExists" }],
-      }],
-    };
+      const end   = new Date(now.getTime() - i * INTERVAL_DAYS * 86_400_000);
+      const start = new Date(end.getTime()  - INTERVAL_DAYS * 86_400_000);
+      const interval = `${start.toISOString()}/${end.toISOString()}`;
 
-    const rawConvs = await gc.queryConversationDetails(api, orgId, analyticsBody, {
-      onProgress: (n) => showProgress(10 + Math.min(n / 10, 20)),
-    });
+      setStatus(STATUS.scanning(i + 1, SCAN_INTERVALS));
+      showProgress((i / SCAN_INTERVALS) * 20);
 
-    if (!rawConvs.length) return [];
+      const analyticsBody = {
+        interval,
+        order: "desc",
+        orderBy: "conversationStart",
+        segmentFilters: [{
+          type: "and",
+          predicates: [{ dimension: "queueId", value: srcId }],
+        }],
+        conversationFilters: [{
+          type: "and",
+          predicates: [{ dimension: "conversationEnd", operator: "notExists" }],
+        }],
+      };
+
+      const page = await gc.queryConversationDetails(api, orgId, analyticsBody, {
+        maxPages: 200,
+        onProgress: (n) => showProgress(
+          (i / SCAN_INTERVALS) * 20 + Math.min(n / 500, 1) * (20 / SCAN_INTERVALS)
+        ),
+      });
+
+      for (const c of page) {
+        if (!seen.has(c.conversationId)) {
+          seen.add(c.conversationId);
+          rawConvIds.push(c.conversationId);
+        }
+      }
+    }
+
+    if (!rawConvIds.length) return [];
     if (cancelled) return [];
+
+    // Build a shim array to keep the rest of the loop compatible
+    const rawConvs = rawConvIds.map(id => ({ conversationId: id }));
 
     // Step 2: Get full details for each and find ACD participant
     const matched = [];
@@ -381,7 +406,7 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
 
       const convId = rawConvs[i].conversationId;
       setStatus(STATUS.inspecting(i + 1, rawConvs.length));
-      showProgress(30 + (i / rawConvs.length) * 60);
+      showProgress(20 + (i / rawConvs.length) * 70);
 
       try {
         const conv = await gc.getConversation(api, orgId, convId);
