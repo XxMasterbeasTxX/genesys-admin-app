@@ -662,7 +662,7 @@ async function fetchPolicies(region, token) {
       if (conditions) {
         if (conditions.forQueues) {
           for (const q of conditions.forQueues) {
-            if (q.id) targetQueues.add(queueLookup[q.id] || q.id);
+            if (q.id) targetQueues.add(q.name || queueLookup[q.id] || q.id);
           }
         }
         if (conditions.forUsers) targetUsersCount += conditions.forUsers.length;
