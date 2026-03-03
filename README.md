@@ -6,7 +6,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 ### Features
 
-- **Interaction Search** — Search conversations by date range, filter by participant data, view details, export to Excel (.xlsx)
+- **Interaction Search** — Search conversations by date range; server-side filters for queue (searchable dropdown), media type, and division; client-side participant data attribute filters; sortable results table with click-to-expand detail; export to Excel (.xlsx)
 - **Move Interactions** — Move conversations between queues with media type filtering and date range controls
 - **Disconnect Interactions** — Force-disconnect stuck/orphaned conversations by ID or empty an entire queue, with media type and date filters
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection

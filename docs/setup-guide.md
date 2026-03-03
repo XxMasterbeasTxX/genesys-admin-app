@@ -4,7 +4,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 
 ## Current features
 
-- **Interaction Search** — Search conversations by date range, filter by participant data, view details, export to Excel
+- **Interaction Search** — Search conversations by date range; server-side filters for queue (searchable dropdown), media type, and division; client-side participant data attribute filters; sortable results table with click-to-expand detail; export to Excel
 - **Move Interactions** — Move conversations between queues with media type and date filters
 - **Disconnect Interactions** — Force-disconnect stuck/orphaned conversations by ID or empty a queue, with media type and date filters
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
@@ -618,7 +618,7 @@ After pushing the config update:
 | 7 | `/api/customers` endpoint works | Returns JSON array of customers |
 | 8 | Selecting a customer updates the page | Page responds to org change |
 | 9 | Nav menu shows top-level groups | "Data Actions", "Data Tables", "Export", "Interactions", "Phones" — items sorted alphabetically |
-| 10 | Interaction Search works | Date range search returns conversations |
+| 10 | Interaction Search works | Date range search returns conversations; queue/division dropdowns populate; queue search filters list; media type filter works; Participant Data filter works client-side |
 | 11 | Excel export works | Downloads `.xlsx` file |
 | 12 | Move Interactions works | Queue selectors load, preview and move succeed |
 | 13 | Data Tables — Copy (Single Org) | Tables, divisions load; copy structure + rows succeeds |
