@@ -15,8 +15,9 @@
  * Note: This export can take up to 5–10 minutes for large organisations.
  *       A loading spinner is shown while the request is in progress.
  */
+import { sendEmail } from "../../../services/emailService.js";
 
-export default function renderDocumentationCreate({ route, me, orgContext }) {
+export default function renderDocumentationCreate({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -30,13 +31,13 @@ export default function renderDocumentationCreate({ route, me, orgContext }) {
     <hr class="hr">
     <p class="page-desc">
       Generates a full Genesys Cloud configuration export for the selected org.
-      The output Excel workbook contains up to 42 sheets covering all major
+      The output Excel workbook contains sheets covering all major
       configuration objects — queues, users, flows, schedules, outbound, OAuth
-      clients and more — in the same format as the Python Export_All.py script.
+      clients and more. 
       A second workbook with DataTable contents is included as a ZIP when present.
     </p>
     <p class="page-desc" style="color:#f59e0b;margin-top:4px">
-      ⏱ This export may take 5–10 minutes for large organisations.
+      ⏱ This export may take a while for large organisations.
       Please keep this tab open while it runs.
     </p>
 
@@ -67,6 +68,27 @@ export default function renderDocumentationCreate({ route, me, orgContext }) {
       <button class="btn te-btn-export" id="docDownloadBtn">⬇ Download</button>
       <span class="te-user-count" id="docFileLabel" style="margin-left:10px"></span>
     </div>
+
+    <div class="em-section">
+      <label class="em-toggle">
+        <input type="checkbox" id="docEmailChk">
+        <span>Send email with export</span>
+      </label>
+
+      <div class="em-fields" id="docEmailFields" style="display:none">
+        <div class="em-field">
+          <label class="em-label" for="docEmailTo">Recipients</label>
+          <input type="text" class="em-input" id="docEmailTo"
+                 placeholder="user@example.com, user2@example.com">
+          <span class="em-hint">Separate multiple addresses with , or ;</span>
+        </div>
+        <div class="em-field">
+          <label class="em-label" for="docEmailBody">Message (optional)</label>
+          <textarea class="em-textarea" id="docEmailBody" rows="3"
+                    placeholder="Leave empty for default message"></textarea>
+        </div>
+      </div>
+    </div>
   `;
 
   // ── References ─────────────────────────────────────────────────────────
@@ -79,6 +101,15 @@ export default function renderDocumentationCreate({ route, me, orgContext }) {
   const $dlWrap      = el.querySelector("#docDownload");
   const $dlBtn       = el.querySelector("#docDownloadBtn");
   const $fileLabel   = el.querySelector("#docFileLabel");
+  const $emailChk    = el.querySelector("#docEmailChk");
+  const $emailFields = el.querySelector("#docEmailFields");
+  const $emailTo     = el.querySelector("#docEmailTo");
+  const $emailBody   = el.querySelector("#docEmailBody");
+
+  // Toggle email fields
+  $emailChk.addEventListener("change", () => {
+    $emailFields.style.display = $emailChk.checked ? "" : "none";
+  });
 
   // ── Helpers ────────────────────────────────────────────────────────────
   function setStatus(msg, cls) {
@@ -163,10 +194,35 @@ export default function renderDocumentationCreate({ route, me, orgContext }) {
       $fileLabel.textContent = result.filename;
       $dlWrap.style.display  = "";
 
-      setStatus(
-        `Export complete — ${extStr} ready — ${elapsed}s elapsed`,
-        "success"
-      );
+      // ── Send email if enabled ──────────────────────────────────────────
+      if ($emailChk.checked && $emailTo.value.trim()) {
+        setStatus("Sending email…");
+        try {
+          const emailResult = await sendEmail(api, {
+            recipients: $emailTo.value,
+            subject: `Documentation Export — ${org.name} — ${new Date().toISOString().replace("T", " ").slice(0, 19)}`,
+            body: $emailBody.value,
+            attachment: {
+              filename: result.filename,
+              base64:   result.base64,
+              mimeType: result.mimeType,
+            },
+          });
+
+          if (emailResult.success) {
+            setStatus(`Export complete — ${extStr} ready — ${elapsed}s elapsed. Email sent to: ${$emailTo.value.trim()}`, "success");
+          } else {
+            setStatus(`Export complete but email failed: ${emailResult.error}`, "error");
+          }
+        } catch (emailErr) {
+          setStatus(`Export complete but email failed: ${emailErr.message}`, "error");
+        }
+      } else {
+        setStatus(
+          `Export complete — ${extStr} ready — ${elapsed}s elapsed`,
+          "success"
+        );
+      }
     } catch (err) {
       setStatus(`Export failed: ${err.message}`, "error");
     } finally {
