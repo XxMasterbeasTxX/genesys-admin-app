@@ -226,6 +226,46 @@ async function safe(fn) {
  * @param {string}   tsStr     Formatted timestamp string (DD-MM-YYYY HH:MM:SS)
  * @param {object[]} inventory [{name, status}] for each sheet added to the workbook
  */
+
+// ─────────────────────────────────────────────────────────
+// Error sheet — mirrors Python's create_error_sheet()
+// ─────────────────────────────────────────────────────────
+/**
+ * Add a styled error sheet to a workbook, matching the Python create_error_sheet format:
+ *   A1 — "ERROR: {name}"  bold 14pt red
+ *   A2 — error message    11pt dark-red
+ *   A3 — "Export attempted: {tsStr}"  10pt grey
+ *
+ * @param {Object} wb         XLSX workbook (mutated)
+ * @param {string} sheetName  Already-safe sheet tab name
+ * @param {string} errorMsg   Error message text
+ * @param {string} tsStr      Timestamp string
+ */
+function createErrorSheet(wb, sheetName, errorMsg, tsStr) {
+  const ws = {};
+
+  ws["A1"] = {
+    v: `ERROR: ${sheetName}`,
+    t: "s",
+    s: { font: { bold: true, sz: 14, color: { rgb: "FF0000" }, name: "Calibri" } },
+  };
+  ws["A2"] = {
+    v: errorMsg,
+    t: "s",
+    s: { font: { sz: 11, color: { rgb: "990000" }, name: "Calibri" } },
+  };
+  ws["A3"] = {
+    v: `Export attempted: ${tsStr}`,
+    t: "s",
+    s: { font: { sz: 10, color: { rgb: "666666" }, name: "Calibri" } },
+  };
+
+  ws["!ref"]  = "A1:A3";
+  ws["!cols"] = [{ wch: 80 }];
+
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+}
+
 function buildCoverSheet(wb, orgName, tsStr, inventory) {
   const ws = {};
 
@@ -1926,8 +1966,8 @@ async function execute(context, schedule) {
   const addSheet = (name, result) => {
     const data = val(result);
     if (data.error) {
-      // Error: include a placeholder sheet and show ERROR in the index
-      addStyledSheet(wb, [["Error"], [data.error]], safeSheet(name));
+      // Error: create a styled error sheet (matching Python's create_error_sheet)
+      createErrorSheet(wb, safeSheet(name), data.error, tsStr);
       inventory.push({ name, status: "error" });
     } else {
       const { headers, rows } = data;
