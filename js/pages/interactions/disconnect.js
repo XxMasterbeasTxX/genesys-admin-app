@@ -60,6 +60,43 @@ function detectMediaType(participants) {
   return "unknown";
 }
 
+/**
+ * Find an ACD participant that is actively waiting (connected or alerting).
+ * If queueId is provided, also requires the participant to be in that queue.
+ * Returns { participantId, mediaType } or null.
+ */
+function findAcdParticipant(conversation, queueId = null) {
+  if (!conversation.participants) return null;
+
+  const mediaCollections = [
+    { key: "calls",     type: "voice" },
+    { key: "emails",    type: "email" },
+    { key: "callbacks", type: "callback" },
+    { key: "messages",  type: "message" },
+  ];
+
+  for (const p of conversation.participants) {
+    if (p.purpose !== "acd") continue;
+
+    if (queueId !== null) {
+      const pQueue = p.queueId || p.queue?.id;
+      if (pQueue !== queueId) continue;
+    }
+
+    for (const mc of mediaCollections) {
+      const items = p[mc.key];
+      if (!items?.length) continue;
+      for (const item of items) {
+        if (item.state === "connected" || item.state === "alerting") {
+          return { participantId: p.id, mediaType: mc.type };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 /** Map common HTTP error codes to user-friendly messages. */
 function friendlyError(err) {
   const msg = err.message || String(err);
@@ -444,14 +481,17 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
 
       try {
         const conv = await gc.getConversation(api, orgId, foundIds[i]);
-        const { pass, mediaType } = passesFilters(conv, filters);
-        if (pass) {
-          matched.push({
-            convId: foundIds[i],
-            mediaType,
-            startTime: formatDateTime(conv.startTime),
-          });
-        }
+        const acd = findAcdParticipant(conv, queueId);
+        if (!acd) continue; // not waiting in queue / already at an agent
+        if (!filters.mediaTypes.includes(acd.mediaType)) continue;
+        const st = conv.startTime ? new Date(conv.startTime) : null;
+        if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) continue;
+        if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) continue;
+        matched.push({
+          convId: foundIds[i],
+          mediaType: acd.mediaType,
+          startTime: formatDateTime(conv.startTime),
+        });
       } catch (err) {
         console.warn(`Could not inspect ${foundIds[i]}:`, err.message);
       }
@@ -474,7 +514,8 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
 
       try {
         const conv = await gc.getConversation(api, orgId, convIds[i]);
-        const { pass, mediaType, reason } = passesFilters(conv, filters);
+        const acd = findAcdParticipant(conv);
+        const mediaType = acd ? acd.mediaType : detectMediaType(conv.participants);
 
         const row = {
           convId: convIds[i],
@@ -482,11 +523,24 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
           startTime: formatDateTime(conv.startTime),
         };
 
-        if (pass) {
-          matched.push(row);
-        } else {
-          skipped.push({ ...row, status: "Filtered", error: reason });
+        if (!acd) {
+          skipped.push({ ...row, status: "Filtered", error: "Not waiting in queue (already at agent or ended)" });
+          continue;
         }
+        if (!filters.mediaTypes.includes(acd.mediaType)) {
+          skipped.push({ ...row, status: "Filtered", error: `Media type "${acd.mediaType}" not selected` });
+          continue;
+        }
+        const st = conv.startTime ? new Date(conv.startTime) : null;
+        if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) {
+          skipped.push({ ...row, status: "Filtered", error: "Started after 'Older than' date" });
+          continue;
+        }
+        if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
+          skipped.push({ ...row, status: "Filtered", error: "Started before 'Newer than' date" });
+          continue;
+        }
+        matched.push(row);
       } catch (err) {
         skipped.push({
           convId: convIds[i],
