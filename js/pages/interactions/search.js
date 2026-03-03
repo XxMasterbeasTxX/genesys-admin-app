@@ -20,6 +20,7 @@
 import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr,
          exportXlsx, timestampedFilename } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
+import { createSingleSelect } from "../../components/multiSelect.js";
 
 // ── Column definitions (page-specific) ──────────────────────────────
 const COLUMNS = [
@@ -181,28 +182,17 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <label class="is-label">Date To</label>
         <input type="date" class="input is-date" id="isDateTo" value="${today}">
       </div>
-      <div class="is-control-group is-queue-group">
+      <div class="is-control-group">
         <label class="is-label">Queue</label>
-        <input type="text" class="input is-queue-search" id="isQueueSearch" placeholder="Search queues…" disabled>
-        <select class="input is-queue-select" id="isQueue" disabled>
-          <option value="">Loading queues…</option>
-        </select>
+        <div id="isQueueDropdown"></div>
       </div>
       <div class="is-control-group">
         <label class="is-label">Media Type</label>
-        <select class="input is-select" id="isMediaType">
-          <option value="">All</option>
-          <option value="voice">Voice</option>
-          <option value="email">Email</option>
-          <option value="callback">Callback</option>
-          <option value="message">Message</option>
-        </select>
+        <div id="isMediaDropdown"></div>
       </div>
       <div class="is-control-group">
         <label class="is-label">Division</label>
-        <select class="input is-select" id="isDivision" disabled>
-          <option value="">Loading divisions…</option>
-        </select>
+        <div id="isDivisionDropdown"></div>
       </div>
       <div class="is-control-group is-pd-group">
         <label class="is-label">Participant Data Filter</label>
@@ -256,10 +246,6 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   // ── DOM refs ────────────────────────────────────────
   const $dateFrom     = el.querySelector("#isDateFrom");
   const $dateTo       = el.querySelector("#isDateTo");
-  const $queueSearch  = el.querySelector("#isQueueSearch");
-  const $queue        = el.querySelector("#isQueue");
-  const $mediaType    = el.querySelector("#isMediaType");
-  const $division     = el.querySelector("#isDivision");
   const $pdKey        = el.querySelector("#isPdKey");
   const $pdValue      = el.querySelector("#isPdValue");
   const $pdAdd        = el.querySelector("#isPdAdd");
@@ -275,20 +261,23 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $tbody        = el.querySelector("#isTbody");
   const $detail       = el.querySelector("#isDetailContent");
 
-  // ── Queue search / filter ──────────────────────────
-  function populateQueueSelect(filterText = "") {
-    const lower = filterText.toLowerCase();
-    const filtered = lower
-      ? queues.filter(q => q.name.toLowerCase().includes(lower))
-      : queues;
-    const prev = $queue.value;
-    $queue.innerHTML = `<option value="">— All queues —</option>`
-      + filtered.map(q =>
-        `<option value="${escapeHtml(q.id)}">${escapeHtml(q.name)}</option>`
-      ).join("");
-    if (prev && filtered.some(q => q.id === prev)) $queue.value = prev;
-  }
-  $queueSearch.addEventListener("input", () => populateQueueSelect($queueSearch.value));
+  // ── Single-select dropdowns ───────────────────────
+  const ssQueue = createSingleSelect({ placeholder: "All queues", searchable: true });
+  el.querySelector("#isQueueDropdown").append(ssQueue.el);
+  ssQueue.setEnabled(false);
+
+  const ssMedia = createSingleSelect({ placeholder: "All", searchable: false });
+  el.querySelector("#isMediaDropdown").append(ssMedia.el);
+  ssMedia.setItems([
+    { id: "voice",    label: "Voice" },
+    { id: "email",    label: "Email" },
+    { id: "callback", label: "Callback" },
+    { id: "message",  label: "Message" },
+  ]);
+
+  const ssDivision = createSingleSelect({ placeholder: "All divisions", searchable: true });
+  el.querySelector("#isDivisionDropdown").append(ssDivision.el);
+  ssDivision.setEnabled(false);
 
   // ── Filter tag management ───────────────────────────
   function renderFilterTags() {
@@ -494,9 +483,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       // Build server-side filter body
       const jobBody = {};
       const segmentPredicates = [];
-      const queueId   = $queue.value;
-      const mediaVal  = $mediaType.value;
-      const divisionId = $division.value;
+      const queueId    = ssQueue.getValue();
+      const mediaVal   = ssMedia.getValue();
+      const divisionId = ssDivision.getValue();
       if (queueId)  segmentPredicates.push({ dimension: "queueId",   value: queueId });
       if (mediaVal) segmentPredicates.push({ dimension: "mediaType", value: mediaVal });
       if (segmentPredicates.length) {
@@ -567,22 +556,15 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       queues.sort((a, b) => a.name.localeCompare(b.name));
       divisions.sort((a, b) => a.name.localeCompare(b.name));
 
-      populateQueueSelect();
-      $queue.disabled = false;
-      $queueSearch.disabled = false;
+      ssQueue.setItems(queues.map(q => ({ id: q.id, label: q.name })));
+      ssQueue.setEnabled(true);
 
-      $division.innerHTML = `<option value="">— All divisions —</option>`
-        + divisions.map(d =>
-          `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`
-        ).join("");
-      $division.disabled = false;
+      ssDivision.setItems(divisions.map(d => ({ id: d.id, label: d.name })));
+      ssDivision.setEnabled(true);
     } catch (err) {
       console.error("Failed to load queues/divisions:", err.message);
-      $queue.innerHTML = `<option value="">— All queues —</option>`;
-      $queue.disabled = false;
-      $queueSearch.disabled = false;
-      $division.innerHTML = `<option value="">— All divisions —</option>`;
-      $division.disabled = false;
+      ssQueue.setEnabled(true);
+      ssDivision.setEnabled(true);
     }
   })();
 

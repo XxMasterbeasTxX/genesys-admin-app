@@ -236,3 +236,153 @@ export function createMultiSelect({ placeholder = "Select…", searchable = fals
     },
   };
 }
+
+/**
+ * Single-select dropdown with built-in search.
+ *
+ * Usage:
+ *   const ss = createSingleSelect({
+ *     placeholder: "All queues",
+ *     searchable: true,
+ *     onChange: (id) => { … },
+ *   });
+ *   container.append(ss.el);
+ *   ss.setItems([{ id: "abc", label: "Sales" }, …]);
+ *   ss.getValue();        // selected id, or "" for the All option
+ *   ss.setValue("abc");
+ *   ss.setEnabled(false);
+ */
+export function createSingleSelect({ placeholder = "Select…", searchable = true, onChange } = {}) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "ms-dropdown";
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "ms-dropdown__trigger";
+  trigger.textContent = placeholder;
+
+  const panel = document.createElement("div");
+  panel.className = "ms-dropdown__panel";
+  panel.hidden = true;
+
+  const searchInput = document.createElement("input");
+  searchInput.type = "text";
+  searchInput.className = "ms-dropdown__search";
+  searchInput.placeholder = "Search…";
+  if (searchable) panel.append(searchInput);
+
+  const listEl = document.createElement("div");
+  listEl.className = "ms-dropdown__list";
+  panel.append(listEl);
+  wrapper.append(trigger, panel);
+
+  let items = [];
+  let selectedId = "";
+  let isOpen = false;
+  let searchTerm = "";
+
+  searchInput.addEventListener("input", () => {
+    searchTerm = searchInput.value.trim();
+    renderList();
+  });
+  searchInput.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (trigger.disabled) return;
+    isOpen ? close() : open();
+  });
+
+  function open() {
+    isOpen = true;
+    panel.hidden = false;
+    wrapper.classList.add("ms-dropdown--open");
+    if (searchable) {
+      searchInput.value = "";
+      searchTerm = "";
+      renderList();
+      requestAnimationFrame(() => searchInput.focus());
+    }
+    requestAnimationFrame(() =>
+      document.addEventListener("pointerdown", onOutsideClick, { once: true }),
+    );
+  }
+
+  function close() {
+    isOpen = false;
+    panel.hidden = true;
+    wrapper.classList.remove("ms-dropdown--open");
+  }
+
+  function onOutsideClick(e) {
+    if (wrapper.contains(e.target)) {
+      requestAnimationFrame(() =>
+        document.addEventListener("pointerdown", onOutsideClick, { once: true }),
+      );
+      return;
+    }
+    close();
+  }
+
+  function renderList() {
+    listEl.innerHTML = "";
+    const q = searchTerm.toLowerCase();
+    const visible = q ? items.filter(it => it.label.toLowerCase().includes(q)) : items;
+
+    // "All" option
+    const allDiv = document.createElement("div");
+    allDiv.className = "ms-dropdown__item" + (selectedId === "" ? " ms-dropdown__item--selected" : "");
+    allDiv.textContent = placeholder;
+    allDiv.addEventListener("pointerdown", () => {
+      selectedId = "";
+      updateTriggerText();
+      close();
+      onChange?.("");
+    });
+    listEl.append(allDiv);
+
+    for (const item of visible) {
+      const div = document.createElement("div");
+      div.className = "ms-dropdown__item" + (selectedId === item.id ? " ms-dropdown__item--selected" : "");
+      div.textContent = item.label;
+      div.addEventListener("pointerdown", () => {
+        selectedId = item.id;
+        updateTriggerText();
+        close();
+        onChange?.(item.id);
+      });
+      listEl.append(div);
+    }
+  }
+
+  function updateTriggerText() {
+    if (!selectedId) {
+      trigger.textContent = placeholder;
+    } else {
+      const it = items.find(i => i.id === selectedId);
+      trigger.textContent = it?.label ?? placeholder;
+    }
+  }
+
+  return {
+    el: wrapper,
+    setItems(newItems) {
+      items = newItems.slice();
+      selectedId = "";
+      updateTriggerText();
+      renderList();
+    },
+    getValue() {
+      return selectedId;
+    },
+    setValue(id) {
+      selectedId = id;
+      updateTriggerText();
+      renderList();
+    },
+    setEnabled(on) {
+      trigger.disabled = !on;
+      if (!on) close();
+    },
+  };
+}

@@ -343,20 +343,9 @@ body {
 .is-date {
   width: 160px;
 }
-.is-queue-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 200px;
-}
-.is-queue-search {
-  width: 200px;
-}
-.is-queue-select {
-  width: 200px;
-}
-.is-select {
-  width: 160px;
+.ms-dropdown__item--selected {
+  background: rgba(59,130,246,0.15);
+  color: #60a5fa;
 }
 .is-pd-group {
   flex: 1;
