@@ -341,6 +341,17 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $progressBar.style.width = "0%";
   }
 
+  // ── Clipboard fallback (works in iframes / no clipboard-write permission) ──
+  function copyFallback(text) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
+
   // ── Render table rows ───────────────────────────────
   function renderRows() {
     $tbody.innerHTML = rows.map((r, i) =>
@@ -359,7 +370,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         e.preventDefault();
         const idx = Number(tr.dataset.idx);
         const id = rows[idx]?.conversationId;
-        if (id) navigator.clipboard.writeText(id).catch(() => {});
+        if (id) {
+          if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(id).catch(() => copyFallback(id));
+          } else {
+            copyFallback(id);
+          }
+        }
         selectedIdx = idx;
         renderRows();
         setStatus(`Copied: ${id}`, "success");
