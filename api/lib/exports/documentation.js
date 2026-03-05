@@ -1051,8 +1051,24 @@ async function fetchSites(region, token) {
   const routeRows = [];
   const planRows  = [];
 
-  // Sequential per-site calls (Python does this sequentially)
-  for (const site of sites) {
+  // Fetch outbound routes + number plans for all sites in parallel
+  const perSiteResults = await Promise.allSettled(
+    sites.map(async (site) => {
+      const [routesResult, plansResult] = await Promise.allSettled([
+        genesysGet(region, token, `/api/v2/telephony/providers/edges/sites/${site.id}/outboundroutes`),
+        genesysGet(region, token, `/api/v2/telephony/providers/edges/sites/${site.id}/numberplans`),
+      ]);
+      return {
+        site,
+        routes: routesResult.status === "fulfilled" ? (routesResult.value.entities || routesResult.value || []) : [],
+        plans:  plansResult.status  === "fulfilled" ? (Array.isArray(plansResult.value) ? plansResult.value : (plansResult.value.entities || [])) : [],
+      };
+    })
+  );
+
+  for (const result of perSiteResults) {
+    if (result.status !== "fulfilled") continue;
+    const { site, routes: routeList, plans: planList } = result.value;
     const mediaRegions = joinArr(site.mediaRegions || []);
 
     siteRows.push([
@@ -1064,58 +1080,44 @@ async function fetchSites(region, token) {
       site.managed != null ? (site.managed ? "True" : "False") : "",
       site.state || "",
       (site.edges || []).length,
-      0, // placeholder, filled below
+      routeList.length,
     ]);
-    const siteRowIdx = siteRows.length - 1;
 
-    // Outbound routes
-    try {
-      const routes = await genesysGet(region, token, `/api/v2/telephony/providers/edges/sites/${site.id}/outboundroutes`);
-      const routeList = routes.entities || routes || [];
-      siteRows[siteRowIdx][9] = routeList.length; // update route count
+    for (const r of routeList) {
+      const trunks = r.externalTrunkBases || [];
+      routeRows.push([
+        site.name,
+        r.name, r.id,
+        r.description || "",
+        r.enabled != null ? (r.enabled ? "True" : "False") : "",
+        r.state || "",
+        r.distribution || "",
+        joinArr(r.classificationTypes || []),
+        trunks.length,
+        trunks.map((t) => t.name).join(", "),
+        trunks.map((t) => t.id).join(", "),
+      ]);
+    }
 
-      for (const r of routeList) {
-        const trunks = r.externalTrunkBases || [];
-        routeRows.push([
-          site.name,
-          r.name, r.id,
-          r.description || "",
-          r.enabled != null ? (r.enabled ? "True" : "False") : "",
-          r.state || "",
-          r.distribution || "",
-          joinArr(r.classificationTypes || []),
-          trunks.length,
-          trunks.map((t) => t.name).join(", "),
-          trunks.map((t) => t.id).join(", "),
-        ]);
+    for (const np of planList) {
+      const numbersStr = (np.numbers || []).map((n) => n.start || "").join(", ");
+      let digitLen = "";
+      if (np.digitLength) {
+        digitLen = np.digitLength.start && np.digitLength.end
+          ? `${np.digitLength.start}-${np.digitLength.end}`
+          : String(np.digitLength.start || "");
       }
-    } catch (_) { /* skip routes for this site */ }
-
-    // Number plans
-    try {
-      const plans = await genesysGet(region, token, `/api/v2/telephony/providers/edges/sites/${site.id}/numberplans`);
-      const planList = Array.isArray(plans) ? plans : (plans.entities || []);
-
-      for (const np of planList) {
-        const numbersStr = (np.numbers || []).map((n) => n.start || "").join(", ");
-        let digitLen = "";
-        if (np.digitLength) {
-          digitLen = np.digitLength.start && np.digitLength.end
-            ? `${np.digitLength.start}-${np.digitLength.end}`
-            : String(np.digitLength.start || "");
-        }
-        planRows.push([
-          site.name,
-          np.name, np.classification || "",
-          np.matchType || "",
-          np.priority ?? "",
-          np.state || "",
-          numbersStr, digitLen,
-          np.match || "",
-          np.normalizedFormat || "",
-        ]);
-      }
-    } catch (_) { /* skip plans for this site */ }
+      planRows.push([
+        site.name,
+        np.name, np.classification || "",
+        np.matchType || "",
+        np.priority ?? "",
+        np.state || "",
+        numbersStr, digitLen,
+        np.match || "",
+        np.normalizedFormat || "",
+      ]);
+    }
   }
 
   return {
@@ -1828,21 +1830,27 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
     100
   );
 
-  for (const table of tables) {
+  // Fetch all table rows in parallel instead of sequentially
+  const tableResults = await Promise.allSettled(
+    tables.map(async (table) => {
+      const props      = table.schema?.properties || {};
+      const colHeaders = ["key", ...Object.keys(props).filter((k) => k !== "key")];
+      let allRows = [];
+      try {
+        allRows = await genesysGetAllPages(
+          region, token,
+          `/api/v2/flows/datatables/${table.id}/rows?showbrief=false`,
+          100
+        );
+      } catch (_) { /* skip this table's rows */ }
+      return { table, colHeaders, allRows };
+    })
+  );
+
+  for (const result of tableResults) {
+    if (result.status !== "fulfilled") continue;
+    const { table, colHeaders, allRows } = result.value;
     const sheetName = safeSheet(table.name || table.id);
-    const props     = table.schema?.properties || {};
-
-    // Column headers from schema: key first, then other fields in order
-    const colHeaders = ["key", ...Object.keys(props).filter((k) => k !== "key")];
-
-    let allRows = [];
-    try {
-      allRows = await genesysGetAllPages(
-        region, token,
-        `/api/v2/flows/datatables/${table.id}/rows?showbrief=false`,
-        100
-      );
-    } catch (_) { /* skip this table's rows */ }
 
     const wsData = [
       colHeaders,
