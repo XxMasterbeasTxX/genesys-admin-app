@@ -228,12 +228,17 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
     const filterMonths = parseInt($filterIn.value, 10) || 0;
 
     try {
-      // Phase 1: Fetch license data (0–33%)
-      setStatus("Fetching license data…");
+      // Phase 1+2: Fetch license data and users in parallel (0–66%)
+      setStatus("Fetching license data and users…");
       setProgress(5);
-      const licenseUsers = await gc.fetchAllLicenseUsers(api, org.id, {
-        onProgress: (n) => setProgress(5 + Math.min((n / 500) * 28, 28)),
-      });
+      const [licenseUsers, allUsers] = await Promise.all([
+        gc.fetchAllLicenseUsers(api, org.id, {}),
+        gc.fetchAllUsers(api, org.id, {
+          expand: ["division", "dateLastLogin"],
+          state: "active",
+          onProgress: (n) => setProgress(5 + Math.min((n / 500) * 61, 61)),
+        }),
+      ]);
       if (cancelled) return;
 
       // Build license map: userId → [licenseNames]
@@ -241,16 +246,6 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
       for (const lu of licenseUsers) {
         licenseMap.set(lu.id, lu.licenses || []);
       }
-      setProgress(33);
-
-      // Phase 2: Fetch user data (34–66%)
-      setStatus("Fetching user data…");
-      const allUsers = await gc.fetchAllUsers(api, org.id, {
-        expand: ["division", "dateLastLogin"],
-        state: "active",
-        onProgress: (n) => setProgress(34 + Math.min((n / 500) * 32, 32)),
-      });
-      if (cancelled) return;
       setProgress(66);
 
       // Phase 3: Filter (67–75%)

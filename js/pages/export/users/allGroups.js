@@ -210,22 +210,19 @@ export default function renderAllGroupsExport({ route, me, api, orgContext }) {
     setProgress(0);
 
     try {
-      // Phase 1: Fetch all groups to build ID → name map (0–15%)
-      setStatus("Fetching groups…");
+      // Phase 1+2: Fetch groups and users in parallel (0–75%)
+      setStatus("Fetching groups and users…");
       setProgress(5);
-      const allGroups = await gc.fetchAllPages(api, org.id, "/api/v2/groups");
+      const [allGroups, allUsers] = await Promise.all([
+        gc.fetchAllPages(api, org.id, "/api/v2/groups"),
+        gc.fetchAllUsers(api, org.id, {
+          expand: ["groups", "team", "dateLastLogin"],
+          state: "any",
+          onProgress: (n) => setProgress(5 + Math.min((n / 500) * 70, 70)),
+        }),
+      ]);
       if (cancelled) return;
       const groupMap = new Map(allGroups.map(g => [g.id, g.name]));
-      setProgress(15);
-
-      // Phase 2: Fetch all users with groups + team + dateLastLogin (16–75%)
-      setStatus("Fetching users and group memberships…");
-      const allUsers = await gc.fetchAllUsers(api, org.id, {
-        expand: ["groups", "team", "dateLastLogin"],
-        state: "any",
-        onProgress: (n) => setProgress(16 + Math.min((n / 500) * 59, 59)),
-      });
-      if (cancelled) return;
       setProgress(75);
 
       // Phase 3: Build rows (76–85%)
