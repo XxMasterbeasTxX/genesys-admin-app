@@ -8,28 +8,44 @@ import { CONFIG } from "../config.js";
 
 /** Fetch the names of all groups the authenticated user belongs to. */
 async function fetchUserGroupNames(accessToken) {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  // Step 1: get group IDs via expand (CORS-safe endpoint)
+  let groupIds;
   try {
-    const resp = await fetch(
-      `${CONFIG.apiBase}/api/v2/users/me?expand=groups`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    );
+    const resp = await fetch(`${CONFIG.apiBase}/api/v2/users/me?expand=groups`, { headers });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      console.error("[accessService] groups API error:", resp.status, json);
-      return null; // signal failure
+      console.error("[accessService] users/me API error:", resp.status, json);
+      return null;
     }
-    console.info("[accessService] raw groups payload:", json.groups);
-    const names = (json.groups || []).map((g) => g.name).filter(Boolean);
+    groupIds = (json.groups || []).map((g) => g.id).filter(Boolean);
+  } catch (err) {
+    console.error("[accessService] users/me fetch failed:", err);
+    return null;
+  }
+
+  if (groupIds.length === 0) {
+    console.info("[accessService] user belongs to no groups");
+    return [];
+  }
+
+  // Step 2: resolve names in parallel by fetching each group by ID
+  try {
+    const results = await Promise.all(
+      groupIds.map((id) =>
+        fetch(`${CONFIG.apiBase}/api/v2/groups/${id}`, { headers })
+          .then((r) => r.json())
+          .then((g) => g.name || null)
+          .catch(() => null),
+      ),
+    );
+    const names = results.filter(Boolean);
     console.info("[accessService] user groups:", names);
-    // If the expand returned objects without names, treat as failure so
-    // we fall back to an alternative strategy below.
-    if (names.length === 0 && (json.groups || []).length > 0) {
-      console.warn("[accessService] groups returned but names missing — IDs:", (json.groups).map(g => g.id));
-    }
     return names;
   } catch (err) {
-    console.error("[accessService] groups fetch failed:", err);
-    return null; // signal failure
+    console.error("[accessService] group name lookup failed:", err);
+    return null;
   }
 }
 
