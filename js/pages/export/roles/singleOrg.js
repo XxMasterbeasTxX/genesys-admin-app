@@ -31,25 +31,24 @@ const HEADERS = ["Name", "Description", "Members"];
 
 /**
  * Compute accurate member counts per role.
- * Active org users fetched once; role users fetched per role and intersected.
- * @param {Function} onProgress  (roleIndex, totalRoles, roleName) => void
+ * Fetches all active users with expand=authorization (roles embedded) and
+ * counts locally — 1 paginated call instead of one call per role.
+ * @param {Function} onProgress  called once when users are loaded
  */
 async function computeMemberCounts(api, orgId, roles, onProgress) {
-  const activeUsers = await gc.fetchAllUsers(api, orgId, {});
-  const activeIds = new Set(activeUsers.map(u => u.id));
-
-  onProgress?.(0, roles.length, "");
-  const roleUserResults = await Promise.allSettled(
-    roles.map(role => gc.fetchRoleUsers(api, orgId, role.id))
-  );
-  onProgress?.(roles.length, roles.length, "");
+  onProgress?.(0, 1, "fetching users with roles…");
+  const activeUsers = await gc.fetchAllUsers(api, orgId, { expand: ["authorization"] });
+  onProgress?.(1, 1, "");
 
   const counts = {};
-  roles.forEach((role, i) => {
-    const r = roleUserResults[i];
-    const users = r.status === "fulfilled" ? r.value : [];
-    counts[role.id] = users.filter(u => activeIds.has(u.id)).length;
-  });
+  for (const role of roles) counts[role.id] = 0;
+
+  for (const user of activeUsers) {
+    for (const r of (user.authorization?.roles || [])) {
+      const rid = r.id || r.roleId;
+      if (rid && counts[rid] !== undefined) counts[rid]++;
+    }
+  }
   return counts;
 }
 

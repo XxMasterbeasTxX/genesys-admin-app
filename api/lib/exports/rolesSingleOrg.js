@@ -93,26 +93,23 @@ async function execute(context, schedule) {
   context.log(`Roles Single Org export for ${customer.name} (${orgId})`);
 
   try {
-    // Fetch roles and active users in parallel
-    context.log("Fetching authorization roles and active users in parallel…");
+    // Fetch roles and users (with roles embedded) in parallel — 2 calls, no per-role calls
+    context.log("Fetching authorization roles and users with expand=authorization in parallel…");
     const [roles, activeUsers] = await Promise.all([
       genesysGetAllPages(orgId, "/api/v2/authorization/roles", 100),
-      genesysGetAllPages(orgId, "/api/v2/users", 500),
+      genesysGetAllPages(orgId, "/api/v2/users?expand=authorization", 500),
     ]);
-    const activeIds = new Set(activeUsers.map(u => u.id));
-    context.log(`Fetched ${roles.length} roles and ${activeUsers.length} active users`);
+    context.log(`Fetched ${roles.length} roles and ${activeUsers.length} users`);
 
-    // Per-role: fetch assigned users in parallel
-    context.log(`Fetching user counts for ${roles.length} roles in parallel…`);
-    const roleUserResults = await Promise.allSettled(
-      roles.map(role => genesysGetAllPages(orgId, `/api/v2/authorization/roles/${role.id}/users`, 100))
-    );
+    // Count role members locally from embedded authorization data
     const counts = {};
-    roles.forEach((role, i) => {
-      const r = roleUserResults[i];
-      const users = r.status === "fulfilled" ? r.value : [];
-      counts[role.id] = users.filter(u => activeIds.has(u.id)).length;
-    });
+    for (const role of roles) counts[role.id] = 0;
+    for (const user of activeUsers) {
+      for (const r of (user.authorization?.roles || [])) {
+        const rid = r.id || r.roleId;
+        if (rid && counts[rid] !== undefined) counts[rid]++;
+      }
+    }
 
     // Build rows sorted alphabetically
     const rows = [...roles]

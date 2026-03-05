@@ -144,27 +144,23 @@ export default function renderRolesAllOrgs({ route, me, api }) {
         setProgress(orgBasePct);
 
         try {
-          // Fetch roles and active users in parallel
+          // Fetch roles and users (with roles embedded) in parallel — 2 calls total, no per-role calls
           setStatus(`Org ${orgIdx + 1}/${customers.length}: ${org.name} — fetching roles and users…`);
           const [roles, activeUsers] = await Promise.all([
             gc.fetchAllAuthorizationRoles(api, org.id),
-            gc.fetchAllUsers(api, org.id, {}),
+            gc.fetchAllUsers(api, org.id, { expand: ["authorization"] }),
           ]);
-          const activeIds = new Set(activeUsers.map(u => u.id));
           if (cancelled) break;
 
-          // Per-role member count — parallel, so one bad role doesn't abort the org
-          setStatus(`Org ${orgIdx + 1}/${customers.length}: ${org.name} — fetching member counts for ${roles.length} roles…`);
-          const roleUserResults = await Promise.allSettled(
-            roles.map(role => gc.fetchRoleUsers(api, org.id, role.id))
-          );
-          if (cancelled) break;
+          // Count role members locally from embedded authorization data
           const counts = {};
-          roles.forEach((role, ri) => {
-            const r = roleUserResults[ri];
-            const users = r.status === "fulfilled" ? r.value : [];
-            counts[role.id] = users.filter(u => activeIds.has(u.id)).length;
-          });
+          for (const role of roles) counts[role.id] = 0;
+          for (const user of activeUsers) {
+            for (const r of (user.authorization?.roles || [])) {
+              const rid = r.id || r.roleId;
+              if (rid && counts[rid] !== undefined) counts[rid]++;
+            }
+          }
 
           // Build sorted rows
           const rows = [...roles]
