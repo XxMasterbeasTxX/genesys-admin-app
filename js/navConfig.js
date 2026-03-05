@@ -103,6 +103,7 @@ export const NAV_TREE = [
     enabled: true,
     children: [
       { label: "Subject Request", path: "subject-request", enabled: true, access: "gdpr.subjectRequest" },
+      { label: "Request Status",  path: "request-status",  enabled: true, access: "gdpr.requestStatus"  },
     ],
   },
 ];

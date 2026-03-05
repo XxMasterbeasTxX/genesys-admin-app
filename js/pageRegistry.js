@@ -57,6 +57,8 @@ const registry = {
   // ── GDPR ──────────────────────────────────────────────
   "/gdpr/subject-request": (ctx) =>
     import("./pages/gdpr/subjectRequest.js").then((m) => m.default(ctx)),
+  "/gdpr/request-status": (ctx) =>
+    import("./pages/gdpr/requestStatus.js").then((m) => m.default(ctx)),
 
   // ── Phones ─────────────────────────────────────────
   "/phones/webrtc/change-site": (ctx) =>

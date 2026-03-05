@@ -40,7 +40,7 @@ const REQUEST_TYPES = {
     badgeClass:   "gdpr-badge--export",
     confirmRequired: false,
     submitLabel:  "Submit Access Request(s)",
-    note:         "Genesys will process and make the data available within 1–2 business days. Check Request History below once ready.",
+    note:         "Genesys will process and make the data available within 1–2 business days. Check Request Status for download links once fulfilled.",
     needsReplacement: false,
   },
   GDPR_UPDATE: {
@@ -158,22 +158,6 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       <div class="te-status" id="gdprSubmitStatus" style="margin-top:8px"></div>
     </div>
 
-    <!-- ── Request History ───────────────────────────────────── -->
-    <div class="gdpr-section gdpr-history-section">
-      <h3 class="gdpr-step-title gdpr-history-toggle" id="gdprHistoryToggle">
-        <span class="gdpr-step-num">↓</span>Request History
-        <span class="gdpr-history-chevron" style="margin-left:auto">▼</span>
-      </h3>
-      <div id="gdprHistoryContent" hidden>
-        <p class="gdpr-step-desc" style="margin-top:0">
-          All GDPR requests previously submitted for the selected org.
-        </p>
-        <div class="te-actions">
-          <button class="btn" id="gdprHistoryRefresh">Load / Refresh</button>
-        </div>
-        <div id="gdprHistoryWrap"></div>
-      </div>
-    </div>
   `;
 
   // ── DOM refs ───────────────────────────────────────────────────────
@@ -191,10 +175,6 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
   const $confirmContent = el.querySelector("#gdprConfirmContent");
   const $submitBtn      = el.querySelector("#gdprSubmitBtn");
   const $submitStatus   = el.querySelector("#gdprSubmitStatus");
-  const $historyToggle  = el.querySelector("#gdprHistoryToggle");
-  const $historyContent = el.querySelector("#gdprHistoryContent");
-  const $historyRefresh = el.querySelector("#gdprHistoryRefresh");
-  const $historyWrap    = el.querySelector("#gdprHistoryWrap");
 
   // ── State ──────────────────────────────────────────────────────────
   let requestType   = null;
@@ -576,6 +556,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
             Genesys is processing them asynchronously.
           </div>
           ${idRows}
+          <a href="#/gdpr/request-status" class="gdpr-status-page-link">→ View Request Status</a>
         `;
         $submitStatus.className = "te-status te-status--success";
 
@@ -618,134 +599,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
     }
   });
 
-  // ── History toggle ─────────────────────────────────────────────────
-  $historyToggle.addEventListener("click", () => {
-    $historyContent.hidden = !$historyContent.hidden;
-    $historyToggle.querySelector(".gdpr-history-chevron").textContent =
-      $historyContent.hidden ? "\u25bc" : "\u25b2";
-  });
-
-  // ── History load ───────────────────────────────────────────────────
-  $historyRefresh.addEventListener("click", async () => {
-    const org = orgContext?.getDetails?.();
-    if (!org) {
-      $historyWrap.innerHTML = `<p class="gdpr-empty">Please select a customer org first.</p>`;
-      return;
-    }
-
-    $historyRefresh.disabled = true;
-    $historyWrap.innerHTML = `<p class="gdpr-loading">Loading\u2026</p>`;
-
-    try {
-      const requests = await gc.gdprGetRequests(api, org.id);
-
-      if (!requests.length) {
-        $historyWrap.innerHTML = `<p class="gdpr-empty">No GDPR requests found for ${escapeHtml(org.name)}.</p>`;
-        return;
-      }
-
-      // Re-resolve removed: contacts may already be deleted (e.g. after erasure).
-      // Fall back to name stored in response, then raw ID.
-
-      const TYPE_LABELS  = { GDPR_DELETE: "Erasure", GDPR_EXPORT: "Access", GDPR_UPDATE: "Rectification" };
-      const TYPE_CLASSES = { GDPR_DELETE: "gdpr-badge--delete", GDPR_EXPORT: "gdpr-badge--export", GDPR_UPDATE: "gdpr-badge--update" };
-      const STATUS_LABEL = {
-        INITIATED:   "Initiated",
-        DELETING:    "Deleting\u2026",
-        IN_PROGRESS: "In Progress",
-        FULFILLED:   "Fulfilled",
-        COMPLETE:    "Fulfilled",
-        COMPLETED:   "Fulfilled",
-        FAILED:      "Failed",
-        REJECTED:    "Rejected",
-        ERROR:       "Error",
-      };
-      const STATUS_CLASS = {
-        INITIATED:   "inprogress",
-        DELETING:    "inprogress",
-        IN_PROGRESS: "inprogress",
-        FULFILLED:   "completed",
-        COMPLETE:    "completed",
-        COMPLETED:   "completed",
-        FAILED:      "failed",
-        REJECTED:    "failed",
-        ERROR:       "failed",
-      };
-
-      const rows = requests.map((r) => {
-        const date        = r.createdDate ? new Date(r.createdDate).toLocaleString() : "\u2014";
-        const type        = r.requestType ?? "\u2014";
-        const typeLabel   = TYPE_LABELS[type] ?? type;
-        const badgeClass  = TYPE_CLASSES[type] ?? "";
-        const rawStatus   = r.status ?? "\u2014";
-        const statusLabel = STATUS_LABEL[rawStatus] ?? rawStatus;
-        const statusClass = STATUS_CLASS[rawStatus] ?? "inprogress";
-
-        const rawId = r.subject?.userId ?? r.subject?.externalContactId ?? r.subject?.dialerContactId?.id ?? null;
-        const nameDisplay = escapeHtml(r.subject?.name ?? rawId ?? "\u2014");
-
-        const subjectType = r.subject?.userId            ? "User"
-                          : r.subject?.externalContactId ? "Ext. Contact"
-                          : r.subject?.dialerContactId   ? "Dialer Contact"
-                          : "\u2014";
-
-        const reqId = escapeHtml(r.id ?? "\u2014");
-
-        // Completed date (resolutionDate is set when the request finishes)
-        const completedDate = r.resolutionDate ? new Date(r.resolutionDate).toLocaleString() : "\u2014";
-
-        // Details column — contextual per request type
-        let detailsHtml = "\u2014";
-        if (type === "GDPR_EXPORT" && r.resultsUrl?.length) {
-          // Article 15 Access: signed download URLs available when fulfilled
-          detailsHtml = r.resultsUrl.map((url, i) =>
-            `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="gdpr-download-link">Download${r.resultsUrl.length > 1 ? ` (${i + 1})` : ""}</a>`
-          ).join("<br>");
-        } else if (type === "GDPR_UPDATE" && r.replacements?.length) {
-          // Article 16 Rectification: show which fields were updated
-          const fieldList = r.replacements.map(rep => escapeHtml(rep.fieldName ?? "?")).join(", ");
-          detailsHtml = `<span class="gdpr-replacements-summary" title="${fieldList}">${r.replacements.length} field${r.replacements.length !== 1 ? "s" : ""} updated: ${fieldList}</span>`;
-        }
-
-        return `
-          <tr>
-            <td>${escapeHtml(date)}</td>
-            <td><span class="gdpr-badge ${badgeClass}">${typeLabel}</span></td>
-            <td><span class="gdpr-subject-name">${nameDisplay}</span></td>
-            <td><span class="gdpr-subject-type-badge">${escapeHtml(subjectType)}</span></td>
-            <td><span class="gdpr-status-dot gdpr-status-dot--${statusClass}">${escapeHtml(statusLabel)}</span></td>
-            <td>${escapeHtml(completedDate)}</td>
-            <td class="gdpr-details-cell">${detailsHtml}</td>
-            <td class="gdpr-mono" title="${reqId}">${reqId.length > 24 ? reqId.substring(0, 24) + "\u2026" : reqId}</td>
-          </tr>
-        `;
-      });
-
-      $historyWrap.innerHTML = `
-        <div class="gdpr-table-wrap" style="margin-top:12px">
-          <table class="gdpr-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Subject</th>
-                <th>Subject Type</th>
-                <th>Status</th>
-                <th>Completed</th>
-                <th>Details</th>
-                <th>Request ID</th>
-              </tr>
-            </thead>
-            <tbody>${rows.join("")}</tbody>
-          </table>
-        </div>
-      `;
-    } catch (err) {
-      $historyWrap.innerHTML = `<p class="gdpr-empty gdpr-empty--error">Error loading history: ${escapeHtml(err.message)}</p>`;
-    } finally {
-      $historyRefresh.disabled = false;
-    }
-  });
+  // ── Request history has moved to the dedicated Request Status page ──
 
   return el;
 }
