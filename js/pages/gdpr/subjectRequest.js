@@ -610,10 +610,21 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
               return user.name ?? null;
             }
             if (r.subject?.externalContactId) {
-              const contact = await gc.getExternalContact(api, org.id, r.subject.externalContactId);
-              return [contact.firstName, contact.lastName].filter(Boolean).join(" ") || null;
+              const c = await gc.getExternalContact(api, org.id, r.subject.externalContactId);
+              console.warn("[GDPR] External contact raw response:", c);
+              // Try name fields first, then fall back to email/phone
+              const fullName = [c.firstName, c.lastName].filter(Boolean).join(" ");
+              if (fullName) return fullName;
+              if (c.workEmail)  return c.workEmail;
+              const firstEmail = c.emailAddresses?.[0]?.address ?? c.emailAddresses?.[0];
+              if (firstEmail)   return firstEmail;
+              const firstPhone = c.phoneNumbers?.[0]?.e164 ?? c.phoneNumbers?.[0]?.number ?? c.cellPhone?.e164 ?? c.workPhone?.e164;
+              if (firstPhone)   return firstPhone;
+              return null;
             }
-          } catch { /* fall back to raw ID */ }
+          } catch (err) {
+            console.warn("[GDPR] Subject resolution failed:", err?.message ?? err);
+          }
           return null;
         })
       );
