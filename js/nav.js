@@ -2,11 +2,11 @@
  * Builds a recursive, collapsible navigation tree.
  *
  * Usage:
- *   const nav = createNav(containerEl, NAV_TREE);
+ *   const nav = createNav(containerEl, NAV_TREE, access);
  *   nav.updateActive("/actions/overview");
  */
-export function createNav(containerEl, tree) {
-  const rootList = buildList(tree, "");
+export function createNav(containerEl, tree, access = { hasAccess: () => true }) {
+  const rootList = buildList(tree, "", access);
   containerEl.replaceChildren(rootList);
 
   return {
@@ -35,7 +35,7 @@ export function createNav(containerEl, tree) {
   };
 }
 
-function buildList(nodes, parentPath) {
+function buildList(nodes, parentPath, access) {
   const ul = document.createElement("ul");
   ul.className = "nav-list";
 
@@ -61,6 +61,10 @@ function buildList(nodes, parentPath) {
       const enabledChildren = node.children.filter((c) => c.enabled !== false);
       if (!enabledChildren.length) continue; // hide folder if all children disabled
 
+      // Build child list first; skip folder if access filtering empties it
+      const childUl = buildList(enabledChildren, fullPath, access);
+      if (!childUl.children.length) continue;
+
       // Folder
       li.className = "nav-group";
 
@@ -75,9 +79,11 @@ function buildList(nodes, parentPath) {
       btn.append(chevron, document.createTextNode(` ${node.label}`));
       btn.addEventListener("click", () => li.classList.toggle("open"));
 
-      li.append(btn, buildList(enabledChildren, fullPath));
+      li.append(btn, childUl);
     } else {
-      // Leaf
+      // Leaf — skip if user doesn't have access
+      if (node.access && !access.hasAccess(node.access)) continue;
+
       const a = document.createElement("a");
       a.className = "nav-leaf";
       a.href = `#${fullPath}`;

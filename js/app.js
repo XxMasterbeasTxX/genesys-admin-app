@@ -1,10 +1,11 @@
 import { CONFIG } from "./config.js";
-import { NAV_TREE, getFirstLeafUnder } from "./navConfig.js";
+import { NAV_TREE, getFirstLeafUnder, getRouteAccessMap } from "./navConfig.js";
 import { createNav } from "./nav.js";
 import { Router } from "./router.js";
 import { getPageLoader } from "./pageRegistry.js";
 import { renderNotFoundPage } from "./pages/notfound.js";
 import { renderWelcomePage } from "./pages/welcome.js";
+import { renderAccessDeniedPage } from "./pages/accessdenied.js";
 import { escapeHtml } from "./utils.js";
 import {
   ensureAuthenticatedWithMe,
@@ -14,6 +15,8 @@ import {
 import { createApiClient } from "./services/apiClient.js";
 import { orgContext } from "./services/orgContext.js";
 import { fetchCustomers } from "./services/customerService.js";
+import { GROUP_ACCESS } from "./accessConfig.js";
+import { resolveAccess } from "./services/accessService.js";
 
 function setHeader({ authText }) {
   document.getElementById("brandTitle").textContent = CONFIG.appName;
@@ -45,6 +48,10 @@ function renderFatalError(message) {
 
   const userName = res.me?.name || "user";
   setHeader({ authText: `Auth: ok \u00B7 ${userName}` });
+
+  // --- Resolve access from group memberships ---
+  const access = await resolveAccess(res.accessToken, GROUP_ACCESS);
+  const routeAccessMap = getRouteAccessMap();
 
   // --- API client ---
   const api = createApiClient(getValidAccessToken);
@@ -84,7 +91,7 @@ function renderFatalError(message) {
 
   // --- Build navigation ---
   const navEl = document.getElementById("appNav");
-  const nav = createNav(navEl, NAV_TREE);
+  const nav = createNav(navEl, NAV_TREE, access);
 
   // --- Start router ---
   const outletEl = document.getElementById("appMain");
@@ -95,7 +102,13 @@ function renderFatalError(message) {
       if (route === "/") return renderWelcomePage();
 
       const loader = getPageLoader(route);
-      if (loader) return loader({ route, me: res.me, api, orgContext });
+      if (loader) {
+        const accessKey = routeAccessMap[route];
+        if (accessKey && !access.hasAccess(accessKey)) {
+          return renderAccessDeniedPage();
+        }
+        return loader({ route, me: res.me, api, orgContext });
+      }
 
       // Folder prefix? Redirect to its first leaf.
       const firstLeaf = getFirstLeafUnder(route);
