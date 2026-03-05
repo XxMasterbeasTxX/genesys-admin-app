@@ -282,7 +282,6 @@ export default function renderTrusteeExport({ route, me, api }) {
 
     // Data: { (trusteeOrgDisplay, email) → { name, email, trusteeOrg, orgs: { orgName: true } } }
     const usersMap = new Map();
-    let processedOrgs = 0;
 
     try {
       // 1. Load all customers
@@ -290,59 +289,48 @@ export default function renderTrusteeExport({ route, me, api }) {
       const customers = await fetchCustomers();
       const totalOrgs = customers.length;
 
-      // 2. Process each customer org
-      for (const cust of customers) {
-        if (cancelled) break;
+      // 2. Process all customer orgs in parallel
+      setStatus(`Processing ${totalOrgs} orgs in parallel…`);
+      showProgress(10);
 
-        processedOrgs++;
-        setStatus(`Processing ${processedOrgs}/${totalOrgs}: ${cust.name}…`);
-        showProgress((processedOrgs / totalOrgs) * 100);
+      const orgResults = await Promise.allSettled(
+        customers.map(async (cust) => {
+          const localMap = new Map();
 
-        try {
-          // 2a. Get trustees for this customer org
           const trustees = await gc.fetchTrustees(api, cust.id);
 
-          for (const trustee of trustees) {
-            if (cancelled) break;
+          await Promise.allSettled(trustees.map(async (trustee) => {
             const trusteeOrgName = trustee.organization?.name;
-            if (!trusteeOrgName) continue;
-
-            // Check if this is one of OUR trustee orgs
+            if (!trusteeOrgName) return;
             const trusteeCustomerId = TRUSTEE_NAME_MAP[trusteeOrgName];
-            if (!trusteeCustomerId) continue;
-
+            if (!trusteeCustomerId) return;
             const displayName = normaliseTrusteeOrg(trusteeOrgName);
             const trusteeId = trustee.id;
-            if (!trusteeId) continue;
+            if (!trusteeId) return;
 
-            // 2b. Get groups granted to this trustee in the customer org
             let groups = [];
             try {
               groups = await gc.fetchTrusteeGroups(api, cust.id, trusteeId);
             } catch (err) {
               console.warn(`Failed to get trustee groups for ${cust.name}:`, err);
-              continue;
+              return;
             }
 
-            for (const group of groups) {
-              if (cancelled) break;
+            await Promise.allSettled(groups.map(async (group) => {
               const groupId = group.id;
-              if (!groupId) continue;
+              if (!groupId) return;
 
-              // 2c. Get group members from the TRUSTEE org
               let members = [];
               try {
                 members = await gc.fetchGroupMembers(api, trusteeCustomerId, groupId);
               } catch (err) {
                 console.warn(`Failed to get group members for group ${groupId}:`, err);
-                continue;
+                return;
               }
 
-              for (const member of members) {
+              const resolved = await Promise.allSettled(members.map(async (member) => {
                 let userName = member.name || null;
                 let userEmail = member.email || null;
-
-                // Fallback: fetch full user if name/email missing
                 if (!userName || !userEmail) {
                   try {
                     const full = await gc.getUser(api, trusteeCustomerId, member.id);
@@ -350,31 +338,24 @@ export default function renderTrusteeExport({ route, me, api }) {
                     userEmail = userEmail || full.email;
                   } catch (_) { /* best effort */ }
                 }
+                return { name: userName || "Unknown", email: userEmail || "N/A" };
+              }));
 
-                userName = userName || "Unknown";
-                userEmail = userEmail || "N/A";
-
+              for (const r of resolved) {
+                if (r.status !== "fulfilled") continue;
+                const { name: userName, email: userEmail } = r.value;
                 const key = `${displayName}||${userEmail}`;
-                if (!usersMap.has(key)) {
-                  usersMap.set(key, {
-                    trusteeOrg: displayName,
-                    name: userName,
-                    email: userEmail,
-                    orgs: {},
-                  });
+                if (!localMap.has(key)) {
+                  localMap.set(key, { trusteeOrg: displayName, name: userName, email: userEmail, orgs: {} });
                 }
-                usersMap.get(key).orgs[cust.name] = true;
+                localMap.get(key).orgs[cust.name] = true;
               }
-            }
-          }
-        } catch (err) {
-          console.error(`Error processing ${cust.name}:`, err);
-          // Continue to next org
-        }
-      }
+            }));
+          }));
 
-      // 3. Build results
-      showProgress(100);
+          return { custName: cust.name, localMap };
+        })
+      );
 
       if (cancelled) {
         setStatus("Cancelled.", "error");
@@ -383,6 +364,23 @@ export default function renderTrusteeExport({ route, me, api }) {
         $cancelBtn.style.display = "none";
         return;
       }
+
+      // Merge all per-org results into usersMap
+      for (const result of orgResults) {
+        if (result.status !== "fulfilled") {
+          console.error("Error processing an org:", result.reason);
+          continue;
+        }
+        for (const [key, entry] of result.value.localMap.entries()) {
+          if (!usersMap.has(key)) {
+            usersMap.set(key, { trusteeOrg: entry.trusteeOrg, name: entry.name, email: entry.email, orgs: {} });
+          }
+          Object.assign(usersMap.get(key).orgs, entry.orgs);
+        }
+      }
+
+      // 3. Build results
+      showProgress(100);
 
       const allUsers = Array.from(usersMap.values());
 
@@ -402,8 +400,7 @@ export default function renderTrusteeExport({ route, me, api }) {
       }
 
       // Get all customer org names that appear
-      const allCustomers = await fetchCustomers();
-      const customerNames = allCustomers.map(c => c.name).sort();
+      const customerNames = customers.map(c => c.name).sort();
 
       // 4. Build HTML table(s)
       let html = "";
