@@ -46,7 +46,6 @@ export default function renderRolesAllOrgs({ route, me, api }) {
       Exports all authorization roles for every customer org in a single workbook,
       one sheet per org. Member counts reflect active org users only
       (deleted and external-org users are excluded). Roles are sorted alphabetically.
-      <strong>Note:</strong> This export makes many API calls and may take several minutes.
     </p>
 
     <div class="te-actions">
