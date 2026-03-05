@@ -28,7 +28,6 @@ const STATUS = {
   validating:  "Validating name…",
   creating:    "Creating table…",
   fetchingRows:"Fetching source rows…",
-  copyingRows: (n, total) => `Copying row ${n} of ${total}…`,
   done:        (name, rows) => `✓ Table "${name}" created successfully${rows ? ` with ${rows} rows` : ""}.`,
   noTables:    "No data tables found in this org.",
   error:       (msg) => `Error: ${msg}`,
@@ -286,15 +285,20 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
         });
         setProgress(60);
 
+        const BATCH = 10;
         const total = rows.length;
-        for (let i = 0; i < total; i++) {
-          setStatus(STATUS.copyingRows(i + 1, total));
-          // Remove server-generated fields before inserting
-          const row = { ...rows[i] };
-          delete row.selfUri;
-          await gc.createDataTableRow(api, orgId, newTable.id, row);
-          copiedRows++;
-          setProgress(60 + Math.round(40 * (i + 1) / total));
+        for (let i = 0; i < total; i += BATCH) {
+          const chunk = rows.slice(i, i + BATCH);
+          setStatus(`Copying rows ${i + 1}–${Math.min(i + BATCH, total)} of ${total}…`);
+          const results = await Promise.allSettled(chunk.map(r => {
+            const row = { ...r };
+            delete row.selfUri;
+            return gc.createDataTableRow(api, orgId, newTable.id, row);
+          }));
+          const failed = results.filter(r => r.status === "rejected");
+          if (failed.length) throw new Error(failed[0].reason?.message ?? "Row insert failed");
+          copiedRows += chunk.length;
+          setProgress(60 + Math.round(40 * (i + chunk.length) / total));
         }
       }
 

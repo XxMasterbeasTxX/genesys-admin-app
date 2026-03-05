@@ -31,7 +31,6 @@ const STATUS = {
   validating:  "Validating name in destination org…",
   creating:    "Creating table in destination org…",
   fetchingRows:"Fetching source rows…",
-  copyingRows: (n, total) => `Copying row ${n} of ${total}…`,
   done:        (name, dest, rows) => `✓ Table "${name}" created in ${dest}${rows ? ` with ${rows} rows` : ""}.`,
   noTables:    "No data tables found in source org.",
   error:       (msg) => `Error: ${msg}`,
@@ -371,15 +370,21 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
         });
         setProgress(70);
 
+        const BATCH = 10;
         const total = rows.length;
         if (total > 0) {
-          for (let i = 0; i < total; i++) {
-            setStatus(STATUS.copyingRows(i + 1, total));
-            const row = { ...rows[i] };
-            delete row.selfUri;
-            await gc.createDataTableRow(api, destOrgId, newTable.id, row);
-            copiedRows++;
-            setProgress(70 + Math.round(30 * (i + 1) / total));
+          for (let i = 0; i < total; i += BATCH) {
+            const chunk = rows.slice(i, i + BATCH);
+            setStatus(`Copying rows ${i + 1}–${Math.min(i + BATCH, total)} of ${total}…`);
+            const results = await Promise.allSettled(chunk.map(r => {
+              const row = { ...r };
+              delete row.selfUri;
+              return gc.createDataTableRow(api, destOrgId, newTable.id, row);
+            }));
+            const failed = results.filter(r => r.status === "rejected");
+            if (failed.length) throw new Error(failed[0].reason?.message ?? "Row insert failed");
+            copiedRows += chunk.length;
+            setProgress(70 + Math.round(30 * (i + chunk.length) / total));
           }
         }
       }
