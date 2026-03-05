@@ -2125,7 +2125,6 @@ body {
 }
 .gdpr-submit-id-value {
   font-size: 12px;
-  flex: 1;
   word-break: break-all;
 }
 .gdpr-copy-btn {
@@ -2198,6 +2197,25 @@ body {
 .gdpr-status-dot--inprogress { background: rgba(59,130,246,0.12); color: #93c5fd; }
 .gdpr-status-dot--error,
 .gdpr-status-dot--failed     { background: rgba(239,68,68,0.12);  color: #f87171; }
+
+/* ── History table — Details column ───────────────────── */
+.gdpr-details-cell { max-width: 220px; }
+.gdpr-download-link {
+  display: inline-block;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(59,130,246,0.12);
+  color: #93c5fd;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.gdpr-download-link:hover { background: rgba(59,130,246,0.22); color: #bfdbfe; }
+.gdpr-replacements-summary {
+  font-size: 12px;
+  color: var(--muted);
+  cursor: default;
+}
 
 /* ── Misc ──────────────────────────────────────────────── */
 .gdpr-empty {

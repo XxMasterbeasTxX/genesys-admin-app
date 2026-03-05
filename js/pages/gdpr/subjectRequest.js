@@ -690,6 +690,23 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
                           : "\u2014";
 
         const reqId = escapeHtml(r.id ?? "\u2014");
+
+        // Completed date (resolutionDate is set when the request finishes)
+        const completedDate = r.resolutionDate ? new Date(r.resolutionDate).toLocaleString() : "\u2014";
+
+        // Details column — contextual per request type
+        let detailsHtml = "\u2014";
+        if (type === "GDPR_EXPORT" && r.resultsUrl?.length) {
+          // Article 15 Access: signed download URLs available when fulfilled
+          detailsHtml = r.resultsUrl.map((url, i) =>
+            `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="gdpr-download-link">Download${r.resultsUrl.length > 1 ? ` (${i + 1})` : ""}</a>`
+          ).join("<br>");
+        } else if (type === "GDPR_UPDATE" && r.replacements?.length) {
+          // Article 16 Rectification: show which fields were updated
+          const fieldList = r.replacements.map(rep => escapeHtml(rep.fieldName ?? "?")).join(", ");
+          detailsHtml = `<span class="gdpr-replacements-summary" title="${fieldList}">${r.replacements.length} field${r.replacements.length !== 1 ? "s" : ""} updated: ${fieldList}</span>`;
+        }
+
         return `
           <tr>
             <td>${escapeHtml(date)}</td>
@@ -697,6 +714,8 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
             <td><span class="gdpr-subject-name">${nameDisplay}</span></td>
             <td><span class="gdpr-subject-type-badge">${escapeHtml(subjectType)}</span></td>
             <td><span class="gdpr-status-dot gdpr-status-dot--${statusClass}">${escapeHtml(statusLabel)}</span></td>
+            <td>${escapeHtml(completedDate)}</td>
+            <td class="gdpr-details-cell">${detailsHtml}</td>
             <td class="gdpr-mono" title="${reqId}">${reqId.length > 24 ? reqId.substring(0, 24) + "\u2026" : reqId}</td>
           </tr>
         `;
@@ -712,6 +731,8 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
                 <th>Subject</th>
                 <th>Subject Type</th>
                 <th>Status</th>
+                <th>Completed</th>
+                <th>Details</th>
                 <th>Request ID</th>
               </tr>
             </thead>
