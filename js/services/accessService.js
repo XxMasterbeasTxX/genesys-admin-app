@@ -14,9 +14,16 @@ async function fetchUserGroupNames(accessToken) {
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     const json = await resp.json().catch(() => ({}));
-    return (json.entities || []).map((g) => g.name).filter(Boolean);
-  } catch {
-    return [];
+    if (!resp.ok) {
+      console.error("[accessService] groups API error:", resp.status, json);
+      return null; // signal failure
+    }
+    const names = (json.entities || []).map((g) => g.name).filter(Boolean);
+    console.info("[accessService] user groups:", names);
+    return names;
+  } catch (err) {
+    console.error("[accessService] groups fetch failed:", err);
+    return null; // signal failure
   }
 }
 
@@ -29,6 +36,17 @@ async function fetchUserGroupNames(accessToken) {
  */
 export async function resolveAccess(accessToken, groupAccessMap) {
   const groupNames = await fetchUserGroupNames(accessToken);
+
+  // If the groups API failed entirely, fail open (full access) so the app
+  // remains usable. The browser console will show the error reason.
+  if (groupNames === null) {
+    console.warn("[accessService] Could not fetch groups — granting full access as fallback.");
+    return {
+      hasAccess: () => true,
+      hasAnyAccess: () => true,
+    };
+  }
+
   const keys = new Set();
 
   for (const name of groupNames) {
