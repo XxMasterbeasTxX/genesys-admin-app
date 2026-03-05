@@ -563,20 +563,7 @@ export async function fetchAllExternalContacts(api, orgId, opts = {}) {
 // GDPR
 // ─────────────────────────────────────────────────────────────────────
 
-/**
- * Search GDPR subjects.
- *
- * @param {Object} api
- * @param {string} orgId
- * @param {string} searchType  NAME | ADDRESS | PHONE | EMAIL
- * @param {string} searchValue
- * @returns {Promise<Object>}
- */
-export async function searchGdprSubjects(api, orgId, searchType, searchValue) {
-  return api.proxyGenesys(orgId, "GET", "/api/v2/gdpr/subjects", {
-    query: { searchType, searchValue },
-  });
-}
+
 
 // ─────────────────────────────────────────────────────────────────────
 // Groups / Divisions
@@ -646,9 +633,10 @@ export async function getUser(api, orgId, userId) {
 
 /** Search for GDPR subjects by a single identifier. */
 export async function gdprSearchSubjects(api, orgId, searchType, searchValue) {
-  const qs = new URLSearchParams({ searchType, searchValue }).toString();
-  const resp = await api.proxyGenesys(orgId, "GET", `/api/v2/gdpr/subjects?${qs}`);
-  return resp.subjects || [];
+  const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/gdpr/subjects", {
+    query: { searchType, searchValue },
+  });
+  return resp.entities || [];
 }
 
 /** Submit a GDPR request. Pass deleteConfirmed=true for GDPR_DELETE. */

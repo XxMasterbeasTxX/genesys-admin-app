@@ -58,9 +58,15 @@ const REQUEST_TYPES = {
 };
 
 const SEARCH_TYPES = [
-  { value: "NAME",  label: "Name"  },
-  { value: "EMAIL", label: "Email" },
-  { value: "PHONE", label: "Phone" },
+  { value: "NAME",           label: "Name"           },
+  { value: "EMAIL",          label: "Email"          },
+  { value: "PHONE",          label: "Phone"          },
+  { value: "ADDRESS",        label: "Address"        },
+  { value: "EXTERNAL_ID",    label: "External ID"    },
+  { value: "TWITTER",        label: "Twitter"        },
+  { value: "INSTAGRAM",      label: "Instagram"      },
+  { value: "FACEBOOK",       label: "Facebook"       },
+  { value: "APPLE_MESSAGES", label: "Apple Messages" },
 ];
 
 // ── Page renderer ─────────────────────────────────────────────────────
