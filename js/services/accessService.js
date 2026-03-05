@@ -18,8 +18,14 @@ async function fetchUserGroupNames(accessToken) {
       console.error("[accessService] groups API error:", resp.status, json);
       return null; // signal failure
     }
+    console.info("[accessService] raw groups payload:", json.groups);
     const names = (json.groups || []).map((g) => g.name).filter(Boolean);
     console.info("[accessService] user groups:", names);
+    // If the expand returned objects without names, treat as failure so
+    // we fall back to an alternative strategy below.
+    if (names.length === 0 && (json.groups || []).length > 0) {
+      console.warn("[accessService] groups returned but names missing — IDs:", (json.groups).map(g => g.id));
+    }
     return names;
   } catch (err) {
     console.error("[accessService] groups fetch failed:", err);
