@@ -561,10 +561,12 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       const deleteConfirmed = requestType === "GDPR_DELETE";
       const results = await Promise.allSettled(
         selectedMatches.map(m => {
+          const hasId = m.subject.userId || m.subject.externalContactId || m.subject.dialerContactId;
           const body = {
             requestType,
             subject: {
-              name: m.subject.name ?? m.matchedBy.value,
+              // Genesys rejects name when an id field is present
+              ...(!hasId && { name: m.subject.name ?? m.matchedBy.value }),
               ...(m.subject.userId            && { userId:            m.subject.userId }),
               ...(m.subject.externalContactId && { externalContactId: m.subject.externalContactId }),
               ...(m.subject.dialerContactId   && { dialerContactId:   m.subject.dialerContactId }),
