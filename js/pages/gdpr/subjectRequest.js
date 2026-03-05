@@ -586,19 +586,20 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
               btn.textContent = ok ? "Copied!" : "Failed";
               setTimeout(() => { btn.textContent = "Copy"; }, 2000);
             };
+            function fallback() {
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand("copy");
+              document.body.removeChild(ta);
+              finish(true);
+            }
             if (navigator.clipboard?.writeText) {
               navigator.clipboard.writeText(text).then(() => finish(true)).catch(() => fallback());
             } else {
               fallback();
-            }
-            function fallback() {
-              const ta = document.createElement("textarea");
-              ta.value = text;
-              ta.style.cssText = "position:fixed;opacity:0;pointer-events:none";
-              document.body.appendChild(ta);
-              ta.select();
-              finish(document.execCommand("copy"));
-              document.body.removeChild(ta);
             }
           });
         });
