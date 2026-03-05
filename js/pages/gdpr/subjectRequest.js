@@ -556,10 +556,37 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       const failed    = results.filter(r => r.status === "rejected");
 
       if (!failed.length) {
-        $submitStatus.textContent =
-          `\u2713 ${succeeded} request${succeeded !== 1 ? "s" : ""} submitted successfully. ` +
-          `Genesys is processing them asynchronously.`;
+        const submittedIds = results
+          .filter(r => r.status === "fulfilled")
+          .map(r => r.value?.id)
+          .filter(Boolean);
+
+        const idRows = submittedIds.map(id => `
+          <div class="gdpr-submit-id-row">
+            <span class="gdpr-submit-id-label">Request ID</span>
+            <span class="gdpr-mono gdpr-submit-id-value">${escapeHtml(id)}</span>
+            <button class="btn btn-sm gdpr-copy-btn" data-copy="${escapeHtml(id)}" title="Copy ID">Copy</button>
+          </div>
+        `).join("");
+
+        $submitStatus.innerHTML = `
+          <div class="gdpr-submit-success">
+            <span class="gdpr-submit-check">✓</span>
+            ${succeeded} request${succeeded !== 1 ? "s" : ""} submitted successfully.
+            Genesys is processing them asynchronously.
+          </div>
+          ${idRows}
+        `;
         $submitStatus.className = "te-status te-status--success";
+
+        $submitStatus.querySelectorAll(".gdpr-copy-btn").forEach(btn => {
+          btn.addEventListener("click", () => {
+            navigator.clipboard.writeText(btn.dataset.copy).then(() => {
+              btn.textContent = "Copied!";
+              setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+            });
+          });
+        });
       } else {
         $submitStatus.textContent =
           `${succeeded} submitted, ${failed.length} failed: ${failed[0].reason?.message ?? "Unknown error"}`;
@@ -601,33 +628,8 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         return;
       }
 
-      // Re-resolve subject display names in parallel
-      const resolutions = await Promise.allSettled(
-        requests.map(async r => {
-          try {
-            if (r.subject?.userId) {
-              const user = await gc.getUser(api, org.id, r.subject.userId);
-              return user.name ?? null;
-            }
-            if (r.subject?.externalContactId) {
-              const c = await gc.getExternalContact(api, org.id, r.subject.externalContactId);
-              console.warn("[GDPR] External contact raw response:", c);
-              // Try name fields first, then fall back to email/phone
-              const fullName = [c.firstName, c.lastName].filter(Boolean).join(" ");
-              if (fullName) return fullName;
-              if (c.workEmail)  return c.workEmail;
-              const firstEmail = c.emailAddresses?.[0]?.address ?? c.emailAddresses?.[0];
-              if (firstEmail)   return firstEmail;
-              const firstPhone = c.phoneNumbers?.[0]?.e164 ?? c.phoneNumbers?.[0]?.number ?? c.cellPhone?.e164 ?? c.workPhone?.e164;
-              if (firstPhone)   return firstPhone;
-              return null;
-            }
-          } catch (err) {
-            console.warn("[GDPR] Subject resolution failed:", err?.message ?? err);
-          }
-          return null;
-        })
-      );
+      // Re-resolve removed: contacts may already be deleted (e.g. after erasure).
+      // Fall back to name stored in response, then raw ID.
 
       const TYPE_LABELS  = { GDPR_DELETE: "Erasure", GDPR_EXPORT: "Access", GDPR_UPDATE: "Rectification" };
       const TYPE_CLASSES = { GDPR_DELETE: "gdpr-badge--delete", GDPR_EXPORT: "gdpr-badge--export", GDPR_UPDATE: "gdpr-badge--update" };
@@ -654,7 +656,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         ERROR:       "failed",
       };
 
-      const rows = requests.map((r, idx) => {
+      const rows = requests.map((r) => {
         const date        = r.createdDate ? new Date(r.createdDate).toLocaleString() : "\u2014";
         const type        = r.requestType ?? "\u2014";
         const typeLabel   = TYPE_LABELS[type] ?? type;
@@ -663,15 +665,9 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         const statusLabel = STATUS_LABEL[rawStatus] ?? rawStatus;
         const statusClass = STATUS_CLASS[rawStatus] ?? "inprogress";
 
-        // Subject: resolved name (primary) + raw ID beneath as secondary
-        const resolvedName = resolutions[idx]?.status === "fulfilled" ? resolutions[idx].value : null;
         const rawId = r.subject?.userId ?? r.subject?.externalContactId ?? r.subject?.dialerContactId?.id ?? null;
-        const nameDisplay = resolvedName ?? r.subject?.name ?? rawId ?? "\u2014";
-        const subjectCell = rawId && resolvedName
-          ? `<span class="gdpr-subject-name">${escapeHtml(nameDisplay)}</span><br><span class="gdpr-subject-id">${escapeHtml(rawId)}</span>`
-          : `<span class="gdpr-subject-name">${escapeHtml(nameDisplay)}</span>`;
+        const nameDisplay = escapeHtml(r.subject?.name ?? rawId ?? "\u2014");
 
-        // Subject type derived from which ID field is populated
         const subjectType = r.subject?.userId            ? "User"
                           : r.subject?.externalContactId ? "Ext. Contact"
                           : r.subject?.dialerContactId   ? "Dialer Contact"
@@ -682,7 +678,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
           <tr>
             <td>${escapeHtml(date)}</td>
             <td><span class="gdpr-badge ${badgeClass}">${typeLabel}</span></td>
-            <td>${subjectCell}</td>
+            <td><span class="gdpr-subject-name">${nameDisplay}</span></td>
             <td><span class="gdpr-subject-type-badge">${escapeHtml(subjectType)}</span></td>
             <td><span class="gdpr-status-dot gdpr-status-dot--${statusClass}">${escapeHtml(statusLabel)}</span></td>
             <td class="gdpr-mono" title="${reqId}">${reqId.length > 24 ? reqId.substring(0, 24) + "\u2026" : reqId}</td>
