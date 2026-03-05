@@ -630,21 +630,51 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
 
       const TYPE_LABELS  = { GDPR_DELETE: "Erasure", GDPR_EXPORT: "Access", GDPR_UPDATE: "Rectification" };
       const TYPE_CLASSES = { GDPR_DELETE: "gdpr-badge--delete", GDPR_EXPORT: "gdpr-badge--export", GDPR_UPDATE: "gdpr-badge--update" };
+      const STATUS_LABEL = {
+        INITIATED:   "Initiated",
+        DELETING:    "Deleting…",
+        IN_PROGRESS: "In Progress",
+        FULFILLED:   "Fulfilled",
+        COMPLETE:    "Fulfilled",
+        COMPLETED:   "Fulfilled",
+        FAILED:      "Failed",
+        REJECTED:    "Rejected",
+        ERROR:       "Error",
+      };
+      const STATUS_CLASS = {
+        INITIATED:   "inprogress",
+        DELETING:    "inprogress",
+        IN_PROGRESS: "inprogress",
+        FULFILLED:   "completed",
+        COMPLETE:    "completed",
+        COMPLETED:   "completed",
+        FAILED:      "failed",
+        REJECTED:    "failed",
+        ERROR:       "failed",
+      };
 
       const rows = requests.map(r => {
-        const date         = r.createdDate ? new Date(r.createdDate).toLocaleString() : "\u2014";
-        const type         = r.requestType ?? "\u2014";
-        const typeLabel    = TYPE_LABELS[type] ?? type;
-        const badgeClass   = TYPE_CLASSES[type] ?? "";
-        const rawStatus    = r.status ?? "\u2014";
-        const subjectName  = escapeHtml(r.subject?.name ?? "\u2014");
-        const reqId        = escapeHtml(r.id ?? "\u2014");
+        const date        = r.createdDate ? new Date(r.createdDate).toLocaleString() : "\u2014";
+        const type        = r.requestType ?? "\u2014";
+        const typeLabel   = TYPE_LABELS[type] ?? type;
+        const badgeClass  = TYPE_CLASSES[type] ?? "";
+        const rawStatus   = r.status ?? "\u2014";
+        const statusLabel = STATUS_LABEL[rawStatus] ?? rawStatus;
+        const statusClass = STATUS_CLASS[rawStatus] ?? "inprogress";
+        const subjectName = escapeHtml(
+          r.subject?.name ||
+          r.subject?.userId ||
+          r.subject?.externalContactId ||
+          r.subject?.dialerContactId?.id ||
+          "\u2014"
+        );
+        const reqId = escapeHtml(r.id ?? "\u2014");
         return `
           <tr>
             <td>${escapeHtml(date)}</td>
             <td><span class="gdpr-badge ${badgeClass}">${typeLabel}</span></td>
             <td>${subjectName}</td>
-            <td><span class="gdpr-status-dot gdpr-status-dot--${escapeHtml(rawStatus.toLowerCase())}">${escapeHtml(rawStatus)}</span></td>
+            <td><span class="gdpr-status-dot gdpr-status-dot--${statusClass}">${escapeHtml(statusLabel)}</span></td>
             <td class="gdpr-mono" title="${reqId}">${reqId.length > 24 ? reqId.substring(0, 24) + "\u2026" : reqId}</td>
           </tr>
         `;
