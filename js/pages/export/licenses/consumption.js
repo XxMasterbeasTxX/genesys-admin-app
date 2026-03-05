@@ -292,20 +292,16 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
     setProgress(0);
 
     try {
-      setStatus("Fetching licence assignments…");
+      setStatus("Fetching licence assignments and user profiles…");
       setProgress(5);
 
-      const licenseUsers = await gc.fetchAllLicenseUsers(api, org.id, {
-        onProgress: (n) => setProgress(5 + Math.min((n / 500) * 28, 28)),
-      });
-      if (cancelled) return;
-      setProgress(33);
-
-      setStatus("Fetching user profiles…");
-      const allUsers = await gc.fetchAllUsers(api, org.id, {
-        expand: ["division"],
-        onProgress: (n) => setProgress(33 + Math.min((n / 500) * 33, 33)),
-      });
+      const [licenseUsers, allUsers] = await Promise.all([
+        gc.fetchAllLicenseUsers(api, org.id, {}),
+        gc.fetchAllUsers(api, org.id, {
+          expand: ["division"],
+          onProgress: (n) => setProgress(5 + Math.min((n / 500) * 61, 61)),
+        }),
+      ]);
       if (cancelled) return;
       setProgress(66);
 

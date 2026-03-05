@@ -105,20 +105,14 @@ async function execute(context, schedule) {
   context.log(`All Groups export for ${customer.name} (${orgId})`);
 
   try {
-    // Phase 1: Fetch all groups to build ID → name lookup map
-    context.log("Phase 1: Fetching all groups…");
-    const allGroupsRaw = await genesysGetAllPages(orgId, "/api/v2/groups", 500);
+    // Phase 1+2: Fetch groups and users in parallel
+    context.log("Phase 1+2: Fetching groups and users in parallel…");
+    const [allGroupsRaw, allUsers] = await Promise.all([
+      genesysGetAllPages(orgId, "/api/v2/groups", 500),
+      genesysGetAllPages(orgId, "/api/v2/users?state=any&expand=groups,team,dateLastLogin", 500),
+    ]);
     const groupMap = new Map(allGroupsRaw.map(g => [g.id, g.name]));
-    context.log(`Fetched ${allGroupsRaw.length} groups`);
-
-    // Phase 2: Fetch all users with groups + team + dateLastLogin (state=any)
-    context.log("Phase 2: Fetching all users with group memberships…");
-    const allUsers = await genesysGetAllPages(
-      orgId,
-      "/api/v2/users?state=any&expand=groups,team,dateLastLogin",
-      500
-    );
-    context.log(`Fetched ${allUsers.length} users`);
+    context.log(`Fetched ${allGroupsRaw.length} groups, ${allUsers.length} users`);
 
     // Phase 3: Build rows — one per user-group combination
     const rows = [];

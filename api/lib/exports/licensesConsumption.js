@@ -97,10 +97,13 @@ async function execute(context, schedule) {
   context.log(`License Consumption export for ${customer.name} (${orgId}) — filter: ${licenseFilter}`);
 
   try {
-    // Step 1: fetch licence-user assignments (paginated)
-    context.log("Fetching licence assignments…");
-    const licenseUsers = await genesysGetAllPages(orgId, "/api/v2/license/users", 100);
-    context.log(`Fetched ${licenseUsers.length} licence-user records`);
+    // Step 1+2: fetch licence assignments and users in parallel
+    context.log("Fetching licence assignments and users in parallel…");
+    const [licenseUsers, allUsers] = await Promise.all([
+      genesysGetAllPages(orgId, "/api/v2/license/users", 100),
+      genesysGetAllPages(orgId, "/api/v2/users?expand=division", 500),
+    ]);
+    context.log(`Fetched ${licenseUsers.length} licence-user records, ${allUsers.length} users`);
 
     // Build map: userId → Set<licenceId>
     // The API returns { user: { id }, licenses } — entry.user.id is the key
@@ -109,11 +112,6 @@ async function execute(context, schedule) {
       const userId = entry.user?.id || entry.id;
       if (userId) licenseMap.set(userId, new Set(entry.licenses || []));
     }
-
-    // Step 2: fetch all users with division expansion (paginated)
-    context.log("Fetching users…");
-    const allUsers = await genesysGetAllPages(orgId, "/api/v2/users?expand=division", 500);
-    context.log(`Fetched ${allUsers.length} users`);
 
     // Step 3: determine licence columns
     let licenseColumns;

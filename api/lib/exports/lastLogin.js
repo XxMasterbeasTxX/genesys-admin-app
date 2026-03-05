@@ -106,25 +106,17 @@ async function execute(context, schedule) {
   context.log(`Last Login export for ${customer.name} (${orgId}), filter: ${filterMonths} months`);
 
   try {
-    // Phase 1: Fetch license data
-    context.log("Phase 1: Fetching license data…");
-    const licenseUsers = await genesysGetAllPages(
-      orgId,
-      "/api/v2/license/users"
-    );
+    // Phase 1+2: Fetch license data and users in parallel
+    context.log("Phase 1+2: Fetching license data and users in parallel…");
+    const [licenseUsers, allUsers] = await Promise.all([
+      genesysGetAllPages(orgId, "/api/v2/license/users"),
+      genesysGetAllPages(orgId, "/api/v2/users?expand=division,dateLastLogin&state=active"),
+    ]);
     const licenseMap = {};
     for (const lu of licenseUsers) {
       licenseMap[lu.id] = lu.licenses || [];
     }
-    context.log(`License data: ${licenseUsers.length} users`);
-
-    // Phase 2: Fetch user data
-    context.log("Phase 2: Fetching user data…");
-    const allUsers = await genesysGetAllPages(
-      orgId,
-      "/api/v2/users?expand=division,dateLastLogin&state=active"
-    );
-    context.log(`User data: ${allUsers.length} users`);
+    context.log(`License data: ${licenseUsers.length} users, User data: ${allUsers.length} users`);
 
     // Phase 3: Filter by inactivity
     let filtered = allUsers;
