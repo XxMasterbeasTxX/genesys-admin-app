@@ -144,26 +144,27 @@ export default function renderRolesAllOrgs({ route, me, api }) {
         setProgress(orgBasePct);
 
         try {
-          // Fetch roles for this org
-          const roles = await gc.fetchAllAuthorizationRoles(api, org.id);
-          if (cancelled) break;
-
-          // Fetch active users once for this org
-          const activeUsers = await gc.fetchAllUsers(api, org.id, {});
+          // Fetch roles and active users in parallel
+          setStatus(`Org ${orgIdx + 1}/${customers.length}: ${org.name} — fetching roles and users…`);
+          const [roles, activeUsers] = await Promise.all([
+            gc.fetchAllAuthorizationRoles(api, org.id),
+            gc.fetchAllUsers(api, org.id, {}),
+          ]);
           const activeIds = new Set(activeUsers.map(u => u.id));
           if (cancelled) break;
 
-          // Per-role member count
-          const counts = {};
-          for (let ri = 0; ri < roles.length; ri++) {
-            if (cancelled) break;
-            setStatus(
-              `Org ${orgIdx + 1}/${customers.length}: ${org.name} — role ${ri + 1}/${roles.length} (${roles[ri].name || ""})`
-            );
-            const roleUsers = await gc.fetchRoleUsers(api, org.id, roles[ri].id);
-            counts[roles[ri].id] = roleUsers.filter(u => activeIds.has(u.id)).length;
-          }
+          // Per-role member count — parallel, so one bad role doesn't abort the org
+          setStatus(`Org ${orgIdx + 1}/${customers.length}: ${org.name} — fetching member counts for ${roles.length} roles…`);
+          const roleUserResults = await Promise.allSettled(
+            roles.map(role => gc.fetchRoleUsers(api, org.id, role.id))
+          );
           if (cancelled) break;
+          const counts = {};
+          roles.forEach((role, ri) => {
+            const r = roleUserResults[ri];
+            const users = r.status === "fulfilled" ? r.value : [];
+            counts[role.id] = users.filter(u => activeIds.has(u.id)).length;
+          });
 
           // Build sorted rows
           const rows = [...roles]

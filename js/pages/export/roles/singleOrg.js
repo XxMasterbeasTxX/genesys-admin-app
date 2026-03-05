@@ -38,12 +38,18 @@ async function computeMemberCounts(api, orgId, roles, onProgress) {
   const activeUsers = await gc.fetchAllUsers(api, orgId, {});
   const activeIds = new Set(activeUsers.map(u => u.id));
 
+  onProgress?.(0, roles.length, "");
+  const roleUserResults = await Promise.allSettled(
+    roles.map(role => gc.fetchRoleUsers(api, orgId, role.id))
+  );
+  onProgress?.(roles.length, roles.length, "");
+
   const counts = {};
-  for (let i = 0; i < roles.length; i++) {
-    onProgress?.(i + 1, roles.length, roles[i].name || "");
-    const roleUsers = await gc.fetchRoleUsers(api, orgId, roles[i].id);
-    counts[roles[i].id] = roleUsers.filter(u => activeIds.has(u.id)).length;
-  }
+  roles.forEach((role, i) => {
+    const r = roleUserResults[i];
+    const users = r.status === "fulfilled" ? r.value : [];
+    counts[role.id] = users.filter(u => activeIds.has(u.id)).length;
+  });
   return counts;
 }
 
