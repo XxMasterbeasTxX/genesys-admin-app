@@ -69,6 +69,9 @@ const SEARCH_TYPES = [
   { value: "APPLE_MESSAGES", label: "Apple Messages" },
 ];
 
+// ── Persist identifier values across re-renders (e.g. org change) ──────
+const _savedValues = {};
+
 // ── Page renderer ─────────────────────────────────────────────────────
 export default function renderSubjectRequest({ route, me, api, orgContext }) {
   const el = document.createElement("section");
@@ -108,11 +111,17 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
     <div class="gdpr-section gdpr-section--locked" id="gdprStep2">
       <h3 class="gdpr-step-title"><span class="gdpr-step-num">2</span>Enter Subject Identifiers</h3>
       <p class="gdpr-step-desc">
-        Enter all known identifiers for this individual. Genesys recommends submitting one request
-        per identifier — more identifiers means a more thorough search.
+        Fill in any identifiers you know for this individual. Genesys will search using all
+        non-empty values — more identifiers means a more thorough search.
       </p>
-      <div id="gdprIdentifierRows"></div>
-      <button class="btn gdpr-add-btn" id="gdprAddRow">+ Add identifier</button>
+      <div class="gdpr-id-grid" id="gdprIdentifierGrid">
+        ${SEARCH_TYPES.map(t => `
+          <div class="gdpr-id-field">
+            <label class="gdpr-id-label">${t.label}</label>
+            <input class="gdpr-id-input" data-type="${t.value}" type="text" placeholder="${t.label}\u2026" />
+          </div>
+        `).join("")}
+      </div>
       <div class="te-actions" style="margin-top:14px">
         <button class="btn te-btn-export" id="gdprSearchBtn" disabled>Search Subjects</button>
       </div>
@@ -172,8 +181,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
   const $step2          = el.querySelector("#gdprStep2");
   const $step3          = el.querySelector("#gdprStep3");
   const $step4          = el.querySelector("#gdprStep4");
-  const $idRows         = el.querySelector("#gdprIdentifierRows");
-  const $addRow         = el.querySelector("#gdprAddRow");
+  const $idGrid         = el.querySelector("#gdprIdentifierGrid");
   const $searchBtn      = el.querySelector("#gdprSearchBtn");
   const $progressWrap   = el.querySelector("#gdprProgressWrap");
   const $progressBar    = el.querySelector("#gdprProgressBar");
@@ -224,49 +232,30 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
   }
 
   function getIdentifiers() {
-    return [...$idRows.querySelectorAll(".gdpr-id-row")].map(row => ({
-      type:        row.querySelector(".gdpr-id-type").value,
-      value:       row.querySelector(".gdpr-id-value").value.trim(),
-      replacement: row.querySelector(".gdpr-id-replacement")?.value.trim() ?? "",
-    })).filter(i => i.value);
+    return [...$idGrid.querySelectorAll(".gdpr-id-input")]
+      .filter(i => i.value.trim())
+      .map(i => ({
+        type:        i.dataset.type,
+        value:       i.value.trim(),
+        replacement: "",
+      }));
   }
 
   function updateSearchBtn() {
     $searchBtn.disabled = getIdentifiers().length === 0 || isRunning;
   }
 
-  // ── Identifier row builder ────────────────────────────────────────
-  function addIdentifierRow(type = "NAME", value = "") {
-    const needsReplacement = requestType === "GDPR_UPDATE";
-    const row = document.createElement("div");
-    row.className = "gdpr-id-row";
-    row.innerHTML = `
-      <select class="gdpr-id-type">
-        ${SEARCH_TYPES.map(t =>
-          `<option value="${t.value}"${t.value === type ? " selected" : ""}>${t.label}</option>`
-        ).join("")}
-      </select>
-      <input class="gdpr-id-value" type="text"
-             placeholder="Enter ${type.toLowerCase()}\u2026"
-             value="${escapeHtml(value)}" />
-      ${needsReplacement
-        ? `<span class="gdpr-replace-arrow">\u2192</span>
-           <input class="gdpr-id-replacement" type="text" placeholder="Replace with\u2026" />`
-        : ""}
-      <button class="btn btn-sm gdpr-id-remove" title="Remove row">\u2715</button>
-    `;
-    row.querySelector(".gdpr-id-type").addEventListener("change", e => {
-      row.querySelector(".gdpr-id-value").placeholder = `Enter ${e.target.value.toLowerCase()}\u2026`;
+  // ── Init grid inputs: pre-populate from saved state, persist on change ──
+  $idGrid.querySelectorAll(".gdpr-id-input").forEach(input => {
+    if (_savedValues[input.dataset.type]) {
+      input.value = _savedValues[input.dataset.type];
+    }
+    input.addEventListener("input", () => {
+      _savedValues[input.dataset.type] = input.value;
       updateSearchBtn();
     });
-    row.querySelector(".gdpr-id-value").addEventListener("input", updateSearchBtn);
-    row.querySelector(".gdpr-id-remove").addEventListener("click", () => {
-      row.remove();
-      updateSearchBtn();
-    });
-    $idRows.appendChild(row);
-    updateSearchBtn();
-  }
+  });
+  updateSearchBtn();
 
   // ── Step 1: Type selection ────────────────────────────────────────
   $typeGrid.addEventListener("change", e => {
@@ -286,23 +275,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
     selectedKeys.clear();
     setStatus("");
 
-    // Rebuild identifier rows (add/remove replacement inputs based on type)
-    const existing = getIdentifiers();
-    $idRows.innerHTML = "";
-    if (existing.length) {
-      existing.forEach(id => addIdentifierRow(id.type, id.value));
-    } else {
-      addIdentifierRow("NAME");
-      addIdentifierRow("EMAIL");
-    }
-
     unlock($step2);
-  });
-
-  // ── Step 2: Add identifier row ────────────────────────────────────
-  $addRow.addEventListener("click", () => {
-    addIdentifierRow();
-    $idRows.lastElementChild?.querySelector(".gdpr-id-value")?.focus();
   });
 
   // ── Search ────────────────────────────────────────────────────────
@@ -628,11 +601,28 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         return;
       }
 
+      // Re-resolve subject display names in parallel
+      const resolutions = await Promise.allSettled(
+        requests.map(async r => {
+          try {
+            if (r.subject?.userId) {
+              const user = await gc.getUser(api, org.id, r.subject.userId);
+              return user.name ?? null;
+            }
+            if (r.subject?.externalContactId) {
+              const contact = await gc.getExternalContact(api, org.id, r.subject.externalContactId);
+              return [contact.firstName, contact.lastName].filter(Boolean).join(" ") || null;
+            }
+          } catch { /* fall back to raw ID */ }
+          return null;
+        })
+      );
+
       const TYPE_LABELS  = { GDPR_DELETE: "Erasure", GDPR_EXPORT: "Access", GDPR_UPDATE: "Rectification" };
       const TYPE_CLASSES = { GDPR_DELETE: "gdpr-badge--delete", GDPR_EXPORT: "gdpr-badge--export", GDPR_UPDATE: "gdpr-badge--update" };
       const STATUS_LABEL = {
         INITIATED:   "Initiated",
-        DELETING:    "Deleting…",
+        DELETING:    "Deleting\u2026",
         IN_PROGRESS: "In Progress",
         FULFILLED:   "Fulfilled",
         COMPLETE:    "Fulfilled",
@@ -653,7 +643,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         ERROR:       "failed",
       };
 
-      const rows = requests.map(r => {
+      const rows = requests.map((r, idx) => {
         const date        = r.createdDate ? new Date(r.createdDate).toLocaleString() : "\u2014";
         const type        = r.requestType ?? "\u2014";
         const typeLabel   = TYPE_LABELS[type] ?? type;
@@ -661,19 +651,28 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         const rawStatus   = r.status ?? "\u2014";
         const statusLabel = STATUS_LABEL[rawStatus] ?? rawStatus;
         const statusClass = STATUS_CLASS[rawStatus] ?? "inprogress";
-        const subjectName = escapeHtml(
-          r.subject?.name ||
-          r.subject?.userId ||
-          r.subject?.externalContactId ||
-          r.subject?.dialerContactId?.id ||
-          "\u2014"
-        );
+
+        // Subject: resolved name (primary) + raw ID beneath as secondary
+        const resolvedName = resolutions[idx]?.status === "fulfilled" ? resolutions[idx].value : null;
+        const rawId = r.subject?.userId ?? r.subject?.externalContactId ?? r.subject?.dialerContactId?.id ?? null;
+        const nameDisplay = resolvedName ?? r.subject?.name ?? rawId ?? "\u2014";
+        const subjectCell = rawId && resolvedName
+          ? `<span class="gdpr-subject-name">${escapeHtml(nameDisplay)}</span><br><span class="gdpr-subject-id">${escapeHtml(rawId)}</span>`
+          : `<span class="gdpr-subject-name">${escapeHtml(nameDisplay)}</span>`;
+
+        // Subject type derived from which ID field is populated
+        const subjectType = r.subject?.userId            ? "User"
+                          : r.subject?.externalContactId ? "Ext. Contact"
+                          : r.subject?.dialerContactId   ? "Dialer Contact"
+                          : "\u2014";
+
         const reqId = escapeHtml(r.id ?? "\u2014");
         return `
           <tr>
             <td>${escapeHtml(date)}</td>
             <td><span class="gdpr-badge ${badgeClass}">${typeLabel}</span></td>
-            <td>${subjectName}</td>
+            <td>${subjectCell}</td>
+            <td><span class="gdpr-subject-type-badge">${escapeHtml(subjectType)}</span></td>
             <td><span class="gdpr-status-dot gdpr-status-dot--${statusClass}">${escapeHtml(statusLabel)}</span></td>
             <td class="gdpr-mono" title="${reqId}">${reqId.length > 24 ? reqId.substring(0, 24) + "\u2026" : reqId}</td>
           </tr>
@@ -688,6 +687,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
                 <th>Date</th>
                 <th>Type</th>
                 <th>Subject</th>
+                <th>Subject Type</th>
                 <th>Status</th>
                 <th>Request ID</th>
               </tr>

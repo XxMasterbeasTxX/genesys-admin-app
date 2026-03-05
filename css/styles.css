@@ -1959,29 +1959,48 @@ body {
   line-height: 1.5;
 }
 
-/* ── Identifier rows (Step 2) ──────────────────────────── */
-.gdpr-id-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  flex-wrap: nowrap;
+/* ── Identifier grid (Step 2) ──────────────────────── */
+.gdpr-id-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px 14px;
+  margin-bottom: 4px;
 }
-.gdpr-id-type {
-  appearance: none;
-  -webkit-appearance: none;
+.gdpr-id-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gdpr-id-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.gdpr-id-input {
   font: inherit;
   font-size: 13px;
-  padding: 6px 28px 6px 10px;
+  padding: 6px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: rgba(255,255,255,0.06)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2393a4b8'/%3E%3C/svg%3E")
-    no-repeat right 8px center;
+  background: rgba(255,255,255,0.06);
   color: var(--text);
-  min-width: 90px;
-  cursor: pointer;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
+.gdpr-id-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.20);
+}
+.gdpr-id-input:not(:placeholder-shown) {
+  border-color: rgba(59,130,246,0.40);
+  background: rgba(59,130,246,0.06);
+}
+
+/* keep .gdpr-id-value for replacement inputs in step 4 */
 .gdpr-id-value {
   flex: 1;
   font: inherit;
@@ -1993,42 +2012,31 @@ body {
   color: var(--text);
   min-width: 0;
 }
-.gdpr-id-value:focus,
-.gdpr-id-type:focus {
+.gdpr-id-value:focus {
   outline: none;
   border-color: #3b82f6;
   box-shadow: 0 0 0 2px rgba(59,130,246,0.20);
 }
-.gdpr-replace-arrow {
+
+/* ── History subject cell ────────────────────────────── */
+.gdpr-subject-name {
+  font-weight: 500;
+}
+.gdpr-subject-id {
+  font-size: 11px;
+  font-family: ui-monospace, "Cascadia Code", "Fira Mono", monospace;
   color: var(--muted);
-  font-size: 14px;
-  flex-shrink: 0;
+  opacity: 0.75;
 }
-.gdpr-id-replacement {
-  flex: 1;
-  font: inherit;
-  font-size: 13px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(251,191,36,0.30);
-  background: rgba(251,191,36,0.05);
-  color: var(--text);
-  min-width: 0;
-}
-.gdpr-id-replacement:focus {
-  outline: none;
-  border-color: #fbbf24;
-  box-shadow: 0 0 0 2px rgba(251,191,36,0.20);
-}
-.gdpr-id-remove {
-  flex-shrink: 0;
-  color: var(--muted);
-}
-.gdpr-id-remove:hover { color: #f87171; }
-.gdpr-add-btn {
-  font-size: 12px;
-  color: #60a5fa;
-  border-color: rgba(59,130,246,0.20);
+.gdpr-subject-type-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: rgba(148,163,184,0.10);
+  color: #94a3b8;
+  white-space: nowrap;
 }
 
 /* ── Subjects table (Step 3) ───────────────────────────── */
