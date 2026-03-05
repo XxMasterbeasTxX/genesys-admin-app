@@ -10,7 +10,7 @@ import { CONFIG } from "../config.js";
 async function fetchUserGroupNames(accessToken) {
   try {
     const resp = await fetch(
-      `${CONFIG.apiBase}/api/v2/users/me/groups?pageSize=500`,
+      `${CONFIG.apiBase}/api/v2/users/me?expand=groups`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     const json = await resp.json().catch(() => ({}));
@@ -18,7 +18,7 @@ async function fetchUserGroupNames(accessToken) {
       console.error("[accessService] groups API error:", resp.status, json);
       return null; // signal failure
     }
-    const names = (json.entities || []).map((g) => g.name).filter(Boolean);
+    const names = (json.groups || []).map((g) => g.name).filter(Boolean);
     console.info("[accessService] user groups:", names);
     return names;
   } catch (err) {
