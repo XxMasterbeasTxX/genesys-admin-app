@@ -97,6 +97,14 @@ export const NAV_TREE = [
       },
     ],
   },
+  {
+    label: "GDPR",
+    path: "gdpr",
+    enabled: true,
+    children: [
+      { label: "Subject Request", path: "subject-request", enabled: true, access: "gdpr.subjectRequest" },
+    ],
+  },
 ];
 
 /** Collect all leaf routes from enabled nodes only. */

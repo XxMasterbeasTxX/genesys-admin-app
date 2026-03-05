@@ -639,3 +639,26 @@ export async function fetchGroupMembers(api, orgId, groupId, opts = {}) {
 export async function getUser(api, orgId, userId) {
   return api.proxyGenesys(orgId, "GET", `/api/v2/users/${userId}`);
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// GDPR
+// ─────────────────────────────────────────────────────────────────────
+
+/** Search for GDPR subjects by a single identifier. */
+export async function gdprSearchSubjects(api, orgId, searchType, searchValue) {
+  const qs = new URLSearchParams({ searchType, searchValue }).toString();
+  const resp = await api.proxyGenesys(orgId, "GET", `/api/v2/gdpr/subjects?${qs}`);
+  return resp.subjects || [];
+}
+
+/** Submit a GDPR request. Pass deleteConfirmed=true for GDPR_DELETE. */
+export async function gdprSubmitRequest(api, orgId, body, deleteConfirmed = false) {
+  const qs = deleteConfirmed ? "?deleteConfirmed=true" : "";
+  return api.proxyGenesys(orgId, "POST", `/api/v2/gdpr/requests${qs}`, { body });
+}
+
+/** Fetch existing GDPR requests for an org. */
+export async function gdprGetRequests(api, orgId) {
+  const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/gdpr/requests?pageSize=50");
+  return resp.entities || [];
+}

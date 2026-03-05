@@ -1844,3 +1844,333 @@ body {
 .se-ok   { color: #34d399; }
 .se-fail { color: #f87171; }
 .se-none { color: var(--muted); font-style: italic; }
+
+/* ══════════════════════════════════════════════════════════
+   GDPR — Subject Request
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Sections ──────────────────────────────────────────── */
+.gdpr-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  transition: opacity 0.2s, filter 0.2s;
+}
+.gdpr-section--locked {
+  opacity: 0.35;
+  pointer-events: none;
+  user-select: none;
+  filter: grayscale(0.4);
+}
+.gdpr-history-section { cursor: default; }
+.gdpr-history-toggle {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+.gdpr-history-toggle:hover { color: #93c5fd; }
+
+/* ── Step headings ─────────────────────────────────────── */
+.gdpr-step-title {
+  font-size: 14px;
+  font-weight: 650;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gdpr-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(59,130,246,0.18);
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.gdpr-step-desc {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+/* ── Type cards (Step 1) ───────────────────────────────── */
+.gdpr-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.gdpr-type-card {
+  position: relative;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: rgba(255,255,255,0.03);
+}
+.gdpr-type-card:hover {
+  border-color: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.05);
+}
+.gdpr-type-card--selected {
+  border-color: #3b82f6 !important;
+  background: rgba(59,130,246,0.06) !important;
+}
+.gdpr-type-radio {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  accent-color: #3b82f6;
+}
+.gdpr-type-card-inner { padding-left: 22px; }
+.gdpr-type-card-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.gdpr-type-label {
+  font-weight: 650;
+  font-size: 14px;
+}
+.gdpr-article-link {
+  font-size: 11px;
+  color: #60a5fa;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.gdpr-article-link:hover { text-decoration: underline; }
+.gdpr-type-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Identifier rows (Step 2) ──────────────────────────── */
+.gdpr-id-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: nowrap;
+}
+.gdpr-id-type {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 28px 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.06)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2393a4b8'/%3E%3C/svg%3E")
+    no-repeat right 8px center;
+  color: var(--text);
+  min-width: 90px;
+  cursor: pointer;
+}
+.gdpr-id-value {
+  flex: 1;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  min-width: 0;
+}
+.gdpr-id-value:focus,
+.gdpr-id-type:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.20);
+}
+.gdpr-replace-arrow {
+  color: var(--muted);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.gdpr-id-replacement {
+  flex: 1;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(251,191,36,0.30);
+  background: rgba(251,191,36,0.05);
+  color: var(--text);
+  min-width: 0;
+}
+.gdpr-id-replacement:focus {
+  outline: none;
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 2px rgba(251,191,36,0.20);
+}
+.gdpr-id-remove {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.gdpr-id-remove:hover { color: #f87171; }
+.gdpr-add-btn {
+  font-size: 12px;
+  color: #60a5fa;
+  border-color: rgba(59,130,246,0.20);
+}
+
+/* ── Subjects table (Step 3) ───────────────────────────── */
+.gdpr-table-wrap {
+  overflow-x: auto;
+}
+.gdpr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.gdpr-table th {
+  text-align: left;
+  padding: 7px 10px;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  background: var(--panel-2);
+}
+.gdpr-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.gdpr-table tr:last-child td { border-bottom: none; }
+.gdpr-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
+.gdpr-mono {
+  font-family: ui-monospace, "Cascadia Code", "Fira Mono", monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.gdpr-type-pill {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.07);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── Confirm section (Step 4) ──────────────────────────── */
+.gdpr-confirm-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.gdpr-article-link-sm {
+  font-size: 11px;
+  color: #60a5fa;
+  text-decoration: none;
+}
+.gdpr-article-link-sm:hover { text-decoration: underline; }
+.gdpr-confirm-count {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+.gdpr-replace-table { margin-top: 8px; margin-bottom: 14px; }
+.gdpr-replace-table td { vertical-align: middle; }
+.gdpr-note {
+  font-size: 12px;
+  color: #fbbf24;
+  background: rgba(251,191,36,0.08);
+  border: 1px solid rgba(251,191,36,0.20);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 12px 0;
+}
+.gdpr-confirm-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  cursor: pointer;
+  margin: 14px 0 0;
+  padding: 12px;
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 8px;
+  background: rgba(239,68,68,0.05);
+  line-height: 1.5;
+}
+.gdpr-confirm-label input { margin-top: 2px; flex-shrink: 0; accent-color: #f87171; }
+
+/* ── Badges ────────────────────────────────────────────── */
+.gdpr-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.gdpr-badge--delete {
+  background: rgba(239,68,68,0.15);
+  color: #f87171;
+  border: 1px solid rgba(239,68,68,0.25);
+}
+.gdpr-badge--export {
+  background: rgba(34,197,94,0.12);
+  color: #4ade80;
+  border: 1px solid rgba(34,197,94,0.20);
+}
+.gdpr-badge--update {
+  background: rgba(251,191,36,0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(251,191,36,0.20);
+}
+
+/* ── Status dots (history) ─────────────────────────────── */
+.gdpr-status-dot {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  color: var(--muted);
+}
+.gdpr-status-dot--complete,
+.gdpr-status-dot--completed  { background: rgba(34,197,94,0.12);  color: #4ade80; }
+.gdpr-status-dot--inprogress { background: rgba(59,130,246,0.12); color: #93c5fd; }
+.gdpr-status-dot--error,
+.gdpr-status-dot--failed     { background: rgba(239,68,68,0.12);  color: #f87171; }
+
+/* ── Misc ──────────────────────────────────────────────── */
+.gdpr-empty {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 12px 0;
+}
+.gdpr-empty--error { color: #f87171; font-style: normal; }
+.gdpr-loading { font-size: 13px; color: var(--muted); margin: 12px 0; }
+
+/* ── Light-mode overrides ──────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  .gdpr-type-card { background: rgba(0,0,0,0.02); }
+  .gdpr-type-card:hover { background: rgba(0,0,0,0.04); }
+  .gdpr-type-card--selected { background: rgba(59,130,246,0.06) !important; }
+  .gdpr-id-type,
+  .gdpr-id-value  { background: rgba(0,0,0,0.04); }
+  .gdpr-table th  { background: rgba(0,0,0,0.04); }
+}
