@@ -93,29 +93,26 @@ async function execute(context, schedule) {
   context.log(`Roles Single Org export for ${customer.name} (${orgId})`);
 
   try {
-    // Fetch all roles
-    context.log("Fetching authorization roles…");
-    const roles = await genesysGetAllPages(orgId, "/api/v2/authorization/roles", 100);
-    context.log(`Fetched ${roles.length} roles`);
-
-    // Fetch all active users (default endpoint returns active only)
-    context.log("Fetching active users…");
-    const activeUsers = await genesysGetAllPages(orgId, "/api/v2/users", 500);
+    // Fetch roles and active users in parallel
+    context.log("Fetching authorization roles and active users in parallel…");
+    const [roles, activeUsers] = await Promise.all([
+      genesysGetAllPages(orgId, "/api/v2/authorization/roles", 100),
+      genesysGetAllPages(orgId, "/api/v2/users", 500),
+    ]);
     const activeIds = new Set(activeUsers.map(u => u.id));
-    context.log(`Fetched ${activeUsers.length} active users`);
+    context.log(`Fetched ${roles.length} roles and ${activeUsers.length} active users`);
 
-    // Per-role: fetch assigned users and count intersection with active users
+    // Per-role: fetch assigned users in parallel
+    context.log(`Fetching user counts for ${roles.length} roles in parallel…`);
+    const roleUserResults = await Promise.allSettled(
+      roles.map(role => genesysGetAllPages(orgId, `/api/v2/authorization/roles/${role.id}/users`, 100))
+    );
     const counts = {};
-    for (let i = 0; i < roles.length; i++) {
-      const role = roles[i];
-      context.log(`Computing members: role ${i + 1}/${roles.length} — ${role.name || role.id}`);
-      const roleUsers = await genesysGetAllPages(
-        orgId,
-        `/api/v2/authorization/roles/${role.id}/users`,
-        100
-      );
-      counts[role.id] = roleUsers.filter(u => activeIds.has(u.id)).length;
-    }
+    roles.forEach((role, i) => {
+      const r = roleUserResults[i];
+      const users = r.status === "fulfilled" ? r.value : [];
+      counts[role.id] = users.filter(u => activeIds.has(u.id)).length;
+    });
 
     // Build rows sorted alphabetically
     const rows = [...roles]

@@ -191,93 +191,89 @@ async function execute(context, schedule) {
 
   try {
     const usersMap = new Map();
-    let processedOrgs = 0;
-    const totalOrgs = customers.length;
 
-    for (const cust of customers) {
-      processedOrgs++;
-      log.info(`Trustee export: processing ${processedOrgs}/${totalOrgs}: ${cust.name}`);
+    // Process all customer orgs in parallel
+    const orgResults = await Promise.allSettled(
+      customers.map(async (cust) => {
+        log.info(`Trustee export: processing ${cust.name}`);
+        const localMap = new Map();
 
-      try {
-        // 1. Get trustees for this customer org
         const trusteeResp = await genesysGet(cust.id, "/api/v2/orgauthorization/trustees");
         const trustees = trusteeResp.entities || [];
 
-        for (const trustee of trustees) {
+        // Process all trustees in parallel
+        await Promise.allSettled(trustees.map(async (trustee) => {
           const trusteeOrgName = trustee.organization?.name;
-          if (!trusteeOrgName) continue;
-
+          if (!trusteeOrgName) return;
           const trusteeCustomerId = TRUSTEE_NAME_MAP[trusteeOrgName];
-          if (!trusteeCustomerId) continue;
-
+          if (!trusteeCustomerId) return;
           const displayName = normaliseTrusteeOrg(trusteeOrgName);
           const trusteeId = trustee.id;
-          if (!trusteeId) continue;
+          if (!trusteeId) return;
 
-          // 2. Get groups granted to this trustee
           let groups = [];
           try {
-            const groupsResp = await genesysGet(
-              cust.id,
-              `/api/v2/orgauthorization/trustees/${trusteeId}/groups`
-            );
+            const groupsResp = await genesysGet(cust.id, `/api/v2/orgauthorization/trustees/${trusteeId}/groups`);
             groups = groupsResp.entities || [];
           } catch (err) {
             log.warn(`Failed to get trustee groups for ${cust.name}: ${err.message}`);
-            continue;
+            return;
           }
 
-          for (const group of groups) {
+          // Process all groups in parallel
+          await Promise.allSettled(groups.map(async (group) => {
             const groupId = group.id;
-            if (!groupId) continue;
+            if (!groupId) return;
 
-            // 3. Get group members from the TRUSTEE org
             let members = [];
             try {
-              members = await genesysGetAllPages(
-                trusteeCustomerId,
-                `/api/v2/groups/${groupId}/members`
-              );
+              members = await genesysGetAllPages(trusteeCustomerId, `/api/v2/groups/${groupId}/members`);
             } catch (err) {
               log.warn(`Failed to get group members for group ${groupId}: ${err.message}`);
-              continue;
+              return;
             }
 
-            for (const member of members) {
+            // Resolve full user data for all members in parallel
+            const resolvedMembers = await Promise.allSettled(members.map(async (member) => {
               let userName = member.name || null;
               let userEmail = member.email || null;
-
-              // Fallback: fetch full user if name/email missing
               if (!userName || !userEmail) {
                 try {
-                  const full = await genesysGet(
-                    trusteeCustomerId,
-                    `/api/v2/users/${member.id}`
-                  );
+                  const full = await genesysGet(trusteeCustomerId, `/api/v2/users/${member.id}`);
                   userName = userName || full.name;
                   userEmail = userEmail || full.email;
                 } catch (_) { /* best effort */ }
               }
+              return { name: userName || "Unknown", email: userEmail || "N/A" };
+            }));
 
-              userName = userName || "Unknown";
-              userEmail = userEmail || "N/A";
-
+            for (const r of resolvedMembers) {
+              if (r.status !== "fulfilled") continue;
+              const { name: userName, email: userEmail } = r.value;
               const key = `${displayName}||${userEmail}`;
-              if (!usersMap.has(key)) {
-                usersMap.set(key, {
-                  trusteeOrg: displayName,
-                  name: userName,
-                  email: userEmail,
-                  orgs: {},
-                });
+              if (!localMap.has(key)) {
+                localMap.set(key, { trusteeOrg: displayName, name: userName, email: userEmail, orgs: {} });
               }
-              usersMap.get(key).orgs[cust.name] = true;
+              localMap.get(key).orgs[cust.name] = true;
             }
-          }
+          }));
+        }));
+
+        return { custName: cust.name, localMap };
+      })
+    );
+
+    // Merge all per-org results into usersMap
+    for (const result of orgResults) {
+      if (result.status !== "fulfilled") {
+        log.error(`Error processing an org: ${result.reason?.message}`);
+        continue;
+      }
+      for (const [key, entry] of result.value.localMap.entries()) {
+        if (!usersMap.has(key)) {
+          usersMap.set(key, { trusteeOrg: entry.trusteeOrg, name: entry.name, email: entry.email, orgs: {} });
         }
-      } catch (err) {
-        log.error(`Error processing ${cust.name}: ${err.message}`);
-        // Continue to next org
+        Object.assign(usersMap.get(key).orgs, entry.orgs);
       }
     }
 
