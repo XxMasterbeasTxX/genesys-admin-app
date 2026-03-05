@@ -204,13 +204,12 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
   function hideProgress() { $progressWrap.hidden = true; setProgress(0); }
   function unlock(el) { el.classList.remove("gdpr-section--locked"); }
 
-  function matchKey(subject, term) {
-    const id = subject.userId?.id
+  function matchKey(subject) {
+    return subject.userId?.id
       ?? subject.externalContactId?.id
       ?? subject.dialerContactId?.id
       ?? subject.id
-      ?? Math.random();
-    return `${id}::${term.type}::${term.value}`;
+      ?? null;
   }
 
   function subjectTypeLabel(s) {
@@ -344,24 +343,35 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         }
       }
 
-      foundMatches = allMatches;
+      // Deduplicate: if the same subject was returned by multiple identifier searches,
+      // collapse them into one row and show all matched-by identifiers together.
+      const byId = new Map();
+      for (const m of allMatches) {
+        const key = matchKey(m.subject) ?? `unknown-${Math.random()}`;
+        if (byId.has(key)) {
+          byId.get(key).matchedByList.push(m.matchedBy);
+        } else {
+          byId.set(key, { subject: m.subject, matchedByList: [m.matchedBy] });
+        }
+      }
+      foundMatches = [...byId.values()];
       setProgress(100);
 
-      if (errors.length && !allMatches.length) {
+      if (errors.length && !foundMatches.length) {
         setStatus(`Search failed: ${errors[0]}`, "error");
       } else if (errors.length) {
         setStatus(`Search completed with ${errors.length} error(s). Showing partial results.`, "warn");
-        renderSubjectsTable(allMatches);
+        renderSubjectsTable(foundMatches);
         unlock($step3);
-        $proceedBtn.disabled = allMatches.length === 0;
-      } else if (!allMatches.length) {
+        $proceedBtn.disabled = foundMatches.length === 0;
+      } else if (!foundMatches.length) {
         setStatus("No matching subjects found. No GDPR request will be required.", "info");
         $subjectsWrap.innerHTML = `<p class="gdpr-empty">No subjects found for the provided identifiers.</p>`;
         unlock($step3);
         $proceedBtn.disabled = true;
       } else {
-        setStatus(`Found ${allMatches.length} match(es). Review and deselect any false positives.`, "success");
-        renderSubjectsTable(allMatches);
+        setStatus(`Found ${foundMatches.length} unique subject${foundMatches.length !== 1 ? "s" : ""}. Review and deselect any false positives.`, "success");
+        renderSubjectsTable(foundMatches);
         unlock($step3);
         $proceedBtn.disabled = false;
       }
@@ -382,9 +392,10 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       const rawId = subjectDisplayId(m.subject);
       const id    = escapeHtml(rawId);
       const name  = escapeHtml(m.subject.name ?? "\u2014");
-      const matchType  = escapeHtml(m.matchedBy.type);
-      const matchValue = escapeHtml(m.matchedBy.value);
-      const key   = escapeHtml(matchKey(m.subject, m.matchedBy));
+      const matchedByHtml = m.matchedByList
+        .map(t => `${escapeHtml(t.type)}: <em>${escapeHtml(t.value)}</em>`)
+        .join(", ");
+      const key   = escapeHtml(matchKey(m.subject) ?? `unknown-${i}`);
       return `
         <tr>
           <td style="text-align:center">
@@ -393,7 +404,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
           <td>${name}</td>
           <td><span class="gdpr-type-pill">${type}</span></td>
           <td class="gdpr-mono" title="${id}">${id.length > 24 ? id.substring(0, 24) + "\u2026" : id}</td>
-          <td>${matchType}: <em>${matchValue}</em></td>
+          <td>${matchedByHtml}</td>
         </tr>
       `;
     });
@@ -416,7 +427,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
     `;
 
     // Init selected set (all checked by default)
-    selectedKeys = new Set(matches.map(m => matchKey(m.subject, m.matchedBy)));
+    selectedKeys = new Set(matches.map((m, i) => matchKey(m.subject) ?? `unknown-${i}`));
 
     $subjectsWrap.querySelectorAll(".gdpr-subject-chk").forEach(chk => {
       chk.addEventListener("change", () => {
@@ -453,7 +464,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       </div>
       <p class="gdpr-confirm-count">
         <strong>${count}</strong> request${count !== 1 ? "s" : ""} will be submitted
-        (one per subject × identifier combination).
+        (one per unique subject).
       </p>
     `;
 
@@ -512,8 +523,8 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
     if (!org) { $submitStatus.textContent = "No org selected."; return; }
 
     const t = REQUEST_TYPES[requestType];
-    const selectedMatches = foundMatches.filter(m =>
-      selectedKeys.has(matchKey(m.subject, m.matchedBy))
+    const selectedMatches = foundMatches.filter((m, i) =>
+      selectedKeys.has(matchKey(m.subject) ?? `unknown-${i}`)
     );
     if (!selectedMatches.length) {
       $submitStatus.textContent = "No subjects selected.";
