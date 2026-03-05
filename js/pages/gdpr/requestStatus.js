@@ -115,7 +115,7 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
             <td><span class="gdpr-status-dot gdpr-status-dot--${statusClass}">${escapeHtml(statusLabel)}</span></td>
             <td>${escapeHtml(completedDate)}</td>
             <td class="gdpr-details-cell">${detailsHtml}</td>
-            <td class="gdpr-mono" title="${reqId}">${reqId.length > 24 ? reqId.substring(0, 24) + "\u2026" : reqId}</td>
+            <td class="gdpr-mono">${reqId}</td>
           </tr>
         `;
       });
