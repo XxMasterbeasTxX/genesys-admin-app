@@ -581,10 +581,25 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
 
         $submitStatus.querySelectorAll(".gdpr-copy-btn").forEach(btn => {
           btn.addEventListener("click", () => {
-            navigator.clipboard.writeText(btn.dataset.copy).then(() => {
-              btn.textContent = "Copied!";
+            const text = btn.dataset.copy;
+            const finish = (ok) => {
+              btn.textContent = ok ? "Copied!" : "Failed";
               setTimeout(() => { btn.textContent = "Copy"; }, 2000);
-            });
+            };
+            if (navigator.clipboard?.writeText) {
+              navigator.clipboard.writeText(text).then(() => finish(true)).catch(() => fallback());
+            } else {
+              fallback();
+            }
+            function fallback() {
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+              document.body.appendChild(ta);
+              ta.select();
+              finish(document.execCommand("copy"));
+              document.body.removeChild(ta);
+            }
           });
         });
       } else {
