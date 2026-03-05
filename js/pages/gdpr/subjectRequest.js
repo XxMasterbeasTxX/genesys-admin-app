@@ -205,8 +205,8 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
   function unlock(el) { el.classList.remove("gdpr-section--locked"); }
 
   function matchKey(subject) {
-    return subject.userId?.id
-      ?? subject.externalContactId?.id
+    return subject.userId
+      ?? subject.externalContactId
       ?? subject.dialerContactId?.id
       ?? subject.id
       ?? null;
@@ -220,7 +220,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
   }
 
   function subjectDisplayId(s) {
-    return s.userId?.id ?? s.externalContactId?.id ?? s.dialerContactId?.id ?? s.id ?? "—";
+    return s.userId ?? s.externalContactId ?? s.dialerContactId?.id ?? s.id ?? "—";
   }
 
   function getIdentifiers() {
