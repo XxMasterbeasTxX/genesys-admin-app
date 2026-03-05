@@ -50,7 +50,7 @@ function renderFatalError(message) {
   setHeader({ authText: `Auth: ok \u00B7 ${userName}` });
 
   // --- Resolve access from group memberships ---
-  const access = await resolveAccess(res.accessToken, GROUP_ACCESS);
+  const access = await resolveAccess(res.accessToken, GROUP_ACCESS, res.me?.id);
   const routeAccessMap = getRouteAccessMap();
 
   // --- API client ---

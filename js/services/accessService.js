@@ -5,6 +5,7 @@
  * (using the PKCE access token) and resolves which app features they can access.
  */
 import { CONFIG } from "../config.js";
+import { SUPERUSER_IDS } from "../accessConfig.js";
 
 /** Fetch the names of all groups the authenticated user belongs to. */
 async function fetchUserGroupNames(accessToken) {
@@ -54,9 +55,16 @@ async function fetchUserGroupNames(accessToken) {
  *
  * @param {string} accessToken   PKCE access token (your own Genesys org).
  * @param {Object} groupAccessMap  GROUP_ACCESS from accessConfig.js.
+ * @param {string} [userId]        The authenticated user's Genesys user ID.
  * @returns {Promise<{ hasAccess, hasAnyAccess }>}
  */
-export async function resolveAccess(accessToken, groupAccessMap) {
+export async function resolveAccess(accessToken, groupAccessMap, userId) {
+  // Superusers always get full access regardless of groups.
+  if (userId && SUPERUSER_IDS.includes(userId)) {
+    console.info("[accessService] superuser — full access granted");
+    return { hasAccess: () => true, hasAnyAccess: () => true };
+  }
+
   const groupNames = await fetchUserGroupNames(accessToken);
 
   // If the groups API failed entirely, fail open (full access) so the app
