@@ -97,6 +97,43 @@ function findAcdParticipant(conversation, queueId = null) {
   return null;
 }
 
+/**
+ * From an analytics conversation detail object, check if the ACD participant
+ * in the given queue has an active "wait" segment (sitting in queue, no agent).
+ * Returns { mediaType } or null.
+ */
+function getQueueWaitInfo(conversation, queueId) {
+  for (const p of (conversation.participants || [])) {
+    if (p.purpose !== "acd") continue;
+    for (const session of (p.sessions || [])) {
+      for (const seg of (session.segments || [])) {
+        if (seg.segmentEnd)             continue; // segment has already ended
+        if (seg.segmentType !== "wait") continue; // not waiting
+        if (queueId && seg.queueId && seg.queueId !== queueId) continue;
+        return { mediaType: (session.mediaType || "unknown").toLowerCase() };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns true if any participant has an ongoing "interact" or "alert" segment,
+ * meaning an agent is currently connected to or ringing for this conversation.
+ * These conversations must NOT be force-disconnected.
+ */
+function hasActiveAgentSegment(conversation) {
+  for (const p of (conversation.participants || [])) {
+    for (const session of (p.sessions || [])) {
+      for (const seg of (session.segments || [])) {
+        if (seg.segmentEnd) continue;
+        if (seg.segmentType === "interact" || seg.segmentType === "alert") return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Map common HTTP error codes to user-friendly messages. */
 function friendlyError(err) {
   const msg = err.message || String(err);
@@ -422,26 +459,29 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     return { pass: true, mediaType: mt, reason: null };
   }
 
-  // ── Scan: queue mode (multi-interval analytics) ────
+  // ── Scan: queue mode (async analytics jobs) ────────
+  //
+  // Uses the async jobs API (/analytics/conversations/details/jobs) instead of
+  // the synchronous query endpoint, which times out via the proxy at ~8000+
+  // conversations. The async path has no per-request timeout constraint.
+  //
+  // Phase 2 (individual getConversation calls) is eliminated: the analytics
+  // response already includes participant sessions and segments, which is
+  // enough to determine waiting state without extra API calls.
   async function scanQueue(queueId, filters) {
-    const orgId = orgContext.get();
-    const now   = new Date();
-    const seen  = new Set();
-    const foundIds = [];
+    const orgId  = orgContext.get();
+    const now    = new Date();
+    const seen   = new Set();
+    const matched = [];
 
-    // Phase 1 — analytics scan across 6 × 31-day windows
     for (let i = 0; i < SCAN_INTERVALS; i++) {
       if (cancelled) break;
 
-      const end   = new Date(now.getTime() - i * INTERVAL_DAYS * 86_400_000);
-      const start = new Date(end.getTime()  - INTERVAL_DAYS * 86_400_000);
+      const end      = new Date(now.getTime() - i * INTERVAL_DAYS * 86_400_000);
+      const start    = new Date(end.getTime()  - INTERVAL_DAYS * 86_400_000);
       const interval = `${start.toISOString()}/${end.toISOString()}`;
 
-      setStatus(STATUS.scanning(i + 1, SCAN_INTERVALS));
-      showProgress((i / SCAN_INTERVALS) * 30);
-
-      const body = {
-        interval,
+      const jobBody = {
         order: "desc",
         orderBy: "conversationStart",
         segmentFilters: [{
@@ -454,46 +494,47 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
         }],
       };
 
-      const convs = await gc.queryConversationDetails(api, orgId, body, {
-        maxPages: 200,
-        onProgress: (n) => showProgress(
-          (i / SCAN_INTERVALS) * 30 + Math.min(n / 500, 1) * (30 / SCAN_INTERVALS)
-        ),
-      });
-
-      for (const c of convs) {
-        if (!seen.has(c.conversationId)) {
-          seen.add(c.conversationId);
-          foundIds.push(c.conversationId);
-        }
-      }
-    }
-
-    if (cancelled || !foundIds.length) return [];
-
-    // Phase 2 — fetch full details and apply filters
-    const matched = [];
-    for (let i = 0; i < foundIds.length; i++) {
-      if (cancelled) break;
-
-      setStatus(STATUS.inspecting(i + 1, foundIds.length));
-      showProgress(30 + (i / foundIds.length) * 60);
-
+      let convs;
       try {
-        const conv = await gc.getConversation(api, orgId, foundIds[i]);
-        const acd = findAcdParticipant(conv, queueId);
-        if (!acd) continue; // not waiting in queue / already at an agent
-        if (!filters.mediaTypes.includes(acd.mediaType)) continue;
-        const st = conv.startTime ? new Date(conv.startTime) : null;
-        if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) continue;
-        if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) continue;
-        matched.push({
-          convId: foundIds[i],
-          mediaType: acd.mediaType,
-          startTime: formatDateTime(conv.startTime),
+        convs = await gc.searchConversations(api, orgId, {
+          interval,
+          jobBody,
+          onStatus: (msg) =>
+            setStatus(`Interval ${i + 1} of ${SCAN_INTERVALS}: ${msg}`),
+          onProgress: (pct) =>
+            showProgress((i / SCAN_INTERVALS) * 100 + pct / SCAN_INTERVALS),
         });
       } catch (err) {
-        console.warn(`Could not inspect ${foundIds[i]}:`, err.message);
+        console.warn(`Interval ${i + 1} scan failed — skipping:`, err.message);
+        continue;
+      }
+
+      for (const c of convs) {
+        if (cancelled) break;
+        if (seen.has(c.conversationId)) continue;
+        seen.add(c.conversationId);
+        if (c.conversationEnd) continue; // already ended
+
+        // Must be actively waiting in queue (ACD participant in "wait" state)
+        const info = getQueueWaitInfo(c, queueId);
+        if (!info) continue;
+
+        // Must NOT have any agent currently ringing or connected — skip those
+        if (hasActiveAgentSegment(c)) continue;
+
+        // Media type filter
+        if (!filters.mediaTypes.includes(info.mediaType)) continue;
+
+        // Date range filters
+        const st = c.conversationStart ? new Date(c.conversationStart) : null;
+        if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) continue;
+        if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) continue;
+
+        matched.push({
+          convId:    c.conversationId,
+          mediaType: info.mediaType,
+          startTime: formatDateTime(c.conversationStart),
+        });
       }
     }
 
