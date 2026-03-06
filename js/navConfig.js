@@ -27,6 +27,16 @@ export const NAV_TREE = [
     ],
   },
   {
+    label: "Divisions",
+    path: "divisions",
+    enabled: true,
+    children: [
+      { label: "Data Tables", path: "data-tables", enabled: true, access: "divisions.dataTables" },
+      { label: "Queues",      path: "queues",      enabled: true, access: "divisions.queues"     },
+      { label: "Users",       path: "users",       enabled: true, access: "divisions.users"      },
+    ],
+  },
+  {
     label: "Interactions",
     path: "interactions",
     enabled: true,

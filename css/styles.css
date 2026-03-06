@@ -2251,3 +2251,98 @@ body {
   .gdpr-id-value  { background: rgba(0,0,0,0.04); }
   .gdpr-table th  { background: rgba(0,0,0,0.04); }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Divisions pages  (dv- prefix)
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Controls bar ────────────────────────────────────────── */
+.dv-search-group { flex: 1; min-width: 200px; }
+.dv-load-group   { flex: 0 0 auto; }
+.dv-filter-select { min-width: 160px; }
+
+/* ── Select-all bar ──────────────────────────────────────── */
+.dv-select-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 4px;
+  margin-top: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.dv-select-all-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.dv-selected-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: #93c5fd;
+}
+
+/* ── Table ───────────────────────────────────────────────── */
+.dv-table-wrap { overflow-x: auto; margin-top: 0; }
+.dv-table { width: 100%; }
+.dv-col-cb { width: 36px; text-align: center !important; }
+.dv-description { max-width: 280px; color: var(--muted); font-size: 13px; }
+.dv-row-selected td { background: rgba(59,130,246,0.07) !important; }
+.dv-empty {
+  text-align: center;
+  color: var(--muted);
+  font-style: italic;
+  padding: 20px !important;
+}
+
+/* ── Status badges (users) ───────────────────────────────── */
+.dv-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.dv-badge--active   { background: rgba(52,211,153,0.15); color: #34d399; }
+.dv-badge--inactive { background: rgba(248,113,113,0.15); color: #f87171; }
+
+/* ── Target bar ──────────────────────────────────────────── */
+.dv-target-bar {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.dv-btn-apply {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+.dv-btn-apply:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+.dv-btn-apply:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Results ─────────────────────────────────────────────── */
+.dv-results-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 16px 0 8px;
+  color: var(--text);
+}
+.dv-ok   { color: #34d399; font-weight: 600; }
+.dv-fail { color: #f87171; font-weight: 600; }
+
+/* ── Light-mode overrides ────────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  .dv-row-selected td { background: rgba(59,130,246,0.06) !important; }
+  .dv-badge--active   { background: rgba(16,185,129,0.1); color: #059669; }
+  .dv-badge--inactive { background: rgba(239,68,68,0.1);  color: #dc2626; }
+  .dv-btn-apply       { background: #2563eb; color: #fff; }
+  .dv-selected-count  { color: #2563eb; }
+}

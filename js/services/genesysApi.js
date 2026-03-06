@@ -338,6 +338,13 @@ export async function fetchAllUsers(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress });
 }
 
+/** Update a user's division. */
+export async function updateUserDivision(api, orgId, userId, divisionId) {
+  return api.proxyGenesys(orgId, "PATCH", `/api/v2/users/${userId}`, {
+    body: { division: { id: divisionId } },
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Routing — Queues, Skills, Wrapup codes
 // ─────────────────────────────────────────────────────────────────────
@@ -345,6 +352,13 @@ export async function fetchAllUsers(api, orgId, opts = {}) {
 /** Fetch all routing queues. */
 export async function fetchAllQueues(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/routing/queues", opts);
+}
+
+/** Update a queue's division. */
+export async function updateQueueDivision(api, orgId, queueId, divisionId) {
+  return api.proxyGenesys(orgId, "PATCH", `/api/v2/routing/queues/${queueId}`, {
+    body: { division: { id: divisionId } },
+  });
 }
 
 /** Fetch all routing skills. */
@@ -380,6 +394,13 @@ export async function fetchAllScheduleGroups(api, orgId, opts = {}) {
 /** Fetch all data tables. Pass opts.query.expand = "schema" for full schema. */
 export async function fetchAllDataTables(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/flows/datatables", opts);
+}
+
+/** Full PUT update of a data table (required to change division). Pass the
+ *  complete table object (name + schema + updated division). */
+export async function putDataTable(api, orgId, tableId, body) {
+  return api.proxyGenesys(orgId, "PUT",
+    `/api/v2/flows/datatables/${tableId}`, { body });
 }
 
 /** Fetch a single data table by ID (includes schema when expand=schema). */

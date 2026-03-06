@@ -25,7 +25,8 @@
  *   export.users.allGroups           export.users.allRoles
  *   export.users.filteredRoles       export.users.lastLogin       export.users.trustee
  *   phones.webrtc.changeSite         phones.webrtc.create
- *   gdpr.subjectRequest            gdpr.requestStatus
+ *   gdpr.subjectRequest              gdpr.requestStatus
+ *   divisions.users                  divisions.queues             divisions.dataTables
  */
 export const GROUP_ACCESS = {
   "Genesys App - Admin":  ["*"],

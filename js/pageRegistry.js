@@ -54,6 +54,14 @@ const registry = {
   "/export/documentation/create": (ctx) =>
     import("./pages/export/documentation/create.js").then((m) => m.default(ctx)),
 
+  // ── Divisions ─────────────────────────────────────────
+  "/divisions/data-tables": (ctx) =>
+    import("./pages/divisions/dataTables.js").then((m) => m.default(ctx)),
+  "/divisions/queues": (ctx) =>
+    import("./pages/divisions/queues.js").then((m) => m.default(ctx)),
+  "/divisions/users": (ctx) =>
+    import("./pages/divisions/users.js").then((m) => m.default(ctx)),
+
   // ── GDPR ──────────────────────────────────────────────
   "/gdpr/subject-request": (ctx) =>
     import("./pages/gdpr/subjectRequest.js").then((m) => m.default(ctx)),
