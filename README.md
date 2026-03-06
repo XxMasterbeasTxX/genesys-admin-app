@@ -26,6 +26,8 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Documentation Export** — Generate a full Genesys Cloud configuration export for a selected org, mirroring the Python `Export_All.py` output. Produces up to 42 alphabetically sorted configuration sheets (Agent Copilots, DID Numbers, Flows, Queues, Users, OAuth clients, Outbound, etc.) plus a styled Index cover sheet with table of contents and clickable hyperlinks. A second workbook containing all DataTable contents (one sheet per table with its rows, plus an Index cover sheet showing row counts) is bundled as a ZIP when present. Export can take 5–10 minutes for large orgs.
 - **Scheduled Exports** — Automate any export on a daily, weekly, or monthly schedule with email delivery. Per-export automation toggle, reusable schedule panel with org selector and custom config fields, "All Scheduled Exports" overview page. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic ensures missed runs are retried. All times in Danish time (Europe/Copenhagen, CET/CEST).
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant). Centralized email service reusable by any page.
+- **GDPR — Subject Request** — Submit GDPR data subject requests for a selected customer org. Guided step-by-step flow: choose request type (Article 15 Right of Access, Article 16 Right to Rectification, Article 17 Right to Erasure), enter known identifiers (name, email, phone, address, social handles), review matched subjects returned by Genesys, enter replacement values for rectification requests, then confirm and submit. After submission, a direct link to Request Status is shown.
+- **GDPR — Request Status** — View all previously submitted GDPR requests for a selected customer org. Columns: Date, Type, Subject, Subject Type, Status, Completed, Details, and full Request ID. For Article 15 Access requests, signed download links appear once Genesys has fulfilled the export (typically 1–2 business days).
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
 - **Top-level menu groups** — Data Actions, Data Tables, Export, Interactions, and Phones each have their own top-level nav section
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
@@ -55,7 +57,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
                                 │         runner               │
  GitHub Actions (cron)          └────┬─────────────────────────┘
 ┌─────────────┐                      │
-│ Every 5 min │── POST /api/ ───────▶│
+│  Every hour │── POST /api/ ───────▶│
 │ scheduled-  │   scheduled-runner   │
 │ runner.yml  │                      │
 └─────────────┘              Encrypted app settings
@@ -89,7 +91,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
 | Auth (customers) | OAuth 2.0 Client Credentials (via backend) |
 | Email | Mailjet v3.1 Send API (EU, GDPR-compliant) |
 | Schedule storage | Azure Table Storage |
-| Scheduled runner | GitHub Actions cron (every 5 min) |
+| Scheduled runner | GitHub Actions cron (hourly) |
 | CI/CD | GitHub Actions |
 
 ## Project Structure
@@ -120,6 +122,7 @@ genesys-admin-app/
 │   ├── pages/
 │   │   ├── welcome.js            Welcome / landing page
 │   │   ├── notfound.js           404 page
+│   │   ├── accessdenied.js       Access denied page
 │   │   ├── placeholder.js        Generic "coming soon" stub
 │   │   ├── dataactions/
 │   │   │   ├── copyBetweenOrgs.js   Copy data action between orgs
@@ -127,6 +130,9 @@ genesys-admin-app/
 │   │   ├── datatables/
 │   │   │   ├── copySingleOrg.js     Copy table within same org
 │   │   │   └── copyBetweenOrgs.js   Copy table between orgs
+│   │   ├── gdpr/
+│   │   │   ├── subjectRequest.js    GDPR Subject Request (Articles 15, 16, 17)
+│   │   │   └── requestStatus.js     GDPR Request Status + Article 15 download links
 │   │   ├── interactions/
 │   │   │   ├── search.js            Interaction Search page
 │   │   │   ├── move.js              Move Interactions between queues
@@ -190,7 +196,7 @@ The app supports automated, server-side export execution with email delivery.
 ### How it works
 
 1. **Schedule creation** — On any export page with automation enabled (e.g. Trustee, Last Login, All Roles, All Groups, Filtered on Role(s), License Consumption), toggle on automation and configure a daily/weekly/monthly schedule with email recipients. Per-org exports include an org selector in the schedule form; Filtered on Role(s) also shows a dynamic role picker; License Consumption also shows a dynamic licence filter; Last Login also has an inactivity filter.
-2. **GitHub Actions cron** — A workflow runs every 5 minutes and POSTs to `/api/scheduled-runner` with a shared secret
+2. **GitHub Actions cron** — A workflow runs every hour and POSTs to `/api/scheduled-runner` with a shared secret
 3. **Server-side execution** — The Azure Function checks Azure Table Storage for due schedules, runs the export using client credentials, and emails the result via Mailjet
 4. **Catch-up logic** — If a run is missed (GitHub Actions delays), the next cycle picks it up automatically. Only one run per schedule per day.
 5. **All times are Danish time** — Europe/Copenhagen (CET in winter, CEST in summer)

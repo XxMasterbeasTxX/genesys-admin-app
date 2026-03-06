@@ -24,6 +24,8 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Documentation Export** — Generate a full Genesys Cloud configuration export for a selected org, mirroring the Python `Export_All.py` output. Produces up to 42 alphabetically sorted configuration sheets (Agent Copilots, DID Numbers, Flows, Queues, Users, OAuth clients, Outbound, and more) plus a styled Index cover sheet with table of contents and clickable hyperlinks. A second workbook containing all DataTable contents (one alphabetically sorted sheet per table with its rows, plus an Index cover sheet showing row counts per table) is bundled alongside the main workbook as a ZIP when present. Export can take 5–10 minutes for large orgs.
 - **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, org selector for per-org exports, "All Scheduled Exports" overview.
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant)
+- **GDPR — Subject Request** — Submit GDPR data subject requests for a selected customer org. Guided step-by-step flow: choose request type (Article 15 Right of Access, Article 16 Right to Rectification, Article 17 Right to Erasure), enter known identifiers (name, email, phone, address, social handles), review matched subjects returned by Genesys, enter replacement values for rectification requests, then confirm and submit. After submission, a direct link to Request Status is shown. Processing is asynchronous — Genesys handles requests in the background (up to 14 days for deletions).
+- **GDPR — Request Status** — View all previously submitted GDPR requests for a selected customer org. Columns: Date, Type, Subject, Subject Type, Status, Completed, Details, and full Request ID. For Article 15 Access requests, signed download links appear here once Genesys has fulfilled the export (typically 1–2 business days).
 
 ---
 
@@ -521,7 +523,7 @@ az staticwebapp appsettings set --name genesys-admin-app \
 
 ## 14. Configure Scheduled Exports
 
-Scheduled exports let users automate any export (e.g. Trustee) on a daily, weekly, or monthly schedule with email delivery. The system uses Azure Table Storage for schedule data, and a GitHub Actions cron workflow to trigger the server-side runner every 5 minutes.
+Scheduled exports let users automate any export (e.g. Trustee) on a daily, weekly, or monthly schedule with email delivery. The system uses Azure Table Storage for schedule data, and a GitHub Actions cron workflow to trigger the server-side runner every hour.
 
 ### 14a. Create an Azure Storage Account
 
@@ -579,7 +581,7 @@ Go to your GitHub repo → **Settings** → **Secrets and variables** → **Acti
 
 ### 14e. How it works
 
-1. A GitHub Actions workflow (`.github/workflows/scheduled-runner.yml`) runs every 5 minutes via cron
+1. A GitHub Actions workflow (`.github/workflows/scheduled-runner.yml`) runs every hour via cron
 2. It POSTs to `/api/scheduled-runner` with the shared secret in the `x-runner-key` header
 3. The Azure Function verifies the secret, loads enabled schedules from Azure Table Storage, checks which are due (in Danish time — Europe/Copenhagen, CET/CEST)
 4. For each due schedule, it runs the export server-side using client credentials, builds the Excel file, and emails it via Mailjet
@@ -652,6 +654,8 @@ After pushing the config update:
 | 44 | License Consumption email | License Consumption export with email enabled sends attachment to recipients via Mailjet |
 | 45 | License Consumption scheduled export | Toggle automation; licence filter picker loads dynamically per org; schedule saved with exportConfig.licenseFilter; Config column shown in schedule list |
 | 46 | Documentation Export | Select org; click Generate Documentation; spinner shown during fetch (5–10 min); main workbook downloaded as XLSX (or ZIP when DataTables present); main workbook has Index cover sheet + up to 42 alphabetically sorted config sheets; DataTables workbook has Index cover sheet (with row counts) + one alphabetically sorted sheet per data table |
+| 47 | GDPR — Subject Request | Select org; choose request type (Access / Rectification / Erasure); enter identifiers (name, email, phone, etc.); click Search — matched subjects appear; for Rectification: enter replacement values per field; tick confirmation for Erasure; click Submit — request IDs returned; link to Request Status shown |
+| 48 | GDPR — Request Status | Select org; click Load / Refresh; table shows Date, Type, Subject, Subject Type, Status, Completed, Details, Request ID; fulfilled Access requests show download links in Details column |
 | 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
 | 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
 | 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
@@ -814,7 +818,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
                                 │         runner               │
  GitHub Actions (cron)          └────┬─────────────────────────┘
 ┌─────────────┐                      │
-│ Every 5 min │── POST /api/ ───────▶│
+│  Every hour │── POST /api/ ───────▶│
 │ scheduled-  │   scheduled-runner   │
 │ runner.yml  │                      │
 └─────────────┘              Encrypted app settings
@@ -863,6 +867,7 @@ genesys-admin-app/
 │   ├── pages/
 │   │   ├── welcome.js            Welcome / landing page
 │   │   ├── notfound.js           404 page
+│   │   ├── accessdenied.js       Access denied page
 │   │   ├── placeholder.js        Generic "coming soon" stub
 │   │   ├── dataactions/
 │   │   │   ├── copyBetweenOrgs.js   Copy data action between orgs
@@ -870,6 +875,9 @@ genesys-admin-app/
 │   │   ├── datatables/
 │   │   │   ├── copySingleOrg.js     Copy table within same org
 │   │   │   └── copyBetweenOrgs.js   Copy table between orgs
+│   │   ├── gdpr/
+│   │   │   ├── subjectRequest.js    GDPR Subject Request (Articles 15, 16, 17)
+│   │   │   └── requestStatus.js     GDPR Request Status + Article 15 download links
 │   │   ├── interactions/
 │   │   │   ├── search.js            Interaction Search page
 │   │   │   ├── move.js              Move Interactions between queues
