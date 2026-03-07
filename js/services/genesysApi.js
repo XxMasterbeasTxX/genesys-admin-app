@@ -361,6 +361,16 @@ export async function updateQueueDivision(api, orgId, queueId, divisionId, versi
   });
 }
 
+/** Fetch a single queue by ID (full object). */
+export async function getQueue(api, orgId, queueId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/routing/queues/${queueId}`);
+}
+
+/** Full PUT update of a queue (required to change division). */
+export async function putQueue(api, orgId, queueId, body) {
+  return api.proxyGenesys(orgId, "PUT", `/api/v2/routing/queues/${queueId}`, { body });
+}
+
 /**
  * Move one or more objects to a division using the batch authorization endpoint.
  * objects: [{ id, type }] where type is e.g. "QUEUE", "DATATABLES", "USER".

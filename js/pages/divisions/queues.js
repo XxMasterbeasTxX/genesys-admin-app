@@ -307,7 +307,9 @@ export default function renderDivisionQueues({ route, me, api, orgContext }) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${q.name || q.id}…`);
 
       try {
-        await gc.updateQueueDivision(api, org.id, q.id, targetId, q.version);
+        // Queues require a full PUT — fetch the current object, then PUT with updated division
+        const full = await gc.getQueue(api, org.id, q.id);
+        await gc.putQueue(api, org.id, q.id, { ...full, division: { id: targetId } });
         q.division = { id: targetId, name: targetName };
         selectedIds.delete(q.id);
         results.push({ queue: q, ok: true, detail: `→ ${targetName}` });
