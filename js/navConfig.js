@@ -66,6 +66,7 @@ export const NAV_TREE = [
           { label: "Milestones", path: "flow-milestone", enabled: true, access: "divisions.architect.flowMilestone" },
           { label: "Flow Outcomes",   path: "flow-outcome",   enabled: true, access: "divisions.architect.flowOutcome"   },
           { label: "Scripts",        path: "script",         enabled: true, access: "divisions.architect.script"        },
+          { label: "Data Tables",    path: "data-tables",    enabled: true, access: "divisions.architect.dataTables"    },
         ],
       },
       // ── Outbound ──────────────────────────────────────
@@ -99,16 +100,6 @@ export const NAV_TREE = [
         children: [
           { label: "Workbins",  path: "workbin",  enabled: true, access: "divisions.task.workbin"  },
           { label: "Work Types", path: "worktype", enabled: true, access: "divisions.task.worktype" },
-        ],
-      },
-      // ── Data ──────────────────────────────────────────
-      {
-        label: "Data",
-        path: "data",
-        enabled: true,
-        children: [
-          { label: "Data Tables", path: "data-tables", enabled: true, access: "divisions.data.dataTables" },
-          { label: "Libraries",    path: "library",     enabled: true, access: "divisions.data.library"    },
         ],
       },
     ],

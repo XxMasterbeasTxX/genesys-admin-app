@@ -110,11 +110,8 @@ const registry = {
   "/divisions/task/worktype": (ctx) =>
     import("./pages/divisions/worktype.js").then((m) => m.default(ctx)),
 
-  // ── Divisions › Data ──────────────────────────────────
-  "/divisions/data/data-tables": (ctx) =>
+  "/divisions/architect/data-tables": (ctx) =>
     import("./pages/divisions/dataTables.js").then((m) => m.default(ctx)),
-  "/divisions/data/library": (ctx) =>
-    import("./pages/divisions/library.js").then((m) => m.default(ctx)),
 
   // ── GDPR ──────────────────────────────────────────────
   "/gdpr/subject-request": (ctx) =>
