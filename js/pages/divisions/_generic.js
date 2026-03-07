@@ -14,6 +14,8 @@
  *   searchFn?          : (item: Object, query: string) => boolean,
  *   extraFilters?      : string,   HTML injected after the Search control (left column)
  *   onExtraFilterSetup?: (el: HTMLElement) => void,  called once after render
+ *   getDivision?       : (item: Object) => {id?: string, name?: string} | null,
+ *   setDivision?       : (item: Object, d: {id: string, name: string}) => void,
  * }} cfg
  */
 import * as gc from "../../services/genesysApi.js";
@@ -21,7 +23,10 @@ import { escapeHtml, sleep } from "../../utils.js";
 
 export default function renderDivisionPage(ctx, cfg) {
   const { api, orgContext } = ctx;
-  const { objectType, label, fetchFn, columns, searchFn, extraFilters, onExtraFilterSetup } = cfg;
+  const { objectType, label, fetchFn, columns, searchFn, extraFilters, onExtraFilterSetup,
+          getDivision: _getDivision, setDivision: _setDivision } = cfg;
+  const getDivision = _getDivision || (i => i.division);
+  const setDivision = _setDivision || ((i, d) => { i.division = d; });
 
   const el = document.createElement("section");
   el.className = "card";
@@ -38,6 +43,7 @@ export default function renderDivisionPage(ctx, cfg) {
   // ── State ─────────────────────────────────────────────
   let allItems      = [];
   let divisions     = [];
+  let divisionById  = new Map();
   let selectedIds   = new Set();
   let isRunning     = false;
   let tableExpanded = true;
@@ -174,11 +180,17 @@ export default function renderDivisionPage(ctx, cfg) {
     $progressBar.style.width = "0%";
   }
 
+  function divName(item) {
+    const d = getDivision(item);
+    if (!d) return "—";
+    return d.name || divisionById.get(d.id)?.name || "—";
+  }
+
   function getVisibleItems() {
     const srcFilter = $srcDiv.value;
     const searchVal = $search.value.trim().toLowerCase();
     return allItems.filter(item => {
-      if (srcFilter && item.division?.id !== srcFilter) return false;
+      if (srcFilter && getDivision(item)?.id !== srcFilter) return false;
       if (searchVal) {
         const match = searchFn
           ? searchFn(item, searchVal)
@@ -224,7 +236,7 @@ export default function renderDivisionPage(ctx, cfg) {
       return `<tr class="${selectedIds.has(item.id) ? "dv-row-selected" : ""}">
         <td class="dv-col-cb"><input type="checkbox" class="dv-cb" data-id="${escapeHtml(item.id)}" ${checked}></td>
         ${columns.map(c => `<td>${escapeHtml(String(c.get(item) ?? "—"))}</td>`).join("")}
-        <td>${escapeHtml(item.division?.name || "—")}</td>
+        <td>${escapeHtml(divName(item))}</td>
       </tr>`;
     }).join("");
 
@@ -267,6 +279,7 @@ export default function renderDivisionPage(ctx, cfg) {
   (async () => {
     try {
       divisions = await gc.fetchAllDivisions(api, org.id);
+      divisionById = new Map(divisions.map(d => [d.id, d]));
       populateDivisionDropdowns();
     } catch (err) {
       setStatus(`Failed to load divisions: ${err.message}`, "error");
@@ -302,8 +315,9 @@ export default function renderDivisionPage(ctx, cfg) {
       // Rebuild source division dropdown to only show divisions present in the data
       const divMap = new Map();
       for (const item of allItems) {
-        if (item.division?.id) {
-          divMap.set(item.division.id, item.division.name || item.division.id);
+        const d = getDivision(item);
+        if (d?.id) {
+          divMap.set(d.id, d.name || divisionById.get(d.id)?.name || d.id);
         }
       }
       const previousSrc = $srcDiv.value;
@@ -352,7 +366,7 @@ export default function renderDivisionPage(ctx, cfg) {
 
       try {
         await gc.moveToDivision(api, org.id, targetId, objectType, [item.id]);
-        item.division = { id: targetId, name: targetName };
+        setDivision(item, { id: targetId, name: targetName });
         selectedIds.delete(item.id);
         results.push({ item, ok: true, detail: `→ ${targetName}` });
         ok++;
