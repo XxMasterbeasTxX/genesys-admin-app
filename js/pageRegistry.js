@@ -54,13 +54,67 @@ const registry = {
   "/export/documentation/create": (ctx) =>
     import("./pages/export/documentation/create.js").then((m) => m.default(ctx)),
 
-  // ── Divisions ─────────────────────────────────────────
-  "/divisions/data-tables": (ctx) =>
-    import("./pages/divisions/dataTables.js").then((m) => m.default(ctx)),
-  "/divisions/queues": (ctx) =>
-    import("./pages/divisions/queues.js").then((m) => m.default(ctx)),
-  "/divisions/users": (ctx) =>
+  // ── Divisions › People ────────────────────────────────
+  "/divisions/people/users": (ctx) =>
     import("./pages/divisions/users.js").then((m) => m.default(ctx)),
+  "/divisions/people/team": (ctx) =>
+    import("./pages/divisions/team.js").then((m) => m.default(ctx)),
+
+  // ── Divisions › Routing ───────────────────────────────
+  "/divisions/routing/queues": (ctx) =>
+    import("./pages/divisions/queues.js").then((m) => m.default(ctx)),
+  "/divisions/routing/callroute": (ctx) =>
+    import("./pages/divisions/callroute.js").then((m) => m.default(ctx)),
+  "/divisions/routing/emergency-groups": (ctx) =>
+    import("./pages/divisions/emergencyGroups.js").then((m) => m.default(ctx)),
+  "/divisions/routing/extension-pool": (ctx) =>
+    import("./pages/divisions/extensionPool.js").then((m) => m.default(ctx)),
+  "/divisions/routing/routing-schedules": (ctx) =>
+    import("./pages/divisions/routingSchedules.js").then((m) => m.default(ctx)),
+  "/divisions/routing/routing-schedule-groups": (ctx) =>
+    import("./pages/divisions/routingScheduleGroups.js").then((m) => m.default(ctx)),
+  "/divisions/routing/skill-group": (ctx) =>
+    import("./pages/divisions/skillGroup.js").then((m) => m.default(ctx)),
+
+  // ── Divisions › Architect ─────────────────────────────
+  "/divisions/architect/flow": (ctx) =>
+    import("./pages/divisions/flow.js").then((m) => m.default(ctx)),
+  "/divisions/architect/flow-milestone": (ctx) =>
+    import("./pages/divisions/flowMilestone.js").then((m) => m.default(ctx)),
+  "/divisions/architect/flow-outcome": (ctx) =>
+    import("./pages/divisions/flowOutcome.js").then((m) => m.default(ctx)),
+  "/divisions/architect/script": (ctx) =>
+    import("./pages/divisions/script.js").then((m) => m.default(ctx)),
+
+  // ── Divisions › Outbound ──────────────────────────────
+  "/divisions/outbound/campaign": (ctx) =>
+    import("./pages/divisions/campaign.js").then((m) => m.default(ctx)),
+  "/divisions/outbound/contact-list": (ctx) =>
+    import("./pages/divisions/contactList.js").then((m) => m.default(ctx)),
+  "/divisions/outbound/dnc-list": (ctx) =>
+    import("./pages/divisions/dncList.js").then((m) => m.default(ctx)),
+  "/divisions/outbound/email-campaign": (ctx) =>
+    import("./pages/divisions/emailCampaign.js").then((m) => m.default(ctx)),
+  "/divisions/outbound/messaging-campaign": (ctx) =>
+    import("./pages/divisions/messagingCampaign.js").then((m) => m.default(ctx)),
+
+  // ── Divisions › Workforce Management ─────────────────
+  "/divisions/workforce/business-unit": (ctx) =>
+    import("./pages/divisions/businessUnit.js").then((m) => m.default(ctx)),
+  "/divisions/workforce/management-unit": (ctx) =>
+    import("./pages/divisions/managementUnit.js").then((m) => m.default(ctx)),
+
+  // ── Divisions › Task Management ───────────────────────
+  "/divisions/task/workbin": (ctx) =>
+    import("./pages/divisions/workbin.js").then((m) => m.default(ctx)),
+  "/divisions/task/worktype": (ctx) =>
+    import("./pages/divisions/worktype.js").then((m) => m.default(ctx)),
+
+  // ── Divisions › Data ──────────────────────────────────
+  "/divisions/data/data-tables": (ctx) =>
+    import("./pages/divisions/dataTables.js").then((m) => m.default(ctx)),
+  "/divisions/data/library": (ctx) =>
+    import("./pages/divisions/library.js").then((m) => m.default(ctx)),
 
   // ── GDPR ──────────────────────────────────────────────
   "/gdpr/subject-request": (ctx) =>

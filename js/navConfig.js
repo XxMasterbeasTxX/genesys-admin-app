@@ -31,9 +31,86 @@ export const NAV_TREE = [
     path: "divisions",
     enabled: true,
     children: [
-      { label: "Data Tables", path: "data-tables", enabled: true, access: "divisions.dataTables" },
-      { label: "Queues",      path: "queues",      enabled: true, access: "divisions.queues"     },
-      { label: "Users",       path: "users",       enabled: true, access: "divisions.users"      },
+      // ── People ────────────────────────────────────────
+      {
+        label: "People",
+        path: "people",
+        enabled: true,
+        children: [
+          { label: "USER", path: "users", enabled: true, access: "divisions.people.users" },
+          { label: "TEAM", path: "team",  enabled: true, access: "divisions.people.team"  },
+        ],
+      },
+      // ── Routing ───────────────────────────────────────
+      {
+        label: "Routing",
+        path: "routing",
+        enabled: true,
+        children: [
+          { label: "QUEUE",                  path: "queues",                  enabled: true, access: "divisions.routing.queues"                  },
+          { label: "CALLROUTE",              path: "callroute",               enabled: true, access: "divisions.routing.callroute"               },
+          { label: "EMERGENCYGROUPS",        path: "emergency-groups",        enabled: true, access: "divisions.routing.emergencyGroups"         },
+          { label: "EXTENSIONPOOL",          path: "extension-pool",          enabled: true, access: "divisions.routing.extensionPool"           },
+          { label: "ROUTINGSCHEDULES",       path: "routing-schedules",       enabled: true, access: "divisions.routing.routingSchedules"        },
+          { label: "ROUTINGSCHEDULEGROUPS",  path: "routing-schedule-groups", enabled: true, access: "divisions.routing.routingScheduleGroups"   },
+          { label: "SKILLGROUP",             path: "skill-group",             enabled: true, access: "divisions.routing.skillGroup"              },
+        ],
+      },
+      // ── Architect ─────────────────────────────────────
+      {
+        label: "Architect",
+        path: "architect",
+        enabled: true,
+        children: [
+          { label: "FLOW",          path: "flow",           enabled: true, access: "divisions.architect.flow"          },
+          { label: "FLOWMILESTONE", path: "flow-milestone", enabled: true, access: "divisions.architect.flowMilestone" },
+          { label: "FLOWOUTCOME",   path: "flow-outcome",   enabled: true, access: "divisions.architect.flowOutcome"   },
+          { label: "SCRIPT",        path: "script",         enabled: true, access: "divisions.architect.script"        },
+        ],
+      },
+      // ── Outbound ──────────────────────────────────────
+      {
+        label: "Outbound",
+        path: "outbound",
+        enabled: true,
+        children: [
+          { label: "CAMPAIGN",          path: "campaign",           enabled: true, access: "divisions.outbound.campaign"          },
+          { label: "CONTACTLIST",       path: "contact-list",       enabled: true, access: "divisions.outbound.contactList"       },
+          { label: "DNCLIST",           path: "dnc-list",           enabled: true, access: "divisions.outbound.dncList"           },
+          { label: "EMAILCAMPAIGN",     path: "email-campaign",     enabled: true, access: "divisions.outbound.emailCampaign"     },
+          { label: "MESSAGINGCAMPAIGN", path: "messaging-campaign", enabled: true, access: "divisions.outbound.messagingCampaign" },
+        ],
+      },
+      // ── Workforce Management ──────────────────────────
+      {
+        label: "Workforce Mgmt",
+        path: "workforce",
+        enabled: true,
+        children: [
+          { label: "BUSINESSUNIT",   path: "business-unit",   enabled: true, access: "divisions.workforce.businessUnit"   },
+          { label: "MANAGEMENTUNIT", path: "management-unit", enabled: true, access: "divisions.workforce.managementUnit" },
+        ],
+      },
+      // ── Task Management ───────────────────────────────
+      {
+        label: "Task Mgmt",
+        path: "task",
+        enabled: true,
+        children: [
+          { label: "WORKBIN",  path: "workbin",  enabled: true, access: "divisions.task.workbin"  },
+          { label: "WORKTYPE", path: "worktype", enabled: true, access: "divisions.task.worktype" },
+        ],
+      },
+      // ── Data ──────────────────────────────────────────
+      {
+        label: "Data",
+        path: "data",
+        enabled: true,
+        children: [
+          { label: "DATATABLES", path: "data-tables", enabled: true, access: "divisions.data.dataTables" },
+          { label: "LIBRARY",    path: "library",     enabled: true, access: "divisions.data.library"    },
+        ],
+      },
     ],
   },
   {

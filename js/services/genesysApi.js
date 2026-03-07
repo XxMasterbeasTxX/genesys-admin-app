@@ -685,6 +685,177 @@ export async function getExternalContact(api, orgId, contactId) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Architect — Flow milestones & outcomes
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all flow milestones. */
+export async function fetchAllFlowMilestones(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/flows/milestones", opts);
+}
+
+/** Fetch all flow outcomes. */
+export async function fetchAllFlowOutcomes(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/flows/outcomes", opts);
+}
+
+/** Fetch all scripts. */
+export async function fetchAllScripts(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/scripts", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Routing — Extended (call routes, emergency groups, extension pools,
+//           skill groups, routing schedules already in Architect section)
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all call routes. */
+export async function fetchAllCallRoutes(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/routing/callroutes", opts);
+}
+
+/** Fetch all emergency groups. */
+export async function fetchAllEmergencyGroups(api, orgId, opts = {}) {
+  return fetchAllPages(
+    api, orgId,
+    "/api/v2/telephony/providers/edges/emergencygroups",
+    opts
+  );
+}
+
+/** Fetch all extension pools. */
+export async function fetchAllExtensionPools(api, orgId, opts = {}) {
+  return fetchAllPages(
+    api, orgId,
+    "/api/v2/telephony/providers/edges/extensionpools",
+    opts
+  );
+}
+
+/** Fetch all routing skill groups. */
+export async function fetchAllSkillGroups(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/routing/skillgroups", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// People / Teams
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all teams. */
+export async function fetchAllTeams(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/teams", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Outbound
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all outbound campaigns (voice). */
+export async function fetchAllCampaigns(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/outbound/campaigns", opts);
+}
+
+/** Fetch all outbound contact lists. */
+export async function fetchAllContactLists(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/outbound/contactlists", opts);
+}
+
+/** Fetch all DNC (Do Not Call) lists. */
+export async function fetchAllDncLists(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/outbound/dncLists", opts);
+}
+
+/** Fetch all outbound email campaigns. */
+export async function fetchAllEmailCampaigns(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/outbound/emailCampaigns", opts);
+}
+
+/** Fetch all outbound messaging campaigns. */
+export async function fetchAllMessagingCampaigns(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/outbound/messagingCampaigns", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Workforce Management
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all WFM business units. */
+export async function fetchAllBusinessUnits(api, orgId, opts = {}) {
+  return fetchAllPages(
+    api, orgId,
+    "/api/v2/workforcemanagement/businessunits",
+    opts
+  );
+}
+
+/** Fetch all WFM management units. */
+export async function fetchAllManagementUnits(api, orgId, opts = {}) {
+  return fetchAllPages(
+    api, orgId,
+    "/api/v2/workforcemanagement/managementunits",
+    opts
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Task Management
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch all task management workbins (POST-based query endpoint).
+ * Supports cursor pagination via response.nextUri / response.entities.
+ */
+export async function fetchAllWorkbins(api, orgId, opts = {}) {
+  const all = [];
+  let after = null;
+  while (true) {
+    const body = { pageSize: 100 };
+    if (after) body.cursor = after;
+    const resp = await api.proxyGenesys(
+      orgId, "POST",
+      "/api/v2/taskmanagement/workbins/query",
+      { body }
+    );
+    const items = resp.entities || [];
+    all.push(...items);
+    after = resp.cursor || null;
+    if (!after || items.length < 100) break;
+  }
+  return all;
+}
+
+/**
+ * Fetch all task management work types (POST-based query endpoint).
+ * Supports cursor pagination via response.cursor.
+ */
+export async function fetchAllWorktypes(api, orgId, opts = {}) {
+  const all = [];
+  let after = null;
+  while (true) {
+    const body = { pageSize: 100 };
+    if (after) body.cursor = after;
+    const resp = await api.proxyGenesys(
+      orgId, "POST",
+      "/api/v2/taskmanagement/worktypes/query",
+      { body }
+    );
+    const items = resp.entities || [];
+    all.push(...items);
+    after = resp.cursor || null;
+    if (!after || items.length < 100) break;
+  }
+  return all;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Response Management — Libraries
+// ─────────────────────────────────────────────────────────────────────
+
+/** Fetch all response management libraries. */
+export async function fetchAllLibraries(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/responsemanagement/libraries", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // GDPR
 // ─────────────────────────────────────────────────────────────────────
 
