@@ -7,8 +7,8 @@ export default function render(ctx) {
     label      : "Scripts",
     fetchFn    : (api, orgId, opts) => gc.fetchAllScripts(api, orgId, opts),
     columns    : [
-      { header: "Name",   get: i => i.name   || "—" },
-      { header: "Status", get: i => i.status || "—" },
+      { header: "Name",   get: i => i.name          || "—" },
+      { header: "Status", get: i => i.publishedDate ? "Published" : "Draft" },
     ],
   });
 }
