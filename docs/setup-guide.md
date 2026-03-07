@@ -26,6 +26,9 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant)
 - **GDPR — Subject Request** — Submit GDPR data subject requests for a selected customer org. Guided step-by-step flow: choose request type (Article 15 Right of Access, Article 16 Right to Rectification, Article 17 Right to Erasure), enter known identifiers (name, email, phone, address, social handles), review matched subjects returned by Genesys, enter replacement values for rectification requests, then confirm and submit. After submission, a direct link to Request Status is shown. Processing is asynchronous — Genesys handles requests in the background (up to 14 days for deletions).
 - **GDPR — Request Status** — View all previously submitted GDPR requests for a selected customer org. Columns: Date, Type, Subject, Subject Type, Status, Completed, Details, and full Request ID. For Article 15 Access requests, signed download links appear here once Genesys has fulfilled the export (typically 1–2 business days).
+- **Divisions — Users** — Reassign one or more users to a different division. Load all users for the org, optionally filter by source division or search by name, multi-select across any combination of divisions, choose a target division and apply. Two-column layout: filters + Load on the left, Target Division + Move Selected on the right. Table section is collapsible and auto-collapses after Apply. Uses `POST /api/v2/authorization/divisions/{id}/objects/USER`.
+- **Divisions — Queues** — Reassign one or more routing queues to a different division. Identical flow and layout to Divisions — Users. Uses `POST /api/v2/authorization/divisions/{id}/objects/QUEUE`.
+- **Divisions — Data Tables** — Reassign one or more data tables to a different division. Identical flow and layout. Uses `POST /api/v2/authorization/divisions/{id}/objects/DATATABLES`.
 
 ---
 
@@ -619,7 +622,7 @@ After pushing the config update:
 | 6 | Org selector dropdown appears | Lists all customers from `customers.json` |
 | 7 | `/api/customers` endpoint works | Returns JSON array of customers |
 | 8 | Selecting a customer updates the page | Page responds to org change |
-| 9 | Nav menu shows top-level groups | "Data Actions", "Data Tables", "Export", "Interactions", "Phones" — items sorted alphabetically |
+| 9 | Nav menu shows top-level groups | "Data Actions", "Data Tables", "Divisions", "Export", "Interactions", "Phones" — items sorted alphabetically |
 | 10 | Interaction Search works | Date range search returns conversations; queue/division dropdowns populate; queue search filters list; media type filter works; Participant Data filter works client-side |
 | 11 | Excel export works | Downloads `.xlsx` file |
 | 12 | Move Interactions works | Queue selectors load, preview and move succeed |
@@ -656,6 +659,9 @@ After pushing the config update:
 | 46 | Documentation Export | Select org; click Generate Documentation; spinner shown during fetch (5–10 min); main workbook downloaded as XLSX (or ZIP when DataTables present); main workbook has Index cover sheet + up to 42 alphabetically sorted config sheets; DataTables workbook has Index cover sheet (with row counts) + one alphabetically sorted sheet per data table |
 | 47 | GDPR — Subject Request | Select org; choose request type (Access / Rectification / Erasure); enter identifiers (name, email, phone, etc.); click Search — matched subjects appear; for Rectification: enter replacement values per field; tick confirmation for Erasure; click Submit — request IDs returned; link to Request Status shown |
 | 48 | GDPR — Request Status | Select org; click Load / Refresh; table shows Date, Type, Subject, Subject Type, Status, Completed, Details, Request ID; fulfilled Access requests show download links in Details column |
+| 49 | Divisions — Users | Select org; click Load; users load with count in toggle label; source division dropdown shows only divisions with users; filter by source division and/or search; select users; choose target division; click Move Selected — progress bar, results table shown, user table auto-collapses; toggle ▼/► expands/collapses table |
+| 50 | Divisions — Queues | Select org; click Load; queues load with count in toggle label; same layout and behaviour as Divisions — Users; Move Selected moves queues to target division |
+| 51 | Divisions — Data Tables | Select org; click Load; data tables load with count in toggle label; same layout and behaviour; Move Selected moves tables to target division |
 | 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
 | 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
 | 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |

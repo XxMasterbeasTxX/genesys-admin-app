@@ -28,8 +28,11 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant). Centralized email service reusable by any page.
 - **GDPR — Subject Request** — Submit GDPR data subject requests for a selected customer org. Guided step-by-step flow: choose request type (Article 15 Right of Access, Article 16 Right to Rectification, Article 17 Right to Erasure), enter known identifiers (name, email, phone, address, social handles), review matched subjects returned by Genesys, enter replacement values for rectification requests, then confirm and submit. After submission, a direct link to Request Status is shown.
 - **GDPR — Request Status** — View all previously submitted GDPR requests for a selected customer org. Columns: Date, Type, Subject, Subject Type, Status, Completed, Details, and full Request ID. For Article 15 Access requests, signed download links appear once Genesys has fulfilled the export (typically 1–2 business days).
+- **Divisions — Users** — Reassign one or more users to a different division. Load all users for the org, filter by source division or search by name, multi-select across divisions, choose a target division and apply. Uses the Genesys authorization objects API (`POST /api/v2/authorization/divisions/{id}/objects/USER`).
+- **Divisions — Queues** — Reassign one or more routing queues to a different division. Same two-column layout with collapsible table section, auto-collapse on apply. Uses `POST /api/v2/authorization/divisions/{id}/objects/QUEUE`.
+- **Divisions — Data Tables** — Reassign one or more data tables to a different division. Same layout and flow. Uses `POST /api/v2/authorization/divisions/{id}/objects/DATATABLES`.
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
-- **Top-level menu groups** — Data Actions, Data Tables, Export, Interactions, and Phones each have their own top-level nav section
+- **Top-level menu groups** — Data Actions, Data Tables, Divisions, Export, Interactions, and Phones each have their own top-level nav section
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
 
 ### Platform
@@ -130,6 +133,10 @@ genesys-admin-app/
 │   │   ├── datatables/
 │   │   │   ├── copySingleOrg.js     Copy table within same org
 │   │   │   └── copyBetweenOrgs.js   Copy table between orgs
+│   │   ├── divisions/
+│   │   │   ├── users.js             Reassign users to a different division
+│   │   │   ├── queues.js            Reassign routing queues to a different division
+│   │   │   └── dataTables.js        Reassign data tables to a different division
 │   │   ├── gdpr/
 │   │   │   ├── subjectRequest.js    GDPR Subject Request (Articles 15, 16, 17)
 │   │   │   └── requestStatus.js     GDPR Request Status + Article 15 download links
