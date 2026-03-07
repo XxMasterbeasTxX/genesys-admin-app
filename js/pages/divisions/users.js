@@ -351,14 +351,18 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${u.name || u.id}…`);
 
       try {
-        // User division must be set via the authorization divisions endpoint with type "PC_USER"
-        await gc.moveToDivision(api, org.id, targetId, [{ id: u.id, type: "PC_USER" }]);
+        // Genesys: user home division requires the authorization/divisions endpoint with type "USER"
+        // Requires the OAuth client to have the "authorization:division:edit" Genesys permission.
+        await gc.moveToDivision(api, org.id, targetId, [{ id: u.id, type: "USER" }]);
         u.division = { id: targetId, name: targetName };
         selectedIds.delete(u.id);
         results.push({ user: u, ok: true, detail: `→ ${targetName}` });
         ok++;
       } catch (err) {
-        results.push({ user: u, ok: false, detail: err.message });
+        const msg = err.status === 404
+          ? "404 – OAuth client needs 'authorization:division:edit' permission in Genesys"
+          : err.message;
+        results.push({ user: u, ok: false, detail: msg });
         fail++;
       }
 
