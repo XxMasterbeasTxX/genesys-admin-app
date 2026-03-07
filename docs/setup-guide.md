@@ -908,12 +908,37 @@ genesys-admin-app/
 │   │   ├── gdpr/
 │   │   │   ├── subjectRequest.js    GDPR Subject Request (Articles 15, 16, 17)
 │   │   │   └── requestStatus.js     GDPR Request Status + Article 15 download links
+│   │   ├── divisions/
+│   │   │   ├── _generic.js          Shared generic renderer with hooks (extraFilters, extraFilterFn, onItemsLoaded)
+│   │   │   ├── users.js             People — Users
+│   │   │   ├── team.js              People — Teams
+│   │   │   ├── queues.js            Routing — Queues
+│   │   │   ├── callroute.js         Routing — Call Routes
+│   │   │   ├── emergencyGroups.js   Routing — Emergency Groups
+│   │   │   ├── extensionPool.js     Routing — Extension Pools
+│   │   │   ├── routingSchedules.js  Routing — Schedules
+│   │   │   ├── routingScheduleGroups.js  Routing — Schedule Groups
+│   │   │   ├── skillGroup.js        Routing — Skill Groups
+│   │   │   ├── flow.js              Architect — Flows (Type dropdown filter)
+│   │   │   ├── flowMilestone.js     Architect — Flow Milestones
+│   │   │   ├── flowOutcome.js       Architect — Flow Outcomes
+│   │   │   ├── script.js            Architect — Scripts (Status column + filter)
+│   │   │   ├── dataTables.js        Architect — Data Tables
+│   │   │   ├── campaign.js          Outbound — Campaigns
+│   │   │   ├── contactList.js       Outbound — Contact Lists
+│   │   │   ├── dncList.js           Outbound — DNC Lists
+│   │   │   ├── emailCampaign.js     Outbound — Email Campaigns
+│   │   │   ├── messagingCampaign.js Outbound — Messaging Campaigns
+│   │   │   ├── businessUnit.js      Workforce Mgmt — Business Units
+│   │   │   ├── managementUnit.js    Workforce Mgmt — Management Units
+│   │   │   ├── workbin.js           Task Mgmt — Workbins
+│   │   │   └── worktype.js          Task Mgmt — Worktypes
 │   │   ├── interactions/
 │   │   │   ├── search.js            Interaction Search page
 │   │   │   ├── move.js              Move Interactions between queues
-│   │   │   └── disconnect.js        Force-disconnect conversations
+│   │   │   └── disconnect.js        Force-disconnect conversations (parallel batch of 10, status + progress only)
 │   │   ├── export/
-│   │   │   ├── scheduledExports.js   All Scheduled Exports overview
+│   │   │   ├── scheduledExports.js   All Scheduled Exports overview (with Last Run Status column)
 │   │   │   ├── licenses/
 │   │   │   │   └── consumption.js   License Consumption export + per-org automation
 │   │   │   ├── documentation/
