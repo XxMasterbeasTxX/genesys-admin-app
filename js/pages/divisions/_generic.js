@@ -14,6 +14,8 @@
  *   searchFn?          : (item: Object, query: string) => boolean,
  *   extraFilters?      : string,   HTML injected after the Search control (left column)
  *   onExtraFilterSetup?: (el: HTMLElement) => void,  called once after render
+ *   extraFilterFn?     : (item: Object) => boolean,  additional client-side filter predicate
+ *   onItemsLoaded?     : (items: Object[]) => void,  called after allItems is populated
  *   getDivision?       : (item: Object) => {id?: string, name?: string} | null,
  *   setDivision?       : (item: Object, d: {id: string, name: string}) => void,
  * }} cfg
@@ -24,6 +26,7 @@ import { escapeHtml, sleep } from "../../utils.js";
 export default function renderDivisionPage(ctx, cfg) {
   const { api, orgContext } = ctx;
   const { objectType, label, fetchFn, columns, searchFn, extraFilters, onExtraFilterSetup,
+          extraFilterFn, onItemsLoaded,
           getDivision: _getDivision, setDivision: _setDivision } = cfg;
   const getDivision = _getDivision || (i => i.division);
   const setDivision = _setDivision || ((i, d) => { i.division = d; });
@@ -197,6 +200,7 @@ export default function renderDivisionPage(ctx, cfg) {
           : (item.name || "").toLowerCase().includes(searchVal);
         if (!match) return false;
       }
+      if (extraFilterFn && !extraFilterFn(item)) return false;
       return true;
     });
   }
@@ -329,6 +333,8 @@ export default function renderDivisionPage(ctx, cfg) {
         .join("");
       $srcDiv.innerHTML = `<option value="">(All)</option>` + srcOpts;
       if (previousSrc && divMap.has(previousSrc)) $srcDiv.value = previousSrc;
+
+      if (onItemsLoaded) onItemsLoaded(allItems);
 
       $tableSection.style.display = "";
       $toggleLabel.textContent = `${label} (${allItems.length})`;
