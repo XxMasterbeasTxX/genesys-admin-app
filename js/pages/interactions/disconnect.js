@@ -180,7 +180,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
   // ── State ───────────────────────────────────────────
   let queues     = [];
   let candidates = [];     // conversations that passed filters
-  let results    = [];     // display rows [{convId, mediaType, startTime, status, error}]
   let isRunning  = false;
   let cancelled  = false;
   let currentMode = "single";
@@ -295,22 +294,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
       <div class="di-progress-bar" id="diProgressBar"></div>
     </div>
 
-    <!-- Results table -->
-    <div class="di-table-wrap" id="diTableWrap" style="display:none">
-      <table class="data-table di-table">
-        <thead>
-          <tr>
-            <th style="width:60px">#</th>
-            <th style="width:300px">Conversation ID</th>
-            <th style="width:100px">Media Type</th>
-            <th style="width:160px">Start Time</th>
-            <th style="width:100px">Status</th>
-            <th>Detail</th>
-          </tr>
-        </thead>
-        <tbody id="diTbody"></tbody>
-      </table>
-    </div>
   `;
 
   // ── DOM refs ────────────────────────────────────────
@@ -336,8 +319,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
   const $status       = el.querySelector("#diStatus");
   const $progressWrap = el.querySelector("#diProgressWrap");
   const $progressBar  = el.querySelector("#diProgressBar");
-  const $tableWrap    = el.querySelector("#diTableWrap");
-  const $tbody        = el.querySelector("#diTbody");
 
   // ── Mode switching ──────────────────────────────────
   $modeRadios.forEach(r => r.addEventListener("change", () => {
@@ -346,8 +327,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     $multiInput.style.display  = currentMode === "multiple" ? "" : "none";
     $queueInput.style.display  = currentMode === "queue" ? "" : "none";
     candidates = [];
-    results = [];
-    renderResults();
     setStatus(STATUS.ready);
   }));
 
@@ -387,27 +366,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     $disconnectBtn.disabled = running;
     $cancelBtn.style.display = running ? "" : "none";
     ssQueue.setEnabled(!running);
-  }
-
-  // ── Render results table ───────────────────────────
-  function renderResults() {
-    if (!results.length) { $tableWrap.style.display = "none"; return; }
-    $tableWrap.style.display = "";
-    $tbody.innerHTML = results.map((r, i) => {
-      const cls = r.status === "Disconnected" ? "di-ok"
-        : r.status === "Failed"    ? "di-fail"
-        : r.status === "Filtered"  ? "di-skip"
-        : r.status === "Cancelled" ? "di-cancel"
-        : "";
-      return `<tr>
-        <td>${i + 1}</td>
-        <td class="di-mono">${escapeHtml(r.convId)}</td>
-        <td>${escapeHtml(r.mediaType || "—")}</td>
-        <td>${escapeHtml(r.startTime || "—")}</td>
-        <td class="${cls}">${escapeHtml(r.status)}</td>
-        <td>${escapeHtml(r.error || "")}</td>
-      </tr>`;
-    }).join("");
   }
 
   // ── Get selected media types ───────────────────────
@@ -596,8 +554,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     cancelled = false;
     setButtonsRunning(true);
     candidates = [];
-    results = [];
-    renderResults();
 
     try {
       if (currentMode === "queue") {
@@ -605,7 +561,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
         if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
 
         candidates = await scanQueue(queueId, filters);
-        results = candidates.map(c => ({ ...c, status: "Pending", error: "" }));
       } else {
         const ids = parseConvIds();
         if (!ids.length) {
@@ -614,12 +569,8 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
           return;
         }
 
-        const { matched, skipped } = await scanIds(ids, filters);
+        const { matched } = await scanIds(ids, filters);
         candidates = matched;
-        results = [
-          ...matched.map(c => ({ ...c, status: "Pending", error: "" })),
-          ...skipped,
-        ];
       }
 
       if (cancelled) {
@@ -629,7 +580,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
       } else {
         setStatus(STATUS.previewed(candidates.length), "success");
       }
-      renderResults();
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
       console.error("Preview error:", err);
@@ -649,8 +599,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     if (!candidates.length) {
       cancelled = false;
       setButtonsRunning(true);
-      results = [];
-      renderResults();
 
       try {
         if (currentMode === "queue") {
@@ -664,14 +612,12 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
             setButtonsRunning(false);
             return;
           }
-          const { matched, skipped } = await scanIds(ids, filters);
+          const { matched } = await scanIds(ids, filters);
           candidates = matched;
-          results = [...skipped];
         }
 
         if (!candidates.length) {
           setStatus(STATUS.noResults);
-          renderResults();
           setButtonsRunning(false);
           hideProgress();
           return;
@@ -707,55 +653,32 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     setButtonsRunning(true);
     const orgId = orgContext.get();
 
-    const existingNonPending = results.filter(r => r.status !== "Pending");
-    results = [
-      ...candidates.map(c => ({ ...c, status: "Pending", error: "" })),
-      ...existingNonPending,
-    ];
-    renderResults();
-
     let okCount   = 0;
     let failCount = 0;
-    let lastRender = 0;
 
     for (let i = 0; i < candidates.length; i++) {
-      if (cancelled) {
-        for (let j = i; j < candidates.length; j++) results[j].status = "Cancelled";
-        renderResults();
-        break;
-      }
+      if (cancelled) break;
 
       setStatus(STATUS.disconnecting(i + 1, candidates.length));
       showProgress((i / candidates.length) * 100);
 
       try {
         await gc.disconnectConversation(api, orgId, candidates[i].convId);
-        results[i].status = "Disconnected";
         okCount++;
       } catch (err) {
-        results[i].status = "Failed";
-        results[i].error  = friendlyError(err);
         failCount++;
-      }
-
-      // Batch DOM updates — re-render at most every 25 completions or 300ms
-      const now = Date.now();
-      if (i === candidates.length - 1 || (i + 1) % 25 === 0 || now - lastRender > 300) {
-        renderResults();
-        lastRender = now;
       }
 
       if (i < candidates.length - 1) await sleep(50);
     }
 
     showProgress(100);
-    const skipCount = results.filter(r => r.status === "Filtered").length;
 
     if (cancelled) {
       const rem = candidates.length - okCount - failCount;
       setStatus(`Cancelled. Disconnected: ${okCount}, Failed: ${failCount}, Remaining: ${rem}.`);
     } else {
-      setStatus(STATUS.done(okCount, failCount, skipCount), failCount > 0 ? "error" : "success");
+      setStatus(STATUS.done(okCount, failCount, 0), failCount > 0 ? "error" : "success");
     }
 
     setTimeout(hideProgress, 800);
@@ -768,8 +691,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
 
   $clearBtn.addEventListener("click", () => {
     candidates = [];
-    results = [];
-    renderResults();
     hideProgress();
     setStatus(STATUS.ready);
   });
