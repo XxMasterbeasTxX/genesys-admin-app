@@ -338,8 +338,8 @@ export async function fetchAllUsers(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress });
 }
 
-/** Update a user's division. version is required by Genesys to prevent silent no-ops. */
-/** Update a user's division. Requires fresh version from GET. divisionObj = { id, name, selfUri }. */\nexport async function updateUserDivision(api, orgId, userId, divisionObj, version) {
+/** Update a user's division. Requires fresh version from GET. divisionObj = { id, name, selfUri }. */
+export async function updateUserDivision(api, orgId, userId, divisionObj, version) {
   return api.proxyGenesys(orgId, "PATCH", `/api/v2/users/${userId}`, {
     body: { version, division: divisionObj },
   });
