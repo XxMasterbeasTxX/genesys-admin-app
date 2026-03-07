@@ -351,9 +351,9 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${u.name || u.id}…`);
 
       try {
-        // Genesys: user home division requires the authorization/divisions endpoint with type "USER"
-        // Requires the OAuth client to have the "authorization:division:edit" Genesys permission.
-        await gc.moveToDivision(api, org.id, targetId, [{ id: u.id, type: "USER" }]);
+        // Genesys: user home division requires the authorization/divisions endpoint
+        // Body = array of ID strings; objectType passed as query param.
+        await gc.moveToDivision(api, org.id, targetId, "USER", [u.id]);
         u.division = { id: targetId, name: targetName };
         selectedIds.delete(u.id);
         results.push({ user: u, ok: true, detail: `→ ${targetName}` });

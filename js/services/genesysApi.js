@@ -378,12 +378,17 @@ export async function putQueue(api, orgId, queueId, body) {
  * objects: [{ id, type }] where type is e.g. "QUEUE", "DATATABLES", "USER".
  * Batches into groups of 100 automatically.
  */
-export async function moveToDivision(api, orgId, divisionId, objects) {
+/**
+ * Move objects to a division.
+ * objectType: "USER", "QUEUE", "DATATABLES", "FLOW", etc.
+ * ids: array of object ID strings.
+ */
+export async function moveToDivision(api, orgId, divisionId, objectType, ids) {
   const BATCH = 100;
-  for (let i = 0; i < objects.length; i += BATCH) {
+  for (let i = 0; i < ids.length; i += BATCH) {
     await api.proxyGenesys(orgId, "POST",
       `/api/v2/authorization/divisions/${divisionId}/objects`,
-      { body: objects.slice(i, i + BATCH) });
+      { query: { objectType }, body: ids.slice(i, i + BATCH) });
   }
 }
 
