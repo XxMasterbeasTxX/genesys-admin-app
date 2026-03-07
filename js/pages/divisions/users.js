@@ -351,9 +351,10 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${u.name || u.id}…`);
 
       try {
-        // Genesys: user home division requires the authorization/divisions endpoint
-        // Body = array of ID strings; objectType passed as query param.
-        await gc.moveToDivision(api, org.id, targetId, "USER", [u.id]);
+        // PATCH /users/{id} requires: full version from a fresh GET + full division object (id+name+selfUri)
+        const fresh = await gc.getUser(api, org.id, u.id);
+        const divObj = divisions.find(d => d.id === targetId) || { id: targetId, name: targetName, selfUri: `/api/v2/authorization/divisions/${targetId}` };
+        await gc.updateUserDivision(api, org.id, u.id, divObj, fresh.version);
         u.division = { id: targetId, name: targetName };
         selectedIds.delete(u.id);
         results.push({ user: u, ok: true, detail: `→ ${targetName}` });
