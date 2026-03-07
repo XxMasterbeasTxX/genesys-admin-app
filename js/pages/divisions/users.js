@@ -359,9 +359,8 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
         results.push({ user: u, ok: true, detail: `→ ${targetName}` });
         ok++;
       } catch (err) {
-        const msg = err.status === 404
-          ? "404 – OAuth client needs 'authorization:division:edit' permission in Genesys"
-          : err.message;
+        const body = err.body ? JSON.stringify(err.body) : "";
+        const msg = `${err.message}${body ? ` | ${body}` : ""}`;
         results.push({ user: u, ok: false, detail: msg });
         fail++;
       }
