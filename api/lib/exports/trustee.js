@@ -278,6 +278,7 @@ async function execute(context, schedule) {
     }
 
     // Build results
+    const totalOrgs = customers.length;
     const allUsers = Array.from(usersMap.values());
 
     if (!allUsers.length) {
