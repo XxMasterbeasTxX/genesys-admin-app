@@ -303,18 +303,13 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
         return;
       }
 
-      // Rebuild source division dropdown from actual data
-      const divMap = new Map();
-      for (const u of allUsers) {
-        if (u.division?.id) divMap.set(u.division.id, u.division.name || u.division.id);
-      }
-      const previousSrc = $srcDiv.value;
-      const srcOpts = [...divMap.entries()]
-        .sort((a, b) => a[1].localeCompare(b[1]))
-        .map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`)
+      // Rebuild source division dropdown from full divisions list
+      const srcOpts = divisions
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`)
         .join("");
       $srcDiv.innerHTML = `<option value="">(All)</option>` + srcOpts;
-      if (previousSrc && divMap.has(previousSrc)) $srcDiv.value = previousSrc;
 
       $tableSection.style.display = "";
       renderTable();
