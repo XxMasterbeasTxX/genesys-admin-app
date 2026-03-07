@@ -511,9 +511,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
         seen.add(c.conversationId);
         if (c.conversationEnd) continue; // already ended
 
-        // Must NOT have any agent currently ringing or connected — protect live calls
-        if (hasActiveAgentSegment(c)) continue;
-
         // Detect media type from sessions (analytics shape)
         const mediaType = getSessionMediaType(c) || "unknown";
 
