@@ -351,17 +351,17 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${u.name || u.id}…`);
 
       try {
-        // PATCH /users/{id} requires: full version from a fresh GET + full division object (id+name+selfUri)
-        const fresh = await gc.getUser(api, org.id, u.id);
-        const divObj = divisions.find(d => d.id === targetId) || { id: targetId, name: targetName, selfUri: `/api/v2/authorization/divisions/${targetId}` };
-        await gc.updateUserDivision(api, org.id, u.id, divObj, fresh.version);
+        // Log what we're sending for debugging
+        const debugInfo = `divId=${targetId} userId=${u.id}`;
+        await gc.moveToDivision(api, org.id, targetId, "USER", [u.id]);
         u.division = { id: targetId, name: targetName };
         selectedIds.delete(u.id);
-        results.push({ user: u, ok: true, detail: `→ ${targetName}` });
+        results.push({ user: u, ok: true, detail: `→ ${targetName} (${debugInfo})` });
         ok++;
       } catch (err) {
         const body = err.body ? JSON.stringify(err.body) : "";
-        const msg = `${err.message}${body ? ` | ${body}` : ""}`;
+        const debugInfo = `divId=${targetId} userId=${u.id}`;
+        const msg = `${err.message} [${debugInfo}]${body ? ` | ${body}` : ""}`;
         results.push({ user: u, ok: false, detail: msg });
         fail++;
       }
