@@ -2311,7 +2311,48 @@ body {
 .dv-badge--active   { background: rgba(52,211,153,0.15); color: #34d399; }
 .dv-badge--inactive { background: rgba(248,113,113,0.15); color: #f87171; }
 
-/* ── Target bar ──────────────────────────────────────────── */
+/* ── Top bar (two-column layout) ─────────────────────────── */
+.dv-top-bar {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+.dv-top-left  { flex: 1 1 auto; }
+.dv-top-right {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  min-width: 260px;
+}
+
+/* ── Collapsible section toggle ──────────────────────────── */
+.dv-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border, #e0e0e0);
+  padding: 0.5rem 0;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: inherit;
+  font-size: 0.95rem;
+  text-align: left;
+}
+.dv-section-toggle:hover { color: var(--accent, #0078d4); }
+.dv-toggle-icon {
+  font-size: 0.75rem;
+  transition: transform 0.15s;
+}
+
+/* ── Target bar (legacy, kept for compatibility) ─────────── */
 .dv-target-bar {
   margin-top: 12px;
   padding-top: 12px;

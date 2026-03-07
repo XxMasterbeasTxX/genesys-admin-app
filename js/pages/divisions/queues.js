@@ -34,8 +34,7 @@ export default function renderDivisionQueues({ route, me, api, orgContext }) {
   let allQueues   = [];
   let divisions   = [];
   let selectedIds = new Set();
-  let isRunning   = false;
-
+  let isRunning   = false;  let tableExpanded = true;
   // ── Render shell ─────────────────────────────────────
   el.innerHTML = `
     <h2>Divisions — Queues</h2>
@@ -45,47 +44,26 @@ export default function renderDivisionQueues({ route, me, api, orgContext }) {
       to move, then choose a target division and apply.
     </p>
 
-    <div class="di-controls">
-      <div class="di-control-group">
-        <label class="di-label">Source Division</label>
-        <select class="input dv-filter-select" id="dvSrcDiv">
-          <option value="">(All)</option>
-        </select>
+    <div class="dv-top-bar">
+      <div class="dv-top-left">
+        <div class="di-controls">
+          <div class="di-control-group">
+            <label class="di-label">Source Division</label>
+            <select class="input dv-filter-select" id="dvSrcDiv">
+              <option value="">(All)</option>
+            </select>
+          </div>
+          <div class="di-control-group dv-search-group">
+            <label class="di-label">Search</label>
+            <input type="text" class="input" id="dvSearch" placeholder="Filter by name…">
+          </div>
+          <div class="di-control-group dv-load-group">
+            <label class="di-label">&nbsp;</label>
+            <button class="btn" id="dvLoadBtn">Load</button>
+          </div>
+        </div>
       </div>
-      <div class="di-control-group dv-search-group">
-        <label class="di-label">Search</label>
-        <input type="text" class="input" id="dvSearch" placeholder="Filter by name…">
-      </div>
-      <div class="di-control-group dv-load-group">
-        <label class="di-label">&nbsp;</label>
-        <button class="btn" id="dvLoadBtn">Load</button>
-      </div>
-    </div>
-
-    <div class="di-status" id="dvStatusMsg">Select options and click Load.</div>
-
-    <div id="dvTableSection" style="display:none">
-      <div class="dv-select-bar">
-        <label class="dv-select-all-label">
-          <input type="checkbox" id="dvSelectAll">
-          <span id="dvSelectAllText">Select visible</span>
-        </label>
-        <span class="dv-selected-count" id="dvSelectedCount"></span>
-      </div>
-      <div class="dv-table-wrap">
-        <table class="data-table dv-table">
-          <thead>
-            <tr>
-              <th class="dv-col-cb"></th>
-              <th>Name</th>
-              <th>Current Division</th>
-            </tr>
-          </thead>
-          <tbody id="dvTbody"></tbody>
-        </table>
-      </div>
-
-      <div class="di-controls dv-target-bar">
+      <div class="dv-top-right">
         <div class="di-control-group">
           <label class="di-label">Target Division</label>
           <select class="input dv-filter-select" id="dvTargetDiv">
@@ -95,6 +73,36 @@ export default function renderDivisionQueues({ route, me, api, orgContext }) {
         <div class="di-control-group dv-load-group">
           <label class="di-label">&nbsp;</label>
           <button class="btn dv-btn-apply" id="dvApplyBtn" disabled>Move Selected</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="di-status" id="dvStatusMsg">Select options and click Load.</div>
+
+    <div id="dvTableSection" style="display:none">
+      <button class="dv-section-toggle" id="dvToggleBtn" type="button">
+        <span class="dv-toggle-icon">▼</span>
+        <span id="dvToggleLabel">Queues</span>
+      </button>
+      <div id="dvTableInner">
+        <div class="dv-select-bar">
+          <label class="dv-select-all-label">
+            <input type="checkbox" id="dvSelectAll">
+            <span id="dvSelectAllText">Select visible</span>
+          </label>
+          <span class="dv-selected-count" id="dvSelectedCount"></span>
+        </div>
+        <div class="dv-table-wrap">
+          <table class="data-table dv-table">
+            <thead>
+              <tr>
+                <th class="dv-col-cb"></th>
+                <th>Name</th>
+                <th>Current Division</th>
+              </tr>
+            </thead>
+            <tbody id="dvTbody"></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -120,6 +128,9 @@ export default function renderDivisionQueues({ route, me, api, orgContext }) {
   const $loadBtn        = el.querySelector("#dvLoadBtn");
   const $statusMsg      = el.querySelector("#dvStatusMsg");
   const $tableSection   = el.querySelector("#dvTableSection");
+  const $toggleBtn      = el.querySelector("#dvToggleBtn");
+  const $toggleLabel    = el.querySelector("#dvToggleLabel");
+  const $tableInner     = el.querySelector("#dvTableInner");
   const $selectAll      = el.querySelector("#dvSelectAll");
   const $selectAllText  = el.querySelector("#dvSelectAllText");
   const $selectedCount  = el.querySelector("#dvSelectedCount");
@@ -132,6 +143,12 @@ export default function renderDivisionQueues({ route, me, api, orgContext }) {
   const $resultsTbody   = el.querySelector("#dvResultsTbody");
 
   // ── Helpers ───────────────────────────────────────────
+  function setTableExpanded(expanded) {
+    tableExpanded = expanded;
+    $tableInner.style.display = expanded ? "" : "none";
+    $toggleBtn.querySelector(".dv-toggle-icon").textContent = expanded ? "▼" : "►";
+  }
+
   function setStatus(msg, type = "") {
     $statusMsg.textContent = msg;
     $statusMsg.className = "di-status" + (type ? ` di-status--${type}` : "");
@@ -273,6 +290,8 @@ export default function renderDivisionQueues({ route, me, api, orgContext }) {
       if (previousSrc && divMap.has(previousSrc)) $srcDiv.value = previousSrc;
 
       $tableSection.style.display = "";
+      $toggleLabel.textContent = `Queues (${allQueues.length})`;
+      setTableExpanded(true);
       renderTable();
       setStatus(`Loaded ${allQueues.length} queue${allQueues.length !== 1 ? "s" : ""}.`);
     } catch (err) {
@@ -333,6 +352,7 @@ export default function renderDivisionQueues({ route, me, api, orgContext }) {
       <td>${escapeHtml(r.detail)}</td>
     </tr>`).join("");
     $resultsSection.style.display = "";
+    setTableExpanded(false);
 
     renderTable();
     isRunning = false;
@@ -342,6 +362,7 @@ export default function renderDivisionQueues({ route, me, api, orgContext }) {
 
   // ── Event listeners ───────────────────────────────────
   $loadBtn.addEventListener("click", loadQueues);
+  $toggleBtn.addEventListener("click", () => setTableExpanded(!tableExpanded));
   $search.addEventListener("input", () => renderTable());
   $srcDiv.addEventListener("change", () => renderTable());
 
