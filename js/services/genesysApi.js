@@ -710,7 +710,7 @@ export async function fetchAllScripts(api, orgId, opts = {}) {
 
 /** Fetch all call routes. */
 export async function fetchAllCallRoutes(api, orgId, opts = {}) {
-  return fetchAllPages(api, orgId, "/api/v2/routing/callroutes", opts);
+  return fetchAllPages(api, orgId, "/api/v2/architect/ivrs", opts);
 }
 
 /** Fetch all emergency groups. */
