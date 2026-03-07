@@ -36,7 +36,7 @@ const STATUS = {
   loading:        "Loading queues…",
   scanning:       (i, n) => `Scanning interval ${i} of ${n}…`,
   inspecting:     (i, n) => `Inspecting conversation ${i} of ${n}…`,
-  disconnecting:  (i, n) => `Disconnecting ${i} of ${n}…`,
+  disconnecting:  (i, n) => `Disconnecting ${i}–${Math.min(i + 9, n)} of ${n}…`,
   previewed:      (n) => `Preview: ${n} conversation${n !== 1 ? "s" : ""} matching criteria.`,
   noResults:      "No conversations found matching the criteria.",
   done(ok, fail, skip) {
@@ -655,21 +655,24 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
 
     let okCount   = 0;
     let failCount = 0;
+    const BATCH   = 10; // concurrent requests per batch
 
-    for (let i = 0; i < candidates.length; i++) {
-      if (cancelled) break;
+    for (let i = 0; i < candidates.length && !cancelled; i += BATCH) {
+      const chunk = candidates.slice(i, i + BATCH);
 
       setStatus(STATUS.disconnecting(i + 1, candidates.length));
       showProgress((i / candidates.length) * 100);
 
-      try {
-        await gc.disconnectConversation(api, orgId, candidates[i].convId);
-        okCount++;
-      } catch (err) {
-        failCount++;
+      const settled = await Promise.allSettled(
+        chunk.map(c => gc.disconnectConversation(api, orgId, c.convId))
+      );
+
+      for (const r of settled) {
+        if (r.status === "fulfilled") okCount++;
+        else failCount++;
       }
 
-      if (i < candidates.length - 1) await sleep(50);
+      if (i + BATCH < candidates.length) await sleep(50);
     }
 
     showProgress(100);
