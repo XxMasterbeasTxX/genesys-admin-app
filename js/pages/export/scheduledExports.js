@@ -73,6 +73,7 @@ export default function renderScheduledExports({ route, me }) {
             <th>Enabled</th>
             <th>Created by</th>
             <th>Last run</th>
+            <th>Last run status</th>
             <th></th>
           </tr></thead>
           <tbody>`;
@@ -91,6 +92,12 @@ export default function renderScheduledExports({ route, me }) {
         <td>${s.lastRun
           ? `<span class="${s.lastStatus === "success" ? "se-ok" : "se-fail"}">${escapeHtml(new Date(s.lastRun).toLocaleString("da-DK", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }))}</span>`
           : `<span class="se-none">Never</span>`}</td>
+        <td>${!s.lastRun
+          ? `<span class="se-none">—</span>`
+          : s.lastStatus === "success"
+            ? `<span class="se-ok">Success</span>`
+            : `<span class="se-fail" title="${escapeHtml(s.lastError || "")}">Failure${s.lastError ? ` — ${escapeHtml(s.lastError)}` : ""}</span>`
+        }</td>
         <td>${editable
           ? `<button class="btn btn-sm sp-btn-edit" data-id="${s.id}">Edit</button>`
           : ""}</td>
