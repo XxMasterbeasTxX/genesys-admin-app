@@ -4,7 +4,7 @@ import * as gc from "../../services/genesysApi.js";
 export default function render(ctx) {
   return renderDivisionPage(ctx, {
     objectType : "TEAM",
-    label      : "TEAM",
+    label      : "Work Teams",
     fetchFn    : (api, orgId, opts) => gc.fetchAllTeams(api, orgId, opts),
     columns    : [
       { header: "Name",        get: i => i.name        || "—" },

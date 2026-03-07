@@ -4,7 +4,7 @@ import * as gc from "../../services/genesysApi.js";
 export default function render(ctx) {
   return renderDivisionPage(ctx, {
     objectType : "ROUTINGSCHEDULEGROUPS",
-    label      : "ROUTINGSCHEDULEGROUPS",
+    label      : "Routing Schedule Groups",
     fetchFn    : (api, orgId, opts) => gc.fetchAllScheduleGroups(api, orgId, opts),
     columns    : [
       { header: "Name",        get: i => i.name        || "—" },

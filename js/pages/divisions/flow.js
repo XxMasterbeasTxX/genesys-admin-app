@@ -4,7 +4,7 @@ import * as gc from "../../services/genesysApi.js";
 export default function render(ctx) {
   return renderDivisionPage(ctx, {
     objectType : "FLOW",
-    label      : "FLOW",
+    label      : "Flows",
     fetchFn    : (api, orgId, opts) => gc.fetchAllFlows(api, orgId, opts),
     columns    : [
       { header: "Name",  get: i => i.name  || "—" },

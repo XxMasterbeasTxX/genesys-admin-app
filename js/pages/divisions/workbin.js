@@ -4,7 +4,7 @@ import * as gc from "../../services/genesysApi.js";
 export default function render(ctx) {
   return renderDivisionPage(ctx, {
     objectType : "WORKBIN",
-    label      : "WORKBIN",
+    label      : "Workbins",
     fetchFn    : (api, orgId, opts) => gc.fetchAllWorkbins(api, orgId, opts),
     columns    : [
       { header: "Name",        get: i => i.name        || "—" },

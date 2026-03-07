@@ -4,7 +4,7 @@ import * as gc from "../../services/genesysApi.js";
 export default function render(ctx) {
   return renderDivisionPage(ctx, {
     objectType : "MESSAGINGCAMPAIGN",
-    label      : "MESSAGINGCAMPAIGN",
+    label      : "Messaging Campaigns",
     fetchFn    : (api, orgId, opts) => gc.fetchAllMessagingCampaigns(api, orgId, opts),
     columns    : [
       { header: "Name",           get: i => i.name           || "—" },
