@@ -351,9 +351,9 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${u.name || u.id}…`);
 
       try {
-        // Users require a full PUT — fetch current object to get latest version, then PUT with updated division
-        const full = await gc.getUser(api, org.id, u.id);
-        await gc.putUser(api, org.id, u.id, { ...full, division: { id: targetId } });
+        // Fetch fresh version first — stale version from list causes silent no-op on PATCH
+        const fresh = await gc.getUser(api, org.id, u.id);
+        await gc.updateUserDivision(api, org.id, u.id, targetId, fresh.version);
         u.division = { id: targetId, name: targetName };
         selectedIds.delete(u.id);
         results.push({ user: u, ok: true, detail: `→ ${targetName}` });
