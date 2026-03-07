@@ -16,6 +16,7 @@
  */
 import { escapeHtml, formatDateTime, sleep } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
+import { createSingleSelect } from "../../components/multiSelect.js";
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -237,13 +238,9 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
       <!-- Queue selector -->
       <div id="diQueueInput" style="display:none">
         <div class="di-controls">
-          <div class="di-control-group di-queue-group">
+          <div class="di-control-group">
             <label class="di-label">Queue</label>
-            <input type="text" class="input di-queue-search" id="diQueueSearch"
-                   placeholder="Search queues…" disabled>
-            <select class="input di-queue-select" id="diQueue" disabled>
-              <option value="">Loading queues…</option>
-            </select>
+            <div id="diQueueDropdown"></div>
           </div>
         </div>
       </div>
@@ -323,8 +320,9 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
   const $queueInput   = el.querySelector("#diQueueInput");
   const $convId       = el.querySelector("#diConvId");
   const $convIds      = el.querySelector("#diConvIds");
-  const $queueSearch  = el.querySelector("#diQueueSearch");
-  const $queue        = el.querySelector("#diQueue");
+  const ssQueue = createSingleSelect({ placeholder: "— Select queue —", searchable: true });
+  el.querySelector("#diQueueDropdown").append(ssQueue.el);
+  ssQueue.setEnabled(false);
   const $mediaAll     = el.querySelector("#diMediaAll");
   const $mediaCbs     = el.querySelectorAll(".di-media-cb");
   const $olderEnable  = el.querySelector("#diOlderEnable");
@@ -352,24 +350,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     renderResults();
     setStatus(STATUS.ready);
   }));
-
-  // ── Queue search / filter ──────────────────────────
-  function populateQueueSelect(filterText = "") {
-    const lower = filterText.toLowerCase();
-    const filtered = lower
-      ? queues.filter(q => q.name.toLowerCase().includes(lower))
-      : queues;
-
-    const prev = $queue.value;
-    $queue.innerHTML = `<option value="">— Select queue —</option>`
-      + filtered.map(q =>
-        `<option value="${escapeHtml(q.id)}">${escapeHtml(q.name)}</option>`
-      ).join("");
-
-    if (prev && filtered.some(q => q.id === prev)) $queue.value = prev;
-  }
-
-  $queueSearch.addEventListener("input", () => populateQueueSelect($queueSearch.value));
 
   // ── Media type wiring ──────────────────────────────
   $mediaAll.addEventListener("change", () => {
@@ -406,8 +386,7 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     $previewBtn.disabled    = running;
     $disconnectBtn.disabled = running;
     $cancelBtn.style.display = running ? "" : "none";
-    $queue.disabled       = running;
-    $queueSearch.disabled = running;
+    ssQueue.setEnabled(!running);
   }
 
   // ── Render results table ───────────────────────────
@@ -625,7 +604,7 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
 
     try {
       if (currentMode === "queue") {
-        const queueId = $queue.value;
+        const queueId = ssQueue.getValue();
         if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
 
         candidates = await scanQueue(queueId, filters);
@@ -678,7 +657,7 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
 
       try {
         if (currentMode === "queue") {
-          const queueId = $queue.value;
+          const queueId = ssQueue.getValue();
           if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
           candidates = await scanQueue(queueId, filters);
         } else {
@@ -712,7 +691,7 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     const count = candidates.length;
     let target = `${count} conversation${count !== 1 ? "s" : ""}`;
     if (currentMode === "queue") {
-      const qName = $queue.options[$queue.selectedIndex]?.text || "";
+      const qName = queues.find(q => q.id === ssQueue.getValue())?.name || "";
       target += ` in queue "${qName}"`;
     }
 
@@ -796,9 +775,8 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     try {
       queues = await gc.fetchAllQueues(api, orgContext.get());
       queues.sort((a, b) => a.name.localeCompare(b.name));
-      populateQueueSelect();
-      $queue.disabled = false;
-      $queueSearch.disabled = false;
+      ssQueue.setItems(queues.map(q => ({ id: q.id, label: q.name })));
+      ssQueue.setEnabled(true);
       setStatus(STATUS.ready);
     } catch (err) {
       setStatus(`Error: Failed to load queues — ${err.message}`, "error");
