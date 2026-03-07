@@ -351,18 +351,14 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${u.name || u.id}…`);
 
       try {
-        // Log what we're sending for debugging
-        const debugInfo = `divId=${targetId} userId=${u.id}`;
+        // Genesys authorization endpoint: POST /authorization/divisions/{id}/objects/{objectType}
         await gc.moveToDivision(api, org.id, targetId, "USER", [u.id]);
         u.division = { id: targetId, name: targetName };
         selectedIds.delete(u.id);
-        results.push({ user: u, ok: true, detail: `→ ${targetName} (${debugInfo})` });
+        results.push({ user: u, ok: true, detail: `→ ${targetName}` });
         ok++;
       } catch (err) {
-        const body = err.body ? JSON.stringify(err.body) : "";
-        const debugInfo = `divId=${targetId} userId=${u.id}`;
-        const msg = `${err.message} [${debugInfo}]${body ? ` | ${body}` : ""}`;
-        results.push({ user: u, ok: false, detail: msg });
+        results.push({ user: u, ok: false, detail: err.message });
         fail++;
       }
 

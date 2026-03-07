@@ -314,16 +314,7 @@ export default function renderDivisionDataTables({ route, me, api, orgContext })
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${tbl.name || tbl.id}…`);
 
       try {
-        // Data tables require a full PUT — fetch current schema first, then update division
-        const full = await gc.getDataTable(api, org.id, tbl.id);
-        const body = {
-          name:     full.name,
-          schema:   full.schema,
-          division: { id: targetId },
-        };
-        if (full.description) body.description = full.description;
-
-        await gc.putDataTable(api, org.id, tbl.id, body);
+        await gc.moveToDivision(api, org.id, targetId, "DATATABLES", [tbl.id]);
         tbl.division = { id: targetId, name: targetName };
         selectedIds.delete(tbl.id);
         results.push({ tbl, ok: true, detail: `→ ${targetName}` });
