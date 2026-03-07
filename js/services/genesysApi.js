@@ -354,10 +354,10 @@ export async function fetchAllQueues(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/routing/queues", opts);
 }
 
-/** Update a queue's division. */
-export async function updateQueueDivision(api, orgId, queueId, divisionId) {
+/** Update a queue's division. version is required by Genesys to prevent silent no-ops. */
+export async function updateQueueDivision(api, orgId, queueId, divisionId, version) {
   return api.proxyGenesys(orgId, "PATCH", `/api/v2/routing/queues/${queueId}`, {
-    body: { division: { id: divisionId } },
+    body: { version, division: { id: divisionId } },
   });
 }
 
