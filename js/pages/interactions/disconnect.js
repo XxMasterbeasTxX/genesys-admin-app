@@ -107,7 +107,11 @@ function getQueueWaitInfo(conversation, queueId) {
     if (p.purpose !== "acd") continue;
     for (const session of (p.sessions || [])) {
       for (const seg of (session.segments || [])) {
-        if (seg.segmentEnd)             continue; // segment has already ended
+        // Note: segmentEnd is intentionally NOT checked here.
+        // Dead/orphaned conversations have their ACD segment closed by
+        // Genesys internally (segmentEnd is set) but conversationEnd is
+        // never written — those are exactly the interactions we want to
+        // catch. Live-agent protection is handled by hasActiveAgentSegment.
         if (seg.segmentType !== "wait") continue; // not waiting
         if (queueId && seg.queueId && seg.queueId !== queueId) continue;
         return { mediaType: (session.mediaType || "unknown").toLowerCase() };
