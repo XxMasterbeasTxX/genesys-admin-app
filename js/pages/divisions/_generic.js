@@ -305,6 +305,8 @@ export default function renderDivisionPage(ctx, cfg) {
         },
       });
 
+      allItems.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
       if (!allItems.length) {
         setStatus(`No ${label} found.`, "error");
         isRunning = false;
