@@ -5,7 +5,7 @@ export default function render(ctx) {
   return renderDivisionPage(ctx, {
     objectType : "CALLROUTE",
     label      : "Call Routing",
-    fetchFn    : (api, orgId, opts) => gc.fetchAllCallRoutes(api, orgId, opts),
+    fetchFn    : (api, orgId, opts) => gc.fetchAllCallRoutes(api, orgId, { ...opts, query: { expand: "division" } }),
     columns    : [
       { header: "Name", get: i => i.name || "—" },
     ],
