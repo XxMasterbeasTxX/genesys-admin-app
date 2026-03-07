@@ -5,7 +5,7 @@ export default function render(ctx) {
   return renderDivisionPage(ctx, {
     objectType : "LIBRARY",
     label      : "CR Libraries",
-    fetchFn    : (api, orgId, opts) => gc.fetchAllLibraries(api, orgId, opts),
+    fetchFn    : (api, orgId, opts) => gc.fetchAllLibraries(api, orgId, { ...opts, query: { expand: "division" } }),
     columns    : [
       { header: "Name", get: i => i.name || "—" },
     ],
