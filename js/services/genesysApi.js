@@ -717,7 +717,7 @@ export async function fetchAllCallRoutes(api, orgId, opts = {}) {
 export async function fetchAllEmergencyGroups(api, orgId, opts = {}) {
   return fetchAllPages(
     api, orgId,
-    "/api/v2/routing/emergencygroups",
+    "/api/v2/architect/emergencygroups",
     opts
   );
 }
