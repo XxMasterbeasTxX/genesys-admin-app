@@ -338,10 +338,10 @@ export async function fetchAllUsers(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress });
 }
 
-/** Update a user's division. */
-export async function updateUserDivision(api, orgId, userId, divisionId) {
+/** Update a user's division. version is required by Genesys to prevent silent no-ops. */
+export async function updateUserDivision(api, orgId, userId, divisionId, version) {
   return api.proxyGenesys(orgId, "PATCH", `/api/v2/users/${userId}`, {
-    body: { division: { id: divisionId } },
+    body: { version, division: { id: divisionId } },
   });
 }
 

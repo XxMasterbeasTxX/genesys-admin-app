@@ -351,7 +351,7 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${u.name || u.id}…`);
 
       try {
-        await gc.updateUserDivision(api, org.id, u.id, targetId);
+        await gc.updateUserDivision(api, org.id, u.id, targetId, u.version);
         // Update local state so the table reflects the change
         u.division = { id: targetId, name: targetName };
         selectedIds.delete(u.id);
