@@ -716,6 +716,7 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
 
     let okCount   = 0;
     let failCount = 0;
+    let lastRender = 0;
 
     for (let i = 0; i < candidates.length; i++) {
       if (cancelled) {
@@ -737,7 +738,13 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
         failCount++;
       }
 
-      renderResults();
+      // Batch DOM updates — re-render at most every 25 completions or 300ms
+      const now = Date.now();
+      if (i === candidates.length - 1 || (i + 1) % 25 === 0 || now - lastRender > 300) {
+        renderResults();
+        lastRender = now;
+      }
+
       if (i < candidates.length - 1) await sleep(50);
     }
 
