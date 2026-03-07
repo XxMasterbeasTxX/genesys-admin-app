@@ -353,7 +353,7 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
       try {
         // Log what we're sending for debugging
         const debugInfo = `divId=${targetId} userId=${u.id}`;
-        await gc.moveToDivision(api, org.id, targetId, "PC_USER", [u.id]);
+        await gc.moveToDivision(api, org.id, targetId, "USER", [u.id]);
         u.division = { id: targetId, name: targetName };
         selectedIds.delete(u.id);
         results.push({ user: u, ok: true, detail: `→ ${targetName} (${debugInfo})` });
