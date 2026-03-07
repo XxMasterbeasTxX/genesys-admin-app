@@ -361,6 +361,20 @@ export async function updateQueueDivision(api, orgId, queueId, divisionId) {
   });
 }
 
+/**
+ * Move one or more objects to a division using the batch authorization endpoint.
+ * objects: [{ id, type }] where type is e.g. "QUEUE", "DATATABLES", "USER".
+ * Batches into groups of 100 automatically.
+ */
+export async function moveToDivision(api, orgId, divisionId, objects) {
+  const BATCH = 100;
+  for (let i = 0; i < objects.length; i += BATCH) {
+    await api.proxyGenesys(orgId, "POST",
+      `/api/v2/authorization/divisions/${divisionId}/objects`,
+      { body: objects.slice(i, i + BATCH) });
+  }
+}
+
 /** Fetch all routing skills. */
 export async function fetchAllSkills(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/routing/skills", opts);

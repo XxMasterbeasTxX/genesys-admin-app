@@ -15,7 +15,7 @@
  *   PATCH /api/v2/routing/queues/{id}         — update queue division
  */
 import * as gc from "../../services/genesysApi.js";
-import { escapeHtml, sleep } from "../../utils.js";
+import { escapeHtml } from "../../utils.js";
 
 export default function renderDivisionQueues({ route, me, api, orgContext }) {
   const el = document.createElement("section");
@@ -298,42 +298,44 @@ export default function renderDivisionQueues({ route, me, api, orgContext }) {
     $loadBtn.disabled  = true;
     $resultsSection.style.display = "none";
 
-    const results = [];
-    let ok = 0, fail = 0;
+    setStatus(`Moving ${toMove.length} queue${toMove.length !== 1 ? "s" : ""}…`);
+    showProgress(30);
 
-    for (let i = 0; i < toMove.length; i++) {
-      const q = toMove[i];
-      showProgress(((i + 1) / toMove.length) * 100);
-      setStatus(`Moving ${i + 1} of ${toMove.length}: ${q.name || q.id}…`);
+    try {
+      // Batch move — single API call for all selected queues
+      await gc.moveToDivision(api, org.id, targetId,
+        toMove.map(q => ({ id: q.id, type: "QUEUE" })));
 
-      try {
-        await gc.updateQueueDivision(api, org.id, q.id, targetId);
+      showProgress(100);
+
+      // Update local state
+      toMove.forEach(q => {
         q.division = { id: targetId, name: targetName };
         selectedIds.delete(q.id);
-        results.push({ queue: q, ok: true, detail: `→ ${targetName}` });
-        ok++;
-      } catch (err) {
-        results.push({ queue: q, ok: false, detail: err.message });
-        fail++;
-      }
+      });
 
-      if (i < toMove.length - 1) await sleep(100);
+      setStatus(`Done. Moved ${toMove.length} queue${toMove.length !== 1 ? "s" : ""} to ${targetName}.`, "success");
+
+      $resultsTbody.innerHTML = toMove.map((q, idx) => `<tr>
+        <td>${idx + 1}</td>
+        <td>${escapeHtml(q.name || q.id)}</td>
+        <td class="dv-ok">✓ Moved</td>
+        <td>→ ${escapeHtml(targetName)}</td>
+      </tr>`).join("");
+
+    } catch (err) {
+      setStatus(`Error: ${err.message}`, "error");
+
+      $resultsTbody.innerHTML = toMove.map((q, idx) => `<tr>
+        <td>${idx + 1}</td>
+        <td>${escapeHtml(q.name || q.id)}</td>
+        <td class="dv-fail">✗ Failed</td>
+        <td>${escapeHtml(err.message)}</td>
+      </tr>`).join("");
     }
 
-    hideProgress();
-    setStatus(
-      `Done. Moved: ${ok}${fail ? `, Failed: ${fail}` : ""}.`,
-      fail ? "error" : "success"
-    );
-
-    $resultsTbody.innerHTML = results.map((r, idx) => `<tr>
-      <td>${idx + 1}</td>
-      <td>${escapeHtml(r.queue.name || r.queue.id)}</td>
-      <td class="${r.ok ? "dv-ok" : "dv-fail"}">${r.ok ? "✓ Moved" : "✗ Failed"}</td>
-      <td>${escapeHtml(r.detail)}</td>
-    </tr>`).join("");
     $resultsSection.style.display = "";
-
+    hideProgress();
     renderTable();
     isRunning = false;
     $loadBtn.disabled = false;
