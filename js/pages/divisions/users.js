@@ -351,9 +351,8 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${u.name || u.id}…`);
 
       try {
-        // Fetch fresh version first — stale version from list causes silent no-op on PATCH
-        const fresh = await gc.getUser(api, org.id, u.id);
-        await gc.updateUserDivision(api, org.id, u.id, targetId, fresh.version);
+        // User division must be set via the authorization divisions endpoint with type "PC_USER"
+        await gc.moveToDivision(api, org.id, targetId, [{ id: u.id, type: "PC_USER" }]);
         u.division = { id: targetId, name: targetName };
         selectedIds.delete(u.id);
         results.push({ user: u, ok: true, detail: `→ ${targetName}` });
