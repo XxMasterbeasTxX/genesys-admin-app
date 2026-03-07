@@ -6,7 +6,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 
 - **Interaction Search** — Search conversations by date range; server-side filters for queue (searchable dropdown), media type, and division; client-side participant data attribute filters; sortable results table with click-to-expand detail; export to Excel
 - **Move Interactions** — Move conversations between queues with media type and date filters
-- **Disconnect Interactions** — Force-disconnect stuck/orphaned conversations by ID or empty a queue, with media type and date filters
+- **Disconnect Interactions** — Force-disconnect stuck/orphaned conversations in three modes: single ID, multiple IDs (comma/newline separated), or empty an entire queue. Queue mode scans up to 6 × 31-day intervals via the async analytics jobs API to find all active conversations. Disconnects execute in parallel batches of 10 for maximum throughput, with a 50 ms pause between batches. Media type filter and date range (older/newer than) filters. Progress shown via status text and progress bar — no table, just a summary of Disconnected / Failed counts on completion.
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division and optional row copy
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
@@ -22,13 +22,17 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Roles Export (Single Org)** — Export all authorization roles for a selected org with accurate member counts (active org users only). Columns: Name, Description, Members. Supports per-org scheduled automation.
 - **Roles Export (All Orgs)** — Export roles for all configured orgs in a single multi-sheet workbook (one sheet per org). Accurate member counts, on-demand only.
 - **Documentation Export** — Generate a full Genesys Cloud configuration export for a selected org, mirroring the Python `Export_All.py` output. Produces up to 42 alphabetically sorted configuration sheets (Agent Copilots, DID Numbers, Flows, Queues, Users, OAuth clients, Outbound, and more) plus a styled Index cover sheet with table of contents and clickable hyperlinks. A second workbook containing all DataTable contents (one alphabetically sorted sheet per table with its rows, plus an Index cover sheet showing row counts per table) is bundled alongside the main workbook as a ZIP when present. Export can take 5–10 minutes for large orgs.
-- **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, org selector for per-org exports, "All Scheduled Exports" overview.
+- **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, org selector for per-org exports, “All Scheduled Exports” overview with Last Run and Last Run Status columns (Success / Failure — error description).
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant)
 - **GDPR — Subject Request** — Submit GDPR data subject requests for a selected customer org. Guided step-by-step flow: choose request type (Article 15 Right of Access, Article 16 Right to Rectification, Article 17 Right to Erasure), enter known identifiers (name, email, phone, address, social handles), review matched subjects returned by Genesys, enter replacement values for rectification requests, then confirm and submit. After submission, a direct link to Request Status is shown. Processing is asynchronous — Genesys handles requests in the background (up to 14 days for deletions).
 - **GDPR — Request Status** — View all previously submitted GDPR requests for a selected customer org. Columns: Date, Type, Subject, Subject Type, Status, Completed, Details, and full Request ID. For Article 15 Access requests, signed download links appear here once Genesys has fulfilled the export (typically 1–2 business days).
-- **Divisions — Users** — Reassign one or more users to a different division. Load all users for the org, optionally filter by source division or search by name, multi-select across any combination of divisions, choose a target division and apply. Two-column layout: filters + Load on the left, Target Division + Move Selected on the right. Table section is collapsible and auto-collapses after Apply. Uses `POST /api/v2/authorization/divisions/{id}/objects/USER`.
-- **Divisions — Queues** — Reassign one or more routing queues to a different division. Identical flow and layout to Divisions — Users. Uses `POST /api/v2/authorization/divisions/{id}/objects/QUEUE`.
-- **Divisions — Data Tables** — Reassign one or more data tables to a different division. Identical flow and layout. Uses `POST /api/v2/authorization/divisions/{id}/objects/DATATABLES`.
+- **Divisions** — Reassign objects between divisions across the full Genesys Cloud object hierarchy. All pages share an identical two-column layout: load objects (with source-division filter + text search) on the left; choose target division and apply on the right. Table section is collapsible and auto-collapses after each apply. Uses `POST /api/v2/authorization/divisions/{id}/objects/{TYPE}`.
+  - **People:** Users — Work Teams
+  - **Routing:** Queues — Call Routes — Emergency Groups — Extension Pools — Routing Schedules — Routing Schedule Groups — Skill Groups
+  - **Architect:** Flows *(with Type dropdown filter)* — Flow Milestones — Flow Outcomes — Scripts *(with Status column — Published/Draft — and Status filter)* — Data Tables
+  - **Outbound:** Campaigns — Contact Lists — DNC Lists — Email Campaigns — Messaging Campaigns
+  - **Workforce Management:** Business Units — Management Units
+  - **Task Management:** Workbins — Work Types
 
 ---
 
@@ -659,9 +663,29 @@ After pushing the config update:
 | 46 | Documentation Export | Select org; click Generate Documentation; spinner shown during fetch (5–10 min); main workbook downloaded as XLSX (or ZIP when DataTables present); main workbook has Index cover sheet + up to 42 alphabetically sorted config sheets; DataTables workbook has Index cover sheet (with row counts) + one alphabetically sorted sheet per data table |
 | 47 | GDPR — Subject Request | Select org; choose request type (Access / Rectification / Erasure); enter identifiers (name, email, phone, etc.); click Search — matched subjects appear; for Rectification: enter replacement values per field; tick confirmation for Erasure; click Submit — request IDs returned; link to Request Status shown |
 | 48 | GDPR — Request Status | Select org; click Load / Refresh; table shows Date, Type, Subject, Subject Type, Status, Completed, Details, Request ID; fulfilled Access requests show download links in Details column |
-| 49 | Divisions — Users | Select org; click Load; users load with count in toggle label; source division dropdown shows only divisions with users; filter by source division and/or search; select users; choose target division; click Move Selected — progress bar, results table shown, user table auto-collapses; toggle ▼/► expands/collapses table |
-| 50 | Divisions — Queues | Select org; click Load; queues load with count in toggle label; same layout and behaviour as Divisions — Users; Move Selected moves queues to target division |
-| 51 | Divisions — Data Tables | Select org; click Load; data tables load with count in toggle label; same layout and behaviour; Move Selected moves tables to target division |
+| 49 | Divisions — People — Users | Select org; click Load; users load with count in toggle label; source division dropdown shows only divisions with users; filter by source division and/or search; select users; choose target division; click Move Selected — progress bar, table auto-collapses; toggle expands/collapses |
+| 50 | Divisions — People — Work Teams | Same layout and behaviour as Users; loads work teams and moves them to target division |
+| 51 | Divisions — Routing — Queues | Same layout; loads routing queues; moves to target division |
+| 52 | Divisions — Routing — Call Routes | Same layout; loads call routes |
+| 53 | Divisions — Routing — Emergency Groups | Same layout; loads emergency groups |
+| 54 | Divisions — Routing — Extension Pools | Same layout; loads extension pools |
+| 55 | Divisions — Routing — Routing Schedules | Same layout; loads routing schedules |
+| 56 | Divisions — Routing — Routing Schedule Groups | Same layout; loads routing schedule groups |
+| 57 | Divisions — Routing — Skill Groups | Same layout; loads skill groups |
+| 58 | Divisions — Architect — Flows | Same layout; loads flows; Type dropdown filter populated from loaded data (In-Queue Flow, Inbound Call Flow, etc.) |
+| 59 | Divisions — Architect — Flow Milestones | Same layout; loads flow milestones |
+| 60 | Divisions — Architect — Flow Outcomes | Same layout; loads flow outcomes |
+| 61 | Divisions — Architect — Scripts | Same layout; Status column shows Published/Draft (derived from publishedDate); Status dropdown filter (Published / Draft / All) |
+| 62 | Divisions — Architect — Data Tables | Same layout; loads data tables |
+| 63 | Divisions — Outbound — Campaigns | Same layout; loads outbound campaigns |
+| 64 | Divisions — Outbound — Contact Lists | Same layout; loads contact lists |
+| 65 | Divisions — Outbound — DNC Lists | Same layout; loads DNC lists |
+| 66 | Divisions — Outbound — Email Campaigns | Same layout; loads email campaigns |
+| 67 | Divisions — Outbound — Messaging Campaigns | Same layout; loads messaging campaigns |
+| 68 | Divisions — Workforce Mgmt — Business Units | Same layout; loads business units |
+| 69 | Divisions — Workforce Mgmt — Management Units | Same layout; loads management units |
+| 70 | Divisions — Task Mgmt — Workbins | Same layout; loads workbins |
+| 71 | Divisions — Task Mgmt — Work Types | Same layout; loads work types |
 | 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
 | 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
 | 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
