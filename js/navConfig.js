@@ -37,8 +37,8 @@ export const NAV_TREE = [
         path: "people",
         enabled: true,
         children: [
-          { label: "USER", path: "users", enabled: true, access: "divisions.people.users" },
-          { label: "TEAM", path: "team",  enabled: true, access: "divisions.people.team"  },
+          { label: "Users", path: "users", enabled: true, access: "divisions.people.users" },
+          { label: "Work Teams", path: "team",  enabled: true, access: "divisions.people.team"  },
         ],
       },
       // ── Routing ───────────────────────────────────────
@@ -47,13 +47,13 @@ export const NAV_TREE = [
         path: "routing",
         enabled: true,
         children: [
-          { label: "QUEUE",                  path: "queues",                  enabled: true, access: "divisions.routing.queues"                  },
-          { label: "CALLROUTE",              path: "callroute",               enabled: true, access: "divisions.routing.callroute"               },
-          { label: "EMERGENCYGROUPS",        path: "emergency-groups",        enabled: true, access: "divisions.routing.emergencyGroups"         },
-          { label: "EXTENSIONPOOL",          path: "extension-pool",          enabled: true, access: "divisions.routing.extensionPool"           },
-          { label: "ROUTINGSCHEDULES",       path: "routing-schedules",       enabled: true, access: "divisions.routing.routingSchedules"        },
-          { label: "ROUTINGSCHEDULEGROUPS",  path: "routing-schedule-groups", enabled: true, access: "divisions.routing.routingScheduleGroups"   },
-          { label: "SKILLGROUP",             path: "skill-group",             enabled: true, access: "divisions.routing.skillGroup"              },
+          { label: "Queues",                  path: "queues",                  enabled: true, access: "divisions.routing.queues"                  },
+          { label: "Call Routes",              path: "callroute",               enabled: true, access: "divisions.routing.callroute"               },
+          { label: "Emergency Groups",        path: "emergency-groups",        enabled: true, access: "divisions.routing.emergencyGroups"         },
+          { label: "Extension Pools",          path: "extension-pool",          enabled: true, access: "divisions.routing.extensionPool"           },
+          { label: "Routing Schedules",       path: "routing-schedules",       enabled: true, access: "divisions.routing.routingSchedules"        },
+          { label: "Routing Schedule Groups",  path: "routing-schedule-groups", enabled: true, access: "divisions.routing.routingScheduleGroups"   },
+          { label: "Skill Groups",             path: "skill-group",             enabled: true, access: "divisions.routing.skillGroup"              },
         ],
       },
       // ── Architect ─────────────────────────────────────
@@ -62,10 +62,10 @@ export const NAV_TREE = [
         path: "architect",
         enabled: true,
         children: [
-          { label: "FLOW",          path: "flow",           enabled: true, access: "divisions.architect.flow"          },
-          { label: "FLOWMILESTONE", path: "flow-milestone", enabled: true, access: "divisions.architect.flowMilestone" },
-          { label: "FLOWOUTCOME",   path: "flow-outcome",   enabled: true, access: "divisions.architect.flowOutcome"   },
-          { label: "SCRIPT",        path: "script",         enabled: true, access: "divisions.architect.script"        },
+          { label: "Flows",          path: "flow",           enabled: true, access: "divisions.architect.flow"          },
+          { label: "Milestones", path: "flow-milestone", enabled: true, access: "divisions.architect.flowMilestone" },
+          { label: "Flow Outcomes",   path: "flow-outcome",   enabled: true, access: "divisions.architect.flowOutcome"   },
+          { label: "Scripts",        path: "script",         enabled: true, access: "divisions.architect.script"        },
         ],
       },
       // ── Outbound ──────────────────────────────────────
@@ -74,11 +74,11 @@ export const NAV_TREE = [
         path: "outbound",
         enabled: true,
         children: [
-          { label: "CAMPAIGN",          path: "campaign",           enabled: true, access: "divisions.outbound.campaign"          },
-          { label: "CONTACTLIST",       path: "contact-list",       enabled: true, access: "divisions.outbound.contactList"       },
-          { label: "DNCLIST",           path: "dnc-list",           enabled: true, access: "divisions.outbound.dncList"           },
-          { label: "EMAILCAMPAIGN",     path: "email-campaign",     enabled: true, access: "divisions.outbound.emailCampaign"     },
-          { label: "MESSAGINGCAMPAIGN", path: "messaging-campaign", enabled: true, access: "divisions.outbound.messagingCampaign" },
+          { label: "Campaigns",          path: "campaign",           enabled: true, access: "divisions.outbound.campaign"          },
+          { label: "Contact Lists",       path: "contact-list",       enabled: true, access: "divisions.outbound.contactList"       },
+          { label: "DNC Lists",           path: "dnc-list",           enabled: true, access: "divisions.outbound.dncList"           },
+          { label: "Email Campaigns",     path: "email-campaign",     enabled: true, access: "divisions.outbound.emailCampaign"     },
+          { label: "Messaging Campaigns", path: "messaging-campaign", enabled: true, access: "divisions.outbound.messagingCampaign" },
         ],
       },
       // ── Workforce Management ──────────────────────────
@@ -87,8 +87,8 @@ export const NAV_TREE = [
         path: "workforce",
         enabled: true,
         children: [
-          { label: "BUSINESSUNIT",   path: "business-unit",   enabled: true, access: "divisions.workforce.businessUnit"   },
-          { label: "MANAGEMENTUNIT", path: "management-unit", enabled: true, access: "divisions.workforce.managementUnit" },
+          { label: "Business Units",   path: "business-unit",   enabled: true, access: "divisions.workforce.businessUnit"   },
+          { label: "Management Units", path: "management-unit", enabled: true, access: "divisions.workforce.managementUnit" },
         ],
       },
       // ── Task Management ───────────────────────────────
@@ -97,8 +97,8 @@ export const NAV_TREE = [
         path: "task",
         enabled: true,
         children: [
-          { label: "WORKBIN",  path: "workbin",  enabled: true, access: "divisions.task.workbin"  },
-          { label: "WORKTYPE", path: "worktype", enabled: true, access: "divisions.task.worktype" },
+          { label: "Workbins",  path: "workbin",  enabled: true, access: "divisions.task.workbin"  },
+          { label: "Work Types", path: "worktype", enabled: true, access: "divisions.task.worktype" },
         ],
       },
       // ── Data ──────────────────────────────────────────
@@ -107,8 +107,8 @@ export const NAV_TREE = [
         path: "data",
         enabled: true,
         children: [
-          { label: "DATATABLES", path: "data-tables", enabled: true, access: "divisions.data.dataTables" },
-          { label: "LIBRARY",    path: "library",     enabled: true, access: "divisions.data.library"    },
+          { label: "Data Tables", path: "data-tables", enabled: true, access: "divisions.data.dataTables" },
+          { label: "Libraries",    path: "library",     enabled: true, access: "divisions.data.library"    },
         ],
       },
     ],

@@ -7,11 +7,13 @@
  *
  * @param {{ route, me, api, orgContext }} ctx   Standard page context.
  * @param {{
- *   objectType : string,                        e.g. "FLOW"
- *   label      : string,                        Display name, e.g. "FLOW"
- *   fetchFn    : (api, orgId, opts) => Promise<Object[]>,
- *   columns    : { header: string, get: (item: Object) => string }[],
- *   searchFn?  : (item: Object, query: string) => boolean,
+ *   objectType         : string,                        e.g. "FLOW"
+ *   label              : string,                        Display name, e.g. "FLOW"
+ *   fetchFn            : (api, orgId, opts) => Promise<Object[]>,
+ *   columns            : { header: string, get: (item: Object) => string }[],
+ *   searchFn?          : (item: Object, query: string) => boolean,
+ *   extraFilters?      : string,   HTML injected after the Search control (left column)
+ *   onExtraFilterSetup?: (el: HTMLElement) => void,  called once after render
  * }} cfg
  */
 import * as gc from "../../services/genesysApi.js";
@@ -19,7 +21,7 @@ import { escapeHtml, sleep } from "../../utils.js";
 
 export default function renderDivisionPage(ctx, cfg) {
   const { api, orgContext } = ctx;
-  const { objectType, label, fetchFn, columns, searchFn } = cfg;
+  const { objectType, label, fetchFn, columns, searchFn, extraFilters, onExtraFilterSetup } = cfg;
 
   const el = document.createElement("section");
   el.className = "card";
@@ -64,6 +66,7 @@ export default function renderDivisionPage(ctx, cfg) {
             <label class="di-label">Search</label>
             <input type="text" class="input" id="dvSearch" placeholder="Filter by name…">
           </div>
+          ${extraFilters || ""}
           <div class="di-control-group dv-load-group">
             <label class="di-label">&nbsp;</label>
             <button class="btn" id="dvLoadBtn">Load</button>
@@ -256,6 +259,9 @@ export default function renderDivisionPage(ctx, cfg) {
     $srcDiv.innerHTML    = `<option value="">(All)</option>` + opts;
     $targetDiv.innerHTML = `<option value="">— select target —</option>` + opts;
   }
+
+  // ── Extra filter setup hook ─────────────────────────
+  if (onExtraFilterSetup) onExtraFilterSetup(el);
 
   // ── Initial load: divisions ───────────────────────────
   (async () => {
