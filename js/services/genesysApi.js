@@ -380,15 +380,15 @@ export async function putQueue(api, orgId, queueId, body) {
  */
 /**
  * Move objects to a division.
- * objectType: "USER", "QUEUE", "DATATABLES", "FLOW", etc.
+ * objectType: "USER", "QUEUE", "DATATABLES", "FLOW", etc. — goes in the URL path.
  * ids: array of object ID strings.
  */
 export async function moveToDivision(api, orgId, divisionId, objectType, ids) {
   const BATCH = 100;
   for (let i = 0; i < ids.length; i += BATCH) {
     await api.proxyGenesys(orgId, "POST",
-      `/api/v2/authorization/divisions/${divisionId}/objects`,
-      { query: { objectType }, body: ids.slice(i, i + BATCH) });
+      `/api/v2/authorization/divisions/${divisionId}/objects/${objectType}`,
+      { body: ids.slice(i, i + BATCH) });
   }
 }
 
