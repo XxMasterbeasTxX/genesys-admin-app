@@ -138,6 +138,19 @@ function hasActiveAgentSegment(conversation) {
   return false;
 }
 
+/**
+ * Detect media type from an analytics conversation's participant sessions.
+ * Returns the first mediaType found (lowercased), or null.
+ */
+function getSessionMediaType(conversation) {
+  for (const p of (conversation.participants || [])) {
+    for (const session of (p.sessions || [])) {
+      if (session.mediaType) return session.mediaType.toLowerCase();
+    }
+  }
+  return null;
+}
+
 /** Map common HTTP error codes to user-friendly messages. */
 function friendlyError(err) {
   const msg = err.message || String(err);
@@ -519,15 +532,14 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
         seen.add(c.conversationId);
         if (c.conversationEnd) continue; // already ended
 
-        // Must be actively waiting in queue (ACD participant in "wait" state)
-        const info = getQueueWaitInfo(c, queueId);
-        if (!info) continue;
-
-        // Must NOT have any agent currently ringing or connected — skip those
+        // Must NOT have any agent currently ringing or connected — protect live calls
         if (hasActiveAgentSegment(c)) continue;
 
-        // Media type filter
-        if (!filters.mediaTypes.includes(info.mediaType)) continue;
+        // Detect media type from sessions (analytics shape)
+        const mediaType = getSessionMediaType(c) || "unknown";
+
+        // Media type filter (pass through if type can't be determined)
+        if (mediaType !== "unknown" && !filters.mediaTypes.includes(mediaType)) continue;
 
         // Date range filters
         const st = c.conversationStart ? new Date(c.conversationStart) : null;
@@ -536,7 +548,7 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
 
         matched.push({
           convId:    c.conversationId,
-          mediaType: info.mediaType,
+          mediaType,
           startTime: formatDateTime(c.conversationStart),
         });
       }
