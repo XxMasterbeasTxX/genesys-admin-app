@@ -766,7 +766,10 @@ export async function fetchAllDncLists(api, orgId, opts = {}) {
 
 /** Fetch all outbound email campaigns. */
 export async function fetchAllEmailCampaigns(api, orgId, opts = {}) {
-  return fetchAllPages(api, orgId, "/api/v2/outbound/emailcampaigns", opts);
+  return fetchAllPages(api, orgId, "/api/v2/outbound/campaigns/all", {
+    ...opts,
+    query: { ...(opts.query ?? {}), mediaType: "EMAIL" },
+  });
 }
 
 /** Fetch all outbound messaging campaigns. */
