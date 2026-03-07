@@ -345,6 +345,11 @@ export async function updateUserDivision(api, orgId, userId, divisionId, version
   });
 }
 
+/** Full PUT update of a user (required to reliably change division). */
+export async function putUser(api, orgId, userId, body) {
+  return api.proxyGenesys(orgId, "PUT", `/api/v2/users/${userId}`, { body });
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Routing — Queues, Skills, Wrapup codes
 // ─────────────────────────────────────────────────────────────────────

@@ -351,8 +351,9 @@ export default function renderDivisionUsers({ route, me, api, orgContext }) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${u.name || u.id}…`);
 
       try {
-        await gc.updateUserDivision(api, org.id, u.id, targetId, u.version);
-        // Update local state so the table reflects the change
+        // Users require a full PUT — fetch current object to get latest version, then PUT with updated division
+        const full = await gc.getUser(api, org.id, u.id);
+        await gc.putUser(api, org.id, u.id, { ...full, division: { id: targetId } });
         u.division = { id: targetId, name: targetName };
         selectedIds.delete(u.id);
         results.push({ user: u, ok: true, detail: `→ ${targetName}` });
