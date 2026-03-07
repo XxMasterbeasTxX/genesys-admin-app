@@ -761,17 +761,17 @@ export async function fetchAllContactLists(api, orgId, opts = {}) {
 
 /** Fetch all DNC (Do Not Call) lists. */
 export async function fetchAllDncLists(api, orgId, opts = {}) {
-  return fetchAllPages(api, orgId, "/api/v2/outbound/dncLists", opts);
+  return fetchAllPages(api, orgId, "/api/v2/outbound/dnclists", opts);
 }
 
 /** Fetch all outbound email campaigns. */
 export async function fetchAllEmailCampaigns(api, orgId, opts = {}) {
-  return fetchAllPages(api, orgId, "/api/v2/outbound/emailCampaigns", opts);
+  return fetchAllPages(api, orgId, "/api/v2/outbound/emailcampaigns", opts);
 }
 
 /** Fetch all outbound messaging campaigns. */
 export async function fetchAllMessagingCampaigns(api, orgId, opts = {}) {
-  return fetchAllPages(api, orgId, "/api/v2/outbound/messagingCampaigns", opts);
+  return fetchAllPages(api, orgId, "/api/v2/outbound/messagingcampaigns", opts);
 }
 
 // ─────────────────────────────────────────────────────────────────────
