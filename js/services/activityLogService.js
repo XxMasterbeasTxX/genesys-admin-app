@@ -22,6 +22,7 @@
  *   division_move        — Reassign objects between divisions
  *   interaction_move     — Move interactions between queues
  *   interaction_disconnect — Force-disconnect interactions
+ *   datatable_create     — Create a new data table
  *   datatable_copy       — Copy a data table
  *   dataaction_copy      — Copy a data action between orgs
  *   dataaction_save      — Save a data action draft

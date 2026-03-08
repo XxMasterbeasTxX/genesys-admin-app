@@ -896,6 +896,56 @@ body {
   border-bottom: 1px solid rgba(255,255,255,0.04);
 }
 
+/* ── Datatable Create — schema column builder ─────────────── */
+.dtc-schema-section {
+  margin-top: 20px;
+}
+.dtc-schema-header {
+  margin-bottom: 8px;
+}
+.dtc-schema-cols-header {
+  display: grid;
+  grid-template-columns: 1fr 160px 32px;
+  gap: 8px;
+  max-width: 560px;
+  margin-bottom: 4px;
+}
+.dtc-col-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-left: 2px;
+}
+.dtc-schema-row {
+  display: grid;
+  grid-template-columns: 1fr 160px 32px;
+  gap: 8px;
+  align-items: center;
+  max-width: 560px;
+  margin-bottom: 6px;
+}
+.dtc-schema-row .dt-input,
+.dtc-schema-row .dt-select {
+  max-width: 100%;
+  width: 100%;
+}
+.dtc-del-btn {
+  padding: 5px 8px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+.dtc-del-btn:hover { color: #f87171; border-color: #f87171; background: transparent; }
+.dtc-add-btn { align-self: flex-start; }
+.dt-field-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
 /* Actions / Progress / Status */
 .dt-actions {
   display: flex;
