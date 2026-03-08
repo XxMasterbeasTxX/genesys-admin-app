@@ -360,16 +360,27 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   });
 
   // ── Actor name resolution ────────────────────────────────────────
+  // Tries user API first; if that fails (e.g. the actor is an OAuth client
+  // rather than a human user), falls back to the OAuth client API.
+  // Changes made by this app are attributed to the OAuth client ID.
   async function resolveActors() {
     const ids = [...new Set(allResults.map(e => e.user?.id).filter(Boolean))];
     await Promise.all(
       ids.map(async (userId) => {
+        // 1. Try user lookup
         try {
           const user = await gc.getUser(api, orgId, userId);
-          actorMap[userId] = user.name || userId;
-        } catch {
-          actorMap[userId] = userId; // fall back to GUID
-        }
+          if (user?.name) { actorMap[userId] = user.name; return; }
+        } catch { /* not a user — try OAuth next */ }
+
+        // 2. Try OAuth client lookup
+        try {
+          const client = await gc.getOAuthClient(api, orgId, userId);
+          if (client?.name) { actorMap[userId] = client.name; return; }
+        } catch { /* not an OAuth client either */ }
+
+        // 3. Fall back to raw ID
+        actorMap[userId] = userId;
       }),
     );
   }

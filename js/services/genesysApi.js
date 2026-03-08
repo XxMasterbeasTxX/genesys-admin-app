@@ -679,6 +679,11 @@ export async function getUser(api, orgId, userId) {
   return api.proxyGenesys(orgId, "GET", `/api/v2/users/${userId}`);
 }
 
+/** Fetch a single OAuth client by client ID. */
+export async function getOAuthClient(api, orgId, clientId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/oauth/clients/${clientId}`);
+}
+
 /** Fetch a single external contact by ID. */
 export async function getExternalContact(api, orgId, contactId) {
   return api.proxyGenesys(orgId, "GET", `/api/v2/externalcontacts/contacts/${contactId}`);
