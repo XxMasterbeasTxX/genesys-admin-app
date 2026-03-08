@@ -33,6 +33,8 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
   - **Outbound:** Campaigns — Contact Lists — DNC Lists — Email Campaigns — Messaging Campaigns
   - **Workforce Management:** Business Units — Management Units
   - **Task Management:** Workbins — Work Types
+- **Activity Log** — Internal log of all write/mutative actions performed through the tool. Every create, copy, move, disconnect, publish, and GDPR submit records who did it, for which org, when, and a plain-language description. Visible to all logged-in users at `/activity-log` via the header link. Client-side filters: action type, org, and free-text search. Entries are stored in Azure Table Storage (`activitylog` table) and fetched via `GET /api/activity-log`. Writes go to `POST /api/activity-log`. Retention is indefinite; the log cannot be cleared from the UI.
+- **Data Tables — Create** — Create a new data table in the selected org. Required fields: Name, Division (loaded from the org), Key (display name of the primary key — always stored as `string`). Optional: Description and additional schema columns. Each schema column has a Name, Type (Boolean / Decimal / Integer / String), and optional default value. Columns can be reordered by dragging the grip handle. Schema can be imported from an Excel file: click **Import from Excel**, select a `.xlsx`/`.xls` file, choose the sheet, and click **Load**. Fixed format: row 1 = `key` / key name; row 2 = `division` / division name; row 3 = `description` / description text; rows 4+ = column name / type. Name is pre-filled from the sheet/tab name. Division is matched case-insensitively (skipped if not found). Multiple tabs can be imported from the same file without re-selecting it.
 - **Audit — Search** — Query Genesys Cloud audit events across any date range. Ranges ≤ 14 days automatically query **all realtime-supported services** concurrently using the synchronous `POST /api/v2/audits/query/realtime` endpoint (no polling) — results appear in seconds. For ≤ 14-day ranges with a specific service not supported by the realtime endpoint, falls back to the standard async query API automatically. Ranges > 14 days require a service selection and always use the async chunked pipeline (`POST /api/v2/audits/query` → poll → cursor-paginated results, 30-day chunks). Preset quick-filters: Today, Last 7 days, Last month, Last 3 months. Auto-runs today's query on page load (restoring last-used service from `localStorage`). Client-side filters: Entity Type → Action (cascading) + Changed By. Results table: Date & Time, Service, Entity Type, Entity Name (resolved via 40+ mapped API paths with `(deleted)` label on 404), Action, Changed By (user or OAuth client name). Click any row to expand a detail panel showing metadata, changed properties (old → new values), additional context, and a raw API response dump. Sticky table header, sortable latest-first, configurable rows per page (50/100/150/200). A blue/amber hint below the service dropdown indicates the current query mode.
 
 ---
@@ -651,6 +653,10 @@ After pushing the config update:
 | 29 | Scheduled export creation | Toggle automation on Trustee page; create daily/weekly/monthly schedule with recipients |
 | 30 | Last Login scheduled export creation | Toggle automation on Last Login page; org selector and inactivity filter shown in schedule form; schedule saved with exportConfig |
 | 31 | All Roles scheduled export creation | Toggle automation on All Roles page; org selector shown in schedule form; schedule saved with exportConfig |
+| 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
+| 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
+| 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
+| 35 | Theme adapts | Dark/light matches OS setting |
 | 35 | Filtered on Role(s) Export | Select org; load roles; pick ≥1 role; export runs (active users only); collapsible preview; Excel with Name, Email, Division + boolean role columns; sheet "User Roles" |
 | 36 | Filtered on Role(s) email | Filtered on Role(s) export with email enabled sends attachment to recipients via Mailjet |
 | 37 | Filtered on Role(s) scheduled export | Toggle automation; role picker loads dynamically per org; schedule saved with exportConfig.roles; Config column shown in schedule list |
@@ -694,10 +700,6 @@ After pushing the config update:
 | 75 | Audit — Search (> 14 days) | Set date range > 14 days with no service; amber hint warns service required; search blocked. Select a service; search runs via async pipeline with 30-day chunks |
 | 76 | Audit preset filters | Today / Last 7 days / Last month / Last 3 months buttons shown; clicking each updates date fields and auto-runs search |
 | 77 | Audit row expand + detail panel | Click a result row; detail panel opens showing metadata, changed properties (old → new), additional context, and raw JSON dump |
-| 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
-| 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
-| 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
-| 35 | Theme adapts | Dark/light matches OS setting |
 
 ---
 

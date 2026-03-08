@@ -9,6 +9,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Interaction Search** — Search conversations by date range; server-side filters for queue (searchable dropdown), media type, and division; client-side participant data attribute filters; sortable results table with click-to-expand detail; export to Excel (.xlsx)
 - **Move Interactions** — Move conversations between queues with media type filtering and date range controls
 - **Disconnect Interactions** — Force-disconnect stuck/orphaned conversations in three modes: single ID, multiple IDs (comma/newline separated), or empty an entire queue. Queue mode scans up to 6 × 31-day intervals via the async analytics jobs API to find all active conversations. Disconnects execute in parallel batches of 10 for maximum throughput, with a 50 ms pause between batches. Media type filter and date range (older/newer than) filters. Progress shown via status text and progress bar — no table, just a summary of Disconnected / Failed counts on completion.
+- **Data Tables — Create** — Create a new data table in the selected org. Required fields: Name, Division, Key (display name of the primary key column, always stored as string). Optional: Description and schema columns. Schema column builder supports Boolean, Decimal, Integer, and String types with optional default values per column. Columns can be reordered by dragging the grip handle. Schema can be imported from an Excel file: select a file, pick the sheet, and the form is pre-filled (Name from tab name; Key, Division, Description, and schema columns from fixed rows 1–4). Multiple tabs in the same file can be imported in sequence without re-selecting the file.
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division selection
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle
@@ -35,6 +36,7 @@ Internal web application for the Genesys Team to perform administrative actions 
   - **Outbound:** Campaigns — Contact Lists — DNC Lists — Email Campaigns — Messaging Campaigns
   - **Workforce Management:** Business Units — Management Units
   - **Task Management:** Workbins — Work Types
+- **Activity Log** — Internal log of all write/mutative actions performed through the tool. Every create, copy, move, disconnect, publish, and GDPR submit records who did it, for which org, when, and a plain-language description. Visible to all logged-in users at `/activity-log` via the header link. Client-side filters: action type, org, and free-text search. Entries are stored in Azure Table Storage and fetched via `/api/activity-log`. Retention is indefinite; the log cannot be cleared from the UI.
 - **Audit — Search** — Query Genesys Cloud audit events across any date range. Ranges ≤ 14 days automatically query **all realtime-supported services** concurrently using the synchronous `POST /api/v2/audits/query/realtime` endpoint (no polling) — results appear in seconds. For ≤ 14-day ranges with a specific service not supported by the realtime endpoint, falls back to the standard async query API automatically. Ranges > 14 days require a service selection and always use the async chunked pipeline (`POST /api/v2/audits/query` → poll → cursor-paginated results, 30-day chunks). Preset quick-filters: Today, Last 7 days, Last month, Last 3 months. Auto-runs today's query on page load (restoring last-used service from `localStorage`). Client-side filters: Entity Type → Action (cascading) + Changed By. Results table: Date & Time, Service, Entity Type, Entity Name (resolved via 40+ mapped API paths with `(deleted)` label on 404), Action, Changed By (user or OAuth client name). Click any row to expand a detail panel showing metadata, changed properties (old → new values), additional context, and a raw API response dump. Sticky table header, sortable latest-first, configurable rows per page (50/100/150/200). A blue/amber hint below the service dropdown indicates the current query mode.
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
 - **Top-level menu groups** — Data Actions, Data Tables, Divisions, Export, Interactions, and Phones each have their own top-level nav section
@@ -132,12 +134,14 @@ genesys-admin-app/
 │   │   ├── notfound.js           404 page
 │   │   ├── accessdenied.js       Access denied page
 │   │   ├── placeholder.js        Generic "coming soon" stub
+│   │   ├── activityLog.js        Internal activity log viewer
 │   │   ├── audit/
 │   │   │   └── search.js            Audit Search (realtime + async dual-path, preset filters, row-expand detail panel)
 │   │   ├── dataactions/
 │   │   │   ├── copyBetweenOrgs.js   Copy data action between orgs
 │   │   │   └── edit.js              Edit / test existing data actions
 │   │   ├── datatables/
+│   │   │   ├── create.js            Create data table (schema builder, drag-to-reorder columns, Excel import)
 │   │   │   ├── copySingleOrg.js     Copy table within same org
 │   │   │   └── copyBetweenOrgs.js   Copy table between orgs
 │   │   ├── divisions/
@@ -197,6 +201,7 @@ genesys-admin-app/
 │       ├── customerService.js    Customer list loader
 │       ├── emailService.js       Centralized email service (Mailjet via /api/send-email)
 │       ├── genesysApi.js         Centralized Genesys Cloud API service
+│       ├── activityLogService.js  Write entries to the internal activity log
 │       ├── orgContext.js         Selected org state management
 │       └── scheduleService.js    Schedule CRUD API wrappers
 ├── api/                          Azure Functions backend
