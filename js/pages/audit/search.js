@@ -43,6 +43,12 @@ function buildIntervalChunks(from, fromTime, to, toTime) {
   return chunks;
 }
 
+/** Days between two YYYY-MM-DD strings (inclusive). Returns 0 if either is missing. */
+function calcRangeDays(from, to) {
+  if (!from || !to) return 0;
+  return Math.round((new Date(to) - new Date(from)) / 86_400_000);
+}
+
 /** Extract a friendly message from an API error. */
 function friendlyError(err) {
   const msg = err.message || String(err);
@@ -83,8 +89,8 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     <h1 class="h1">Audit — Search</h1>
     <hr class="hr">
     <p class="page-desc">
-      Query audit events for a service within a date range.
-      Select optional filters after results load to narrow the view.
+      Ranges up to 7 days query <strong>all services</strong> automatically.
+      For longer ranges, select a service first. Use the filters below the results to narrow the view.
     </p>
 
     <!-- Preset quick filters -->
@@ -112,6 +118,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         <div id="aqServiceDropdown" class="aq-service-dropdown">
           <span class="di-status">Loading services…</span>
         </div>
+        <p class="aq-service-hint" id="aqServiceHint"></p>
       </div>
       <div class="di-control-group" style="justify-content:flex-end;padding-top:20px">
         <button class="btn" id="aqSearchBtn" disabled>Search</button>
@@ -186,6 +193,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   const $dateTo       = el.querySelector("#aqDateTo");
   const $timeTo       = el.querySelector("#aqTimeTo");
   const $serviceDrop  = el.querySelector("#aqServiceDropdown");
+  const $serviceHint  = el.querySelector("#aqServiceHint");
   const $searchBtn    = el.querySelector("#aqSearchBtn");
   const $status       = el.querySelector("#aqStatus");
   const $progressWrap = el.querySelector("#aqProgressWrap");
@@ -209,6 +217,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   $dateFrom.max   = today;
   $dateTo.min     = minDate;
   $dateTo.max     = today;
+  updateServiceMode(); // set initial hint
 
   // ── Single-select dropdowns ──────────────────────────────────────
   const ssService    = createSingleSelect({ placeholder: "— Select service —",  searchable: true,  onChange: () => {} });
@@ -245,6 +254,19 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     $progressBar.style.width    = "0%";
   }
 
+  // ── Service-mode hint ────────────────────────────────────────────
+  // ≤7 days: service optional (all services queried); >7 days: service required.
+  function updateServiceMode() {
+    const days = calcRangeDays($dateFrom.value, $dateTo.value);
+    if (days <= 7) {
+      $serviceHint.textContent = "All services will be queried — select one to narrow.";
+      $serviceHint.className   = "aq-service-hint aq-service-hint--info";
+    } else {
+      $serviceHint.textContent = "Range > 7 days — please select a service to narrow down results.";
+      $serviceHint.className   = "aq-service-hint aq-service-hint--warn";
+    }
+  }
+
   // ── Load service mapping on mount ───────────────────────────────
   async function loadServiceMapping() {
     setStatus("Loading service mapping…");
@@ -257,14 +279,15 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       ssService.setItems(services);
       $searchBtn.disabled = false;
       setStatus("");
-      // Restore last-used service and auto-run for today
+      // Restore last-used service (optional — search works without one for ≤7 days)
       const lastService = localStorage.getItem("aq-last-service");
       if (lastService && services.some(s => s.id === lastService)) {
         ssService.setValue(lastService);
-        // Activate the "Today" preset button
-        el.querySelector('[data-preset="today"]')?.classList.add("aq-preset-btn--active");
-        runSearch();
       }
+      // Always auto-run with today selected (≤7 days → all-services mode)
+      el.querySelector('[data-preset="today"]')?.classList.add("aq-preset-btn--active");
+      updateServiceMode();
+      runSearch();
     } catch (err) {
       setStatus(`Failed to load service mapping: ${friendlyError(err)}`, "error");
     }
@@ -295,17 +318,20 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       // Highlight active preset
       el.querySelectorAll(".aq-preset-btn").forEach(b => b.classList.remove("aq-preset-btn--active"));
       btn.classList.add("aq-preset-btn--active");
-      // Auto-run if a service is selected
-      if (ssService.getValue()) runSearch();
+      updateServiceMode();
+      // Auto-run: always for ≤7 day presets; longer ranges require a service
+      const isShortRange = ["today", "7d"].includes(preset);
+      if (isShortRange || ssService.getValue()) runSearch();
     });
   });
 
   // ── Search ───────────────────────────────────────────────────────
   // Deactivate preset highlight when user edits dates manually
   [$dateFrom, $dateTo, $timeFrom, $timeTo].forEach(input =>
-    input.addEventListener("change", () =>
-      el.querySelectorAll(".aq-preset-btn").forEach(b => b.classList.remove("aq-preset-btn--active"))
-    )
+    input.addEventListener("change", () => {
+      el.querySelectorAll(".aq-preset-btn").forEach(b => b.classList.remove("aq-preset-btn--active"));
+      updateServiceMode();
+    })
   );
 
   $searchBtn.addEventListener("click", () => runSearch());
@@ -319,14 +345,17 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     const toTime   = $timeTo.value   || "23:59";
     const service  = ssService.getValue();
 
-    if (!from)    return setStatus("Please select a Date From.", "error");
-    if (!to)      return setStatus("Please select a Date To.", "error");
-    if (!service) return setStatus("Please select a Service.", "error");
+    const days    = calcRangeDays(from, to);
+    const allMode = !service && days <= 7;
+
+    if (!from)                return setStatus("Please select a Date From.", "error");
+    if (!to)                  return setStatus("Please select a Date To.", "error");
+    if (!service && days > 7) return setStatus("Please select a service for ranges over 7 days.", "error");
     if (from > to || (from === to && fromTime > toTime))
       return setStatus("Date/time From must be before Date/time To.", "error");
 
-    // Persist service choice for next session
-    localStorage.setItem("aq-last-service", service);
+    // Persist service choice for next session (only when specifically selected)
+    if (service) localStorage.setItem("aq-last-service", service);
 
     isRunning = true;
     $searchBtn.disabled = true;
@@ -346,51 +375,59 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     ssChangedBy.setEnabled(false);
 
     try {
-      const chunks = buildIntervalChunks(from, fromTime, to, toTime);
-      const total  = chunks.length;
+      const servicesToQuery = allMode
+        ? (serviceMapping?.services || []).map(s => s.name)
+        : [service];
+      const chunks    = buildIntervalChunks(from, fromTime, to, toTime);
+      const totalJobs = servicesToQuery.length * chunks.length;
+      let   jobsDone  = 0;
 
-      setStatus(`Querying ${total} interval${total !== 1 ? "s" : ""}…`);
+      setStatus(`Querying ${servicesToQuery.length} service${servicesToQuery.length !== 1 ? "s" : ""}…`);
       showProgress(0);
 
-      for (let i = 0; i < chunks.length; i++) {
-        const interval = chunks[i];
-        setStatus(`Fetching interval ${i + 1} of ${total}…`);
-        showProgress((i / total) * 85);
+      for (const svcName of servicesToQuery) {
+        for (let i = 0; i < chunks.length; i++) {
+          jobsDone++;
+          const interval = chunks[i];
+          const jobLabel = servicesToQuery.length > 1
+            ? `${svcName} (${jobsDone}/${totalJobs})`
+            : `interval ${i + 1}/${chunks.length}`;
+          setStatus(`Querying ${jobLabel}…`);
+          showProgress((jobsDone / totalJobs) * 85);
 
-        const body = { interval, serviceName: service };
+          const body = { interval, serviceName: svcName };
 
-        let txId;
-        try {
-          txId = await gc.submitAuditQuery(api, orgId, body);
-        } catch (err) {
-          console.warn(`Chunk ${i + 1} submit failed:`, err.message);
-          continue;
-        }
+          let txId;
+          try {
+            txId = await gc.submitAuditQuery(api, orgId, body);
+          } catch (err) {
+            console.warn(`[${svcName}] chunk ${i + 1} submit failed:`, err.message);
+            continue;
+          }
 
-        try {
-          await gc.pollAuditQuery(api, orgId, txId, {
-            onPoll: () => setStatus(`Interval ${i + 1} of ${total}: waiting for results…`),
-          });
-        } catch (err) {
-          console.warn(`Chunk ${i + 1} poll failed:`, err.message);
-          continue;
-        }
+          try {
+            await gc.pollAuditQuery(api, orgId, txId, {
+              onPoll: () => setStatus(`${jobLabel}: waiting…`),
+            });
+          } catch (err) {
+            console.warn(`[${svcName}] chunk ${i + 1} poll failed:`, err.message);
+            continue;
+          }
 
-        try {
-          const entries = await gc.fetchAuditQueryResults(api, orgId, txId, {
-            onProgress: (n) =>
-              setStatus(`Interval ${i + 1} of ${total}: fetching results… (${n} so far)`),
-          });
-          allResults.push(...entries);
-        } catch (err) {
-          console.warn(`Chunk ${i + 1} result fetch failed:`, err.message);
+          try {
+            const entries = await gc.fetchAuditQueryResults(api, orgId, txId, {
+              onProgress: (n) => setStatus(`${jobLabel}: fetching… (${n} so far)`),
+            });
+            allResults.push(...entries);
+          } catch (err) {
+            console.warn(`[${svcName}] chunk ${i + 1} result fetch failed:`, err.message);
+          }
         }
       }
 
       showProgress(90);
-      setStatus("Resolving names…");
+      setStatus("Resolving actor names…");
       await resolveActors();
-      await resolveEntities();
 
       // Sort all results latest-first
       allResults.sort((a, b) => {
@@ -404,7 +441,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       setStatus(`Done — ${n} result${n !== 1 ? "s" : ""} found.`, "success");
       hideProgress();
 
-      populateClientFilters(service);
+      populateClientFilters(allMode ? null : service);
       currentPage = 1;
       applyFilters();
       $resultsZone.style.display = "";
@@ -485,19 +522,21 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     "Messaging/Integration":          id => `/api/v2/messaging/integrations/${id}`,
   };
 
-  async function resolveEntities() {
-    // Collect unique (service/entityType, id) pairs that have a resolver
+  // Lazy entity resolution: resolve only the visible page's entities, then
+  // patch any matching cells in the table without a full re-render.
+  async function resolvePageEntities(entries) {
     const toResolve = [];
-    for (const entry of allResults) {
+    for (const entry of entries) {
       const id      = entry.entity?.id;
-      const service = entry.serviceName || "";
+      const svcName = entry.serviceName || "";
       const type    = entry.entityType  || entry.entity?.type || "";
-      const key     = `${service}/${type}`;
-      if (id && ENTITY_PATH[key] && !entityNameMap[id]) {
-        entityNameMap[id] = null; // mark as in-flight
+      const key     = `${svcName}/${type}`;
+      if (id && ENTITY_PATH[key] && entityNameMap[id] === undefined) {
+        entityNameMap[id] = null; // mark in-flight so parallel calls skip it
         toResolve.push({ key, id });
       }
     }
+    if (!toResolve.length) return;
 
     await Promise.all(
       toResolve.map(async ({ key, id }) => {
@@ -506,12 +545,19 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
           const res  = await gc.fetchEntityByPath(api, orgId, path);
           entityNameMap[id] = res?.name || id;
         } catch (err) {
-          entityNameMap[id] = err?.status === 404
-            ? `(deleted) ${id}`
-            : id; // other errors (permissions, network) — just show GUID
+          entityNameMap[id] = err?.status === 404 ? `(deleted) ${id}` : id;
         }
       }),
     );
+
+    // Patch visible cells in-place without re-rendering the table
+    $tableBody.querySelectorAll("[data-aq-eid]").forEach(cell => {
+      const id = cell.dataset.aqEid;
+      if (id && entityNameMap[id] != null && entityNameMap[id] !== cell.textContent) {
+        cell.textContent = entityNameMap[id];
+        cell.title       = entityNameMap[id];
+      }
+    });
   }
 
   // ── Actor name resolution ────────────────────────────────────────
@@ -542,10 +588,23 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   // ── Populate client-side filter dropdowns ────────────────────────
   function populateClientFilters(serviceName) {
-    const svc = (serviceMapping?.services || []).find(s => s.name === serviceName);
-    const entityTypes = (svc?.entities || [])
-      .map(e => ({ id: e.name, label: e.name }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+    let entityTypes;
+    if (serviceName) {
+      const svc = (serviceMapping?.services || []).find(s => s.name === serviceName);
+      entityTypes = (svc?.entities || [])
+        .map(e => ({ id: e.name, label: e.name }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    } else {
+      // All-services mode: aggregate unique entity types across every service
+      const seen = new Set();
+      entityTypes = [];
+      for (const svc of (serviceMapping?.services || [])) {
+        for (const e of (svc.entities || [])) {
+          if (!seen.has(e.name)) { seen.add(e.name); entityTypes.push({ id: e.name, label: e.name }); }
+        }
+      }
+      entityTypes.sort((a, b) => a.label.localeCompare(b.label));
+    }
 
     ssEntityType.setItems(entityTypes);
     ssEntityType.setEnabled(true);
@@ -567,11 +626,28 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       ssAction.setEnabled(false);
     } else {
       const serviceName = ssService.getValue();
-      const svc    = (serviceMapping?.services || []).find(s => s.name === serviceName);
-      const entity = (svc?.entities || []).find(e => e.name === entityTypeId);
-      const actions = (entity?.actions || []).map(a => ({ id: a, label: a }));
+      let actions;
+      if (serviceName) {
+        // Single service: actions from that service only
+        const svc    = (serviceMapping?.services || []).find(s => s.name === serviceName);
+        const entity = (svc?.entities || []).find(e => e.name === entityTypeId);
+        actions = (entity?.actions || []).map(a => ({ id: a, label: a }));
+      } else {
+        // All-services mode: aggregate actions for this entity type across every service
+        const seen = new Set();
+        actions = [];
+        for (const svc of (serviceMapping?.services || [])) {
+          const entity = (svc.entities || []).find(e => e.name === entityTypeId);
+          if (entity) {
+            for (const a of (entity.actions || [])) {
+              if (!seen.has(a)) { seen.add(a); actions.push({ id: a, label: a }); }
+            }
+          }
+        }
+        actions.sort((a, b) => a.label.localeCompare(b.label));
+      }
       ssAction.setItems(actions);
-      ssAction.setEnabled(true);
+      ssAction.setEnabled(actions.length > 0);
     }
     applyFilters();
   }
@@ -673,7 +749,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         <td>${escapeHtml(ts)}</td>
         <td>${escapeHtml(service)}</td>
         <td>${escapeHtml(entityType)}</td>
-        <td class="aq-entity-name" title="${escapeHtml(entityName)}">${escapeHtml(entityName)}</td>
+        <td class="aq-entity-name" data-aq-eid="${escapeHtml(entry.entity?.id || '')}" title="${escapeHtml(entityName)}">${escapeHtml(entityName)}</td>
         <td>${escapeHtml(action)}</td>
         <td>${escapeHtml(actor)}</td>
         <td class="aq-details-cell">
@@ -700,6 +776,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       $tableBody.appendChild(tr);
       $tableBody.appendChild(detailTr);
     }
+
+    // Lazy-load entity names for this page in the background
+    resolvePageEntities(pageRows);
   }
 
   // ── Build diff HTML for an expanded row ───────────────────────────
