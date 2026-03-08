@@ -48,6 +48,16 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     <div class="dt-actions">
       <button class="btn" id="dtcCreateBtn">Create</button>
       <button class="btn" id="dtcSaveBtn" disabled>Save</button>
+      <button class="btn dtc-import-btn" id="dtcImportBtn" style="margin-left:auto">Import from Excel</button>
+      <input type="file" id="dtcFileInput" accept=".xlsx,.xls" style="display:none" />
+    </div>
+
+    <!-- Sheet picker (shown after a file is chosen) -->
+    <div id="dtcSheetPicker" class="dtc-sheet-picker" hidden>
+      <span class="dtc-sheet-label">Sheet:</span>
+      <select class="dt-select dtc-sheet-select" id="dtcSheetSelect"></select>
+      <button class="btn btn-sm" id="dtcSheetLoad">Load</button>
+      <button class="btn btn-sm dtc-sheet-cancel" id="dtcSheetCancel">Cancel</button>
     </div>
 
     <!-- Status -->
@@ -109,9 +119,16 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
   const $key          = el.querySelector("#dtcKey");
   const $rowsContainer= el.querySelector("#dtcRows");
   const $addRowBtn    = el.querySelector("#dtcAddRow");
+  const $importBtn    = el.querySelector("#dtcImportBtn");
+  const $fileInput    = el.querySelector("#dtcFileInput");
+  const $sheetPicker  = el.querySelector("#dtcSheetPicker");
+  const $sheetSelect  = el.querySelector("#dtcSheetSelect");
+  const $sheetLoad    = el.querySelector("#dtcSheetLoad");
+  const $sheetCancel  = el.querySelector("#dtcSheetCancel");
 
   let divisionsLoaded = false;
   let rowCounter = 0;
+  let _importWorkbook = null;
 
   // ── Helpers ────────────────────────────────────────────────────
   function setStatus(msg, type = "") {
@@ -181,13 +198,13 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     }
   }
 
-  function addSchemaRow() {
+  function addSchemaRow(prefillName = "", prefillType = "") {
     const id = makeRowId();
     const row = document.createElement("div");
     row.className = "dtc-schema-row";
     row.id = id;
     // Use the first type in the sorted list (Boolean) as the initial default
-    const initialType = COLUMN_TYPES[0].type;
+    const initialType = prefillType || COLUMN_TYPES[0].type;
     row.innerHTML = `
       <div class="dtc-drag-handle" title="Drag to reorder">⠿</div>
       <input class="dt-input dtc-col-name" type="text" placeholder="columnName" autocomplete="off" />
@@ -198,6 +215,8 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     // Enable dragging only when the handle is grabbed (prevents accidental drags from inputs)
     row.querySelector(".dtc-drag-handle").addEventListener("mousedown", () => { row.draggable = true; });
     row.addEventListener("dragend", () => { row.draggable = false; });
+    if (prefillName) row.querySelector(".dtc-col-name").value = prefillName;
+    if (prefillType) row.querySelector(".dtc-col-type").value = prefillType;
     row.querySelector(".dtc-del-btn").addEventListener("click", () => row.remove());
     // Wire handlers for the initial state
     wireDefaultHandlers(row);
@@ -207,7 +226,8 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
       wireDefaultHandlers(row);
     });
     $rowsContainer.appendChild(row);
-    row.querySelector(".dtc-col-name").focus();
+    // Only focus the name field when adding manually (not during bulk import)
+    if (!prefillName) row.querySelector(".dtc-col-name").focus();
   }
 
   function collectSchema(keyTitle) {
@@ -276,6 +296,90 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     divisionsLoaded = false;
     $saveBtn.disabled = true;
   }
+
+  // ── Import from Excel ──────────────────────────────────────────
+  const TYPE_MAP = {
+    boolean: "boolean",
+    string:  "string",
+    integer: "integer",
+    decimal: "number",
+    number:  "number",
+  };
+
+  $importBtn.addEventListener("click", () => $fileInput.click());
+
+  $fileInput.addEventListener("change", () => {
+    const file = $fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        _importWorkbook = XLSX.read(e.target.result, { type: "array" });
+        $sheetSelect.innerHTML = _importWorkbook.SheetNames
+          .map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
+          .join("");
+        $sheetPicker.hidden = false;
+        setStatus("Select the sheet to import, then click Load.");
+      } catch (err) {
+        setStatus(`Could not read file: ${err.message}`, "error");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    // Reset so the same file can be re-selected later
+    $fileInput.value = "";
+  });
+
+  $sheetCancel.addEventListener("click", () => {
+    $sheetPicker.hidden = true;
+    _importWorkbook = null;
+    setStatus("");
+  });
+
+  $sheetLoad.addEventListener("click", async () => {
+    if (!_importWorkbook) return;
+    const sheetName = $sheetSelect.value;
+    const ws = _importWorkbook.Sheets[sheetName];
+    // Parse as array-of-arrays; defval ensures empty cells are empty strings
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+    if (!rows.length) {
+      setStatus("The selected sheet appears to be empty.", "error");
+      return;
+    }
+
+    // Row 0: ["key", <key display name>]
+    const keyName = String(rows[0][1] || "").trim();
+    // Rows 1+: [<column name>, <type>]
+    const schemaRows = rows.slice(1).filter(r => String(r[0] || "").trim() !== "");
+
+    // Ensure form is open and divisions are loaded
+    if ($form.hidden) {
+      const orgId = orgContext.get();
+      if (!orgId) { setStatus("Please select a customer org first.", "error"); return; }
+      resetForm();
+      $form.hidden = false;
+      setStatus("Loading divisions…");
+      const ok = await loadDivisions();
+      if (!ok) return;
+    }
+
+    // Pre-fill key
+    $key.value = keyName;
+
+    // Clear existing schema rows and populate from Excel
+    $rowsContainer.innerHTML = "";
+    schemaRows.forEach(([colName, colType]) => {
+      const name = String(colName).trim();
+      const rawType = String(colType).trim().toLowerCase();
+      const type = TYPE_MAP[rawType] || "string";
+      addSchemaRow(name, type);
+    });
+
+    $sheetPicker.hidden = true;
+    _importWorkbook = null;
+    validateSave();
+    setStatus(`Imported ${schemaRows.length} column(s) from "${sheetName}". Fill in Name and Division, then Save.`);
+  });
 
   // ── Create button ──────────────────────────────────────────────
   $createBtn.addEventListener("click", async () => {
