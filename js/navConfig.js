@@ -184,6 +184,14 @@ export const NAV_TREE = [
       { label: "Request Status",  path: "request-status",  enabled: true, access: "gdpr.requestStatus"  },
     ],
   },
+  {
+    label: "Audit",
+    path: "audit",
+    enabled: true,
+    children: [
+      { label: "Search", path: "search", enabled: true, access: "audit.search" },
+    ],
+  },
 ];
 
 /** Collect all leaf routes from enabled nodes only. */

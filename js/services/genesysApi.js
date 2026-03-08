@@ -881,3 +881,127 @@ export async function gdprGetRequests(api, orgId) {
   const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/gdpr/requests?pageSize=50");
   return resp.entities || [];
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch the service/entity/action mapping for audit queries.
+ * Returned once per page session and cached by the caller.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @returns {Promise<Object>}  { services: [{ name, entities: [{ name, actions }] }] }
+ */
+export async function fetchAuditServiceMapping(api, orgId) {
+  return api.proxyGenesys(orgId, "GET", "/api/v2/audits/query/servicemapping");
+}
+
+/**
+ * Submit an async audit query.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {Object} body  Full query body — interval + serviceName + optional filters.
+ * @returns {Promise<string>}  transactionId
+ */
+export async function submitAuditQuery(api, orgId, body) {
+  const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/audits/query", { body });
+  const txId = resp.id || resp.transactionId;
+  if (!txId) {
+    throw new Error(`Audit query submission failed: ${resp.message || JSON.stringify(resp)}`);
+  }
+  return txId;
+}
+
+/**
+ * Poll an audit query until it reaches Succeeded (or Failed / timeout).
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {string}   transactionId
+ * @param {Object}   [opts]
+ * @param {number}   [opts.pollIntervalMs=2000]
+ * @param {number}   [opts.maxWaitSeconds=120]
+ * @param {Function} [opts.onPoll]  Called each tick with (elapsedSeconds).
+ * @returns {Promise<void>}
+ */
+export async function pollAuditQuery(api, orgId, transactionId, opts = {}) {
+  const {
+    pollIntervalMs = 2000,
+    maxWaitSeconds = 120,
+    onPoll,
+  } = opts;
+
+  const start = Date.now();
+  while (true) {
+    await sleep(pollIntervalMs);
+    const elapsed = (Date.now() - start) / 1000;
+    if (elapsed > maxWaitSeconds) {
+      throw new Error(`Audit query timed out after ${maxWaitSeconds}s`);
+    }
+
+    const resp = await api.proxyGenesys(orgId, "GET",
+      `/api/v2/audits/query/${transactionId}`);
+
+    if (onPoll) onPoll(elapsed);
+
+    const state = (resp.state || "").toLowerCase();
+    if (state === "succeeded" || state === "fulfilled") return;
+    if (state === "failed") {
+      throw new Error(`Audit query failed: ${resp.errorMessage || "Unknown error"}`);
+    }
+  }
+}
+
+/**
+ * Fetch all results from a completed audit query (cursor / nextUri pagination).
+ *
+ * The Genesys audit results endpoint uses `nextUri` to point to the
+ * next page. Results are in `entities[]`.
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {string}   transactionId
+ * @param {Object}   [opts]
+ * @param {Function} [opts.onProgress]  Called with (fetchedSoFar).
+ * @returns {Promise<Object[]>}  All audit entries.
+ */
+export async function fetchAuditQueryResults(api, orgId, transactionId, opts = {}) {
+  const { onProgress } = opts;
+  const all = [];
+  let cursor = null;
+
+  while (true) {
+    const query = cursor ? { cursor } : {};
+    const resp = await api.proxyGenesys(orgId, "GET",
+      `/api/v2/audits/query/${transactionId}/results`,
+      { query });
+
+    const items = resp.entities || resp.audits || [];
+    all.push(...items);
+    if (onProgress) onProgress(all.length);
+
+    // Extract cursor from nextUri (e.g. "...results?cursor=xxx")
+    const nextUri = resp.nextUri || null;
+    if (!nextUri) break;
+    const match = nextUri.match(/[?&]cursor=([^&]+)/);
+    cursor = match ? decodeURIComponent(match[1]) : null;
+    if (!cursor) break;
+  }
+
+  return all;
+}
+
+/**
+ * Fetch a single user's display name.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {string} userId
+ * @returns {Promise<Object>}  User object (id, name, …)
+ */
+export async function getUser(api, orgId, userId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/users/${userId}`);
+}

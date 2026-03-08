@@ -2387,3 +2387,83 @@ body {
   .dv-btn-apply       { background: #2563eb; color: #fff; }
   .dv-selected-count  { color: #2563eb; }
 }
+
+/* ══════════════════════════════════════════════════════════
+   Audit Search page  (aq-* prefix)
+   ══════════════════════════════════════════════════════════ */
+
+.aq-service-group    { min-width: 260px; }
+.aq-service-dropdown { min-width: 260px; }
+
+/* Results table wrapper */
+.aq-table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 60vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.aq-table { font-size: 12px; }
+
+.aq-row:hover td { background: rgba(255,255,255,0.02); }
+
+/* Truncate long entity names */
+.aq-entity-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Expand / collapse button */
+.aq-details-cell { text-align: center; }
+.aq-expand-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.aq-expand-btn:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.06);
+}
+
+/* Expanded detail row */
+.aq-detail-row > td {
+  background: var(--panel-2);
+  padding: 12px 16px !important;
+  white-space: normal !important;
+}
+
+/* Diff section headers */
+.aq-diff-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.aq-diff-empty {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Diff table column colours */
+.aq-diff-table { margin-top: 0; }
+.aq-diff-prop  { font-weight: 600; min-width: 160px; }
+.aq-diff-old   { color: #f87171; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; }
+.aq-diff-new   { color: #34d399; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; }
+
+/* Light-mode overrides */
+@media (prefers-color-scheme: light) {
+  .aq-detail-row > td { background: rgba(0,0,0,0.03); }
+  .aq-expand-btn:hover { background: rgba(0,0,0,0.06); }
+  .aq-diff-old { color: #dc2626; }
+  .aq-diff-new { color: #16a34a; }
+}
