@@ -192,7 +192,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   // ── Date defaults ────────────────────────────────────────────────
   const today       = todayStr();
-  const defaultFrom = daysAgoStr(30);
+  const defaultFrom = today;   // default to today, matching Genesys UI behaviour
   const minDate     = daysAgoStr(365);
 
   $dateFrom.value = defaultFrom;
@@ -367,6 +367,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   // entity.id in audit entries is always the resource GUID (or for
   // Datatables/Row it is the parent datatable ID).
   const ENTITY_PATH = {
+    // Triggers / ProcessAutomation
+    "Triggers/Trigger":                   id => `/api/v2/processautomation/triggers/${id}`,
+    "ProcessAutomation/Trigger":           id => `/api/v2/processautomation/triggers/${id}`,
     // Datatables
     "Datatables/Schema":              id => `/api/v2/flows/datatables/${id}`,
     "Datatables/Row":                 id => `/api/v2/flows/datatables/${id}`,

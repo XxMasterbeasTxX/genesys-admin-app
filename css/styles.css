@@ -2438,6 +2438,15 @@ body {
 
 .aq-table { font-size: 12px; }
 
+/* Sticky header */
+.aq-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--panel-2, #1e2430);
+  box-shadow: 0 1px 0 var(--border);
+}
+
 .aq-row:hover td { background: rgba(255,255,255,0.02); }
 
 /* Truncate long entity names */
