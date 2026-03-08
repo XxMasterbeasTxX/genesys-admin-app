@@ -2395,6 +2395,34 @@ body {
 .aq-service-group    { min-width: 260px; }
 .aq-service-dropdown { min-width: 260px; }
 
+/* Pagination bar */
+.aq-pagination {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.aq-page-btn { min-width: 80px; }
+.aq-page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.aq-page-info {
+  font-size: 13px;
+  color: var(--muted);
+  min-width: 100px;
+  text-align: center;
+}
+.aq-page-size-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.aq-page-size-sel {
+  width: 80px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
 /* Results table wrapper */
 .aq-table-wrap {
   overflow-x: auto;

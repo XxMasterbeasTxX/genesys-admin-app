@@ -70,9 +70,12 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   // ── Module state ─────────────────────────────────────────────────
   const orgId = orgContext.get();
   let serviceMapping = null;   // { services: [{ name, entities:[{ name, actions }] }] }
-  let allResults     = [];     // all fetched audit entries (merged from all chunks)
+  let allResults     = [];     // all fetched audit entries, sorted latest-first
+  let filteredRows   = [];     // current filtered view (subset of allResults)
   let actorMap       = {};     // { userId → displayName }
   let isRunning      = false;
+  let currentPage    = 1;
+  let pageSize       = 50;
 
   // ── Build skeleton UI ────────────────────────────────────────────
   el.innerHTML = `
@@ -147,6 +150,22 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         </table>
       </div>
 
+      <!-- Pagination controls -->
+      <div class="aq-pagination" id="aqPagination">
+        <button class="btn aq-page-btn" id="aqPrevBtn">&#8592; Prev</button>
+        <span class="aq-page-info" id="aqPageInfo"></span>
+        <button class="btn aq-page-btn" id="aqNextBtn">Next &#8594;</button>
+        <div class="aq-page-size-group">
+          <label class="di-label" for="aqPageSize">Rows per page</label>
+          <select class="input aq-page-size-sel" id="aqPageSize">
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="150">150</option>
+            <option value="200">200</option>
+          </select>
+        </div>
+      </div>
+
     </div>
   `;
 
@@ -161,6 +180,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   const $resultsZone  = el.querySelector("#aqResultsZone");
   const $resultCount  = el.querySelector("#aqResultCount");
   const $tableBody    = el.querySelector("#aqTableBody");
+  const $prevBtn      = el.querySelector("#aqPrevBtn");
+  const $nextBtn      = el.querySelector("#aqNextBtn");
+  const $pageInfo     = el.querySelector("#aqPageInfo");
+  const $pageSizeSel  = el.querySelector("#aqPageSize");
 
   // ── Date defaults ────────────────────────────────────────────────
   const today       = todayStr();
@@ -303,13 +326,21 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       setStatus("Resolving user names…");
       await resolveActors();
 
+      // Sort all results latest-first
+      allResults.sort((a, b) => {
+        const ta = new Date(a.eventDate || a.createdDate || 0).getTime();
+        const tb = new Date(b.eventDate || b.createdDate || 0).getTime();
+        return tb - ta;
+      });
+
       showProgress(100);
       const n = allResults.length;
       setStatus(`Done — ${n} result${n !== 1 ? "s" : ""} found.`, "success");
       hideProgress();
 
       populateClientFilters(service);
-      renderTable(allResults);
+      currentPage = 1;
+      applyFilters();
       $resultsZone.style.display = "";
 
     } catch (err) {
@@ -378,7 +409,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     const action     = ssAction.getValue();
     const changedBy  = ssChangedBy.getValue();
 
-    const filtered = allResults.filter(entry => {
+    filteredRows = allResults.filter(entry => {
       if (entityType && getEntityType(entry) !== entityType) return false;
       if (action     && entry.action !== action)             return false;
       if (changedBy) {
@@ -388,7 +419,8 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       return true;
     });
 
-    renderTable(filtered);
+    currentPage = 1;
+    renderTable();
   }
 
   // ── Field extractors ─────────────────────────────────────────────
@@ -405,18 +437,43 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     return entry.user?.name || entry.user?.id || "—";
   }
 
+  // ── Pagination wiring ────────────────────────────────────────────
+  $prevBtn.addEventListener("click", () => {
+    if (currentPage > 1) { currentPage--; renderTable(); }
+  });
+  $nextBtn.addEventListener("click", () => {
+    const totalPages = Math.ceil(filteredRows.length / pageSize);
+    if (currentPage < totalPages) { currentPage++; renderTable(); }
+  });
+  $pageSizeSel.addEventListener("change", () => {
+    pageSize = Number($pageSizeSel.value);
+    currentPage = 1;
+    renderTable();
+  });
+
   // ── Render results table ─────────────────────────────────────────
-  function renderTable(rows) {
-    const total = allResults.length;
-    const shown = rows.length;
+  function renderTable() {
+    const total      = allResults.length;
+    const shown      = filteredRows.length;
+    const totalPages = Math.max(1, Math.ceil(shown / pageSize));
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    const start    = (currentPage - 1) * pageSize;
+    const pageRows = filteredRows.slice(start, start + pageSize);
+
     $resultCount.textContent =
       shown === total
         ? `${total} result${total !== 1 ? "s" : ""}`
         : `${total} results (${shown} shown after filters)`;
 
+    // Pagination info + button states
+    $pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+    $prevBtn.disabled = currentPage <= 1;
+    $nextBtn.disabled = currentPage >= totalPages;
+
     $tableBody.innerHTML = "";
 
-    if (!rows.length) {
+    if (!pageRows.length) {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">
@@ -426,7 +483,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       return;
     }
 
-    for (const entry of rows) {
+    for (const entry of pageRows) {
       const entityType = getEntityType(entry);
       const entityName = getEntityName(entry);
       const actor      = getActorName(entry);
