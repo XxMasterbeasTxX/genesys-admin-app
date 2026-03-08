@@ -696,6 +696,13 @@ body {
   opacity: 1;
   box-shadow: 0 0 0 2px #3b82f6;
 }
+.aq-service-hint {
+  font-size: 11px;
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+.aq-service-hint--info { color: #60a5fa; }
+.aq-service-hint--warn { color: #f59e0b; }
 .di-actions {
   display: flex;
   gap: 8px;

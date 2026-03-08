@@ -912,6 +912,28 @@ export async function fetchAuditServiceMapping(api, orgId) {
 }
 
 /**
+ * Fetch the service mapping for the realtime audit endpoint.
+ * Returns only services supported by /audits/query/realtime.
+ */
+export async function fetchRealtimeAuditServiceMapping(api, orgId) {
+  return api.proxyGenesys(orgId, "GET", "/api/v2/audits/query/realtime/servicemapping");
+}
+
+/**
+ * Submit a synchronous (realtime) audit query.
+ * Covers up to 14 days back. Returns entities directly — no polling needed.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {Object} body  { interval, serviceName }
+ * @returns {Promise<Object[]>}  Audit entries array.
+ */
+export async function submitRealtimeAuditQuery(api, orgId, body) {
+  const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/audits/query/realtime", { body });
+  return resp.entities || resp.audits || [];
+}
+
+/**
  * Submit an async audit query.
  *
  * @param {Object} api

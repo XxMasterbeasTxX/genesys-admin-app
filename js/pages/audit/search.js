@@ -1,15 +1,21 @@
 /**
  * Audit › Search
  *
- * Query audit events for a selected service within a date range.
- * Client-side filters: Entity Type → Action (cascading) + Changed By (independent).
+ * Routing:
+ *   ≤ 14 days, no service  → realtime API, all realtime-supported services (concurrent)
+ *   ≤ 14 days, service selected, in realtime mapping → realtime API (sync, fast)
+ *   ≤ 14 days, service selected, NOT in realtime     → async API fallback
+ *   > 14 days → async API only; service selection required
  *
- * API endpoints:
- *   GET  /api/v2/audits/query/servicemapping        — service/entity/action mapping
- *   POST /api/v2/audits/query                       — submit async audit query
- *   GET  /api/v2/audits/query/{transactionId}       — poll query status
- *   GET  /api/v2/audits/query/{transactionId}/results — cursor-paginated results
- *   GET  /api/v2/users/{userId}                     — resolve actor display names
+ * Realtime endpoints (synchronous, ≤14 days):
+ *   GET  /api/v2/audits/query/realtime/servicemapping
+ *   POST /api/v2/audits/query/realtime
+ *
+ * Async endpoints (any range):
+ *   GET  /api/v2/audits/query/servicemapping
+ *   POST /api/v2/audits/query
+ *   GET  /api/v2/audits/query/{transactionId}
+ *   GET  /api/v2/audits/query/{transactionId}/results
  */
 import { escapeHtml, formatDateTime, todayStr, daysAgoStr } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
@@ -43,6 +49,12 @@ function buildIntervalChunks(from, fromTime, to, toTime) {
   return chunks;
 }
 
+/** Days between two YYYY-MM-DD strings. Returns 0 if either is missing. */
+function calcRangeDays(from, to) {
+  if (!from || !to) return 0;
+  return Math.round((new Date(to) - new Date(from)) / 86_400_000);
+}
+
 /** Extract a friendly message from an API error. */
 function friendlyError(err) {
   const msg = err.message || String(err);
@@ -69,7 +81,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   // ── Module state ─────────────────────────────────────────────────
   const orgId = orgContext.get();
-  let serviceMapping = null;   // { services: [{ name, entities:[{ name, actions }] }] }
+  let serviceMapping         = null;  // async service mapping
+  let realtimeServiceMapping = null;  // realtime service mapping (≤14 days)
+  let realtimeServiceNames   = new Set(); // service names supported by realtime API
   let allResults     = [];     // all fetched audit entries, sorted latest-first
   let filteredRows   = [];     // current filtered view (subset of allResults)
   let actorMap       = {};     // { userId → displayName }
@@ -83,8 +97,8 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     <h1 class="h1">Audit — Search</h1>
     <hr class="hr">
     <p class="page-desc">
-      Query audit events for a service within a date range.
-      Select optional filters after results load to narrow the view.
+      Ranges up to 14 days query all supported services automatically.
+      For longer ranges, select a service first.
     </p>
 
     <!-- Preset quick filters -->
@@ -112,6 +126,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         <div id="aqServiceDropdown" class="aq-service-dropdown">
           <span class="di-status">Loading services…</span>
         </div>
+        <p class="aq-service-hint" id="aqServiceHint"></p>
       </div>
       <div class="di-control-group" style="justify-content:flex-end;padding-top:20px">
         <button class="btn" id="aqSearchBtn" disabled>Search</button>
@@ -186,6 +201,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   const $dateTo       = el.querySelector("#aqDateTo");
   const $timeTo       = el.querySelector("#aqTimeTo");
   const $serviceDrop  = el.querySelector("#aqServiceDropdown");
+  const $serviceHint  = el.querySelector("#aqServiceHint");
   const $searchBtn    = el.querySelector("#aqSearchBtn");
   const $status       = el.querySelector("#aqStatus");
   const $progressWrap = el.querySelector("#aqProgressWrap");
@@ -209,6 +225,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   $dateFrom.max   = today;
   $dateTo.min     = minDate;
   $dateTo.max     = today;
+  updateServiceMode(); // set initial hint
 
   // ── Single-select dropdowns ──────────────────────────────────────
   const ssService    = createSingleSelect({ placeholder: "— Select service —",  searchable: true,  onChange: () => {} });
@@ -245,11 +262,17 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     $progressBar.style.width    = "0%";
   }
 
-  // ── Load service mapping on mount ───────────────────────────────
+  // ── Load service mappings on mount (both async + realtime in parallel) ──
   async function loadServiceMapping() {
     setStatus("Loading service mapping…");
     try {
-      serviceMapping = await gc.fetchAuditServiceMapping(api, orgId);
+      [serviceMapping, realtimeServiceMapping] = await Promise.all([
+        gc.fetchAuditServiceMapping(api, orgId),
+        gc.fetchRealtimeAuditServiceMapping(api, orgId).catch(() => null), // non-fatal
+      ]);
+      realtimeServiceNames = new Set(
+        (realtimeServiceMapping?.services || []).map(s => s.name)
+      );
       const services = (serviceMapping.services || [])
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -257,20 +280,33 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       ssService.setItems(services);
       $searchBtn.disabled = false;
       setStatus("");
-      // Restore last-used service and auto-run for today
+      // Restore last-used service if available (optional for ≤14 day range)
       const lastService = localStorage.getItem("aq-last-service");
       if (lastService && services.some(s => s.id === lastService)) {
         ssService.setValue(lastService);
-        // Activate the "Today" preset button
-        el.querySelector('[data-preset="today"]')?.classList.add("aq-preset-btn--active");
-        runSearch();
       }
+      // Always auto-run today — ≤14 days works with or without a service selection
+      el.querySelector('[data-preset="today"]')?.classList.add("aq-preset-btn--active");
+      updateServiceMode();
+      runSearch();
     } catch (err) {
       setStatus(`Failed to load service mapping: ${friendlyError(err)}`, "error");
     }
   }
 
   loadServiceMapping();
+
+  // ── Service mode hint ────────────────────────────────────────────
+  function updateServiceMode() {
+    const days = calcRangeDays($dateFrom.value, $dateTo.value);
+    if (days <= 14) {
+      $serviceHint.textContent = "All supported services shown — select one to narrow.";
+      $serviceHint.className   = "aq-service-hint aq-service-hint--info";
+    } else {
+      $serviceHint.textContent = "Range > 14 days — a service selection is required.";
+      $serviceHint.className   = "aq-service-hint aq-service-hint--warn";
+    }
+  }
 
   // ── Preset quick-filter buttons ──────────────────────────────────
   el.querySelectorAll(".aq-preset-btn").forEach(btn => {
@@ -295,17 +331,21 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       // Highlight active preset
       el.querySelectorAll(".aq-preset-btn").forEach(b => b.classList.remove("aq-preset-btn--active"));
       btn.classList.add("aq-preset-btn--active");
-      // Auto-run if a service is selected
-      if (ssService.getValue()) runSearch();
+      updateServiceMode();
+      // ≤14 day presets: always auto-run (allMode works without a service)
+      // >14 day presets: only auto-run if a service is selected
+      const isShortRange = ["today", "7d"].includes(preset);
+      if (isShortRange || ssService.getValue()) runSearch();
     });
   });
 
   // ── Search ───────────────────────────────────────────────────────
   // Deactivate preset highlight when user edits dates manually
   [$dateFrom, $dateTo, $timeFrom, $timeTo].forEach(input =>
-    input.addEventListener("change", () =>
-      el.querySelectorAll(".aq-preset-btn").forEach(b => b.classList.remove("aq-preset-btn--active"))
-    )
+    input.addEventListener("change", () => {
+      el.querySelectorAll(".aq-preset-btn").forEach(b => b.classList.remove("aq-preset-btn--active"));
+      updateServiceMode();
+    })
   );
 
   $searchBtn.addEventListener("click", () => runSearch());
@@ -318,25 +358,25 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     const to       = $dateTo.value;
     const toTime   = $timeTo.value   || "23:59";
     const service  = ssService.getValue();
+    const days     = calcRangeDays(from, to);
+    const allMode  = !service && days <= 14; // no service + ≤14 days → all realtime services
 
-    if (!from)    return setStatus("Please select a Date From.", "error");
-    if (!to)      return setStatus("Please select a Date To.", "error");
-    if (!service) return setStatus("Please select a Service.", "error");
+    if (!from)                 return setStatus("Please select a Date From.", "error");
+    if (!to)                   return setStatus("Please select a Date To.", "error");
+    if (!service && days > 14) return setStatus("Please select a service for ranges over 14 days.", "error");
     if (from > to || (from === to && fromTime > toTime))
       return setStatus("Date/time From must be before Date/time To.", "error");
 
-    // Persist service choice for next session
-    localStorage.setItem("aq-last-service", service);
+    if (service) localStorage.setItem("aq-last-service", service);
 
     isRunning = true;
     $searchBtn.disabled = true;
-    allResults = [];
-    actorMap   = {};
+    allResults    = [];
+    actorMap      = {};
     entityNameMap = {};
     $tableBody.innerHTML = "";
     $resultsZone.style.display = "none";
 
-    // Reset client-side filters
     ssEntityType.setValue("");
     ssEntityType.setEnabled(false);
     ssAction.setValue("");
@@ -346,45 +386,42 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     ssChangedBy.setEnabled(false);
 
     try {
-      const chunks = buildIntervalChunks(from, fromTime, to, toTime);
-      const total  = chunks.length;
+      // Build a single ISO interval string (used by realtime and for ≤14-day async)
+      const intervalStr =
+        `${new Date(`${from}T${fromTime}:00.000Z`).toISOString()}` +
+        `/` +
+        `${new Date(`${to}T${toTime}:59.999Z`).toISOString()}`;
 
-      setStatus(`Querying ${total} interval${total !== 1 ? "s" : ""}…`);
-      showProgress(0);
+      if (days <= 14 && allMode) {
+        // ── Realtime: all supported services, concurrent ───────────────
+        const svcList = [...realtimeServiceNames].sort();
+        let done = 0;
+        setStatus(`Querying ${svcList.length} services (realtime)…`);
+        showProgress(5);
 
-      for (let i = 0; i < chunks.length; i++) {
-        const interval = chunks[i];
-        setStatus(`Fetching interval ${i + 1} of ${total}…`);
-        showProgress((i / total) * 85);
-
-        const body = { interval, serviceName: service };
-
-        let txId;
-        try {
-          txId = await gc.submitAuditQuery(api, orgId, body);
-        } catch (err) {
-          console.warn(`Chunk ${i + 1} submit failed:`, err.message);
-          continue;
+        const settled = await Promise.allSettled(
+          svcList.map(svcName =>
+            gc.submitRealtimeAuditQuery(api, orgId, { interval: intervalStr, serviceName: svcName })
+              .then(entries => { done++; showProgress(5 + (done / svcList.length) * 80); return entries; })
+          )
+        );
+        for (const r of settled) {
+          if (r.status === "fulfilled") allResults.push(...r.value);
+          else console.warn("Realtime query failed:", r.reason?.message);
         }
 
-        try {
-          await gc.pollAuditQuery(api, orgId, txId, {
-            onPoll: () => setStatus(`Interval ${i + 1} of ${total}: waiting for results…`),
-          });
-        } catch (err) {
-          console.warn(`Chunk ${i + 1} poll failed:`, err.message);
-          continue;
-        }
+      } else if (days <= 14 && realtimeServiceNames.has(service)) {
+        // ── Realtime: single service ─────────────────────────────
+        setStatus(`Querying ${service} (realtime)…`);
+        showProgress(10);
+        const entries = await gc.submitRealtimeAuditQuery(api, orgId, { interval: intervalStr, serviceName: service });
+        allResults.push(...entries);
+        showProgress(85);
 
-        try {
-          const entries = await gc.fetchAuditQueryResults(api, orgId, txId, {
-            onProgress: (n) =>
-              setStatus(`Interval ${i + 1} of ${total}: fetching results… (${n} so far)`),
-          });
-          allResults.push(...entries);
-        } catch (err) {
-          console.warn(`Chunk ${i + 1} result fetch failed:`, err.message);
-        }
+      } else {
+        // ── Async: >14 days, or service not in realtime mapping ─────
+        if (days <= 14) setStatus(`${service} not in realtime mapping — using standard query…`);
+        await runAsyncQuery(service, from, fromTime, to, toTime);
       }
 
       showProgress(90);
@@ -392,7 +429,6 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       await resolveActors();
       await resolveEntities();
 
-      // Sort all results latest-first
       allResults.sort((a, b) => {
         const ta = new Date(a.eventDate || a.createdDate || 0).getTime();
         const tb = new Date(b.eventDate || b.createdDate || 0).getTime();
@@ -404,7 +440,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       setStatus(`Done — ${n} result${n !== 1 ? "s" : ""} found.`, "success");
       hideProgress();
 
-      populateClientFilters(service);
+      populateClientFilters(allMode ? null : service);
       currentPage = 1;
       applyFilters();
       $resultsZone.style.display = "";
@@ -415,6 +451,32 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     } finally {
       isRunning = false;
       $searchBtn.disabled = false;
+    }
+  }
+
+  // Chunked async query helper (>14 days, or realtime-unsupported service)
+  async function runAsyncQuery(service, from, fromTime, to, toTime) {
+    const chunks = buildIntervalChunks(from, fromTime, to, toTime);
+    const total  = chunks.length;
+    for (let i = 0; i < chunks.length; i++) {
+      const interval = chunks[i];
+      setStatus(`Fetching interval ${i + 1} of ${total} (${service})…`);
+      showProgress(5 + (i / total) * 80);
+      let txId;
+      try {
+        txId = await gc.submitAuditQuery(api, orgId, { interval, serviceName: service });
+      } catch (err) { console.warn(`Chunk ${i + 1} submit failed:`, err.message); continue; }
+      try {
+        await gc.pollAuditQuery(api, orgId, txId, {
+          onPoll: () => setStatus(`Interval ${i + 1} of ${total}: waiting…`),
+        });
+      } catch (err) { console.warn(`Chunk ${i + 1} poll failed:`, err.message); continue; }
+      try {
+        const entries = await gc.fetchAuditQueryResults(api, orgId, txId, {
+          onProgress: (n) => setStatus(`Interval ${i + 1} of ${total}: fetching… (${n} so far)`),
+        });
+        allResults.push(...entries);
+      } catch (err) { console.warn(`Chunk ${i + 1} result fetch failed:`, err.message); }
     }
   }
 
@@ -542,19 +604,30 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   // ── Populate client-side filter dropdowns ────────────────────────
   function populateClientFilters(serviceName) {
-    const svc = (serviceMapping?.services || []).find(s => s.name === serviceName);
-    const entityTypes = (svc?.entities || [])
-      .map(e => ({ id: e.name, label: e.name }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+    let entityTypes;
+    if (serviceName) {
+      // Single service: use async mapping
+      const svc = (serviceMapping?.services || []).find(s => s.name === serviceName);
+      entityTypes = (svc?.entities || [])
+        .map(e => ({ id: e.name, label: e.name }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    } else {
+      // allMode: aggregate unique entity types from realtime service mapping
+      const src  = realtimeServiceMapping || serviceMapping;
+      const seen = new Set();
+      entityTypes = [];
+      for (const svc of (src?.services || [])) {
+        for (const e of (svc.entities || [])) {
+          if (!seen.has(e.name)) { seen.add(e.name); entityTypes.push({ id: e.name, label: e.name }); }
+        }
+      }
+      entityTypes.sort((a, b) => a.label.localeCompare(b.label));
+    }
 
     ssEntityType.setItems(entityTypes);
     ssEntityType.setEnabled(true);
-
-    // Action stays disabled until entity type is chosen
     ssAction.setItems([]);
     ssAction.setEnabled(false);
-
-    // Changed By — populated from resolved actor names in actual results
     const actorNames = [...new Set(Object.values(actorMap))].sort();
     ssChangedBy.setItems(actorNames.map(n => ({ id: n, label: n })));
     ssChangedBy.setEnabled(true);
@@ -567,11 +640,26 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       ssAction.setEnabled(false);
     } else {
       const serviceName = ssService.getValue();
-      const svc    = (serviceMapping?.services || []).find(s => s.name === serviceName);
-      const entity = (svc?.entities || []).find(e => e.name === entityTypeId);
-      const actions = (entity?.actions || []).map(a => ({ id: a, label: a }));
+      let actions;
+      if (serviceName) {
+        // Single service: actions from async mapping
+        const svc    = (serviceMapping?.services || []).find(s => s.name === serviceName);
+        const entity = (svc?.entities || []).find(e => e.name === entityTypeId);
+        actions = (entity?.actions || []).map(a => ({ id: a, label: a }));
+      } else {
+        // allMode: aggregate actions for this entity type across all realtime services
+        const src  = realtimeServiceMapping || serviceMapping;
+        const seen = new Set();
+        actions = [];
+        for (const svc of (src?.services || [])) {
+          const entity = (svc.entities || []).find(e => e.name === entityTypeId);
+          if (entity) for (const a of (entity.actions || []))
+            if (!seen.has(a)) { seen.add(a); actions.push({ id: a, label: a }); }
+        }
+        actions.sort((a, b) => a.label.localeCompare(b.label));
+      }
       ssAction.setItems(actions);
-      ssAction.setEnabled(true);
+      ssAction.setEnabled(actions.length > 0);
     }
     applyFilters();
   }
