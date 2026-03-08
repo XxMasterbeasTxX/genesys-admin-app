@@ -135,12 +135,49 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
       return `<label class="dtc-bool-wrap"><input type="checkbox" class="dtc-col-default-bool" /><span class="dtc-bool-label">false</span></label>`;
     }
     if (type === "integer") {
-      return `<input class="dt-input dtc-col-default" type="number" step="1" placeholder="0" />`;
+      return `<input class="dt-input dtc-col-default" type="number" step="1" inputmode="numeric" placeholder="0" />`;
     }
     if (type === "number") {
-      return `<input class="dt-input dtc-col-default" type="number" step="any" placeholder="0" />`;
+      return `<input class="dt-input dtc-col-default" type="number" step="any" placeholder="0.0" />`;
     }
     return `<input class="dt-input dtc-col-default" type="text" placeholder="" />`;
+  }
+
+  /** Wire event listeners for the default input inside a row after (re-)rendering it. */
+  function wireDefaultHandlers(row) {
+    const wrap = row.querySelector(".dtc-col-default-wrap");
+    const type = row.querySelector(".dtc-col-type").value;
+
+    // Boolean: keep label in sync with checkbox
+    const bool = wrap.querySelector(".dtc-col-default-bool");
+    if (bool) {
+      bool.addEventListener("change", () => {
+        bool.nextElementSibling.textContent = bool.checked ? "true" : "false";
+      });
+    }
+
+    // Integer: strip any decimal part on input
+    const numInput = wrap.querySelector(".dtc-col-default");
+    if (numInput && type === "integer") {
+      numInput.addEventListener("input", () => {
+        if (numInput.value !== "" && numInput.value.includes(".")) {
+          numInput.value = Math.trunc(Number(numInput.value));
+        }
+      });
+      numInput.addEventListener("blur", () => {
+        if (numInput.value !== "") numInput.value = Math.trunc(Number(numInput.value));
+      });
+    }
+
+    // Decimal: reject non-numeric characters (allow - and .)
+    if (numInput && type === "number") {
+      numInput.addEventListener("input", () => {
+        const v = numInput.value;
+        // Remove anything that isn't a digit, dot, or leading minus
+        const clean = v.replace(/[^0-9.\-]/g, "").replace(/(?!^)-/g, "").replace(/(\..*)\./g, "$1");
+        if (clean !== v) numInput.value = clean;
+      });
+    }
   }
 
   function addSchemaRow() {
@@ -148,25 +185,21 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     const row = document.createElement("div");
     row.className = "dtc-schema-row";
     row.id = id;
+    // Use the first type in the sorted list (Boolean) as the initial default
+    const initialType = COLUMN_TYPES[0].type;
     row.innerHTML = `
       <input class="dt-input dtc-col-name" type="text" placeholder="columnName" autocomplete="off" />
       <select class="dt-select dtc-col-type">${TYPE_OPTIONS_HTML}</select>
-      <div class="dtc-col-default-wrap">${makeDefaultInput("string")}</div>
+      <div class="dtc-col-default-wrap">${makeDefaultInput(initialType)}</div>
       <button class="btn btn-sm dtc-del-btn" title="Remove column">×</button>
     `;
     row.querySelector(".dtc-del-btn").addEventListener("click", () => row.remove());
-    // Swap default input when type changes
+    // Wire handlers for the initial state
+    wireDefaultHandlers(row);
+    // Swap default input and re-wire when type changes
     row.querySelector(".dtc-col-type").addEventListener("change", (e) => {
       row.querySelector(".dtc-col-default-wrap").innerHTML = makeDefaultInput(e.target.value);
-      const bool = row.querySelector(".dtc-col-default-bool");
-      if (bool) bool.addEventListener("change", () => {
-        bool.nextElementSibling.textContent = bool.checked ? "true" : "false";
-      });
-    });
-    // Label update for initial boolean if ever pre-set
-    const initBool = row.querySelector(".dtc-col-default-bool");
-    if (initBool) initBool.addEventListener("change", () => {
-      initBool.nextElementSibling.textContent = initBool.checked ? "true" : "false";
+      wireDefaultHandlers(row);
     });
     $rowsContainer.appendChild(row);
     row.querySelector(".dtc-col-name").focus();
