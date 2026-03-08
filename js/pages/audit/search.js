@@ -87,6 +87,14 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       Select optional filters after results load to narrow the view.
     </p>
 
+    <!-- Preset quick filters -->
+    <div class="aq-presets">
+      <button class="btn aq-preset-btn" data-preset="today">Today</button>
+      <button class="btn aq-preset-btn" data-preset="7d">Last 7 days</button>
+      <button class="btn aq-preset-btn" data-preset="30d">Last month</button>
+      <button class="btn aq-preset-btn" data-preset="90d">Last 3 months</button>
+    </div>
+
     <!-- Zone 1: Required query inputs -->
     <div class="di-controls">
       <div class="di-control-group">
@@ -249,6 +257,14 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       ssService.setItems(services);
       $searchBtn.disabled = false;
       setStatus("");
+      // Restore last-used service and auto-run for today
+      const lastService = localStorage.getItem("aq-last-service");
+      if (lastService && services.some(s => s.id === lastService)) {
+        ssService.setValue(lastService);
+        // Activate the "Today" preset button
+        el.querySelector('[data-preset="today"]')?.classList.add("aq-preset-btn--active");
+        runSearch();
+      }
     } catch (err) {
       setStatus(`Failed to load service mapping: ${friendlyError(err)}`, "error");
     }
@@ -256,8 +272,45 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   loadServiceMapping();
 
+  // ── Preset quick-filter buttons ──────────────────────────────────
+  el.querySelectorAll(".aq-preset-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const preset = btn.dataset.preset;
+      const t = todayStr();
+      $dateTo.value   = t;
+      $timeTo.value   = "23:59";
+      if (preset === "today") {
+        $dateFrom.value = t;
+        $timeFrom.value = "00:00";
+      } else if (preset === "7d") {
+        $dateFrom.value = daysAgoStr(7);
+        $timeFrom.value = "00:00";
+      } else if (preset === "30d") {
+        $dateFrom.value = daysAgoStr(30);
+        $timeFrom.value = "00:00";
+      } else if (preset === "90d") {
+        $dateFrom.value = daysAgoStr(90);
+        $timeFrom.value = "00:00";
+      }
+      // Highlight active preset
+      el.querySelectorAll(".aq-preset-btn").forEach(b => b.classList.remove("aq-preset-btn--active"));
+      btn.classList.add("aq-preset-btn--active");
+      // Auto-run if a service is selected
+      if (ssService.getValue()) runSearch();
+    });
+  });
+
   // ── Search ───────────────────────────────────────────────────────
-  $searchBtn.addEventListener("click", async () => {
+  // Deactivate preset highlight when user edits dates manually
+  [$dateFrom, $dateTo, $timeFrom, $timeTo].forEach(input =>
+    input.addEventListener("change", () =>
+      el.querySelectorAll(".aq-preset-btn").forEach(b => b.classList.remove("aq-preset-btn--active"))
+    )
+  );
+
+  $searchBtn.addEventListener("click", () => runSearch());
+
+  async function runSearch() {
     if (isRunning) return;
 
     const from     = $dateFrom.value;
@@ -271,6 +324,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     if (!service) return setStatus("Please select a Service.", "error");
     if (from > to || (from === to && fromTime > toTime))
       return setStatus("Date/time From must be before Date/time To.", "error");
+
+    // Persist service choice for next session
+    localStorage.setItem("aq-last-service", service);
 
     isRunning = true;
     $searchBtn.disabled = true;
@@ -360,7 +416,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       isRunning = false;
       $searchBtn.disabled = false;
     }
-  });
+  }
 
   // ── Entity name resolution ───────────────────────────────────────
   // Maps service+entityType to a Genesys API path function.

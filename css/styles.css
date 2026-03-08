@@ -677,6 +677,25 @@ body {
   width: 120px;
   margin-top: 4px;
 }
+.aq-presets {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.aq-preset-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+  opacity: 0.75;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.aq-preset-btn:hover {
+  opacity: 1;
+}
+.aq-preset-btn--active {
+  opacity: 1;
+  box-shadow: 0 0 0 2px #3b82f6;
+}
 .di-actions {
   display: flex;
   gap: 8px;
