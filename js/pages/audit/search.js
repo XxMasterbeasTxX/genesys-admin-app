@@ -530,15 +530,15 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       detailTr.hidden = true;
       detailTr.innerHTML = `<td colspan="7">${buildDiffHtml(entry, entityName, action, ts)}</td>`;
 
-      // ── Toggle expand / collapse ──────────────────────
+      // ── Toggle expand / collapse (click anywhere on the row) ──
       const expandBtn = tr.querySelector(".aq-expand-btn");
-      expandBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
+      function toggleRow() {
         const opening = detailTr.hidden;
         detailTr.hidden = !opening;
         expandBtn.textContent = opening ? "▼" : "▶";
         expandBtn.setAttribute("aria-expanded", String(opening));
-      });
+      }
+      tr.addEventListener("click", toggleRow);
 
       $tableBody.appendChild(tr);
       $tableBody.appendChild(detailTr);

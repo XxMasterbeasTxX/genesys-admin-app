@@ -2490,6 +2490,14 @@ body {
 }
 .aq-diff-meta-val { font-size: 12px; }
 
+/* Clickable result rows */
+#aqTableBody tr.aq-row {
+  cursor: pointer;
+}
+#aqTableBody tr.aq-row:hover td {
+  background: var(--hover, rgba(255,255,255,0.05));
+}
+
 .aq-diff-empty {
   font-size: 12px;
   color: var(--muted);
