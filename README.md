@@ -35,6 +35,7 @@ Internal web application for the Genesys Team to perform administrative actions 
   - **Outbound:** Campaigns — Contact Lists — DNC Lists — Email Campaigns — Messaging Campaigns
   - **Workforce Management:** Business Units — Management Units
   - **Task Management:** Workbins — Work Types
+- **Audit — Search** — Query Genesys Cloud audit events across any date range. Ranges ≤ 14 days automatically query **all realtime-supported services** concurrently using the synchronous `POST /api/v2/audits/query/realtime` endpoint (no polling) — results appear in seconds. For ≤ 14-day ranges with a specific service not supported by the realtime endpoint, falls back to the standard async query API automatically. Ranges > 14 days require a service selection and always use the async chunked pipeline (`POST /api/v2/audits/query` → poll → cursor-paginated results, 30-day chunks). Preset quick-filters: Today, Last 7 days, Last month, Last 3 months. Auto-runs today's query on page load (restoring last-used service from `localStorage`). Client-side filters: Entity Type → Action (cascading) + Changed By. Results table: Date & Time, Service, Entity Type, Entity Name (resolved via 40+ mapped API paths with `(deleted)` label on 404), Action, Changed By (user or OAuth client name). Click any row to expand a detail panel showing metadata, changed properties (old → new values), additional context, and a raw API response dump. Sticky table header, sortable latest-first, configurable rows per page (50/100/150/200). A blue/amber hint below the service dropdown indicates the current query mode.
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
 - **Top-level menu groups** — Data Actions, Data Tables, Divisions, Export, Interactions, and Phones each have their own top-level nav section
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
@@ -131,6 +132,8 @@ genesys-admin-app/
 │   │   ├── notfound.js           404 page
 │   │   ├── accessdenied.js       Access denied page
 │   │   ├── placeholder.js        Generic "coming soon" stub
+│   │   ├── audit/
+│   │   │   └── search.js            Audit Search (realtime + async dual-path, preset filters, row-expand detail panel)
 │   │   ├── dataactions/
 │   │   │   ├── copyBetweenOrgs.js   Copy data action between orgs
 │   │   │   └── edit.js              Edit / test existing data actions

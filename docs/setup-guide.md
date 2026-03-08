@@ -33,6 +33,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
   - **Outbound:** Campaigns — Contact Lists — DNC Lists — Email Campaigns — Messaging Campaigns
   - **Workforce Management:** Business Units — Management Units
   - **Task Management:** Workbins — Work Types
+- **Audit — Search** — Query Genesys Cloud audit events across any date range. Ranges ≤ 14 days automatically query **all realtime-supported services** concurrently using the synchronous `POST /api/v2/audits/query/realtime` endpoint (no polling) — results appear in seconds. For ≤ 14-day ranges with a specific service not supported by the realtime endpoint, falls back to the standard async query API automatically. Ranges > 14 days require a service selection and always use the async chunked pipeline (`POST /api/v2/audits/query` → poll → cursor-paginated results, 30-day chunks). Preset quick-filters: Today, Last 7 days, Last month, Last 3 months. Auto-runs today's query on page load (restoring last-used service from `localStorage`). Client-side filters: Entity Type → Action (cascading) + Changed By. Results table: Date & Time, Service, Entity Type, Entity Name (resolved via 40+ mapped API paths with `(deleted)` label on 404), Action, Changed By (user or OAuth client name). Click any row to expand a detail panel showing metadata, changed properties (old → new values), additional context, and a raw API response dump. Sticky table header, sortable latest-first, configurable rows per page (50/100/150/200). A blue/amber hint below the service dropdown indicates the current query mode.
 
 ---
 
@@ -262,6 +263,7 @@ For the initial Actions feature, the OAuth client's role needs at minimum:
 | Permission | Purpose |
 | --- | --- |
 | `user:readonly` | Fetch `/users/me` for auth verification |
+| `audits:audit:view` | Read audit events (Audit — Search feature, both realtime and async endpoints) |
 
 Add more scopes later as features are built (e.g. `processautomation`, `architect`, etc.).
 
@@ -686,6 +688,12 @@ After pushing the config update:
 | 69 | Divisions — Workforce Mgmt — Management Units | Same layout; loads management units |
 | 70 | Divisions — Task Mgmt — Workbins | Same layout; loads workbins |
 | 71 | Divisions — Task Mgmt — Work Types | Same layout; loads work types |
+| 72 | Audit — Search (≤ 14 days, all services) | Auto-runs today on load; no service selected; results appear from all realtime services; blue hint reads "All supported services shown"; rows show Service column |
+| 73 | Audit — Search (≤ 14 days, single realtime service) | Select a service in the realtime map; run search; results from realtime endpoint; 1-day chunking transparent to user |
+| 74 | Audit — Search (≤ 14 days, async fallback service) | Select a service not in realtime map; search runs via async pipeline; result rows populated |
+| 75 | Audit — Search (> 14 days) | Set date range > 14 days with no service; amber hint warns service required; search blocked. Select a service; search runs via async pipeline with 30-day chunks |
+| 76 | Audit preset filters | Today / Last 7 days / Last month / Last 3 months buttons shown; clicking each updates date fields and auto-runs search |
+| 77 | Audit row expand + detail panel | Click a result row; detail panel opens showing metadata, changed properties (old → new), additional context, and raw JSON dump |
 | 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
 | 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
 | 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
@@ -899,6 +907,8 @@ genesys-admin-app/
 │   │   ├── notfound.js           404 page
 │   │   ├── accessdenied.js       Access denied page
 │   │   ├── placeholder.js        Generic "coming soon" stub
+│   │   ├── audit/
+│   │   │   └── search.js            Audit Search (realtime + async dual-path, preset filters, row-expand detail panel)
 │   │   ├── dataactions/
 │   │   │   ├── copyBetweenOrgs.js   Copy data action between orgs
 │   │   │   └── edit.js              Edit / test existing data actions
