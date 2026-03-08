@@ -76,7 +76,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
         <div class="dt-control-group">
           <label class="dt-label" for="dtcKey">Key <span style="color:#f87171">*</span></label>
           <input class="dt-input" id="dtcKey" type="text" placeholder="e.g. userId" autocomplete="off" />
-          <span class="dt-field-hint">The unique lookup key for each row (always stored as string).</span>
+          <span class="dt-field-hint">Display name of the primary key column (e.g. "userId"). Always stored as string.</span>
         </div>
       </div>
 
@@ -144,12 +144,12 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     row.querySelector(".dtc-col-name").focus();
   }
 
-  function collectSchema(keyName) {
+  function collectSchema(keyTitle) {
     const properties = {};
-    const required = [keyName];
 
-    // Key column (always string, always first)
-    properties[keyName] = { title: keyName, type: "string" };
+    // Key column: property name must always be "key" in Genesys schema;
+    // the user's chosen label goes in the title field.
+    properties["key"] = { title: keyTitle, type: "string" };
 
     // Extra columns
     $rowsContainer.querySelectorAll(".dtc-schema-row").forEach(row => {
@@ -163,7 +163,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     return {
       type: "object",
       properties,
-      required,
+      required: ["key"],
       $schema: "http://json-schema.org/draft-04/schema#",
       additionalProperties: false,
     };
