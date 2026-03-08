@@ -2492,6 +2492,21 @@ body {
 .aq-diff-old   { color: #f87171; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; }
 .aq-diff-new   { color: #34d399; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; }
 
+/* Section titles inside expanded rows */
+.aq-diff-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 12px 0 6px;
+}
+.aq-diff-section-title:first-of-type { margin-top: 0; }
+.aq-diff-section-title--ctx { margin-top: 16px; }
+
+/* Additional Context table */
+.aq-diff-ctx-table { margin-top: 0; }
+.aq-diff-ctx-key   { font-weight: 600; min-width: 160px; }
+.aq-diff-ctx-val   { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; }
+
 /* Light-mode overrides */
 @media (prefers-color-scheme: light) {
   .aq-detail-row > td { background: rgba(0,0,0,0.03); }

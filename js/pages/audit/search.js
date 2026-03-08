@@ -547,40 +547,76 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   // ── Build diff HTML for an expanded row ───────────────────────────
   function buildDiffHtml(entry, entityName, action, ts) {
-    const props  = entry.properties || [];
+    const props   = entry.properties || [];
+    // Genesys puts additional context in entry.context (object) or
+    // entry.additionalContext (array of {key, value} or plain object)
+    const ctxRaw  = entry.context ?? entry.additionalContext ?? null;
+
     const header = `
       <div class="aq-diff-header">
         ${escapeHtml(entityName || "—")} — ${escapeHtml(action)} — ${escapeHtml(ts)}
       </div>`;
 
+    let propsHtml = "";
     if (!props.length) {
       const verb =
         action === "Create" ? "created" :
         action === "Delete" ? "deleted" : "changed";
-      return `${header}<p class="aq-diff-empty">Entity ${verb}. No property-level diff recorded.</p>`;
+      propsHtml = `<p class="aq-diff-empty">Entity ${verb}. No property-level diff recorded.</p>`;
+    } else {
+      const rows = props.map(p => {
+        // Genesys may use PascalCase or camelCase property keys
+        const prop   = p.property  ?? p.Property  ?? "";
+        const oldVal = p.oldValue  ?? p.OldValue  ?? "";
+        const newVal = p.newValue  ?? p.NewValue  ?? "";
+        return `
+          <tr>
+            <td class="aq-diff-prop">${escapeHtml(String(prop))}</td>
+            <td class="aq-diff-old">${escapeHtml(String(oldVal))}</td>
+            <td class="aq-diff-new">${escapeHtml(String(newVal))}</td>
+          </tr>`;
+      }).join("");
+      propsHtml = `
+        <h4 class="aq-diff-section-title">Changed Properties</h4>
+        <table class="data-table aq-diff-table">
+          <thead>
+            <tr><th>Change</th><th>Old Value</th><th>New Value</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
     }
 
-    const rows = props.map(p => {
-      // Genesys may use PascalCase or camelCase property keys
-      const prop   = p.property  ?? p.Property  ?? "";
-      const oldVal = p.oldValue  ?? p.OldValue  ?? "";
-      const newVal = p.newValue  ?? p.NewValue  ?? "";
-      return `
-        <tr>
-          <td class="aq-diff-prop">${escapeHtml(String(prop))}</td>
-          <td class="aq-diff-old">${escapeHtml(String(oldVal))}</td>
-          <td class="aq-diff-new">${escapeHtml(String(newVal))}</td>
-        </tr>`;
-    }).join("");
+    // Additional Context — Genesys returns this as a plain object { key: value }
+    // or occasionally as an array [{ key, value }]
+    let ctxHtml = "";
+    if (ctxRaw) {
+      // Normalise to an array of { k, v } pairs
+      let pairs = [];
+      if (Array.isArray(ctxRaw)) {
+        pairs = ctxRaw.map(item =>
+          typeof item === "object" && item !== null
+            ? { k: String(item.key ?? item.name ?? ""), v: String(item.value ?? "") }
+            : { k: String(item), v: "" }
+        );
+      } else if (typeof ctxRaw === "object") {
+        pairs = Object.entries(ctxRaw).map(([k, v]) => ({ k, v: String(v ?? "") }));
+      }
+      if (pairs.length) {
+        const ctxRows = pairs.map(({ k, v }) => `
+          <tr>
+            <td class="aq-diff-ctx-key">${escapeHtml(k)}</td>
+            <td class="aq-diff-ctx-val">${escapeHtml(v)}</td>
+          </tr>`).join("");
+        ctxHtml = `
+          <h4 class="aq-diff-section-title aq-diff-section-title--ctx">Additional Context</h4>
+          <table class="data-table aq-diff-table aq-diff-ctx-table">
+            <thead><tr><th>Key</th><th>Value</th></tr></thead>
+            <tbody>${ctxRows}</tbody>
+          </table>`;
+      }
+    }
 
-    return `
-      ${header}
-      <table class="data-table aq-diff-table">
-        <thead>
-          <tr><th>Property</th><th>Old Value</th><th>New Value</th></tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+    return `${header}${propsHtml}${ctxHtml}`;
   }
 
   return el;
