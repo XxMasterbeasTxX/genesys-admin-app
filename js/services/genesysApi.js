@@ -993,15 +993,3 @@ export async function fetchAuditQueryResults(api, orgId, transactionId, opts = {
 
   return all;
 }
-
-/**
- * Fetch a single user's display name.
- *
- * @param {Object} api
- * @param {string} orgId
- * @param {string} userId
- * @returns {Promise<Object>}  User object (id, name, …)
- */
-export async function getUser(api, orgId, userId) {
-  return api.proxyGenesys(orgId, "GET", `/api/v2/users/${userId}`);
-}
