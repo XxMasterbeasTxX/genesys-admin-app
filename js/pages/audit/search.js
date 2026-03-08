@@ -24,6 +24,7 @@ import { createSingleSelect } from "../../components/multiSelect.js";
 // ── Constants ────────────────────────────────────────────────────────
 
 const CHUNK_DAYS = 30;
+const REALTIME_CHUNK_DAYS = 1; // realtime endpoint times out on multi-day intervals
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -31,7 +32,7 @@ const CHUNK_DAYS = 30;
  * Split a [from, to] date+time range into CHUNK_DAYS-day ISO 8601 interval strings.
  * fromTime / toTime are "HH:MM" strings (24-hour, UTC).
  */
-function buildIntervalChunks(from, fromTime, to, toTime) {
+function buildIntervalChunks(from, fromTime, to, toTime, chunkDays = CHUNK_DAYS) {
   const start = new Date(`${from}T${fromTime}:00.000Z`);
   const end   = new Date(`${to}T${toTime}:59.999Z`);
   const chunks = [];
@@ -39,7 +40,7 @@ function buildIntervalChunks(from, fromTime, to, toTime) {
 
   while (cursor < end) {
     const chunkEnd = new Date(Math.min(
-      cursor.getTime() + CHUNK_DAYS * 86_400_000 - 1,
+      cursor.getTime() + chunkDays * 86_400_000 - 1,
       end.getTime(),
     ));
     chunks.push(`${cursor.toISOString()}/${chunkEnd.toISOString()}`);
@@ -386,37 +387,44 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     ssChangedBy.setEnabled(false);
 
     try {
-      // Build a single ISO interval string (used by realtime and for ≤14-day async)
-      const intervalStr =
-        `${new Date(`${from}T${fromTime}:00.000Z`).toISOString()}` +
-        `/` +
-        `${new Date(`${to}T${toTime}:59.999Z`).toISOString()}`;
-
       if (days <= 14 && allMode) {
-        // ── Realtime: all supported services, concurrent ───────────────
-        const svcList = [...realtimeServiceNames].sort();
-        let done = 0;
-        setStatus(`Querying ${svcList.length} services (realtime)…`);
+        // ── Realtime: all supported services, 1-day chunks, services concurrent ──
+        const svcList   = [...realtimeServiceNames].sort();
+        const rtChunks  = buildIntervalChunks(from, fromTime, to, toTime, REALTIME_CHUNK_DAYS);
+        const totalJobs = rtChunks.length;
+        setStatus(`Querying ${svcList.length} services over ${totalJobs} day${totalJobs !== 1 ? "s" : ""} (realtime)…`);
         showProgress(5);
 
-        const settled = await Promise.allSettled(
-          svcList.map(svcName =>
-            gc.submitRealtimeAuditQuery(api, orgId, { interval: intervalStr, serviceName: svcName })
-              .then(entries => { done++; showProgress(5 + (done / svcList.length) * 80); return entries; })
-          )
-        );
-        for (const r of settled) {
-          if (r.status === "fulfilled") allResults.push(...r.value);
-          else console.warn("Realtime query failed:", r.reason?.message);
+        for (let ci = 0; ci < rtChunks.length; ci++) {
+          const interval = rtChunks[ci];
+          const dayLabel = interval.slice(0, 10); // YYYY-MM-DD for status
+          setStatus(`Realtime: fetching ${dayLabel} across ${svcList.length} services…`);
+          showProgress(5 + ((ci / totalJobs) * 80));
+
+          const settled = await Promise.allSettled(
+            svcList.map(svcName =>
+              gc.submitRealtimeAuditQuery(api, orgId, { interval, serviceName: svcName })
+            )
+          );
+          for (const r of settled) {
+            if (r.status === "fulfilled") allResults.push(...r.value);
+            else console.warn("Realtime query failed:", r.reason?.message);
+          }
         }
 
       } else if (days <= 14 && realtimeServiceNames.has(service)) {
-        // ── Realtime: single service ─────────────────────────────
-        setStatus(`Querying ${service} (realtime)…`);
-        showProgress(10);
-        const entries = await gc.submitRealtimeAuditQuery(api, orgId, { interval: intervalStr, serviceName: service });
-        allResults.push(...entries);
-        showProgress(85);
+        // ── Realtime: single service, 1-day chunks ────────────────────
+        const rtChunks = buildIntervalChunks(from, fromTime, to, toTime, REALTIME_CHUNK_DAYS);
+        for (let ci = 0; ci < rtChunks.length; ci++) {
+          const interval = rtChunks[ci];
+          const dayLabel = interval.slice(0, 10);
+          setStatus(`Realtime: ${service} — ${dayLabel}…`);
+          showProgress(5 + ((ci / rtChunks.length) * 80));
+          try {
+            const entries = await gc.submitRealtimeAuditQuery(api, orgId, { interval, serviceName: service });
+            allResults.push(...entries);
+          } catch (err) { console.warn(`Realtime chunk ${dayLabel} failed:`, err.message); }
+        }
 
       } else {
         // ── Async: >14 days, or service not in realtime mapping ─────
