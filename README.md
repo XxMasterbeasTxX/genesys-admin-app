@@ -226,6 +226,7 @@ genesys-admin-app/
 │           └── trustee.js           Server-side trustee export handler
 └── docs/
     ├── setup-guide.md            Full deployment guide
+    ├── api-reference.md          Complete list of all API endpoints used
     └── conversion-reference.md   Python → JS migration reference
 ```
 

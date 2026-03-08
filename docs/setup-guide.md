@@ -60,6 +60,8 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 17. [Day-to-Day Operations](#17-day-to-day-operations)
 18. [Troubleshooting](#18-troubleshooting)
 
+See also: [docs/api-reference.md](api-reference.md) — complete list of every Genesys Cloud and internal API endpoint used.
+
 ---
 
 ## 1. Prerequisites
