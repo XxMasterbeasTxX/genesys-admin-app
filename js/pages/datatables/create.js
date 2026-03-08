@@ -86,6 +86,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
           <span class="dt-label">Schema Columns</span>
         </div>
         <div class="dtc-schema-cols-header">
+          <span></span>
           <span class="dtc-col-label">Column Name</span>
           <span class="dtc-col-label">Type</span>
           <span class="dtc-col-label">Default</span>
@@ -188,11 +189,15 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     // Use the first type in the sorted list (Boolean) as the initial default
     const initialType = COLUMN_TYPES[0].type;
     row.innerHTML = `
+      <div class="dtc-drag-handle" title="Drag to reorder">⠿</div>
       <input class="dt-input dtc-col-name" type="text" placeholder="columnName" autocomplete="off" />
       <select class="dt-select dtc-col-type">${TYPE_OPTIONS_HTML}</select>
       <div class="dtc-col-default-wrap">${makeDefaultInput(initialType)}</div>
       <button class="btn btn-sm dtc-del-btn" title="Remove column">×</button>
     `;
+    // Enable dragging only when the handle is grabbed (prevents accidental drags from inputs)
+    row.querySelector(".dtc-drag-handle").addEventListener("mousedown", () => { row.draggable = true; });
+    row.addEventListener("dragend", () => { row.draggable = false; });
     row.querySelector(".dtc-del-btn").addEventListener("click", () => row.remove());
     // Wire handlers for the initial state
     wireDefaultHandlers(row);
@@ -291,8 +296,59 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     el.addEventListener("change", validateSave);
   });
 
+  // ── Drag-to-reorder ────────────────────────────────────────────
+  function initDragDrop() {
+    let dragging = null;
+
+    function clearIndicators() {
+      $rowsContainer.querySelectorAll(".dtc--drop-above, .dtc--drop-below")
+        .forEach(r => r.classList.remove("dtc--drop-above", "dtc--drop-below"));
+    }
+
+    $rowsContainer.addEventListener("dragstart", (e) => {
+      const row = e.target.closest(".dtc-schema-row");
+      if (!row) return;
+      dragging = row;
+      row.classList.add("dtc--dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+
+    $rowsContainer.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      const row = e.target.closest(".dtc-schema-row");
+      if (!row || row === dragging) return;
+      clearIndicators();
+      const rect = row.getBoundingClientRect();
+      row.classList.add(e.clientY < rect.top + rect.height / 2 ? "dtc--drop-above" : "dtc--drop-below");
+    });
+
+    $rowsContainer.addEventListener("dragleave", (e) => {
+      if (!$rowsContainer.contains(e.relatedTarget)) clearIndicators();
+    });
+
+    $rowsContainer.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const target = e.target.closest(".dtc-schema-row");
+      if (!target || target === dragging) { clearIndicators(); return; }
+      const above = target.classList.contains("dtc--drop-above");
+      clearIndicators();
+      if (above) {
+        $rowsContainer.insertBefore(dragging, target);
+      } else {
+        target.insertAdjacentElement("afterend", dragging);
+      }
+    });
+
+    $rowsContainer.addEventListener("dragend", () => {
+      if (dragging) { dragging.classList.remove("dtc--dragging"); dragging.draggable = false; }
+      dragging = null;
+      clearIndicators();
+    });
+  }
+
   // ── Add column button ──────────────────────────────────────────
   $addRowBtn.addEventListener("click", addSchemaRow);
+  initDragDrop();
 
   // ── Save button ────────────────────────────────────────────────
   $saveBtn.addEventListener("click", async () => {

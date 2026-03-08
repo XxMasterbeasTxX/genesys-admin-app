@@ -905,9 +905,9 @@ body {
 }
 .dtc-schema-cols-header {
   display: grid;
-  grid-template-columns: 1fr 140px 140px 32px;
+  grid-template-columns: 24px 1fr 140px 140px 32px;
   gap: 8px;
-  max-width: 680px;
+  max-width: 712px;
   margin-bottom: 4px;
 }
 .dtc-col-label {
@@ -920,11 +920,12 @@ body {
 }
 .dtc-schema-row {
   display: grid;
-  grid-template-columns: 1fr 140px 140px 32px;
+  grid-template-columns: 24px 1fr 140px 140px 32px;
   gap: 8px;
   align-items: center;
-  max-width: 680px;
+  max-width: 712px;
   margin-bottom: 6px;
+  position: relative;
 }
 .dtc-schema-row .dt-input,
 .dtc-schema-row .dt-select {
@@ -965,6 +966,21 @@ body {
   color: var(--muted);
   margin-top: 2px;
 }
+.dtc-drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  user-select: none;
+  opacity: 0.45;
+  text-align: center;
+  padding-top: 1px;
+}
+.dtc-drag-handle:hover { opacity: 1; }
+.dtc-drag-handle:active { cursor: grabbing; }
+.dtc-schema-row.dtc--dragging { opacity: 0.35; }
+.dtc-schema-row.dtc--drop-above { box-shadow: 0 -2px 0 0 #3b82f6; }
+.dtc-schema-row.dtc--drop-below { box-shadow: 0 2px 0 0 #3b82f6; }
 
 /* Actions / Progress / Status */
 .dt-actions {
