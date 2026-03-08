@@ -2507,6 +2507,27 @@ body {
 .aq-diff-ctx-key   { font-weight: 600; min-width: 160px; }
 .aq-diff-ctx-val   { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; }
 
+/* Raw API response dump */
+.aq-raw-details { margin-top: 14px; }
+.aq-raw-summary {
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.aq-raw-summary:hover { color: var(--text); }
+.aq-raw-json {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--panel-3, rgba(0,0,0,0.25));
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--text);
+}
+
 /* Light-mode overrides */
 @media (prefers-color-scheme: light) {
   .aq-detail-row > td { background: rgba(0,0,0,0.03); }

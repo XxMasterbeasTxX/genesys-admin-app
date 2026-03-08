@@ -616,7 +616,11 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       }
     }
 
-    return `${header}${propsHtml}${ctxHtml}`;
+    return `${header}${propsHtml}${ctxHtml}
+      <details class="aq-raw-details">
+        <summary class="aq-raw-summary">Raw API response</summary>
+        <pre class="aq-raw-json">${escapeHtml(JSON.stringify(entry, null, 2))}</pre>
+      </details>`;
   }
 
   return el;
