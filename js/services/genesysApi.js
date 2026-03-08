@@ -979,16 +979,18 @@ export async function fetchAuditQueryResults(api, orgId, transactionId, opts = {
   let cursor = null;
 
   while (true) {
-    const query = cursor ? { cursor } : {};
-    const resp = await api.proxyGenesys(orgId, "GET",
-      `/api/v2/audits/query/${transactionId}/results`,
-      { query });
+    // Build query params directly into the path so the proxy forwards them
+    // correctly regardless of how it handles the `query` option for GET requests.
+    let path = `/api/v2/audits/query/${transactionId}/results?pageSize=500`;
+    if (cursor) path += `&cursor=${encodeURIComponent(cursor)}`;
+
+    const resp = await api.proxyGenesys(orgId, "GET", path);
 
     const items = resp.entities || resp.audits || [];
     all.push(...items);
     if (onProgress) onProgress(all.length);
 
-    // Extract cursor from nextUri (e.g. "...results?cursor=xxx")
+    // Extract cursor from nextUri (e.g. "...results?cursor=xxx" — may be absolute URL)
     const nextUri = resp.nextUri || null;
     if (!nextUri) break;
     const match = nextUri.match(/[?&]cursor=([^&]+)/);
