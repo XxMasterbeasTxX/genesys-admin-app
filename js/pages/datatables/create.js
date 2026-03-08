@@ -347,10 +347,14 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
       return;
     }
 
-    // Row 0: ["key", <key display name>]
-    const keyName = String(rows[0][1] || "").trim();
-    // Rows 1+: [<column name>, <type>]
-    const schemaRows = rows.slice(1).filter(r => String(r[0] || "").trim() !== "");
+    // Row 0: ["key",         <key display name>]
+    // Row 1: ["division",    <division name>]
+    // Row 2: ["description", <description text>]
+    // Row 3+: [<column name>, <type>]
+    const keyName     = String(rows[0]?.[1] || "").trim();
+    const divisionVal = String(rows[1]?.[1] || "").trim();
+    const description = String(rows[2]?.[1] || "").trim();
+    const schemaRows  = rows.slice(3).filter(r => String(r[0] || "").trim() !== "");
 
     // Ensure form is open and divisions are loaded
     if ($form.hidden) {
@@ -363,8 +367,22 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
       if (!ok) return;
     }
 
-    // Pre-fill key
+    // Pre-fill Name from sheet tab name
+    $name.value = sheetName;
+
+    // Pre-fill Key
     $key.value = keyName;
+
+    // Pre-fill Description
+    $description.value = description;
+
+    // Pre-fill Division — case-insensitive match against loaded options
+    if (divisionVal) {
+      const lower = divisionVal.toLowerCase();
+      const match = Array.from($division.options)
+        .find(o => o.textContent.trim().toLowerCase() === lower);
+      if (match) $division.value = match.value;
+    }
 
     // Clear existing schema rows and populate from Excel
     $rowsContainer.innerHTML = "";
@@ -378,7 +396,8 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     $sheetPicker.hidden = true;
     _importWorkbook = null;
     validateSave();
-    setStatus(`Imported ${schemaRows.length} column(s) from "${sheetName}". Fill in Name and Division, then Save.`);
+    const skippedDiv = divisionVal && !$division.value ? ` Division "${divisionVal}" not found — please select manually.` : "";
+    setStatus(`Imported ${schemaRows.length} column(s) from "${sheetName}".${skippedDiv}`);
   });
 
   // ── Create button ──────────────────────────────────────────────
