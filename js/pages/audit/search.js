@@ -547,50 +547,55 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   // ── Build diff HTML for an expanded row ───────────────────────────
   function buildDiffHtml(entry, entityName, action, ts) {
-    const props   = entry.properties || [];
-    // Genesys puts additional context in entry.context (object) or
-    // entry.additionalContext (array of {key, value} or plain object)
-    const ctxRaw  = entry.context ?? entry.additionalContext ?? null;
+    // ── Metadata row ─────────────────────────────────────────────
+    const metaFields = [
+      ["Service",    entry.serviceName],
+      ["Entity Type",entry.entityType],
+      ["Action",     entry.action],
+      ["Level",      entry.level],
+      ["Date",       entry.eventDate ? formatDateTime(entry.eventDate) : null],
+      ["Remote IP",  (entry.remoteIp || []).filter(Boolean).join(", ") || null],
+    ].filter(([, v]) => v);
 
-    const header = `
-      <div class="aq-diff-header">
-        ${escapeHtml(entityName || "—")} — ${escapeHtml(action)} — ${escapeHtml(ts)}
-      </div>`;
+    const metaHtml = metaFields.length ? `
+      <table class="data-table aq-diff-meta-table">
+        <tbody>
+          ${metaFields.map(([k, v]) => `
+            <tr>
+              <td class="aq-diff-meta-key">${escapeHtml(k)}</td>
+              <td class="aq-diff-meta-val">${escapeHtml(String(v))}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>` : "";
 
+    // ── Changed Properties (real field: propertyChanges) ─────────
+    const propChanges = entry.propertyChanges || entry.properties || [];
     let propsHtml = "";
-    if (!props.length) {
-      const verb =
-        action === "Create" ? "created" :
-        action === "Delete" ? "deleted" : "changed";
-      propsHtml = `<p class="aq-diff-empty">Entity ${verb}. No property-level diff recorded.</p>`;
-    } else {
-      const rows = props.map(p => {
-        // Genesys may use PascalCase or camelCase property keys
+    if (propChanges.length) {
+      const rows = propChanges.map(p => {
         const prop   = p.property  ?? p.Property  ?? "";
-        const oldVal = p.oldValue  ?? p.OldValue  ?? "";
-        const newVal = p.newValue  ?? p.NewValue  ?? "";
+        // Values come as arrays; join for display
+        const oldVal = [].concat(p.oldValues ?? p.oldValue ?? []).join(", ");
+        const newVal = [].concat(p.newValues ?? p.newValue ?? []).join(", ");
         return `
           <tr>
             <td class="aq-diff-prop">${escapeHtml(String(prop))}</td>
-            <td class="aq-diff-old">${escapeHtml(String(oldVal))}</td>
-            <td class="aq-diff-new">${escapeHtml(String(newVal))}</td>
+            <td class="aq-diff-old">${escapeHtml(oldVal)}</td>
+            <td class="aq-diff-new">${escapeHtml(newVal)}</td>
           </tr>`;
       }).join("");
       propsHtml = `
         <h4 class="aq-diff-section-title">Changed Properties</h4>
         <table class="data-table aq-diff-table">
-          <thead>
-            <tr><th>Change</th><th>Old Value</th><th>New Value</th></tr>
-          </thead>
+          <thead><tr><th>Change</th><th>Old Value</th><th>New Value</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
     }
 
-    // Additional Context — Genesys returns this as a plain object { key: value }
-    // or occasionally as an array [{ key, value }]
+    // ── Additional Context (entry.context plain object) ──────────
     let ctxHtml = "";
+    const ctxRaw = entry.context ?? entry.additionalContext ?? null;
     if (ctxRaw) {
-      // Normalise to an array of { k, v } pairs
       let pairs = [];
       if (Array.isArray(ctxRaw)) {
         pairs = ctxRaw.map(item =>
@@ -599,7 +604,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
             : { k: String(item), v: "" }
         );
       } else if (typeof ctxRaw === "object") {
-        pairs = Object.entries(ctxRaw).map(([k, v]) => ({ k, v: String(v ?? "") }));
+        pairs = Object.entries(ctxRaw)
+          .filter(([, v]) => v !== null && v !== undefined && v !== "")
+          .map(([k, v]) => ({ k, v: String(v) }));
       }
       if (pairs.length) {
         const ctxRows = pairs.map(({ k, v }) => `
@@ -616,7 +623,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       }
     }
 
-    return `${header}${propsHtml}${ctxHtml}
+    return `${metaHtml}${propsHtml}${ctxHtml}
       <details class="aq-raw-details">
         <summary class="aq-raw-summary">Raw API response</summary>
         <pre class="aq-raw-json">${escapeHtml(JSON.stringify(entry, null, 2))}</pre>
