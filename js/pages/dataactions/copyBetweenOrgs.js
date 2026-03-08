@@ -24,6 +24,7 @@
  */
 import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
+import { logAction } from "../../services/activityLogService.js";
 
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {
@@ -460,6 +461,12 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
 
       const destName = customers.find(c => c.id === destOrgId)?.name ?? destOrgId;
       setStatus(STATUS.done(newName, destName, usePublish), "success");
+      logAction({
+        me,
+        orgId:       $srcOrg.value,
+        action:      "dataaction_copy",
+        description: `Copied data action '${$sourceSelect.options[$sourceSelect.selectedIndex]?.text || ""}' to '${newName}' in ${destName} (${usePublish ? "published" : "draft"})`,
+      });
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
     } finally {

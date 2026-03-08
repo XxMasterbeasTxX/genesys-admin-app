@@ -15,6 +15,7 @@
  */
 import * as gc from "../../services/genesysApi.js";
 import { escapeHtml } from "../../utils.js";
+import { logAction } from "../../services/activityLogService.js";
 
 // ── Request type definitions ──────────────────────────────────────────
 const REQUEST_TYPES = {
@@ -559,6 +560,10 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
           <a href="#/gdpr/request-status" class="gdpr-status-page-link">→ View Request Status</a>
         `;
         $submitStatus.className = "te-status te-status--success";
+        logAction({ me, orgId: org?.id || "", orgName: org?.name || "",
+          action: "gdpr_request",
+          description: `Submitted ${succeeded} GDPR ${REQUEST_TYPES[requestType]?.label || requestType} request${succeeded !== 1 ? "s" : ""}`,
+          count: succeeded });
 
         $submitStatus.querySelectorAll(".gdpr-copy-btn").forEach(btn => {
           btn.addEventListener("click", () => {

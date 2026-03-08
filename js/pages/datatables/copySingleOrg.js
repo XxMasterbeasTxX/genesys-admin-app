@@ -20,6 +20,7 @@
  */
 import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
+import { logAction } from "../../services/activityLogService.js";
 
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {
@@ -304,6 +305,13 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
 
       setProgress(100);
       setStatus(STATUS.done(newName, copiedRows || null), "success");
+      logAction({
+        me,
+        orgId:       orgContext.get() || "",
+        action:      "datatable_copy",
+        description: `Copied data table '${$sourceSelect.options[$sourceSelect.selectedIndex]?.text || ""}' to '${newName}'${copiedRows ? ` with ${copiedRows} rows` : ""}`,
+        count:       copiedRows || undefined,
+      });
 
       // Refresh table list
       setTimeout(() => loadTables(), 1500);

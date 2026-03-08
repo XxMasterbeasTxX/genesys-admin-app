@@ -26,6 +26,7 @@ import { sendEmail, validateRecipients } from "../../../services/emailService.js
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
 import { STYLE_HEADER, STYLE_ROW_EVEN, STYLE_ROW_ODD } from "../../../utils/excelStyles.js";
+import { logAction } from "../../../services/activityLogService.js";
 
 // ── Automation: set to false to hide the schedule panel on this page ─
 const AUTOMATION_ENABLED = true;
@@ -450,6 +451,8 @@ export default function renderTrusteeExport({ route, me, api }) {
       // 5. Show download button
       $download.style.display = "";
       $downloadBtn.onclick = () => downloadExcel(byTrusteeOrg, customerNames);
+      logAction({ me, action: "export_run",
+        description: `Exported '${AUTOMATION_EXPORT_LABEL}'` });
 
       // 6. Send email if enabled
       if ($emailChk.checked && $emailTo.value.trim()) {

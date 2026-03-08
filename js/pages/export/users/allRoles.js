@@ -19,6 +19,7 @@ import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
+import { logAction } from "../../../services/activityLogService.js";
 
 // ── Automation ──────────────────────────────────────────
 const AUTOMATION_ENABLED = true;
@@ -243,6 +244,8 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
       $dlWrap.style.display = "";
 
       setProgress(100);
+      logAction({ me, orgId: org?.id || "", orgName: org?.name || "", action: "export_run",
+        description: `Exported '${AUTOMATION_EXPORT_LABEL}' for '${org?.name || ""}'` });
 
       // Send email if enabled
       if ($emailChk.checked && $emailTo.value.trim()) {

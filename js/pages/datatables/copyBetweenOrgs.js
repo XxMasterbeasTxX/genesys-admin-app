@@ -23,6 +23,7 @@
  */
 import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
+import { logAction } from "../../services/activityLogService.js";
 
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {
@@ -392,6 +393,13 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
       setProgress(100);
       const destName = customers.find(c => c.id === destOrgId)?.name ?? destOrgId;
       setStatus(STATUS.done(newName, destName, copiedRows || null), "success");
+      logAction({
+        me,
+        orgId:       $srcOrg.value,
+        action:      "datatable_copy",
+        description: `Copied data table '${$sourceSelect.options[$sourceSelect.selectedIndex]?.text || ""}' to '${newName}' in ${destName}${copiedRows ? ` with ${copiedRows} rows` : ""}`,
+        count:       copiedRows || undefined,
+      });
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
     } finally {

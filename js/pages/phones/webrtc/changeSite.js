@@ -19,6 +19,7 @@
 import { escapeHtml, sleep, exportXlsx, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
+import { logAction } from "../../../services/activityLogService.js";
 
 // ── Page renderer ───────────────────────────────────────────────────
 
@@ -295,6 +296,10 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
         : parts.join("  •  ");
 
       setStatus(cancelled ? "Cancelled." : "Done.", failed ? "error" : "success");
+      logAction({ me, orgId: orgContext.get() || "", action: "phone_move",
+        description: `Moved ${moved} phone${moved !== 1 ? "s" : ""} to '${toSite.name}'${failed ? ` (${failed} failed)` : ""}${cancelled ? " [cancelled]" : ""}`,
+        result: moved === 0 && failed > 0 ? "failure" : failed > 0 || cancelled ? "partial" : "success",
+        count: moved + failed });
 
       $summary.textContent = summaryText;
       $summary.style.display = "";

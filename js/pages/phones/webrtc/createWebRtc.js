@@ -22,6 +22,7 @@
  */
 import { escapeHtml, formatDateTime, sleep, exportXlsx, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
+import { logAction } from "../../../services/activityLogService.js";
 
 // ── Page renderer ───────────────────────────────────────────────────
 
@@ -306,6 +307,10 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
         : parts.join("  •  ");
 
       setStatus(cancelled ? "Cancelled." : "Done.", failed ? "error" : "success");
+      logAction({ me, orgId: orgContext.get() || "", action: "phone_create",
+        description: `Created ${created} WebRTC phone${created !== 1 ? "s" : ""}${failed ? ` (${failed} failed)` : ""}${cancelled ? " [cancelled]" : ""}`,
+        result: created === 0 && failed > 0 ? "failure" : failed > 0 || cancelled ? "partial" : "success",
+        count: created + failed });
 
       // Show summary
       $summary.textContent = summaryText;

@@ -16,6 +16,7 @@
  *       A loading spinner is shown while the request is in progress.
  */
 import { sendEmail } from "../../../services/emailService.js";
+import { logAction } from "../../../services/activityLogService.js";
 
 export default function renderDocumentationCreate({ route, me, api, orgContext }) {
   const el = document.createElement("section");
@@ -193,6 +194,8 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
       $dlBtn.textContent    = `⬇ Download ${extStr}`;
       $fileLabel.textContent = result.filename;
       $dlWrap.style.display  = "";
+      logAction({ me, orgId: org?.id || "", orgName: org?.name || "", action: "export_run",
+        description: `Exported Documentation for '${org?.name || ""}'` });
 
       // ── Send email if enabled ──────────────────────────────────────────
       if ($emailChk.checked && $emailTo.value.trim()) {

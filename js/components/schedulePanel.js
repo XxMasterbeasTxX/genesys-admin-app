@@ -20,6 +20,7 @@ import {
   deleteSchedule,
 } from "../services/scheduleService.js";
 import { orgContext } from "../services/orgContext.js";
+import { logAction } from "../services/activityLogService.js";
 
 // ── Constants ───────────────────────────────────────────
 export const ADMIN_EMAIL = "thva@tdc.dk";
@@ -501,6 +502,11 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
             ...formData,
             userEmail: me.email,
           });
+          logAction({
+            me,
+            action:      "schedule_update",
+            description: `Updated schedule for '${exportLabel}'`,
+          });
         } else {
           await createSchedule({
             ...formData,
@@ -509,6 +515,11 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
             userEmail: me.email,
             userName: me.name,
           });
+          logAction({
+            me,
+            action:      "schedule_create",
+            description: `Created ${formData.scheduleType} schedule for '${exportLabel}' at ${formData.scheduleTime}`,
+          });
         }
         hideForm();
         await loadSchedules();
@@ -516,6 +527,11 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
       onCancel: () => hideForm(),
       onDelete: async (id) => {
         await deleteSchedule(id, me.email);
+        logAction({
+          me,
+          action:      "schedule_delete",
+          description: `Deleted schedule for '${exportLabel}'`,
+        });
         hideForm();
         await loadSchedules();
       },

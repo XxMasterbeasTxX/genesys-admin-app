@@ -17,6 +17,7 @@
 import { escapeHtml, formatDateTime, sleep } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
+import { logAction } from "../../services/activityLogService.js";
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -683,6 +684,16 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     } else {
       setStatus(STATUS.done(okCount, failCount, 0), failCount > 0 ? "error" : "success");
     }
+
+    logAction({
+      me,
+      orgId:       orgContext.get() || "",
+      action:      "interaction_disconnect",
+      description: `Disconnected ${okCount} interaction${okCount !== 1 ? "s" : ""}${failCount ? ` (${failCount} failed)` : ""}${
+        cancelled ? " [cancelled]" : ""}`,
+      result:      okCount === 0 && failCount > 0 ? "failure" : failCount > 0 || cancelled ? "partial" : "success",
+      count:       okCount + failCount,
+    });
 
     setTimeout(hideProgress, 800);
     setButtonsRunning(false);

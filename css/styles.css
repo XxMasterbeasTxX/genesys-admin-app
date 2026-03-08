@@ -106,6 +106,31 @@ body {
   color: var(--muted);
 }
 
+/* Activity Log header button */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-log-btn {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--muted);
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.header-log-btn:hover {
+  border-color: rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.09);
+  color: var(--text);
+}
+
 .app-body {
   display: grid;
   grid-template-columns: var(--nav-w) 1fr;
@@ -2588,4 +2613,129 @@ body {
   .aq-expand-btn:hover { background: rgba(0,0,0,0.06); }
   .aq-diff-old { color: #dc2626; }
   .aq-diff-new { color: #16a34a; }
+}
+
+/* ════════════════════════════════════════════════════════════
+   Activity Log page  (.al-*)
+   ════════════════════════════════════════════════════════════ */
+.al-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.al-refresh-btn {
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.al-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.al-filters .di-control-group {
+  min-width: 140px;
+}
+
+.al-status {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.al-table-wrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.al-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.al-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+}
+
+.al-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  vertical-align: top;
+}
+
+.al-row:hover td {
+  background: rgba(255,255,255,0.03);
+}
+.al-row--fail td   { background: rgba(239,68,68,0.04); }
+.al-row--partial td { background: rgba(245,158,11,0.04); }
+
+.al-cell-time  { white-space: nowrap; color: var(--muted); font-size: 12px; width: 160px; }
+.al-cell-user  { white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.al-cell-org   { white-space: nowrap; max-width: 120px; }
+.al-cell-action { white-space: nowrap; }
+.al-cell-desc  { max-width: 420px; word-break: break-word; }
+.al-cell-result { white-space: nowrap; }
+
+.al-action-tag {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.al-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.al-badge--success { background: rgba(34,197,94,0.15);  color: #4ade80; }
+.al-badge--partial  { background: rgba(245,158,11,0.15); color: #fbbf24; }
+.al-badge--failure  { background: rgba(239,68,68,0.15);  color: #f87171; }
+
+.al-error-detail {
+  font-size: 11px;
+  color: #f87171;
+  display: block;
+  margin-top: 2px;
+}
+
+.al-count {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+
+@media (prefers-color-scheme: light) {
+  .header-log-btn { color: var(--muted); }
+  .header-log-btn:hover { color: var(--text); background: rgba(0,0,0,0.05); }
+  .al-table th   { background: var(--panel); }
+  .al-row--fail td   { background: rgba(220,38,38,0.05); }
+  .al-row--partial td { background: rgba(202,138,4,0.05); }
+  .al-badge--success { color: #16a34a; }
+  .al-badge--partial  { color: #b45309; }
+  .al-badge--failure  { color: #dc2626; }
+  .al-error-detail   { color: #dc2626; }
+  .al-action-tag { background: rgba(0,0,0,0.05); }
 }

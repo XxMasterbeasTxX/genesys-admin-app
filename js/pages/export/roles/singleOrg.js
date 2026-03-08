@@ -19,6 +19,7 @@ import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
+import { logAction } from "../../../services/activityLogService.js";
 
 // ── Automation ──────────────────────────────────────────
 const AUTOMATION_ENABLED = true;
@@ -205,6 +206,8 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
       $summary.style.display = "";
       $dlWrap.style.display = "";
       setProgress(100);
+      logAction({ me, orgId: org?.id || "", orgName: org?.name || "", action: "export_run",
+        description: `Exported '${AUTOMATION_EXPORT_LABEL}' — ${rows.length} roles for '${org?.name || ""}'` });
 
       // Email
       if ($emailChk.checked && $emailTo.value.trim()) {

@@ -20,6 +20,7 @@ import { sendEmail } from "../../../services/emailService.js";
 import { addStyledSheet } from "../../../utils/excelStyles.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
 import { orgContext } from "../../../services/orgContext.js";
+import { logAction } from "../../../services/activityLogService.js";
 
 const HEADERS = ["Name", "Description", "Members"];
 
@@ -189,6 +190,8 @@ export default function renderRolesAllOrgs({ route, me, api }) {
         $dlWrap.style.display = "";
         $summary.textContent = `${successOrgs} orgs exported — ${totalRoles} total roles`;
         $summary.style.display = "";
+        logAction({ me, action: "export_run",
+          description: `Exported Roles — All Orgs — ${successOrgs} orgs, ${totalRoles} roles`, count: successOrgs });
 
         if ($emailChk.checked && $emailTo.value.trim()) {
           setStatus("Sending email…");

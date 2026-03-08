@@ -17,6 +17,7 @@
  */
 import { escapeHtml, formatDateTime, sleep } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
+import { logAction } from "../../services/activityLogService.js";
 
 // ── Constants ───────────────────────────────────────────────────────
 
@@ -567,6 +568,15 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     } else {
       setStatus(STATUS.done(successCount, failCount), failCount > 0 ? "error" : "success");
     }
+    logAction({
+      me,
+      orgId:       orgContext.get() || "",
+      action:      "interaction_move",
+      description: `Moved ${successCount} interaction${successCount !== 1 ? "s" : ""} from '${srcName}' to '${dstName}'${failCount ? ` (${failCount} failed)` : ""}${
+        cancelled ? " [cancelled]" : ""}`,
+      result:      successCount === 0 && failCount > 0 ? "failure" : failCount > 0 || cancelled ? "partial" : "success",
+      count:       successCount + failCount,
+    });
     setTimeout(hideProgress, 800);
     setButtonsRunning(false);
     candidates = []; // Force re-scan on next move

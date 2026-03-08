@@ -12,6 +12,10 @@
 import { renderPlaceholder } from "./pages/placeholder.js";
 
 const registry = {
+  // ── Activity Log ─────────────────────────────────────
+  "/activity-log": (ctx) =>
+    import("./pages/admin/activityLog.js").then((m) => m.default(ctx)),
+
   // ── Data Actions ──────────────────────────────────────
   "/dataactions/copy-between": (ctx) =>
     import("./pages/dataactions/copyBetweenOrgs.js").then((m) => m.default(ctx)),

@@ -25,6 +25,7 @@
  */
 import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
+import { logAction } from "../../services/activityLogService.js";
 
 // ── Status helpers ──────────────────────────────────────────────────
 const STATUS = {
@@ -659,6 +660,8 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
       }
 
       setStatus("✓ Draft saved.", "success");
+      logAction({ me, orgId: $org.value, action: "dataaction_save",
+        description: `Saved draft for data action '${$actionSelect.options[$actionSelect.selectedIndex]?.text || $actionSelect.value}'` });
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
     } finally {
@@ -722,6 +725,8 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
       if (item) item.status = "Published";
 
       setStatus("✓ Action published.", "success");
+      logAction({ me, orgId: $org.value, action: "dataaction_publish",
+        description: `Published data action '${$actionSelect.options[$actionSelect.selectedIndex]?.text || $actionSelect.value}'` });
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
     } finally {

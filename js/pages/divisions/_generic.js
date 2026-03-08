@@ -22,9 +22,10 @@
  */
 import * as gc from "../../services/genesysApi.js";
 import { escapeHtml, sleep } from "../../utils.js";
+import { logAction } from "../../services/activityLogService.js";
 
 export default function renderDivisionPage(ctx, cfg) {
-  const { api, orgContext } = ctx;
+  const { api, orgContext, me } = ctx;
   const { objectType, label, fetchFn, columns, searchFn, extraFilters, onExtraFilterSetup,
           extraFilterFn, onItemsLoaded,
           getDivision: _getDivision, setDivision: _setDivision } = cfg;
@@ -391,6 +392,17 @@ export default function renderDivisionPage(ctx, cfg) {
       `Done. Moved: ${ok}${fail ? `, Failed: ${fail}` : ""}.`,
       fail ? "error" : "success"
     );
+
+    const srcDivName = $srcDiv.options[$srcDiv.selectedIndex]?.text || "All";
+    logAction({
+      me,
+      orgId:       org.id,
+      orgName:     org.name,
+      action:      "division_move",
+      description: `Moved ${ok} ${label} from '${srcDivName}' to '${targetName}'${fail ? ` (${fail} failed)` : ""}`,
+      result:      ok === 0 ? "failure" : fail > 0 ? "partial" : "success",
+      count:       ok + fail,
+    });
 
     $resultsTbody.innerHTML = results.map((r, idx) => `<tr>
       <td>${idx + 1}</td>
