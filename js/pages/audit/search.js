@@ -446,8 +446,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
           const path = ENTITY_PATH[key](id);
           const res  = await gc.fetchEntityByPath(api, orgId, path);
           entityNameMap[id] = res?.name || id;
-        } catch {
-          entityNameMap[id] = id; // fall back to GUID on 404 / permission error
+        } catch (err) {
+          entityNameMap[id] = err?.status === 404
+            ? `(deleted) ${id}`
+            : id; // other errors (permissions, network) — just show GUID
         }
       }),
     );
