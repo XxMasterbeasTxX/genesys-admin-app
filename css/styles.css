@@ -978,6 +978,7 @@ body {
   border-radius: 6px;
   max-width: 480px;
 }
+.dtc-sheet-picker[hidden] { display: none; }
 .dtc-sheet-label {
   font-size: 13px;
   color: var(--muted);
