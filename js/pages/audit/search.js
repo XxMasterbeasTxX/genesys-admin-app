@@ -22,12 +22,12 @@ const CHUNK_DAYS = 30;
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /**
- * Split a [from, to] date range (YYYY-MM-DD strings) into CHUNK_DAYS-day ISO 8601
- * interval strings. Returns intervals in chronological order.
+ * Split a [from, to] date+time range into CHUNK_DAYS-day ISO 8601 interval strings.
+ * fromTime / toTime are "HH:MM" strings (24-hour, UTC).
  */
-function buildIntervalChunks(from, to) {
-  const start = new Date(`${from}T00:00:00.000Z`);
-  const end   = new Date(`${to}T23:59:59.999Z`);
+function buildIntervalChunks(from, fromTime, to, toTime) {
+  const start = new Date(`${from}T${fromTime}:00.000Z`);
+  const end   = new Date(`${to}T${toTime}:59.999Z`);
   const chunks = [];
   let cursor = start;
 
@@ -91,10 +91,12 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       <div class="di-control-group">
         <label class="di-label" for="aqDateFrom">Date From</label>
         <input type="date" class="input di-date" id="aqDateFrom">
+        <input type="time" class="input aq-time" id="aqTimeFrom" value="00:00">
       </div>
       <div class="di-control-group">
         <label class="di-label" for="aqDateTo">Date To</label>
         <input type="date" class="input di-date" id="aqDateTo">
+        <input type="time" class="input aq-time" id="aqTimeTo" value="23:59">
       </div>
       <div class="di-control-group aq-service-group">
         <label class="di-label">Service</label>
@@ -171,7 +173,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   // ── DOM refs ─────────────────────────────────────────────────────
   const $dateFrom     = el.querySelector("#aqDateFrom");
+  const $timeFrom     = el.querySelector("#aqTimeFrom");
   const $dateTo       = el.querySelector("#aqDateTo");
+  const $timeTo       = el.querySelector("#aqTimeTo");
   const $serviceDrop  = el.querySelector("#aqServiceDropdown");
   const $searchBtn    = el.querySelector("#aqSearchBtn");
   const $status       = el.querySelector("#aqStatus");
@@ -255,14 +259,17 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   $searchBtn.addEventListener("click", async () => {
     if (isRunning) return;
 
-    const from    = $dateFrom.value;
-    const to      = $dateTo.value;
-    const service = ssService.getValue();
+    const from     = $dateFrom.value;
+    const fromTime = $timeFrom.value || "00:00";
+    const to       = $dateTo.value;
+    const toTime   = $timeTo.value   || "23:59";
+    const service  = ssService.getValue();
 
     if (!from)    return setStatus("Please select a Date From.", "error");
     if (!to)      return setStatus("Please select a Date To.", "error");
     if (!service) return setStatus("Please select a Service.", "error");
-    if (from > to) return setStatus("Date From must be on or before Date To.", "error");
+    if (from > to || (from === to && fromTime > toTime))
+      return setStatus("Date/time From must be before Date/time To.", "error");
 
     isRunning = true;
     $searchBtn.disabled = true;
@@ -281,7 +288,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     ssChangedBy.setEnabled(false);
 
     try {
-      const chunks = buildIntervalChunks(from, to);
+      const chunks = buildIntervalChunks(from, fromTime, to, toTime);
       const total  = chunks.length;
 
       setStatus(`Querying ${total} interval${total !== 1 ? "s" : ""}…`);

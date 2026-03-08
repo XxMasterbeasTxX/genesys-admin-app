@@ -673,6 +673,10 @@ body {
 .di-date {
   width: 160px;
 }
+.aq-time {
+  width: 120px;
+  margin-top: 4px;
+}
 .di-actions {
   display: flex;
   gap: 8px;
