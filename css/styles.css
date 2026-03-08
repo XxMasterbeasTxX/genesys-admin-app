@@ -905,9 +905,9 @@ body {
 }
 .dtc-schema-cols-header {
   display: grid;
-  grid-template-columns: 1fr 160px 32px;
+  grid-template-columns: 1fr 140px 140px 32px;
   gap: 8px;
-  max-width: 560px;
+  max-width: 680px;
   margin-bottom: 4px;
 }
 .dtc-col-label {
@@ -920,10 +920,10 @@ body {
 }
 .dtc-schema-row {
   display: grid;
-  grid-template-columns: 1fr 160px 32px;
+  grid-template-columns: 1fr 140px 140px 32px;
   gap: 8px;
   align-items: center;
-  max-width: 560px;
+  max-width: 680px;
   margin-bottom: 6px;
 }
 .dtc-schema-row .dt-input,
@@ -940,6 +940,26 @@ body {
 }
 .dtc-del-btn:hover { color: #f87171; border-color: #f87171; background: transparent; }
 .dtc-add-btn { align-self: flex-start; }
+.dtc-col-default-wrap { display: flex; align-items: center; }
+.dtc-bool-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+.dtc-bool-wrap input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #3b82f6;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.dtc-bool-label {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 28px;
+}
 .dt-field-hint {
   font-size: 11px;
   color: var(--muted);

@@ -88,6 +88,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
         <div class="dtc-schema-cols-header">
           <span class="dtc-col-label">Column Name</span>
           <span class="dtc-col-label">Type</span>
+          <span class="dtc-col-label">Default</span>
           <span></span>
         </div>
         <div id="dtcRows"></div>
@@ -129,6 +130,19 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     return `dtcrow-${++rowCounter}`;
   }
 
+  function makeDefaultInput(type) {
+    if (type === "boolean") {
+      return `<label class="dtc-bool-wrap"><input type="checkbox" class="dtc-col-default-bool" /><span class="dtc-bool-label">false</span></label>`;
+    }
+    if (type === "integer") {
+      return `<input class="dt-input dtc-col-default" type="number" step="1" placeholder="0" />`;
+    }
+    if (type === "number") {
+      return `<input class="dt-input dtc-col-default" type="number" step="any" placeholder="0" />`;
+    }
+    return `<input class="dt-input dtc-col-default" type="text" placeholder="" />`;
+  }
+
   function addSchemaRow() {
     const id = makeRowId();
     const row = document.createElement("div");
@@ -137,9 +151,23 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     row.innerHTML = `
       <input class="dt-input dtc-col-name" type="text" placeholder="columnName" autocomplete="off" />
       <select class="dt-select dtc-col-type">${TYPE_OPTIONS_HTML}</select>
+      <div class="dtc-col-default-wrap">${makeDefaultInput("string")}</div>
       <button class="btn btn-sm dtc-del-btn" title="Remove column">×</button>
     `;
     row.querySelector(".dtc-del-btn").addEventListener("click", () => row.remove());
+    // Swap default input when type changes
+    row.querySelector(".dtc-col-type").addEventListener("change", (e) => {
+      row.querySelector(".dtc-col-default-wrap").innerHTML = makeDefaultInput(e.target.value);
+      const bool = row.querySelector(".dtc-col-default-bool");
+      if (bool) bool.addEventListener("change", () => {
+        bool.nextElementSibling.textContent = bool.checked ? "true" : "false";
+      });
+    });
+    // Label update for initial boolean if ever pre-set
+    const initBool = row.querySelector(".dtc-col-default-bool");
+    if (initBool) initBool.addEventListener("change", () => {
+      initBool.nextElementSibling.textContent = initBool.checked ? "true" : "false";
+    });
     $rowsContainer.appendChild(row);
     row.querySelector(".dtc-col-name").focus();
   }
@@ -155,9 +183,17 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     $rowsContainer.querySelectorAll(".dtc-schema-row").forEach(row => {
       const name = row.querySelector(".dtc-col-name").value.trim();
       const type = row.querySelector(".dtc-col-type").value;
-      if (name) {
-        properties[name] = { title: name, type };
+      if (!name) return;
+      const prop = { title: name, type };
+      const boolInput = row.querySelector(".dtc-col-default-bool");
+      const textInput = row.querySelector(".dtc-col-default");
+      if (boolInput) {
+        prop.default = boolInput.checked;
+      } else if (textInput && textInput.value.trim() !== "") {
+        const raw = textInput.value.trim();
+        prop.default = (type === "integer" || type === "number") ? Number(raw) : raw;
       }
+      properties[name] = prop;
     });
 
     return {
