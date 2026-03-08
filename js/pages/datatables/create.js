@@ -394,7 +394,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     });
 
     $sheetPicker.hidden = true;
-    _importWorkbook = null;
+    // Keep _importWorkbook so the user can load another tab via Create
     validateSave();
     const skippedDiv = divisionVal && !$division.value ? ` Division "${divisionVal}" not found — please select manually.` : "";
     setStatus(`Imported ${schemaRows.length} column(s) from "${sheetName}".${skippedDiv}`);
@@ -410,7 +410,15 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     $form.hidden = false;
 
     const ok = await loadDivisions();
-    if (ok) setStatus("Fill in the required fields and click Save.");
+    if (ok) {
+      // If a workbook is still loaded, surface the picker so the user can pick the next tab
+      if (_importWorkbook) {
+        $sheetPicker.hidden = false;
+        setStatus("Select a sheet to import, or fill in the fields manually.");
+      } else {
+        setStatus("Fill in the required fields and click Save.");
+      }
+    }
   });
 
   // ── Live validation ────────────────────────────────────────────
@@ -517,6 +525,8 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
       $division.innerHTML = `<option value="">Select division…</option>`;
       $rowsContainer.innerHTML = "";
       divisionsLoaded = false;
+      // If a workbook is still loaded, re-show the picker for the next tab
+      if (_importWorkbook) $sheetPicker.hidden = false;
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
       logAction({ me, orgId, action: "datatable_create",
