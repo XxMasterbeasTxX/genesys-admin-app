@@ -73,6 +73,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   let allResults     = [];     // all fetched audit entries, sorted latest-first
   let filteredRows   = [];     // current filtered view (subset of allResults)
   let actorMap       = {};     // { userId → displayName }
+  let entityNameMap  = {};     // { entityId → resolvedName }
   let isRunning      = false;
   let currentPage    = 1;
   let pageSize       = 50;
@@ -275,6 +276,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     $searchBtn.disabled = true;
     allResults = [];
     actorMap   = {};
+    entityNameMap = {};
     $tableBody.innerHTML = "";
     $resultsZone.style.display = "none";
 
@@ -330,8 +332,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       }
 
       showProgress(90);
-      setStatus("Resolving user names…");
+      setStatus("Resolving names…");
       await resolveActors();
+      await resolveEntities();
 
       // Sort all results latest-first
       allResults.sort((a, b) => {
@@ -358,6 +361,97 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       $searchBtn.disabled = false;
     }
   });
+
+  // ── Entity name resolution ───────────────────────────────────────
+  // Maps service+entityType to a Genesys API path function.
+  // entity.id in audit entries is always the resource GUID (or for
+  // Datatables/Row it is the parent datatable ID).
+  const ENTITY_PATH = {
+    // Datatables
+    "Datatables/Schema":              id => `/api/v2/flows/datatables/${id}`,
+    "Datatables/Row":                 id => `/api/v2/flows/datatables/${id}`,
+    // Architect
+    "Architect/Flow":                 id => `/api/v2/flows/${id}`,
+    "Architect/Prompt":               id => `/api/v2/architect/prompts/${id}`,
+    "Architect/IVR":                  id => `/api/v2/architect/ivrs/${id}`,
+    "Architect/Schedule":             id => `/api/v2/architect/schedules/${id}`,
+    "Architect/ScheduleGroup":        id => `/api/v2/architect/schedulegroups/${id}`,
+    "Architect/EmergencyGroup":       id => `/api/v2/architect/emergencygroups/${id}`,
+    "Architect/FlowOutcome":          id => `/api/v2/flows/outcomes/${id}`,
+    "Architect/FlowMilestone":        id => `/api/v2/flows/milestones/${id}`,
+    // ContactCenter
+    "ContactCenter/Queue":            id => `/api/v2/routing/queues/${id}`,
+    "ContactCenter/WrapupCode":       id => `/api/v2/routing/wrapupcodes/${id}`,
+    // PeoplePermissions
+    "PeoplePermissions/Role":         id => `/api/v2/authorization/roles/${id}`,
+    "PeoplePermissions/OAuthClient":  id => `/api/v2/oauth/clients/${id}`,
+    // Directory
+    "Directory/User":                 id => `/api/v2/users/${id}`,
+    // Groups
+    "Groups/DirectoryGroup":          id => `/api/v2/groups/${id}`,
+    "Groups/Team":                    id => `/api/v2/teams/${id}`,
+    "Groups/SkillGroup":              id => `/api/v2/routing/skillgroups/${id}`,
+    // Routing
+    "Routing/RoutingSkill":           id => `/api/v2/routing/skills/${id}`,
+    // ResponseManagement
+    "ResponseManagement/Response":        id => `/api/v2/responsemanagement/responses/${id}`,
+    "ResponseManagement/ResponseLibrary": id => `/api/v2/responsemanagement/libraries/${id}`,
+    // Telephony
+    "Telephony/Site":                 id => `/api/v2/telephony/providers/edges/sites/${id}`,
+    "Telephony/Trunk":                id => `/api/v2/telephony/providers/edges/trunks/${id}`,
+    "Telephony/TrunkBase":            id => `/api/v2/telephony/providers/edges/trunkbasesettings/${id}`,
+    "Telephony/Phone":                id => `/api/v2/telephony/providers/edges/phones/${id}`,
+    "Telephony/Edge":                 id => `/api/v2/telephony/providers/edges/${id}`,
+    "Telephony/IVR":                  id => `/api/v2/architect/ivrs/${id}`,
+    "Telephony/Schedule":             id => `/api/v2/architect/schedules/${id}`,
+    "Telephony/ScheduleGroup":        id => `/api/v2/architect/schedulegroups/${id}`,
+    "Telephony/EmergencyGroup":       id => `/api/v2/architect/emergencygroups/${id}`,
+    // Outbound
+    "Outbound/Campaign":              id => `/api/v2/outbound/campaigns/${id}`,
+    "Outbound/ContactList":           id => `/api/v2/outbound/contactlists/${id}`,
+    "Outbound/DNCList":               id => `/api/v2/outbound/dnclists/${id}`,
+    "Outbound/RuleSet":               id => `/api/v2/outbound/rulesets/${id}`,
+    "Outbound/CallableTimeSet":       id => `/api/v2/outbound/callabletimesets/${id}`,
+    // Knowledge
+    "Knowledge/KnowledgeBase":        id => `/api/v2/knowledge/knowledgebases/${id}`,
+    // Integrations
+    "Integrations/Integration":       id => `/api/v2/integrations/${id}`,
+    // WebDeployments
+    "WebDeployments/Deployment":      id => `/api/v2/webdeployments/deployments/${id}`,
+    "WebDeployments/Configuration":   id => `/api/v2/webdeployments/configurations/${id}`,
+    // WorkforceManagement
+    "WorkforceManagement/BusinessUnit":   id => `/api/v2/workforcemanagement/businessunits/${id}`,
+    "WorkforceManagement/ManagementUnit": id => `/api/v2/workforcemanagement/managementunits/${id}`,
+    // Messaging
+    "Messaging/Integration":          id => `/api/v2/messaging/integrations/${id}`,
+  };
+
+  async function resolveEntities() {
+    // Collect unique (service/entityType, id) pairs that have a resolver
+    const toResolve = [];
+    for (const entry of allResults) {
+      const id      = entry.entity?.id;
+      const service = entry.serviceName || "";
+      const type    = entry.entityType  || entry.entity?.type || "";
+      const key     = `${service}/${type}`;
+      if (id && ENTITY_PATH[key] && !entityNameMap[id]) {
+        entityNameMap[id] = null; // mark as in-flight
+        toResolve.push({ key, id });
+      }
+    }
+
+    await Promise.all(
+      toResolve.map(async ({ key, id }) => {
+        try {
+          const path = ENTITY_PATH[key](id);
+          const res  = await gc.fetchEntityByPath(api, orgId, path);
+          entityNameMap[id] = res?.name || id;
+        } catch {
+          entityNameMap[id] = id; // fall back to GUID on 404 / permission error
+        }
+      }),
+    );
+  }
 
   // ── Actor name resolution ────────────────────────────────────────
   // Tries user API first; if that fails (e.g. the actor is an OAuth client
@@ -447,7 +541,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   }
 
   function getEntityName(entry) {
-    return entry.entity?.name || entry.entity?.id || "";
+    const id = entry.entity?.id;
+    if (id && entityNameMap[id] && entityNameMap[id] !== id) return entityNameMap[id];
+    return entry.entity?.name || id || "";
   }
 
   function getActorName(entry) {

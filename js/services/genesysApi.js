@@ -684,6 +684,14 @@ export async function getOAuthClient(api, orgId, clientId) {
   return api.proxyGenesys(orgId, "GET", `/api/v2/oauth/clients/${clientId}`);
 }
 
+/**
+ * Generic entity fetch by path — used by the audit entity name resolver.
+ * Returns the full response object; caller extracts `.name`.
+ */
+export async function fetchEntityByPath(api, orgId, path) {
+  return api.proxyGenesys(orgId, "GET", path);
+}
+
 /** Fetch a single external contact by ID. */
 export async function getExternalContact(api, orgId, contactId) {
   return api.proxyGenesys(orgId, "GET", `/api/v2/externalcontacts/contacts/${contactId}`);
