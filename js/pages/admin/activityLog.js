@@ -96,6 +96,12 @@ export default async function renderActivityLog({ me }) {
       </div>
       ${isAdmin ? `
       <div class="di-control-group">
+        <label class="di-label">Org</label>
+        <select class="input" id="alOrg">
+          <option value="">All orgs</option>
+        </select>
+      </div>
+      <div class="di-control-group">
         <label class="di-label">User</label>
         <select class="input" id="alUser">
           <option value="">All users</option>
@@ -133,6 +139,7 @@ export default async function renderActivityLog({ me }) {
   const $to        = el.querySelector("#alTo");
   const $result    = el.querySelector("#alResult");
   const $action    = el.querySelector("#alAction");
+  const $org       = el.querySelector("#alOrg");    // null for non-admin
   const $user      = el.querySelector("#alUser");   // null for non-admin
   const $refresh   = el.querySelector("#alRefreshBtn");
 
@@ -162,6 +169,19 @@ export default async function renderActivityLog({ me }) {
 
       allEntries = data.entries || [];
 
+      // Populate org filter (admin only)
+      if ($org && allEntries.length) {
+        const orgs = [...new Map(
+          allEntries
+            .filter(e => e.orgId)
+            .map(e => [e.orgId, e.orgName || e.orgId])
+        ).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+        const currentOrg = $org.value;
+        $org.innerHTML = `<option value="">All orgs</option>` +
+          orgs.map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join("");
+        if (currentOrg) $org.value = currentOrg;
+      }
+
       // Populate user filter (admin only)
       if ($user && allEntries.length) {
         const emails = [...new Set(allEntries.map(e => e.userEmail).filter(Boolean))].sort();
@@ -186,6 +206,7 @@ export default async function renderActivityLog({ me }) {
     const toStr   = $to.value;
     const result  = $result.value;
     const action  = $action.value;
+    const org     = $org?.value  || "";
     const user    = $user?.value || "";
 
     const filtered = allEntries.filter(e => {
@@ -193,6 +214,7 @@ export default async function renderActivityLog({ me }) {
       if (toStr   && e.logTimestamp > toStr + "T23:59:59Z") return false;
       if (result  && e.result !== result) return false;
       if (action  && e.action !== action) return false;
+      if (org     && e.orgId !== org) return false;
       if (user    && e.userEmail?.toLowerCase() !== user.toLowerCase()) return false;
       return true;
     });
@@ -228,6 +250,7 @@ export default async function renderActivityLog({ me }) {
   [$from, $to, $result, $action].forEach(el => {
     if (el) el.addEventListener("change", renderTable);
   });
+  if ($org)  $org.addEventListener("change", renderTable);
   if ($user) $user.addEventListener("change", renderTable);
   $refresh.addEventListener("click", loadEntries);
 
