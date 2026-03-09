@@ -488,7 +488,7 @@ async function fetchUsers(region, token) {
   const rows = users.map((u) => {
     const skills    = (u.skills  || []).map((s) => s.name).join(", ");
     const languages = (u.languages || []).map((l) => l.name).join(", ");
-    const stationId = u.station?.effectiveStation?.id;
+    const stationId = u.station?.effectiveStation?.id || u.station?.associatedStation?.id;
     const station   = stationId ? (stationMap[stationId] || stationId) : "";
 
     return [
