@@ -347,14 +347,16 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
       return;
     }
 
-    // Row 0: ["key",         <key display name>]
-    // Row 1: ["division",    <division name>]
-    // Row 2: ["description", <description text>]
-    // Row 3+: [<column name>, <type>]
-    const keyName     = String(rows[0]?.[1] || "").trim();
-    const divisionVal = String(rows[1]?.[1] || "").trim();
-    const description = String(rows[2]?.[1] || "").trim();
-    const schemaRows  = rows.slice(3).filter(r => String(r[0] || "").trim() !== "");
+    // Row 0: ["Name",        <data table name>]
+    // Row 1: ["key",         <key display name>]
+    // Row 2: ["division",    <division name>]
+    // Row 3: ["description", <description text>]
+    // Row 4+: [<column name>, <type>]
+    const tableName   = String(rows[0]?.[1] || "").trim();
+    const keyName     = String(rows[1]?.[1] || "").trim();
+    const divisionVal = String(rows[2]?.[1] || "").trim();
+    const description = String(rows[3]?.[1] || "").trim();
+    const schemaRows  = rows.slice(4).filter(r => String(r[0] || "").trim() !== "");
 
     // Ensure form is open and divisions are loaded
     if ($form.hidden) {
@@ -367,8 +369,8 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
       if (!ok) return;
     }
 
-    // Pre-fill Name from sheet tab name
-    $name.value = sheetName;
+    // Pre-fill Name from the Name row inside the sheet
+    $name.value = tableName;
 
     // Pre-fill Key
     $key.value = keyName;
