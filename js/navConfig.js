@@ -193,6 +193,14 @@ export const NAV_TREE = [
       { label: "Search", path: "search", enabled: true, access: "audit.search" },
     ],
   },
+  {
+    label: "Deployment",
+    path: "deployment",
+    enabled: true,
+    children: [
+      { label: "Data Tables", path: "datatables", enabled: true, access: "deployment.datatables" },
+    ],
+  },
 ];
 
 /** Collect all leaf routes from enabled nodes only. */

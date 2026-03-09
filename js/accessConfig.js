@@ -27,6 +27,7 @@
  *   phones.webrtc.changeSite         phones.webrtc.create
  *   gdpr.subjectRequest              gdpr.requestStatus
  *   divisions.users                  divisions.queues             divisions.dataTables
+ *   deployment.datatables
  */
 export const GROUP_ACCESS = {
   "Genesys App - Admin":  ["*"],

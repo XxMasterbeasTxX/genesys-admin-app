@@ -129,6 +129,10 @@ const registry = {
   "/audit/search": (ctx) =>
     import("./pages/audit/search.js").then((m) => m.default(ctx)),
 
+  // ── Deployment ────────────────────────────────────────
+  "/deployment/datatables": (ctx) =>
+    import("./pages/deployment/datatables.js").then((m) => m.default(ctx)),
+
   // ── Phones ─────────────────────────────────────────
   "/phones/webrtc/change-site": (ctx) =>
     import("./pages/phones/webrtc/changeSite.js").then((m) => m.default(ctx)),
