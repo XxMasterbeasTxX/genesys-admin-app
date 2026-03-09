@@ -368,7 +368,7 @@ Used by: Audit — Search (entity name resolution)
 
 ## 24. Stations
 
-Used by: Documentation Export (Users sheet — station name resolution)
+Used by: Documentation Export (Users sheet — station name resolution via `associatedStation` fallback when user is offline)
 
 | Method | Path | Purpose |
 |--------|------|---------|
