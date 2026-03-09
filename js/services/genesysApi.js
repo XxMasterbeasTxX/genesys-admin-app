@@ -929,8 +929,25 @@ export async function fetchRealtimeAuditServiceMapping(api, orgId) {
  * @returns {Promise<Object[]>}  Audit entries array.
  */
 export async function submitRealtimeAuditQuery(api, orgId, body) {
-  const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/audits/query/realtime", { body });
-  return resp.entities || resp.audits || [];
+  const all = [];
+  let cursor = null;
+
+  while (true) {
+    let path = "/api/v2/audits/query/realtime?pageSize=500";
+    if (cursor) path += `&cursor=${encodeURIComponent(cursor)}`;
+
+    const resp = await api.proxyGenesys(orgId, "POST", path, { body });
+    const items = resp.entities || resp.audits || [];
+    all.push(...items);
+
+    const nextUri = resp.nextUri || null;
+    if (!nextUri) break;
+    const match = nextUri.match(/[?&]cursor=([^&]+)/);
+    cursor = match ? decodeURIComponent(match[1]) : null;
+    if (!cursor) break;
+  }
+
+  return all;
 }
 
 /**

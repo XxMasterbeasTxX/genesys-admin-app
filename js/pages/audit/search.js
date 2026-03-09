@@ -281,12 +281,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       ssService.setItems(services);
       $searchBtn.disabled = false;
       setStatus("");
-      // Restore last-used service if available (optional for ≤14 day range)
-      const lastService = localStorage.getItem("aq-last-service");
-      if (lastService && services.some(s => s.id === lastService)) {
-        ssService.setValue(lastService);
-      }
-      // Always auto-run today — ≤14 days works with or without a service selection
+      // Always auto-run today in allMode (no service pre-selected)
       el.querySelector('[data-preset="today"]')?.classList.add("aq-preset-btn--active");
       updateServiceMode();
       runSearch();
