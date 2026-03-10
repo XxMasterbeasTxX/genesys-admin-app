@@ -114,9 +114,13 @@ async function processSites({ rows, api, orgId, me, addResult }) {
       // webRtcTurnRelayAlgorithm is ignored on POST — apply via PUT using full GET response
       if (result?.id && turnRelay !== "AnyMediaRegionForSite") {
         const current = await gc.getSite(api, orgId, result.id);
+        // Debug: show all keys from GET to identify correct field name
+        const turnFields = Object.keys(current).filter(k => k.toLowerCase().includes("turn") || k.toLowerCase().includes("relay") || k.toLowerCase().includes("webrtc"));
+        addResult(name, true, `DEBUG GET keys: ${turnFields.join(", ") || "none found"}`);
         await gc.updateSite(api, orgId, result.id, { ...current, webRtcTurnRelayAlgorithm: turnRelay });
+      } else {
+        addResult(name, true, result?.id ? `id: ${result.id}` : "");
       }
-      addResult(name, true, result?.id ? `id: ${result.id}` : "");
       logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created site '${name}' (${normalizedModel})` });
       created++;
     } catch (err) {
