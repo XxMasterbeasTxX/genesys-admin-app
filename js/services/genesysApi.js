@@ -455,39 +455,6 @@ export async function createDataTable(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/flows/datatables", { body });
 }
 
-/** Fetch metabase id/name pairs from existing trunk base settings.
- *  Genesys has no dedicated "list metabases" endpoint; the metabase
- *  reference is embedded in every trunk base settings object.
- */
-export async function fetchTrunkMetabasesFromExisting(api, orgId) {
-  const trunks = await fetchAllPages(api, orgId,
-    "/api/v2/telephony/providers/edges/trunkbasesettings");
-  const seen = new Map();
-  for (const t of trunks) {
-    if (t.trunkMetabase?.id && !seen.has(t.trunkMetabase.id)) {
-      seen.set(t.trunkMetabase.id, t.trunkMetabase);
-    }
-  }
-  return [...seen.values()];
-}
-
-/** Fetch all edge sites. */
-export async function fetchAllEdgeSites(api, orgId) {
-  return fetchAllPages(api, orgId, "/api/v2/telephony/providers/edges/sites");
-}
-
-/** Create a trunk base setting. */
-export async function createTrunk(api, orgId, body) {
-  return api.proxyGenesys(orgId, "POST",
-    "/api/v2/telephony/providers/edges/trunkbasesettings", { body });
-}
-
-/** Delete a trunk base setting by ID. */
-export async function deleteTrunk(api, orgId, trunkId) {
-  return api.proxyGenesys(orgId, "DELETE",
-    `/api/v2/telephony/providers/edges/trunkbasesettings/${trunkId}`);
-}
-
 /** Create a DID pool. */
 export async function createDIDPool(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/telephony/providers/edges/didpools", { body });

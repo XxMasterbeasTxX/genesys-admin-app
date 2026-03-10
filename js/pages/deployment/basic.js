@@ -27,100 +27,11 @@ import { escapeHtml } from "../../utils.js";
 // Returns { created, failed } counts (updates are made via addResult internally).
 
 const TAB_HANDLERS = {
-  "DID Pools":         processDIDPools,
-  "Divisions":         processDivisions,
-  "Skills":            processSkills,
+  "DID Pools":      processDIDPools,
+  "Divisions":      processDivisions,
+  "Skills":         processSkills,
   "Skills - Language": processLanguages,
-  "Trunks":            processTrunks,
 };
-
-// ── Tab: Trunks ──────────────────────────────────────────────────────────────
-// Columns: A=Name, B=Type, C=Metabase Name, D=Site Name, E=Recording, F=Consent Driven, G=Description
-async function processTrunks({ rows, api, orgId, me, addResult }) {
-  let created = 0;
-  let failed  = 0;
-
-  // Pre-fetch metabases (from existing trunks) and sites once
-  let metabases, sites;
-  try {
-    [metabases, sites] = await Promise.all([
-      gc.fetchTrunkMetabasesFromExisting(api, orgId),
-      gc.fetchAllEdgeSites(api, orgId),
-    ]);
-  } catch (err) {
-    addResult("(setup)", false, `Failed to fetch metabases/sites: ${err.message}`);
-    return { created: 0, failed: rows.length };
-  }
-
-  if (!metabases.length) {
-    addResult("(setup)", false,
-      "No existing trunks found in this org — cannot resolve metabase names to IDs. " +
-      "Create one trunk manually first, or provide the Metabase ID directly.");
-    return { created: 0, failed: rows.length };
-  }
-
-  const metabaseMap = Object.fromEntries(metabases.map(m => [m.name.toLowerCase(), m]));
-  const siteMap     = Object.fromEntries(sites.map(s => [s.name.toLowerCase(), s]));
-
-  for (const row of rows) {
-    const name        = String(row[0] || "").trim();
-    const type        = String(row[1] || "").trim().toUpperCase();
-    const metaName    = String(row[2] || "").trim();
-    const siteName    = String(row[3] || "").trim();
-    const recording   = String(row[4] || "").trim().toLowerCase() === "true";
-    const consent     = String(row[5] || "").trim().toLowerCase() === "true";
-    const description = String(row[6] || "").trim();
-
-    const label = name || "(empty)";
-
-    if (!name)     { addResult(label, false, "Missing name — skipped");     failed++; continue; }
-    if (!type)     { addResult(label, false, "Missing type — skipped");     failed++; continue; }
-    if (!metaName) { addResult(label, false, "Missing metabase — skipped"); failed++; continue; }
-
-    const metabase = metabaseMap[metaName.toLowerCase()];
-    if (!metabase) {
-      addResult(label, false, `Metabase '${metaName}' not found`);
-      failed++;
-      continue;
-    }
-
-    const body = {
-      name,
-      state: "active",
-      trunkType: type,
-      trunkMetabase: { id: metabase.id, name: metabase.name },
-      ...(description && { description }),
-      properties: {
-        "trunk.media.mediaRecording.enabled": { value: { instance: recording } },
-        ...(recording && { "trunk.media.mediaRecording.pauseOnConsent": { value: { instance: consent } } }),
-      },
-    };
-
-    if (siteName) {
-      const site = siteMap[siteName.toLowerCase()];
-      if (!site) {
-        addResult(label, false, `Site '${siteName}' not found`);
-        failed++;
-        continue;
-      }
-      body.site = { id: site.id, name: site.name };
-    }
-
-    try {
-      const result = await gc.createTrunk(api, orgId, body);
-      const detail = result?.id ? `id: ${result.id}` : (result ? JSON.stringify(result).slice(0, 120) : "no response body");
-      addResult(name, true, detail);
-      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created trunk '${name}' (${type})` });
-      created++;
-    } catch (err) {
-      addResult(name, false, err.message);
-      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create trunk '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
-      failed++;
-    }
-  }
-
-  return { created, failed };
-}
 
 // ── Tab: Skills ──────────────────────────────────────────────────────────────
 // Columns: A=Name (required)
@@ -299,15 +210,6 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     <div class="dt-status" id="dbStatus"></div>
 
     <ul class="ddt-results" id="dbResults" style="list-style:none;padding:0;margin-top:12px"></ul>
-
-    <hr style="margin:24px 0;border-color:var(--border,#334)" />
-    <h3 style="margin-bottom:8px">Delete Trunk Base Settings by ID</h3>
-    <p style="margin-bottom:8px;opacity:0.7;font-size:0.9em">Paste one trunk base settings ID per line to delete trunks that are not visible in the Genesys UI.</p>
-    <textarea id="dbDeleteIds" rows="5" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:0.85em;padding:8px;background:var(--bg2,#1e2433);color:inherit;border:1px solid var(--border,#334);border-radius:4px" placeholder="58ad6a25-8da0-4c9d-a587-de71125ecb7a"></textarea>
-    <div style="margin-top:8px">
-      <button class="btn btn--danger" id="dbDeleteBtn">Delete</button>
-    </div>
-    <ul id="dbDeleteResults" style="list-style:none;padding:0;margin-top:12px"></ul>
   `;
 
   const $selectBtn = el.querySelector("#dbSelectBtn");
@@ -324,7 +226,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     const li = document.createElement("li");
     li.style.cssText = "padding:4px 0;border-bottom:1px solid var(--border,#334)";
     li.innerHTML = ok
-      ? `<span style="color:#4ade80">✓</span> <strong>${escapeHtml(label)}</strong>${detail ? ` <small style="opacity:0.6">${escapeHtml(detail)}</small>` : ""}`
+      ? `<span style="color:#4ade80">✓</span> <strong>${escapeHtml(label)}</strong>`
       : `<span style="color:#f87171">✗</span> <strong>${escapeHtml(label)}</strong> — ${escapeHtml(detail)}`;
     $results.appendChild(li);
   }
@@ -392,36 +294,6 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
   }
 
   $selectBtn.addEventListener("click", () => $fileInput.click());
-
-  // ── Delete by ID ────────────────────────────────────────────────────────────
-  const $deleteBtn     = el.querySelector("#dbDeleteBtn");
-  const $deleteIds     = el.querySelector("#dbDeleteIds");
-  const $deleteResults = el.querySelector("#dbDeleteResults");
-
-  $deleteBtn.addEventListener("click", async () => {
-    const orgId = orgContext.get();
-    if (!orgId) { alert("Please select a customer org first."); return; }
-
-    const ids = $deleteIds.value.split("\n").map(s => s.trim()).filter(Boolean);
-    if (!ids.length) return;
-
-    $deleteResults.innerHTML = "";
-    $deleteBtn.disabled = true;
-
-    for (const id of ids) {
-      const li = document.createElement("li");
-      li.style.cssText = "padding:4px 0;border-bottom:1px solid var(--border,#334)";
-      try {
-        await gc.deleteTrunk(api, orgId, id);
-        li.innerHTML = `<span style="color:#4ade80">✓</span> Deleted <code>${escapeHtml(id)}</code>`;
-      } catch (err) {
-        li.innerHTML = `<span style="color:#f87171">✗</span> <code>${escapeHtml(id)}</code> — ${escapeHtml(err.message)}`;
-      }
-      $deleteResults.appendChild(li);
-    }
-
-    $deleteBtn.disabled = false;
-  });
 
   $fileInput.addEventListener("change", () => {
     const file = $fileInput.files[0];
