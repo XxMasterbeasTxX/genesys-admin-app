@@ -86,6 +86,7 @@ async function processTrunks({ rows, api, orgId, me, addResult }) {
 
     const body = {
       name,
+      state: "active",
       trunkType: type,
       trunkMetabase: { id: metabase.id, name: metabase.name },
       ...(description && { description }),
