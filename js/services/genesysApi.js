@@ -482,6 +482,12 @@ export async function createTrunk(api, orgId, body) {
     "/api/v2/telephony/providers/edges/trunkbasesettings", { body });
 }
 
+/** Delete a trunk base setting by ID. */
+export async function deleteTrunk(api, orgId, trunkId) {
+  return api.proxyGenesys(orgId, "DELETE",
+    `/api/v2/telephony/providers/edges/trunkbasesettings/${trunkId}`);
+}
+
 /** Create a DID pool. */
 export async function createDIDPool(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/telephony/providers/edges/didpools", { body });

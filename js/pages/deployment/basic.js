@@ -299,6 +299,15 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     <div class="dt-status" id="dbStatus"></div>
 
     <ul class="ddt-results" id="dbResults" style="list-style:none;padding:0;margin-top:12px"></ul>
+
+    <hr style="margin:24px 0;border-color:var(--border,#334)" />
+    <h3 style="margin-bottom:8px">Delete Trunk Base Settings by ID</h3>
+    <p style="margin-bottom:8px;opacity:0.7;font-size:0.9em">Paste one trunk base settings ID per line to delete trunks that are not visible in the Genesys UI.</p>
+    <textarea id="dbDeleteIds" rows="5" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:0.85em;padding:8px;background:var(--bg2,#1e2433);color:inherit;border:1px solid var(--border,#334);border-radius:4px" placeholder="58ad6a25-8da0-4c9d-a587-de71125ecb7a"></textarea>
+    <div style="margin-top:8px">
+      <button class="btn btn--danger" id="dbDeleteBtn">Delete</button>
+    </div>
+    <ul id="dbDeleteResults" style="list-style:none;padding:0;margin-top:12px"></ul>
   `;
 
   const $selectBtn = el.querySelector("#dbSelectBtn");
@@ -383,6 +392,36 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
   }
 
   $selectBtn.addEventListener("click", () => $fileInput.click());
+
+  // ── Delete by ID ────────────────────────────────────────────────────────────
+  const $deleteBtn     = el.querySelector("#dbDeleteBtn");
+  const $deleteIds     = el.querySelector("#dbDeleteIds");
+  const $deleteResults = el.querySelector("#dbDeleteResults");
+
+  $deleteBtn.addEventListener("click", async () => {
+    const orgId = orgContext.get();
+    if (!orgId) { alert("Please select a customer org first."); return; }
+
+    const ids = $deleteIds.value.split("\n").map(s => s.trim()).filter(Boolean);
+    if (!ids.length) return;
+
+    $deleteResults.innerHTML = "";
+    $deleteBtn.disabled = true;
+
+    for (const id of ids) {
+      const li = document.createElement("li");
+      li.style.cssText = "padding:4px 0;border-bottom:1px solid var(--border,#334)";
+      try {
+        await gc.deleteTrunk(api, orgId, id);
+        li.innerHTML = `<span style="color:#4ade80">✓</span> Deleted <code>${escapeHtml(id)}</code>`;
+      } catch (err) {
+        li.innerHTML = `<span style="color:#f87171">✗</span> <code>${escapeHtml(id)}</code> — ${escapeHtml(err.message)}`;
+      }
+      $deleteResults.appendChild(li);
+    }
+
+    $deleteBtn.disabled = false;
+  });
 
   $fileInput.addEventListener("change", () => {
     const file = $fileInput.files[0];
