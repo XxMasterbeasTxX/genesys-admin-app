@@ -36,7 +36,7 @@ const TAB_HANDLERS = {
 
 // ── Tab: Sites ──────────────────────────────────────────────────────────────
 // Columns: A=Name (req), B=Media Model (req: Cloud|Premises), C=Media Regions (Cloud only, comma-sep),
-//          D=Location Name (req), E=TURN Relay (opt: Site|Geo, default=Site), F=Description (opt)
+//          D=Location Name (req), E=TURN Relay (opt: Site|Geo, default=Site), F=Caller ID (opt), G=Caller Name (opt), H=Description (opt)
 async function processSites({ rows, api, orgId, me, addResult }) {
   let created = 0;
   let failed  = 0;
@@ -65,7 +65,9 @@ async function processSites({ rows, api, orgId, me, addResult }) {
     const mediaRegions = String(row[2] || "").trim().split(",").map(s => s.trim()).filter(Boolean);
     const locationName = String(row[3] || "").trim();
     const turnRelayRaw = String(row[4] || "").trim().toLowerCase() || "site";
-    const description  = String(row[5] || "").trim();
+    const callerId     = String(row[5] || "").trim();
+    const callerName   = String(row[6] || "").trim();
+    const description  = String(row[7] || "").trim();
 
     const label = name || "(empty)";
 
@@ -106,6 +108,8 @@ async function processSites({ rows, api, orgId, me, addResult }) {
       location: { id: location.id, name: location.name },
       mediaRegionsUseLatencyBased: turnRelay === "GeoLocation",
       ...(normalizedModel === "Cloud" && { mediaRegions }),
+      ...(callerId   && { callerId }),
+      ...(callerName && { callerName }),
       ...(description && { description }),
     };
 
