@@ -130,6 +130,8 @@ const registry = {
     import("./pages/audit/search.js").then((m) => m.default(ctx)),
 
   // ── Deployment ────────────────────────────────────────
+  "/deployment/basic": (ctx) =>
+    import("./pages/deployment/basic.js").then((m) => m.default(ctx)),
   "/deployment/datatables": (ctx) =>
     import("./pages/deployment/datatables.js").then((m) => m.default(ctx)),
 

@@ -198,6 +198,7 @@ export const NAV_TREE = [
     path: "deployment",
     enabled: true,
     children: [
+      { label: "Basic",       path: "basic",      enabled: true, access: "deployment.basic"      },
       { label: "Data Tables", path: "datatables", enabled: true, access: "deployment.datatables" },
     ],
   },

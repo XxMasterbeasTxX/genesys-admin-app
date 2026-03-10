@@ -445,6 +445,11 @@ export async function createDataTable(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/flows/datatables", { body });
 }
 
+/** Create a DID pool. */
+export async function createDIDPool(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/telephony/providers/edges/didpools", { body });
+}
+
 /** Insert a single row into a data table. */
 export async function createDataTableRow(api, orgId, tableId, row) {
   return api.proxyGenesys(orgId, "POST",
