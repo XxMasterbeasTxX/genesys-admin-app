@@ -27,10 +27,10 @@ import { escapeHtml } from "../../utils.js";
 // Returns { created, failed } counts (updates are made via addResult internally).
 
 const TAB_HANDLERS = {
-  "DID Pools":         processDIDPools,
-  "Divisions":         processDivisions,
-  "Number Plans":      processNumberPlans,
-  "Sites":             processSites,
+  "DID Pools":              processDIDPools,
+  "Divisions":              processDivisions,
+  "Site - Number Plans":    processNumberPlans,
+  "Sites":                  processSites,
   "Skills":            processSkills,
   "Skills - Language": processLanguages,
 };
