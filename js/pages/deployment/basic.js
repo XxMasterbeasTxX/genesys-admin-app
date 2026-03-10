@@ -27,9 +27,61 @@ import { escapeHtml } from "../../utils.js";
 // Returns { created, failed } counts (updates are made via addResult internally).
 
 const TAB_HANDLERS = {
-  "DID Pools": processDIDPools,
-  "Divisions":  processDivisions,
+  "DID Pools":      processDIDPools,
+  "Divisions":      processDivisions,
+  "Skills":         processSkills,
+  "Skills - Language": processLanguages,
 };
+
+// ── Tab: Skills ──────────────────────────────────────────────────────────────
+// Columns: A=Name (required)
+async function processSkills({ rows, api, orgId, me, addResult }) {
+  let created = 0;
+  let failed  = 0;
+
+  for (const row of rows) {
+    const name = String(row[0] || "").trim();
+    if (!name) { addResult("(empty)", false, "Missing name — skipped"); failed++; continue; }
+
+    try {
+      await gc.createSkill(api, orgId, { name });
+      addResult(name, true);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created skill '${name}'` });
+      created++;
+    } catch (err) {
+      addResult(name, false, err.message);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create skill '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+    }
+  }
+
+  return { created, failed };
+}
+
+// ── Tab: Skills - Language ────────────────────────────────────────────────────
+// Columns: A=Name (required)
+async function processLanguages({ rows, api, orgId, me, addResult }) {
+  let created = 0;
+  let failed  = 0;
+
+  for (const row of rows) {
+    const name = String(row[0] || "").trim();
+    if (!name) { addResult("(empty)", false, "Missing name — skipped"); failed++; continue; }
+
+    try {
+      await gc.createLanguage(api, orgId, { name });
+      addResult(name, true);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created language '${name}'` });
+      created++;
+    } catch (err) {
+      addResult(name, false, err.message);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create language '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+    }
+  }
+
+  return { created, failed };
+}
 
 // ── Tab: Divisions ───────────────────────────────────────────────────────────
 // Columns: A=Name (required), B=Description (optional)

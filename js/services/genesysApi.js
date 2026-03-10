@@ -397,6 +397,16 @@ export async function fetchAllSkills(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/routing/skills", opts);
 }
 
+/** Create a routing skill. Body: { name }. */
+export async function createSkill(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/routing/skills", { body });
+}
+
+/** Create a routing language. Body: { name }. */
+export async function createLanguage(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/routing/languages", { body });
+}
+
 /** Fetch all wrapup codes. */
 export async function fetchAllWrapupCodes(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/routing/wrapupcodes", opts);
