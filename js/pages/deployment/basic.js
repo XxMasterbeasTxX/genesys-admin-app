@@ -97,11 +97,6 @@ async function processNumberPlans({ rows, api, orgId, me, addResult }) {
       failed++;
       continue;
     }
-    if (planGroups.size > 200) {
-      addResult(siteName, false, `${planGroups.size} plans exceeds Genesys limit of 200 — skipped`);
-      failed++;
-      continue;
-    }
 
     const plans = [];
     let rowError = null;
@@ -168,9 +163,23 @@ async function processNumberPlans({ rows, api, orgId, me, addResult }) {
     }
 
     try {
-      await gc.updateSiteNumberPlans(api, orgId, site.id, plans);
-      addResult(siteName, true, `${plans.length} plan${plans.length !== 1 ? "s" : ""} updated`);
-      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Updated ${plans.length} number plan(s) on site '${siteName}'` });
+      // GET existing plans, merge (sheet plans overwrite by name, unknowns are kept)
+      let existing = [];
+      try { existing = await gc.getSiteNumberPlans(api, orgId, site.id) || []; } catch (_) { /* start fresh if GET fails */ }
+
+      const sheetByName = new Map(plans.map(p => [p.name.toLowerCase(), p]));
+      const existingNotInSheet = existing.filter(p => !sheetByName.has(p.name.toLowerCase()));
+      const merged = [...existingNotInSheet, ...plans];
+
+      if (merged.length > 200) {
+        addResult(siteName, false, `Merged total of ${merged.length} plans exceeds Genesys limit of 200 — skipped`);
+        failed++;
+        continue;
+      }
+
+      await gc.updateSiteNumberPlans(api, orgId, site.id, merged);
+      addResult(siteName, true, `${plans.length} plan${plans.length !== 1 ? "s" : ""} applied (${merged.length} total on site)`);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Updated ${plans.length} number plan(s) on site '${siteName}' (${merged.length} total)` });
       updated++;
     } catch (err) {
       addResult(siteName, false, err.message);
