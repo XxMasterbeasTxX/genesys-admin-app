@@ -349,7 +349,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
 
       // Skip header row (row 0)
-      const dataRows = rows.slice(1).filter(r => r.some(c => String(c).trim() !== ""));
+      const dataRows = rows.slice(1).filter(r => String(r[0] || "").trim() !== "");
 
       addSectionHeader(tabName);
 
