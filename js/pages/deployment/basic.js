@@ -138,14 +138,15 @@ async function processNumberPlans({ rows, api, orgId, me, addResult }) {
       const plan = { name: planName, classification, matchType: matchTypeCased, priority, state };
 
       if (MULTI_NUMBER_TYPES.has(matchTypeRaw)) {
-        plan.numbers = planRows
+        const nums = planRows
           .map(r => String(r[6] || "").trim())
           .filter(Boolean)
           .map(v => ({ start: v }));
+        if (nums.length) plan.numbers = nums;
       }
 
       if (matchTypeRaw === "digitlength" && digitLengthRaw) {
-        const parts = digitLengthRaw.split("-").map(s => s.trim());
+        const parts = digitLengthRaw.split("-").map(s => parseInt(s.trim(), 10));
         plan.digitLength = parts.length === 2
           ? { start: parts[0], end: parts[1] }
           : { start: parts[0] };
