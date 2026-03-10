@@ -493,18 +493,6 @@ export async function createSite(api, orgId, body) {
     "/api/v2/telephony/providers/edges/sites", { body });
 }
 
-/** Get a single site by ID. */
-export async function getSite(api, orgId, siteId) {
-  return api.proxyGenesys(orgId, "GET",
-    `/api/v2/telephony/providers/edges/sites/${siteId}`);
-}
-
-/** Update a site (full PUT). */
-export async function updateSite(api, orgId, siteId, body) {
-  return api.proxyGenesys(orgId, "PUT",
-    `/api/v2/telephony/providers/edges/sites/${siteId}`, { body });
-}
-
 /** Fetch all DID pools. */
 export async function fetchAllDidPools(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId,

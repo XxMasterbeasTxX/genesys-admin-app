@@ -111,11 +111,6 @@ async function processSites({ rows, api, orgId, me, addResult }) {
 
     try {
       const result = await gc.createSite(api, orgId, body);
-      // mediaRegionsUseLatencyBased is ignored on POST — apply via PUT using full GET response
-      if (result?.id && turnRelay !== "AnyMediaRegionForSite") {
-        const current = await gc.getSite(api, orgId, result.id);
-        await gc.updateSite(api, orgId, result.id, { ...current, mediaRegionsUseLatencyBased: true });
-      }
       addResult(name, true, result?.id ? `id: ${result.id}` : "");
       logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created site '${name}' (${normalizedModel})` });
       created++;
