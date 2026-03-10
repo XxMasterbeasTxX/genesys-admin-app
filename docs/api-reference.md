@@ -32,6 +32,7 @@ All Genesys Cloud calls are proxied through `POST /api/genesys-proxy` on the Azu
 22. [Response Management](#22-response-management)
 23. [External Contacts](#23-external-contacts)
 24. [Stations](#24-stations)
+25. [Locations](#25-locations)
 
 ---
 
@@ -87,11 +88,12 @@ Used by: Audit — Search
 
 ## 4. Authorization & Divisions
 
-Used by: Divisions (all object types), Data Tables — Create, export pages
+Used by: Divisions (all object types), Data Tables — Create, export pages, Deployment — Basic
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/authorization/divisions` | List all divisions |
+| POST | `/api/v2/authorization/divisions` | **Create** a new division (Deployment — Basic) |
 | GET | `/api/v2/authorization/roles` | List all authorization roles |
 | GET | `/api/v2/authorization/roles/{roleId}/users` | List users assigned a specific role |
 | GET | `/api/v2/authorization/subjects/{userId}` | Get a user's role assignments |
@@ -129,7 +131,7 @@ Used by: Trustee Export
 
 ## 7. Routing
 
-Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisions — Queues/Wrapup/Skills, Documentation Export
+Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisions — Queues/Wrapup/Skills, Documentation Export, Deployment — Basic
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -138,6 +140,9 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | PATCH | `/api/v2/routing/queues/{queueId}` | Partial update a queue (e.g., division change) |
 | PUT | `/api/v2/routing/queues/{queueId}` | Full queue update |
 | GET | `/api/v2/routing/skills` | List routing skills |
+| POST | `/api/v2/routing/skills` | **Create** a routing skill (Deployment — Basic) |
+| GET | `/api/v2/routing/languages` | List routing languages |
+| POST | `/api/v2/routing/languages` | **Create** a routing language (Deployment — Basic) |
 | GET | `/api/v2/routing/skillgroups` | List routing skill groups |
 | GET | `/api/v2/routing/wrapupcodes` | List wrapup codes |
 | GET | `/api/v2/routing/message/recipients` | List messaging recipients |
@@ -183,14 +188,16 @@ Used by: Divisions — Scripts, Documentation Export
 
 ## 10. Telephony / Edges
 
-Used by: WebRTC Phones — Create/Change Site, Documentation Export, Divisions — Extension Pools
+Used by: WebRTC Phones — Create/Change Site, Documentation Export, Divisions — Extension Pools, Deployment — Basic
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/telephony/providers/edges/sites` | List sites |
+| POST | `/api/v2/telephony/providers/edges/sites` | **Create** a site (Deployment — Basic) |
 | GET | `/api/v2/telephony/providers/edges/sites/{id}/outboundroutes` | Site outbound routes |
 | GET | `/api/v2/telephony/providers/edges/sites/{id}/numberplans` | Site number plans |
 | GET | `/api/v2/telephony/providers/edges/didpools` | List DID pools |
+| POST | `/api/v2/telephony/providers/edges/didpools` | **Create** a DID pool (Deployment — Basic) |
 | GET | `/api/v2/telephony/providers/edges/didpools/dids` | List DID numbers (assigned and unassigned) |
 | GET | `/api/v2/telephony/providers/edges/phonebasesettings` | List phone base settings |
 | GET | `/api/v2/telephony/providers/edges/phonebasesettings/{id}` | Get a phone base setting (includes line templates) |
@@ -373,6 +380,16 @@ Used by: Documentation Export (Users sheet — station name resolution via `asso
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/stations` | List all stations |
+
+---
+
+## 25. Locations
+
+Used by: Deployment — Basic (resolves location names to IDs for site creation)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v2/locations` | List all configured locations |
 
 ---
 
