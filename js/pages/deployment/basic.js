@@ -106,8 +106,9 @@ async function processTrunks({ rows, api, orgId, me, addResult }) {
     }
 
     try {
-      await gc.createTrunk(api, orgId, body);
-      addResult(name, true);
+      const result = await gc.createTrunk(api, orgId, body);
+      const detail = result?.id ? `id: ${result.id}` : (result ? JSON.stringify(result).slice(0, 120) : "no response body");
+      addResult(name, true, detail);
       logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created trunk '${name}' (${type})` });
       created++;
     } catch (err) {
@@ -313,7 +314,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     const li = document.createElement("li");
     li.style.cssText = "padding:4px 0;border-bottom:1px solid var(--border,#334)";
     li.innerHTML = ok
-      ? `<span style="color:#4ade80">✓</span> <strong>${escapeHtml(label)}</strong>`
+      ? `<span style="color:#4ade80">✓</span> <strong>${escapeHtml(label)}</strong>${detail ? ` <small style="opacity:0.6">${escapeHtml(detail)}</small>` : ""}`
       : `<span style="color:#f87171">✗</span> <strong>${escapeHtml(label)}</strong> — ${escapeHtml(detail)}`;
     $results.appendChild(li);
   }
