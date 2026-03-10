@@ -458,7 +458,8 @@ export async function createDataTable(api, orgId, body) {
 /** Fetch all trunk metabases (global Genesys-managed list). */
 export async function fetchAllTrunkMetabases(api, orgId) {
   const data = await api.proxyGenesys(orgId, "GET",
-    "/api/v2/telephony/providers/edges/trunkbasesettings/trunkmetabases?pageSize=100");
+    "/api/v2/telephony/providers/edges/trunkbasesettings/trunkmetabases",
+    { query: { pageSize: 100 } });
   return data.entities || [];
 }
 
