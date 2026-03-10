@@ -455,6 +455,24 @@ export async function createDataTable(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/flows/datatables", { body });
 }
 
+/** Fetch all trunk metabases (global Genesys-managed list). */
+export async function fetchAllTrunkMetabases(api, orgId) {
+  const data = await api.proxyGenesys(orgId, "GET",
+    "/api/v2/telephony/providers/edges/trunkbasesettings/trunkmetabases?pageSize=100");
+  return data.entities || [];
+}
+
+/** Fetch all edge sites. */
+export async function fetchAllEdgeSites(api, orgId) {
+  return fetchAllPages(api, orgId, "/api/v2/telephony/providers/edges/sites");
+}
+
+/** Create a trunk base setting. */
+export async function createTrunk(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST",
+    "/api/v2/telephony/providers/edges/trunkbasesettings", { body });
+}
+
 /** Create a DID pool. */
 export async function createDIDPool(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/telephony/providers/edges/didpools", { body });

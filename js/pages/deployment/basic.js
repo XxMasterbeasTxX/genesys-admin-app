@@ -27,11 +27,91 @@ import { escapeHtml } from "../../utils.js";
 // Returns { created, failed } counts (updates are made via addResult internally).
 
 const TAB_HANDLERS = {
-  "DID Pools":      processDIDPools,
-  "Divisions":      processDivisions,
-  "Skills":         processSkills,
+  "DID Pools":         processDIDPools,
+  "Divisions":         processDivisions,
+  "Skills":            processSkills,
   "Skills - Language": processLanguages,
+  "Trunks":            processTrunks,
 };
+
+// ── Tab: Trunks ──────────────────────────────────────────────────────────────
+// Columns: A=Name, B=Type, C=Metabase Name, D=Site Name, E=Recording, F=Consent Driven, G=Description
+async function processTrunks({ rows, api, orgId, me, addResult }) {
+  let created = 0;
+  let failed  = 0;
+
+  // Pre-fetch metabases and sites once
+  let metabases, sites;
+  try {
+    [metabases, sites] = await Promise.all([
+      gc.fetchAllTrunkMetabases(api, orgId),
+      gc.fetchAllEdgeSites(api, orgId),
+    ]);
+  } catch (err) {
+    addResult("(setup)", false, `Failed to fetch metabases/sites: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+
+  const metabaseMap = Object.fromEntries(metabases.map(m => [m.name.toLowerCase(), m]));
+  const siteMap     = Object.fromEntries(sites.map(s => [s.name.toLowerCase(), s]));
+
+  for (const row of rows) {
+    const name        = String(row[0] || "").trim();
+    const type        = String(row[1] || "").trim().toUpperCase();
+    const metaName    = String(row[2] || "").trim();
+    const siteName    = String(row[3] || "").trim();
+    const recording   = String(row[4] || "").trim().toLowerCase() === "true";
+    const consent     = String(row[5] || "").trim().toLowerCase() === "true";
+    const description = String(row[6] || "").trim();
+
+    const label = name || "(empty)";
+
+    if (!name)     { addResult(label, false, "Missing name — skipped");     failed++; continue; }
+    if (!type)     { addResult(label, false, "Missing type — skipped");     failed++; continue; }
+    if (!metaName) { addResult(label, false, "Missing metabase — skipped"); failed++; continue; }
+
+    const metabase = metabaseMap[metaName.toLowerCase()];
+    if (!metabase) {
+      addResult(label, false, `Metabase '${metaName}' not found`);
+      failed++;
+      continue;
+    }
+
+    const body = {
+      name,
+      trunkType: type,
+      trunkMetabase: { id: metabase.id, name: metabase.name },
+      ...(description && { description }),
+      properties: {
+        "trunk.media.mediaRecording.enabled": { value: { instance: recording } },
+        ...(recording && { "trunk.media.mediaRecording.pauseOnConsent": { value: { instance: consent } } }),
+      },
+    };
+
+    if (siteName) {
+      const site = siteMap[siteName.toLowerCase()];
+      if (!site) {
+        addResult(label, false, `Site '${siteName}' not found`);
+        failed++;
+        continue;
+      }
+      body.site = { id: site.id, name: site.name };
+    }
+
+    try {
+      await gc.createTrunk(api, orgId, body);
+      addResult(name, true);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created trunk '${name}' (${type})` });
+      created++;
+    } catch (err) {
+      addResult(name, false, err.message);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create trunk '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+    }
+  }
+
+  return { created, failed };
+}
 
 // ── Tab: Skills ──────────────────────────────────────────────────────────────
 // Columns: A=Name (required)
