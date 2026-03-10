@@ -30,6 +30,7 @@ const TAB_HANDLERS = {
   "DID Pools":              processDIDPools,
   "Divisions":              processDivisions,
   "Site - Number Plans":    processNumberPlans,
+  "Site - Outbound Routes": processOutboundRoutes,
   "Sites":                  processSites,
   "Skills":            processSkills,
   "Skills - Language": processLanguages,
@@ -187,6 +188,142 @@ async function processNumberPlans({ rows, api, orgId, me, addResult }) {
       addResult(siteName, false, err.message);
       logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to update number plans on site '${siteName}': ${err.message}`, result: "failure", errorMessage: err.message });
       failed++;
+    }
+  }
+
+  return { created: updated, failed };
+}
+
+// ── Tab: Outbound Routes ─────────────────────────────────────────────────────
+// Columns: A=Site Name (req), B=Route Name (req), C=Classification Types (one per row),
+//          D=Distribution (req: SEQUENTIAL|RANDOM, from first row of each route group),
+//          E=Trunk Names (one per row, resolved to IDs by name),
+//          F=State (req: true|false → enabled, from first row)
+//
+// Rows are grouped by Site Name then by Route Name.
+// Multiple rows with the same Site+Route accumulate classification types and trunk names.
+// Existing routes on a site not present in the sheet are left untouched.
+// Routes matching by name are updated (PUT); new routes are created (POST).
+async function processOutboundRoutes({ rows, api, orgId, me, addResult }) {
+  let updated = 0;
+  let failed  = 0;
+
+  // Pre-fetch all sites
+  let sites;
+  try {
+    sites = await gc.fetchAllSites(api, orgId);
+  } catch (err) {
+    addResult("(setup)", false, `Failed to fetch sites: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+  const siteMap = Object.fromEntries(sites.map(s => [s.name.toLowerCase(), s]));
+
+  // Pre-fetch all trunk base settings
+  let trunks;
+  try {
+    trunks = await gc.fetchAllTrunkBaseSettings(api, orgId);
+  } catch (err) {
+    addResult("(setup)", false, `Failed to fetch trunk base settings: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+  const trunkMap = Object.fromEntries(trunks.map(t => [t.name.toLowerCase(), t]));
+
+  // Group rows by site name
+  const siteGroups = new Map();
+  for (const row of rows) {
+    const siteName = String(row[0] || "").trim();
+    if (!siteName) continue;
+    if (!siteGroups.has(siteName)) siteGroups.set(siteName, []);
+    siteGroups.get(siteName).push(row);
+  }
+
+  for (const [siteName, siteRows] of siteGroups) {
+    const site = siteMap[siteName.toLowerCase()];
+    if (!site) {
+      addResult(siteName, false, `Site '${siteName}' not found`);
+      failed++;
+      continue;
+    }
+
+    // GET existing outbound routes for merge (update by name if exists)
+    let existingRoutes = [];
+    try {
+      const resp = await gc.getSiteOutboundRoutes(api, orgId, site.id);
+      existingRoutes = Array.isArray(resp) ? resp : (resp?.entities ?? []);
+    } catch (_) { /* start fresh if GET fails */ }
+    const existingByName = new Map(existingRoutes.map(r => [r.name.toLowerCase(), r]));
+
+    // Group rows by route name within this site
+    const routeGroups = new Map();
+    for (const row of siteRows) {
+      const routeName = String(row[1] || "").trim();
+      if (!routeName) continue;
+      if (!routeGroups.has(routeName)) routeGroups.set(routeName, []);
+      routeGroups.get(routeName).push(row);
+    }
+
+    if (routeGroups.size === 0) {
+      addResult(siteName, false, "No valid route rows — skipped");
+      failed++;
+      continue;
+    }
+
+    for (const [routeName, routeRows] of routeGroups) {
+      const first = routeRows[0];
+      const distribution = String(first[3] || "").trim().toUpperCase();
+      const stateRaw     = String(first[5] || "").trim().toLowerCase();
+      const enabled      = stateRaw !== "false";
+
+      if (!distribution) {
+        addResult(`${siteName} — ${routeName}`, false, "Missing Distribution");
+        failed++;
+        continue;
+      }
+
+      // Accumulate classification types (col C, one per row, skip blanks)
+      const classificationTypes = routeRows
+        .map(r => String(r[2] || "").trim())
+        .filter(Boolean);
+
+      // Accumulate trunk names (col E, one per row), deduplicate, resolve to objects
+      const seenTrunks = new Set();
+      const externalTrunkBases = [];
+      let trunkError = null;
+      for (const row of routeRows) {
+        const trunkName = String(row[4] || "").trim();
+        if (!trunkName || seenTrunks.has(trunkName.toLowerCase())) continue;
+        seenTrunks.add(trunkName.toLowerCase());
+        const trunk = trunkMap[trunkName.toLowerCase()];
+        if (!trunk) {
+          trunkError = `Trunk '${trunkName}' not found`;
+          break;
+        }
+        externalTrunkBases.push({ id: trunk.id, name: trunk.name });
+      }
+
+      if (trunkError) {
+        addResult(`${siteName} — ${routeName}`, false, trunkError);
+        failed++;
+        continue;
+      }
+
+      const body = { name: routeName, classificationTypes, distribution, enabled, externalTrunkBases };
+
+      try {
+        const existing = existingByName.get(routeName.toLowerCase());
+        if (existing) {
+          await gc.updateSiteOutboundRoute(api, orgId, site.id, existing.id, { ...body, id: existing.id });
+        } else {
+          await gc.createSiteOutboundRoute(api, orgId, site.id, body);
+        }
+        addResult(`${siteName} — ${routeName}`, true);
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] ${existing ? "Updated" : "Created"} outbound route '${routeName}' on site '${siteName}'` });
+        updated++;
+      } catch (err) {
+        addResult(`${siteName} — ${routeName}`, false, err.message);
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to ${existingByName.has(routeName.toLowerCase()) ? "update" : "create"} outbound route '${routeName}' on site '${siteName}': ${err.message}`, result: "failure", errorMessage: err.message });
+        failed++;
+      }
     }
   }
 

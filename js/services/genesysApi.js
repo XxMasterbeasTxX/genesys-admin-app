@@ -505,6 +505,30 @@ export async function createSite(api, orgId, body) {
     "/api/v2/telephony/providers/edges/sites", { body });
 }
 
+/** Fetch all trunk base settings (paginated). */
+export async function fetchAllTrunkBaseSettings(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    "/api/v2/telephony/providers/edges/trunkbasesettings", opts);
+}
+
+/** Get all outbound routes for a site. */
+export async function getSiteOutboundRoutes(api, orgId, siteId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/telephony/providers/edges/sites/${siteId}/outboundroutes`);
+}
+
+/** Create an outbound route on a site. */
+export async function createSiteOutboundRoute(api, orgId, siteId, body) {
+  return api.proxyGenesys(orgId, "POST",
+    `/api/v2/telephony/providers/edges/sites/${siteId}/outboundroutes`, { body });
+}
+
+/** Update an outbound route on a site (full PUT). */
+export async function updateSiteOutboundRoute(api, orgId, siteId, routeId, body) {
+  return api.proxyGenesys(orgId, "PUT",
+    `/api/v2/telephony/providers/edges/sites/${siteId}/outboundroutes/${routeId}`, { body });
+}
+
 /** Fetch all DID pools. */
 export async function fetchAllDidPools(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId,

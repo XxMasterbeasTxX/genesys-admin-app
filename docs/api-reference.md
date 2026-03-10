@@ -194,8 +194,12 @@ Used by: WebRTC Phones — Create/Change Site, Documentation Export, Divisions �
 | --- | --- | --- |
 | GET | `/api/v2/telephony/providers/edges/sites` | List sites |
 | POST | `/api/v2/telephony/providers/edges/sites` | **Create** a site (Deployment — Basic) |
-| GET | `/api/v2/telephony/providers/edges/sites/{id}/outboundroutes` | Site outbound routes |
-| GET | `/api/v2/telephony/providers/edges/sites/{id}/numberplans` | Site number plans |
+| GET | `/api/v2/telephony/providers/edges/sites/{id}/outboundroutes` | List outbound routes for a site (Deployment — Basic) |
+| POST | `/api/v2/telephony/providers/edges/sites/{id}/outboundroutes` | Create an outbound route on a site (Deployment — Basic) |
+| PUT | `/api/v2/telephony/providers/edges/sites/{id}/outboundroutes/{routeId}` | Update an outbound route on a site (Deployment — Basic) |
+| GET | `/api/v2/telephony/providers/edges/trunkbasesettings` | List trunk base settings — name→ID lookup for outbound routes (Deployment — Basic) |
+| GET | `/api/v2/telephony/providers/edges/sites/{id}/numberplans` | Read existing number plans for a site (Deployment — Basic) |
+| PUT | `/api/v2/telephony/providers/edges/sites/{id}/numberplans` | Replace all number plans for a site (Deployment — Basic, merged with existing defaults) |
 | GET | `/api/v2/telephony/providers/edges/didpools` | List DID pools |
 | POST | `/api/v2/telephony/providers/edges/didpools` | **Create** a DID pool (Deployment — Basic) |
 | GET | `/api/v2/telephony/providers/edges/didpools/dids` | List DID numbers (assigned and unassigned) |
