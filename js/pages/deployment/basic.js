@@ -178,7 +178,9 @@ async function processNumberPlans({ rows, api, orgId, me, addResult }) {
       }
 
       await gc.updateSiteNumberPlans(api, orgId, site.id, merged);
-      addResult(siteName, true, `${plans.length} plan${plans.length !== 1 ? "s" : ""} applied (${merged.length} total on site)`);
+      for (const p of plans) {
+        addResult(`${siteName} — ${p.name}`, true);
+      }
       logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Updated ${plans.length} number plan(s) on site '${siteName}' (${merged.length} total)` });
       updated++;
     } catch (err) {
