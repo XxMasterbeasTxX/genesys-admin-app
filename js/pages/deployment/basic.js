@@ -28,8 +28,57 @@ import { escapeHtml } from "../../utils.js";
 
 const TAB_HANDLERS = {
   "DID Pools": processDIDPools,
+  "Divisions":  processDivisions,
 };
 
+// ── Tab: Divisions ───────────────────────────────────────────────────────────
+// Columns: A=Name (required), B=Description (optional)
+async function processDivisions({ rows, api, orgId, me, addResult }) {
+  let created = 0;
+  let failed  = 0;
+
+  for (const row of rows) {
+    const name        = String(row[0] || "").trim();
+    const description = String(row[1] || "").trim();
+
+    if (!name) {
+      addResult("(empty)", false, "Missing name — skipped");
+      failed++;
+      continue;
+    }
+
+    const body = {
+      name,
+      ...(description && { description }),
+    };
+
+    try {
+      await gc.createDivision(api, orgId, body);
+      addResult(name, true);
+      logAction({
+        me, orgId,
+        action: "deployment_basic",
+        description: `[Deployment] Created division '${name}'`,
+      });
+      created++;
+    } catch (err) {
+      addResult(name, false, err.message);
+      logAction({
+        me, orgId,
+        action: "deployment_basic",
+        description: `[Deployment] Failed to create division '${name}': ${err.message}`,
+        result: "failure",
+        errorMessage: err.message,
+      });
+      failed++;
+    }
+  }
+
+  return { created, failed };
+}
+
+// ── Tab: DID Pools ────────────────────────────────────────────────────────────
+// Columns: A=Number-Start, B=Number-End, C=Description, D=Comment, E=Provider
 async function processDIDPools({ rows, api, orgId, me, addResult }) {
   let created = 0;
   let failed  = 0;

@@ -636,6 +636,11 @@ export async function fetchAllDivisions(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/authorization/divisions", opts);
 }
 
+/** Create a division. Body: { name, description? }. */
+export async function createDivision(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/authorization/divisions", { body });
+}
+
 /** Fetch all authorization roles (for role picker and filtered export). */
 export async function fetchAllAuthorizationRoles(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/authorization/roles", opts);
