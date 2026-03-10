@@ -487,11 +487,6 @@ export async function fetchAllLocations(api, orgId) {
   return fetchAllPages(api, orgId, "/api/v2/locations");
 }
 
-/** Fetch all sites. */
-export async function fetchAllSites(api, orgId, opts = {}) {
-  return fetchAllPages(api, orgId, "/api/v2/telephony/providers/edges/sites", opts);
-}
-
 /** Replace all number plans for a site (max 200). */
 export async function updateSiteNumberPlans(api, orgId, siteId, plans) {
   return api.proxyGenesys(orgId, "PUT",
