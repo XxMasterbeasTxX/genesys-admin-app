@@ -113,7 +113,15 @@ async function processSites({ rows, api, orgId, me, addResult }) {
       const result = await gc.createSite(api, orgId, body);
       // webRtcTurnRelayAlgorithm is ignored on POST — apply via PUT if non-default
       if (result?.id && turnRelay !== "AnyMediaRegionForSite") {
-        await gc.updateSite(api, orgId, result.id, { ...result, webRtcTurnRelayAlgorithm: turnRelay });
+        const putBody = {
+          name,
+          mediaModel: normalizedModel,
+          location: { id: location.id, name: location.name },
+          webRtcTurnRelayAlgorithm: turnRelay,
+          ...(normalizedModel === "Cloud" && { mediaRegions }),
+          ...(description && { description }),
+        };
+        await gc.updateSite(api, orgId, result.id, putBody);
       }
       addResult(name, true, result?.id ? `id: ${result.id}` : "");
       logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created site '${name}' (${normalizedModel})` });
