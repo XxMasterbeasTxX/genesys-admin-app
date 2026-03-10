@@ -482,6 +482,17 @@ export async function fetchAllSites(api, orgId, opts = {}) {
     "/api/v2/telephony/providers/edges/sites", opts);
 }
 
+/** Fetch all locations. */
+export async function fetchAllLocations(api, orgId) {
+  return fetchAllPages(api, orgId, "/api/v2/locations");
+}
+
+/** Create a site. Body: { name, mediaModel, mediaRegions?, location, description? }. */
+export async function createSite(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST",
+    "/api/v2/telephony/providers/edges/sites", { body });
+}
+
 /** Fetch all DID pools. */
 export async function fetchAllDidPools(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId,

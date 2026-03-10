@@ -27,11 +27,88 @@ import { escapeHtml } from "../../utils.js";
 // Returns { created, failed } counts (updates are made via addResult internally).
 
 const TAB_HANDLERS = {
-  "DID Pools":      processDIDPools,
-  "Divisions":      processDivisions,
-  "Skills":         processSkills,
+  "DID Pools":         processDIDPools,
+  "Divisions":         processDivisions,
+  "Sites":             processSites,
+  "Skills":            processSkills,
   "Skills - Language": processLanguages,
 };
+
+// ── Tab: Sites ──────────────────────────────────────────────────────────────
+// Columns: A=Name (req), B=Media Model (req: Cloud|Premises), C=Media Regions (Cloud only, comma-sep),
+//          D=Location Name (req), E=Description (opt)
+async function processSites({ rows, api, orgId, me, addResult }) {
+  let created = 0;
+  let failed  = 0;
+
+  // Pre-fetch locations once
+  let locations;
+  try {
+    locations = await gc.fetchAllLocations(api, orgId);
+  } catch (err) {
+    addResult("(setup)", false, `Failed to fetch locations: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+
+  const locationMap = Object.fromEntries(
+    locations.map(l => [l.name.toLowerCase(), l])
+  );
+
+  for (const row of rows) {
+    const name         = String(row[0] || "").trim();
+    const mediaModel   = String(row[1] || "").trim();
+    const mediaRegions = String(row[2] || "").trim().split(",").map(s => s.trim()).filter(Boolean);
+    const locationName = String(row[3] || "").trim();
+    const description  = String(row[4] || "").trim();
+
+    const label = name || "(empty)";
+
+    if (!name)       { addResult(label, false, "Missing name — skipped");         failed++; continue; }
+    if (!mediaModel) { addResult(label, false, "Missing media model — skipped");   failed++; continue; }
+    if (!locationName) { addResult(label, false, "Missing location — skipped");   failed++; continue; }
+
+    const normalizedModel = mediaModel.charAt(0).toUpperCase() + mediaModel.slice(1).toLowerCase();
+    if (![ "Cloud", "Premises"].includes(normalizedModel)) {
+      addResult(label, false, `Invalid media model '${mediaModel}' — must be Cloud or Premises`);
+      failed++;
+      continue;
+    }
+
+    if (normalizedModel === "Cloud" && !mediaRegions.length) {
+      addResult(label, false, "Media regions required for Cloud sites — skipped");
+      failed++;
+      continue;
+    }
+
+    const location = locationMap[locationName.toLowerCase()];
+    if (!location) {
+      addResult(label, false, `Location '${locationName}' not found`);
+      failed++;
+      continue;
+    }
+
+    const body = {
+      name,
+      mediaModel: normalizedModel,
+      location: { id: location.id, name: location.name },
+      ...(normalizedModel === "Cloud" && { mediaRegions }),
+      ...(description && { description }),
+    };
+
+    try {
+      const result = await gc.createSite(api, orgId, body);
+      addResult(name, true, result?.id ? `id: ${result.id}` : "");
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created site '${name}' (${normalizedModel})` });
+      created++;
+    } catch (err) {
+      addResult(name, false, err.message);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create site '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+    }
+  }
+
+  return { created, failed };
+}
 
 // ── Tab: Skills ──────────────────────────────────────────────────────────────
 // Columns: A=Name (required)
