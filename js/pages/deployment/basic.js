@@ -169,8 +169,15 @@ async function processNumberPlans({ rows, api, orgId, me, addResult }) {
       try { existing = await gc.getSiteNumberPlans(api, orgId, site.id) || []; } catch (_) { /* start fresh if GET fails */ }
 
       const sheetByName = new Map(plans.map(p => [p.name.toLowerCase(), p]));
+      const existingByName = new Map(existing.map(p => [p.name.toLowerCase(), p]));
       const existingNotInSheet = existing.filter(p => !sheetByName.has(p.name.toLowerCase()));
-      const merged = [...existingNotInSheet, ...plans];
+      // Carry over id (and version) from existing plan when names match — required by Genesys PUT
+      const resolvedPlans = plans.map(p => {
+        const ex = existingByName.get(p.name.toLowerCase());
+        if (!ex) return p;
+        return { ...p, id: ex.id, ...(ex.version !== undefined ? { version: ex.version } : {}) };
+      });
+      const merged = [...existingNotInSheet, ...resolvedPlans];
 
       if (merged.length > 200) {
         addResult(siteName, false, `Merged total of ${merged.length} plans exceeds Genesys limit of 200 — skipped`);
