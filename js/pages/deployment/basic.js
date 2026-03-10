@@ -29,10 +29,157 @@ import { escapeHtml } from "../../utils.js";
 const TAB_HANDLERS = {
   "DID Pools":         processDIDPools,
   "Divisions":         processDivisions,
+  "Number Plans":      processNumberPlans,
   "Sites":             processSites,
   "Skills":            processSkills,
   "Skills - Language": processLanguages,
 };
+
+// ── Tab: Number Plans ────────────────────────────────────────────────────────
+// Columns: A=Site Name (req), B=Plan Name (req), C=Classification (req),
+//          D=Match Type (req: numberList|digitLength|intraCountryCode|interCountryCode|regex),
+//          E=Priority (req, integer), F=State (req: active|inactive),
+//          G=Numbers (one entry per row, for numberList/interCountryCode/intraCountryCode),
+//          H=Digit Length (e.g. "4-10" or "7", for digitLength),
+//          I=Match Pattern (regex string, for regex),
+//          J=Normalized Format (optional)
+//
+// Rows are grouped by Site Name, then by Plan Name within each site.
+// For numberList/interCountryCode/intraCountryCode: multiple rows with the same
+// Site+Plan name each contribute one entry to numbers[].
+// One PUT per site — replaces ALL number plans on that site.
+// Max 200 plans per site (Genesys API limit).
+async function processNumberPlans({ rows, api, orgId, me, addResult }) {
+  let updated = 0;
+  let failed  = 0;
+
+  const MULTI_NUMBER_TYPES = new Set(["numberlist", "intercountrycode", "intracountrycode"]);
+  const VALID_TYPES = new Set(["numberlist", "digitlength", "intracountrycode", "intercountrycode", "regex"]);
+
+  // Pre-fetch all sites once
+  let sites;
+  try {
+    sites = await gc.fetchAllSites(api, orgId);
+  } catch (err) {
+    addResult("(setup)", false, `Failed to fetch sites: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+  const siteMap = Object.fromEntries(sites.map(s => [s.name.toLowerCase(), s]));
+
+  // Group rows by site name (preserving insertion order)
+  const siteGroups = new Map();
+  for (const row of rows) {
+    const siteName = String(row[0] || "").trim();
+    if (!siteName) continue;
+    if (!siteGroups.has(siteName)) siteGroups.set(siteName, []);
+    siteGroups.get(siteName).push(row);
+  }
+
+  for (const [siteName, siteRows] of siteGroups) {
+    const site = siteMap[siteName.toLowerCase()];
+    if (!site) {
+      addResult(siteName, false, `Site '${siteName}' not found`);
+      failed++;
+      continue;
+    }
+
+    // Group rows by plan name within this site (preserving order)
+    const planGroups = new Map();
+    for (const row of siteRows) {
+      const planName = String(row[1] || "").trim();
+      if (!planName) continue;
+      if (!planGroups.has(planName)) planGroups.set(planName, []);
+      planGroups.get(planName).push(row);
+    }
+
+    if (planGroups.size === 0) {
+      addResult(siteName, false, "No valid plan rows — skipped");
+      failed++;
+      continue;
+    }
+    if (planGroups.size > 200) {
+      addResult(siteName, false, `${planGroups.size} plans exceeds Genesys limit of 200 — skipped`);
+      failed++;
+      continue;
+    }
+
+    const plans = [];
+    let rowError = null;
+
+    for (const [planName, planRows] of planGroups) {
+      // All rows for this plan should agree on classification/matchType/priority/state/normalizedFormat
+      // — use values from the first row.
+      const first = planRows[0];
+      const classification   = String(first[2] || "").trim();
+      const matchTypeRaw     = String(first[3] || "").trim().toLowerCase();
+      const priorityRaw      = String(first[4] || "").trim();
+      const state            = String(first[5] || "").trim().toLowerCase() || "active";
+      const digitLengthRaw   = String(first[7] || "").trim();
+      const matchPattern     = String(first[8] || "").trim();
+      const normalizedFormat = String(first[9] || "").trim();
+
+      if (!classification) { rowError = `Plan '${planName}': missing classification`; break; }
+      if (!VALID_TYPES.has(matchTypeRaw)) {
+        rowError = `Plan '${planName}': invalid matchType '${first[3]}' — must be numberList, digitLength, intraCountryCode, interCountryCode, or regex`;
+        break;
+      }
+      const priority = parseInt(priorityRaw, 10);
+      if (isNaN(priority)) { rowError = `Plan '${planName}': invalid priority '${priorityRaw}'`; break; }
+
+      // Capitalise matchType to Genesys casing (e.g. "numberlist" → "numberList")
+      const matchTypeCased = {
+        numberlist:       "numberList",
+        digitlength:      "digitLength",
+        intracountrycode: "intraCountryCode",
+        intercountrycode: "interCountryCode",
+        regex:            "regex",
+      }[matchTypeRaw];
+
+      const plan = { name: planName, classification, matchType: matchTypeCased, priority, state };
+
+      if (MULTI_NUMBER_TYPES.has(matchTypeRaw)) {
+        plan.numbers = planRows
+          .map(r => String(r[6] || "").trim())
+          .filter(Boolean)
+          .map(v => ({ start: v }));
+      }
+
+      if (matchTypeRaw === "digitlength" && digitLengthRaw) {
+        const parts = digitLengthRaw.split("-").map(s => s.trim());
+        plan.digitLength = parts.length === 2
+          ? { start: parts[0], end: parts[1] }
+          : { start: parts[0] };
+      }
+
+      if (["intracountrycode", "intercountrycode", "regex"].includes(matchTypeRaw) && matchPattern) {
+        plan.match = matchPattern;
+      }
+
+      if (normalizedFormat) plan.normalizedFormat = normalizedFormat;
+
+      plans.push(plan);
+    }
+
+    if (rowError) {
+      addResult(siteName, false, rowError);
+      failed++;
+      continue;
+    }
+
+    try {
+      await gc.updateSiteNumberPlans(api, orgId, site.id, plans);
+      addResult(siteName, true, `${plans.length} plan${plans.length !== 1 ? "s" : ""} updated`);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Updated ${plans.length} number plan(s) on site '${siteName}'` });
+      updated++;
+    } catch (err) {
+      addResult(siteName, false, err.message);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to update number plans on site '${siteName}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+    }
+  }
+
+  return { created: updated, failed };
+}
 
 // ── Tab: Sites ──────────────────────────────────────────────────────────────
 // Columns: A=Name (req), B=Media Model (req: Cloud|Premises), C=Media Regions (Cloud only, comma-sep),
