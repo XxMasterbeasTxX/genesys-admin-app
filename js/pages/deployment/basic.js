@@ -40,15 +40,22 @@ async function processTrunks({ rows, api, orgId, me, addResult }) {
   let created = 0;
   let failed  = 0;
 
-  // Pre-fetch metabases and sites once
+  // Pre-fetch metabases (from existing trunks) and sites once
   let metabases, sites;
   try {
     [metabases, sites] = await Promise.all([
-      gc.fetchAllTrunkMetabases(api, orgId),
+      gc.fetchTrunkMetabasesFromExisting(api, orgId),
       gc.fetchAllEdgeSites(api, orgId),
     ]);
   } catch (err) {
     addResult("(setup)", false, `Failed to fetch metabases/sites: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+
+  if (!metabases.length) {
+    addResult("(setup)", false,
+      "No existing trunks found in this org — cannot resolve metabase names to IDs. " +
+      "Create one trunk manually first, or provide the Metabase ID directly.");
     return { created: 0, failed: rows.length };
   }
 

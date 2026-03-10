@@ -455,12 +455,20 @@ export async function createDataTable(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/flows/datatables", { body });
 }
 
-/** Fetch all trunk metabases (global Genesys-managed list). */
-export async function fetchAllTrunkMetabases(api, orgId) {
-  const data = await api.proxyGenesys(orgId, "GET",
-    "/api/v2/telephony/providers/edges/trunkbasesettings/trunkmetabases",
-    { query: { pageSize: 100 } });
-  return data.entities || [];
+/** Fetch metabase id/name pairs from existing trunk base settings.
+ *  Genesys has no dedicated "list metabases" endpoint; the metabase
+ *  reference is embedded in every trunk base settings object.
+ */
+export async function fetchTrunkMetabasesFromExisting(api, orgId) {
+  const trunks = await fetchAllPages(api, orgId,
+    "/api/v2/telephony/providers/edges/trunkbasesettings");
+  const seen = new Map();
+  for (const t of trunks) {
+    if (t.trunkMetabase?.id && !seen.has(t.trunkMetabase.id)) {
+      seen.set(t.trunkMetabase.id, t.trunkMetabase);
+    }
+  }
+  return [...seen.values()];
 }
 
 /** Fetch all edge sites. */
