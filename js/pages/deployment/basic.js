@@ -36,7 +36,7 @@ const TAB_HANDLERS = {
 
 // ── Tab: Sites ──────────────────────────────────────────────────────────────
 // Columns: A=Name (req), B=Media Model (req: Cloud|Premises), C=Media Regions (Cloud only, comma-sep),
-//          D=Location Name (req), E=Description (opt)
+//          D=Location Name (req), E=TURN Relay (opt: Site|Geo, default=Site), F=Description (opt)
 async function processSites({ rows, api, orgId, me, addResult }) {
   let created = 0;
   let failed  = 0;
@@ -54,21 +54,27 @@ async function processSites({ rows, api, orgId, me, addResult }) {
     locations.map(l => [l.name.toLowerCase(), l])
   );
 
+  const turnRelayMap = {
+    "site": "AnyMediaRegionForSite",
+    "geo":  "GeoLocation",
+  };
+
   for (const row of rows) {
     const name         = String(row[0] || "").trim();
     const mediaModel   = String(row[1] || "").trim();
     const mediaRegions = String(row[2] || "").trim().split(",").map(s => s.trim()).filter(Boolean);
     const locationName = String(row[3] || "").trim();
-    const description  = String(row[4] || "").trim();
+    const turnRelayRaw = String(row[4] || "").trim().toLowerCase() || "site";
+    const description  = String(row[5] || "").trim();
 
     const label = name || "(empty)";
 
-    if (!name)       { addResult(label, false, "Missing name — skipped");         failed++; continue; }
-    if (!mediaModel) { addResult(label, false, "Missing media model — skipped");   failed++; continue; }
-    if (!locationName) { addResult(label, false, "Missing location — skipped");   failed++; continue; }
+    if (!name)         { addResult(label, false, "Missing name — skipped");       failed++; continue; }
+    if (!mediaModel)   { addResult(label, false, "Missing media model — skipped"); failed++; continue; }
+    if (!locationName) { addResult(label, false, "Missing location — skipped");    failed++; continue; }
 
     const normalizedModel = mediaModel.charAt(0).toUpperCase() + mediaModel.slice(1).toLowerCase();
-    if (![ "Cloud", "Premises"].includes(normalizedModel)) {
+    if (!["Cloud", "Premises"].includes(normalizedModel)) {
       addResult(label, false, `Invalid media model '${mediaModel}' — must be Cloud or Premises`);
       failed++;
       continue;
@@ -76,6 +82,13 @@ async function processSites({ rows, api, orgId, me, addResult }) {
 
     if (normalizedModel === "Cloud" && !mediaRegions.length) {
       addResult(label, false, "Media regions required for Cloud sites — skipped");
+      failed++;
+      continue;
+    }
+
+    const turnRelay = turnRelayMap[turnRelayRaw];
+    if (!turnRelay) {
+      addResult(label, false, `Invalid TURN Relay '${row[4]}' — must be Site or Geo`);
       failed++;
       continue;
     }
@@ -91,6 +104,7 @@ async function processSites({ rows, api, orgId, me, addResult }) {
       name,
       mediaModel: normalizedModel,
       location: { id: location.id, name: location.name },
+      webRtcTurnRelayAlgorithm: turnRelay,
       ...(normalizedModel === "Cloud" && { mediaRegions }),
       ...(description && { description }),
     };
