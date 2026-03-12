@@ -884,7 +884,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     $results.appendChild(li);
   }
 
-  async function processWorkbook(workbook) {
+  async function processWorkbook(workbook, selectedTabs = null) {
     const orgId = orgContext.get();
     if (!orgId) { setStatus("Please select a customer org first.", "error"); return; }
 
@@ -892,12 +892,14 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     $selectBtn.disabled = true;
 
     const sheets = workbook.SheetNames;
-    const supported   = sheets.filter(n => TAB_HANDLERS[n]);
+    const supported   = sheets.filter(n => TAB_HANDLERS[n] && (!selectedTabs || selectedTabs.includes(n)));
     const unsupported = sheets.filter(n => !TAB_HANDLERS[n]);
 
     if (!supported.length) {
       setStatus(
-        `No supported tabs found. Recognised tab names: ${Object.keys(TAB_HANDLERS).join(", ")}.`,
+        selectedTabs && selectedTabs.length === 0
+          ? "No tabs selected — nothing to deploy."
+          : `No supported tabs found. Recognised tab names: ${Object.keys(TAB_HANDLERS).join(", ")}.`,
         "error"
       );
       $selectBtn.disabled = false;
@@ -950,7 +952,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     // Tabs that upsert (update existing matched by name / merge, rather than always creating new)
     const UPSERT_TABS = new Set(["Site - Number Plans", "Site - Outbound Routes", "Queues"]);
 
-    // Build per-tab summary rows
+    // Build per-tab summary rows (with checkboxes)
     const tabRows = supported.map(tabName => {
       const ws   = workbook.Sheets[tabName];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
@@ -958,8 +960,16 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
       const upsertNote = UPSERT_TABS.has(tabName)
         ? ` <span style="color:var(--text-muted,#888);font-size:.82em">(existing will be updated)</span>`
         : "";
-      return `<tr><td style="padding:3px 10px 3px 0">${escapeHtml(tabName)}${upsertNote}</td>
-              <td style="padding:3px 0;text-align:right">${dataRows.length} row${dataRows.length !== 1 ? "s" : ""}</td></tr>`;
+      const safeTab = escapeHtml(tabName);
+      return `<tr>
+        <td style="padding:3px 10px 3px 0">
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
+            <input type="checkbox" data-tab="${safeTab}" checked style="cursor:pointer;width:14px;height:14px;flex-shrink:0">
+            ${safeTab}${upsertNote}
+          </label>
+        </td>
+        <td style="padding:3px 0;text-align:right;white-space:nowrap">${dataRows.length} row${dataRows.length !== 1 ? "s" : ""}</td>
+      </tr>`;
     }).join("");
 
     const skippedHtml = skipped.length
@@ -998,8 +1008,11 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
       document.body.removeChild(overlay);
     });
     overlay.querySelector("#dbConfirmDeploy").addEventListener("click", () => {
+      const checked = [...overlay.querySelectorAll("input[data-tab]")]
+        .filter(cb => cb.checked)
+        .map(cb => cb.dataset.tab);
       document.body.removeChild(overlay);
-      onConfirm();
+      onConfirm(checked);
     });
   }
 
@@ -1019,7 +1032,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
         setStatus(`Could not read file: ${err.message}`, "error");
         return;
       }
-      showConfirmDialog(file.name, workbook, () => processWorkbook(workbook));
+      showConfirmDialog(file.name, workbook, (selectedTabs) => processWorkbook(workbook, selectedTabs));
     };
     reader.readAsArrayBuffer(file);
   });
