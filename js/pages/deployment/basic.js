@@ -29,6 +29,7 @@ import { escapeHtml } from "../../utils.js";
 const TAB_HANDLERS = {
   "DID Pools":              processDIDPools,
   "Divisions":              processDivisions,
+  "Queues":                 processQueues,
   "Site - Number Plans":    processNumberPlans,
   "Site - Outbound Routes": processOutboundRoutes,
   "Sites":                  processSites,
@@ -449,6 +450,243 @@ async function processSkills({ rows, api, orgId, me, addResult }) {
     } catch (err) {
       addResult(name, false, err.message);
       logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create skill '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+    }
+  }
+
+  return { created, failed };
+}
+
+// ── Tab: Queues ──────────────────────────────────────────────────────────────
+// Columns A–AY (51 total, 0-indexed 0–50)
+//
+// General (cols 0–20):
+//   0:A  Queue Name              text    REQUIRED
+//   1:B  Division                name→ID REQUIRED
+//   2:C  Description             text
+//   3:D  Scoring Method          enum    TimestampAndPriority | PriorityOnly
+//   4:E  Last Agent Routing      enum    Disabled | QueueMembersOnly | AnyAgent
+//   5:F  ACW Prompt              enum    OPTIONAL | MANDATORY | MANDATORY_TIMEOUT | MANDATORY_FORCED_TIMEOUT | AGENT_REQUESTED
+//   6:G  Skill Eval Method       enum    NONE | BEST | ALL
+//   7:H  Auto Answer Only        bool
+//   8:I  Enable Transcription    bool
+//   9:J  Enable Manual Assign    bool
+//  10:K  Suppress Recording      bool
+//  11:L  Calling Party Name      text
+//  12:M  Calling Party Number    text
+//  13:N  Call In-Queue Flow      name→ID
+//  14:O  Email In-Queue Flow     name→ID
+//  15:P  Message In-Queue Flow   name→ID
+//  16:Q  Call Script             name→ID
+//  17:R  Callback Script         name→ID
+//  18:S  Chat Script             name→ID
+//  19:T  Email Script            name→ID
+//  20:U  Message Script          name→ID
+//
+// Media blocks (6 cols each): call=21, callback=27, chat=33, email=39, message=45
+//   +0 Alerting (s)             number
+//   +1 Auto Answer              bool
+//   +2 Enable Audio Duration    bool
+//   +3 Audio Duration (s)       number
+//   +4 SL %                     number
+//   +5 SL Duration (ms)         number
+//
+// Blank cell = field omitted (no error). Only required fields are Queue Name and Division.
+// Non-blank but invalid value (bad enum / non-boolean / non-number / name not found) = skip row.
+async function processQueues({ rows, api, orgId, me, addResult }) {
+  let created = 0;
+  let failed  = 0;
+
+  const SCORING_METHODS    = new Set(["TimestampAndPriority", "PriorityOnly"]);
+  const LAST_AGENT_MODES   = new Set(["Disabled", "QueueMembersOnly", "AnyAgent"]);
+  const ACW_PROMPTS        = new Set(["OPTIONAL", "MANDATORY", "MANDATORY_TIMEOUT", "MANDATORY_FORCED_TIMEOUT", "AGENT_REQUESTED"]);
+  const SKILL_EVAL_METHODS = new Set(["NONE", "BEST", "ALL"]);
+
+  // Pre-fetch lookup maps once (divisions, flows, scripts)
+  let divMap = {}, flowMap = {}, scriptMap = {};
+  try {
+    const [divs, flows, scripts] = await Promise.all([
+      gc.fetchAllDivisions(api, orgId),
+      gc.fetchAllFlows(api, orgId),
+      gc.fetchAllScripts(api, orgId),
+    ]);
+    divMap    = Object.fromEntries(divs.map(d => [d.name.toLowerCase(), d.id]));
+    flowMap   = Object.fromEntries(flows.map(f => [f.name.toLowerCase(), f.id]));
+    scriptMap = Object.fromEntries(scripts.map(s => [s.name.toLowerCase(), s.id]));
+  } catch (err) {
+    addResult("(setup)", false, `Failed to fetch lookup data: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+
+  // blank → null (omit); non-blank invalid → error string
+  function parseEnum(val, validSet) {
+    const s = String(val ?? "").trim();
+    if (!s) return { value: null, error: null };
+    if (!validSet.has(s)) return { value: null, error: `Invalid value '${s}' — expected one of: ${[...validSet].join(", ")}` };
+    return { value: s, error: null };
+  }
+
+  function parseBool(val) {
+    const s = String(val ?? "").trim().toLowerCase();
+    if (!s) return { value: null, error: null };
+    if (s === "true")  return { value: true,  error: null };
+    if (s === "false") return { value: false, error: null };
+    return { value: null, error: `Invalid boolean '${val}' — must be true or false` };
+  }
+
+  function parseNum(val) {
+    const s = String(val ?? "").trim();
+    if (!s) return { value: null, error: null };
+    const n = Number(s);
+    if (isNaN(n)) return { value: null, error: `Invalid number '${val}'` };
+    return { value: n, error: null };
+  }
+
+  function resolveName(val, map, entityType) {
+    const s = String(val ?? "").trim();
+    if (!s) return { id: null, error: null };
+    const id = map[s.toLowerCase()];
+    if (id === undefined) return { id: null, error: `${entityType} '${s}' not found` };
+    return { id, error: null };
+  }
+
+  // Parse a 6-column media block starting at row[offset].
+  // Returns { block, error } — block is null if all 6 cells are blank.
+  function parseMediaBlock(row, offset) {
+    const vals = [row[offset], row[offset+1], row[offset+2], row[offset+3], row[offset+4], row[offset+5]];
+    if (vals.every(v => String(v ?? "").trim() === "")) return { block: null, error: null };
+
+    const alerting    = parseNum(vals[0]);
+    const autoAnswer  = parseBool(vals[1]);
+    const enableAudio = parseBool(vals[2]);
+    const audioDur    = parseNum(vals[3]);
+    const slPct       = parseNum(vals[4]);
+    const slDur       = parseNum(vals[5]);
+
+    for (const r of [alerting, autoAnswer, enableAudio, audioDur, slPct, slDur]) {
+      if (r.error) return { block: null, error: r.error };
+    }
+
+    const block = {};
+    if (alerting.value    !== null) block.alertingTimeoutSeconds    = alerting.value;
+    if (autoAnswer.value  !== null) block.autoAnswer                = autoAnswer.value;
+    if (enableAudio.value !== null) block.enableAutoAnswerAlertTone = enableAudio.value;
+    if (audioDur.value    !== null) block.autoAnswerAlertToneSeconds = audioDur.value;
+    if (slPct.value !== null || slDur.value !== null) {
+      block.serviceLevel = {};
+      if (slPct.value !== null) block.serviceLevel.percentage = slPct.value;
+      if (slDur.value !== null) block.serviceLevel.durationMs = slDur.value;
+    }
+    return { block, error: null };
+  }
+
+  for (const row of rows) {
+    const name        = String(row[0] ?? "").trim();
+    const divisionRaw = String(row[1] ?? "").trim();
+
+    if (!name)        { addResult("(empty)", false, "Missing queue name — skipped");   failed++; continue; }
+    if (!divisionRaw) { addResult(name,      false, "Missing division — skipped");      failed++; continue; }
+
+    const div = resolveName(divisionRaw, divMap, "Division");
+    if (div.error) { addResult(name, false, div.error); failed++; continue; }
+
+    const description = String(row[2] ?? "").trim();
+
+    const scoringMethod   = parseEnum(row[3], SCORING_METHODS);
+    if (scoringMethod.error)   { addResult(name, false, scoringMethod.error);   failed++; continue; }
+    const lastAgentMode   = parseEnum(row[4], LAST_AGENT_MODES);
+    if (lastAgentMode.error)   { addResult(name, false, lastAgentMode.error);   failed++; continue; }
+    const acwPrompt       = parseEnum(row[5], ACW_PROMPTS);
+    if (acwPrompt.error)       { addResult(name, false, acwPrompt.error);       failed++; continue; }
+    const skillEvalMethod = parseEnum(row[6], SKILL_EVAL_METHODS);
+    if (skillEvalMethod.error) { addResult(name, false, skillEvalMethod.error); failed++; continue; }
+
+    const autoAnswerOnly      = parseBool(row[7]);
+    if (autoAnswerOnly.error)      { addResult(name, false, autoAnswerOnly.error);      failed++; continue; }
+    const enableTranscription = parseBool(row[8]);
+    if (enableTranscription.error) { addResult(name, false, enableTranscription.error); failed++; continue; }
+    const enableManualAssign  = parseBool(row[9]);
+    if (enableManualAssign.error)  { addResult(name, false, enableManualAssign.error);  failed++; continue; }
+    const suppressRecording   = parseBool(row[10]);
+    if (suppressRecording.error)   { addResult(name, false, suppressRecording.error);   failed++; continue; }
+
+    const callingPartyName   = String(row[11] ?? "").trim();
+    const callingPartyNumber = String(row[12] ?? "").trim();
+
+    const callFlow  = resolveName(row[13], flowMap, "Call in-queue flow");
+    if (callFlow.error)  { addResult(name, false, callFlow.error);  failed++; continue; }
+    const emailFlow = resolveName(row[14], flowMap, "Email in-queue flow");
+    if (emailFlow.error) { addResult(name, false, emailFlow.error); failed++; continue; }
+    const msgFlow   = resolveName(row[15], flowMap, "Message in-queue flow");
+    if (msgFlow.error)   { addResult(name, false, msgFlow.error);   failed++; continue; }
+
+    const callScript     = resolveName(row[16], scriptMap, "Call script");
+    if (callScript.error)     { addResult(name, false, callScript.error);     failed++; continue; }
+    const callbackScript  = resolveName(row[17], scriptMap, "Callback script");
+    if (callbackScript.error) { addResult(name, false, callbackScript.error); failed++; continue; }
+    const chatScript      = resolveName(row[18], scriptMap, "Chat script");
+    if (chatScript.error)     { addResult(name, false, chatScript.error);     failed++; continue; }
+    const emailScript     = resolveName(row[19], scriptMap, "Email script");
+    if (emailScript.error)    { addResult(name, false, emailScript.error);    failed++; continue; }
+    const msgScript       = resolveName(row[20], scriptMap, "Message script");
+    if (msgScript.error)      { addResult(name, false, msgScript.error);      failed++; continue; }
+
+    const callMedia     = parseMediaBlock(row, 21);
+    if (callMedia.error)     { addResult(name, false, `Call media: ${callMedia.error}`);     failed++; continue; }
+    const callbackMedia = parseMediaBlock(row, 27);
+    if (callbackMedia.error) { addResult(name, false, `Callback media: ${callbackMedia.error}`); failed++; continue; }
+    const chatMedia     = parseMediaBlock(row, 33);
+    if (chatMedia.error)     { addResult(name, false, `Chat media: ${chatMedia.error}`);     failed++; continue; }
+    const emailMedia    = parseMediaBlock(row, 39);
+    if (emailMedia.error)    { addResult(name, false, `Email media: ${emailMedia.error}`);    failed++; continue; }
+    const msgMedia      = parseMediaBlock(row, 45);
+    if (msgMedia.error)      { addResult(name, false, `Message media: ${msgMedia.error}`);    failed++; continue; }
+
+    // Build API body — only include fields that have a value
+    const body = {
+      name,
+      division: { id: div.id },
+    };
+
+    if (description)                        body.description                  = description;
+    if (scoringMethod.value)                body.scoringMethod                = scoringMethod.value;
+    if (lastAgentMode.value)                body.lastAgentRoutingMode         = lastAgentMode.value;
+    if (acwPrompt.value)                    body.acwSettings                  = { wrapupPrompt: acwPrompt.value };
+    if (skillEvalMethod.value)              body.skillEvaluationMethod        = skillEvalMethod.value;
+    if (autoAnswerOnly.value      !== null) body.autoAnswerOnly               = autoAnswerOnly.value;
+    if (enableTranscription.value !== null) body.enableTranscription          = enableTranscription.value;
+    if (enableManualAssign.value  !== null) body.enableManualAssignment       = enableManualAssign.value;
+    if (suppressRecording.value   !== null) body.suppressInQueueCallRecording = suppressRecording.value;
+    if (callingPartyName)                   body.callingPartyName             = callingPartyName;
+    if (callingPartyNumber)                 body.callingPartyNumber           = callingPartyNumber;
+    if (callFlow.id)                        body.queueFlow                    = { id: callFlow.id };
+    if (emailFlow.id)                       body.emailInQueueFlow             = { id: emailFlow.id };
+    if (msgFlow.id)                         body.messageInQueueFlow           = { id: msgFlow.id };
+
+    const defaultScripts = {};
+    if (callScript.id)     defaultScripts.CALL     = { id: callScript.id };
+    if (callbackScript.id) defaultScripts.CALLBACK = { id: callbackScript.id };
+    if (chatScript.id)     defaultScripts.CHAT     = { id: chatScript.id };
+    if (emailScript.id)    defaultScripts.EMAIL    = { id: emailScript.id };
+    if (msgScript.id)      defaultScripts.MESSAGE  = { id: msgScript.id };
+    if (Object.keys(defaultScripts).length) body.defaultScripts = defaultScripts;
+
+    const mediaSettings = {};
+    if (callMedia.block)     mediaSettings.call     = callMedia.block;
+    if (callbackMedia.block) mediaSettings.callback = callbackMedia.block;
+    if (chatMedia.block)     mediaSettings.chat     = chatMedia.block;
+    if (emailMedia.block)    mediaSettings.email    = emailMedia.block;
+    if (msgMedia.block)      mediaSettings.message  = msgMedia.block;
+    if (Object.keys(mediaSettings).length) body.mediaSettings = mediaSettings;
+
+    try {
+      await gc.createQueue(api, orgId, body);
+      addResult(name, true);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created queue '${name}'` });
+      created++;
+    } catch (err) {
+      addResult(name, false, err.message);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create queue '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
       failed++;
     }
   }

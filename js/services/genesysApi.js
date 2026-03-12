@@ -407,6 +407,11 @@ export async function createLanguage(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/routing/languages", { body });
 }
 
+/** Create a routing queue. */
+export async function createQueue(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/routing/queues", { body });
+}
+
 /** Fetch all wrapup codes. */
 export async function fetchAllWrapupCodes(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/routing/wrapupcodes", opts);

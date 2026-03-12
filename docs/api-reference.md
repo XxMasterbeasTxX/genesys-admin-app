@@ -136,6 +136,7 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/routing/queues` | List queues (paginated) |
+| POST | `/api/v2/routing/queues` | **Create** a routing queue (Deployment — Basic) |
 | GET | `/api/v2/routing/queues/{queueId}` | Get a single queue (full object, includes version) |
 | PATCH | `/api/v2/routing/queues/{queueId}` | Partial update a queue (e.g., division change) |
 | PUT | `/api/v2/routing/queues/{queueId}` | Full queue update |
