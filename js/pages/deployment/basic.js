@@ -947,12 +947,15 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     const supported = sheets.filter(n => TAB_HANDLERS[n]);
     const skipped   = sheets.filter(n => !TAB_HANDLERS[n]);
 
+    // Tabs that upsert (update existing matched by name / merge, rather than always creating new)
+    const UPSERT_TABS = new Set(["Site - Number Plans", "Site - Outbound Routes", "Queues"]);
+
     // Build per-tab summary rows
     const tabRows = supported.map(tabName => {
       const ws   = workbook.Sheets[tabName];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
       const dataRows = rows.slice(1).filter(r => String(r[0] || "").trim() !== "");
-      const upsertNote = tabName === "Queues"
+      const upsertNote = UPSERT_TABS.has(tabName)
         ? ` <span style="color:var(--text-muted,#888);font-size:.82em">(existing will be updated)</span>`
         : "";
       return `<tr><td style="padding:3px 10px 3px 0">${escapeHtml(tabName)}${upsertNote}</td>
