@@ -574,7 +574,7 @@ async function processQueues({ rows, api, orgId, me, addResult }) {
     if (audioDur.value    !== null) block.autoAnswerAlertToneSeconds = audioDur.value;
     if (slPct.value !== null || slDur.value !== null) {
       block.serviceLevel = {};
-      if (slPct.value !== null) block.serviceLevel.percentage = slPct.value;
+      if (slPct.value !== null) block.serviceLevel.percentage = slPct.value / 100;
       if (slDur.value !== null) block.serviceLevel.durationMs = slDur.value;
     }
     return { block, error: null };
