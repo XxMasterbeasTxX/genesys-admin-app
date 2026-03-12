@@ -186,6 +186,59 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
     $selectBtn.disabled = false;
   }
 
+  function showConfirmDialog(fileName, workbook, onConfirm) {
+    const orgDetails = orgContext.getDetails();
+    const orgName    = orgDetails ? orgDetails.name : (orgContext.get() || "Unknown org");
+
+    const tableRows = workbook.SheetNames.map(sheetName => {
+      const ws   = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      const tableName   = String(rows[0]?.[1] || "").trim() || `(${sheetName})`;
+      const keyName     = String(rows[1]?.[1] || "").trim() || "—";
+      const divisionVal = String(rows[2]?.[1] || "").trim() || "—";
+      const schemaCols  = rows.slice(4).filter(r => String(r[0] || "").trim() !== "").length;
+      return `<tr>
+        <td style="padding:3px 10px 3px 0">${escapeHtml(tableName)}</td>
+        <td style="padding:3px 8px;color:var(--text-muted,#888);font-size:.85rem">${escapeHtml(divisionVal)}</td>
+        <td style="padding:3px 8px;color:var(--text-muted,#888);font-size:.85rem">key: ${escapeHtml(keyName)}</td>
+        <td style="padding:3px 0;text-align:right;font-size:.85rem">${schemaCols} col${schemaCols !== 1 ? "s" : ""}</td>
+      </tr>`;
+    }).join("");
+
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+
+    overlay.innerHTML = `
+      <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border,#334);border-radius:8px;padding:24px;min-width:340px;max-width:580px;width:90%">
+        <h3 style="margin:0 0 16px;font-size:1.1rem">Confirm Deployment</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:.9rem">
+          <tr><td style="padding:3px 10px 3px 0;color:var(--text-muted,#888)">Org</td>
+              <td style="padding:3px 0"><strong>${escapeHtml(orgName)}</strong></td></tr>
+          <tr><td style="padding:3px 10px 3px 0;color:var(--text-muted,#888)">File</td>
+              <td style="padding:3px 0">${escapeHtml(fileName)}</td></tr>
+        </table>
+        <hr style="border:none;border-top:1px solid var(--border,#334);margin:14px 0">
+        <table style="width:100%;border-collapse:collapse;font-size:.9rem">
+          ${tableRows}
+        </table>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+          <button id="ddtConfirmCancel" class="btn btn--secondary">Cancel</button>
+          <button id="ddtConfirmDeploy" class="btn">Deploy</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelector("#ddtConfirmCancel").addEventListener("click", () => {
+      document.body.removeChild(overlay);
+    });
+    overlay.querySelector("#ddtConfirmDeploy").addEventListener("click", () => {
+      document.body.removeChild(overlay);
+      onConfirm();
+    });
+  }
+
   $selectBtn.addEventListener("click", () => $fileInput.click());
 
   $fileInput.addEventListener("change", () => {
@@ -202,7 +255,7 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
         setStatus(`Could not read file: ${err.message}`, "error");
         return;
       }
-      processWorkbook(workbook);
+      showConfirmDialog(file.name, workbook, () => processWorkbook(workbook));
     };
     reader.readAsArrayBuffer(file);
   });
