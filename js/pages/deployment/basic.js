@@ -603,45 +603,43 @@ async function processQueues({ rows, api, orgId, me, addResult }) {
     const skillEvalMethod = parseEnum(row[6], SKILL_EVAL_METHODS);
     if (skillEvalMethod.error) { addResult(name, false, skillEvalMethod.error); failed++; continue; }
 
-    const autoAnswerOnly      = parseBool(row[7]);
-    if (autoAnswerOnly.error)      { addResult(name, false, autoAnswerOnly.error);      failed++; continue; }
-    const enableTranscription = parseBool(row[8]);
+    const enableTranscription = parseBool(row[7]);
     if (enableTranscription.error) { addResult(name, false, enableTranscription.error); failed++; continue; }
-    const enableManualAssign  = parseBool(row[9]);
+    const enableManualAssign  = parseBool(row[8]);
     if (enableManualAssign.error)  { addResult(name, false, enableManualAssign.error);  failed++; continue; }
-    const suppressRecording   = parseBool(row[10]);
+    const suppressRecording   = parseBool(row[9]);
     if (suppressRecording.error)   { addResult(name, false, suppressRecording.error);   failed++; continue; }
 
-    const callingPartyName   = String(row[11] ?? "").trim();
-    const callingPartyNumber = String(row[12] ?? "").trim();
+    const callingPartyName   = String(row[10] ?? "").trim();
+    const callingPartyNumber = String(row[11] ?? "").trim();
 
-    const callFlow  = resolveName(row[13], flowMap, "Call in-queue flow");
+    const callFlow  = resolveName(row[12], flowMap, "Call in-queue flow");
     if (callFlow.error)  { addResult(name, false, callFlow.error);  failed++; continue; }
-    const emailFlow = resolveName(row[14], flowMap, "Email in-queue flow");
+    const emailFlow = resolveName(row[13], flowMap, "Email in-queue flow");
     if (emailFlow.error) { addResult(name, false, emailFlow.error); failed++; continue; }
-    const msgFlow   = resolveName(row[15], flowMap, "Message in-queue flow");
+    const msgFlow   = resolveName(row[14], flowMap, "Message in-queue flow");
     if (msgFlow.error)   { addResult(name, false, msgFlow.error);   failed++; continue; }
 
-    const callScript     = resolveName(row[16], scriptMap, "Call script");
+    const callScript     = resolveName(row[15], scriptMap, "Call script");
     if (callScript.error)     { addResult(name, false, callScript.error);     failed++; continue; }
-    const callbackScript  = resolveName(row[17], scriptMap, "Callback script");
+    const callbackScript  = resolveName(row[16], scriptMap, "Callback script");
     if (callbackScript.error) { addResult(name, false, callbackScript.error); failed++; continue; }
-    const chatScript      = resolveName(row[18], scriptMap, "Chat script");
+    const chatScript      = resolveName(row[17], scriptMap, "Chat script");
     if (chatScript.error)     { addResult(name, false, chatScript.error);     failed++; continue; }
-    const emailScript     = resolveName(row[19], scriptMap, "Email script");
+    const emailScript     = resolveName(row[18], scriptMap, "Email script");
     if (emailScript.error)    { addResult(name, false, emailScript.error);    failed++; continue; }
-    const msgScript       = resolveName(row[20], scriptMap, "Message script");
+    const msgScript       = resolveName(row[19], scriptMap, "Message script");
     if (msgScript.error)      { addResult(name, false, msgScript.error);      failed++; continue; }
 
-    const callMedia     = parseMediaBlock(row, 21);
+    const callMedia     = parseMediaBlock(row, 20);
     if (callMedia.error)     { addResult(name, false, `Call media: ${callMedia.error}`);         failed++; continue; }
-    const callbackMedia = parseMediaBlock(row, 27);
+    const callbackMedia = parseMediaBlock(row, 26);
     if (callbackMedia.error) { addResult(name, false, `Callback media: ${callbackMedia.error}`); failed++; continue; }
-    const chatMedia     = parseMediaBlock(row, 33);
+    const chatMedia     = parseMediaBlock(row, 32);
     if (chatMedia.error)     { addResult(name, false, `Chat media: ${chatMedia.error}`);         failed++; continue; }
-    const emailMedia    = parseMediaBlock(row, 39);
+    const emailMedia    = parseMediaBlock(row, 38);
     if (emailMedia.error)    { addResult(name, false, `Email media: ${emailMedia.error}`);       failed++; continue; }
-    const msgMedia      = parseMediaBlock(row, 45);
+    const msgMedia      = parseMediaBlock(row, 44);
     if (msgMedia.error)      { addResult(name, false, `Message media: ${msgMedia.error}`);       failed++; continue; }
 
     // Build API body — only include fields that have a value
@@ -655,7 +653,6 @@ async function processQueues({ rows, api, orgId, me, addResult }) {
     if (lastAgentMode.value)                body.lastAgentRoutingMode         = lastAgentMode.value;
     if (acwPrompt.value)                    body.acwSettings                  = { wrapupPrompt: acwPrompt.value };
     if (skillEvalMethod.value)              body.skillEvaluationMethod        = skillEvalMethod.value;
-    if (autoAnswerOnly.value      !== null) body.autoAnswerOnly               = autoAnswerOnly.value;
     if (enableTranscription.value !== null) body.enableTranscription          = enableTranscription.value;
     if (enableManualAssign.value  !== null) body.enableManualAssignment       = enableManualAssign.value;
     if (suppressRecording.value   !== null) body.suppressInQueueCallRecording = suppressRecording.value;
