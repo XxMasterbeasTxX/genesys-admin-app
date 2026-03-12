@@ -551,27 +551,29 @@ async function processQueues({ rows, api, orgId, me, addResult }) {
   }
 
   // Parse a 6-column media block starting at row[offset].
-  // supportsAutoAnswer: true for call/callback/message; false for chat/email.
-  // Cols +2 (Enable Audio Duration) and +3 (Audio Duration) have no API support and are silently ignored.
-  // The Genesys API field for auto answer is enableAutoAnswer (string "true"/"false").
+  // Col +0=Alerting, +1=AutoAnswer (bool), +2=EnableAudioDuration (bool), +3=AudioDuration(s),
+  // +4=SL%, +5=SLDurationMs. All 5 media types support all fields.
   // Returns { block, error } — block is null if all 6 cells are blank.
-  function parseMediaBlock(row, offset, supportsAutoAnswer) {
+  function parseMediaBlock(row, offset) {
     const vals = [row[offset], row[offset+1], row[offset+2], row[offset+3], row[offset+4], row[offset+5]];
     if (vals.every(v => String(v ?? "").trim() === "")) return { block: null, error: null };
 
-    const alerting   = parseNum(vals[0]);
-    const slPct      = parseNum(vals[4]);
-    const slDur      = parseNum(vals[5]);
-    // cols +1 (auto answer) only parsed when the media type supports it; cols +2/+3 ignored entirely
-    const autoAnswer = supportsAutoAnswer ? parseBool(vals[1]) : { value: null, error: null };
+    const alerting       = parseNum(vals[0]);
+    const autoAnswer     = parseBool(vals[1]);
+    const enableAudioDur = parseBool(vals[2]);
+    const audioDurSecs   = parseNum(vals[3]);
+    const slPct          = parseNum(vals[4]);
+    const slDur          = parseNum(vals[5]);
 
-    for (const r of [alerting, autoAnswer, slPct, slDur]) {
+    for (const r of [alerting, autoAnswer, enableAudioDur, audioDurSecs, slPct, slDur]) {
       if (r.error) return { block: null, error: r.error };
     }
 
     const block = {};
     if (alerting.value   !== null) block.alertingTimeoutSeconds = alerting.value;
-    if (autoAnswer.value !== null) block.enableAutoAnswer       = String(autoAnswer.value);
+    if (autoAnswer.value !== null) block.enableAutoAnswer       = autoAnswer.value;
+    if (enableAudioDur.value === true && audioDurSecs.value !== null)
+      block.autoAnswerAlertToneSeconds = audioDurSecs.value;
     if (slPct.value !== null || slDur.value !== null) {
       block.serviceLevel = {};
       if (slPct.value !== null) block.serviceLevel.percentage = slPct.value / 100;
@@ -631,16 +633,16 @@ async function processQueues({ rows, api, orgId, me, addResult }) {
     const msgScript       = resolveName(row[20], scriptMap, "Message script");
     if (msgScript.error)      { addResult(name, false, msgScript.error);      failed++; continue; }
 
-    const callMedia     = parseMediaBlock(row, 21, true);   // call     — supports enableAutoAnswer
-    if (callMedia.error)     { addResult(name, false, `Call media: ${callMedia.error}`);     failed++; continue; }
-    const callbackMedia = parseMediaBlock(row, 27, true);   // callback — supports enableAutoAnswer
+    const callMedia     = parseMediaBlock(row, 21);
+    if (callMedia.error)     { addResult(name, false, `Call media: ${callMedia.error}`);         failed++; continue; }
+    const callbackMedia = parseMediaBlock(row, 27);
     if (callbackMedia.error) { addResult(name, false, `Callback media: ${callbackMedia.error}`); failed++; continue; }
-    const chatMedia     = parseMediaBlock(row, 33, false);  // chat     — no auto answer
-    if (chatMedia.error)     { addResult(name, false, `Chat media: ${chatMedia.error}`);     failed++; continue; }
-    const emailMedia    = parseMediaBlock(row, 39, false);  // email    — no auto answer
-    if (emailMedia.error)    { addResult(name, false, `Email media: ${emailMedia.error}`);    failed++; continue; }
-    const msgMedia      = parseMediaBlock(row, 45, true);   // message  — supports enableAutoAnswer
-    if (msgMedia.error)      { addResult(name, false, `Message media: ${msgMedia.error}`);    failed++; continue; }
+    const chatMedia     = parseMediaBlock(row, 33);
+    if (chatMedia.error)     { addResult(name, false, `Chat media: ${chatMedia.error}`);         failed++; continue; }
+    const emailMedia    = parseMediaBlock(row, 39);
+    if (emailMedia.error)    { addResult(name, false, `Email media: ${emailMedia.error}`);       failed++; continue; }
+    const msgMedia      = parseMediaBlock(row, 45);
+    if (msgMedia.error)      { addResult(name, false, `Message media: ${msgMedia.error}`);       failed++; continue; }
 
     // Build API body — only include fields that have a value
     const body = {
