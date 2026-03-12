@@ -46,7 +46,7 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
 
     <div class="dt-status" id="ddtStatus"></div>
 
-    <ul class="ddt-results" id="ddtResults" style="list-style:none;padding:0;margin-top:12px"></ul>
+    <ul class="ddt-results" id="ddtResults" style="list-style:none;padding:0;margin-top:12px;max-height:480px;overflow-y:auto"></ul>
   `;
 
   const $selectBtn  = el.querySelector("#ddtSelectBtn");
@@ -89,9 +89,18 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
     };
   }
 
-  async function processWorkbook(workbook) {
+  async function processWorkbook(workbook, selectedSheets = null) {
     const orgId = orgContext.get();
     if (!orgId) { setStatus("Please select a customer org first.", "error"); return; }
+
+    const sheets = selectedSheets && selectedSheets.length > 0
+      ? workbook.SheetNames.filter(n => selectedSheets.includes(n))
+      : workbook.SheetNames;
+
+    if (!sheets.length) {
+      setStatus("No sheets selected — nothing to deploy.", "error");
+      return;
+    }
 
     $results.innerHTML = "";
     $selectBtn.disabled = true;
@@ -110,7 +119,6 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
       (divisions || []).map(d => [d.name.toLowerCase(), d])
     );
 
-    const sheets = workbook.SheetNames;
     setStatus(`Processing ${sheets.length} sheet(s)…`);
 
     let created = 0;
@@ -197,11 +205,17 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
       const keyName     = String(rows[1]?.[1] || "").trim() || "—";
       const divisionVal = String(rows[2]?.[1] || "").trim() || "—";
       const schemaCols  = rows.slice(4).filter(r => String(r[0] || "").trim() !== "").length;
+      const safeSheet = escapeHtml(sheetName);
       return `<tr>
-        <td style="padding:3px 10px 3px 0">${escapeHtml(tableName)}</td>
+        <td style="padding:3px 10px 3px 0">
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
+            <input type="checkbox" data-sheet="${safeSheet}" checked style="cursor:pointer;width:14px;height:14px;flex-shrink:0">
+            ${escapeHtml(tableName)}
+          </label>
+        </td>
         <td style="padding:3px 8px;color:var(--text-muted,#888);font-size:.85rem">${escapeHtml(divisionVal)}</td>
         <td style="padding:3px 8px;color:var(--text-muted,#888);font-size:.85rem">key: ${escapeHtml(keyName)}</td>
-        <td style="padding:3px 0;text-align:right;font-size:.85rem">${schemaCols} col${schemaCols !== 1 ? "s" : ""}</td>
+        <td style="padding:3px 0;text-align:right;font-size:.85rem;white-space:nowrap">${schemaCols} col${schemaCols !== 1 ? "s" : ""}</td>
       </tr>`;
     }).join("");
 
@@ -209,7 +223,7 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
     overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
 
     overlay.innerHTML = `
-      <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border,#334);border-radius:8px;padding:24px;min-width:340px;max-width:580px;width:90%">
+      <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border,#334);border-radius:8px;padding:24px;min-width:340px;max-width:640px;width:90%">
         <h3 style="margin:0 0 16px;font-size:1.1rem">Confirm Deployment</h3>
         <table style="width:100%;border-collapse:collapse;font-size:.9rem">
           <tr><td style="padding:3px 10px 3px 0;color:var(--text-muted,#888)">Org</td>
@@ -234,8 +248,11 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
       document.body.removeChild(overlay);
     });
     overlay.querySelector("#ddtConfirmDeploy").addEventListener("click", () => {
+      const checked = [...overlay.querySelectorAll("input[data-sheet]")]
+        .filter(cb => cb.checked)
+        .map(cb => cb.dataset.sheet);
       document.body.removeChild(overlay);
-      onConfirm();
+      onConfirm(checked);
     });
   }
 
@@ -255,7 +272,7 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
         setStatus(`Could not read file: ${err.message}`, "error");
         return;
       }
-      showConfirmDialog(file.name, workbook, () => processWorkbook(workbook));
+      showConfirmDialog(file.name, workbook, (selectedSheets) => processWorkbook(workbook, selectedSheets));
     };
     reader.readAsArrayBuffer(file);
   });

@@ -855,7 +855,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
 
     <div class="dt-status" id="dbStatus"></div>
 
-    <ul class="ddt-results" id="dbResults" style="list-style:none;padding:0;margin-top:12px"></ul>
+    <ul class="ddt-results" id="dbResults" style="list-style:none;padding:0;margin-top:12px;max-height:480px;overflow-y:auto"></ul>
   `;
 
   const $selectBtn = el.querySelector("#dbSelectBtn");
@@ -982,7 +982,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
 
     overlay.innerHTML = `
-      <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border,#334);border-radius:8px;padding:24px;min-width:340px;max-width:520px;width:90%">
+      <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border,#334);border-radius:8px;padding:24px;min-width:340px;max-width:640px;width:90%">
         <h3 style="margin:0 0 16px;font-size:1.1rem">Confirm Deployment</h3>
         <table style="width:100%;border-collapse:collapse;font-size:.9rem">
           <tr><td style="padding:3px 10px 3px 0;color:var(--text-muted,#888)">Org</td>
