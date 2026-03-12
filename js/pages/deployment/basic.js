@@ -495,6 +495,7 @@ async function processSkills({ rows, api, orgId, me, addResult }) {
 // Non-blank but invalid value (bad enum / non-boolean / non-number / name not found) = skip row.
 async function processQueues({ rows, api, orgId, me, addResult }) {
   let created = 0;
+  let updated = 0;
   let failed  = 0;
 
   const SCORING_METHODS    = new Set(["TimestampAndPriority", "PriorityOnly"]);
@@ -502,17 +503,19 @@ async function processQueues({ rows, api, orgId, me, addResult }) {
   const ACW_PROMPTS        = new Set(["OPTIONAL", "MANDATORY", "MANDATORY_TIMEOUT", "MANDATORY_FORCED_TIMEOUT", "AGENT_REQUESTED"]);
   const SKILL_EVAL_METHODS = new Set(["NONE", "BEST", "ALL"]);
 
-  // Pre-fetch lookup maps once (divisions, flows, scripts)
-  let divMap = {}, flowMap = {}, scriptMap = {};
+  // Pre-fetch lookup maps once (divisions, flows, scripts, existing queues)
+  let divMap = {}, flowMap = {}, scriptMap = {}, queueMap = {};
   try {
-    const [divs, flows, scripts] = await Promise.all([
+    const [divs, flows, scripts, queues] = await Promise.all([
       gc.fetchAllDivisions(api, orgId),
       gc.fetchAllFlows(api, orgId),
       gc.fetchAllScripts(api, orgId),
+      gc.fetchAllQueues(api, orgId),
     ]);
     divMap    = Object.fromEntries(divs.map(d => [d.name.toLowerCase(), d.id]));
     flowMap   = Object.fromEntries(flows.map(f => [f.name.toLowerCase(), f.id]));
     scriptMap = Object.fromEntries(scripts.map(s => [s.name.toLowerCase(), s.id]));
+    queueMap  = Object.fromEntries(queues.map(q => [q.name.toLowerCase(), { id: q.id, version: q.version }]));
   } catch (err) {
     addResult("(setup)", false, `Failed to fetch lookup data: ${err.message}`);
     return { created: 0, failed: rows.length };
@@ -678,19 +681,27 @@ async function processQueues({ rows, api, orgId, me, addResult }) {
     if (msgMedia.block)      mediaSettings.message  = msgMedia.block;
     if (Object.keys(mediaSettings).length) body.mediaSettings = mediaSettings;
 
+    const existing = queueMap[name.toLowerCase()];
     try {
-      await gc.createQueue(api, orgId, body);
-      addResult(name, true);
-      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created queue '${name}'` });
-      created++;
+      if (existing) {
+        await gc.putQueue(api, orgId, existing.id, { ...body, version: existing.version });
+        addResult(name, true, "Updated");
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Updated queue '${name}'` });
+        updated++;
+      } else {
+        await gc.createQueue(api, orgId, body);
+        addResult(name, true, "Created");
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created queue '${name}'` });
+        created++;
+      }
     } catch (err) {
       addResult(name, false, err.message);
-      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create queue '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to ${existing ? "update" : "create"} queue '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
       failed++;
     }
   }
 
-  return { created, failed };
+  return { created: created + updated, failed };
 }
 
 // ── Tab: Skills - Language ────────────────────────────────────────────────────
@@ -861,7 +872,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     const li = document.createElement("li");
     li.style.cssText = "padding:4px 0;border-bottom:1px solid var(--border,#334)";
     li.innerHTML = ok
-      ? `<span style="color:#4ade80">✓</span> <strong>${escapeHtml(label)}</strong>`
+      ? `<span style="color:#4ade80">✓</span> <strong>${escapeHtml(label)}</strong>${detail ? ` <span style="color:var(--text-muted,#888);font-size:.85em">${escapeHtml(detail)}</span>` : ""}`
       : `<span style="color:#f87171">✗</span> <strong>${escapeHtml(label)}</strong> — ${escapeHtml(detail)}`;
     $results.appendChild(li);
   }
@@ -941,7 +952,10 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
       const ws   = workbook.Sheets[tabName];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
       const dataRows = rows.slice(1).filter(r => String(r[0] || "").trim() !== "");
-      return `<tr><td style="padding:3px 10px 3px 0">${escapeHtml(tabName)}</td>
+      const upsertNote = tabName === "Queues"
+        ? ` <span style="color:var(--text-muted,#888);font-size:.82em">(existing will be updated)</span>`
+        : "";
+      return `<tr><td style="padding:3px 10px 3px 0">${escapeHtml(tabName)}${upsertNote}</td>
               <td style="padding:3px 0;text-align:right">${dataRows.length} row${dataRows.length !== 1 ? "s" : ""}</td></tr>`;
     }).join("");
 
