@@ -551,29 +551,29 @@ async function processQueues({ rows, api, orgId, me, addResult }) {
   }
 
   // Parse a 6-column media block starting at row[offset].
-  // Col +0=Alerting, +1=AutoAnswer (bool), +2=EnableAudioDuration (bool), +3=AudioDuration(s),
+  // Col +0=Alerting(s), +1=AutoAnswer(bool), +2=AutoAnswerAlertTone(s), +3=ManualAnswerAlertTone(s),
   // +4=SL%, +5=SLDurationMs. All 5 media types support all fields.
   // Returns { block, error } — block is null if all 6 cells are blank.
   function parseMediaBlock(row, offset) {
     const vals = [row[offset], row[offset+1], row[offset+2], row[offset+3], row[offset+4], row[offset+5]];
     if (vals.every(v => String(v ?? "").trim() === "")) return { block: null, error: null };
 
-    const alerting       = parseNum(vals[0]);
-    const autoAnswer     = parseBool(vals[1]);
-    const enableAudioDur = parseBool(vals[2]);
-    const audioDurSecs   = parseNum(vals[3]);
-    const slPct          = parseNum(vals[4]);
-    const slDur          = parseNum(vals[5]);
+    const alerting          = parseNum(vals[0]);
+    const autoAnswer        = parseBool(vals[1]);
+    const autoAnswerTone    = parseNum(vals[2]);
+    const manualAnswerTone  = parseNum(vals[3]);
+    const slPct             = parseNum(vals[4]);
+    const slDur             = parseNum(vals[5]);
 
-    for (const r of [alerting, autoAnswer, enableAudioDur, audioDurSecs, slPct, slDur]) {
+    for (const r of [alerting, autoAnswer, autoAnswerTone, manualAnswerTone, slPct, slDur]) {
       if (r.error) return { block: null, error: r.error };
     }
 
     const block = {};
-    if (alerting.value   !== null) block.alertingTimeoutSeconds = alerting.value;
-    if (autoAnswer.value !== null) block.enableAutoAnswer       = autoAnswer.value;
-    if (enableAudioDur.value === true && audioDurSecs.value !== null)
-      block.autoAnswerAlertToneSeconds = audioDurSecs.value;
+    if (alerting.value         !== null) block.alertingTimeoutSeconds        = alerting.value;
+    if (autoAnswer.value       !== null) block.enableAutoAnswer              = autoAnswer.value;
+    if (autoAnswerTone.value   !== null) block.autoAnswerAlertToneSeconds    = autoAnswerTone.value;
+    if (manualAnswerTone.value !== null) block.manualAnswerAlertToneSeconds  = manualAnswerTone.value;
     if (slPct.value !== null || slDur.value !== null) {
       block.serviceLevel = {};
       if (slPct.value !== null) block.serviceLevel.percentage = slPct.value / 100;
