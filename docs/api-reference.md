@@ -174,6 +174,8 @@ Used by: Data Tables — Create/Copy, Divisions — Flows/DataTables/Schedules/e
 | POST | `/api/v2/architect/schedules` | **Create** a routing schedule (Deployment — Basic) |
 | PUT | `/api/v2/architect/schedules/{scheduleId}` | **Update** a routing schedule (Deployment — Basic) |
 | GET | `/api/v2/architect/schedulegroups` | List routing schedule groups |
+| POST | `/api/v2/architect/schedulegroups` | **Create** a routing schedule group (Deployment — Basic) |
+| PUT | `/api/v2/architect/schedulegroups/{groupId}` | **Update** a routing schedule group (Deployment — Basic) |
 | GET | `/api/v2/architect/emergencygroups` | List emergency groups |
 | GET | `/api/v2/architect/prompts` | List architect prompts |
 

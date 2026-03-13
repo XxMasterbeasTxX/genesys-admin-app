@@ -447,6 +447,16 @@ export async function fetchAllScheduleGroups(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/architect/schedulegroups", opts);
 }
 
+/** Create an Architect schedule group. */
+export async function createScheduleGroup(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/architect/schedulegroups", { body });
+}
+
+/** Full PUT update of an Architect schedule group. */
+export async function putScheduleGroup(api, orgId, groupId, body) {
+  return api.proxyGenesys(orgId, "PUT", `/api/v2/architect/schedulegroups/${groupId}`, { body });
+}
+
 /** Fetch all data tables. Pass opts.query.expand = "schema" for full schema. */
 export async function fetchAllDataTables(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/flows/datatables", opts);

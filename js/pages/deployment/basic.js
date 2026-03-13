@@ -30,6 +30,7 @@ const TAB_HANDLERS = {
   "DID Pools":              processDIDPools,
   "Divisions":              processDivisions,
   "Queues":                 processQueues,
+  "Schedule Groups":        processScheduleGroups,
   "Schedules":              processSchedules,
   "Site - Number Plans":    processNumberPlans,
   "Site - Outbound Routes": processOutboundRoutes,
@@ -546,6 +547,133 @@ async function processSchedules({ rows, api, orgId, me, addResult }) {
   return { created: created + updated, failed };
 }
 
+// ── Tab: Schedule Groups ─────────────────────────────────────────────────────
+// Multi-row per group: rows sharing the same Group Name (col A) are folded into
+// one POST/PUT.  Division / Description / Time Zone are read only from the
+// FIRST row of each group; subsequent rows need only A + E + F.
+//
+// Columns:
+//   A  Group Name     (req)        — groups rows with the same name
+//   B  Division                    — resolved by name; first row only
+//   C  Description                 — first row only
+//   D  Time Zone                   — IANA id e.g. Europe/Copenhagen; first row only
+//   E  Type           (req)        — open | closed | holiday
+//   F  Schedule Name  (req)        — resolved to {id} via schedule name lookup
+//
+async function processScheduleGroups({ rows, api, orgId, me, addResult }) {
+  let created = 0;
+  let updated = 0;
+  let failed  = 0;
+
+  // Pre-fetch lookup data
+  let divMap = {}, scheduleMap = {}, groupMap = {};
+  try {
+    const [divs, schedules, groups] = await Promise.all([
+      gc.fetchAllDivisions(api, orgId),
+      gc.fetchAllSchedules(api, orgId),
+      gc.fetchAllScheduleGroups(api, orgId),
+    ]);
+    divMap      = Object.fromEntries(divs.map(d => [d.name.toLowerCase(), d.id]));
+    scheduleMap = Object.fromEntries(schedules.map(s => [s.name.toLowerCase(), { id: s.id }]));
+    groupMap    = Object.fromEntries(groups.map(g => [g.name.toLowerCase(), { id: g.id, version: g.version }]));
+  } catch (err) {
+    addResult("(setup)", false, `Failed to fetch lookup data: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+
+  // Fold rows into groups: Map<lowerName, { meta, open[], closed[], holiday[], rowCount }>
+  const VALID_TYPES = new Set(["open", "closed", "holiday"]);
+  const groups_acc = new Map();
+
+  for (const row of rows) {
+    const name = String(row[0] ?? "").trim();
+    if (!name) { addResult("(empty)", false, "Missing Group Name — skipped"); failed++; continue; }
+
+    const key = name.toLowerCase();
+    if (!groups_acc.has(key)) {
+      groups_acc.set(key, {
+        name,
+        divisionRaw:  String(row[1] ?? "").trim(),
+        description:  String(row[2] ?? "").trim(),
+        timeZone:     String(row[3] ?? "").trim(),
+        open:     [],
+        closed:   [],
+        holiday:  [],
+        rowErrors: [],
+      });
+    }
+
+    const g       = groups_acc.get(key);
+    const typeRaw = String(row[4] ?? "").trim().toLowerCase();
+    const schName = String(row[5] ?? "").trim();
+
+    if (!VALID_TYPES.has(typeRaw)) {
+      g.rowErrors.push(`Type '${row[4]}' invalid (must be open/closed/holiday)`);
+      continue;
+    }
+    if (!schName) {
+      g.rowErrors.push(`Missing Schedule Name for type '${typeRaw}'`);
+      continue;
+    }
+    const sch = scheduleMap[schName.toLowerCase()];
+    if (!sch) {
+      g.rowErrors.push(`Schedule '${schName}' not found`);
+      continue;
+    }
+
+    g[typeRaw].push({ id: sch.id });
+  }
+
+  // Process each collected group
+  for (const [, g] of groups_acc) {
+    // Surface row-level errors first
+    if (g.rowErrors.length) {
+      for (const e of g.rowErrors) addResult(g.name, false, e);
+      failed++;
+      continue;
+    }
+
+    // Build body
+    const body = { name: g.name };
+    if (g.description) body.description = g.description;
+    if (g.timeZone)    body.timeZone    = g.timeZone;
+    if (g.open.length)    body.openSchedules    = g.open;
+    if (g.closed.length)  body.closedSchedules  = g.closed;
+    if (g.holiday.length) body.holidaySchedules = g.holiday;
+
+    if (g.divisionRaw) {
+      const divId = divMap[g.divisionRaw.toLowerCase()];
+      if (divId === undefined) {
+        addResult(g.name, false, `Division '${g.divisionRaw}' not found`);
+        failed++;
+        continue;
+      }
+      body.division = { id: divId };
+    }
+
+    const existing = groupMap[g.name.toLowerCase()];
+    try {
+      if (existing) {
+        await gc.putScheduleGroup(api, orgId, existing.id, { ...body, version: existing.version });
+        addResult(g.name, true, "Updated");
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Updated schedule group '${g.name}'` });
+        updated++;
+      } else {
+        await gc.createScheduleGroup(api, orgId, body);
+        addResult(g.name, true, "Created");
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created schedule group '${g.name}'` });
+        created++;
+      }
+    } catch (err) {
+      addResult(g.name, false, err.message);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to ${existing ? "update" : "create"} schedule group '${g.name}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+    }
+  }
+
+  return { created: created + updated, failed };
+}
+
 // ── Tab: Queues ──────────────────────────────────────────────────────────────
 // Columns A–AY (51 total, 0-indexed 0–50)
 //
@@ -1039,7 +1167,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     const skipped   = sheets.filter(n => !TAB_HANDLERS[n]);
 
     // Tabs that upsert (update existing matched by name / merge, rather than always creating new)
-    const UPSERT_TABS = new Set(["Schedules", "Site - Number Plans", "Site - Outbound Routes", "Queues"]);
+    const UPSERT_TABS = new Set(["Schedule Groups", "Schedules", "Site - Number Plans", "Site - Outbound Routes", "Queues"]);
 
     // Build per-tab summary rows (with checkboxes)
     const tabRows = supported.map(tabName => {
