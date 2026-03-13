@@ -1281,9 +1281,10 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
   for (const [, g] of userGroups) {
     const label = g.email;
     const notes = [];   // per-step outcome notes
-    let userId  = null;
-    let version = null;
-    let isNew   = false;
+    let userId       = null;
+    let version      = null;
+    let isNew        = false;
+    let versionDirty = false; // true when a step may have incremented version server-side without us capturing it
 
     // Step 1: upsert user
     try {
@@ -1329,6 +1330,7 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
       } else {
         try {
           await gc.moveToDivision(api, orgId, divEntry.id, "USER", [userId]);
+          versionDirty = true;
           notes.push(`division '${g.division}'`);
         } catch (err) {
           notes.push(`⚠ Division failed: ${err.message}`);
@@ -1366,6 +1368,7 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
       if (skillEntries.length) {
         try {
           await gc.addUserRoutingSkillsBulk(api, orgId, userId, skillEntries);
+          versionDirty = true;
           notes.push(`skill(s): ${g.skills.filter(s => skillMap[s.toLowerCase()]).join(", ")}`);
         } catch (err) {
           notes.push(`⚠ Skill assignment failed: ${err.message}`);
@@ -1414,7 +1417,7 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
 
     // Refresh version before address PATCHes — earlier steps (e.g. moveToDivision) may
     // have incremented it server-side without us capturing the result.
-    if (g.extension || g.did) {
+    if (versionDirty && (g.extension || g.did)) {
       try {
         const freshUser = await gc.getUser(api, orgId, userId);
         version = freshUser?.version ?? version;
