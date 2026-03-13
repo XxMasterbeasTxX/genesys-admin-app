@@ -1203,12 +1203,13 @@ async function processWrapupCodes({ rows, api, orgId, me, addResult }) {
 // ── Tab: Users ───────────────────────────────────────────────────────────────
 // Columns:
 //   A=User (display name, req), B=E-mail (req), C=Phone Name, D=Phone Site,
-//   E=Division, F=Skill, G=Roles, H=Extension, I=DID (Direct Number), J=Phone Type
+//   E=Division, F=Skill, G=Roles, H=Extension, I=DID (Direct Number), J=Phone Type,
+//   K=Queue
 //
 // Multi-row: rows sharing the same e-mail (case-insensitive) are folded into one
 // user upsert. First row determines: name, phone name, phone site, division,
-// extension, DID, phone type. Every row contributes one Skill (col F) and one
-// Role (col G) — blank cells are skipped.
+// extension, DID, phone type. Every row contributes one Skill (col F), one
+// Role (col G), and one Queue (col K) — blank cells are skipped.
 //
 // Steps per user (each is independent — a failure logs a warning but does NOT
 // abort the remaining steps for that user):
@@ -1219,15 +1220,16 @@ async function processWrapupCodes({ rows, api, orgId, me, addResult }) {
 //   5. Phone — find by name; create if missing; assign via owner/webRtcUser
 //   6. Set extension          (PATCH user addresses, type WORK2)
 //   7. Set DID                (PATCH user addresses, type WORK)
+//   8. Add to queues          (bulk POST per queue, after all users processed)
 async function processUsers({ rows, api, orgId, me, addResult }) {
   let succeeded = 0;
   let failed    = 0;
 
   // ── Pre-fetch lookup maps ──────────────────────────────────────────────────
   let userMap = {}, divMap = {}, skillMap = {}, roleMap = {}, siteMap = {},
-      phoneBaseMap = {}, phoneMap = {};
+      phoneBaseMap = {}, phoneMap = {}, queueMap = {};
   try {
-    const [users, divs, skills, roles, sites, phoneBases, phones] = await Promise.all([
+    const [users, divs, skills, roles, sites, phoneBases, phones, queues] = await Promise.all([
       gc.fetchAllUsers(api, orgId, { state: "any" }),
       gc.fetchAllDivisions(api, orgId),
       gc.fetchAllSkills(api, orgId),
@@ -1235,6 +1237,7 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
       gc.fetchAllSites(api, orgId),
       gc.fetchAllPhoneBaseSettings(api, orgId),
       gc.fetchAllPhones(api, orgId),
+      gc.fetchAllQueues(api, orgId),
     ]);
     userMap      = Object.fromEntries(users.map(u => [
       (u.email || u.username || "").toLowerCase(),
@@ -1246,13 +1249,14 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
     siteMap      = Object.fromEntries(sites.map(s => [s.name.toLowerCase(), s.id]));
     phoneBaseMap = Object.fromEntries(phoneBases.map(b => [b.name.toLowerCase(), b.id]));
     phoneMap     = Object.fromEntries(phones.map(p => [p.name.toLowerCase(), { id: p.id, version: p.version }]));
+    queueMap     = Object.fromEntries(queues.map(q => [q.name.toLowerCase(), q.id]));
   } catch (err) {
     addResult("(setup)", false, `Failed to fetch lookup data: ${err.message}`);
     return { created: 0, failed: rows.length };
   }
 
   // ── Fold rows by email ─────────────────────────────────────────────────────
-  // Map<lowerEmail, { name, email, phoneName, phoneSite, division, extension, did, phoneType, roles[], skills[] }>
+  // Map<lowerEmail, { name, email, phoneName, phoneSite, division, extension, did, phoneType, roles[], skills[], queues[] }>
   const userGroups = new Map();
   for (const row of rows) {
     const name      = String(row[0] || "").trim();
@@ -1265,19 +1269,23 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
     const extension = String(row[7] || "").trim();
     const did       = String(row[8] || "").trim();
     const phoneType = String(row[9] || "").trim();
+    const queue     = String(row[10] || "").trim();
 
     if (!email) continue;
     const key = email.toLowerCase();
 
     if (!userGroups.has(key)) {
-      userGroups.set(key, { name, email, phoneName, phoneSite, division, extension, did, phoneType, roles: [], skills: [] });
+      userGroups.set(key, { name, email, phoneName, phoneSite, division, extension, did, phoneType, roles: [], skills: [], queues: [] });
     }
     const g = userGroups.get(key);
     if (role)  g.roles.push(role);
     if (skill) g.skills.push(skill);
+    if (queue) g.queues.push(queue);
   }
 
   // ── Process each user ──────────────────────────────────────────────────────
+  // Accumulator for step 8: Map<queueId, { name, userIds[] }>
+  const queueMemberAccum = new Map();
   for (const [, g] of userGroups) {
     const label = g.email;
     const notes = [];   // per-step outcome notes
@@ -1455,6 +1463,37 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
     addResult(label, true, notes.join("; "));
     logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] ${isNew ? "Created" : "Updated"} user '${g.email}'` });
     succeeded++;
+
+    // Collect queue memberships for bulk processing after all users
+    if (userId && g.queues.length) {
+      for (const qName of g.queues) {
+        const qId = queueMap[qName.toLowerCase()];
+        if (!qId) continue; // unknown queues surfaced in step 8 below
+        if (!queueMemberAccum.has(qId)) queueMemberAccum.set(qId, { name: qName, userIds: [] });
+        queueMemberAccum.get(qId).userIds.push(userId);
+      }
+    }
+  }
+
+  // ── Step 8: bulk-add queue members (one call per queue) ───────────────────
+  for (const g of userGroups.values()) {
+    for (const qName of g.queues) {
+      if (!queueMap[qName.toLowerCase()]) {
+        addResult(g.email, false, `Queue '${qName}' not found`);
+        failed++;
+      }
+    }
+  }
+  for (const [qId, { name: qName, userIds }] of queueMemberAccum) {
+    try {
+      await gc.addQueueMembers(api, orgId, qId, userIds.map(id => ({ id })));
+      addResult(qName, true, `Added ${userIds.length} member(s)`);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Added ${userIds.length} member(s) to queue '${qName}'` });
+    } catch (err) {
+      addResult(qName, false, `Queue member add failed: ${err.message}`);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to add members to queue '${qName}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+    }
   }
 
   return { created: succeeded, failed };

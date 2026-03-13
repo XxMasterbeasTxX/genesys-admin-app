@@ -406,6 +406,19 @@ export async function getQueue(api, orgId, queueId) {
   return api.proxyGenesys(orgId, "GET", `/api/v2/routing/queues/${queueId}`);
 }
 
+/**
+ * Add members to a queue in batches of 100.
+ * members: [{ id, ringNumber? }]
+ */
+export async function addQueueMembers(api, orgId, queueId, members) {
+  const BATCH = 100;
+  for (let i = 0; i < members.length; i += BATCH) {
+    await api.proxyGenesys(orgId, "POST", `/api/v2/routing/queues/${queueId}/members`, {
+      body: members.slice(i, i + BATCH),
+    });
+  }
+}
+
 /** Full PUT update of a queue (required to change division). */
 export async function putQueue(api, orgId, queueId, body) {
   return api.proxyGenesys(orgId, "PUT", `/api/v2/routing/queues/${queueId}`, { body });
