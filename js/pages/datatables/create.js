@@ -50,6 +50,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
       <button class="btn" id="dtcSaveBtn" disabled>Save</button>
       <button class="btn dtc-import-btn" id="dtcImportBtn" style="margin-left:auto">Import from Excel</button>
       <input type="file" id="dtcFileInput" accept=".xlsx,.xls" style="display:none" />
+      <button class="btn" id="dtcTemplateBtn">Download Template</button>
     </div>
 
     <!-- Sheet picker (shown after a file is chosen) -->
@@ -121,6 +122,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
   const $addRowBtn    = el.querySelector("#dtcAddRow");
   const $importBtn    = el.querySelector("#dtcImportBtn");
   const $fileInput    = el.querySelector("#dtcFileInput");
+  const $templateBtn  = el.querySelector("#dtcTemplateBtn");
   const $sheetPicker  = el.querySelector("#dtcSheetPicker");
   const $sheetSelect  = el.querySelector("#dtcSheetSelect");
   const $sheetLoad    = el.querySelector("#dtcSheetLoad");
@@ -568,6 +570,55 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
       validateSave();
     }
   });
+
+  async function downloadTemplate() {
+    const base = new URL("docs/Templates/Deployment/Data Tables/", document.baseURI).href;
+    let manifest;
+    try {
+      const res = await fetch(base + "manifest.json");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      manifest = await res.json();
+    } catch (err) {
+      setStatus(`Could not load template list: ${err.message}`, "error");
+      return;
+    }
+    const files = (manifest.files || []).filter(Boolean);
+    if (!files.length) { setStatus("No template files found.", "error"); return; }
+
+    if (files.length === 1) {
+      try {
+        const res = await fetch(base + files[0]);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        const b64 = btoa(binary);
+        const helperUrl = new URL("download.html", document.baseURI);
+        helperUrl.hash = encodeURIComponent(files[0]) + "|" + b64;
+        window.open(helperUrl.href, "_blank");
+      } catch (err) {
+        setStatus(`Could not download template: ${err.message}`, "error");
+      }
+    } else {
+      if (typeof JSZip === "undefined") { setStatus("JSZip library not loaded. Please reload the page.", "error"); return; }
+      try {
+        const zip = new JSZip();
+        await Promise.all(files.map(async (f) => {
+          const res = await fetch(base + f);
+          if (!res.ok) throw new Error(`Could not fetch ${f}: HTTP ${res.status}`);
+          zip.file(f, await res.arrayBuffer());
+        }));
+        const b64 = await zip.generateAsync({ type: "base64" });
+        const helperUrl = new URL("download.html", document.baseURI);
+        helperUrl.hash = encodeURIComponent("DataTables_Templates.zip") + "|" + b64;
+        window.open(helperUrl.href, "_blank");
+      } catch (err) {
+        setStatus(`Could not create template archive: ${err.message}`, "error");
+      }
+    }
+  }
+
+  $templateBtn.addEventListener("click", downloadTemplate);
 
   return el;
 }
