@@ -147,7 +147,7 @@ genesys-admin-app/
 │   │   │   ├── copySingleOrg.js     Copy table within same org
 │   │   │   └── copyBetweenOrgs.js   Copy table between orgs
 │   │   ├── deployment/
-│   │   │   ├── basic.js             Bulk-create DID Pools, Divisions, Sites, Skills, Routing Languages
+│   │   │   ├── basic.js             Bulk-deploy DID Pools, Divisions, Sites, Skills, Number Plans, Outbound Routes, Schedules, Queues (upsert by name where supported)
 │   │   │   └── datatables.js        Bulk-create data tables from Excel workbook
 │   │   ├── divisions/
 │   │   │   ├── _generic.js          Shared generic renderer with hooks (extraFilters, extraFilterFn, onItemsLoaded)

@@ -155,7 +155,7 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 
 ## 8. Architect
 
-Used by: Data Tables — Create/Copy, Divisions — Flows/DataTables/Schedules/etc., Documentation Export
+Used by: Data Tables — Create/Copy, Divisions — Flows/DataTables/Schedules/etc., Documentation Export, Deployment — Basic
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -171,6 +171,8 @@ Used by: Data Tables — Create/Copy, Divisions — Flows/DataTables/Schedules/e
 | POST | `/api/v2/flows/datatables/{id}/rows` | Insert a row into a data table |
 | GET | `/api/v2/architect/ivrs` | List IVRs (Call Routing) |
 | GET | `/api/v2/architect/schedules` | List routing schedules |
+| POST | `/api/v2/architect/schedules` | **Create** a routing schedule (Deployment — Basic) |
+| PUT | `/api/v2/architect/schedules/{scheduleId}` | **Update** a routing schedule (Deployment — Basic) |
 | GET | `/api/v2/architect/schedulegroups` | List routing schedule groups |
 | GET | `/api/v2/architect/emergencygroups` | List emergency groups |
 | GET | `/api/v2/architect/prompts` | List architect prompts |
