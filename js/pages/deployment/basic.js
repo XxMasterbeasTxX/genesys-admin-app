@@ -1590,6 +1590,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     <div class="dt-actions">
       <button class="btn" id="dbSelectBtn">Select Excel Sheet</button>
       <input type="file" id="dbFileInput" accept=".xlsx,.xls" style="display:none" />
+      <button class="btn" id="dbTemplateBtn" style="margin-left:auto">Download Template</button>
     </div>
 
     <div class="dt-status" id="dbStatus"></div>
@@ -1770,6 +1771,8 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     });
   }
 
+  const $templateBtn = el.querySelector("#dbTemplateBtn");
+
   $selectBtn.addEventListener("click", () => $fileInput.click());
 
   $fileInput.addEventListener("change", () => {
@@ -1790,6 +1793,62 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     };
     reader.readAsArrayBuffer(file);
   });
+
+  function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+
+  async function downloadTemplate() {
+    const base = new URL("docs/Templates/Deployment/Basic/", document.baseURI).href;
+    let manifest;
+    try {
+      const res = await fetch(base + "manifest.json");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      manifest = await res.json();
+    } catch (err) {
+      setStatus(`Could not load template list: ${err.message}`, "error");
+      return;
+    }
+    const files = (manifest.files || []).filter(Boolean);
+    if (!files.length) { setStatus("No template files found.", "error"); return; }
+
+    if (files.length === 1) {
+      try {
+        const res = await fetch(base + files[0]);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const b64 = arrayBufferToBase64(await res.arrayBuffer());
+        const helperUrl = new URL("download.html", document.baseURI);
+        helperUrl.hash = encodeURIComponent(files[0]) + "|" + b64;
+        window.open(helperUrl.href, "_blank");
+      } catch (err) {
+        setStatus(`Could not download template: ${err.message}`, "error");
+      }
+    } else {
+      if (typeof JSZip === "undefined") {
+        setStatus("JSZip library not loaded. Please reload the page.", "error");
+        return;
+      }
+      try {
+        const zip = new JSZip();
+        await Promise.all(files.map(async (f) => {
+          const res = await fetch(base + f);
+          if (!res.ok) throw new Error(`Could not fetch ${f}: HTTP ${res.status}`);
+          zip.file(f, await res.arrayBuffer());
+        }));
+        const b64 = await zip.generateAsync({ type: "base64" });
+        const helperUrl = new URL("download.html", document.baseURI);
+        helperUrl.hash = encodeURIComponent("Deployment_Basic_Templates.zip") + "|" + b64;
+        window.open(helperUrl.href, "_blank");
+      } catch (err) {
+        setStatus(`Could not create template archive: ${err.message}`, "error");
+      }
+    }
+  }
+
+  $templateBtn.addEventListener("click", downloadTemplate);
 
   return el;
 }
