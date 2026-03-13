@@ -1444,9 +1444,10 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     $results.innerHTML = "";
     $selectBtn.disabled = true;
 
+    const IGNORED_TABS = new Set(["Overview", "Lists"]);
     const sheets = workbook.SheetNames;
     const supported   = sheets.filter(n => TAB_HANDLERS[n] && (!selectedTabs || selectedTabs.includes(n)));
-    const unsupported = sheets.filter(n => !TAB_HANDLERS[n]);
+    const unsupported = sheets.filter(n => !TAB_HANDLERS[n] && !IGNORED_TABS.has(n));
 
     if (!supported.length) {
       setStatus(
@@ -1498,9 +1499,10 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     const orgDetails = orgContext.getDetails();
     const orgName    = orgDetails ? orgDetails.name : (orgContext.get() || "Unknown org");
 
+    const IGNORED_TABS_DIALOG = new Set(["Overview", "Lists"]);
     const sheets    = workbook.SheetNames;
     const supported = sheets.filter(n => TAB_HANDLERS[n]);
-    const skipped   = sheets.filter(n => !TAB_HANDLERS[n]);
+    const skipped   = sheets.filter(n => !TAB_HANDLERS[n] && !IGNORED_TABS_DIALOG.has(n));
 
     // Tabs that upsert (update existing matched by name / merge, rather than always creating new)
     const UPSERT_TABS = new Set(["Schedule Groups", "Schedules", "Site - Number Plans", "Site - Outbound Routes", "Queues", "Users", "Wrapup Codes"]);
