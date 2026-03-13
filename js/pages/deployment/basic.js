@@ -173,14 +173,15 @@ async function processNumberPlans({ rows, api, orgId, me, addResult }) {
       let existing = [];
       try { existing = await gc.getSiteNumberPlans(api, orgId, site.id) || []; } catch (_) { /* start fresh if GET fails */ }
 
-      const sheetByName = new Map(plans.map(p => [p.name.toLowerCase(), p]));
+      const sheetByName    = new Map(plans.map(p => [p.name.toLowerCase(), p]));
       const existingByName = new Map(existing.map(p => [p.name.toLowerCase(), p]));
       const existingNotInSheet = existing.filter(p => !sheetByName.has(p.name.toLowerCase()));
-      // Carry over id (and version) from existing plan when names match — required by Genesys PUT
+      // Use existing object as base so no Genesys-internal fields are accidentally stripped,
+      // then overlay sheet values. id is always from the existing plan.
       const resolvedPlans = plans.map(p => {
         const ex = existingByName.get(p.name.toLowerCase());
         if (!ex) return p;
-        return { ...p, id: ex.id, ...(ex.version !== undefined ? { version: ex.version } : {}) };
+        return { ...ex, ...p, id: ex.id };
       });
       const merged = [...existingNotInSheet, ...resolvedPlans];
 
@@ -190,17 +191,48 @@ async function processNumberPlans({ rows, api, orgId, me, addResult }) {
         continue;
       }
 
-      await gc.updateSiteNumberPlans(api, orgId, site.id, merged);
-      for (const p of plans) {
-        addResult(`${siteName} — ${p.name}`, true);
+      let recovered = false;
+      try {
+        await gc.updateSiteNumberPlans(api, orgId, site.id, merged);
+        for (const p of plans) addResult(`${siteName} — ${p.name}`, true);
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Updated ${plans.length} number plan(s) on site '${siteName}' (${merged.length} total)` });
+        updated++;
+      } catch (firstErr) {
+        // If a plan's classification can't change because it's referenced by an outbound route,
+        // revert just that plan to its existing version and retry the PUT.
+        const refMatch = firstErr.message.match(/classification '([^']+)' is referenced by one or more outbound routes/i);
+        if (refMatch) {
+          const blockedClass = refMatch[1];
+          const conflictPlan = resolvedPlans.find(p => {
+            const ex = existingByName.get(p.name.toLowerCase());
+            return ex?.classification === blockedClass && p.classification !== blockedClass;
+          });
+          if (conflictPlan) {
+            const existingPlan = existingByName.get(conflictPlan.name.toLowerCase());
+            const recoveryMerged = merged.map(p => (p === conflictPlan ? existingPlan : p));
+            try {
+              await gc.updateSiteNumberPlans(api, orgId, site.id, recoveryMerged);
+              recovered = true;
+              for (const p of plans) {
+                if (p.name.toLowerCase() === conflictPlan.name.toLowerCase()) {
+                  addResult(`${siteName} — ${p.name}`, false,
+                    `Not updated: classification '${blockedClass}' is used by outbound routes — update those routes first`);
+                  failed++;
+                } else {
+                  addResult(`${siteName} — ${p.name}`, true);
+                }
+              }
+              logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Updated number plan(s) on site '${siteName}' (plan '${conflictPlan.name}' skipped — classification '${blockedClass}' is referenced by outbound routes)` });
+              updated++;
+            } catch (_) { /* recovery also failed — fall through to original error */ }
+          }
+        }
+        if (!recovered) {
+          addResult(siteName, false, firstErr.message);
+          logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to update number plans on site '${siteName}': ${firstErr.message}`, result: "failure", errorMessage: firstErr.message });
+          failed++;
+        }
       }
-      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Updated ${plans.length} number plan(s) on site '${siteName}' (${merged.length} total)` });
-      updated++;
-    } catch (err) {
-      addResult(siteName, false, err.message);
-      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to update number plans on site '${siteName}': ${err.message}`, result: "failure", errorMessage: err.message });
-      failed++;
-    }
   }
 
   return { created: updated, failed };
