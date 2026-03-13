@@ -430,6 +430,11 @@ export async function createSkill(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/routing/skills", { body });
 }
 
+/** Fetch all routing languages. */
+export async function fetchAllLanguages(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/routing/languages", opts);
+}
+
 /** Create a routing language. Body: { name }. */
 export async function createLanguage(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/routing/languages", { body });

@@ -479,9 +479,20 @@ async function processSkills({ rows, api, orgId, me, addResult }) {
   let created = 0;
   let failed  = 0;
 
+  let existingSkills = new Set();
+  try {
+    const skills = await gc.fetchAllSkills(api, orgId);
+    existingSkills = new Set(skills.map(s => s.name.toLowerCase()));
+  } catch (_) { /* proceed without duplicate check */ }
+
   for (const row of rows) {
     const name = String(row[0] || "").trim();
     if (!name) { addResult("(empty)", false, "Missing name — skipped"); failed++; continue; }
+
+    if (existingSkills.has(name.toLowerCase())) {
+      addResult(name, true, "Already exists");
+      continue;
+    }
 
     try {
       await gc.createSkill(api, orgId, { name });
@@ -979,9 +990,20 @@ async function processLanguages({ rows, api, orgId, me, addResult }) {
   let created = 0;
   let failed  = 0;
 
+  let existingLangs = new Set();
+  try {
+    const langs = await gc.fetchAllLanguages(api, orgId);
+    existingLangs = new Set(langs.map(l => l.name.toLowerCase()));
+  } catch (_) { /* proceed without duplicate check */ }
+
   for (const row of rows) {
     const name = String(row[0] || "").trim();
     if (!name) { addResult("(empty)", false, "Missing name — skipped"); failed++; continue; }
+
+    if (existingLangs.has(name.toLowerCase())) {
+      addResult(name, true, "Already exists");
+      continue;
+    }
 
     try {
       await gc.createLanguage(api, orgId, { name });
@@ -1004,6 +1026,12 @@ async function processDivisions({ rows, api, orgId, me, addResult }) {
   let created = 0;
   let failed  = 0;
 
+  let existingDivs = new Set();
+  try {
+    const divs = await gc.fetchAllDivisions(api, orgId);
+    existingDivs = new Set(divs.map(d => d.name.toLowerCase()));
+  } catch (_) { /* proceed without duplicate check */ }
+
   for (const row of rows) {
     const name        = String(row[0] || "").trim();
     const description = String(row[1] || "").trim();
@@ -1011,6 +1039,11 @@ async function processDivisions({ rows, api, orgId, me, addResult }) {
     if (!name) {
       addResult("(empty)", false, "Missing name — skipped");
       failed++;
+      continue;
+    }
+
+    if (existingDivs.has(name.toLowerCase())) {
+      addResult(name, true, "Already exists");
       continue;
     }
 
@@ -1173,7 +1206,7 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
     ]);
     userMap      = Object.fromEntries(users.map(u => [
       (u.email || u.username || "").toLowerCase(),
-      { id: u.id, version: u.version, name: u.name },
+      { id: u.id, version: u.version, name: u.name, state: u.state },
     ]));
     divMap       = Object.fromEntries(divs.map(d => [d.name.toLowerCase(), { id: d.id, name: d.name, selfUri: d.selfUri }]));
     skillMap     = Object.fromEntries(skills.map(s => [s.name.toLowerCase(), s.id]));
@@ -1226,6 +1259,12 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
       if (existing) {
         userId  = existing.id;
         version = existing.version;
+        // Restore deleted/inactive user first so subsequent steps can act on them
+        if (existing.state !== "active") {
+          const restored = await gc.patchUser(api, orgId, userId, { version, state: "active" });
+          version = restored?.version ?? version;
+          notes.push("Restored");
+        }
         // PATCH name if provided and different
         if (g.name && g.name !== existing.name) {
           const result = await gc.patchUser(api, orgId, userId, { version, name: g.name });
