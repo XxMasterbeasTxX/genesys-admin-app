@@ -361,7 +361,7 @@ export async function updateUserDivision(api, orgId, userId, divisionObj, versio
  */
 export async function grantUserRoles(api, orgId, userId, roles) {
   return api.proxyGenesys(orgId, "POST", `/api/v2/authorization/subjects/${userId}/bulkadd`, {
-    body: { subjects: [{ id: userId, type: "PC_USER" }], roles },
+    body: { roles },
   });
 }
 

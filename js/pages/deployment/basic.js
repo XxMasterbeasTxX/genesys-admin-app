@@ -500,9 +500,13 @@ async function processSkills({ rows, api, orgId, me, addResult }) {
       logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created skill '${name}'` });
       created++;
     } catch (err) {
-      addResult(name, false, err.message);
-      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create skill '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
-      failed++;
+      if (/unique|duplicate|already exist/i.test(err.message)) {
+        addResult(name, true, "Already exists");
+      } else {
+        addResult(name, false, err.message);
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create skill '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+        failed++;
+      }
     }
   }
 
@@ -1021,9 +1025,13 @@ async function processLanguages({ rows, api, orgId, me, addResult }) {
       logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created language '${name}'` });
       created++;
     } catch (err) {
-      addResult(name, false, err.message);
-      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create language '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
-      failed++;
+      if (/unique|duplicate|already exist/i.test(err.message)) {
+        addResult(name, true, "Already exists");
+      } else {
+        addResult(name, false, err.message);
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create language '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+        failed++;
+      }
     }
   }
 
@@ -1072,15 +1080,19 @@ async function processDivisions({ rows, api, orgId, me, addResult }) {
       });
       created++;
     } catch (err) {
-      addResult(name, false, err.message);
-      logAction({
-        me, orgId,
-        action: "deployment_basic",
-        description: `[Deployment] Failed to create division '${name}': ${err.message}`,
-        result: "failure",
-        errorMessage: err.message,
-      });
-      failed++;
+      if (/unique|duplicate|already exist/i.test(err.message)) {
+        addResult(name, true, "Already exists");
+      } else {
+        addResult(name, false, err.message);
+        logAction({
+          me, orgId,
+          action: "deployment_basic",
+          description: `[Deployment] Failed to create division '${name}': ${err.message}`,
+          result: "failure",
+          errorMessage: err.message,
+        });
+        failed++;
+      }
     }
   }
 
