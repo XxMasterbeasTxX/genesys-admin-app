@@ -33,6 +33,7 @@ All Genesys Cloud calls are proxied through `POST /api/genesys-proxy` on the Azu
 23. [External Contacts](#23-external-contacts)
 24. [Stations](#24-stations)
 25. [Locations](#25-locations)
+26. [Utilities](#26-utilities)
 
 ---
 
@@ -96,6 +97,7 @@ Used by: Divisions (all object types), Data Tables — Create, export pages, Dep
 | POST | `/api/v2/authorization/divisions` | **Create** a new division (Deployment — Basic) |
 | GET | `/api/v2/authorization/roles` | List all authorization roles |
 | GET | `/api/v2/authorization/roles/{roleId}/users` | List users assigned a specific role |
+| POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to subjects with division scope (Deployment — Basic Users) |
 | GET | `/api/v2/authorization/subjects/{userId}` | Get a user's role assignments |
 | POST | `/api/v2/authorization/divisions/{divisionId}/objects/{type}` | Move objects between divisions (Divisions pages) |
 
@@ -140,14 +142,16 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | GET | `/api/v2/routing/queues/{queueId}` | Get a single queue (full object, includes version) |
 | PATCH | `/api/v2/routing/queues/{queueId}` | Partial update a queue (e.g., division change) |
 | PUT | `/api/v2/routing/queues/{queueId}` | Full queue update |
+| POST | `/api/v2/routing/queues/{queueId}/members` | **Bulk-add members** to a queue (Deployment — Basic Users, batches of 100) |
 | GET | `/api/v2/routing/skills` | List routing skills |
 | POST | `/api/v2/routing/skills` | **Create** a routing skill (Deployment — Basic) |
 | GET | `/api/v2/routing/languages` | List routing languages |
 | POST | `/api/v2/routing/languages` | **Create** a routing language (Deployment — Basic) |
 | GET | `/api/v2/routing/skillgroups` | List routing skill groups |
 | POST | `/api/v2/users` | **Create** a user (Deployment — Basic) |
-| PATCH | `/api/v2/users/{userId}` | **Update** a user — name, addresses, extension, DID (Deployment — Basic) |
-| PUT | `/api/v2/authorization/subjects/{userId}/bulkadd` | **Grant** roles to a user additively (Deployment — Basic) |
+| GET | `/api/v2/users/{userId}` | **Get** a single user — version refresh before address PATCH (Deployment — Basic) |
+| PATCH | `/api/v2/users/{userId}` | **Update** a user — name, state (restore deleted), addresses, extension, DID (Deployment — Basic) |
+| POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to a user per-role with division scope (Deployment — Basic) |
 | PATCH | `/api/v2/users/{userId}/routingskills/bulk` | **Add** routing skills to a user (Deployment — Basic) |
 | GET | `/api/v2/routing/wrapupcodes` | List wrapup codes |
 | POST | `/api/v2/routing/wrapupcodes` | **Create** a wrap-up code (Deployment — Basic) |
@@ -406,6 +410,16 @@ Used by: Deployment — Basic (resolves location names to IDs for site creation)
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/locations` | List all configured locations |
+
+---
+
+## 26. Utilities
+
+Used by: Deployment — Basic (Schedule Groups timezone validation)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v2/timezones` | List all valid Genesys Cloud timezone IDs (used to validate Schedule Group timezone before API call) |
 
 ---
 
