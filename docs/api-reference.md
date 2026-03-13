@@ -145,6 +145,10 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | GET | `/api/v2/routing/languages` | List routing languages |
 | POST | `/api/v2/routing/languages` | **Create** a routing language (Deployment — Basic) |
 | GET | `/api/v2/routing/skillgroups` | List routing skill groups |
+| POST | `/api/v2/users` | **Create** a user (Deployment — Basic) |
+| PATCH | `/api/v2/users/{userId}` | **Update** a user — name, addresses, extension, DID (Deployment — Basic) |
+| PUT | `/api/v2/authorization/subjects/{userId}/bulkadd` | **Grant** roles to a user additively (Deployment — Basic) |
+| PATCH | `/api/v2/users/{userId}/routingskills/bulk` | **Add** routing skills to a user (Deployment — Basic) |
 | GET | `/api/v2/routing/wrapupcodes` | List wrapup codes |
 | POST | `/api/v2/routing/wrapupcodes` | **Create** a wrap-up code (Deployment — Basic) |
 | PUT | `/api/v2/routing/wrapupcodes/{codeId}` | **Update** a wrap-up code (Deployment — Basic) |

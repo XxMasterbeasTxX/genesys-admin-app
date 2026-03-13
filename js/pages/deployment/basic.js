@@ -37,6 +37,7 @@ const TAB_HANDLERS = {
   "Sites":                  processSites,
   "Skills":            processSkills,
   "Skills - Language": processLanguages,
+  "Users":             processUsers,
   "Wrapup Codes":      processWrapupCodes,
 };
 
@@ -1084,6 +1085,249 @@ async function processWrapupCodes({ rows, api, orgId, me, addResult }) {
   return { created: created + updated, failed };
 }
 
+// ── Tab: Users ───────────────────────────────────────────────────────────────
+// Columns:
+//   A=User (display name, req), B=E-mail (req), C=Phone Name, D=Phone Site,
+//   E=Division, F=Skill, G=Roles, H=Extension, I=DID (Direct Number), J=Phone Type
+//
+// Multi-row: rows sharing the same e-mail (case-insensitive) are folded into one
+// user upsert. First row determines: name, phone name, phone site, division,
+// extension, DID, phone type. Every row contributes one Skill (col F) and one
+// Role (col G) — blank cells are skipped.
+//
+// Steps per user (each is independent — a failure logs a warning but does NOT
+// abort the remaining steps for that user):
+//   1. Upsert user by email   (POST if new, PATCH name if found)
+//   2. Assign to division     (moveToDivision)
+//   3. Grant roles            (additive — does not remove existing)
+//   4. Add routing skills     (proficiency 1.0, additive)
+//   5. Phone — find by name; create if missing; assign via owner/webRtcUser
+//   6. Set extension          (PATCH user addresses, type WORK2)
+//   7. Set DID                (PATCH user addresses, type WORK)
+async function processUsers({ rows, api, orgId, me, addResult }) {
+  let succeeded = 0;
+  let failed    = 0;
+
+  // ── Pre-fetch lookup maps ──────────────────────────────────────────────────
+  let userMap = {}, divMap = {}, skillMap = {}, roleMap = {}, siteMap = {},
+      phoneBaseMap = {}, phoneMap = {};
+  try {
+    const [users, divs, skills, roles, sites, phoneBases, phones] = await Promise.all([
+      gc.fetchAllUsers(api, orgId, { state: "any" }),
+      gc.fetchAllDivisions(api, orgId),
+      gc.fetchAllSkills(api, orgId),
+      gc.fetchAllAuthorizationRoles(api, orgId),
+      gc.fetchAllSites(api, orgId),
+      gc.fetchAllPhoneBaseSettings(api, orgId),
+      gc.fetchAllPhones(api, orgId),
+    ]);
+    userMap      = Object.fromEntries(users.map(u => [
+      (u.email || u.username || "").toLowerCase(),
+      { id: u.id, version: u.version, name: u.name },
+    ]));
+    divMap       = Object.fromEntries(divs.map(d => [d.name.toLowerCase(), { id: d.id, name: d.name, selfUri: d.selfUri }]));
+    skillMap     = Object.fromEntries(skills.map(s => [s.name.toLowerCase(), s.id]));
+    roleMap      = Object.fromEntries(roles.map(r => [r.name.toLowerCase(), r.id]));
+    siteMap      = Object.fromEntries(sites.map(s => [s.name.toLowerCase(), s.id]));
+    phoneBaseMap = Object.fromEntries(phoneBases.map(b => [b.name.toLowerCase(), b.id]));
+    phoneMap     = Object.fromEntries(phones.map(p => [p.name.toLowerCase(), { id: p.id, version: p.version }]));
+  } catch (err) {
+    addResult("(setup)", false, `Failed to fetch lookup data: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+
+  // ── Fold rows by email ─────────────────────────────────────────────────────
+  // Map<lowerEmail, { name, email, phoneName, phoneSite, division, extension, did, phoneType, roles[], skills[] }>
+  const userGroups = new Map();
+  for (const row of rows) {
+    const name      = String(row[0] || "").trim();
+    const email     = String(row[1] || "").trim();
+    const phoneName = String(row[2] || "").trim();
+    const phoneSite = String(row[3] || "").trim();
+    const division  = String(row[4] || "").trim();
+    const skill     = String(row[5] || "").trim();
+    const role      = String(row[6] || "").trim();
+    const extension = String(row[7] || "").trim();
+    const did       = String(row[8] || "").trim();
+    const phoneType = String(row[9] || "").trim();
+
+    if (!email) continue;
+    const key = email.toLowerCase();
+
+    if (!userGroups.has(key)) {
+      userGroups.set(key, { name, email, phoneName, phoneSite, division, extension, did, phoneType, roles: [], skills: [] });
+    }
+    const g = userGroups.get(key);
+    if (role)  g.roles.push(role);
+    if (skill) g.skills.push(skill);
+  }
+
+  // ── Process each user ──────────────────────────────────────────────────────
+  for (const [, g] of userGroups) {
+    const label = g.email;
+    const notes = [];   // per-step outcome notes
+    let userId  = null;
+    let version = null;
+    let isNew   = false;
+
+    // Step 1: upsert user
+    try {
+      const existing = userMap[g.email.toLowerCase()];
+      if (existing) {
+        userId  = existing.id;
+        version = existing.version;
+        // PATCH name if provided and different
+        if (g.name && g.name !== existing.name) {
+          const result = await gc.patchUser(api, orgId, userId, { version, name: g.name });
+          version = result?.version ?? version;
+          notes.push("Updated");
+        } else {
+          notes.push("Updated");
+        }
+      } else {
+        if (!g.name) { addResult(label, false, "Missing display name for new user"); failed++; continue; }
+        const result = await gc.createUser(api, orgId, { name: g.name, email: g.email });
+        userId  = result?.id;
+        version = result?.version ?? 1;
+        isNew   = true;
+        if (userId) userMap[g.email.toLowerCase()] = { id: userId, version, name: g.name };
+        notes.push("Created");
+      }
+    } catch (err) {
+      addResult(label, false, `User upsert failed: ${err.message}`);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to upsert user '${g.email}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+      continue;
+    }
+
+    // Step 2: assign division
+    if (g.division) {
+      const divEntry = divMap[g.division.toLowerCase()];
+      if (!divEntry) {
+        notes.push(`⚠ Division '${g.division}' not found`);
+      } else {
+        try {
+          await gc.moveToDivision(api, orgId, divEntry.id, "USER", [userId]);
+          notes.push(`division '${g.division}'`);
+        } catch (err) {
+          notes.push(`⚠ Division failed: ${err.message}`);
+        }
+      }
+    }
+
+    // Step 3: grant roles
+    if (g.roles.length) {
+      const roleGrants = [];
+      const divId = g.division ? (divMap[g.division.toLowerCase()]?.id ?? null) : null;
+      for (const roleName of g.roles) {
+        const roleId = roleMap[roleName.toLowerCase()];
+        if (!roleId) { notes.push(`⚠ Role '${roleName}' not found`); continue; }
+        roleGrants.push({ roleId, divisionId: divId ?? "00000000-0000-0000-0000-000000000000" });
+      }
+      if (roleGrants.length) {
+        try {
+          await gc.grantUserRoles(api, orgId, userId, roleGrants);
+          notes.push(`role(s): ${g.roles.filter(r => roleMap[r.toLowerCase()]).join(", ")}`);
+        } catch (err) {
+          notes.push(`⚠ Role grant failed: ${err.message}`);
+        }
+      }
+    }
+
+    // Step 4: add routing skills
+    if (g.skills.length) {
+      const skillEntries = [];
+      for (const skillName of g.skills) {
+        const skillId = skillMap[skillName.toLowerCase()];
+        if (!skillId) { notes.push(`⚠ Skill '${skillName}' not found`); continue; }
+        skillEntries.push({ id: skillId, proficiency: 1.0 });
+      }
+      if (skillEntries.length) {
+        try {
+          await gc.addUserRoutingSkillsBulk(api, orgId, userId, skillEntries);
+          notes.push(`skill(s): ${g.skills.filter(s => skillMap[s.toLowerCase()]).join(", ")}`);
+        } catch (err) {
+          notes.push(`⚠ Skill assignment failed: ${err.message}`);
+        }
+      }
+    }
+
+    // Step 5: phone create/find + assign
+    if (g.phoneName) {
+      const existingPhone = phoneMap[g.phoneName.toLowerCase()];
+      if (existingPhone) {
+        notes.push(`phone '${g.phoneName}' found`);
+      } else {
+        // Need base setting + site
+        const baseId  = g.phoneType ? phoneBaseMap[g.phoneType.toLowerCase()] : null;
+        const siteId  = g.phoneSite ? siteMap[g.phoneSite.toLowerCase()] : null;
+
+        if (!baseId) {
+          notes.push(`⚠ Phone type '${g.phoneType || "(not set)"}' not found — phone skipped`);
+        } else if (!siteId) {
+          notes.push(`⚠ Phone site '${g.phoneSite || "(not set)"}' not found — phone skipped`);
+        } else {
+          try {
+            // Fetch base detail to get lineBaseSettings id
+            const baseDetail = await gc.getPhoneBaseSetting(api, orgId, baseId);
+            const lineBaseId = baseDetail?.lines?.[0]?.lineBaseSettings?.id ?? null;
+            const isWebRtc   = (g.phoneType || "").toLowerCase().includes("webrtc");
+
+            const phoneBody = {
+              name: g.phoneName,
+              site: { id: siteId },
+              phoneBaseSettings: { id: baseId },
+              ...(lineBaseId && { lines: [{ lineBaseSettings: { id: lineBaseId } }] }),
+              owner: { id: userId, type: "USER" },
+              ...(isWebRtc && { webRtcUser: { id: userId, type: "USER" } }),
+            };
+            const newPhone = await gc.createPhone(api, orgId, phoneBody);
+            if (newPhone?.id) phoneMap[g.phoneName.toLowerCase()] = { id: newPhone.id, version: newPhone.version };
+            notes.push(`phone '${g.phoneName}' created`);
+          } catch (err) {
+            notes.push(`⚠ Phone create failed: ${err.message}`);
+          }
+        }
+      }
+    }
+
+    // Step 6: set extension (PATCH user addresses type WORK2)
+    if (g.extension) {
+      try {
+        // GET fresh version first so PATCH doesn't conflict
+        const fresh = await gc.patchUser(api, orgId, userId, {
+          version,
+          addresses: [{ mediaType: "PHONE", type: "WORK2", address: g.extension }],
+        });
+        version = fresh?.version ?? version;
+        notes.push(`ext ${g.extension}`);
+      } catch (err) {
+        notes.push(`⚠ Extension failed: ${err.message}`);
+      }
+    }
+
+    // Step 7: set DID (PATCH user addresses type WORK)
+    if (g.did) {
+      try {
+        const fresh = await gc.patchUser(api, orgId, userId, {
+          version,
+          addresses: [{ mediaType: "PHONE", type: "WORK", address: g.did }],
+        });
+        version = fresh?.version ?? version;
+        notes.push(`DID ${g.did}`);
+      } catch (err) {
+        notes.push(`⚠ DID failed: ${err.message}`);
+      }
+    }
+
+    addResult(label, true, notes.join("; "));
+    logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] ${isNew ? "Created" : "Updated"} user '${g.email}'` });
+    succeeded++;
+  }
+
+  return { created: succeeded, failed };
+}
+
 // ── Tab: DID Pools ────────────────────────────────────────────────────────────
 // Columns: A=Number-Start, B=Number-End, C=Description, D=Comment, E=Provider
 async function processDIDPools({ rows, api, orgId, me, addResult }) {
@@ -1259,7 +1503,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     const skipped   = sheets.filter(n => !TAB_HANDLERS[n]);
 
     // Tabs that upsert (update existing matched by name / merge, rather than always creating new)
-    const UPSERT_TABS = new Set(["Schedule Groups", "Schedules", "Site - Number Plans", "Site - Outbound Routes", "Queues", "Wrapup Codes"]);
+    const UPSERT_TABS = new Set(["Schedule Groups", "Schedules", "Site - Number Plans", "Site - Outbound Routes", "Queues", "Users", "Wrapup Codes"]);
 
     // Build per-tab summary rows (with checkboxes)
     const tabRows = supported.map(tabName => {

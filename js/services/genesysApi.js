@@ -338,11 +338,39 @@ export async function fetchAllUsers(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress });
 }
 
+/** Create a new user. Minimum body: { name, email }. */
+export async function createUser(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/users", { body });
+}
+
+/** Partial-update a user (name, addresses, etc.). version is required. */
+export async function patchUser(api, orgId, userId, body) {
+  return api.proxyGenesys(orgId, "PATCH", `/api/v2/users/${userId}`, { body });
+}
+
 /** Update a user's division. Requires fresh version from GET. divisionObj = { id, name, selfUri }. */
 export async function updateUserDivision(api, orgId, userId, divisionObj, version) {
   return api.proxyGenesys(orgId, "PATCH", `/api/v2/users/${userId}`, {
     body: { version, division: divisionObj },
   });
+}
+
+/**
+ * Grant roles to a user (additive — does not remove existing roles).
+ * roles = [{ roleId, divisionId }]
+ */
+export async function grantUserRoles(api, orgId, userId, roles) {
+  return api.proxyGenesys(orgId, "PUT", `/api/v2/authorization/subjects/${userId}/bulkadd`, {
+    body: { subjects: [{ id: userId, type: "PC_USER" }], roles },
+  });
+}
+
+/**
+ * Add or update routing skills for a user (additive bulk patch).
+ * skills = [{ id, proficiency }]
+ */
+export async function addUserRoutingSkillsBulk(api, orgId, userId, skills) {
+  return api.proxyGenesys(orgId, "PATCH", `/api/v2/users/${userId}/routingskills/bulk`, { body: skills });
 }
 
 
