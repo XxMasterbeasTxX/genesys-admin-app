@@ -198,7 +198,23 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     }
   }
 
-  function addSchemaRow(prefillName = "", prefillType = "") {
+  function parseDefaultValue(raw, type) {
+    if (type === "boolean") {
+      const l = raw.toLowerCase();
+      return l === "true" ? true : l === "false" ? false : undefined;
+    }
+    if (type === "integer") {
+      const n = Number(raw);
+      return (!isNaN(n) && n === Math.trunc(n)) ? Math.trunc(n) : undefined;
+    }
+    if (type === "number") {
+      const n = Number(raw);
+      return !isNaN(n) ? n : undefined;
+    }
+    return raw; // string — any non-empty value is valid
+  }
+
+  function addSchemaRow(prefillName = "", prefillType = "", prefillDefault = undefined) {
     const id = makeRowId();
     const row = document.createElement("div");
     row.className = "dtc-schema-row";
@@ -220,6 +236,17 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     row.querySelector(".dtc-del-btn").addEventListener("click", () => row.remove());
     // Wire handlers for the initial state
     wireDefaultHandlers(row);
+    // Pre-fill default value from Excel import if provided
+    if (prefillDefault !== undefined) {
+      const boolInput = row.querySelector(".dtc-col-default-bool");
+      const textInput = row.querySelector(".dtc-col-default");
+      if (boolInput) {
+        boolInput.checked = prefillDefault === true;
+        boolInput.nextElementSibling.textContent = boolInput.checked ? "true" : "false";
+      } else if (textInput) {
+        textInput.value = String(prefillDefault);
+      }
+    }
     // Swap default input and re-wire when type changes
     row.querySelector(".dtc-col-type").addEventListener("change", (e) => {
       row.querySelector(".dtc-col-default-wrap").innerHTML = makeDefaultInput(e.target.value);
@@ -351,7 +378,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     // Row 1: ["key",         <key display name>]
     // Row 2: ["division",    <division name>]
     // Row 3: ["description", <description text>]
-    // Row 4+: [<column name>, <type>]
+    // Row 4+: [<column name>, <type>, <default value (optional)>]
     const tableName   = String(rows[0]?.[1] || "").trim();
     const keyName     = String(rows[1]?.[1] || "").trim();
     const divisionVal = String(rows[2]?.[1] || "").trim();
@@ -388,11 +415,13 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
 
     // Clear existing schema rows and populate from Excel
     $rowsContainer.innerHTML = "";
-    schemaRows.forEach(([colName, colType]) => {
+    schemaRows.forEach(([colName, colType, colDefault]) => {
       const name = String(colName).trim();
       const rawType = String(colType).trim().toLowerCase();
       const type = TYPE_MAP[rawType] || "string";
-      addSchemaRow(name, type);
+      const rawDef = String(colDefault ?? "").trim();
+      const parsedDefault = rawDef !== "" ? parseDefaultValue(rawDef, type) : undefined;
+      addSchemaRow(name, type, parsedDefault);
     });
 
     $sheetPicker.hidden = true;

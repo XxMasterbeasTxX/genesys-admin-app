@@ -8,7 +8,7 @@
  *   Row 2:  ["key",         <key display name>]
  *   Row 3:  ["division",    <division name>]
  *   Row 4:  ["description", <description text>]
- *   Row 5+: [<column name>, <type: boolean|string|integer|decimal|number>]
+ *   Row 5+: [<column name>, <type: boolean|string|integer|decimal|number>, <default value (optional)>]
  *   All sheets in the workbook are processed in order.
  *
  * Flow:
@@ -68,6 +68,22 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
     $results.appendChild(li);
   }
 
+  function parseDefaultValue(raw, type) {
+    if (type === "boolean") {
+      const l = raw.toLowerCase();
+      return l === "true" ? true : l === "false" ? false : undefined;
+    }
+    if (type === "integer") {
+      const n = Number(raw);
+      return (!isNaN(n) && n === Math.trunc(n)) ? Math.trunc(n) : undefined;
+    }
+    if (type === "number") {
+      const n = Number(raw);
+      return !isNaN(n) ? n : undefined;
+    }
+    return raw; // string — any non-empty value is valid
+  }
+
   function buildSchema(keyTitle, schemaRows) {
     const properties = {};
     properties["key"] = { title: keyTitle, type: "string" };
@@ -77,7 +93,13 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
       const rawType = String(row[1] || "").trim().toLowerCase();
       if (!name) continue;
       const type = TYPE_MAP[rawType] || "string";
-      properties[name] = { title: name, type };
+      const prop = { title: name, type };
+      const rawDefault = String(row[2] ?? "").trim();
+      if (rawDefault !== "") {
+        const def = parseDefaultValue(rawDefault, type);
+        if (def !== undefined) prop.default = def;
+      }
+      properties[name] = prop;
     }
 
     return {
