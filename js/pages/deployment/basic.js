@@ -37,6 +37,7 @@ const TAB_HANDLERS = {
   "Sites":                  processSites,
   "Skills":            processSkills,
   "Skills - Language": processLanguages,
+  "Wrapup Codes":      processWrapupCodes,
 };
 
 // ── Tab: Number Plans ────────────────────────────────────────────────────────
@@ -992,6 +993,97 @@ async function processDivisions({ rows, api, orgId, me, addResult }) {
   return { created, failed };
 }
 
+// ── Tab: Wrapup Codes ────────────────────────────────────────────────────────
+// Columns:
+//   A=Name (req), B=Division, C=Description, D=Queue Name
+//
+// Upserts by name (PUT with version if found, POST if new).
+// If col D has a queue name, the code is assigned to that queue after upsert.
+async function processWrapupCodes({ rows, api, orgId, me, addResult }) {
+  let created = 0;
+  let updated = 0;
+  let failed  = 0;
+
+  // Pre-fetch lookup maps once
+  let codeMap = {}, divMap = {}, queueMap = {};
+  try {
+    const [codes, divs, queues] = await Promise.all([
+      gc.fetchAllWrapupCodes(api, orgId),
+      gc.fetchAllDivisions(api, orgId),
+      gc.fetchAllQueues(api, orgId),
+    ]);
+    codeMap  = Object.fromEntries(codes.map(c => [c.name.toLowerCase(), { id: c.id, version: c.version }]));
+    divMap   = Object.fromEntries(divs.map(d => [d.name.toLowerCase(), d.id]));
+    queueMap = Object.fromEntries(queues.map(q => [q.name.toLowerCase(), q.id]));
+  } catch (err) {
+    addResult("(setup)", false, `Failed to fetch lookup data: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+
+  for (const row of rows) {
+    const name        = String(row[0] || "").trim();
+    const divisionRaw = String(row[1] || "").trim();
+    const description = String(row[2] || "").trim();
+    const queueRaw    = String(row[3] || "").trim();
+
+    if (!name) { addResult("(empty)", false, "Missing name — skipped"); failed++; continue; }
+
+    // Resolve division (optional)
+    let divisionId = null;
+    if (divisionRaw) {
+      divisionId = divMap[divisionRaw.toLowerCase()];
+      if (!divisionId) { addResult(name, false, `Division '${divisionRaw}' not found`); failed++; continue; }
+    }
+
+    // Resolve queue (optional)
+    let queueId = null;
+    if (queueRaw) {
+      queueId = queueMap[queueRaw.toLowerCase()];
+      if (!queueId) { addResult(name, false, `Queue '${queueRaw}' not found`); failed++; continue; }
+    }
+
+    const body = {
+      name,
+      ...(description && { description }),
+      ...(divisionId  && { division: { id: divisionId } }),
+    };
+
+    try {
+      const existing = codeMap[name.toLowerCase()];
+      let codeId;
+      let action;
+
+      if (existing) {
+        const result = await gc.putWrapupCode(api, orgId, existing.id, { ...body, version: existing.version });
+        codeId = existing.id;
+        action = "Updated";
+        updated++;
+        codeMap[name.toLowerCase()] = { id: codeId, version: result?.version ?? existing.version };
+      } else {
+        const result = await gc.createWrapupCode(api, orgId, body);
+        codeId = result?.id;
+        action = "Created";
+        created++;
+        if (codeId) codeMap[name.toLowerCase()] = { id: codeId, version: result.version };
+      }
+
+      if (queueId && codeId) {
+        await gc.addWrapupCodesToQueue(api, orgId, queueId, [{ id: codeId }]);
+        action += `, added to '${queueRaw}'`;
+      }
+
+      addResult(name, true, action);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] ${action.split(",")[0]} wrapup code '${name}'` });
+    } catch (err) {
+      addResult(name, false, err.message);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to upsert wrapup code '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+    }
+  }
+
+  return { created: created + updated, failed };
+}
+
 // ── Tab: DID Pools ────────────────────────────────────────────────────────────
 // Columns: A=Number-Start, B=Number-End, C=Description, D=Comment, E=Provider
 async function processDIDPools({ rows, api, orgId, me, addResult }) {
@@ -1167,7 +1259,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     const skipped   = sheets.filter(n => !TAB_HANDLERS[n]);
 
     // Tabs that upsert (update existing matched by name / merge, rather than always creating new)
-    const UPSERT_TABS = new Set(["Schedule Groups", "Schedules", "Site - Number Plans", "Site - Outbound Routes", "Queues"]);
+    const UPSERT_TABS = new Set(["Schedule Groups", "Schedules", "Site - Number Plans", "Site - Outbound Routes", "Queues", "Wrapup Codes"]);
 
     // Build per-tab summary rows (with checkboxes)
     const tabRows = supported.map(tabName => {

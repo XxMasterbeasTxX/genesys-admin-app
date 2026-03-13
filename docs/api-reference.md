@@ -146,6 +146,9 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | POST | `/api/v2/routing/languages` | **Create** a routing language (Deployment — Basic) |
 | GET | `/api/v2/routing/skillgroups` | List routing skill groups |
 | GET | `/api/v2/routing/wrapupcodes` | List wrapup codes |
+| POST | `/api/v2/routing/wrapupcodes` | **Create** a wrap-up code (Deployment — Basic) |
+| PUT | `/api/v2/routing/wrapupcodes/{codeId}` | **Update** a wrap-up code (Deployment — Basic) |
+| POST | `/api/v2/routing/queues/{queueId}/wrapupcodes` | **Assign** wrap-up codes to a queue (Deployment — Basic) |
 | GET | `/api/v2/routing/message/recipients` | List messaging recipients |
 | GET | `/api/v2/routing/email/domains` | List inbound email domains |
 | GET | `/api/v2/routing/email/outbound/domains` | List outbound email domains |

@@ -417,6 +417,21 @@ export async function fetchAllWrapupCodes(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/routing/wrapupcodes", opts);
 }
 
+/** Create a wrap-up code. */
+export async function createWrapupCode(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/routing/wrapupcodes", { body });
+}
+
+/** Update a wrap-up code. */
+export async function putWrapupCode(api, orgId, codeId, body) {
+  return api.proxyGenesys(orgId, "PUT", `/api/v2/routing/wrapupcodes/${codeId}`, { body });
+}
+
+/** Assign wrap-up codes to a queue (body = array of {id}). */
+export async function addWrapupCodesToQueue(api, orgId, queueId, codes) {
+  return api.proxyGenesys(orgId, "POST", `/api/v2/routing/queues/${queueId}/wrapupcodes`, { body: codes });
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Architect — Flows, Schedules, DataTables
 // ─────────────────────────────────────────────────────────────────────
