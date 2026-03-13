@@ -1477,8 +1477,21 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     $selectBtn.disabled = true;
 
     const IGNORED_TABS = new Set(["Overview", "Lists"]);
+    // Explicit processing order ensures dependencies run first
+    // (e.g. Schedules must run before Schedule Groups)
+    const TAB_ORDER = [
+      "DID Pools", "Divisions", "Sites", "Skills", "Skills - Language",
+      "Schedules", "Schedule Groups",
+      "Site - Number Plans", "Site - Outbound Routes",
+      "Queues", "Wrapup Codes", "Users",
+    ];
     const sheets = workbook.SheetNames;
-    const supported   = sheets.filter(n => TAB_HANDLERS[n] && (!selectedTabs || selectedTabs.includes(n)));
+    const supportedSet = new Set(sheets.filter(n => TAB_HANDLERS[n] && (!selectedTabs || selectedTabs.includes(n))));
+    // Sort by TAB_ORDER, any unrecognised supported tab falls to the end in sheet order
+    const supported = [
+      ...TAB_ORDER.filter(n => supportedSet.has(n)),
+      ...[...supportedSet].filter(n => !TAB_ORDER.includes(n)),
+    ];
     const unsupported = sheets.filter(n => !TAB_HANDLERS[n] && !IGNORED_TABS.has(n));
 
     if (!supported.length) {
