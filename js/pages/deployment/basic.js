@@ -618,6 +618,7 @@ async function processScheduleGroups({ rows, api, orgId, me, addResult }) {
   // Fold rows into groups: Map<lowerName, { meta, open[], closed[], holiday[], rowCount }>
   const VALID_TYPES = new Set(["open", "closed", "holiday"]);
   const groups_acc = new Map();
+  let schedulesRefreshed = false;
 
   for (const row of rows) {
     const name = String(row[0] ?? "").trim();
@@ -649,7 +650,19 @@ async function processScheduleGroups({ rows, api, orgId, me, addResult }) {
       g.rowErrors.push(`Missing Schedule Name for type '${typeRaw}'`);
       continue;
     }
-    const sch = scheduleMap[schName.toLowerCase()];
+
+    let sch = scheduleMap[schName.toLowerCase()];
+    // One-time lazy re-fetch to handle Genesys eventual consistency
+    // (schedules created in the same run may not immediately appear in list)
+    if (!sch && !schedulesRefreshed) {
+      try {
+        const fresh = await gc.fetchAllSchedules(api, orgId);
+        scheduleMap = Object.fromEntries(fresh.map(s => [s.name.toLowerCase(), { id: s.id }]));
+        sch = scheduleMap[schName.toLowerCase()];
+      } catch (_) { /* ignore, will fall through to not-found error */ }
+      schedulesRefreshed = true;
+    }
+
     if (!sch) {
       g.rowErrors.push(`Schedule '${schName}' not found`);
       continue;
