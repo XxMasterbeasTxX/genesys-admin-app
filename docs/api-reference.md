@@ -166,7 +166,7 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 
 ## 8. Architect
 
-Used by: Data Tables — Create/Copy, Divisions — Flows/DataTables/Schedules/etc., Documentation Export, Deployment — Basic
+Used by: Data Tables — Create/Copy, Deployment — Data Tables, Divisions — Flows/DataTables/Schedules/etc., Documentation Export, Deployment — Basic
 
 | Method | Path | Purpose |
 | --- | --- | --- |
