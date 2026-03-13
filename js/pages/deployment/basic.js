@@ -233,6 +233,11 @@ async function processNumberPlans({ rows, api, orgId, me, addResult }) {
           failed++;
         }
       }
+    } catch (outerErr) {
+      addResult(siteName, false, outerErr.message);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to update number plans on site '${siteName}': ${outerErr.message}`, result: "failure", errorMessage: outerErr.message });
+      failed++;
+    }
   }
 
   return { created: updated, failed };
