@@ -386,18 +386,19 @@ async function processSites({ rows, api, orgId, me, addResult }) {
   let created = 0;
   let failed  = 0;
 
-  // Pre-fetch locations once
-  let locations;
+  // Pre-fetch lookup data
+  let locationMap = {}, siteMap = {};
   try {
-    locations = await gc.fetchAllLocations(api, orgId);
+    const [locations, sites] = await Promise.all([
+      gc.fetchAllLocations(api, orgId),
+      gc.fetchAllSites(api, orgId),
+    ]);
+    locationMap = Object.fromEntries(locations.map(l => [l.name.toLowerCase(), l]));
+    siteMap     = new Set(sites.map(s => s.name.toLowerCase()));
   } catch (err) {
-    addResult("(setup)", false, `Failed to fetch locations: ${err.message}`);
+    addResult("(setup)", false, `Failed to fetch lookup data: ${err.message}`);
     return { created: 0, failed: rows.length };
   }
-
-  const locationMap = Object.fromEntries(
-    locations.map(l => [l.name.toLowerCase(), l])
-  );
 
   const turnRelayMap = {
     "site": "AnyMediaRegionForSite",
@@ -447,6 +448,11 @@ async function processSites({ rows, api, orgId, me, addResult }) {
       continue;
     }
 
+    if (siteMap.has(name.toLowerCase())) {
+      addResult(name, true, "Already exists");
+      continue;
+    }
+
     const body = {
       name,
       mediaModel: normalizedModel,
@@ -464,9 +470,13 @@ async function processSites({ rows, api, orgId, me, addResult }) {
       logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created site '${name}' (${normalizedModel})` });
       created++;
     } catch (err) {
-      addResult(name, false, err.message);
-      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create site '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
-      failed++;
+      if (/already assigned|already exists|unique/i.test(err.message)) {
+        addResult(name, true, "Already exists");
+      } else {
+        addResult(name, false, err.message);
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to create site '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+        failed++;
+      }
     }
   }
 
@@ -1445,6 +1455,12 @@ async function processDIDPools({ rows, api, orgId, me, addResult }) {
   let created = 0;
   let failed  = 0;
 
+  let existingPools = new Map(); // startPhoneNumber → endPhoneNumber
+  try {
+    const pools = await gc.fetchAllDidPools(api, orgId);
+    for (const p of pools) existingPools.set(p.startPhoneNumber, p.endPhoneNumber);
+  } catch (_) { /* proceed without duplicate check */ }
+
   for (const row of rows) {
     const start       = String(row[0] || "").trim();
     const end         = String(row[1] || "").trim();
@@ -1462,6 +1478,11 @@ async function processDIDPools({ rows, api, orgId, me, addResult }) {
     if (!provider) {
       addResult(label, false, "Missing provider — skipped");
       failed++;
+      continue;
+    }
+
+    if (existingPools.has(start) && existingPools.get(start) === end) {
+      addResult(label, true, "Already exists");
       continue;
     }
 
@@ -1483,15 +1504,19 @@ async function processDIDPools({ rows, api, orgId, me, addResult }) {
       });
       created++;
     } catch (err) {
-      addResult(label, false, err.message);
-      logAction({
-        me, orgId,
-        action: "deployment_basic",
-        description: `[Deployment] Failed to create DID pool ${start}: ${err.message}`,
-        result: "failure",
-        errorMessage: err.message,
-      });
-      failed++;
+      if (/overlap/i.test(err.message)) {
+        addResult(label, true, "Already exists (overlapping pool)");
+      } else {
+        addResult(label, false, err.message);
+        logAction({
+          me, orgId,
+          action: "deployment_basic",
+          description: `[Deployment] Failed to create DID pool ${start}: ${err.message}`,
+          result: "failure",
+          errorMessage: err.message,
+        });
+        failed++;
+      }
     }
   }
 
