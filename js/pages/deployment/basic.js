@@ -1313,9 +1313,9 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
           notes.push(`⚠ Phone site '${g.phoneSite || "(not set)"}' not found — phone skipped`);
         } else {
           try {
-            // Fetch base detail to get lineBaseSettings id
+            // Fetch base detail to get line base settings id
             const baseDetail = await gc.getPhoneBaseSetting(api, orgId, baseId);
-            const lineBaseId = baseDetail?.lines?.[0]?.lineBaseSettings?.id ?? null;
+            const lineBaseId = baseDetail?.lines?.[0]?.id ?? null;
             const isWebRtc   = (g.phoneType || "").toLowerCase().includes("webrtc");
 
             const phoneBody = {
