@@ -617,15 +617,18 @@ async function processScheduleGroups({ rows, api, orgId, me, addResult }) {
 
   // Pre-fetch lookup data
   let divMap = {}, scheduleMap = {}, groupMap = {};
+  let validTimezones = new Set();
   try {
-    const [divs, schedules, groups] = await Promise.all([
+    const [divs, schedules, groups, tzList] = await Promise.all([
       gc.fetchAllDivisions(api, orgId),
       gc.fetchAllSchedules(api, orgId),
       gc.fetchAllScheduleGroups(api, orgId),
+      gc.fetchTimezones(api, orgId),
     ]);
-    divMap      = Object.fromEntries(divs.map(d => [d.name.toLowerCase(), d.id]));
-    scheduleMap = Object.fromEntries(schedules.map(s => [s.name.toLowerCase(), { id: s.id }]));
-    groupMap    = Object.fromEntries(groups.map(g => [g.name.toLowerCase(), { id: g.id, version: g.version }]));
+    divMap         = Object.fromEntries(divs.map(d => [d.name.toLowerCase(), d.id]));
+    scheduleMap    = Object.fromEntries(schedules.map(s => [s.name.toLowerCase(), { id: s.id }]));
+    groupMap       = Object.fromEntries(groups.map(g => [g.name.toLowerCase(), { id: g.id, version: g.version }]));
+    validTimezones = new Set(tzList.map(t => t.id));
   } catch (err) {
     addResult("(setup)", false, `Failed to fetch lookup data: ${err.message}`);
     return { created: 0, failed: rows.length };
@@ -699,7 +702,14 @@ async function processScheduleGroups({ rows, api, orgId, me, addResult }) {
     // Build body
     const body = { name: g.name };
     if (g.description) body.description = g.description;
-    if (g.timeZone)    body.timeZone    = g.timeZone;
+    if (g.timeZone) {
+      if (validTimezones.size > 0 && !validTimezones.has(g.timeZone)) {
+        addResult(g.name, false, `Timezone '${g.timeZone}' is not a valid Genesys timezone — use an IANA timezone ID (e.g. 'America/New_York', 'Europe/London')`);
+        failed++;
+        continue;
+      }
+      body.timeZone = g.timeZone;
+    }
     if (g.open.length)    body.openSchedules    = g.open;
     if (g.closed.length)  body.closedSchedules  = g.closed;
     if (g.holiday.length) body.holidaySchedules = g.holiday;

@@ -505,6 +505,11 @@ export async function putScheduleGroup(api, orgId, groupId, body) {
   return api.proxyGenesys(orgId, "PUT", `/api/v2/architect/schedulegroups/${groupId}`, { body });
 }
 
+/** Fetch all valid timezone IDs supported by Genesys Cloud. */
+export async function fetchTimezones(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/timezones", opts);
+}
+
 /** Fetch all data tables. Pass opts.query.expand = "schema" for full schema. */
 export async function fetchAllDataTables(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/flows/datatables", opts);
