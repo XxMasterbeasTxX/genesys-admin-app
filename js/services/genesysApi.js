@@ -359,10 +359,20 @@ export async function updateUserDivision(api, orgId, userId, divisionObj, versio
  * Grant roles to a user (additive — does not remove existing roles).
  * roles = [{ roleId, divisionId }]
  */
+/**
+ * Grant roles to a user (additive). roles = [{ roleId, divisionId }]
+ * Calls POST /api/v2/authorization/roles/{roleId} once per role.
+ */
 export async function grantUserRoles(api, orgId, userId, roles) {
-  return api.proxyGenesys(orgId, "POST", "/api/v2/authorization/subjects/bulkadd", {
-    body: { subjects: [{ id: userId, type: "PC_USER" }], roles },
-  });
+  for (const { roleId, divisionId } of roles) {
+    await api.proxyGenesys(orgId, "POST", `/api/v2/authorization/roles/${roleId}`, {
+      query: { subjectType: "PC_USER" },
+      body: {
+        subjectIds: [userId],
+        divisionIds: [divisionId ?? "00000000-0000-0000-0000-000000000000"],
+      },
+    });
+  }
 }
 
 /**
