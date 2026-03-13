@@ -30,6 +30,7 @@ const TAB_HANDLERS = {
   "DID Pools":              processDIDPools,
   "Divisions":              processDivisions,
   "Queues":                 processQueues,
+  "Schedules":              processSchedules,
   "Site - Number Plans":    processNumberPlans,
   "Site - Outbound Routes": processOutboundRoutes,
   "Sites":                  processSites,
@@ -455,6 +456,94 @@ async function processSkills({ rows, api, orgId, me, addResult }) {
   }
 
   return { created, failed };
+}
+
+// ── Tab: Schedules ───────────────────────────────────────────────────────────
+// Columns:
+//   A=Name (req), B=Division, C=Description,
+//   D=Start (req) ISO-8601 without timezone: yyyy-MM-ddTHH:mm:ss.SSS
+//   E=End   (req) same format
+//   F=RRule  iCal RRULE string e.g. FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR (optional)
+//
+// Start/End times are interpreted in the org's configured timezone by Genesys.
+// Names are matched case-insensitively; existing schedules are PUT (updated),
+// new ones are POST (created).
+async function processSchedules({ rows, api, orgId, me, addResult }) {
+  let created = 0;
+  let updated = 0;
+  let failed  = 0;
+
+  // Pre-fetch divisions and existing schedules for upsert
+  let divMap = {}, scheduleMap = {};
+  try {
+    const [divs, schedules] = await Promise.all([
+      gc.fetchAllDivisions(api, orgId),
+      gc.fetchAllSchedules(api, orgId),
+    ]);
+    divMap      = Object.fromEntries(divs.map(d => [d.name.toLowerCase(), d.id]));
+    scheduleMap = Object.fromEntries(schedules.map(s => [s.name.toLowerCase(), { id: s.id, version: s.version }]));
+  } catch (err) {
+    addResult("(setup)", false, `Failed to fetch lookup data: ${err.message}`);
+    return { created: 0, failed: rows.length };
+  }
+
+  // Validate ISO-8601 without timezone: yyyy-MM-ddTHH:mm:ss or yyyy-MM-ddTHH:mm:ss.SSS
+  function parseDateTime(val) {
+    const s = String(val ?? "").trim();
+    if (!s) return { value: null, error: null };
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(s))
+      return { value: null, error: `Invalid datetime '${s}' — expected yyyy-MM-ddTHH:mm:ss[.SSS] (no timezone)` };
+    return { value: s, error: null };
+  }
+
+  for (const row of rows) {
+    const name        = String(row[0] ?? "").trim();
+    const divisionRaw = String(row[1] ?? "").trim();
+    const description = String(row[2] ?? "").trim();
+    const startRaw    = row[3];
+    const endRaw      = row[4];
+    const rrule       = String(row[5] ?? "").trim();
+
+    if (!name) { addResult("(empty)", false, "Missing name — skipped"); failed++; continue; }
+
+    const start = parseDateTime(startRaw);
+    if (start.error) { addResult(name, false, `Start: ${start.error}`); failed++; continue; }
+    if (!start.value) { addResult(name, false, "Missing Start date/time — required"); failed++; continue; }
+
+    const end = parseDateTime(endRaw);
+    if (end.error) { addResult(name, false, `End: ${end.error}`); failed++; continue; }
+    if (!end.value) { addResult(name, false, "Missing End date/time — required"); failed++; continue; }
+
+    const body = { name, start: start.value, end: end.value };
+    if (description) body.description = description;
+    if (rrule)       body.rrule = rrule;
+    if (divisionRaw) {
+      const divId = divMap[divisionRaw.toLowerCase()];
+      if (divId === undefined) { addResult(name, false, `Division '${divisionRaw}' not found`); failed++; continue; }
+      body.division = { id: divId };
+    }
+
+    const existing = scheduleMap[name.toLowerCase()];
+    try {
+      if (existing) {
+        await gc.putSchedule(api, orgId, existing.id, { ...body, version: existing.version });
+        addResult(name, true, "Updated");
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Updated schedule '${name}'` });
+        updated++;
+      } else {
+        await gc.createSchedule(api, orgId, body);
+        addResult(name, true, "Created");
+        logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Created schedule '${name}'` });
+        created++;
+      }
+    } catch (err) {
+      addResult(name, false, err.message);
+      logAction({ me, orgId, action: "deployment_basic", description: `[Deployment] Failed to ${existing ? "update" : "create"} schedule '${name}': ${err.message}`, result: "failure", errorMessage: err.message });
+      failed++;
+    }
+  }
+
+  return { created: created + updated, failed };
 }
 
 // ── Tab: Queues ──────────────────────────────────────────────────────────────
@@ -950,7 +1039,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     const skipped   = sheets.filter(n => !TAB_HANDLERS[n]);
 
     // Tabs that upsert (update existing matched by name / merge, rather than always creating new)
-    const UPSERT_TABS = new Set(["Site - Number Plans", "Site - Outbound Routes", "Queues"]);
+    const UPSERT_TABS = new Set(["Schedules", "Site - Number Plans", "Site - Outbound Routes", "Queues"]);
 
     // Build per-tab summary rows (with checkboxes)
     const tabRows = supported.map(tabName => {

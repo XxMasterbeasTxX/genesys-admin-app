@@ -432,6 +432,16 @@ export async function fetchAllSchedules(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/architect/schedules", opts);
 }
 
+/** Create an Architect schedule. */
+export async function createSchedule(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/architect/schedules", { body });
+}
+
+/** Full PUT update of an Architect schedule. */
+export async function putSchedule(api, orgId, scheduleId, body) {
+  return api.proxyGenesys(orgId, "PUT", `/api/v2/architect/schedules/${scheduleId}`, { body });
+}
+
 /** Fetch all schedule groups. */
 export async function fetchAllScheduleGroups(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/architect/schedulegroups", opts);
