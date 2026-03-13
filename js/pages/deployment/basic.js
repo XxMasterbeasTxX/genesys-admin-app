@@ -1412,10 +1412,18 @@ async function processUsers({ rows, api, orgId, me, addResult }) {
       }
     }
 
+    // Refresh version before address PATCHes — earlier steps (e.g. moveToDivision) may
+    // have incremented it server-side without us capturing the result.
+    if (g.extension || g.did) {
+      try {
+        const freshUser = await gc.getUser(api, orgId, userId);
+        version = freshUser?.version ?? version;
+      } catch (_) { /* best-effort; proceed with last known version */ }
+    }
+
     // Step 6: set extension (PATCH user addresses type WORK2)
     if (g.extension) {
       try {
-        // GET fresh version first so PATCH doesn't conflict
         const fresh = await gc.patchUser(api, orgId, userId, {
           version,
           addresses: [{ mediaType: "PHONE", type: "WORK2", address: g.extension }],
