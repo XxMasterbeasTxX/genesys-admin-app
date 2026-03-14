@@ -190,6 +190,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <div style="display:flex;gap:6px">
           <button class="btn btn-sm" id="isQuickLastWeek">Last Week</button>
           <button class="btn btn-sm" id="isQuickLastMonth">Last Month</button>
+          <button class="btn btn-sm" id="isQuickPrev7">Previous 7 Days</button>
+          <button class="btn btn-sm" id="isQuickPrev30">Previous 30 Days</button>
         </div>
       </div>
       <div class="is-control-group">
@@ -288,6 +290,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $clearBtn       = el.querySelector("#isClearBtn");
   const $quickLastWeek  = el.querySelector("#isQuickLastWeek");
   const $quickLastMonth = el.querySelector("#isQuickLastMonth");
+  const $quickPrev7     = el.querySelector("#isQuickPrev7");
+  const $quickPrev30    = el.querySelector("#isQuickPrev30");
   const $status         = el.querySelector("#isStatus");
   const $progressWrap = el.querySelector("#isProgressWrap");
   const $progressBar  = el.querySelector("#isProgressBar");
@@ -368,12 +372,32 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     renderFilterTags();
   });
 
+  // Helper: YYYY-MM-DD string from a Date object
+  function dateStr(d) { return d.toISOString().slice(0, 10); }
+
   $quickLastWeek.addEventListener("click", () => {
+    const now = new Date();
+    const dow = (now.getDay() + 6) % 7; // Mon=0 … Sun=6
+    const lastSun = new Date(now); lastSun.setDate(now.getDate() - dow - 1);
+    const lastMon = new Date(lastSun); lastMon.setDate(lastSun.getDate() - 6);
+    $dateFrom.value = dateStr(lastMon);
+    $dateTo.value   = dateStr(lastSun);
+  });
+
+  $quickLastMonth.addEventListener("click", () => {
+    const now = new Date();
+    const lastDay  = new Date(now.getFullYear(), now.getMonth(), 0);
+    const firstDay = new Date(lastDay.getFullYear(), lastDay.getMonth(), 1);
+    $dateFrom.value = dateStr(firstDay);
+    $dateTo.value   = dateStr(lastDay);
+  });
+
+  $quickPrev7.addEventListener("click", () => {
     $dateFrom.value = daysAgoStr(8);
     $dateTo.value   = daysAgoStr(2);
   });
 
-  $quickLastMonth.addEventListener("click", () => {
+  $quickPrev30.addEventListener("click", () => {
     $dateFrom.value = daysAgoStr(31);
     $dateTo.value   = daysAgoStr(2);
   });
