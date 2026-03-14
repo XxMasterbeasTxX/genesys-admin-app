@@ -175,8 +175,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
 
     <p class="page-desc">
       Search conversation records by date range with optional participant data
-      attribute filters. Results are displayed in a sortable table with
-      click-to-expand details. Export results to Excel or copy to clipboard.
+      attribute filters. Results are filtered by conversation <strong>start date</strong>.
+      Export results to Excel or copy to clipboard.
     </p>
 
     <div class="is-info-banner">
@@ -691,7 +691,6 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         const t = new Date(c.conversationStart);
         return t >= rangeStart && t <= rangeEnd;
       });
-      console.debug(`[Search] API returned ${allConvs.length} conversations; ${startFiltered.length} started within date range ${dateFrom}→${dateTo} UTC`);
 
       // Client-side participant data filtering
       const totalFetched = startFiltered.length;
@@ -708,18 +707,15 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       showProgress(100);
 
       // Status message
-      const apiNote = allConvs.length !== startFiltered.length
-        ? ` (${allConvs.length} from API, ${allConvs.length - startFiltered.length} outside date range)`
-        : "";
       if (rows.length > 0) {
         if (currentFilters.length) {
-          setStatus(STATUS.foundFiltered(rows.length, totalFetched) + apiNote, "success");
+          setStatus(STATUS.foundFiltered(rows.length, totalFetched), "success");
         } else {
-          setStatus(STATUS.found(rows.length) + apiNote, "success");
+          setStatus(STATUS.found(rows.length), "success");
         }
       } else {
         if (currentFilters.length && totalFetched > 0) {
-          setStatus(STATUS.noFilterMatch(totalFetched) + apiNote);
+          setStatus(STATUS.noFilterMatch(totalFetched));
         } else {
           setStatus(STATUS.noResults);
         }

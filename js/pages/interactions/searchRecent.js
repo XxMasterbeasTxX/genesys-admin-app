@@ -118,7 +118,8 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
 
     <p class="page-desc">
       Search conversations from the last 48 hours. Results are returned immediately
-      without analytics processing delay. Click a row to load full participant data.
+      without analytics processing delay, filtered by conversation <strong>start date</strong>.
+      Click a row to load full participant data.
     </p>
 
     <div class="is-info-banner">
@@ -250,7 +251,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   }
   renderFilterTags();
 
-  $pdAdd.addEventListener("click", () => {
+  function addPdFilter() {
     const key = $pdKey.value.trim();
     const value = $pdValue.value.trim();
     if (!key) return;
@@ -258,6 +259,15 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     $pdKey.value = "";
     $pdValue.value = "";
     renderFilterTags();
+  }
+
+  $pdAdd.addEventListener("click", addPdFilter);
+
+  $pdKey.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addPdFilter();
+  });
+  $pdValue.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && $pdKey.value.trim()) addPdFilter();
   });
 
   $pdClear.addEventListener("click", () => {
