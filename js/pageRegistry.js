@@ -31,9 +31,9 @@ const registry = {
     import("./pages/datatables/copySingleOrg.js").then((m) => m.default(ctx)),
 
   // ── Interactions ─────────────────────────────────────
-  "/interactions/search/recent": (ctx) =>
+  "/interactions/search/participant-data/recent": (ctx) =>
     import("./pages/interactions/searchRecent.js").then((m) => m.default(ctx)),
-  "/interactions/search/historical": (ctx) =>
+  "/interactions/search/participant-data/historical": (ctx) =>
     import("./pages/interactions/search.js").then((m) => m.default(ctx)),
   "/interactions/move": (ctx) =>
     import("./pages/interactions/move.js").then((m) => m.default(ctx)),

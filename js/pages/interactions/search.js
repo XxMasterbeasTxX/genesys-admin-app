@@ -179,7 +179,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
 
     <div class="is-info-banner">
       &#9432; For conversations from the last 48 hours, use
-      <a href="#/interactions/search/recent" class="is-link">Recent Search</a>.
+      <a href="#/interactions/search/participant-data/recent" class="is-link">Recent Search</a>.
       Historical data may take up to 48 hours to appear here.
     </div>
 

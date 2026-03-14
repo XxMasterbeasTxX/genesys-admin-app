@@ -123,7 +123,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
 
     <div class="is-info-banner">
       &#9432; For conversations older than ~48 hours use
-      <a href="#/interactions/search/historical" class="is-link">Historical Search</a>.
+      <a href="#/interactions/search/participant-data/historical" class="is-link">Historical Search</a>.
       Participant Data filters apply when clicking a row, not during search.
     </div>
 
