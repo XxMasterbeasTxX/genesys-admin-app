@@ -164,8 +164,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   let divisions = [];      // all divisions from org
 
   // ── Build UI ────────────────────────────────────────
-  const today = todayStr();
-  const weekAgo = daysAgoStr(7);
+  const twoDaysAgo = daysAgoStr(2);
+  const weekAgo    = daysAgoStr(7);
 
   el.innerHTML = `
     <h1 class="h1">Historical Interaction Search</h1>
@@ -191,7 +191,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       </div>
       <div class="is-control-group">
         <label class="is-label">Date To</label>
-        <input type="date" class="input is-date" id="isDateTo" value="${today}">
+        <input type="date" class="input is-date" id="isDateTo" max="${twoDaysAgo}" value="${twoDaysAgo}">
       </div>
       <div class="is-control-group">
         <label class="is-label">Queue</label>
@@ -222,6 +222,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <div class="is-pd-hint">Queue, Media, and Division filters are server-side. Participant Data is client-side.</div>
         <div class="is-filter-tags" id="isFilterTags"></div>
       </div>
+    </div>
+
+    <!-- Quick select -->
+    <div class="is-quick-select">
+      <span class="is-quick-label">Quick select:</span>
+      <button class="btn btn-sm" id="isQuickLastWeek">Last Week</button>
+      <button class="btn btn-sm" id="isQuickLastMonth">Last Month</button>
     </div>
 
     <!-- Action buttons -->
@@ -278,8 +285,10 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $searchBtn    = el.querySelector("#isSearchBtn");
   const $exportBtn    = el.querySelector("#isExportBtn");
   const $exportPdBtn  = el.querySelector("#isExportPdBtn");
-  const $clearBtn     = el.querySelector("#isClearBtn");
-  const $status       = el.querySelector("#isStatus");
+  const $clearBtn       = el.querySelector("#isClearBtn");
+  const $quickLastWeek  = el.querySelector("#isQuickLastWeek");
+  const $quickLastMonth = el.querySelector("#isQuickLastMonth");
+  const $status         = el.querySelector("#isStatus");
   const $progressWrap = el.querySelector("#isProgressWrap");
   const $progressBar  = el.querySelector("#isProgressBar");
   const $tbody        = el.querySelector("#isTbody");
@@ -357,6 +366,16 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   $pdClear.addEventListener("click", () => {
     pdFilters = [];
     renderFilterTags();
+  });
+
+  $quickLastWeek.addEventListener("click", () => {
+    $dateFrom.value = daysAgoStr(8);
+    $dateTo.value   = daysAgoStr(2);
+  });
+
+  $quickLastMonth.addEventListener("click", () => {
+    $dateFrom.value = daysAgoStr(31);
+    $dateTo.value   = daysAgoStr(2);
   });
 
   // ── Status / progress helpers ───────────────────────
@@ -643,6 +662,10 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     }
     if (dateFrom > dateTo) {
       setStatus("'Date From' must be before 'Date To'.", "error");
+      return;
+    }
+    if (dateTo > daysAgoStr(2)) {
+      setStatus("End date must be at least 48 hours ago. Use Recent Search for recent conversations.", "error");
       return;
     }
 

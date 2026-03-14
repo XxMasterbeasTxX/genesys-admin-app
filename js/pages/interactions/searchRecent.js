@@ -40,7 +40,7 @@ const COLUMNS = [
 
 // ── Status messages ──────────────────────────────────────────────────
 const STATUS = {
-  ready:     "Ready. Select a date range and click Search.",
+  ready:     "Ready. Select a period and click Search.",
   found:     (n) => `Found ${n} conversation${n !== 1 ? "s" : ""}. Click a row to load participant data.`,
   noResults: "No conversations found for the selected date range.",
   exported:  (n) => `Exported ${n} rows to Excel.`,
@@ -109,8 +109,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   let realtimeCache = {};   // conversationId → realtime conv object
   let pdFilters = [];       // [{key, value}] — applied when a row is clicked
 
-  const today     = todayStr();
-  const yesterday = daysAgoStr(1);
+  let selectedPeriod = 'last48';  // 'last48' | 'today' | 'yesterday'
 
   el.innerHTML = `
     <h1 class="h1">Recent Interaction Search</h1>
@@ -131,12 +130,12 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     <!-- Controls row -->
     <div class="is-controls">
       <div class="is-control-group">
-        <label class="is-label">Date From</label>
-        <input type="date" class="input is-date" id="rsDateFrom" value="${yesterday}">
-      </div>
-      <div class="is-control-group">
-        <label class="is-label">Date To</label>
-        <input type="date" class="input is-date" id="rsDateTo" value="${today}">
+        <label class="is-label">Period</label>
+        <div class="is-period-btns" id="rsPeriodBtns">
+          <button class="btn btn-sm is-period-btn is-period-active" data-period="last48">Last 48 hours</button>
+          <button class="btn btn-sm is-period-btn" data-period="today">Today</button>
+          <button class="btn btn-sm is-period-btn" data-period="yesterday">Yesterday</button>
+        </div>
       </div>
       <div class="is-control-group">
         <label class="is-label">Queue</label>
@@ -201,8 +200,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   `;
 
   // ── DOM refs ─────────────────────────────────────────
-  const $dateFrom      = el.querySelector("#rsDateFrom");
-  const $dateTo        = el.querySelector("#rsDateTo");
+  const $periodBtns    = el.querySelectorAll(".is-period-btn");
   const $pdKey         = el.querySelector("#rsPdKey");
   const $pdValue       = el.querySelector("#rsPdValue");
   const $pdAdd         = el.querySelector("#rsPdAdd");
@@ -273,6 +271,13 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   $pdClear.addEventListener("click", () => {
     pdFilters = [];
     renderFilterTags();
+  });
+
+  $periodBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      selectedPeriod = btn.dataset.period;
+      $periodBtns.forEach((b) => b.classList.toggle("is-period-active", b === btn));
+    });
   });
 
   // ── Single-select dropdowns ───────────────────────────
@@ -513,17 +518,6 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
 
   // ── Search ────────────────────────────────────────────
   $searchBtn.addEventListener("click", async () => {
-    const dateFrom = $dateFrom.value;
-    const dateTo   = $dateTo.value;
-    if (!dateFrom || !dateTo) {
-      setStatus("Please select both dates.", "error");
-      return;
-    }
-    if (dateFrom > dateTo) {
-      setStatus("'Date From' must be before 'Date To'.", "error");
-      return;
-    }
-
     clearResults();
     $searchBtn.disabled = true;
     const orgId = orgContext.get();
@@ -543,7 +537,15 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
         body.conversationFilters = [{ type: "and", predicates: [{ dimension: "divisionId", value: divisionId }] }];
       }
 
-      body.interval = buildInterval(dateFrom, dateTo);
+      const now = new Date();
+      if (selectedPeriod === 'last48') {
+        const from48 = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+        body.interval = `${from48.toISOString()}/${now.toISOString()}`;
+      } else if (selectedPeriod === 'today') {
+        body.interval = buildInterval(todayStr(), todayStr());
+      } else {
+        body.interval = buildInterval(daysAgoStr(1), daysAgoStr(1));
+      }
 
       setStatus("Searching…");
       showProgress(10);
