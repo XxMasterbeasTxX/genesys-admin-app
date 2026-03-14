@@ -97,7 +97,8 @@ function toRow(conv) {
 /**
  * Client-side participant-data filter.
  * A conversation matches if ANY participant has attributes matching
- * ALL filter key/value pairs (case-insensitive value match).
+ * ALL filter key/value pairs. If a filter has no value, only the key
+ * presence is checked (case-insensitive value match when value provided).
  */
 function filterByPD(conversations, filters) {
   if (!filters.length) return conversations;
@@ -107,7 +108,9 @@ function filterByPD(conversations, filters) {
       const attrs = p.attributes || {};
       return filters.every((f) => {
         const v = attrs[f.key];
-        return v != null && v.toLowerCase() === f.value.toLowerCase();
+        if (v == null) return false;
+        if (f.value === "") return true;
+        return v.toLowerCase() === f.value.toLowerCase();
       });
     });
   });
@@ -287,7 +290,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     }
     $filterTags.innerHTML = pdFilters.map((f, i) =>
       `<span class="is-filter-tag" data-idx="${i}" title="Click to edit">
-        <span class="is-filter-tag-text">${escapeHtml(f.key)} = ${escapeHtml(f.value)}</span>
+        <span class="is-filter-tag-text">${escapeHtml(f.key)}${f.value !== "" ? " = " + escapeHtml(f.value) : ""}</span>
         <button class="is-filter-tag-remove" data-idx="${i}">&times;</button>
        </span>`
     ).join("");
@@ -315,7 +318,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   $pdAdd.addEventListener("click", () => {
     const key = $pdKey.value.trim();
     const value = $pdValue.value.trim();
-    if (!key || !value) return;
+    if (!key) return;
     pdFilters.push({ key, value });
     $pdKey.value = "";
     $pdValue.value = "";
