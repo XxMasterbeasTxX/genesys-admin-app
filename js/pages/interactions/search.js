@@ -108,10 +108,11 @@ function filterByPD(conversations, filters, exclude = false) {
     const matches = conv.participants.some((p) => {
       const attrs = p.attributes || {};
       return filters.every((f) => {
-        const v = attrs[f.key];
-        if (v == null) return false;
+        const fKeyLower = f.key.toLowerCase();
+        const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
+        if (matchedKey == null) return false;
         if (f.value === "") return true;
-        return v.toLowerCase() === f.value.toLowerCase();
+        return attrs[matchedKey].toLowerCase() === f.value.toLowerCase();
       });
     });
     return exclude ? !matches : matches;
