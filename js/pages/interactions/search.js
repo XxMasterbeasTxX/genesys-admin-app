@@ -229,9 +229,11 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     <!-- Action buttons -->
     <div class="is-actions">
       <button class="btn" id="isSearchBtn">Search</button>
-      <button class="btn" id="isExportBtn" disabled>Export Excel</button>
-      <button class="btn" id="isExportPdBtn" disabled>Export Participant Data</button>
       <button class="btn" id="isClearBtn">Clear Results</button>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn" id="isExportBtn" disabled>Export Excel</button>
+        <button class="btn" id="isExportPdBtn" disabled>Export Participant Data</button>
+      </div>
     </div>
 
     <!-- Hint -->
