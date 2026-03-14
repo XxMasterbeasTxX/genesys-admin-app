@@ -600,12 +600,21 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         onProgress: (pct) => showProgress(pct),
       });
 
+      // Client-side: keep only conversations that STARTED within the selected range
+      // (The analytics API interval matches on end time, not start time)
+      const rangeStart = new Date(`${dateFrom}T00:00:00.000Z`);
+      const rangeEnd   = new Date(`${dateTo}T23:59:59.999Z`);
+      const startFiltered = allConvs.filter((c) => {
+        const t = new Date(c.conversationStart);
+        return t >= rangeStart && t <= rangeEnd;
+      });
+
       // Client-side participant data filtering
-      const totalFetched = allConvs.length;
-      let filtered = allConvs;
+      const totalFetched = startFiltered.length;
+      let filtered = startFiltered;
       if (currentFilters.length) {
         setStatus(`Filtering ${totalFetched} conversations by participant data…`);
-        filtered = filterByPD(allConvs, currentFilters, currentExclude);
+        filtered = filterByPD(startFiltered, currentFilters, currentExclude);
       }
 
       conversations = filtered;
