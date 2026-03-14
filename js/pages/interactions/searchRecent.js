@@ -105,6 +105,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   let conversations = [];
   let rows = [];
   let selectedIdx = -1;
+  let pdFilters = [];   // [{key, value}] — applied when a row is clicked
 
   const today     = todayStr();
   const yesterday = daysAgoStr(1);
@@ -119,8 +120,9 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     </p>
 
     <div class="is-info-banner">
-      &#9432; For conversations older than ~48 hours, or to filter by participant data,
-      use <a href="#/interactions/search/historical" class="is-link">Historical Search</a>.
+      &#9432; For conversations older than ~48 hours use
+      <a href="#/interactions/search/historical" class="is-link">Historical Search</a>.
+      Participant Data filters apply when clicking a row, not during search.
     </div>
 
     <!-- Controls row -->
@@ -144,6 +146,20 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       <div class="is-control-group">
         <label class="is-label">Division</label>
         <div id="rsDivisionDropdown"></div>
+      </div>
+      <div class="is-control-group is-pd-group">
+        <label class="is-label">Participant Data Filter</label>
+        <div class="is-pd-inputs">
+          <input type="text" class="input is-pd-key" id="rsPdKey" placeholder="Key">
+          <input type="text" class="input is-pd-value" id="rsPdValue" placeholder="Value">
+          <button class="btn btn-sm" id="rsPdAdd">Add</button>
+          <button class="btn btn-sm" id="rsPdClear">Clear All</button>
+          <label class="is-pd-exclude-label" title="When checked, attribute values are treated as comma-separated lists and displayed as pills">
+            <input type="checkbox" id="rsPdMultiVal"> Multi-value
+          </label>
+        </div>
+        <div class="is-pd-hint">PD filters apply when clicking a row — not during search.</div>
+        <div class="is-filter-tags" id="rsFilterTags"></div>
       </div>
     </div>
 
@@ -175,21 +191,81 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       <div class="is-detail" id="rsDetail">
         <div class="is-detail-title">Conversation Detail</div>
         <pre class="is-detail-content" id="rsDetailContent">Select a row to load participant data.</pre>
+        <div id="rsDetailPdSection" style="display:none">
+          <div class="is-detail-title" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">Participant Data</div>
+          <div class="is-expand-attrs" id="rsDetailPdBody"></div>
+        </div>
       </div>
     </div>
   `;
 
   // ── DOM refs ─────────────────────────────────────────
-  const $dateFrom     = el.querySelector("#rsDateFrom");
-  const $dateTo       = el.querySelector("#rsDateTo");
-  const $searchBtn    = el.querySelector("#rsSearchBtn");
-  const $exportBtn    = el.querySelector("#rsExportBtn");
-  const $clearBtn     = el.querySelector("#rsClearBtn");
-  const $status       = el.querySelector("#rsStatus");
-  const $progressWrap = el.querySelector("#rsProgressWrap");
-  const $progressBar  = el.querySelector("#rsProgressBar");
-  const $tbody        = el.querySelector("#rsTbody");
-  const $detail       = el.querySelector("#rsDetailContent");
+  const $dateFrom      = el.querySelector("#rsDateFrom");
+  const $dateTo        = el.querySelector("#rsDateTo");
+  const $pdKey         = el.querySelector("#rsPdKey");
+  const $pdValue       = el.querySelector("#rsPdValue");
+  const $pdAdd         = el.querySelector("#rsPdAdd");
+  const $pdClear       = el.querySelector("#rsPdClear");
+  const $pdMultiVal    = el.querySelector("#rsPdMultiVal");
+  const $filterTags    = el.querySelector("#rsFilterTags");
+  const $searchBtn     = el.querySelector("#rsSearchBtn");
+  const $exportBtn     = el.querySelector("#rsExportBtn");
+  const $clearBtn      = el.querySelector("#rsClearBtn");
+  const $status        = el.querySelector("#rsStatus");
+  const $progressWrap  = el.querySelector("#rsProgressWrap");
+  const $progressBar   = el.querySelector("#rsProgressBar");
+  const $tbody         = el.querySelector("#rsTbody");
+  const $detail        = el.querySelector("#rsDetailContent");
+  const $detailPdSec   = el.querySelector("#rsDetailPdSection");
+  const $detailPdBody  = el.querySelector("#rsDetailPdBody");
+
+  // ── PD filter tag management ──────────────────────────
+  function renderFilterTags() {
+    if (!pdFilters.length) {
+      $filterTags.innerHTML = `<span class="is-no-filters">No filters active</span>`;
+      return;
+    }
+    $filterTags.innerHTML = pdFilters.map((f, i) =>
+      `<span class="is-filter-tag" data-idx="${i}" title="Click to edit">
+        <span class="is-filter-tag-text">${escapeHtml(f.key)}${f.value !== "" ? " = " + escapeHtml(f.value) : ""}</span>
+        <button class="is-filter-tag-remove" data-idx="${i}">&times;</button>
+       </span>`
+    ).join("");
+    $filterTags.querySelectorAll(".is-filter-tag-remove").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        pdFilters.splice(Number(btn.dataset.idx), 1);
+        renderFilterTags();
+      });
+    });
+    $filterTags.querySelectorAll(".is-filter-tag").forEach((tag) => {
+      tag.addEventListener("click", () => {
+        const idx = Number(tag.dataset.idx);
+        const f = pdFilters[idx];
+        $pdKey.value = f.key;
+        $pdValue.value = f.value;
+        pdFilters.splice(idx, 1);
+        renderFilterTags();
+        $pdKey.focus();
+      });
+    });
+  }
+  renderFilterTags();
+
+  $pdAdd.addEventListener("click", () => {
+    const key = $pdKey.value.trim();
+    const value = $pdValue.value.trim();
+    if (!key) return;
+    pdFilters.push({ key, value });
+    $pdKey.value = "";
+    $pdValue.value = "";
+    renderFilterTags();
+  });
+
+  $pdClear.addEventListener("click", () => {
+    pdFilters = [];
+    renderFilterTags();
+  });
 
   // ── Single-select dropdowns ───────────────────────────
   const ssQueue = createSingleSelect({ placeholder: "All queues", searchable: true });
@@ -276,53 +352,102 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     if (idx < 0 || idx >= rows.length) return;
     selectedIdx = idx;
     renderRows();
-    $detail.textContent = "Loading participant data…";
+    $detail.textContent = "Loading…";
+    $detailPdSec.style.display = "none";
 
-    const orgId = orgContext.get();
+    const filters  = [...pdFilters];
+    const multiVal = $pdMultiVal.checked;
+    const orgId    = orgContext.get();
     try {
       const conv = await gc.getConversation(api, orgId, rows[idx].conversationId);
-      showDetailFromRealtime(conv);
+      showDetailFromRealtime(conv, filters, multiVal);
     } catch (err) {
-      $detail.textContent = `Error loading participant data: ${err.message}`;
+      $detail.textContent = `Error loading data: ${err.message}`;
     }
   }
 
   /**
-   * Format detail from GET /api/v2/conversations/{id} response.
-   * This endpoint uses a different schema than the analytics API:
-   * - conv.id (not conversationId)
-   * - conv.startTime / conv.endTime (not conversationStart/End)
-   * - p.attributes is a flat object (same as analytics)
-   * - p.disconnectType is directly on participant (not nested in sessions)
+   * Show conversation details + participant data in the right pane.
+   * Details section: basic info (id, times, purpose, disconnect).
+   * PD section: if filters active → show matching keys with pills;
+   *             if no filters → show all attributes.
    */
-  function showDetailFromRealtime(conv) {
+  function showDetailFromRealtime(conv, filters, multiVal) {
+    // ── Details section ──────────────────────────────────
     const lines = [];
     lines.push(`Conversation ID: ${conv.id || ""}`);
     lines.push(`Start: ${formatDateTime(conv.startTime)}`);
     lines.push(`End:   ${formatDateTime(conv.endTime)}`);
     lines.push("");
-
     if (conv.participants) {
       conv.participants.forEach((p, pi) => {
         lines.push(`--- Participant #${pi + 1} ---`);
         if (p.purpose)        lines.push(`  Purpose: ${p.purpose}`);
         if (p.name)           lines.push(`  Name: ${p.name}`);
-
-        const attrs = p.attributes || {};
-        const attrKeys = Object.keys(attrs).sort();
-        if (attrKeys.length) {
-          lines.push("  Participant Data:");
-          for (const k of attrKeys) lines.push(`    ${k} = ${attrs[k]}`);
-        } else {
-          lines.push("  (no participant data)");
-        }
-
         if (p.disconnectType) lines.push(`  Disconnect: ${p.disconnectType}`);
         lines.push("");
       });
     }
-
     $detail.textContent = lines.join("\n");
+
+    // ── Participant data section ──────────────────────────
+    const sections = [];
+
+    if (filters.length) {
+      // Show only the filtered keys (same display as Historical expand)
+      for (const f of filters) {
+        const fKeyLower = f.key.toLowerCase();
+        const values = new Set();
+        for (const p of conv.participants || []) {
+          const attrs = p.attributes || {};
+          const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
+          if (matchedKey != null) values.add(attrs[matchedKey]);
+        }
+        const rawVal = values.size ? [...values].join(", ") : null;
+        let valsHtml;
+        if (!rawVal) {
+          valsHtml = `<span class="is-expand-raw" style="opacity:0.45">(not found)</span>`;
+        } else if (multiVal) {
+          valsHtml = rawVal.split(",").map(t => t.trim()).filter(Boolean)
+            .map(t => `<span class="is-pill">${escapeHtml(t)}</span>`).join("");
+        } else {
+          valsHtml = `<span class="is-expand-raw">${escapeHtml(rawVal)}</span>`;
+        }
+        sections.push(`<div class="is-expand-attr">
+          <span class="is-expand-key">${escapeHtml(f.key)}</span>
+          <div class="is-expand-vals">${valsHtml}</div>
+        </div>`);
+      }
+    } else {
+      // No filters — show all attributes across all participants
+      const seen = new Map(); // key → Set of values (merge across participants)
+      for (const p of conv.participants || []) {
+        for (const [k, v] of Object.entries(p.attributes || {})) {
+          if (!seen.has(k)) seen.set(k, new Set());
+          seen.get(k).add(v);
+        }
+      }
+      for (const [k, valSet] of [...seen.entries()].sort()) {
+        const rawVal = [...valSet].join(", ");
+        let valsHtml;
+        if (multiVal) {
+          valsHtml = rawVal.split(",").map(t => t.trim()).filter(Boolean)
+            .map(t => `<span class="is-pill">${escapeHtml(t)}</span>`).join("");
+        } else {
+          valsHtml = `<span class="is-expand-raw">${escapeHtml(rawVal)}</span>`;
+        }
+        sections.push(`<div class="is-expand-attr">
+          <span class="is-expand-key">${escapeHtml(k)}</span>
+          <div class="is-expand-vals">${valsHtml}</div>
+        </div>`);
+      }
+      if (!sections.length) {
+        sections.push(`<div class="is-expand-attr"><span class="is-expand-raw" style="opacity:0.45">(no participant data)</span></div>`);
+      }
+    }
+
+    $detailPdBody.innerHTML = sections.join("");
+    $detailPdSec.style.display = "";
   }
 
   // ── Clear results ─────────────────────────────────────
@@ -332,6 +457,8 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     selectedIdx = -1;
     $tbody.innerHTML = "";
     $detail.textContent = "Select a row to load participant data.";
+    $detailPdSec.style.display = "none";
+    $detailPdBody.innerHTML = "";
     $exportBtn.disabled = true;
     hideProgress();
     setStatus(STATUS.ready);
