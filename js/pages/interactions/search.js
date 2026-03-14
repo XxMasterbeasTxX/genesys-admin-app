@@ -160,6 +160,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   let conversations = [];  // raw API results (after filtering)
   let rows = [];           // flattened rows for display
   let selectedIdx = -1;
+  let expandedIdx = -1;
   let abortCtrl = null;    // AbortController for cancelling
   let queues    = [];      // all queues from org
   let divisions = [];      // all divisions from org
@@ -209,6 +210,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
           <button class="btn btn-sm" id="isPdClear">Clear All</button>
           <label class="is-pd-exclude-label" title="When checked, shows conversations that do NOT match the filters">
             <input type="checkbox" id="isPdExclude"> Exclude
+          </label>
+          <label class="is-pd-exclude-label" title="When checked, attribute values are treated as comma-separated lists and displayed as pills">
+            <input type="checkbox" id="isPdMultiVal"> Multi-value
           </label>
         </div>
         <div class="is-pd-hint">Queue, Media, and Division filters are server-side. Participant Data is client-side.</div>
@@ -260,6 +264,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $pdAdd        = el.querySelector("#isPdAdd");
   const $pdClear      = el.querySelector("#isPdClear");
   const $pdExclude    = el.querySelector("#isPdExclude");
+  const $pdMultiVal   = el.querySelector("#isPdMultiVal");
   const $filterTags   = el.querySelector("#isFilterTags");
   const $searchBtn    = el.querySelector("#isSearchBtn");
   const $exportBtn    = el.querySelector("#isExportBtn");
@@ -364,17 +369,72 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
 
   // ── Render table rows ───────────────────────────────
   function renderRows() {
-    $tbody.innerHTML = rows.map((r, i) =>
-      `<tr class="is-row${i % 2 === 1 ? " is-row-alt" : ""}${i === selectedIdx ? " is-row-selected" : ""}" data-idx="${i}">
+    const multiVal = $pdMultiVal.checked;
+
+    // Build rows HTML — each data row may be followed by an expand detail row
+    let html = "";
+    rows.forEach((r, i) => {
+      const isSelected = i === selectedIdx;
+      const isExpanded = i === expandedIdx;
+      const rowClass = [
+        "is-row",
+        i % 2 === 1 ? "is-row-alt" : "",
+        isSelected  ? "is-row-selected" : "",
+        isExpanded  ? "is-row-expanded" : "",
+      ].filter(Boolean).join(" ");
+
+      html += `<tr class="${rowClass}" data-idx="${i}">
         ${COLUMNS.map((c) => `<td>${escapeHtml(r[c.key])}</td>`).join("")}
-       </tr>`
-    ).join("");
+      </tr>`;
+
+      if (isExpanded && pdFilters.length) {
+        // Find matched participant attributes for active filters
+        const conv = r._raw;
+        const sections = [];
+        for (const f of pdFilters) {
+          const fKeyLower = f.key.toLowerCase();
+          // Collect all values across all participants for this key
+          const values = new Set();
+          for (const p of conv.participants || []) {
+            const attrs = p.attributes || {};
+            const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
+            if (matchedKey != null) values.add(attrs[matchedKey]);
+          }
+          if (values.size === 0) continue;
+          const rawVal = [...values].join(", ");
+          let pillsHtml;
+          if (multiVal) {
+            const tokens = rawVal.split(",").map(t => t.trim()).filter(Boolean);
+            pillsHtml = tokens.map(t =>
+              `<span class="is-pill">${escapeHtml(t)}</span>`
+            ).join("");
+          } else {
+            pillsHtml = `<span class="is-expand-raw">${escapeHtml(rawVal)}</span>`;
+          }
+          sections.push(`<div class="is-expand-attr">
+            <span class="is-expand-key">${escapeHtml(f.key)}</span>
+            <div class="is-expand-vals">${pillsHtml}</div>
+          </div>`);
+        }
+        const colSpan = COLUMNS.length;
+        html += `<tr class="is-expand-row" data-expand-idx="${i}">
+          <td colspan="${colSpan}">
+            <div class="is-expand-panel">
+              <div class="is-expand-attrs">${sections.join("")}</div>
+              <button class="is-expand-detail-btn" data-idx="${i}" title="Open conversation detail">&#10697;</button>
+            </div>
+          </td>
+        </tr>`;
+      }
+    });
+    $tbody.innerHTML = html;
 
     $tbody.querySelectorAll(".is-row").forEach((tr) => {
       tr.addEventListener("click", () => {
-        selectedIdx = Number(tr.dataset.idx);
+        const idx = Number(tr.dataset.idx);
+        selectedIdx = idx;
+        expandedIdx = expandedIdx === idx ? -1 : idx;
         renderRows();
-        showDetail(selectedIdx);
       });
       tr.addEventListener("contextmenu", (e) => {
         e.preventDefault();
@@ -390,6 +450,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         selectedIdx = idx;
         renderRows();
         setStatus(`Copied: ${id}`, "success");
+      });
+    });
+
+    $tbody.querySelectorAll(".is-expand-detail-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        showDetail(Number(btn.dataset.idx));
       });
     });
 
@@ -447,6 +514,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     conversations = [];
     rows = [];
     selectedIdx = -1;
+    expandedIdx = -1;
     $tbody.innerHTML = "";
     $detail.textContent = "Select a row to view details.";
     $exportBtn.disabled = true;
