@@ -104,8 +104,10 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   // ── State ────────────────────────────────────────────
   let conversations = [];
   let rows = [];
-  let selectedIdx = -1;
-  let pdFilters = [];   // [{key, value}] — applied when a row is clicked
+  let selectedIdx  = -1;
+  let expandedIdx  = -1;
+  let realtimeCache = {};   // conversationId → realtime conv object
+  let pdFilters = [];       // [{key, value}] — applied when a row is clicked
 
   const today     = todayStr();
   const yesterday = daysAgoStr(1);
@@ -191,10 +193,6 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       <div class="is-detail" id="rsDetail">
         <div class="is-detail-title">Conversation Detail</div>
         <pre class="is-detail-content" id="rsDetailContent">Select a row to load participant data.</pre>
-        <div id="rsDetailPdSection" style="display:none">
-          <div class="is-detail-title" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">Participant Data</div>
-          <div class="is-expand-attrs" id="rsDetailPdBody"></div>
-        </div>
       </div>
     </div>
   `;
@@ -216,8 +214,6 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   const $progressBar   = el.querySelector("#rsProgressBar");
   const $tbody         = el.querySelector("#rsTbody");
   const $detail        = el.querySelector("#rsDetailContent");
-  const $detailPdSec   = el.querySelector("#rsDetailPdSection");
-  const $detailPdBody  = el.querySelector("#rsDetailPdBody");
 
   // ── PD filter tag management ──────────────────────────
   function renderFilterTags() {
@@ -310,16 +306,88 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
 
   // ── Render table rows ─────────────────────────────────
   function renderRows() {
+    const multiVal = $pdMultiVal.checked;
     let html = "";
     rows.forEach((r, i) => {
+      const isSelected = i === selectedIdx;
+      const isExpanded = i === expandedIdx;
       const rowClass = [
         "is-row",
         i % 2 === 1 ? "is-row-alt" : "",
-        i === selectedIdx ? "is-row-selected" : "",
+        isSelected  ? "is-row-selected" : "",
+        isExpanded  ? "is-row-expanded" : "",
       ].filter(Boolean).join(" ");
       html += `<tr class="${rowClass}" data-idx="${i}">
         ${COLUMNS.map((c) => `<td>${escapeHtml(r[c.key])}</td>`).join("")}
       </tr>`;
+
+      // Inline expand row with pills (only if data already fetched)
+      if (isExpanded) {
+        const cached = realtimeCache[r.conversationId];
+        if (!cached) {
+          html += `<tr class="is-expand-row" data-expand-idx="${i}">
+            <td colspan="${COLUMNS.length}">
+              <div class="is-expand-panel"><span style="opacity:0.5;font-size:12px">Loading…</span></div>
+            </td></tr>`;
+        } else {
+          const filters = [...pdFilters];
+          const sections = [];
+          if (filters.length) {
+            for (const f of filters) {
+              const fKeyLower = f.key.toLowerCase();
+              const values = new Set();
+              for (const p of cached.participants || []) {
+                const attrs = p.attributes || {};
+                const mk = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
+                if (mk != null) values.add(attrs[mk]);
+              }
+              const rawVal = values.size ? [...values].join(", ") : null;
+              let valsHtml;
+              if (!rawVal) {
+                valsHtml = `<span class="is-expand-raw" style="opacity:0.45">(not found)</span>`;
+              } else if (multiVal) {
+                valsHtml = rawVal.split(",").map(t => t.trim()).filter(Boolean)
+                  .map(t => `<span class="is-pill">${escapeHtml(t)}</span>`).join("");
+              } else {
+                valsHtml = `<span class="is-expand-raw">${escapeHtml(rawVal)}</span>`;
+              }
+              sections.push(`<div class="is-expand-attr">
+                <span class="is-expand-key">${escapeHtml(f.key)}</span>
+                <div class="is-expand-vals">${valsHtml}</div>
+              </div>`);
+            }
+          } else {
+            // No filters — show all attributes across all participants
+            const seen = new Map();
+            for (const p of cached.participants || []) {
+              for (const [k, v] of Object.entries(p.attributes || {})) {
+                if (!seen.has(k)) seen.set(k, new Set());
+                seen.get(k).add(v);
+              }
+            }
+            for (const [k, valSet] of [...seen.entries()].sort()) {
+              const rawVal = [...valSet].join(", ");
+              const valsHtml = multiVal
+                ? rawVal.split(",").map(t => t.trim()).filter(Boolean)
+                    .map(t => `<span class="is-pill">${escapeHtml(t)}</span>`).join("")
+                : `<span class="is-expand-raw">${escapeHtml(rawVal)}</span>`;
+              sections.push(`<div class="is-expand-attr">
+                <span class="is-expand-key">${escapeHtml(k)}</span>
+                <div class="is-expand-vals">${valsHtml}</div>
+              </div>`);
+            }
+            if (!sections.length) {
+              sections.push(`<div class="is-expand-attr"><span class="is-expand-raw" style="opacity:0.45">(no participant data)</span></div>`);
+            }
+          }
+          html += `<tr class="is-expand-row" data-expand-idx="${i}">
+            <td colspan="${COLUMNS.length}">
+              <div class="is-expand-panel">
+                <div class="is-expand-attrs">${sections.join("")}</div>
+              </div>
+            </td></tr>`;
+        }
+      }
     });
     $tbody.innerHTML = html;
 
@@ -454,11 +522,11 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   function clearResults() {
     conversations = [];
     rows = [];
-    selectedIdx = -1;
+    selectedIdx  = -1;
+    expandedIdx  = -1;
+    realtimeCache = {};
     $tbody.innerHTML = "";
     $detail.textContent = "Select a row to load participant data.";
-    $detailPdSec.style.display = "none";
-    $detailPdBody.innerHTML = "";
     $exportBtn.disabled = true;
     hideProgress();
     setStatus(STATUS.ready);
