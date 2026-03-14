@@ -247,6 +247,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       <div class="is-progress-bar" id="isProgressBar"></div>
     </div>
 
+    <!-- Value Distribution panel -->
+    <div class="is-dist-panel" id="isDistChart" style="display:none"></div>
+
     <!-- Results area: table + detail pane -->
     <div class="is-results">
       <div class="is-table-wrap">
@@ -282,8 +285,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $progressWrap = el.querySelector("#isProgressWrap");
   const $progressBar  = el.querySelector("#isProgressBar");
   const $tbody        = el.querySelector("#isTbody");
-  const $detail       = el.querySelector("#isDetailContent");
-
+  const $detail       = el.querySelector("#isDetailContent");  const $distChart     = el.querySelector("#isDistChart");
   // ── Single-select dropdowns ───────────────────────
   const ssQueue = createSingleSelect({ placeholder: "All queues", searchable: true });
   el.querySelector("#isQueueDropdown").append(ssQueue.el);
@@ -335,7 +337,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   }
   renderFilterTags();
 
-  $pdAdd.addEventListener("click", () => {
+  function addPdFilter() {
     const key = $pdKey.value.trim();
     const value = $pdValue.value.trim();
     if (!key) return;
@@ -343,6 +345,15 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $pdKey.value = "";
     $pdValue.value = "";
     renderFilterTags();
+  }
+
+  $pdAdd.addEventListener("click", addPdFilter);
+
+  $pdKey.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addPdFilter();
+  });
+  $pdValue.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && $pdKey.value.trim()) addPdFilter();
   });
 
   $pdClear.addEventListener("click", () => {
@@ -517,6 +528,69 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $detail.textContent = lines.join("\n");
   }
 
+  // ── Value Distribution chart ───────────────────────
+  function renderDistChart() {
+    const multiVal = $pdMultiVal.checked;
+    if (!multiVal || !pdFilters.length || !conversations.length) {
+      $distChart.style.display = "none";
+      return;
+    }
+
+    const charts = [];
+    for (const f of pdFilters) {
+      const fKeyLower = f.key.toLowerCase();
+      const freq = new Map();
+      for (const conv of conversations) {
+        for (const p of conv.participants || []) {
+          const attrs = p.attributes || {};
+          const mk = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
+          if (mk == null) continue;
+          for (const val of attrs[mk].split(",").map(v => v.trim()).filter(Boolean)) {
+            freq.set(val, (freq.get(val) || 0) + 1);
+          }
+        }
+      }
+      if (freq.size) charts.push({ key: f.key, freq });
+    }
+
+    if (!charts.length) {
+      $distChart.style.display = "none";
+      return;
+    }
+
+    let html = `<div class="is-dist-header">
+      <span class="is-dist-title">Value Distribution</span>
+      <button class="is-dist-close" id="isDistClose">&times;</button>
+    </div>`;
+
+    for (const { key, freq } of charts) {
+      const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]);
+      const maxCount = sorted[0]?.[1] || 1;
+      const total = [...freq.values()].reduce((a, b) => a + b, 0);
+      html += `<div class="is-dist-chart">
+        <div class="is-dist-key">${escapeHtml(key)}</div>
+        <div class="is-dist-bars">`;
+      for (const [val, count] of sorted) {
+        const barPct  = Math.round((count / maxCount) * 100);
+        const ofTotal = Math.round((count / total) * 100);
+        html += `<div class="is-dist-row">
+          <div class="is-dist-val-label" title="${escapeHtml(val)}">${escapeHtml(val)}</div>
+          <div class="is-dist-bar-wrap"><div class="is-dist-bar" style="width:${barPct}%"></div></div>
+          <div class="is-dist-count">${count} <span class="is-dist-pct">${ofTotal}%</span></div>
+        </div>`;
+      }
+      html += `</div></div>`;
+    }
+
+    $distChart.innerHTML = html;
+    $distChart.style.display = "";
+    el.querySelector("#isDistClose")?.addEventListener("click", () => {
+      $distChart.style.display = "none";
+    });
+  }
+
+  $pdMultiVal.addEventListener("change", renderDistChart);
+
   // ── Clear results ───────────────────────────────────
   function clearResults() {
     conversations = [];
@@ -527,6 +601,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $detail.textContent = "Select a row to view details.";
     $exportBtn.disabled = true;
     $exportPdBtn.disabled = true;
+    $distChart.style.display = "none";
     hideProgress();
     setStatus(STATUS.ready);
   }
@@ -629,6 +704,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       conversations = filtered;
       rows = conversations.map(toRow);
       renderRows();
+      renderDistChart();
       showProgress(100);
 
       // Status message
