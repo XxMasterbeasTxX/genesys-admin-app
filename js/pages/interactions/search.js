@@ -608,6 +608,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         const t = new Date(c.conversationStart);
         return t >= rangeStart && t <= rangeEnd;
       });
+      console.debug(`[Search] API returned ${allConvs.length} conversations; ${startFiltered.length} started within date range ${dateFrom}→${dateTo} UTC`);
 
       // Client-side participant data filtering
       const totalFetched = startFiltered.length;
@@ -623,15 +624,18 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       showProgress(100);
 
       // Status message
+      const apiNote = allConvs.length !== startFiltered.length
+        ? ` (${allConvs.length} from API, ${allConvs.length - startFiltered.length} outside date range)`
+        : "";
       if (rows.length > 0) {
         if (currentFilters.length) {
-          setStatus(STATUS.foundFiltered(rows.length, totalFetched), "success");
+          setStatus(STATUS.foundFiltered(rows.length, totalFetched) + apiNote, "success");
         } else {
-          setStatus(STATUS.found(rows.length), "success");
+          setStatus(STATUS.found(rows.length) + apiNote, "success");
         }
       } else {
         if (currentFilters.length && totalFetched > 0) {
-          setStatus(STATUS.noFilterMatch(totalFetched));
+          setStatus(STATUS.noFilterMatch(totalFetched) + apiNote);
         } else {
           setStatus(STATUS.noResults);
         }
