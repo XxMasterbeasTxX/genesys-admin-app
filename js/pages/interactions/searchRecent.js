@@ -168,8 +168,10 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     <!-- Action buttons -->
     <div class="is-actions">
       <button class="btn" id="rsSearchBtn">Search</button>
-      <button class="btn" id="rsExportBtn" disabled>Export Excel</button>
       <button class="btn" id="rsClearBtn">Clear Results</button>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn" id="rsExportBtn" disabled>Export Excel</button>
+      </div>
     </div>
 
     <div class="is-hint">Tip: Right-click a row to copy the Conversation ID to clipboard.</div>
@@ -418,30 +420,41 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   // ── Detail pane — lazy load via real-time API ─────────
   async function loadDetail(idx) {
     if (idx < 0 || idx >= rows.length) return;
-    selectedIdx = idx;
-    renderRows();
-    $detail.textContent = "Loading…";
-    $detailPdSec.style.display = "none";
 
-    const filters  = [...pdFilters];
-    const multiVal = $pdMultiVal.checked;
-    const orgId    = orgContext.get();
+    // Toggle: clicking the same row again collapses it
+    if (expandedIdx === idx) {
+      expandedIdx = -1;
+      selectedIdx = -1;
+      renderRows();
+      $detail.textContent = "Select a row to load participant data.";
+      return;
+    }
+
+    expandedIdx = idx;
+    selectedIdx = idx;
+    renderRows(); // Shows inline expand with "Loading…" placeholder
+
+    const conversationId = rows[idx].conversationId;
+
+    if (realtimeCache[conversationId]) {
+      showDetailPane(realtimeCache[conversationId]);
+      return;
+    }
+
+    $detail.textContent = "Loading…";
+    const orgId = orgContext.get();
     try {
-      const conv = await gc.getConversation(api, orgId, rows[idx].conversationId);
-      showDetailFromRealtime(conv, filters, multiVal);
+      const conv = await gc.getConversation(api, orgId, conversationId);
+      realtimeCache[conversationId] = conv;
+      renderRows(); // Refresh inline expand with actual participant data
+      showDetailPane(conv);
     } catch (err) {
       $detail.textContent = `Error loading data: ${err.message}`;
     }
   }
 
-  /**
-   * Show conversation details + participant data in the right pane.
-   * Details section: basic info (id, times, purpose, disconnect).
-   * PD section: if filters active → show matching keys with pills;
-   *             if no filters → show all attributes.
-   */
-  function showDetailFromRealtime(conv, filters, multiVal) {
-    // ── Details section ──────────────────────────────────
+  /** Show basic conversation info in the right-hand detail pane. */
+  function showDetailPane(conv) {
     const lines = [];
     lines.push(`Conversation ID: ${conv.id || ""}`);
     lines.push(`Start: ${formatDateTime(conv.startTime)}`);
@@ -457,65 +470,6 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       });
     }
     $detail.textContent = lines.join("\n");
-
-    // ── Participant data section ──────────────────────────
-    const sections = [];
-
-    if (filters.length) {
-      // Show only the filtered keys (same display as Historical expand)
-      for (const f of filters) {
-        const fKeyLower = f.key.toLowerCase();
-        const values = new Set();
-        for (const p of conv.participants || []) {
-          const attrs = p.attributes || {};
-          const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-          if (matchedKey != null) values.add(attrs[matchedKey]);
-        }
-        const rawVal = values.size ? [...values].join(", ") : null;
-        let valsHtml;
-        if (!rawVal) {
-          valsHtml = `<span class="is-expand-raw" style="opacity:0.45">(not found)</span>`;
-        } else if (multiVal) {
-          valsHtml = rawVal.split(",").map(t => t.trim()).filter(Boolean)
-            .map(t => `<span class="is-pill">${escapeHtml(t)}</span>`).join("");
-        } else {
-          valsHtml = `<span class="is-expand-raw">${escapeHtml(rawVal)}</span>`;
-        }
-        sections.push(`<div class="is-expand-attr">
-          <span class="is-expand-key">${escapeHtml(f.key)}</span>
-          <div class="is-expand-vals">${valsHtml}</div>
-        </div>`);
-      }
-    } else {
-      // No filters — show all attributes across all participants
-      const seen = new Map(); // key → Set of values (merge across participants)
-      for (const p of conv.participants || []) {
-        for (const [k, v] of Object.entries(p.attributes || {})) {
-          if (!seen.has(k)) seen.set(k, new Set());
-          seen.get(k).add(v);
-        }
-      }
-      for (const [k, valSet] of [...seen.entries()].sort()) {
-        const rawVal = [...valSet].join(", ");
-        let valsHtml;
-        if (multiVal) {
-          valsHtml = rawVal.split(",").map(t => t.trim()).filter(Boolean)
-            .map(t => `<span class="is-pill">${escapeHtml(t)}</span>`).join("");
-        } else {
-          valsHtml = `<span class="is-expand-raw">${escapeHtml(rawVal)}</span>`;
-        }
-        sections.push(`<div class="is-expand-attr">
-          <span class="is-expand-key">${escapeHtml(k)}</span>
-          <div class="is-expand-vals">${valsHtml}</div>
-        </div>`);
-      }
-      if (!sections.length) {
-        sections.push(`<div class="is-expand-attr"><span class="is-expand-raw" style="opacity:0.45">(no participant data)</span></div>`);
-      }
-    }
-
-    $detailPdBody.innerHTML = sections.join("");
-    $detailPdSec.style.display = "";
   }
 
   // ── Clear results ─────────────────────────────────────
