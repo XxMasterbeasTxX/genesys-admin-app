@@ -35,25 +35,20 @@ export function formatDateTime(iso) {
 
 /**
  * Build an ISO 8601 interval string from two YYYY-MM-DD date strings.
- * Start is local midnight, end is local 23:59:59.999, both converted to UTC.
- * Using "T00:00:00" without "Z" lets Date parse as local time.
+ * Start is midnight UTC, end is 23:59:59.999 UTC.
  */
 export function buildInterval(from, to) {
-  const start = new Date(`${from}T00:00:00`);
-  const end   = new Date(`${to}T23:59:59.999`);
-  return `${start.toISOString()}/${end.toISOString()}`;
+  return `${from}T00:00:00.000Z/${to}T23:59:59.999Z`;
 }
 
-/** Return today's date as YYYY-MM-DD in local time. */
+/** Return today's date as YYYY-MM-DD (UTC). */
 export function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return new Date().toISOString().slice(0, 10);
 }
 
-/** Return a date N days ago as YYYY-MM-DD in local time. */
+/** Return a date N days ago as YYYY-MM-DD (UTC). */
 export function daysAgoStr(n) {
-  const d = new Date(Date.now() - n * 86_400_000);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 }
 
 // ── Async ───────────────────────────────────────────────────────────
