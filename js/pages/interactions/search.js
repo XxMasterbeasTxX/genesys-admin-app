@@ -170,7 +170,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const weekAgo = daysAgoStr(7);
 
   el.innerHTML = `
-    <h1 class="h1">Interaction Search</h1>
+    <h1 class="h1">Historical Interaction Search</h1>
     <hr class="hr">
 
     <p class="page-desc">
@@ -178,6 +178,12 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       attribute filters. Results are displayed in a sortable table with
       click-to-expand details. Export results to Excel or copy to clipboard.
     </p>
+
+    <div class="is-info-banner">
+      &#9432; For conversations from the last 48 hours, use
+      <a href="#/interactions/search/recent" class="is-link">Recent Search</a>.
+      Historical data may take up to 48 hours to appear here.
+    </div>
 
     <!-- Controls row -->
     <div class="is-controls">

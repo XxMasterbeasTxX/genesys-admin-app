@@ -453,6 +453,20 @@ body {
   margin-bottom: 10px;
 }
 
+.is-info-banner {
+  font-size: 13px;
+  color: #93c5fd;
+  background: rgba(59,130,246,0.1);
+  border: 1px solid rgba(59,130,246,0.25);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+}
+.is-info-banner .is-link {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
 .is-status {
   font-size: 13px;
   color: var(--muted);

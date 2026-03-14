@@ -111,7 +111,15 @@ export const NAV_TREE = [
     enabled: true,
     children: [
       { label: "Disconnect", path: "disconnect", enabled: true, access: "interactions.disconnect" },
-      { label: "Search", path: "search", enabled: true, access: "interactions.search" },
+      {
+        label: "Search",
+        path: "search",
+        enabled: true,
+        children: [
+          { label: "Recent (<48h)",    path: "recent",     enabled: true, access: "interactions.search" },
+          { label: "Historical (>48h)", path: "historical", enabled: true, access: "interactions.search" },
+        ],
+      },
       { label: "Move", path: "move", enabled: true, access: "interactions.move" },
     ],
   },
