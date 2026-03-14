@@ -44,14 +44,16 @@ export function buildInterval(from, to) {
   return `${start.toISOString()}/${end.toISOString()}`;
 }
 
-/** Return today's date as YYYY-MM-DD. */
+/** Return today's date as YYYY-MM-DD in local time. */
 export function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Return a date N days ago as YYYY-MM-DD. */
+/** Return a date N days ago as YYYY-MM-DD in local time. */
 export function daysAgoStr(n) {
-  return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+  const d = new Date(Date.now() - n * 86_400_000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 // ── Async ───────────────────────────────────────────────────────────
