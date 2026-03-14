@@ -36,8 +36,6 @@ const COLUMNS = [
 
 const PD_COLUMNS = [
   { key: "conversationId", label: "Conversation ID" },
-  { key: "participantNum", label: "Participant #" },
-  { key: "purpose",        label: "Purpose" },
   { key: "attrKey",        label: "Key" },
   { key: "attrValue",      label: "Value" },
 ];
