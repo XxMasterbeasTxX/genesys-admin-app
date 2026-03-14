@@ -186,6 +186,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     <!-- Controls row -->
     <div class="is-controls">
       <div class="is-control-group">
+        <label class="is-label">&nbsp;</label>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" id="isQuickLastWeek">Last Week</button>
+          <button class="btn btn-sm" id="isQuickLastMonth">Last Month</button>
+        </div>
+      </div>
+      <div class="is-control-group">
         <label class="is-label">Date From</label>
         <input type="date" class="input is-date" id="isDateFrom" value="${weekAgo}">
       </div>
@@ -222,13 +229,6 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <div class="is-pd-hint">Queue, Media, and Division filters are server-side. Participant Data is client-side.</div>
         <div class="is-filter-tags" id="isFilterTags"></div>
       </div>
-    </div>
-
-    <!-- Quick select -->
-    <div class="is-quick-select">
-      <span class="is-quick-label">Quick select:</span>
-      <button class="btn btn-sm" id="isQuickLastWeek">Last Week</button>
-      <button class="btn btn-sm" id="isQuickLastMonth">Last Month</button>
     </div>
 
     <!-- Action buttons -->
