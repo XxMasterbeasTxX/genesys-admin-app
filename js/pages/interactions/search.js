@@ -99,12 +99,13 @@ function toRow(conv) {
  * A conversation matches if ANY participant has attributes matching
  * ALL filter key/value pairs. If a filter has no value, only the key
  * presence is checked (case-insensitive value match when value provided).
+ * When exclude=true, returns conversations that do NOT match.
  */
-function filterByPD(conversations, filters) {
+function filterByPD(conversations, filters, exclude = false) {
   if (!filters.length) return conversations;
   return conversations.filter((conv) => {
-    if (!conv.participants) return false;
-    return conv.participants.some((p) => {
+    if (!conv.participants) return exclude ? true : false;
+    const matches = conv.participants.some((p) => {
       const attrs = p.attributes || {};
       return filters.every((f) => {
         const v = attrs[f.key];
@@ -113,6 +114,7 @@ function filterByPD(conversations, filters) {
         return v.toLowerCase() === f.value.toLowerCase();
       });
     });
+    return exclude ? !matches : matches;
   });
 }
 
@@ -204,6 +206,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
           <input type="text" class="input is-pd-value" id="isPdValue" placeholder="Value">
           <button class="btn btn-sm" id="isPdAdd">Add</button>
           <button class="btn btn-sm" id="isPdClear">Clear All</button>
+          <label class="is-pd-exclude-label" title="When checked, shows conversations that do NOT match the filters">
+            <input type="checkbox" id="isPdExclude"> Exclude
+          </label>
         </div>
         <div class="is-pd-hint">Queue, Media, and Division filters are server-side. Participant Data is client-side.</div>
         <div class="is-filter-tags" id="isFilterTags"></div>
@@ -253,6 +258,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $pdValue      = el.querySelector("#isPdValue");
   const $pdAdd        = el.querySelector("#isPdAdd");
   const $pdClear      = el.querySelector("#isPdClear");
+  const $pdExclude    = el.querySelector("#isPdExclude");
   const $filterTags   = el.querySelector("#isFilterTags");
   const $searchBtn    = el.querySelector("#isSearchBtn");
   const $exportBtn    = el.querySelector("#isExportBtn");
@@ -497,6 +503,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     clearResults();
     $searchBtn.disabled = true;
     const currentFilters = [...pdFilters];
+    const currentExclude = $pdExclude.checked;
     const orgId = orgContext.get();
 
     try {
@@ -529,7 +536,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       let filtered = allConvs;
       if (currentFilters.length) {
         setStatus(`Filtering ${totalFetched} conversations by participant data…`);
-        filtered = filterByPD(allConvs, currentFilters);
+        filtered = filterByPD(allConvs, currentFilters, currentExclude);
       }
 
       conversations = filtered;
