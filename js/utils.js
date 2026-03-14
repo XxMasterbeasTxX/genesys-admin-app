@@ -35,10 +35,13 @@ export function formatDateTime(iso) {
 
 /**
  * Build an ISO 8601 interval string from two YYYY-MM-DD date strings.
- * Start is midnight UTC, end is 23:59:59.999 UTC.
+ * Start is local midnight, end is local 23:59:59.999, both converted to UTC.
+ * Using "T00:00:00" without "Z" lets Date parse as local time.
  */
 export function buildInterval(from, to) {
-  return `${from}T00:00:00.000Z/${to}T23:59:59.999Z`;
+  const start = new Date(`${from}T00:00:00`);
+  const end   = new Date(`${to}T23:59:59.999`);
+  return `${start.toISOString()}/${end.toISOString()}`;
 }
 
 /** Return today's date as YYYY-MM-DD. */
