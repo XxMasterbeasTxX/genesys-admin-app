@@ -75,7 +75,7 @@ Used by: Interaction Search (Recent + Historical), Disconnect Interactions, Move
 
 ## 3. Audits
 
-Used by: Audit — Search
+Used by: Audit — Search (including Export to Excel of filtered results)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -440,4 +440,4 @@ Used by: Transcript Search
 - **Pagination**: Most list endpoints use offset pagination (`pageNumber`/`pageSize`). Exceptions: External Contacts and Assistants use **cursor pagination** (`nextUri`). Task Management (Workbins/Work Types) uses **POST-based queries**.
 - **Proxying**: All Genesys calls go through `POST /api/genesys-proxy`, which adds `Authorization: Bearer <token>` for the selected org and forwards the request to the correct Genesys region.
 - **Entity name resolution**: The Audit — Search page resolves entity names for 40+ entity types by calling the appropriate `GET /api/v2/{path}/{id}` endpoint on-demand when a row is expanded.
-- **Server-side endpoints**: Endpoints in sections 2, 11, 15–24 that are also called from `api/lib/exports/` run server-side during scheduled export execution — not from the browser.
+- **Server-side endpoints**: Endpoints in sections 2, 4, 5, 7–27 that are also called from `api/lib/exports/` run server-side during scheduled export execution (including Documentation Export) — not from the browser.
