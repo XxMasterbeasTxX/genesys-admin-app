@@ -5,6 +5,8 @@
  * Keep Genesys-specific logic in services/genesysApi.js instead.
  */
 
+import { addStyledSheet } from "./utils/excelStyles.js";
+
 // ── String / HTML ───────────────────────────────────────────────────
 
 /** Escape a string for safe insertion into HTML. */
@@ -98,23 +100,12 @@ export function exportXlsx(sheets, filename) {
   const wb = XLSX.utils.book_new();
 
   for (const sheet of sheets) {
-    // Map rows from { key: value } to { label: value } for readable headers
-    const data = sheet.rows.map((r) => {
-      const obj = {};
-      for (const col of sheet.columns) {
-        obj[col.label] = r[col.key] ?? "";
-      }
-      return obj;
-    });
-
-    const ws = XLSX.utils.json_to_sheet(data);
-
-    // Apply column widths if specified
-    if (sheet.columns.some((c) => c.wch)) {
-      ws["!cols"] = sheet.columns.map((c) => ({ wch: c.wch || 15 }));
-    }
-
-    XLSX.utils.book_append_sheet(wb, ws, sheet.name || "Sheet1");
+    // Build array-of-arrays: header row + data rows
+    const headers = sheet.columns.map((c) => c.label);
+    const dataRows = sheet.rows.map((r) =>
+      sheet.columns.map((c) => r[c.key] ?? "")
+    );
+    addStyledSheet(wb, [headers, ...dataRows], sheet.name || "Sheet1");
   }
 
   // Store data on window (keyed) so the popup can read it via window.opener
