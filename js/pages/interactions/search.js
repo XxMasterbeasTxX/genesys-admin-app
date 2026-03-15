@@ -117,6 +117,35 @@ function filterByPD(conversations, filters, exclude = false) {
   });
 }
 
+/** Flatten conversations to selected-filter participant-data rows.
+ *  If multiVal=true, CSV-valued attributes are split into individual rows.
+ */
+function toSelectedParticipantDataRows(convs, filters, multiVal) {
+  const rows = [];
+  for (const conv of convs) {
+    for (const f of filters) {
+      const fKeyLower = f.key.toLowerCase();
+      const values = new Set();
+      for (const p of conv.participants || []) {
+        const attrs = p.attributes || {};
+        const mk = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
+        if (mk != null) values.add(attrs[mk]);
+      }
+      if (!values.size) continue;
+      for (const rawVal of values) {
+        if (multiVal) {
+          for (const token of rawVal.split(",").map(t => t.trim()).filter(Boolean)) {
+            rows.push({ conversationId: conv.conversationId, attrKey: f.key, attrValue: token });
+          }
+        } else {
+          rows.push({ conversationId: conv.conversationId, attrKey: f.key, attrValue: rawVal });
+        }
+      }
+    }
+  }
+  return rows;
+}
+
 /** Flatten conversations to participant-data CSV rows. */
 function toParticipantDataRows(conversations) {
   const rows = [];
@@ -242,8 +271,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       <button class="btn" id="isSearchBtn">Search</button>
       <button class="btn" id="isClearBtn">Clear Results</button>
       <div style="margin-left:auto;display:flex;gap:8px">
-        <button class="btn" id="isExportBtn" disabled>Export Excel</button>
-        <button class="btn" id="isExportPdBtn" disabled>Export Participant Data</button>
+        <button class="btn" id="isExportBtn" disabled>Export Interactions</button>
+        <button class="btn" id="isExportPdSelectedBtn" disabled>Export Selected Participant Data</button>
+        <button class="btn" id="isExportPdBtn" disabled>Export All Participant Data</button>
       </div>
     </div>
 
@@ -295,8 +325,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $pdMultiVal   = el.querySelector("#isPdMultiVal");
   const $filterTags   = el.querySelector("#isFilterTags");
   const $searchBtn    = el.querySelector("#isSearchBtn");
-  const $exportBtn    = el.querySelector("#isExportBtn");
-  const $exportPdBtn  = el.querySelector("#isExportPdBtn");
+  const $exportBtn           = el.querySelector("#isExportBtn");
+  const $exportPdSelectedBtn = el.querySelector("#isExportPdSelectedBtn");
+  const $exportPdBtn         = el.querySelector("#isExportPdBtn");
   const $clearBtn       = el.querySelector("#isClearBtn");
   const $quickLastWeek  = el.querySelector("#isQuickLastWeek");
   const $quickLastMonth = el.querySelector("#isQuickLastMonth");
@@ -549,6 +580,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     });
 
     $exportBtn.disabled = !rows.length;
+    $exportPdSelectedBtn.disabled = !conversations.length || !pdFilters.length;
     $exportPdBtn.disabled = !conversations.length;
   }
 
@@ -695,6 +727,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $tbody.innerHTML = "";
     $detail.textContent = "Select a row to view details.";
     $exportBtn.disabled = true;
+    $exportPdSelectedBtn.disabled = true;
     $exportPdBtn.disabled = true;
     $distChart.style.display = "none";
     $resultsToggle.style.display = "none";
@@ -713,6 +746,22 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         timestampedFilename("InteractionSearch", "xlsx"),
       );
       setStatus(STATUS.exported(rows.length), "success");
+    } catch (err) {
+      setStatus(STATUS.error(err.message), "error");
+    }
+  });
+
+  $exportPdSelectedBtn.addEventListener("click", () => {
+    if (!conversations.length || !pdFilters.length) return;
+    try {
+      const multiVal = $pdMultiVal.checked;
+      const pdRows = toSelectedParticipantDataRows(conversations, pdFilters, multiVal);
+      if (!pdRows.length) { setStatus("No matching participant data found for active filters.", "error"); return; }
+      exportXlsx(
+        [{ name: "Participant Data", rows: pdRows, columns: PD_COLUMNS }],
+        timestampedFilename("ParticipantDataSelected", "xlsx"),
+      );
+      setStatus(STATUS.exported(pdRows.length), "success");
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
     }
