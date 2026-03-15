@@ -6,7 +6,8 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 ### Features
 
-- **Interaction Search** — Search conversations by date range; server-side filters for queue (searchable dropdown), media type, and division; client-side participant data attribute filters; sortable results table with click-to-expand detail; export to Excel (.xlsx)
+- **Interaction Search — Recent (<48h)** — Search conversations from the last 48 hours, today, or yesterday using the synchronous query API (results appear immediately). Server-side filters: Queue (searchable), Direction (Inbound/Outbound), Media Type, Division. Client-side Participant Data attribute filters with key/value matching, exclude mode, and multi-value (CSV) support. Inline row expand shows matched PD values as pills. Sortable results table; click-to-expand detail; right-click to copy Conversation ID. Export Interactions to styled Excel.
+- **Interaction Search — Historical (>48h)** — Search historical conversations by date range (up to 48 hours ago) using the async analytics jobs API. Quick-select buttons: Last Week, Last Month, Previous 7 Days, Previous 30 Days. Server-side filters: Queue (searchable), Direction (Inbound/Outbound), Media Type, Division. Client-side Participant Data attribute filters with key/value matching, exclude mode, and multi-value (CSV) support. Inline row expand and right-side detail pane. Collapsible results section (auto-collapses when Multi-value is active to surface the Value Distribution chart). Value Distribution bar chart for multi-value PD keys. Three export buttons: **Export Interactions** (all result rows), **Export Selected Participant Data** (only the filtered PD keys — one row per Conv ID/key/value; CSV values split into individual rows when Multi-value is checked), **Export All Participant Data** (all participant attributes across all conversations). All exports use styled Excel (blue header, alternating rows, auto-filter, frozen row).
 - **Move Interactions** — Move conversations between queues with media type filtering and date range controls
 - **Disconnect Interactions** — Force-disconnect stuck/orphaned conversations in three modes: single ID, multiple IDs (comma/newline separated), or empty an entire queue. Queue mode scans up to 6 × 31-day intervals via the async analytics jobs API to find all active conversations. Disconnects execute in parallel batches of 10 for maximum throughput, with a 50 ms pause between batches. Media type filter and date range (older/newer than) filters. Progress shown via status text and progress bar — no table, just a summary of Disconnected / Failed counts on completion.
 - **Data Tables — Create** — Create a new data table in the selected org. Required fields: Name, Division, Key (display name of the primary key column, always stored as string). Optional: Description and schema columns. Schema column builder supports Boolean, Decimal, Integer, and String types with optional default values per column. Columns can be reordered by dragging the grip handle. Schema can be imported from an Excel file: select a file, pick the sheet, and the form is pre-filled (Name from row 1; Key, Division, Description from rows 2–4; schema columns from row 5+ — A=Column Name, B=Type, C=Default value optional — invalid or empty defaults are silently skipped). Multiple tabs in the same file can be imported in sequence without re-selecting the file. A **Download Template** button downloads the pre-formatted Excel template directly.
@@ -53,7 +54,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **OAuth PKCE login** — Team members authenticate via Genesys Cloud (your own org)
 - **Welcome page** — App always starts on a clean welcome screen; no page or org is pre-selected
 - **Dark/light theme** — Adapts to OS preference automatically
-- **Iframe-safe Excel export** — Uses SheetJS (xlsx-js-style) with a helper page for reliable downloads inside Genesys Cloud iframes, with full cell styling support
+- **Iframe-safe Excel export** — Uses SheetJS (xlsx-js-style) with a `download.html` helper page for reliable downloads inside Genesys Cloud iframes. Data is passed via `window.opener` (not the URL hash) to support large exports without hitting browser URL-length limits. All exports use standard cell styling: blue header, alternating rows, auto-filter, frozen row.
 
 ## Architecture
 
@@ -178,7 +179,8 @@ genesys-admin-app/
 │   │   │   ├── subjectRequest.js    GDPR Subject Request (Articles 15, 16, 17)
 │   │   │   └── requestStatus.js     GDPR Request Status + Article 15 download links
 │   │   ├── interactions/
-│   │   │   ├── search.js            Interaction Search page
+│   │   │   ├── search.js            Historical Interaction Search (>48h, async jobs API)
+│   │   │   ├── searchRecent.js      Recent Interaction Search (<48h, sync query API)
 │   │   │   ├── move.js              Move Interactions between queues
 │   │   │   └── disconnect.js        Force-disconnect conversations (parallel batch of 10, status + progress only)
 │   │   ├── export/

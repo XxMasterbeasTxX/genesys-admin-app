@@ -4,7 +4,8 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 
 ## Current features
 
-- **Interaction Search** — Search conversations by date range; server-side filters for queue (searchable dropdown), media type, and division; client-side participant data attribute filters; sortable results table with click-to-expand detail; export to Excel
+- **Interaction Search — Recent (<48h)** — Search conversations from the last 48 hours, today, or yesterday using the synchronous query API (results appear immediately). Server-side filters: Queue (searchable), Direction (Inbound/Outbound), Media Type, Division. Client-side Participant Data attribute filters with key/value matching, exclude mode, and multi-value (CSV) support. Inline row expand shows matched PD values as pills. Sortable results table; click-to-expand detail; right-click to copy Conversation ID. Export Interactions to styled Excel.
+- **Interaction Search — Historical (>48h)** — Search historical conversations by date range (up to 48 hours ago) using the async analytics jobs API. Quick-select buttons: Last Week, Last Month, Previous 7 Days, Previous 30 Days. Server-side filters: Queue (searchable), Direction (Inbound/Outbound), Media Type, Division. Client-side Participant Data attribute filters with key/value matching, exclude mode, and multi-value (CSV) support. Inline row expand and right-side detail pane. Collapsible results section (auto-collapses when Multi-value is active to surface the Value Distribution chart). Value Distribution bar chart for multi-value PD keys. Three export buttons: **Export Interactions** (all result rows), **Export Selected Participant Data** (only the filtered PD keys — one row per Conv ID/key/value; CSV values split into individual rows when Multi-value is checked), **Export All Participant Data** (all participant attributes across all conversations). All exports use styled Excel (blue header, alternating rows, auto-filter, frozen row).
 - **Move Interactions** — Move conversations between queues with media type and date filters
 - **Disconnect Interactions** — Force-disconnect stuck/orphaned conversations in three modes: single ID, multiple IDs (comma/newline separated), or empty an entire queue. Queue mode scans up to 6 × 31-day intervals via the async analytics jobs API to find all active conversations. Disconnects execute in parallel batches of 10 for maximum throughput, with a 50 ms pause between batches. Media type filter and date range (older/newer than) filters. Progress shown via status text and progress bar — no table, just a summary of Disconnected / Failed counts on completion.
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection
@@ -635,7 +636,8 @@ After pushing the config update:
 | 7 | `/api/customers` endpoint works | Returns JSON array of customers |
 | 8 | Selecting a customer updates the page | Page responds to org change |
 | 9 | Nav menu shows top-level groups | "Data Actions", "Data Tables", "Divisions", "Export", "Interactions", "Phones" — items sorted alphabetically |
-| 10 | Interaction Search works | Date range search returns conversations; queue/division dropdowns populate; queue search filters list; media type filter works; Participant Data filter works client-side |
+| 10 | Interaction Search — Recent works | Period buttons (Last 48h / Today / Yesterday) return conversations; queue/division dropdowns populate; Direction, Media Type, Queue filters work server-side; Participant Data filter works client-side; Export Interactions downloads styled Excel |
+| 10b | Interaction Search — Historical works | Date range + quick-select buttons work; server-side filters (Queue, Direction, Media Type, Division) work; PD filter + multi-value + exclude work; Value Distribution chart shown; collapsible results; Export Interactions, Export Selected PD, Export All PD all download styled Excel |
 | 11 | Excel export works | Downloads `.xlsx` file |
 | 12 | Move Interactions works | Queue selectors load, preview and move succeed |
 | 13 | Data Tables — Copy (Single Org) | Tables, divisions load; copy structure + rows succeeds |
@@ -958,7 +960,8 @@ genesys-admin-app/
 │   │   │   ├── workbin.js           Task Mgmt — Workbins
 │   │   │   └── worktype.js          Task Mgmt — Worktypes
 │   │   ├── interactions/
-│   │   │   ├── search.js            Interaction Search page
+│   │   │   ├── search.js            Historical Interaction Search (>48h, async jobs API)
+│   │   │   ├── searchRecent.js      Recent Interaction Search (<48h, sync query API)
 │   │   │   ├── move.js              Move Interactions between queues
 │   │   │   └── disconnect.js        Force-disconnect conversations (parallel batch of 10, status + progress only)
 │   │   ├── export/

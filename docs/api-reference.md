@@ -58,15 +58,15 @@ These are the Azure Functions endpoints exposed by the app itself.
 
 ## 2. Analytics — Conversations
 
-Used by: Interaction Search, Disconnect Interactions, Move Interactions
+Used by: Interaction Search (Recent + Historical), Disconnect Interactions, Move Interactions
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/api/v2/analytics/conversations/details/jobs` | Submit an async conversation search job |
+| POST | `/api/v2/analytics/conversations/details/jobs` | Submit an async conversation search job (Historical Search — >48h) |
 | GET | `/api/v2/analytics/conversations/details/jobs/{jobId}` | Poll async job status |
 | GET | `/api/v2/analytics/conversations/details/jobs/{jobId}/results` | Fetch async job results (paginated) |
-| POST | `/api/v2/analytics/conversations/details/query` | Synchronous conversation query (single-page fallback) |
-| GET | `/api/v2/conversations/{id}` | Get a single conversation by ID |
+| POST | `/api/v2/analytics/conversations/details/query` | Synchronous conversation query (Recent Search — <48h) |
+| GET | `/api/v2/conversations/{id}` | Get a single conversation by ID (Recent Search — lazy PD load on row expand) |
 | POST | `/api/v2/conversations/{id}/disconnect` | Force-disconnect an active conversation |
 | POST | `/api/v2/conversations/{id}/participants/{participantId}/replace` | Blind transfer (move interaction to a different queue) |
 
