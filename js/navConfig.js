@@ -127,6 +127,14 @@ export const NAV_TREE = [
           },
         ],
       },
+      {
+        label: "Transcripts",
+        path: "transcripts",
+        enabled: true,
+        children: [
+          { label: "Search", path: "search", enabled: true, access: "interactions.transcripts.search" },
+        ],
+      },
       { label: "Move", path: "move", enabled: true, access: "interactions.move" },
     ],
   },

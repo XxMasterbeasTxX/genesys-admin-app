@@ -44,6 +44,8 @@
  *   interactions.search.participantData.historical  Historical Interaction Search (>48h)
  *   interactions.search.participantData.*           Both Participant Data search pages
  *   interactions.search.*                           All search pages (any sub-group)
+ *   interactions.transcripts.search                Transcript Search (single-day STA transcript check)
+ *   interactions.transcripts.*                     All transcript pages
  *   interactions.move                               Move interactions between queues
  *   interactions.disconnect                         Force-disconnect stuck conversations
  *

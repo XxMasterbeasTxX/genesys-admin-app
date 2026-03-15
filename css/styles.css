@@ -733,6 +733,194 @@ body {
   margin: 0;
 }
 
+/* ── Transcript Search ─────────────────────────────────── */
+.ts-time {
+  width: 100px;
+}
+
+/* Stacked bar chart */
+.ts-chart-wrap {
+  background: var(--panel-2, #1e2433);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+}
+.ts-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.ts-chart-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.ts-chart-legend {
+  display: flex;
+  gap: 14px;
+}
+.ts-legend-item {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.ts-legend-item::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.ts-legend-found::before    { background: #34d399; }
+.ts-legend-none::before     { background: #f87171; }
+.ts-legend-unchecked::before { background: rgba(255,255,255,0.15); }
+
+.ts-stacked-bar {
+  height: 20px;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  background: rgba(255,255,255,0.06);
+  margin-bottom: 6px;
+}
+.ts-bar-found {
+  height: 100%;
+  background: #34d399;
+  transition: width 0.3s ease;
+}
+.ts-bar-none {
+  height: 100%;
+  background: #f87171;
+  transition: width 0.3s ease;
+}
+.ts-bar-unchecked {
+  height: 100%;
+  background: rgba(255,255,255,0.15);
+  transition: width 0.3s ease;
+  flex: 1;
+}
+.ts-chart-counts {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+}
+.ts-count-found     { color: #34d399; }
+.ts-count-none      { color: #f87171; }
+.ts-count-unchecked { color: var(--muted); }
+
+/* Transcript filter bar */
+.ts-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.ts-filter-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-right: 2px;
+}
+.ts-filter-btn {
+  padding: 3px 12px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.ts-filter-btn:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+}
+.ts-filter-btn.ts-filter-active {
+  background: rgba(99,102,241,0.18);
+  border-color: rgba(99,102,241,0.45);
+  color: #a5b4fc;
+}
+
+/* Status badge in transcript column */
+.ts-status-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.ts-status-true     { background: rgba(52,211,153,0.15); color: #34d399; border: 1px solid rgba(52,211,153,0.3); }
+.ts-status-false    { background: rgba(248,113,113,0.12); color: #f87171; border: 1px solid rgba(248,113,113,0.25); }
+.ts-status-checking { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
+.ts-status-error    { background: rgba(248,113,113,0.08); color: #f87171; border: 1px solid rgba(248,113,113,0.15); }
+.ts-status-unchecked { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border); }
+
+/* Expand panel within table */
+.ts-expand-panel {
+  padding: 10px 14px 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ts-expand-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.ts-expand-none {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+.ts-expand-raw-note {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+  margin-bottom: 4px;
+}
+
+/* Transcript phrases */
+.ts-phrase {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 3px 0;
+}
+.ts-phrase-speaker {
+  font-weight: 600;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+.ts-phrase--agent    .ts-phrase-speaker { color: #60a5fa; }
+.ts-phrase--customer .ts-phrase-speaker { color: #34d399; }
+.ts-phrase-text {
+  color: var(--text);
+  word-break: break-word;
+}
+
+/* Detail pane content (scrollable transcript) */
+.ts-detail-content {
+  overflow-y: auto;
+  max-height: calc(60vh - 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+/* Results section */
+.ts-results-section .is-results {
+  grid-template-columns: 1fr 320px;
+}
+
 /* ── Move Interactions ──────────────────────────────────── */
 .mi-controls {
   display: flex;
