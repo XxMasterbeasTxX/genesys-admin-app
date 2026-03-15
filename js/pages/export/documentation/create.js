@@ -17,6 +17,12 @@
  */
 import { sendEmail } from "../../../services/emailService.js";
 import { logAction } from "../../../services/activityLogService.js";
+import { createSchedulePanel } from "../../../components/schedulePanel.js";
+
+// ── Automation ─────────────────────────────────────────────────────────────────
+const AUTOMATION_ENABLED     = true;
+const AUTOMATION_EXPORT_TYPE  = "documentation";
+const AUTOMATION_EXPORT_LABEL = "Documentation Export";
 
 export default function renderDocumentationCreate({ route, me, api, orgContext }) {
   const el = document.createElement("section");
@@ -91,6 +97,17 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
       </div>
     </div>
   `;
+
+  // ── Automation panel ────────────────────────────────────────────────────
+  if (AUTOMATION_ENABLED) {
+    const schedulePanel = createSchedulePanel({
+      exportType:  AUTOMATION_EXPORT_TYPE,
+      exportLabel: AUTOMATION_EXPORT_LABEL,
+      me,
+      requiresOrg: true,
+    });
+    el.appendChild(schedulePanel);
+  }
 
   // ── References ─────────────────────────────────────────────────────────
   const $orgLabel    = el.querySelector("#docOrgLabel");
