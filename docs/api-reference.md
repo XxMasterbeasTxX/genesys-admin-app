@@ -34,6 +34,7 @@ All Genesys Cloud calls are proxied through `POST /api/genesys-proxy` on the Azu
 24. [Stations](#24-stations)
 25. [Locations](#25-locations)
 26. [Utilities](#26-utilities)
+27. [Speech & Text Analytics](#27-speech--text-analytics)
 
 ---
 
@@ -66,7 +67,7 @@ Used by: Interaction Search (Recent + Historical), Disconnect Interactions, Move
 | GET | `/api/v2/analytics/conversations/details/jobs/{jobId}` | Poll async job status |
 | GET | `/api/v2/analytics/conversations/details/jobs/{jobId}/results` | Fetch async job results (paginated) |
 | POST | `/api/v2/analytics/conversations/details/query` | Synchronous conversation query (Recent Search — <48h) |
-| GET | `/api/v2/conversations/{id}` | Get a single conversation by ID (Recent Search — lazy PD load on row expand) |
+| GET | `/api/v2/conversations/{id}` | Get a single conversation by ID (Recent Search — lazy PD load on row expand; Transcript Search — fetch conversation details and communicationId for ID-mode search) |
 | POST | `/api/v2/conversations/{id}/disconnect` | Force-disconnect an active conversation |
 | POST | `/api/v2/conversations/{id}/participants/{participantId}/replace` | Blind transfer (move interaction to a different queue) |
 
@@ -420,6 +421,17 @@ Used by: Deployment — Basic (Schedule Groups timezone validation)
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/timezones` | List all valid Genesys Cloud timezone IDs (used to validate Schedule Group timezone before API call) |
+
+---
+
+## 27. Speech & Text Analytics
+
+Used by: Transcript Search
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v2/speechandtextanalytics/conversations/{id}/communications/{commId}/transcripturl` | Check whether a STA transcript exists for a specific communication. HTTP 200 = transcript exists and returns a pre-signed S3 URL; HTTP 404 = no transcript. Called in parallel batches of 10 per conversation result row. |
+| GET | `{s3PreSignedUrl}` | Fetch the full transcript JSON content from AWS S3 using the pre-signed URL returned above. Direct browser request — no Authorization header. Called on-demand when the user expands a row to read the transcript. |
 
 ---
 
