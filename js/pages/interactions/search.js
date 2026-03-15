@@ -373,7 +373,12 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   });
 
   // Helper: YYYY-MM-DD string from a Date object
-  function dateStr(d) { return d.toISOString().slice(0, 10); }
+  function dateStr(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
 
   $quickLastWeek.addEventListener("click", () => {
     const now = new Date();
