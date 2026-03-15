@@ -40,9 +40,11 @@
  *   data-tables.copy.singleOrg         Copy a data table within the same org
  *
  *   INTERACTIONS
- *   interactions.search                Recent (<48h) and Historical (>48h) search
- *   interactions.move                  Move interactions between queues
- *   interactions.disconnect            Force-disconnect stuck conversations
+ *   interactions.search.recent            Recent Interaction Search (<48h)
+ *   interactions.search.historical        Historical Interaction Search (>48h)
+ *   interactions.search.*                 Both search pages
+ *   interactions.move                     Move interactions between queues
+ *   interactions.disconnect               Force-disconnect stuck conversations
  *
  *   EXPORT
  *   export.scheduled                   All Scheduled Exports overview + automation
