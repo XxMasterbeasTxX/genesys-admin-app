@@ -121,8 +121,8 @@ export const NAV_TREE = [
             path: "participant-data",
             enabled: true,
             children: [
-              { label: "Recent (<48h)",     path: "recent",     enabled: true, access: "interactions.search.recent"     },
-              { label: "Historical (>48h)", path: "historical", enabled: true, access: "interactions.search.historical" },
+              { label: "Recent (<48h)",     path: "recent",     enabled: true, access: "interactions.search.participantData.recent"     },
+              { label: "Historical (>48h)", path: "historical", enabled: true, access: "interactions.search.participantData.historical" },
             ],
           },
         ],
