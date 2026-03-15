@@ -101,8 +101,8 @@
  */
 export const GROUP_ACCESS = {
   "Genesys App - Master Admin": ["*"],
-  "Genesys App - Admin":  ["*"],
-  "Genesys App - Support":    ["*"],
+  "Genesys App - Admin": ["*"],
+  "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*"],
   "Genesys App - Export": ["export.*"],
 };
 
