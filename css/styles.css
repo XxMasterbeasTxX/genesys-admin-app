@@ -598,6 +598,24 @@ body {
   transition: width 0.3s ease;
 }
 
+.is-results-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 5px 2px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.is-results-toggle:hover { color: var(--text); }
+.is-results-toggle-arrow {
+  font-size: 10px;
+  transition: transform 0.15s;
+}
 .is-results {
   display: grid;
   grid-template-columns: 1fr 340px;

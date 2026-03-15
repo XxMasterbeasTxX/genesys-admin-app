@@ -258,18 +258,24 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     <div class="is-dist-panel" id="isDistChart" style="display:none"></div>
 
     <!-- Results area: table + detail pane -->
-    <div class="is-results">
-      <div class="is-table-wrap">
-        <table class="data-table is-table" id="isTable">
-          <thead>
-            <tr>${COLUMNS.map((c) => `<th style="width:${c.width}">${c.label}</th>`).join("")}</tr>
-          </thead>
-          <tbody id="isTbody"></tbody>
-        </table>
+    <div class="is-results-section" id="isResultsSection">
+      <div class="is-results-toggle" id="isResultsToggle" style="display:none">
+        <span class="is-results-toggle-arrow" id="isResultsArrow">&#9660;</span>
+        <span id="isResultsToggleLabel">Results</span>
       </div>
-      <div class="is-detail" id="isDetail">
-        <div class="is-detail-title">Conversation Detail</div>
-        <pre class="is-detail-content" id="isDetailContent">Select a row to view details.</pre>
+      <div class="is-results" id="isResultsBody">
+        <div class="is-table-wrap">
+          <table class="data-table is-table" id="isTable">
+            <thead>
+              <tr>${COLUMNS.map((c) => `<th style="width:${c.width}">${c.label}</th>`).join("")}</tr>
+            </thead>
+            <tbody id="isTbody"></tbody>
+          </table>
+        </div>
+        <div class="is-detail" id="isDetail">
+          <div class="is-detail-title">Conversation Detail</div>
+          <pre class="is-detail-content" id="isDetailContent">Select a row to view details.</pre>
+        </div>
       </div>
     </div>
   `;
@@ -296,7 +302,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $progressWrap = el.querySelector("#isProgressWrap");
   const $progressBar  = el.querySelector("#isProgressBar");
   const $tbody        = el.querySelector("#isTbody");
-  const $detail       = el.querySelector("#isDetailContent");  const $distChart     = el.querySelector("#isDistChart");
+  const $detail       = el.querySelector("#isDetailContent");
+  const $distChart     = el.querySelector("#isDistChart");
+  const $resultsToggle = el.querySelector("#isResultsToggle");
+  const $resultsArrow  = el.querySelector("#isResultsArrow");
+  const $resultsLabel  = el.querySelector("#isResultsToggleLabel");
+  const $resultsBody   = el.querySelector("#isResultsBody");
+  let resultsCollapsed = false;
   // ── Single-select dropdowns ───────────────────────
   const ssQueue = createSingleSelect({ placeholder: "All queues", searchable: true });
   el.querySelector("#isQueueDropdown").append(ssQueue.el);
@@ -635,7 +647,33 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     });
   }
 
-  $pdMultiVal.addEventListener("change", renderDistChart);
+  $pdMultiVal.addEventListener("change", () => {
+    renderDistChart();
+    if ($pdMultiVal.checked && rows.length) {
+      setResultsCollapsed(true);
+    } else {
+      setResultsCollapsed(false);
+    }
+  });
+
+  function setResultsCollapsed(collapsed) {
+    resultsCollapsed = collapsed;
+    $resultsBody.style.display = collapsed ? "none" : "";
+    $resultsArrow.innerHTML = collapsed ? "&#9654;" : "&#9660;";
+  }
+
+  function updateResultsToggle() {
+    if (rows.length) {
+      $resultsToggle.style.display = "";
+      $resultsLabel.textContent = `Results (${rows.length})`;
+    } else {
+      $resultsToggle.style.display = "none";
+    }
+  }
+
+  $resultsToggle.addEventListener("click", () => {
+    setResultsCollapsed(!resultsCollapsed);
+  });
 
   // ── Clear results ───────────────────────────────────
   function clearResults() {
@@ -648,6 +686,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $exportBtn.disabled = true;
     $exportPdBtn.disabled = true;
     $distChart.style.display = "none";
+    $resultsToggle.style.display = "none";
+    setResultsCollapsed(false);
     hideProgress();
     setStatus(STATUS.ready);
   }
@@ -754,6 +794,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       rows = conversations.map(toRow);
       renderRows();
       renderDistChart();
+      updateResultsToggle();
+      if ($pdMultiVal.checked && rows.length) setResultsCollapsed(true);
       showProgress(100);
 
       // Status message
