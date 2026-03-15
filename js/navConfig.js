@@ -125,14 +125,14 @@ export const NAV_TREE = [
               { label: "Historical (>48h)", path: "historical", enabled: true, access: "interactions.search.participantData.historical" },
             ],
           },
-        ],
-      },
-      {
-        label: "Transcripts",
-        path: "transcripts",
-        enabled: true,
-        children: [
-          { label: "Search", path: "search", enabled: true, access: "interactions.transcripts.search" },
+          {
+            label: "Transcripts",
+            path: "transcripts",
+            enabled: true,
+            children: [
+              { label: "Search", path: "search", enabled: true, access: "interactions.transcripts.search" },
+            ],
+          },
         ],
       },
       { label: "Move", path: "move", enabled: true, access: "interactions.move" },
