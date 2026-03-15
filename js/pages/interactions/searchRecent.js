@@ -142,6 +142,10 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
         <div id="rsQueueDropdown"></div>
       </div>
       <div class="is-control-group">
+        <label class="is-label">Direction</label>
+        <div id="rsDirectionDropdown"></div>
+      </div>
+      <div class="is-control-group">
         <label class="is-label">Media Type</label>
         <div id="rsMediaDropdown"></div>
       </div>
@@ -284,6 +288,13 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   const ssQueue = createSingleSelect({ placeholder: "All queues", searchable: true });
   el.querySelector("#rsQueueDropdown").append(ssQueue.el);
   ssQueue.setEnabled(false);
+
+  const ssDirection = createSingleSelect({ placeholder: "All", searchable: false });
+  el.querySelector("#rsDirectionDropdown").append(ssDirection.el);
+  ssDirection.setItems([
+    { id: "inbound",  label: "Inbound" },
+    { id: "outbound", label: "Outbound" },
+  ]);
 
   const ssMedia = createSingleSelect({ placeholder: "All", searchable: false });
   el.querySelector("#rsMediaDropdown").append(ssMedia.el);
@@ -525,11 +536,13 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     try {
       const body = {};
       const segmentPredicates = [];
-      const queueId    = ssQueue.getValue();
-      const mediaVal   = ssMedia.getValue();
-      const divisionId = ssDivision.getValue();
-      if (queueId)  segmentPredicates.push({ dimension: "queueId",   value: queueId });
-      if (mediaVal) segmentPredicates.push({ dimension: "mediaType", value: mediaVal });
+      const queueId      = ssQueue.getValue();
+      const directionVal = ssDirection.getValue();
+      const mediaVal     = ssMedia.getValue();
+      const divisionId   = ssDivision.getValue();
+      if (queueId)      segmentPredicates.push({ dimension: "queueId",   value: queueId });
+      if (directionVal) segmentPredicates.push({ dimension: "direction", value: directionVal });
+      if (mediaVal)     segmentPredicates.push({ dimension: "mediaType", value: mediaVal });
       if (segmentPredicates.length) {
         body.segmentFilters = [{ type: "and", predicates: segmentPredicates }];
       }

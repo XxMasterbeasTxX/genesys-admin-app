@@ -207,6 +207,10 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <div id="isQueueDropdown"></div>
       </div>
       <div class="is-control-group">
+        <label class="is-label">Direction</label>
+        <div id="isDirectionDropdown"></div>
+      </div>
+      <div class="is-control-group">
         <label class="is-label">Media Type</label>
         <div id="isMediaDropdown"></div>
       </div>
@@ -313,6 +317,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const ssQueue = createSingleSelect({ placeholder: "All queues", searchable: true });
   el.querySelector("#isQueueDropdown").append(ssQueue.el);
   ssQueue.setEnabled(false);
+
+  const ssDirection = createSingleSelect({ placeholder: "All", searchable: false });
+  el.querySelector("#isDirectionDropdown").append(ssDirection.el);
+  ssDirection.setItems([
+    { id: "inbound",  label: "Inbound" },
+    { id: "outbound", label: "Outbound" },
+  ]);
 
   const ssMedia = createSingleSelect({ placeholder: "All", searchable: false });
   el.querySelector("#isMediaDropdown").append(ssMedia.el);
@@ -752,11 +763,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       // Build server-side filter body
       const jobBody = {};
       const segmentPredicates = [];
-      const queueId    = ssQueue.getValue();
-      const mediaVal   = ssMedia.getValue();
-      const divisionId = ssDivision.getValue();
-      if (queueId)  segmentPredicates.push({ dimension: "queueId",   value: queueId });
-      if (mediaVal) segmentPredicates.push({ dimension: "mediaType", value: mediaVal });
+      const queueId      = ssQueue.getValue();
+      const directionVal = ssDirection.getValue();
+      const mediaVal     = ssMedia.getValue();
+      const divisionId   = ssDivision.getValue();
+      if (queueId)      segmentPredicates.push({ dimension: "queueId",   value: queueId });
+      if (directionVal) segmentPredicates.push({ dimension: "direction", value: directionVal });
+      if (mediaVal)     segmentPredicates.push({ dimension: "mediaType", value: mediaVal });
       if (segmentPredicates.length) {
         jobBody.segmentFilters = [{ type: "and", predicates: segmentPredicates }];
       }
