@@ -17,7 +17,7 @@
  *   GET  /api/v2/audits/query/{transactionId}
  *   GET  /api/v2/audits/query/{transactionId}/results
  */
-import { escapeHtml, formatDateTime, todayStr, daysAgoStr } from "../../utils.js";
+import { escapeHtml, formatDateTime, todayStr, daysAgoStr, exportXlsx, timestampedFilename } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 
@@ -156,6 +156,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
           <label class="di-label">Changed By</label>
           <div id="aqChangedByDropdown"></div>
         </div>
+        <div class="di-control-group" style="margin-left:auto;justify-content:flex-end;padding-top:20px">
+          <button class="btn" id="aqExportBtn" disabled>Export to Excel</button>
+        </div>
       </div>
 
       <p class="di-status" id="aqResultCount"></p>
@@ -214,6 +217,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   const $nextBtn      = el.querySelector("#aqNextBtn");
   const $pageInfo     = el.querySelector("#aqPageInfo");
   const $pageSizeSel  = el.querySelector("#aqPageSize");
+  const $exportBtn    = el.querySelector("#aqExportBtn");
 
   // ── Date defaults ────────────────────────────────────────────────
   const today       = todayStr();
@@ -685,6 +689,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
     currentPage = 1;
     renderTable();
+    $exportBtn.disabled = filteredRows.length === 0;
   }
 
   // ── Field extractors ─────────────────────────────────────────────
@@ -877,6 +882,86 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         <pre class="aq-raw-json">${escapeHtml(JSON.stringify(entry, null, 2))}</pre>
       </details>`;
   }
+
+  // ── Export to Excel ─────────────────────────────────────────────────────────
+  const EXPORT_COLUMNS = [
+    { key: "dateTime",   label: "Date & Time",       wch: 22 },
+    { key: "service",    label: "Service",            wch: 20 },
+    { key: "entityType", label: "Entity Type",        wch: 25 },
+    { key: "entityName", label: "Entity Name",        wch: 35 },
+    { key: "action",     label: "Action",             wch: 20 },
+    { key: "changedBy",  label: "Changed By",         wch: 30 },
+    { key: "level",      label: "Level",              wch: 12 },
+    { key: "remoteIp",   label: "Remote IP",          wch: 20 },
+    { key: "property",   label: "Property",           wch: 30 },
+    { key: "oldValue",   label: "Old Value",          wch: 40 },
+    { key: "newValue",   label: "New Value",          wch: 40 },
+    { key: "context",    label: "Additional Context", wch: 50 },
+  ];
+
+  function exportToExcel() {
+    if (!filteredRows.length) return;
+
+    const rows = [];
+    for (const entry of filteredRows) {
+      const dateTime   = formatDateTime(entry.eventDate || entry.createdDate);
+      const service    = entry.serviceName || ssService.getValue() || "";
+      const entityType = getEntityType(entry);
+      const entityName = getEntityName(entry);
+      const action     = entry.action || "";
+      const changedBy  = getActorName(entry);
+      const level      = entry.level || "";
+      const remoteIp   = (entry.remoteIp || []).filter(Boolean).join(", ");
+
+      // Additional context → "key: value; key: value"
+      const ctxRaw = entry.context ?? entry.additionalContext ?? null;
+      let context = "";
+      if (ctxRaw) {
+        if (Array.isArray(ctxRaw)) {
+          context = ctxRaw
+            .map(item => typeof item === "object"
+              ? `${item.key ?? item.name ?? ""}: ${item.value ?? ""}`
+              : String(item))
+            .filter(Boolean).join("; ");
+        } else if (typeof ctxRaw === "object") {
+          context = Object.entries(ctxRaw)
+            .filter(([, v]) => v !== null && v !== undefined && v !== "")
+            .map(([k, v]) => `${k}: ${v}`)
+            .join("; ");
+        }
+      }
+
+      const propChanges = entry.propertyChanges || entry.properties || [];
+      if (propChanges.length) {
+        for (const p of propChanges) {
+          rows.push({
+            dateTime, service, entityType, entityName, action, changedBy, level, remoteIp,
+            property: String(p.property ?? p.Property ?? ""),
+            oldValue: [].concat(p.oldValues ?? p.oldValue ?? []).join(", "),
+            newValue: [].concat(p.newValues ?? p.newValue ?? []).join(", "),
+            context,
+          });
+        }
+      } else {
+        rows.push({ dateTime, service, entityType, entityName, action, changedBy, level, remoteIp,
+          property: "", oldValue: "", newValue: "", context });
+      }
+    }
+
+    const org      = orgContext?.getDetails?.();
+    const safeName = (org?.name || orgId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const from     = $dateFrom.value || "unknown";
+    const to       = $dateTo.value   || "unknown";
+    const filename = timestampedFilename(`Audit_Search_${safeName}_${from}_${to}`, "xlsx");
+
+    try {
+      exportXlsx([{ name: "Audit Search", rows, columns: EXPORT_COLUMNS }], filename);
+    } catch (err) {
+      setStatus(`Export failed: ${err.message}`, "error");
+    }
+  }
+
+  $exportBtn.addEventListener("click", exportToExcel);
 
   return el;
 }
