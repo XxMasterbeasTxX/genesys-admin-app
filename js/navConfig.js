@@ -130,7 +130,7 @@ export const NAV_TREE = [
             path: "transcripts",
             enabled: true,
             children: [
-              { label: "Search", path: "search", enabled: true, access: "interactions.transcripts.search" },
+              { label: "Search", path: "search", enabled: true, access: "interactions.search.transcripts.search" },
             ],
           },
         ],
