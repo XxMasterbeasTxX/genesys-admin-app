@@ -55,10 +55,6 @@ const EXPORT_COLUMNS = [
   { key: "direction",         label: "Direction"             },
   { key: "transcriptStatus",  label: "Transcript Exists"     },
   { key: "transcriptCheckedAt", label: "Checked At"          },
-  { key: "transcriptPreview", label: "Transcript (preview)"  },
-  { key: "phraseCount",       label: "Phrase Count"          },
-  { key: "firstMessage",      label: "First Message"         },
-  { key: "lastMessage",       label: "Last Message"          },
 ];
 
 // ── Status messages ──────────────────────────────────────────────────
