@@ -71,6 +71,7 @@ const STATUS = {
   exported:  (n) => `Exported ${n} rows to Excel.`,
   cancelled: "Transcript check cancelled.",
   error:     (msg) => `Error: ${msg}`,
+  idReady:   "Ready. Paste one or more conversation IDs and click Search.",
 };
 
 // ── Transcript status constants ──────────────────────────────────────
@@ -133,6 +134,51 @@ function toRow(conv, queueMap) {
     lastMessage:         "",
     _raw: conv,
     _transcriptContent: null,   // stored when transcript has been fetched
+  };
+}
+
+/** Build a display row from a GET /api/v2/conversations/{id} response. */
+function toRowFromConvDetail(conv, queueMap) {
+  let direction = "";
+  let mediaType = "";
+  let queue     = "";
+
+  for (const p of conv.participants || []) {
+    for (const c of p.calls || []) {
+      if (!direction && c.direction) direction = c.direction;
+      if (!mediaType) mediaType = "voice";
+    }
+    for (const m of p.messages || []) {
+      if (!direction && m.direction) direction = m.direction;
+      if (!mediaType) mediaType = m.type || "message";
+    }
+    if (!queue && p.queueId) queue = queueMap[p.queueId] || p.queueId;
+  }
+
+  const agentParticipant = (conv.participants || []).find(p => p.purpose === "agent");
+  const agentName = agentParticipant?.name || "";
+
+  const dur = (conv.startTime && conv.endTime)
+    ? Math.round((new Date(conv.endTime) - new Date(conv.startTime)) / 1000)
+    : "";
+
+  return {
+    conversationId:      conv.id || "",
+    startTime:           formatDateTime(conv.startTime),
+    endTime:             formatDateTime(conv.endTime),
+    duration:            dur,
+    direction,
+    mediaType,
+    queue,
+    agentName,
+    transcriptStatus:    TS.UNCHECKED,
+    transcriptCheckedAt: "",
+    transcriptPreview:   "",
+    phraseCount:         "",
+    firstMessage:        "",
+    lastMessage:         "",
+    _raw: conv,
+    _transcriptContent: null,
   };
 }
 
@@ -239,6 +285,7 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
   let expandedIdx = -1;
   let checkAbortCtrl = null;
   let transcriptFilter = "all";  // "all" | "true" | "false" | "unchecked"
+  let searchMode = "date";       // "date" | "ids"
   let queues = [];
   let queueMap = {};       // { id → name }
 
@@ -254,8 +301,15 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
       transcript exists for each one. Use the time filters to narrow down high-volume periods.
     </p>
 
+    <!-- Search mode toggle -->
+    <div class="ts-filter-bar" style="margin-bottom:14px">
+      <span class="ts-filter-label">Search by:</span>
+      <button class="ts-filter-btn ts-filter-active" id="tsModeDate">Date &amp; Filters</button>
+      <button class="ts-filter-btn" id="tsModeIds">Conversation ID(s)</button>
+    </div>
+
     <!-- Filter panel -->
-    <div class="is-controls">
+    <div class="is-controls" id="tsDateControls">
       <div class="is-control-group">
         <label class="is-label">Date</label>
         <input type="date" class="input is-date" id="tsDate" value="${todayVal}" max="${todayVal}">
@@ -279,6 +333,16 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
       <div class="is-control-group">
         <label class="is-label">Direction</label>
         <div id="tsDirectionDropdown"></div>
+      </div>
+    </div>
+
+    <!-- ID input panel -->
+    <div id="tsIdControls" style="display:none">
+      <div class="is-control-group" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <label class="is-label">Conversation ID(s)</label>
+        <textarea class="input" id="tsIdInput" rows="5"
+          style="width:100%;max-width:640px;resize:vertical;font-family:monospace;font-size:12px"
+          placeholder="Paste one or more conversation IDs — separated by commas, spaces, or new lines…"></textarea>
       </div>
     </div>
 
@@ -370,6 +434,11 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
   const $resultsSection = el.querySelector("#tsResultsSection");
   const $tbody        = el.querySelector("#tsTbody");
   const $detailContent = el.querySelector("#tsDetailContent");
+  const $modeDateBtn  = el.querySelector("#tsModeDate");
+  const $modeIdsBtn   = el.querySelector("#tsModeIds");
+  const $dateControls = el.querySelector("#tsDateControls");
+  const $idControls   = el.querySelector("#tsIdControls");
+  const $idInput      = el.querySelector("#tsIdInput");
 
   // ── Dropdowns ────────────────────────────────────────
   const ssQueue = createSingleSelect({ placeholder: "All queues", searchable: true });
@@ -440,6 +509,18 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
       renderRows();
     });
   });
+
+  // ── Search mode toggle ────────────────────────────────
+  function setSearchMode(mode) {
+    searchMode = mode;
+    $modeDateBtn.classList.toggle("ts-filter-active", mode === "date");
+    $modeIdsBtn.classList.toggle("ts-filter-active", mode === "ids");
+    $dateControls.style.display = mode === "date" ? "" : "none";
+    $idControls.style.display   = mode === "ids"  ? "" : "none";
+    setStatus(mode === "ids" ? STATUS.idReady : STATUS.ready);
+  }
+  $modeDateBtn.addEventListener("click", () => setSearchMode("date"));
+  $modeIdsBtn.addEventListener("click",  () => setSearchMode("ids"));
 
   // ── Render table rows ─────────────────────────────────
   function getVisibleRows() {
@@ -764,7 +845,79 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
   });
 
   // ── SEARCH ────────────────────────────────────────────
+
+  async function searchByIds() {
+    const raw = $idInput.value.trim();
+    if (!raw) {
+      setStatus("Please paste at least one conversation ID.", "error");
+      return;
+    }
+
+    // Split on whitespace, commas, semicolons — deduplicate
+    const ids = [...new Set(
+      raw.split(/[\s,;]+/).map(s => s.trim()).filter(s => s.length > 0)
+    )];
+
+    if (!ids.length) {
+      setStatus("No valid IDs found.", "error");
+      return;
+    }
+
+    clearResults();
+    $searchBtn.disabled = true;
+    showProgress(0);
+
+    const orgId = orgContext.get();
+    let done = 0;
+    let skipped = 0;
+    const loadedRows = [];
+
+    try {
+      setStatus(`Loading ${ids.length} conversation${ids.length !== 1 ? "s" : ""}…`);
+
+      for (let i = 0; i < ids.length; i += CONCURRENCY) {
+        const batch = ids.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(batch.map(async (id) => {
+          try {
+            const conv = await api.proxyGenesys(orgId, "GET", `/api/v2/conversations/${id}`);
+            return toRowFromConvDetail(conv, queueMap);
+          } catch {
+            skipped++;
+            return null;
+          }
+        }));
+        for (const r of results) if (r) loadedRows.push(r);
+        done += batch.length;
+        showProgress(Math.round(done / ids.length * 100));
+      }
+
+      rows         = loadedRows;
+      conversations = rows.map(r => r._raw);
+
+      renderRows();
+      updateChart();
+      $filterBar.style.display      = rows.length ? "" : "none";
+      $resultsSection.style.display = rows.length ? "" : "none";
+      $checkBtn.disabled            = !rows.length;
+
+      if (rows.length) {
+        const suffix = skipped ? ` (${skipped} ID${skipped !== 1 ? "s" : ""} not found)` : "";
+        setStatus(`Loaded ${rows.length} conversation${rows.length !== 1 ? "s" : ""}${suffix}. Click "Check Transcripts" to verify.`, "success");
+      } else {
+        setStatus("No conversations found for the given IDs.");
+      }
+    } catch (err) {
+      setStatus(STATUS.error(err.message || String(err)), "error");
+      console.error("ID search error:", err);
+    } finally {
+      $searchBtn.disabled = false;
+      setTimeout(hideProgress, 800);
+    }
+  }
+
   $searchBtn.addEventListener("click", async () => {
+    if (searchMode === "ids") { await searchByIds(); return; }
+
     const date     = $date.value;
     const timeFrom = $timeFrom.value || "00:00";
     const timeTo   = $timeTo.value   || "23:59";
