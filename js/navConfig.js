@@ -209,6 +209,14 @@ export const NAV_TREE = [
     ],
   },
   {
+    label: "Roles",
+    path: "roles",
+    enabled: true,
+    children: [
+      { label: "Compare", path: "compare", enabled: true, access: "roles.compare" },
+    ],
+  },
+  {
     label: "Audit",
     path: "audit",
     enabled: true,

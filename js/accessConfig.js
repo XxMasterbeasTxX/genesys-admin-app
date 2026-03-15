@@ -69,6 +69,9 @@
  *   gdpr.subjectRequest                Submit GDPR data subject requests
  *   gdpr.requestStatus                 View GDPR request status
  *
+ *   ROLES
+ *   roles.compare                      Compare permission policies across roles
+ *
  *   AUDIT
  *   audit.search                       Audit event search
  *

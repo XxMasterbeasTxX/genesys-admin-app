@@ -129,6 +129,10 @@ const registry = {
   "/gdpr/request-status": (ctx) =>
     import("./pages/gdpr/requestStatus.js").then((m) => m.default(ctx)),
 
+  // ── Roles ──────────────────────────────────────────────
+  "/roles/compare": (ctx) =>
+    import("./pages/roles/compare.js").then((m) => m.default(ctx)),
+
   // ── Audit ─────────────────────────────────────────────
   "/audit/search": (ctx) =>
     import("./pages/audit/search.js").then((m) => m.default(ctx)),
