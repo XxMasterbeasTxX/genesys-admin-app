@@ -103,14 +103,7 @@ function renderFatalError(message) {
     outletEl,
     resolve: async (route) => {
       // Root route — show welcome page with no preselection
-      if (route === "/") return renderWelcomePage({
-        debugInfo: {
-          userId: res.me?.id,
-          isSuperuser: !!access._isSuperuser,
-          groupNames: access._groupNames,
-          accessKeys: access.grantedKeys,
-        },
-      });
+      if (route === "/") return renderWelcomePage();
 
       const loader = getPageLoader(route);
       if (loader) {

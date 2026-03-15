@@ -62,7 +62,7 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
   // Superusers always get full access regardless of groups.
   if (userId && SUPERUSER_IDS.includes(userId)) {
     console.info("[accessService] superuser — full access granted");
-    return { hasAccess: () => true, hasAnyAccess: () => true, grantedKeys: ["*"], _isSuperuser: true, _groupNames: [] };
+    return { hasAccess: () => true, hasAnyAccess: () => true };
   }
 
   const groupNames = await fetchUserGroupNames(accessToken);
@@ -85,11 +85,6 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
   }
 
   return {
-    /** Debug: the group names that were resolved for this user. */
-    _groupNames: groupNames,
-    /** Debug: the raw granted keys. */
-    grantedKeys: [...keys],
-
     /**
      * Returns true if the user has access to the given page key.
      * Checks (in order): *, section.*, section.group.*, exact key.
