@@ -28,12 +28,21 @@
       var btnEl = document.getElementById("dlBtn");
 
       try {
-        var hash = location.hash.substring(1);
-        var sep = hash.indexOf("|");
-        if (!hash || sep < 0) { msgEl.textContent = "No export data found."; return; }
+        var key = location.hash.substring(1);
+        if (!key) { msgEl.textContent = "No export data found."; return; }
 
-        var fileName = decodeURIComponent(hash.substring(0, sep));
-        var b64 = hash.substring(sep + 1);
+        var store = window.opener && window.opener._xlsxDownload;
+        var payload = store && store[key];
+        if (!payload) { msgEl.textContent = "Export data not found or expired. Please try again."; return; }
+
+        var fileName = payload.filename;
+        var b64 = payload.b64;
+
+        // Clean up from opener
+        try { delete window.opener._xlsxDownload[key]; } catch (e) {}
+
+        // Clear hash for privacy
+        history.replaceState(null, "", location.pathname);
 
         // Decode base64
         var raw = atob(b64);
@@ -58,9 +67,6 @@
         pickerTypes[0].accept[mime] = ["." + ext];
 
         var blob = new Blob([bytes], { type: mime });
-
-        // Clear hash for privacy
-        history.replaceState(null, "", location.pathname);
 
         msgEl.textContent = "Click the button to save your file:";
         btnEl.textContent = "\u2B07 Save " + fileName;

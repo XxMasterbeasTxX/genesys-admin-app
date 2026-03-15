@@ -117,13 +117,19 @@ export function exportXlsx(sheets, filename) {
     XLSX.utils.book_append_sheet(wb, ws, sheet.name || "Sheet1");
   }
 
-  // Encode as base64 and open download helper
+  // Store data on window (keyed) so the popup can read it via window.opener
+  // — avoids putting megabytes of base64 in the URL, which browsers block.
   const b64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+  const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+  window._xlsxDownload = window._xlsxDownload || {};
+  window._xlsxDownload[key] = { filename, b64 };
+
   const helperUrl = new URL("download.html", document.baseURI);
-  helperUrl.hash = encodeURIComponent(filename) + "|" + b64;
+  helperUrl.hash = key;
 
   const popup = window.open(helperUrl.href, "_blank");
   if (!popup) {
+    delete window._xlsxDownload[key];
     throw new Error("Pop-up blocked. Please allow pop-ups for this site and try again.");
   }
 }
