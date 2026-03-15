@@ -11,6 +11,7 @@ import {
   ensureAuthenticatedWithMe,
   getValidAccessToken,
   scheduleTokenRefresh,
+  refreshSession,
 } from "./services/authService.js";
 import { createApiClient } from "./services/apiClient.js";
 import { orgContext } from "./services/orgContext.js";
@@ -92,6 +93,9 @@ function renderFatalError(message) {
   // --- Build navigation ---
   const navEl = document.getElementById("appNav");
   const nav = createNav(navEl, NAV_TREE, access);
+
+  // --- Sign-out button ---
+  document.getElementById("signOutBtn").addEventListener("click", () => refreshSession());
 
   // --- Start router ---
   const outletEl = document.getElementById("appMain");

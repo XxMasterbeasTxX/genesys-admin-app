@@ -115,6 +115,7 @@ body {
 
 .header-log-btn {
   font-size: 12px;
+  font-family: inherit;
   padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid var(--border);
