@@ -117,17 +117,15 @@ export function exportXlsx(sheets, filename) {
     XLSX.utils.book_append_sheet(wb, ws, sheet.name || "Sheet1");
   }
 
-  // Write as array buffer and trigger download directly (no popup needed)
-  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Encode as base64 and open download helper
+  const b64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+  const helperUrl = new URL("download.html", document.baseURI);
+  helperUrl.hash = encodeURIComponent(filename) + "|" + b64;
+
+  const popup = window.open(helperUrl.href, "_blank");
+  if (!popup) {
+    throw new Error("Pop-up blocked. Please allow pop-ups for this site and try again.");
+  }
 }
 
 /** Generate a timestamped filename, e.g. "Prefix_2026-02-27T14-30-00". */
