@@ -10,9 +10,61 @@
  */
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
 import { createMultiSelect } from "../../components/multiSelect.js";
-import { fetchAllAuthorizationRoles } from "../../services/genesysApi.js";
+import { fetchAllAuthorizationRoles, fetchAllPages } from "../../services/genesysApi.js";
 
 const ENTITY_COL_W = 220; // px — entity column fixed width
+
+// ── Permission catalog & wildcard expansion ───────────────────────────────────
+
+/**
+ * Fetch the full Genesys permission catalog.
+ * Returns { domain: { entityName: string[] } } — all known (domain, entity, actions).
+ */
+async function fetchPermissionCatalog(api, orgId) {
+  const perms = await fetchAllPages(api, orgId, "/api/v2/authorization/permissions", { pageSize: 200 });
+  const catalog = {};
+  for (const p of perms) {
+    if (!catalog[p.domain]) catalog[p.domain] = {};
+    catalog[p.domain][p.entityName] = [...(p.actionSet || [])].sort();
+  }
+  return catalog;
+}
+
+/**
+ * Expand wildcard policies in a single role using the catalog.
+ * Handles three wildcard forms:
+ *   entityName="*", actionSet=["*"]  → all entities × all actions for that domain
+ *   entityName="*", actionSet=["v"]  → all entities × specific actions for that domain
+ *   entityName="flow", actionSet=["*"] → specific entity × all catalog actions
+ * After expansion, entries for the same (domain, entityName) are merged (union of actions).
+ */
+function expandPolicies(policies, catalog) {
+  const expanded = [];
+  for (const p of policies) {
+    const domainCatalog = catalog[p.domain] || {};
+    const entityIsWild = p.entityName === "*";
+    const actionIsWild = (p.actionSet || []).includes("*");
+    if (!entityIsWild && !actionIsWild) { expanded.push(p); continue; }
+    const entities = entityIsWild ? Object.keys(domainCatalog) : [p.entityName];
+    for (const entityName of entities) {
+      const catalogActions = domainCatalog[entityName] || [];
+      const actions = actionIsWild ? catalogActions : [...(p.actionSet || [])].sort();
+      expanded.push({ domain: p.domain, entityName, actionSet: actions });
+    }
+  }
+  // Merge duplicate (domain, entityName) pairs — take union of all actions
+  const merged = {};
+  for (const p of expanded) {
+    const key = `${p.domain}::${p.entityName}`;
+    if (!merged[key]) merged[key] = { domain: p.domain, entityName: p.entityName, actions: new Set() };
+    for (const a of p.actionSet) merged[key].actions.add(a);
+  }
+  return Object.values(merged).map(p => ({
+    domain: p.domain,
+    entityName: p.entityName,
+    actionSet: [...p.actions].sort(),
+  }));
+}
 
 // ── Page renderer ─────────────────────────────────────────────────────────────
 
@@ -111,6 +163,8 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     <p class="page-desc">
       Select 2 or more roles from the same org to compare their permission policies side by side.
       Permissions are fetched individually per role and grouped by domain.
+      Wildcard permissions (&#42;) are automatically expanded against the full permission
+      catalog so every concrete permission is visible in the comparison.
     </p>
 
     <div class="rc-controls">
@@ -222,11 +276,27 @@ export default function renderRolesCompare({ me, api, orgContext }) {
 
     try {
       // Fetch each role's full detail (including permissionPolicies) in parallel
-      const roleDetails = await Promise.all(
+      let roleDetails = await Promise.all(
         selectedIds.map(id =>
           api.proxyGenesys(org.id, "GET", `/api/v2/authorization/roles/${id}`)
         )
       );
+
+      // Detect wildcards — expand before building the matrix so all concrete
+      // permissions are visible and differences are correctly identified
+      const needsExpansion = roleDetails.some(r =>
+        (r.permissionPolicies || []).some(p =>
+          p.entityName === "*" || (p.actionSet || []).includes("*")
+        )
+      );
+      if (needsExpansion) {
+        setStatus("Wildcard permissions detected — fetching permission catalog…");
+        const catalog = await fetchPermissionCatalog(api, org.id);
+        roleDetails = roleDetails.map(r => ({
+          ...r,
+          permissionPolicies: expandPolicies(r.permissionPolicies || [], catalog),
+        }));
+      }
 
       setStatus("");
       buildComparison(roleDetails);
