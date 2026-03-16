@@ -1,25 +1,32 @@
-/**
+﻿/**
  * Roles > Compare
  *
- * Compares permission policies across 2–10 roles side by side.
- * Fetches GET /api/v2/authorization/roles/{id} for each selected role in parallel.
+ * Two modes selectable via a top toggle:
  *
- * Column alignment: every domain table uses table-layout:fixed with an identical
- * <colgroup> (entity col = fixed 220 px, role cols = equal share of remainder).
- * Because all tables are the same total width, columns align perfectly across groups.
+ *   "roles" â€” Compare permission policies across 2â€“10 roles side by side.
+ *             Fetches GET /api/v2/authorization/roles/{id} for each role.
+ *
+ *   "users" â€” Compare effective permissions of exactly 2 users.
+ *             Fetches GET /api/v2/authorization/subjects/{id} to get each
+ *             user's role assignments, then fetches each unique role's full
+ *             permissionPolicies. Permissions are unioned per user; each cell
+ *             shows which role(s) grant the permission. Missing permissions
+ *             show which role the other user gets them from.
+ *
+ * Wildcard permissions (* entity or * action) are expanded against the full
+ * Genesys permission catalog (GET /api/v2/authorization/permissions).
+ *
+ * Column alignment: every domain table uses table-layout:fixed with an
+ * identical <colgroup> so columns line up across all domain groups.
  */
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
 import { createMultiSelect } from "../../components/multiSelect.js";
 import { fetchAllAuthorizationRoles } from "../../services/genesysApi.js";
 
-const ENTITY_COL_W = 220; // px — entity column fixed width
+const ENTITY_COL_W = 220; // px â€” entity column fixed width
 
-// ── Permission catalog & wildcard expansion ───────────────────────────────────
+// â”€â”€ Permission catalog & wildcard expansion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/**
- * Fetch the full Genesys permission catalog.
- * Returns { domain: { entityName: string[] } } — all known (domain, entity, actions).
- */
 async function fetchPermissionCatalog(api, orgId) {
   const catalog = {};
   let page = 1;
@@ -33,6 +40,7 @@ async function fetchPermissionCatalog(api, orgId) {
       if (!p.domain || !p.permissionMap) continue;
       if (!catalog[p.domain]) catalog[p.domain] = {};
       for (const [entityName, actionList] of Object.entries(p.permissionMap)) {
+        // actionList is an array of { domain, entityType, action, label, ... }
         catalog[p.domain][entityName] = actionList.map(a => a.action).sort();
       }
     }
@@ -41,14 +49,6 @@ async function fetchPermissionCatalog(api, orgId) {
   return catalog;
 }
 
-/**
- * Expand wildcard policies in a single role using the catalog.
- * Handles three wildcard forms:
- *   entityName="*", actionSet=["*"]  → all entities × all actions for that domain
- *   entityName="*", actionSet=["v"]  → all entities × specific actions for that domain
- *   entityName="flow", actionSet=["*"] → specific entity × all catalog actions
- * After expansion, entries for the same (domain, entityName) are merged (union of actions).
- */
 function expandPolicies(policies, catalog) {
   const expanded = [];
   for (const p of policies) {
@@ -63,7 +63,7 @@ function expandPolicies(policies, catalog) {
       expanded.push({ domain: p.domain, entityName, actionSet: actions });
     }
   }
-  // Merge duplicate (domain, entityName) pairs — take union of all actions
+  // Merge duplicate (domain, entityName) pairs â€” union of actions
   const merged = {};
   for (const p of expanded) {
     const key = `${p.domain}::${p.entityName}`;
@@ -77,60 +77,70 @@ function expandPolicies(policies, catalog) {
   }));
 }
 
-// ── Page renderer ─────────────────────────────────────────────────────────────
+// â”€â”€ Page renderer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function renderRolesCompare({ me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  // ── Internal state ──────────────────────────────────────
-  let comparedRoles   = []; // role names in selected order
-  let comparedDomains = []; // [{ name, rows:[{entity, perms:{roleName:string[]}}], hasDiff }]
-  let viewMode        = "all"; // "all" | "diff"
+  // â”€â”€ Internal state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  let mode            = "roles"; // "roles" | "users"
+  let comparedCols    = []; // column keys (role names or disambiguated user names)
+  let comparedDomains = []; // [{ name, rows:[{entity, perms:{col:{actions,via}}}], hasDiff }]
+  let viewMode        = "all";  // "all" | "diff"
   let filterText      = "";
   let rolesLoaded     = false;
+  let selectedUsers   = [null, null]; // [{id,name}, {id,name}]
 
-  // ── HTML skeleton ───────────────────────────────────────
+  // â”€â”€ HTML skeleton â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   el.innerHTML = `
     <style>
+      /* â”€â”€ Mode toggle â”€â”€ */
+      .rc-mode-toggle { display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:22px; width:fit-content; }
+      .rc-mode-btn { padding:7px 22px; background:none; border:none; color:var(--muted); cursor:pointer; font:inherit; font-size:13px; font-weight:600; transition:background .12s,color .12s; }
+      .rc-mode-btn.active { background:rgba(59,130,246,.22); color:#60a5fa; }
+      .rc-mode-btn:not(.active):hover { background:rgba(255,255,255,.05); color:var(--text); }
+      /* â”€â”€ Controls â”€â”€ */
       .rc-controls { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; margin-bottom:16px; }
       .rc-control-group { display:flex; flex-direction:column; gap:4px; }
       .rc-label { font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
       .rc-note  { font-size:11px; color:var(--muted); margin-top:3px; }
-      .rc-status-bar {
-        display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-        padding:9px 12px; background:var(--panel-2,rgba(255,255,255,.03));
-        border:1px solid var(--border); border-radius:8px; margin-bottom:12px;
-        font-size:13px; color:var(--muted);
-      }
+      /* â”€â”€ User autocomplete picker â”€â”€ */
+      .rc-user-picker { position:relative; min-width:280px; }
+      .rc-user-input { width:100%; padding:6px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg,var(--panel)); color:var(--text); font:inherit; font-size:13px; outline:none; box-sizing:border-box; }
+      .rc-user-input:focus { border-color:#3b82f6; }
+      .rc-user-input::placeholder { color:var(--muted); }
+      .rc-user-tag { display:flex; align-items:center; gap:6px; padding:5px 10px; background:rgba(30,58,95,.8); border:1px solid #3b82f6; border-radius:8px; font-size:13px; color:#93c5fd; width:100%; box-sizing:border-box; }
+      .rc-user-tag-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .rc-user-tag-clear { cursor:pointer; color:var(--muted); font-size:16px; line-height:1; padding:0 2px; flex-shrink:0; }
+      .rc-user-tag-clear:hover { color:#f87171; }
+      .rc-user-dropdown { position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:200; background:var(--panel); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.4); max-height:240px; overflow-y:auto; display:none; }
+      .rc-user-dropdown.open { display:block; }
+      .rc-user-option { padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--border); }
+      .rc-user-option:last-child { border-bottom:none; }
+      .rc-user-option:hover { background:rgba(59,130,246,.15); }
+      .rc-user-option-name { font-weight:500; color:var(--text); }
+      .rc-user-option-email { font-size:11px; color:var(--muted); margin-top:1px; }
+      .rc-user-option-hint { color:var(--muted); font-style:italic; padding:10px 12px; cursor:default; font-size:13px; }
+      /* â”€â”€ Status bar â”€â”€ */
+      .rc-status-bar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:9px 12px; background:var(--panel-2,rgba(255,255,255,.03)); border:1px solid var(--border); border-radius:8px; margin-bottom:12px; font-size:13px; color:var(--muted); }
       .rc-status-bar strong { color:var(--text); }
       .rc-badge { border-radius:10px; padding:2px 9px; font-size:12px; font-weight:600; }
       .rc-badge--diff  { background:rgba(217,119,6,.18);  color:#fbbf24; }
       .rc-badge--match { background:rgba(22,163,74,.15);  color:#86efac; }
+      /* â”€â”€ Toolbar â”€â”€ */
       .rc-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
       .rc-toggle { display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
-      .rc-toggle-btn {
-        padding:5px 14px; background:none; border:none; color:var(--muted);
-        cursor:pointer; font:inherit; font-size:13px; transition:background .12s,color .12s;
-      }
+      .rc-toggle-btn { padding:5px 14px; background:none; border:none; color:var(--muted); cursor:pointer; font:inherit; font-size:13px; transition:background .12s,color .12s; }
       .rc-toggle-btn.active { background:rgba(59,130,246,.22); color:#60a5fa; }
       .rc-toggle-btn:not(.active):hover { background:rgba(255,255,255,.05); color:var(--text); }
-      .rc-filter-input {
-        padding:5px 10px; border:1px solid var(--border); border-radius:8px;
-        background:var(--bg,var(--panel)); color:var(--text); font:inherit; font-size:13px;
-        width:200px; outline:none;
-      }
+      .rc-filter-input { padding:5px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg,var(--panel)); color:var(--text); font:inherit; font-size:13px; width:200px; outline:none; }
       .rc-filter-input:focus { border-color:#3b82f6; }
       .rc-filter-input::placeholder { color:var(--muted); }
       .rc-ml-auto { margin-left:auto; }
-      /* Domain accordions */
+      /* â”€â”€ Domain accordions â”€â”€ */
       .rc-domain { margin-bottom:3px; }
-      .rc-domain-hdr {
-        display:flex; align-items:center; gap:10px; padding:7px 12px;
-        background:var(--panel-2,rgba(255,255,255,.03));
-        border:1px solid var(--border); border-radius:8px;
-        cursor:pointer; user-select:none;
-      }
+      .rc-domain-hdr { display:flex; align-items:center; gap:10px; padding:7px 12px; background:var(--panel-2,rgba(255,255,255,.03)); border:1px solid var(--border); border-radius:8px; cursor:pointer; user-select:none; }
       .rc-domain-hdr:hover { background:rgba(255,255,255,.05); }
       .rc-chevron { font-size:10px; color:var(--muted); transition:transform .15s; width:12px; display:inline-block; }
       .rc-domain.open .rc-chevron { transform:rotate(90deg); }
@@ -140,15 +150,10 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       .rc-match-badge { border-radius:10px; padding:1px 8px; font-size:11px; background:rgba(22,163,74,.12); color:#86efac; }
       .rc-domain-body { display:none; margin-top:2px; margin-bottom:6px; }
       .rc-domain.open .rc-domain-body { display:block; }
-      /* Permission table — table-layout:fixed keeps columns aligned across all domain groups */
+      /* â”€â”€ Permission table â€” table-layout:fixed keeps columns aligned â”€â”€ */
       .rc-table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
-      .rc-table thead th {
-        padding:6px 10px; text-align:left; font-weight:600; font-size:11px;
-        color:var(--muted); background:var(--bg,var(--panel));
-        text-transform:uppercase; letter-spacing:.04em;
-        border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-      }
-      .rc-table thead th.rc-th-role { color:#93c5fd; }
+      .rc-table thead th { padding:6px 10px; text-align:left; font-weight:600; font-size:11px; color:var(--muted); background:var(--bg,var(--panel)); text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .rc-table thead th.rc-th-col { color:#93c5fd; }
       .rc-table tbody tr { border-bottom:1px solid var(--border); }
       .rc-table tbody tr:last-child { border-bottom:none; }
       .rc-table tr.row-diff td  { background:rgba(120,53,15,.12); }
@@ -160,41 +165,77 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       .rc-td-actions { color:var(--muted); font-size:12px; }
       .rc-td-actions.has  { color:var(--text); }
       .rc-td-actions.none { color:rgba(255,255,255,.2); font-style:italic; }
-      .rc-action-tag {
-        display:inline-block; background:rgba(30,58,95,.8); color:#93c5fd;
-        border-radius:3px; padding:1px 5px; font-size:11px; margin:1px 2px 1px 0; white-space:nowrap;
-      }
+      .rc-action-tag { display:inline-block; background:rgba(30,58,95,.8); color:#93c5fd; border-radius:3px; padding:1px 5px; font-size:11px; margin:1px 2px 1px 0; white-space:nowrap; }
+      /* Attribution lines (user mode) */
+      .rc-via         { font-size:10px; color:var(--muted); margin-top:3px; font-style:italic; }
+      .rc-missing-via { font-size:10px; color:#fbbf24;      margin-top:2px; font-style:italic; }
+      /* â”€â”€ Empty state â”€â”€ */
       .rc-empty { padding:48px 24px; text-align:center; color:var(--muted); }
       .rc-empty-icon { font-size:2.2rem; margin-bottom:10px; }
       .rc-results-wrap { max-height:calc(100vh - 300px); overflow-y:auto; }
     </style>
 
-    <h1 class="h1">Roles — Compare</h1>
+    <h1 class="h1">Roles â€” Compare</h1>
     <hr class="hr">
-    <p class="page-desc">
-      Select 2 or more roles from the same org to compare their permission policies side by side.
-      Permissions are fetched individually per role and grouped by domain.
-      Wildcard permissions (&#42;) are automatically expanded against the full permission
-      catalog so every concrete permission is visible in the comparison.
-    </p>
 
-    <div class="rc-controls">
-      <div class="rc-control-group">
-        <span class="rc-label">Roles to compare</span>
-        <div id="rcRolePicker"></div>
-        <span class="rc-note">Select 2–10 roles. Permissions are fetched for each role after you click Compare.</span>
+    <div class="rc-mode-toggle">
+      <button class="rc-mode-btn active" id="rcModeRoles">Compare Roles</button>
+      <button class="rc-mode-btn"        id="rcModeUsers">Compare Users</button>
+    </div>
+
+    <!-- â”€â”€ Role mode â”€â”€ -->
+    <div id="rcRoleSection">
+      <p class="page-desc">
+        Select 2 or more roles from the same org to compare their permission policies side by side.
+        Wildcard permissions (&#42;) are automatically expanded against the full permission catalog.
+      </p>
+      <div class="rc-controls">
+        <div class="rc-control-group">
+          <span class="rc-label">Roles to compare</span>
+          <div id="rcRolePicker"></div>
+          <span class="rc-note">Select 2â€“10 roles. Permissions are fetched after you click Compare.</span>
+        </div>
+        <div class="rc-control-group" style="justify-content:flex-end">
+          <span class="rc-label">&nbsp;</span>
+          <button class="btn" id="rcCompareBtn" disabled>Compare</button>
+        </div>
       </div>
-      <div class="rc-control-group" style="justify-content:flex-end">
-        <span class="rc-label">&nbsp;</span>
-        <button class="btn" id="rcCompareBtn" disabled>Compare</button>
+    </div>
+
+    <!-- â”€â”€ User mode â”€â”€ -->
+    <div id="rcUserSection" style="display:none">
+      <p class="page-desc">
+        Select two users to compare their effective permissions side by side.
+        All roles assigned to each user are fetched and their permissions unioned.
+        Each permission shows which role grants it; missing permissions show which role the other user gets them from.
+      </p>
+      <div class="rc-controls">
+        <div class="rc-control-group">
+          <span class="rc-label">User A</span>
+          <div class="rc-user-picker" id="rcUserPickerA">
+            <input type="text" class="rc-user-input" placeholder="Search by name or emailâ€¦" autocomplete="off">
+            <div class="rc-user-dropdown" id="rcDropdownA"></div>
+          </div>
+        </div>
+        <div class="rc-control-group">
+          <span class="rc-label">User B</span>
+          <div class="rc-user-picker" id="rcUserPickerB">
+            <input type="text" class="rc-user-input" placeholder="Search by name or emailâ€¦" autocomplete="off">
+            <div class="rc-user-dropdown" id="rcDropdownB"></div>
+          </div>
+        </div>
+        <div class="rc-control-group" style="justify-content:flex-end">
+          <span class="rc-label">&nbsp;</span>
+          <button class="btn" id="rcUserCompareBtn" disabled>Compare</button>
+        </div>
       </div>
     </div>
 
     <div class="rc-status-bar" id="rcStatusBar" style="display:none">
-      <span>Roles: <strong id="rcStatRoles">—</strong></span>
-      <span>Permission rows: <strong id="rcStatTotal">—</strong></span>
-      <span class="rc-badge rc-badge--diff"  id="rcBadgeDiff">—</span>
-      <span class="rc-badge rc-badge--match" id="rcBadgeMatch">—</span>
+      <span id="rcStatPrefix">Roles:</span> <strong id="rcStatCols">â€”</strong>
+      <span>Permission rows: <strong id="rcStatTotal">â€”</strong></span>
+      <span class="rc-badge rc-badge--diff"  id="rcBadgeDiff">â€”</span>
+      <span class="rc-badge rc-badge--match" id="rcBadgeMatch">â€”</span>
     </div>
 
     <div class="rc-toolbar" id="rcToolbar" style="display:none">
@@ -202,7 +243,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
         <button class="rc-toggle-btn active" id="rcBtnAll">All permissions</button>
         <button class="rc-toggle-btn"        id="rcBtnDiff">Differences only</button>
       </div>
-      <input type="text" class="rc-filter-input" id="rcFilter" placeholder="Filter by domain or entity…">
+      <input type="text" class="rc-filter-input" id="rcFilter" placeholder="Filter by domain or entityâ€¦">
       <div class="rc-ml-auto" style="display:flex;gap:8px">
         <button class="btn btn-sm" id="rcExpandAll">Expand all</button>
         <button class="btn btn-sm" id="rcCollapseAll">Collapse all</button>
@@ -214,42 +255,85 @@ export default function renderRolesCompare({ me, api, orgContext }) {
 
     <div id="rcResults">
       <div class="rc-empty">
-        <div class="rc-empty-icon">⚖️</div>
-        <p>Select two or more roles and click <strong>Compare</strong>.</p>
+        <div class="rc-empty-icon">âš–ï¸</div>
+        <p>Select roles or users and click <strong>Compare</strong>.</p>
       </div>
     </div>
   `;
 
-  // ── DOM refs ──────────────────────────────────────────────
-  const $rolePicker  = el.querySelector("#rcRolePicker");
-  const $compareBtn  = el.querySelector("#rcCompareBtn");
-  const $statusBar   = el.querySelector("#rcStatusBar");
-  const $toolbar     = el.querySelector("#rcToolbar");
-  const $status      = el.querySelector("#rcStatus");
-  const $results     = el.querySelector("#rcResults");
-  const $statRoles   = el.querySelector("#rcStatRoles");
-  const $statTotal   = el.querySelector("#rcStatTotal");
-  const $badgeDiff   = el.querySelector("#rcBadgeDiff");
-  const $badgeMatch  = el.querySelector("#rcBadgeMatch");
-  const $btnAll      = el.querySelector("#rcBtnAll");
-  const $btnDiff     = el.querySelector("#rcBtnDiff");
-  const $filter      = el.querySelector("#rcFilter");
-  const $expandAll   = el.querySelector("#rcExpandAll");
-  const $collapseAll = el.querySelector("#rcCollapseAll");
-  const $exportBtn   = el.querySelector("#rcExportBtn");
+  // â”€â”€ DOM refs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const $roleSection    = el.querySelector("#rcRoleSection");
+  const $userSection    = el.querySelector("#rcUserSection");
+  const $rolePicker     = el.querySelector("#rcRolePicker");
+  const $compareBtn     = el.querySelector("#rcCompareBtn");
+  const $userCompareBtn = el.querySelector("#rcUserCompareBtn");
+  const $statusBar      = el.querySelector("#rcStatusBar");
+  const $toolbar        = el.querySelector("#rcToolbar");
+  const $status         = el.querySelector("#rcStatus");
+  const $results        = el.querySelector("#rcResults");
+  const $statPrefix     = el.querySelector("#rcStatPrefix");
+  const $statCols       = el.querySelector("#rcStatCols");
+  const $statTotal      = el.querySelector("#rcStatTotal");
+  const $badgeDiff      = el.querySelector("#rcBadgeDiff");
+  const $badgeMatch     = el.querySelector("#rcBadgeMatch");
+  const $btnAll         = el.querySelector("#rcBtnAll");
+  const $btnDiff        = el.querySelector("#rcBtnDiff");
+  const $filter         = el.querySelector("#rcFilter");
+  const $expandAll      = el.querySelector("#rcExpandAll");
+  const $collapseAll    = el.querySelector("#rcCollapseAll");
+  const $exportBtn      = el.querySelector("#rcExportBtn");
 
   function setStatus(msg, cls = "") {
     $status.textContent = msg;
     $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
   }
 
-  // ── Role multi-select ────────────────────────────────────
+  function resetResults() {
+    comparedCols    = [];
+    comparedDomains = [];
+    $statusBar.style.display = "none";
+    $toolbar.style.display   = "none";
+    $results.innerHTML = `<div class="rc-empty"><div class="rc-empty-icon">âš–ï¸</div>
+      <p>Select ${mode === "roles" ? "roles" : "two users"} and click <strong>Compare</strong>.</p></div>`;
+    setStatus("");
+  }
+
+  // â”€â”€ Mode toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  el.querySelector("#rcModeRoles").addEventListener("click", () => {
+    if (mode === "roles") return;
+    mode = "roles";
+    el.querySelector("#rcModeRoles").classList.add("active");
+    el.querySelector("#rcModeUsers").classList.remove("active");
+    $roleSection.style.display = "";
+    $userSection.style.display = "none";
+    viewMode = "all";
+    $btnAll.classList.add("active");
+    $btnDiff.classList.remove("active");
+    $filter.value = "";
+    filterText    = "";
+    resetResults();
+  });
+
+  el.querySelector("#rcModeUsers").addEventListener("click", () => {
+    if (mode === "users") return;
+    mode = "users";
+    el.querySelector("#rcModeUsers").classList.add("active");
+    el.querySelector("#rcModeRoles").classList.remove("active");
+    $userSection.style.display = "";
+    $roleSection.style.display = "none";
+    viewMode = "diff"; // finding gaps is the primary use case
+    $btnDiff.classList.add("active");
+    $btnAll.classList.remove("active");
+    $filter.value = "";
+    filterText    = "";
+    resetResults();
+  });
+
+  // â”€â”€ Role multi-select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const roleSelect = createMultiSelect({
-    placeholder: "Select roles…",
+    placeholder: "Select rolesâ€¦",
     searchable: true,
-    onChange: (sel) => {
-      $compareBtn.disabled = sel.size < 2;
-    },
+    onChange: (sel) => { $compareBtn.disabled = sel.size < 2; },
   });
   roleSelect.el.style.minWidth = "320px";
   $rolePicker.appendChild(roleSelect.el);
@@ -258,7 +342,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     const org = orgContext?.getDetails?.();
     if (!org || rolesLoaded) return;
     rolesLoaded = true;
-    setStatus("Loading roles…");
+    setStatus("Loading rolesâ€¦");
     try {
       const roles = await fetchAllAuthorizationRoles(api, org.id);
       roles.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -272,7 +356,103 @@ export default function renderRolesCompare({ me, api, orgContext }) {
 
   loadRoles();
 
-  // ── Compare ───────────────────────────────────────────────
+  // â”€â”€ User pickers (A and B) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  function createUserPicker(containerId, dropdownId, index) {
+    const container = el.querySelector(`#${containerId}`);
+    const input     = container.querySelector("input");
+    const dropdown  = el.querySelector(`#${dropdownId}`);
+    let debounce    = null;
+
+    function updateBtn() {
+      $userCompareBtn.disabled = !(selectedUsers[0] && selectedUsers[1]);
+    }
+
+    function closeDropdown() {
+      dropdown.classList.remove("open");
+      dropdown.innerHTML = "";
+    }
+
+    function setSelected(user) {
+      selectedUsers[index] = user;
+      const existing = container.querySelector(".rc-user-tag");
+      if (existing) existing.remove();
+      if (user) {
+        const tag = document.createElement("div");
+        tag.className = "rc-user-tag";
+        tag.innerHTML = `<span class="rc-user-tag-name">${escapeHtml(user.name)}</span>
+          <span class="rc-user-tag-clear" title="Clear">Ã—</span>`;
+        tag.querySelector(".rc-user-tag-clear").addEventListener("click", () => {
+          selectedUsers[index] = null;
+          tag.remove();
+          input.style.display = "";
+          input.value = "";
+          input.focus();
+          updateBtn();
+        });
+        input.style.display = "none";
+        container.insertBefore(tag, dropdown);
+      } else {
+        input.style.display = "";
+      }
+      closeDropdown();
+      updateBtn();
+    }
+
+    function showResults(users, hint = null) {
+      dropdown.innerHTML = "";
+      if (hint) {
+        dropdown.innerHTML = `<div class="rc-user-option-hint">${escapeHtml(hint)}</div>`;
+        dropdown.classList.add("open");
+        return;
+      }
+      if (!users.length) {
+        dropdown.innerHTML = `<div class="rc-user-option-hint">No users found</div>`;
+        dropdown.classList.add("open");
+        return;
+      }
+      for (const u of users) {
+        const opt = document.createElement("div");
+        opt.className = "rc-user-option";
+        opt.innerHTML = `<div class="rc-user-option-name">${escapeHtml(u.name || u.id)}</div>
+          <div class="rc-user-option-email">${escapeHtml(u.email || "")}</div>`;
+        opt.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          setSelected({ id: u.id, name: u.name || u.id });
+        });
+        dropdown.appendChild(opt);
+      }
+      dropdown.classList.add("open");
+    }
+
+    async function search(q) {
+      if (!q.trim()) { closeDropdown(); return; }
+      const org = orgContext?.getDetails?.();
+      if (!org) return;
+      showResults([], "Searchingâ€¦");
+      try {
+        const resp = await api.proxyGenesys(org.id, "GET", "/api/v2/users", {
+          query: { name: q, pageSize: "20", pageNumber: "1" },
+        });
+        showResults(resp.entities || []);
+      } catch {
+        closeDropdown();
+      }
+    }
+
+    input.addEventListener("input", () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => search(input.value), 300);
+    });
+
+    input.addEventListener("blur", () => {
+      setTimeout(closeDropdown, 150);
+    });
+  }
+
+  createUserPicker("rcUserPickerA", "rcDropdownA", 0);
+  createUserPicker("rcUserPickerB", "rcDropdownB", 1);
+
+  // â”€â”€ Role compare handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   $compareBtn.addEventListener("click", async () => {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
@@ -280,28 +460,23 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     const selectedIds = [...roleSelect.getSelected()];
     if (selectedIds.length < 2) return;
 
-    setStatus(`Fetching permissions for ${selectedIds.length} roles…`);
+    setStatus(`Fetching permissions for ${selectedIds.length} rolesâ€¦`);
     $compareBtn.disabled = true;
-    $toolbar.style.display = "none";
+    $toolbar.style.display   = "none";
     $statusBar.style.display = "none";
 
     try {
-      // Fetch each role's full detail (including permissionPolicies) in parallel
       let roleDetails = await Promise.all(
-        selectedIds.map(id =>
-          api.proxyGenesys(org.id, "GET", `/api/v2/authorization/roles/${id}`)
-        )
+        selectedIds.map(id => api.proxyGenesys(org.id, "GET", `/api/v2/authorization/roles/${id}`))
       );
 
-      // Detect wildcards — expand before building the matrix so all concrete
-      // permissions are visible and differences are correctly identified
       const needsExpansion = roleDetails.some(r =>
         (r.permissionPolicies || []).some(p =>
           p.entityName === "*" || (p.actionSet || []).includes("*")
         )
       );
       if (needsExpansion) {
-        setStatus("Wildcard permissions detected — fetching permission catalog…");
+        setStatus("Wildcard permissions detected â€” fetching permission catalogâ€¦");
         const catalog = await fetchPermissionCatalog(api, org.id);
         roleDetails = roleDetails.map(r => ({
           ...r,
@@ -310,8 +485,8 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       }
 
       setStatus("");
-      buildComparison(roleDetails);
-      viewMode   = "all";
+      buildRoleComparison(roleDetails);
+      viewMode = "all";
       filterText = "";
       $filter.value = "";
       $btnAll.classList.add("active");
@@ -319,64 +494,212 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       $toolbar.style.display = "";
       renderResults();
     } catch (err) {
-      setStatus(`Error fetching permissions: ${err.message}`, "error");
+      setStatus(`Error: ${err.message}`, "error");
     } finally {
       $compareBtn.disabled = false;
     }
   });
 
-  // ── Build internal data model ─────────────────────────────
-  function buildComparison(roleDetails) {
-    comparedRoles = roleDetails.map(r => r.name || r.id);
+  // â”€â”€ User compare handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  $userCompareBtn.addEventListener("click", async () => {
+    const org = orgContext?.getDetails?.();
+    if (!org) { setStatus("Please select a customer org first.", "error"); return; }
+    if (!selectedUsers[0] || !selectedUsers[1]) return;
 
-    // Index: "domain::entityName" → { domain, entity, perms: { roleName: string[] } }
+    setStatus("Fetching role assignmentsâ€¦");
+    $userCompareBtn.disabled = true;
+    $toolbar.style.display   = "none";
+    $statusBar.style.display = "none";
+
+    try {
+      // 1. Fetch role assignments for each user via subjects endpoint.
+      //    Response shape: SubjectDivisions â†’
+      //    { entities: [ { grants: [ { role: { id, name }, divisionId } ] } ] }
+      const [subjectsA, subjectsB] = await Promise.all(
+        selectedUsers.map(u =>
+          api.proxyGenesys(org.id, "GET", `/api/v2/authorization/subjects/${u.id}`)
+        )
+      );
+
+      function extractRoles(subjectData) {
+        const map = new Map(); // roleId â†’ roleName
+        for (const entity of (subjectData?.entities || [])) {
+          for (const grant of (entity.grants || [])) {
+            if (grant.role?.id) map.set(grant.role.id, grant.role.name || grant.role.id);
+          }
+        }
+        return map;
+      }
+
+      const rolesA = extractRoles(subjectsA);
+      const rolesB = extractRoles(subjectsB);
+
+      // 2. Fetch each unique role's permissionPolicies in parallel
+      const allRoleIds = new Set([...rolesA.keys(), ...rolesB.keys()]);
+      setStatus(`Fetching permissions for ${allRoleIds.size} unique role${allRoleIds.size !== 1 ? "s" : ""}â€¦`);
+
+      const roleDetailMap = {};
+      await Promise.all(
+        [...allRoleIds].map(async id => {
+          roleDetailMap[id] = await api.proxyGenesys(org.id, "GET", `/api/v2/authorization/roles/${id}`);
+        })
+      );
+
+      // 3. Expand wildcards if any role uses them
+      const hasWildcard = Object.values(roleDetailMap).some(r =>
+        (r.permissionPolicies || []).some(p =>
+          p.entityName === "*" || (p.actionSet || []).includes("*")
+        )
+      );
+      if (hasWildcard) {
+        setStatus("Wildcard permissions detected â€” fetching permission catalogâ€¦");
+        const catalog = await fetchPermissionCatalog(api, org.id);
+        for (const id of Object.keys(roleDetailMap)) {
+          roleDetailMap[id] = {
+            ...roleDetailMap[id],
+            permissionPolicies: expandPolicies(roleDetailMap[id].permissionPolicies || [], catalog),
+          };
+        }
+      }
+
+      setStatus("");
+      buildUserComparison(selectedUsers, rolesA, rolesB, roleDetailMap);
+      viewMode = "diff";
+      filterText = "";
+      $filter.value = "";
+      $btnDiff.classList.add("active");
+      $btnAll.classList.remove("active");
+      $toolbar.style.display = "";
+      renderResults();
+    } catch (err) {
+      setStatus(`Error: ${err.message}`, "error");
+    } finally {
+      $userCompareBtn.disabled = false;
+    }
+  });
+
+  // â”€â”€ Build role comparison model â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Each cell: { actions: string[], via: [] }  (via always empty in role mode)
+  function buildRoleComparison(roleDetails) {
+    comparedCols = roleDetails.map(r => r.name || r.id);
     const index = {};
     for (const role of roleDetails) {
-      const roleName = role.name || role.id;
+      const col = role.name || role.id;
       for (const p of (role.permissionPolicies || [])) {
         const key = `${p.domain}::${p.entityName}`;
         if (!index[key]) {
           index[key] = { domain: p.domain, entity: p.entityName, perms: {} };
-          comparedRoles.forEach(r => { index[key].perms[r] = []; });
+          comparedCols.forEach(c => { index[key].perms[c] = { actions: [], via: [] }; });
         }
-        index[key].perms[roleName] = [...(p.actionSet || [])].sort();
+        index[key].perms[col] = { actions: [...(p.actionSet || [])].sort(), via: [] };
       }
     }
+    finalizeDomains(index);
+    updateStatusBar();
+  }
 
-    // Group by domain, sort domains and entities alphabetically
+  // â”€â”€ Build user comparison model â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Each cell: { actions: string[], via: string[] }  (role names that grant the permission)
+  function buildUserComparison(users, rolesA, rolesB, roleDetailMap) {
+    // Disambiguate column names if both users share the same display name
+    const nameA = users[0].name;
+    const nameB = users[1].name;
+    comparedCols = nameA !== nameB ? [nameA, nameB] : [`${nameA} (A)`, `${nameB} (B)`];
+
+    function buildPermsForUser(roleIds) {
+      const map = {}; // "domain::entity" â†’ { domain, entity, actions: Set, via: Set<roleName> }
+      for (const [roleId] of roleIds) {
+        const detail = roleDetailMap[roleId];
+        if (!detail) continue;
+        const roleName = detail.name || roleId;
+        for (const p of (detail.permissionPolicies || [])) {
+          const key = `${p.domain}::${p.entityName}`;
+          if (!map[key]) map[key] = { domain: p.domain, entity: p.entityName, actions: new Set(), via: new Set() };
+          for (const a of (p.actionSet || [])) map[key].actions.add(a);
+          map[key].via.add(roleName);
+        }
+      }
+      return map;
+    }
+
+    const permsA = buildPermsForUser(rolesA);
+    const permsB = buildPermsForUser(rolesB);
+
+    const allKeys = new Set([...Object.keys(permsA), ...Object.keys(permsB)]);
+    const index = {};
+    for (const key of allKeys) {
+      const a = permsA[key];
+      const b = permsB[key];
+      const ref = a || b;
+      index[key] = {
+        domain: ref.domain,
+        entity: ref.entity,
+        perms: {
+          [comparedCols[0]]: a
+            ? { actions: [...a.actions].sort(), via: [...a.via].sort() }
+            : { actions: [], via: [] },
+          [comparedCols[1]]: b
+            ? { actions: [...b.actions].sort(), via: [...b.via].sort() }
+            : { actions: [], via: [] },
+        },
+      };
+    }
+
+    finalizeDomains(index);
+    updateStatusBar();
+  }
+
+  function finalizeDomains(index) {
     const domainMap = {};
     for (const row of Object.values(index)) {
       if (!domainMap[row.domain]) domainMap[row.domain] = [];
       domainMap[row.domain].push(row);
     }
-
     comparedDomains = Object.keys(domainMap).sort().map(d => {
       const rows = domainMap[d].sort((a, b) => a.entity.localeCompare(b.entity));
       const hasDiff = rows.some(r => !isMatch(r.perms));
       return { name: d, rows, hasDiff };
     });
+  }
 
-    // Status bar counts
-    const totalRows = Object.keys(index).length;
-    const diffRows  = Object.values(index).filter(r => !isMatch(r.perms)).length;
-    const matchRows = totalRows - diffRows;
+  function updateStatusBar() {
+    const allRows  = comparedDomains.flatMap(d => d.rows);
+    const total    = allRows.length;
+    const diffRows = allRows.filter(r => !isMatch(r.perms)).length;
+    const match    = total - diffRows;
 
-    $statRoles.textContent  = comparedRoles.join(", ");
-    $statTotal.textContent  = totalRows;
-    $badgeDiff.textContent  = `${diffRows} difference${diffRows !== 1 ? "s" : ""}`;
-    $badgeMatch.textContent = `${matchRows} identical`;
+    if (mode === "users") {
+      const onlyA = allRows.filter(r =>
+        r.perms[comparedCols[0]].actions.length > 0 &&
+        r.perms[comparedCols[1]].actions.length === 0
+      ).length;
+      const onlyB = allRows.filter(r =>
+        r.perms[comparedCols[1]].actions.length > 0 &&
+        r.perms[comparedCols[0]].actions.length === 0
+      ).length;
+      $statPrefix.textContent = "Users:";
+      $statCols.textContent   = comparedCols.join(" vs ");
+      $statTotal.textContent  = total;
+      $badgeDiff.textContent  = `only A: ${onlyA} Â· only B: ${onlyB}`;
+      $badgeMatch.textContent = `${match} shared`;
+    } else {
+      $statPrefix.textContent = "Roles:";
+      $statCols.textContent   = comparedCols.join(", ");
+      $statTotal.textContent  = total;
+      $badgeDiff.textContent  = `${diffRows} difference${diffRows !== 1 ? "s" : ""}`;
+      $badgeMatch.textContent = `${match} identical`;
+    }
     $statusBar.style.display = "";
   }
 
   function isMatch(perms) {
-    const sets = Object.values(perms).map(a => [...a].sort().join(","));
+    const sets = Object.values(perms).map(p => (p.actions || []).join(","));
     return sets.every(s => s === sets[0]);
   }
 
-  // ── Render results ────────────────────────────────────────
+  // â”€â”€ Render results â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function renderResults() {
-    if (!comparedRoles.length) return;
-
+    if (!comparedCols.length) return;
     const q = filterText.toLowerCase();
 
     const filteredDomains = comparedDomains
@@ -392,8 +715,10 @@ export default function renderRolesCompare({ me, api, orgContext }) {
 
     if (filteredDomains.length === 0) {
       $results.innerHTML = `<div class="rc-empty">
-        <div class="rc-empty-icon">✅</div>
-        <p>No differences found. All selected roles have identical permissions.</p>
+        <div class="rc-empty-icon">âœ…</div>
+        <p>${viewMode === "diff"
+          ? "No differences found â€” both subjects have identical permissions."
+          : "No results match the current filter."}</p>
       </div>`;
       return;
     }
@@ -401,32 +726,46 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     const wrap = document.createElement("div");
     wrap.className = "rc-results-wrap";
 
-    // Fixed colgroup — identical on every table so columns align across all domain groups.
-    // With table-layout:fixed and an explicit width on the entity col, the browser divides
-    // the remaining space equally among all unsized role columns.
     const colgroupHtml = `<colgroup>
       <col style="width:${ENTITY_COL_W}px">
-      ${comparedRoles.map(() => `<col>`).join("")}
+      ${comparedCols.map(() => `<col>`).join("")}
     </colgroup>`;
 
     const headerRowHtml = `<tr>
       <th>Entity</th>
-      ${comparedRoles.map(r => `<th class="rc-th-role">${escapeHtml(r)}</th>`).join("")}
+      ${comparedCols.map(c => `<th class="rc-th-col">${escapeHtml(c)}</th>`).join("")}
     </tr>`;
 
-    filteredDomains.forEach((domain, di) => {
+    filteredDomains.forEach(domain => {
       const diffCount = domain.rows.filter(r => !isMatch(r.perms)).length;
       const domEl = document.createElement("div");
       domEl.className = "rc-domain";
 
       const bodyRows = domain.rows.map(row => {
         const diff = !isMatch(row.perms);
-        const cells = comparedRoles.map(r => {
-          const actions = row.perms[r] || [];
-          if (!actions.length) return `<td class="rc-td-actions none">—</td>`;
+
+        const cells = comparedCols.map((col, colIdx) => {
+          const { actions, via } = row.perms[col] || { actions: [], via: [] };
+
+          if (!actions.length) {
+            if (mode === "users") {
+              const otherCol = comparedCols[colIdx === 0 ? 1 : 0];
+              const otherVia = row.perms[otherCol]?.via || [];
+              const hint = otherVia.length
+                ? `<div class="rc-missing-via">missing Â· other has via: ${otherVia.map(v => escapeHtml(v)).join(", ")}</div>`
+                : "";
+              return `<td class="rc-td-actions none">â€”${hint}</td>`;
+            }
+            return `<td class="rc-td-actions none">â€”</td>`;
+          }
+
           const tags = actions.map(a => `<span class="rc-action-tag">${escapeHtml(a)}</span>`).join("");
-          return `<td class="rc-td-actions has">${tags}</td>`;
+          const viaHtml = (mode === "users" && via.length)
+            ? `<div class="rc-via">via: ${via.map(v => escapeHtml(v)).join(", ")}</div>`
+            : "";
+          return `<td class="rc-td-actions has">${tags}${viaHtml}</td>`;
         }).join("");
+
         return `<tr class="${diff ? "row-diff" : "row-match"}">
           <td class="rc-td-entity">${escapeHtml(row.entity)}</td>
           ${cells}
@@ -435,7 +774,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
 
       domEl.innerHTML = `
         <div class="rc-domain-hdr">
-          <span class="rc-chevron">▶</span>
+          <span class="rc-chevron">â–¶</span>
           <span class="rc-domain-name">${escapeHtml(domain.name)}</span>
           <span class="rc-domain-stats">${domain.rows.length} entit${domain.rows.length !== 1 ? "ies" : "y"}</span>
           ${diffCount > 0
@@ -461,7 +800,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     $results.appendChild(wrap);
   }
 
-  // ── Toolbar events ────────────────────────────────────────
+  // â”€â”€ Toolbar events â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   $btnAll.addEventListener("click", () => {
     viewMode = "all";
     $btnAll.classList.add("active");
@@ -489,14 +828,13 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     el.querySelectorAll(".rc-domain").forEach(d => d.classList.remove("open"));
   });
 
-  // ── Export to Excel ───────────────────────────────────────
+  // â”€â”€ Export to Excel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   $exportBtn.addEventListener("click", () => {
-    if (!comparedRoles.length) return;
+    if (!comparedCols.length) return;
     const org = orgContext?.getDetails?.();
-
-    // Flatten visible rows (respects current viewMode + filter)
     const q = filterText.toLowerCase();
     const rows = [];
+
     for (const domain of comparedDomains) {
       let domainRows = domain.rows;
       if (viewMode === "diff") domainRows = domainRows.filter(r => !isMatch(r.perms));
@@ -505,8 +843,10 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       );
       for (const row of domainRows) {
         const entry = { domain: domain.name, entity: row.entity };
-        for (const roleName of comparedRoles) {
-          entry[roleName] = (row.perms[roleName] || []).join(", ");
+        for (const col of comparedCols) {
+          const { actions, via } = row.perms[col] || { actions: [], via: [] };
+          entry[col] = actions.join(", ");
+          if (mode === "users") entry[`${col} â€” via roles`] = via.join(", ");
         }
         rows.push(entry);
       }
@@ -515,11 +855,15 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     const columns = [
       { key: "domain", label: "Domain", wch: 24 },
       { key: "entity", label: "Entity", wch: 24 },
-      ...comparedRoles.map(r => ({ key: r, label: r, wch: 28 })),
+      ...comparedCols.flatMap(c => mode === "users"
+        ? [{ key: c, label: c, wch: 28 }, { key: `${c} â€” via roles`, label: `${c} â€” via roles`, wch: 36 }]
+        : [{ key: c, label: c, wch: 28 }]
+      ),
     ];
 
-    const orgSlug = (org?.name || "").replace(/\s+/g, "_") || "org";
-    const filename = timestampedFilename(`Roles_Compare_${orgSlug}`, "xlsx");
+    const orgSlug  = (org?.name || "").replace(/\s+/g, "_") || "org";
+    const prefix   = mode === "users" ? "Users_Permissions_Compare" : "Roles_Compare";
+    const filename = timestampedFilename(`${prefix}_${orgSlug}`, "xlsx");
 
     try {
       exportXlsx([{ name: "Permissions", rows, columns }], filename);
