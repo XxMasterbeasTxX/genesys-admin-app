@@ -529,9 +529,25 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       );
 
       function extractRoles(subjectData) {
-        const map = new Map(); // roleId → roleName
+        // Map<roleId → { name: string, sources: string[] }>
+        // A user can receive the same role both directly and via a group,
+        // so sources is an array (usually length 1).
+        const map = new Map();
         for (const grant of (subjectData?.grants || [])) {
-          if (grant.role?.id) map.set(grant.role.id, grant.role.name || grant.role.id);
+          if (!grant.role?.id) continue;
+          const roleId   = grant.role.id;
+          const roleName = grant.role.name || roleId;
+          let sourceLabel;
+          if (grant.subjectType === "PC_GROUP") {
+            // Group name is most likely on grant.subject.name; fall back to subjectId
+            const groupName = grant.subject?.name || grant.subjectId || "Unknown Group";
+            sourceLabel = `Inherited from Group: ${groupName}`;
+          } else {
+            sourceLabel = "Assigned manually";
+          }
+          if (!map.has(roleId)) map.set(roleId, { name: roleName, sources: [] });
+          const entry = map.get(roleId);
+          if (!entry.sources.includes(sourceLabel)) entry.sources.push(sourceLabel);
         }
         return map;
       }
@@ -611,17 +627,21 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     const nameB = users[1].name;
     comparedCols = nameA !== nameB ? [nameA, nameB] : [`${nameA} (A)`, `${nameB} (B)`];
 
-    function buildPermsForUser(roleIds) {
-      const map = {}; // "domain::entity" → { domain, entity, actions: Set, via: Set<roleName> }
-      for (const [roleId] of roleIds) {
+    function buildPermsForUser(roleGrants) {
+      // roleGrants: Map<roleId → { name, sources: string[] }>
+      const map = {}; // "domain::entity" → { domain, entity, actions: Set, via: Set<string> }
+      for (const [roleId, { name: roleName, sources }] of roleGrants) {
         const detail = roleDetailMap[roleId];
         if (!detail) continue;
-        const roleName = detail.name || roleId;
+        // Build full attribution labels, e.g. "#SuperMaster Admin — Assigned manually"
+        const viaLabels = sources.length
+          ? sources.map(s => `${roleName} — ${s}`)
+          : [`${roleName} — Assigned manually`];
         for (const p of (detail.permissionPolicies || [])) {
           const key = `${p.domain}::${p.entityName}`;
           if (!map[key]) map[key] = { domain: p.domain, entity: p.entityName, actions: new Set(), via: new Set() };
           for (const a of (p.actionSet || [])) map[key].actions.add(a);
-          map[key].via.add(roleName);
+          for (const label of viaLabels) map[key].via.add(label);
         }
       }
       return map;
@@ -753,14 +773,6 @@ export default function renderRolesCompare({ me, api, orgContext }) {
           const { actions, via } = row.perms[col] || { actions: [], via: [] };
 
           if (!actions.length) {
-            if (mode === "users") {
-              const otherCol = comparedCols[colIdx === 0 ? 1 : 0];
-              const otherVia = row.perms[otherCol]?.via || [];
-              const hint = otherVia.length
-                ? `<div class="rc-missing-via">missing · other has via: ${otherVia.map(v => escapeHtml(v)).join(", ")}</div>`
-                : "";
-              return `<td class="rc-td-actions none">—${hint}</td>`;
-            }
             return `<td class="rc-td-actions none">—</td>`;
           }
 
