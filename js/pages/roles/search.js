@@ -24,7 +24,7 @@
  *  5. Action-filter checkboxes can narrow the visible rows client-side after
  *     results have loaded.
  */
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
 import { fetchAllAuthorizationRoles, fetchAllUsers } from "../../services/genesysApi.js";
 
 // ── Permission catalog ────────────────────────────────────────────────────────
@@ -150,6 +150,10 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       .rs-filter-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
       .rs-filter-input { padding:5px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg,var(--panel)); color:var(--text); font:inherit; font-size:13px; outline:none; min-width:220px; }
       .rs-filter-input:focus { border-color:#3b82f6; }
+      /* ── Export btn ── */
+      .rs-export-btn { margin-left:auto; padding:5px 16px; background:transparent; color:#93c5fd; border:1px solid #3b82f6; border-radius:8px; font:inherit; font-size:12px; font-weight:600; cursor:pointer; transition:background .15s,color .15s; white-space:nowrap; }
+      .rs-export-btn:hover:not(:disabled) { background:rgba(59,130,246,.18); }
+      .rs-export-btn:disabled { opacity:.4; cursor:not-allowed; }
       /* ── Role name ── */
       .rs-role-cell { color:#93c5fd; font-size:12px; }
       .rs-div-cell  { color:var(--muted); font-size:12px; }
@@ -353,6 +357,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     filterRow.innerHTML = `
       <input class="rs-filter-input" id="rsFilter" placeholder="Filter by name or email…" value="${escapeHtml(filterText)}">
       <span class="rs-summary" id="rsSummary"></span>
+      <button class="rs-export-btn" id="rsExportBtn" disabled>Export to Excel</button>
     `;
     wrap.appendChild(filterRow);
 
@@ -526,6 +531,39 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       applyFilter();
       updateSummary();
       setStatus(`Done — ${matchedUsers.length} assignment${matchedUsers.length !== 1 ? "s" : ""}.`);
+
+      // Enable export
+      const $exportBtn = el.querySelector("#rsExportBtn");
+      if ($exportBtn) {
+        $exportBtn.disabled = false;
+        $exportBtn.onclick = () => {
+          const org     = orgContext?.getDetails?.();
+          const orgSlug = (org?.name || "").replace(/\s+/g, "_") || "org";
+          const filename = timestampedFilename(`Roles_Search_${orgSlug}`, "xlsx");
+          const columns = [
+            { key: "user",   label: "User",   wch: 30 },
+            { key: "email",  label: "Email",  wch: 36 },
+            { key: "role",   label: "Role",   wch: 40 },
+            { key: "source", label: "Source", wch: 50 },
+          ];
+          // Export all rows (not filtered-out) from the table
+          const rows = [];
+          el.querySelectorAll("#rsTbody tr").forEach(tr => {
+            const cells = tr.querySelectorAll("td");
+            rows.push({
+              user:   cells[0]?.textContent?.trim() || "",
+              email:  cells[1]?.textContent?.trim() || "",
+              role:   cells[2]?.textContent?.trim() || "",
+              source: cells[4]?.textContent?.trim() || "",
+            });
+          });
+          try {
+            exportXlsx([{ name: "Roles Search", rows, columns }], filename);
+          } catch (err) {
+            setStatus(err.message, "error");
+          }
+        };
+      }
 
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
