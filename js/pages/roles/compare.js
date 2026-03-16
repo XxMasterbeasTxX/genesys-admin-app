@@ -512,50 +512,63 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
     if (!selectedUsers[0] || !selectedUsers[1]) return;
 
-    setStatus("Fetching role assignments…");
+    setStatus("Fetching role assignments and group memberships…");
     $userCompareBtn.disabled = true;
     $toolbar.style.display   = "none";
     $statusBar.style.display = "none";
 
     try {
-      // 1. Fetch role assignments for each user via subjects endpoint.
-      //    Response shape: SubjectDivisions →
-      //    { id, name, grants: [ { role: { id, name }, division: {...} } ], selfUri }
-      //    (grants are at the top level, NOT wrapped in entities[])
-      const [subjectsA, subjectsB] = await Promise.all(
-        selectedUsers.map(u =>
-          api.proxyGenesys(org.id, "GET", `/api/v2/authorization/subjects/${u.id}`)
-        )
+      // 1. Fetch direct role assignments + group memberships for both users in parallel
+      const [[subjectsA, groupsA], [subjectsB, groupsB]] = await Promise.all(
+        selectedUsers.map(u => Promise.all([
+          api.proxyGenesys(org.id, "GET", `/api/v2/authorization/subjects/${u.id}`),
+          api.proxyGenesys(org.id, "GET", "/api/v2/groups", { query: { memberId: u.id, pageSize: "100" } }),
+        ]))
       );
 
-      function extractRoles(subjectData) {
-        // Map<roleId → { name: string, sources: string[] }>
-        // A user can receive the same role both directly and via a group,
-        // so sources is an array (usually length 1).
+      // 2. Fetch role assignments for every unique group across both users in parallel
+      //    The subjects/{userId} endpoint only returns directly-assigned roles.
+      //    Group-inherited roles live on the group's own subject.
+      const allGroups = new Map(); // groupId → groupName
+      for (const g of [...(groupsA.entities || []), ...(groupsB.entities || [])]) {
+        if (g.id) allGroups.set(g.id, g.name || g.id);
+      }
+      const groupSubjectMap = {}; // groupId → grants[]
+      await Promise.all(
+        [...allGroups.keys()].map(async groupId => {
+          const gs = await api.proxyGenesys(org.id, "GET", `/api/v2/authorization/subjects/${groupId}`);
+          groupSubjectMap[groupId] = gs.grants || [];
+        })
+      );
+
+      // 3. Build Map<roleId → { name, sources[] }> for each user
+      function buildRoleMap(subjects, groups) {
         const map = new Map();
-        for (const grant of (subjectData?.grants || [])) {
+        // Direct assignments
+        for (const grant of (subjects?.grants || [])) {
           if (!grant.role?.id) continue;
-          const roleId   = grant.role.id;
-          const roleName = grant.role.name || roleId;
-          let sourceLabel;
-          if (grant.subjectType === "PC_GROUP") {
-            // Group name is most likely on grant.subject.name; fall back to subjectId
-            const groupName = grant.subject?.name || grant.subjectId || "Unknown Group";
-            sourceLabel = `Inherited from Group: ${groupName}`;
-          } else {
-            sourceLabel = "Assigned manually";
+          if (!map.has(grant.role.id)) map.set(grant.role.id, { name: grant.role.name || grant.role.id, sources: [] });
+          const entry = map.get(grant.role.id);
+          if (!entry.sources.includes("Assigned manually")) entry.sources.push("Assigned manually");
+        }
+        // Group-inherited
+        for (const group of (groups?.entities || [])) {
+          const groupName = allGroups.get(group.id) || group.id;
+          const label = `Inherited from Group: ${groupName}`;
+          for (const grant of (groupSubjectMap[group.id] || [])) {
+            if (!grant.role?.id) continue;
+            if (!map.has(grant.role.id)) map.set(grant.role.id, { name: grant.role.name || grant.role.id, sources: [] });
+            const entry = map.get(grant.role.id);
+            if (!entry.sources.includes(label)) entry.sources.push(label);
           }
-          if (!map.has(roleId)) map.set(roleId, { name: roleName, sources: [] });
-          const entry = map.get(roleId);
-          if (!entry.sources.includes(sourceLabel)) entry.sources.push(sourceLabel);
         }
         return map;
       }
 
-      const rolesA = extractRoles(subjectsA);
-      const rolesB = extractRoles(subjectsB);
+      const rolesA = buildRoleMap(subjectsA, groupsA);
+      const rolesB = buildRoleMap(subjectsB, groupsB);
 
-      // 2. Fetch each unique role's permissionPolicies in parallel
+      // 4. Fetch each unique role's permissionPolicies in parallel
       const allRoleIds = new Set([...rolesA.keys(), ...rolesB.keys()]);
       setStatus(`Fetching permissions for ${allRoleIds.size} unique role${allRoleIds.size !== 1 ? "s" : ""}…`);
 
@@ -566,7 +579,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
         })
       );
 
-      // 3. Expand wildcards if any role uses them
+      // 5. Expand wildcards if any role uses them
       const hasWildcard = Object.values(roleDetailMap).some(r =>
         (r.permissionPolicies || []).some(p =>
           p.entityName === "*" || (p.actionSet || []).includes("*")
