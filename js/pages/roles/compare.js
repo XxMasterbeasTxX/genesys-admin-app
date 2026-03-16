@@ -28,12 +28,9 @@ async function fetchPermissionCatalog(api, orgId) {
   for (const p of perms) {
     if (!p.domain || !p.permissionMap) continue;
     if (!catalog[p.domain]) catalog[p.domain] = {};
-    for (const [entityName, entityData] of Object.entries(p.permissionMap)) {
-      // actionSet may be empty; fall back to the keys of namedActions
-      const actions = (entityData.actionSet && entityData.actionSet.length > 0)
-        ? entityData.actionSet
-        : Object.keys(entityData.namedActions || {});
-      catalog[p.domain][entityName] = [...actions].sort();
+    for (const [entityName, actionList] of Object.entries(p.permissionMap)) {
+      // actionList is an array of { domain, entityType, action, label, ... }
+      catalog[p.domain][entityName] = actionList.map(a => a.action).sort();
     }
   }
   return catalog;
