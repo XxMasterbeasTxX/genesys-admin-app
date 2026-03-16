@@ -168,6 +168,13 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       .rs-combo-option:last-child { border-bottom:none; }
       .rs-combo-option:hover { background:rgba(59,130,246,.15); color:#93c5fd; }
       .rs-combo-noresult { padding:10px 12px; font-size:12px; color:var(--muted); text-align:center; }
+      /* ── Progress bar ── */
+      .rs-progress-wrap { margin-bottom:6px; }
+      .rs-progress-track { height:3px; background:rgba(255,255,255,.08); border-radius:2px; overflow:hidden; }
+      .rs-progress-fill { height:100%; background:#3b82f6; border-radius:2px; width:0; transition:width .25s ease; }
+      @keyframes rs-slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(280%)} }
+      .rs-progress-fill.indeterminate { width:35%; animation:rs-slide 1.3s ease-in-out infinite; }
+      .rs-progress-detail { font-size:11px; color:var(--muted); margin-top:3px; }
     </style>
 
     <h2 style="margin:0 0 18px">Roles — Search</h2>
@@ -199,6 +206,10 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     </div>
 
     <div class="rs-status" id="rsStatus"></div>
+    <div class="rs-progress-wrap" id="rsProgressWrap" style="display:none">
+      <div class="rs-progress-track"><div class="rs-progress-fill" id="rsProgressFill"></div></div>
+      <div class="rs-progress-detail" id="rsProgressDetail"></div>
+    </div>
 
     <div id="rsResults">
       <div class="rs-empty">
@@ -209,10 +220,13 @@ export default function renderRolesSearch({ me, api, orgContext }) {
   `;
 
   // ── DOM refs ──────────────────────────────────────────────
-  const $actions   = el.querySelector("#rsActions");
-  const $searchBtn = el.querySelector("#rsSearchBtn");
-  const $status    = el.querySelector("#rsStatus");
-  const $results   = el.querySelector("#rsResults");
+  const $actions        = el.querySelector("#rsActions");
+  const $searchBtn      = el.querySelector("#rsSearchBtn");
+  const $status         = el.querySelector("#rsStatus");
+  const $progressWrap   = el.querySelector("#rsProgressWrap");
+  const $progressFill   = el.querySelector("#rsProgressFill");
+  const $progressDetail = el.querySelector("#rsProgressDetail");
+  const $results        = el.querySelector("#rsResults");
 
   // ── State ─────────────────────────────────────────────────
   let catalog        = null;
@@ -225,6 +239,27 @@ export default function renderRolesSearch({ me, api, orgContext }) {
   function setStatus(msg, cls = "") {
     $status.textContent = msg;
     $status.className = "rs-status" + (cls ? ` rs-status--${cls}` : "");
+  }
+
+  function showProgress(fetched, total) {
+    $progressWrap.style.display = "";
+    if (total && total > 0) {
+      const pct = Math.min(100, Math.round(fetched / total * 100));
+      $progressFill.style.width = `${pct}%`;
+      $progressFill.classList.remove("indeterminate");
+      $progressDetail.textContent = `${fetched.toLocaleString()} / ${total.toLocaleString()}`;
+    } else {
+      $progressFill.classList.add("indeterminate");
+      $progressFill.style.width = "";
+      $progressDetail.textContent = fetched > 0 ? `${fetched.toLocaleString()} loaded…` : "";
+    }
+  }
+
+  function hideProgress() {
+    $progressWrap.style.display = "none";
+    $progressFill.style.width = "0";
+    $progressFill.classList.remove("indeterminate");
+    $progressDetail.textContent = "";
   }
 
   // ── Combobox factory ──────────────────────────────────────
@@ -444,9 +479,21 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       // automatically excluded because they are not in the local directory.
       // We only expand=authorization here (same as the export pages) to avoid
       // 500 errors from the server when combining both expands for 1000+ users.
+      let rolesFetched = 0, rolesTotal = null;
+      let usersFetched = 0, usersTotal = null;
+      const updateFetchProgress = () => {
+        const total = rolesTotal !== null && usersTotal !== null ? rolesTotal + usersTotal : null;
+        showProgress(rolesFetched + usersFetched, total);
+      };
+      showProgress(0, null);
       const [allRoles, allUsers] = await Promise.all([
-        fetchAllAuthorizationRoles(api, org.id),
-        fetchAllUsers(api, org.id, { expand: ["authorization"] }),
+        fetchAllAuthorizationRoles(api, org.id, {
+          onProgress: (f, t) => { rolesFetched = f; if (t != null) rolesTotal = t; updateFetchProgress(); },
+        }),
+        fetchAllUsers(api, org.id, {
+          expand: ["authorization"],
+          onProgress: (f, t) => { usersFetched = f; if (t != null) usersTotal = t; updateFetchProgress(); },
+        }),
       ]);
 
       const matchingRoleIds = new Set(
@@ -457,6 +504,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       const roleNameMap = new Map(allRoles.map(r => [r.id, r.name || r.id]));
 
       if (matchingRoleIds.size === 0) {
+        hideProgress();
         setStatus("");
         $results.innerHTML = `<div class="rs-empty"><div class="rs-empty-icon">🔍</div>
           <p>No roles found with permission <strong>${escapeHtml(domain)}:${escapeHtml(entity)}</strong>.</p></div>`;
@@ -486,8 +534,10 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       // Avoids the server-side 500 that occurs when expand=groups is combined
       // with expand=authorization across 1000+ users in a single bulk fetch.
       if (matchedUsers.length > 0) {
-        setStatus(`Found ${matchedUsers.length} assignment${matchedUsers.length !== 1 ? "s" : ""} — fetching group memberships…`);
         const uniqueUserIds = [...new Set(matchedUsers.map(u => u.userId))];
+        let grpFetched = 0;
+        setStatus(`Found ${matchedUsers.length} assignment${matchedUsers.length !== 1 ? "s" : ""} — fetching group memberships…`);
+        showProgress(grpFetched, uniqueUserIds.length);
         const userGroupMap  = new Map(); // userId → groups[]
         await runBatched(
           uniqueUserIds.map(userId => async () => {
@@ -497,6 +547,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
             } catch {
               userGroupMap.set(userId, []);
             }
+            showProgress(++grpFetched, uniqueUserIds.length);
           }),
           10
         );
@@ -506,6 +557,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       }
 
       if (matchedUsers.length === 0) {
+        hideProgress();
         setStatus("");
         $results.innerHTML = `<div class="rs-empty"><div class="rs-empty-icon">👥</div>
           <p>No users in this org have permission <strong>${escapeHtml(domain)}:${escapeHtml(entity)}</strong>.</p></div>`;
@@ -524,6 +576,9 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       const groupGrantsCache = new Map(); // groupId → grants[]
       const groupNameCache   = new Map(); // groupId → name
 
+      if (allGroupIds.size > 0) showProgress(0, allGroupIds.size);
+      else hideProgress();
+      let srcFetched = 0;
       await runBatched(
         [...allGroupIds].map(groupId => async () => {
           try {
@@ -536,6 +591,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
           } catch {
             groupGrantsCache.set(groupId, []);
           }
+          showProgress(++srcFetched, allGroupIds.size);
         }),
         10
       );
@@ -555,6 +611,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
 
       applyFilter();
       updateSummary();
+      hideProgress();
       setStatus(`Done — ${matchedUsers.length} assignment${matchedUsers.length !== 1 ? "s" : ""}.`);
 
       // Enable export
@@ -591,6 +648,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       }
 
     } catch (err) {
+      hideProgress();
       setStatus(`Error: ${err.message}`, "error");
     } finally {
       searching = false;
