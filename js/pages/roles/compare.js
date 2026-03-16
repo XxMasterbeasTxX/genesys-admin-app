@@ -430,10 +430,16 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       if (!org) return;
       showResults([], "Searching…");
       try {
-        const resp = await api.proxyGenesys(org.id, "GET", "/api/v2/users", {
-          query: { name: q, pageSize: "20", pageNumber: "1" },
+        const resp = await api.proxyGenesys(org.id, "POST", "/api/v2/users/search", {
+          body: {
+            pageSize: 25,
+            pageNumber: 1,
+            query: [{ type: "CONTAINS", fields: ["name", "email"], value: q }],
+            sortOrder: "ASC",
+            sortBy: "name",
+          },
         });
-        showResults(resp.entities || []);
+        showResults(resp.results || []);
       } catch {
         closeDropdown();
       }
