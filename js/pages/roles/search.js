@@ -25,6 +25,7 @@
  *     results have loaded.
  */
 import { escapeHtml } from "../../utils.js";
+import { fetchAllAuthorizationRoles } from "../../services/genesysApi.js";
 
 // ── Permission catalog ────────────────────────────────────────────────────────
 
@@ -49,31 +50,29 @@ async function fetchPermissionCatalog(api, orgId) {
   return catalog;
 }
 
-// ── Roles-by-permission lookup ────────────────────────────────────────────────
+// ── Client-side role filter by permissionPolicies ───────────────────────────
 
-async function fetchRolesForPermission(api, orgId, domain, entity, action) {
-  const permission = `${domain}:${entity}:${action}`;
-  const roles = [];
-  let page = 1;
-  let pageCount = null;
-  do {
-    const resp = await api.proxyGenesys(
-      orgId, "GET", "/api/v2/authorization/roles",
-      { query: { permission, pageSize: "100", pageNumber: String(page) } }
-    );
-    pageCount = resp.pageCount ?? 1;
-    for (const r of (resp.entities || [])) {
-      roles.push({ id: r.id, name: r.name || r.id });
-    }
-    page++;
-  } while (page <= pageCount);
-  return roles;
+/**
+ * Returns true if the role's permissionPolicies grant any of the
+ * checkedActions for the given domain+entity (wildcard-aware).
+ */
+function roleMatchesPermission(role, domain, entity, checkedActions) {
+  for (const p of (role.permissionPolicies || [])) {
+    const domainMatch  = p.domain     === domain || p.domain     === "*";
+    const entityMatch  = p.entityName === entity || p.entityName === "*";
+    if (!domainMatch || !entityMatch) continue;
+    const actionSet = p.actionSet || [];
+    if (actionSet.includes("*")) return true;
+    if (checkedActions.some(a => actionSet.includes(a))) return true;
+  }
+  return false;
 }
 
 // ── Users-in-role lookup ──────────────────────────────────────────────────────
 
 async function fetchUsersForRole(api, orgId, roleId) {
   const users = [];
+  const seen  = new Set(); // deduplicate — endpoint may return same user per division
   let page = 1;
   let pageCount = null;
   do {
@@ -83,11 +82,11 @@ async function fetchUsersForRole(api, orgId, roleId) {
     );
     pageCount = resp.pageCount ?? 1;
     for (const u of (resp.entities || [])) {
-      users.push({
-        id: u.id,
-        name: u.name || u.id,
-        email: u.email || "",
-      });
+      if (!u.id || seen.has(u.id)) continue;
+      seen.add(u.id);
+      // This endpoint may return minimal objects (id + selfUri only).
+      // name/email will be resolved in the attribution step.
+      users.push({ id: u.id, name: u.name || "", email: u.email || "" });
     }
     page++;
   } while (page <= pageCount);
@@ -96,17 +95,19 @@ async function fetchUsersForRole(api, orgId, roleId) {
 
 // ── Source attribution ────────────────────────────────────────────────────────
 
-async function resolveUserSource(api, orgId, userId, roleId) {
+async function resolveUserAttribution(api, orgId, userId, roleId) {
   const [subjects, userDetail] = await Promise.all([
     api.proxyGenesys(orgId, "GET", `/api/v2/authorization/subjects/${userId}`),
     api.proxyGenesys(orgId, "GET", `/api/v2/users/${userId}`, { query: { expand: "groups" } }),
   ]);
 
+  const name       = userDetail.name  || userDetail.username || userId;
+  const email      = userDetail.email || "";
   const userGroups = userDetail.groups || [];
 
   // Fetch every group's grants + name in parallel
   const groupSubjectMap = {}; // groupId → grants[]
-  const groupNameMap = {};    // groupId → name
+  const groupNameMap    = {}; // groupId → name
   await Promise.all(
     userGroups.map(async g => {
       const [gs, groupDetail] = await Promise.all([
@@ -114,7 +115,7 @@ async function resolveUserSource(api, orgId, userId, roleId) {
         api.proxyGenesys(orgId, "GET", `/api/v2/groups/${g.id}`),
       ]);
       groupSubjectMap[g.id] = gs.grants || [];
-      groupNameMap[g.id] = groupDetail.name || g.name || g.id;
+      groupNameMap[g.id]    = groupDetail.name || g.name || g.id;
     })
   );
 
@@ -128,22 +129,20 @@ async function resolveUserSource(api, orgId, userId, roleId) {
 
   // Build source label(s) for the requested roleId
   const sources = [];
-
-  // Manual assignment: role appears in user's direct grants AND not only via group
   const hasDirectGrant = (subjects.grants || []).some(gr => gr.role?.id === roleId);
-  if (hasDirectGrant && !groupRoleIds.has(roleId)) {
-    sources.push("Assigned manually");
-  }
+  if (hasDirectGrant && !groupRoleIds.has(roleId)) sources.push("Assigned manually");
 
-  // Group-inherited
   for (const g of userGroups) {
-    const hasGroupGrant = (groupSubjectMap[g.id] || []).some(gr => gr.role?.id === roleId);
-    if (hasGroupGrant) {
+    if ((groupSubjectMap[g.id] || []).some(gr => gr.role?.id === roleId)) {
       sources.push(`Inherited from Group: ${groupNameMap[g.id]}`);
     }
   }
 
-  return sources.length ? sources.join("; ") : "Assigned manually";
+  return {
+    name,
+    email,
+    source: sources.length ? sources.join("; ") : "Assigned manually",
+  };
 }
 
 // ── Concurrency helper ────────────────────────────────────────────────────────
@@ -423,8 +422,8 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     tr.dataset.email = email;
     tr.dataset.roleId = roleId;
     tr.innerHTML = `
-      <td>${escapeHtml(userName)}</td>
-      <td>${escapeHtml(email)}</td>
+      <td class="rs-name-cell">${userName ? escapeHtml(userName) : "<span style='color:var(--muted)'>Resolving…</span>"}</td>
+      <td class="rs-email-cell">${escapeHtml(email)}</td>
       <td class="rs-role-cell">${escapeHtml(roleName)}</td>
       <td class="rs-div-cell">${escapeHtml(division || "")}</td>
       <td class="rs-source-cell">${sourceBadge(null)}</td>
@@ -433,11 +432,17 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     applyFilter();
   }
 
-  function updateRowSource(rowId, source) {
+  function updateRowAttribution(rowId, { name, email, source }) {
     const tr = el.querySelector(`#${CSS.escape(rowId)}`);
     if (!tr) return;
-    const cell = tr.querySelector(".rs-source-cell");
-    if (cell) cell.innerHTML = sourceBadge(source);
+    if (name) {
+      const nameCell = tr.querySelector(".rs-name-cell");
+      if (nameCell) { nameCell.textContent = name; tr.dataset.name = name; }
+      const emailCell = tr.querySelector(".rs-email-cell");
+      if (emailCell && !tr.dataset.email) { emailCell.textContent = email; tr.dataset.email = email; }
+    }
+    const sourceCell = tr.querySelector(".rs-source-cell");
+    if (sourceCell) sourceCell.innerHTML = sourceBadge(source);
   }
 
   // ── Main search ───────────────────────────────────────────
@@ -466,39 +471,28 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     });
 
     try {
-      // ── Step 1: find matching roles (one request per action, deduplicated) ──
-      const roleMap = new Map(); // roleId → roleName
-      const rolesByAction = {}; // action → Set<roleId>
+      // ── Step 1: fetch all roles, filter client-side by permissionPolicies ──
+      setStatus("Fetching roles…");
+      const allRoles = await fetchAllAuthorizationRoles(api, org.id);
+      const matchingRoles = allRoles.filter(r => roleMatchesPermission(r, domain, entity, actions));
 
-      const roleResults = await Promise.all(
-        actions.map(action =>
-          fetchRolesForPermission(api, org.id, domain, entity, action)
-            .then(roles => ({ action, roles }))
-        )
-      );
-
-      for (const { action, roles } of roleResults) {
-        rolesByAction[action] = new Set(roles.map(r => r.id));
-        for (const r of roles) {
-          if (!roleMap.has(r.id)) roleMap.set(r.id, r.name);
-        }
-      }
-
-      if (roleMap.size === 0) {
+      if (matchingRoles.length === 0) {
         setStatus("");
         $results.innerHTML = `<div class="rs-empty"><div class="rs-empty-icon">🔍</div>
           <p>No roles found with permission <strong>${escapeHtml(domain)}:${escapeHtml(entity)}</strong>.</p></div>`;
         return;
       }
 
-      setStatus(`Found ${roleMap.size} role${roleMap.size !== 1 ? "s" : ""} — loading users…`);
+      setStatus(`Found ${matchingRoles.length} role${matchingRoles.length !== 1 ? "s" : ""} — loading users…`);
 
-      // ── Step 2: for each role, load its users and stream rows ──
+      // ── Step 2: for each role, load its users (deduplicated) and stream rows ──
       let totalUsers = 0;
-      const attributionTasks = []; // deferred source-resolution tasks
+      const attributionTasks = []; // deferred source + name resolution tasks
 
       await Promise.all(
-        [...roleMap.entries()].map(async ([roleId, roleName]) => {
+        matchingRoles.map(async (role) => {
+          const roleId   = role.id;
+          const roleName = role.name || role.id;
           let users;
           try {
             users = await fetchUsersForRole(api, org.id, roleId);
@@ -510,12 +504,12 @@ export default function renderRolesSearch({ me, api, orgContext }) {
             totalUsers++;
             const rowId = `rs-row-${roleId}-${u.id}`;
             appendRow({
-              userId:    u.id,
-              userName:  u.name,
-              email:     u.email,
+              userId:   u.id,
+              userName: u.name,   // may be empty — resolved in attribution step
+              email:    u.email,
               roleId,
               roleName,
-              division:  u.division?.name || "",
+              division: "",
               rowId,
             });
             attributionTasks.push({ userId: u.id, roleId, rowId });
@@ -531,16 +525,16 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       }
 
       updateSummary();
-      setStatus(`Found ${totalUsers} user assignment${totalUsers !== 1 ? "s" : ""} — resolving sources…`);
+      setStatus(`Found ${totalUsers} user assignment${totalUsers !== 1 ? "s" : ""} — resolving names and sources…`);
 
-      // ── Step 3: resolve source attribution in batches of 10 ──
+      // ── Step 3: resolve user name + source attribution in batches of 10 ──
       await runBatched(
         attributionTasks.map(({ userId, roleId, rowId }) => async () => {
           try {
-            const source = await resolveUserSource(api, org.id, userId, roleId);
-            updateRowSource(rowId, source);
+            const result = await resolveUserAttribution(api, org.id, userId, roleId);
+            updateRowAttribution(rowId, result);
           } catch {
-            updateRowSource(rowId, "Unknown");
+            updateRowAttribution(rowId, { name: "", email: "", source: "Unknown" });
           }
         }),
         10
