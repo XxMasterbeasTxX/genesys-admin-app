@@ -541,16 +541,31 @@ export default function renderRolesCompare({ me, api, orgContext }) {
         })
       );
 
-      // 3. Build Map<roleId → { name, sources[] }> for each user
+      // 3. Build Map<roleId → { name, sources[] }> for each user.
+      //    subjects/{userId} returns ALL effective grants (incl. group-inherited),
+      //    so we must NOT label a role "Assigned manually" if it is also granted
+      //    via any of the user's groups — only add manual label for roles that
+      //    do not appear in any group.
       function buildRoleMap(subjects, groups) {
         const map = new Map();
-        // Direct assignments
+
+        // First: collect every roleId that comes from a group for this user
+        const groupRoleIds = new Set();
+        for (const group of (groups?.entities || [])) {
+          for (const grant of (groupSubjectMap[group.id] || [])) {
+            if (grant.role?.id) groupRoleIds.add(grant.role.id);
+          }
+        }
+
+        // Direct assignments — only "Assigned manually" when NOT group-inherited
         for (const grant of (subjects?.grants || [])) {
           if (!grant.role?.id) continue;
+          if (groupRoleIds.has(grant.role.id)) continue; // skip — handled via group below
           if (!map.has(grant.role.id)) map.set(grant.role.id, { name: grant.role.name || grant.role.id, sources: [] });
           const entry = map.get(grant.role.id);
           if (!entry.sources.includes("Assigned manually")) entry.sources.push("Assigned manually");
         }
+
         // Group-inherited
         for (const group of (groups?.entities || [])) {
           const groupName = allGroups.get(group.id) || group.id;
@@ -562,6 +577,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
             if (!entry.sources.includes(label)) entry.sources.push(label);
           }
         }
+
         return map;
       }
 
