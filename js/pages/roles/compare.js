@@ -539,10 +539,12 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       const groupSubjectMap = {}; // groupId → grants[]
       await Promise.all(
         [...allGroups.keys()].map(async groupId => {
-          const gs = await api.proxyGenesys(org.id, "GET", `/api/v2/authorization/subjects/${groupId}`);
+          const [gs, groupDetail] = await Promise.all([
+            api.proxyGenesys(org.id, "GET", `/api/v2/authorization/subjects/${groupId}`),
+            api.proxyGenesys(org.id, "GET", `/api/v2/groups/${groupId}`),
+          ]);
           groupSubjectMap[groupId] = gs.grants || [];
-          // The subjects response includes the group's display name — use it
-          if (gs.name) allGroups.set(groupId, gs.name);
+          if (groupDetail.name) allGroups.set(groupId, groupDetail.name);
         })
       );
 
