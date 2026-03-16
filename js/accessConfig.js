@@ -71,6 +71,7 @@
  *
  *   ROLES
  *   roles.compare                      Compare permission policies across roles
+ *   roles.search                       Search permissions and see which users hold them
  *
  *   AUDIT
  *   audit.search                       Audit event search
@@ -107,7 +108,7 @@
 export const GROUP_ACCESS = {
   "Genesys App - Master Admin": ["*"],
   "Genesys App - Admin": ["*"],
-  "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*", "roles.compare"],
+  "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*", "roles.compare", "roles.search"],
   "Genesys App - Export": ["export.*"],
 };
 

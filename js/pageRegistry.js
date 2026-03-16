@@ -132,6 +132,8 @@ const registry = {
   // ── Roles ──────────────────────────────────────────────
   "/roles/compare": (ctx) =>
     import("./pages/roles/compare.js").then((m) => m.default(ctx)),
+  "/roles/search": (ctx) =>
+    import("./pages/roles/search.js").then((m) => m.default(ctx)),
 
   // ── Audit ─────────────────────────────────────────────
   "/audit/search": (ctx) =>

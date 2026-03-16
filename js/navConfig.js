@@ -214,6 +214,7 @@ export const NAV_TREE = [
     enabled: true,
     children: [
       { label: "Compare", path: "compare", enabled: true, access: "roles.compare" },
+      { label: "Search",  path: "search",  enabled: true, access: "roles.search"  },
     ],
   },
   {
