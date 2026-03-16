@@ -90,7 +90,7 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 
 ## 4. Authorization & Divisions
 
-Used by: Divisions (all object types), Data Tables — Create, export pages, Deployment — Basic, Roles — Compare
+Used by: Divisions (all object types), Data Tables — Create, export pages, Deployment — Basic, Roles — Compare (both modes)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -98,26 +98,28 @@ Used by: Divisions (all object types), Data Tables — Create, export pages, Dep
 | POST | `/api/v2/authorization/divisions` | **Create** a new division (Deployment — Basic) |
 | GET | `/api/v2/authorization/roles` | List all authorization roles |
 | GET | `/api/v2/authorization/roles/{roleId}` | Get a single role with full `permissionPolicies` (Roles — Compare) |
-| GET | `/api/v2/authorization/permissions` | List the full permission catalog — all concrete domain/entity/action entries; used by Roles — Compare to expand wildcard policies |
+| GET | `/api/v2/authorization/permissions` | List the full permission catalog — domain/entity/action entries; used by Roles — Compare to expand wildcard policies (paginated, `pageSize=100`, looped via `pageCount`) |
 | GET | `/api/v2/authorization/roles/{roleId}/users` | List users assigned a specific role |
 | POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to subjects with division scope (Deployment — Basic Users) |
-| GET | `/api/v2/authorization/subjects/{userId}` | Get a user's role assignments |
+| GET | `/api/v2/authorization/subjects/{subjectId}` | Get effective role grants for a user or group — returns `{ grants: [{ role: { id, name }, division }] }` at top level (Compare Users) |
 | POST | `/api/v2/authorization/divisions/{divisionId}/objects/{type}` | Move objects between divisions (Divisions pages) |
 
 ---
 
 ## 5. Users & Groups
 
-Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Trustee Export, Divisions — Users, Documentation Export, WebRTC Phones
+Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Trustee Export, Divisions — Users, Documentation Export, WebRTC Phones, Roles — Compare Users
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/users` | List users (paginated; supports `expand=skills,languages,station,division`) |
+| POST | `/api/v2/users/search` | Search users by name/email — body: `{ query: [{ type: "CONTAINS", fields: ["name","email"], value }] }` — response key is `results` (not `entities`); used by Compare Users picker |
 | GET | `/api/v2/users/me` | Get current authenticated user and group memberships |
 | GET | `/api/v2/users/{userId}` | Get a single user by ID |
+| GET | `/api/v2/users/{userId}?expand=groups` | Get user with `groups` array inline — used to resolve group memberships for Compare Users |
 | PATCH | `/api/v2/users/{userId}` | Update user (e.g., change division) |
 | GET | `/api/v2/groups` | List all groups |
-| GET | `/api/v2/groups/{groupId}` | Get a single group by ID (access-check resolution) |
+| GET | `/api/v2/groups/{groupId}` | Get a single group by ID — used to resolve group display name in Compare Users |
 | GET | `/api/v2/groups/{groupId}/members` | List members of a group |
 | GET | `/api/v2/teams` | List work teams |
 
