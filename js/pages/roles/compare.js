@@ -406,7 +406,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     filteredDomains.forEach((domain, di) => {
       const diffCount = domain.rows.filter(r => !isMatch(r.perms)).length;
       const domEl = document.createElement("div");
-      domEl.className = "rc-domain" + (domain.hasDiff ? " open" : "");
+      domEl.className = "rc-domain";
 
       const bodyRows = domain.rows.map(row => {
         const diff = !isMatch(row.perms);
