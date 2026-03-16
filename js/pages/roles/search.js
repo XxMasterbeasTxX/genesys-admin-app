@@ -442,9 +442,11 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       // ── Step 1: fetch all roles + all active org users in parallel ──
       // fetchAllUsers returns only users in THIS org — trustee org users are
       // automatically excluded because they are not in the local directory.
+      // We only expand=authorization here (same as the export pages) to avoid
+      // 500 errors from the server when combining both expands for 1000+ users.
       const [allRoles, allUsers] = await Promise.all([
         fetchAllAuthorizationRoles(api, org.id),
-        fetchAllUsers(api, org.id, { expand: ["authorization", "groups"] }),
+        fetchAllUsers(api, org.id, { expand: ["authorization"] }),
       ]);
 
       const matchingRoleIds = new Set(
@@ -474,9 +476,32 @@ export default function renderRolesSearch({ me, api, orgContext }) {
               email:    user.email || "",
               roleId:   rid,
               roleName: roleNameMap.get(rid) || rid,
-              groups:   user.groups || [],
+              groups:   [], // populated below for matched users only
             });
           }
+        }
+      }
+
+      // ── Step 2b: fetch groups only for the matched users (small set) ──
+      // Avoids the server-side 500 that occurs when expand=groups is combined
+      // with expand=authorization across 1000+ users in a single bulk fetch.
+      if (matchedUsers.length > 0) {
+        setStatus(`Found ${matchedUsers.length} assignment${matchedUsers.length !== 1 ? "s" : ""} — fetching group memberships…`);
+        const uniqueUserIds = [...new Set(matchedUsers.map(u => u.userId))];
+        const userGroupMap  = new Map(); // userId → groups[]
+        await runBatched(
+          uniqueUserIds.map(userId => async () => {
+            try {
+              const detail = await api.proxyGenesys(org.id, "GET", `/api/v2/users/${userId}`, { query: { expand: "groups" } });
+              userGroupMap.set(userId, detail.groups || []);
+            } catch {
+              userGroupMap.set(userId, []);
+            }
+          }),
+          10
+        );
+        for (const u of matchedUsers) {
+          u.groups = userGroupMap.get(u.userId) || [];
         }
       }
 
