@@ -21,11 +21,16 @@ const ENTITY_COL_W = 220; // px — entity column fixed width
  * Returns { domain: { entityName: string[] } } — all known (domain, entity, actions).
  */
 async function fetchPermissionCatalog(api, orgId) {
+  // Each entity in the response is a DomainPermissionCollection:
+  // { domain: string, permissionMap: { [entityName]: { entityType, actionSet } } }
   const perms = await fetchAllPages(api, orgId, "/api/v2/authorization/permissions", { pageSize: 200 });
   const catalog = {};
   for (const p of perms) {
+    if (!p.domain || !p.permissionMap) continue;
     if (!catalog[p.domain]) catalog[p.domain] = {};
-    catalog[p.domain][p.entityName] = [...(p.actionSet || [])].sort();
+    for (const [entityName, entityData] of Object.entries(p.permissionMap)) {
+      catalog[p.domain][entityName] = [...(entityData.actionSet || [])].sort();
+    }
   }
   return catalog;
 }
