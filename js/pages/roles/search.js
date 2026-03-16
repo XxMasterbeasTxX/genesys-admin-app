@@ -25,7 +25,7 @@
  *     results have loaded.
  */
 import { escapeHtml } from "../../utils.js";
-import { fetchAllAuthorizationRoles } from "../../services/genesysApi.js";
+import { fetchAllAuthorizationRoles, fetchAllUsers } from "../../services/genesysApi.js";
 
 // ── Permission catalog ────────────────────────────────────────────────────────
 
@@ -68,81 +68,23 @@ function roleMatchesPermission(role, domain, entity, checkedActions) {
   return false;
 }
 
-// ── Users-in-role lookup ──────────────────────────────────────────────────────
+// ── Source attribution (uses pre-fetched group cache) ────────────────────────
 
-async function fetchUsersForRole(api, orgId, roleId) {
-  const users = [];
-  const seen  = new Set(); // deduplicate — endpoint may return same user per division
-  let page = 1;
-  let pageCount = null;
-  do {
-    const resp = await api.proxyGenesys(
-      orgId, "GET", `/api/v2/authorization/roles/${roleId}/users`,
-      { query: { pageSize: "100", pageNumber: String(page) } }
-    );
-    pageCount = resp.pageCount ?? 1;
-    for (const u of (resp.entities || [])) {
-      if (!u.id || seen.has(u.id)) continue;
-      seen.add(u.id);
-      // This endpoint may return minimal objects (id + selfUri only).
-      // name/email will be resolved in the attribution step.
-      users.push({ id: u.id, name: u.name || "", email: u.email || "" });
-    }
-    page++;
-  } while (page <= pageCount);
-  return users;
-}
-
-// ── Source attribution ────────────────────────────────────────────────────────
-
-async function resolveUserAttribution(api, orgId, userId, roleId) {
-  const [subjects, userDetail] = await Promise.all([
-    api.proxyGenesys(orgId, "GET", `/api/v2/authorization/subjects/${userId}`),
-    api.proxyGenesys(orgId, "GET", `/api/v2/users/${userId}`, { query: { expand: "groups" } }),
-  ]);
-
-  const name       = userDetail.name  || userDetail.username || userId;
-  const email      = userDetail.email || "";
-  const userGroups = userDetail.groups || [];
-
-  // Fetch every group's grants + name in parallel
-  const groupSubjectMap = {}; // groupId → grants[]
-  const groupNameMap    = {}; // groupId → name
-  await Promise.all(
-    userGroups.map(async g => {
-      const [gs, groupDetail] = await Promise.all([
-        api.proxyGenesys(orgId, "GET", `/api/v2/authorization/subjects/${g.id}`),
-        api.proxyGenesys(orgId, "GET", `/api/v2/groups/${g.id}`),
-      ]);
-      groupSubjectMap[g.id] = gs.grants || [];
-      groupNameMap[g.id]    = groupDetail.name || g.name || g.id;
-    })
-  );
-
-  // Collect which roleIds this user gets via groups
+function buildSourceLabel(roleId, userGroups, groupGrantsCache, groupNameCache) {
   const groupRoleIds = new Set();
   for (const g of userGroups) {
-    for (const grant of (groupSubjectMap[g.id] || [])) {
+    for (const grant of (groupGrantsCache.get(g.id) || [])) {
       if (grant.role?.id) groupRoleIds.add(grant.role.id);
     }
   }
-
-  // Build source label(s) for the requested roleId
   const sources = [];
-  const hasDirectGrant = (subjects.grants || []).some(gr => gr.role?.id === roleId);
-  if (hasDirectGrant && !groupRoleIds.has(roleId)) sources.push("Assigned manually");
-
+  if (!groupRoleIds.has(roleId)) sources.push("Assigned manually");
   for (const g of userGroups) {
-    if ((groupSubjectMap[g.id] || []).some(gr => gr.role?.id === roleId)) {
-      sources.push(`Inherited from Group: ${groupNameMap[g.id]}`);
+    if ((groupGrantsCache.get(g.id) || []).some(gr => gr.role?.id === roleId)) {
+      sources.push(`Inherited from Group: ${groupNameCache.get(g.id) || g.name || g.id}`);
     }
   }
-
-  return {
-    name,
-    email,
-    source: sources.length ? sources.join("; ") : "Assigned manually",
-  };
+  return sources.length ? sources.join("; ") : "Assigned manually";
 }
 
 // ── Concurrency helper ────────────────────────────────────────────────────────
@@ -211,6 +153,17 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       /* ── Role name ── */
       .rs-role-cell { color:#93c5fd; font-size:12px; }
       .rs-div-cell  { color:var(--muted); font-size:12px; }
+      /* ── Searchable combobox ── */
+      .rs-combo { position:relative; min-width:200px; }
+      .rs-combo-input { width:100%; padding:6px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg,var(--panel)); color:var(--text); font:inherit; font-size:13px; outline:none; box-sizing:border-box; }
+      .rs-combo-input:focus { border-color:#3b82f6; }
+      .rs-combo-input:disabled { opacity:.5; cursor:not-allowed; }
+      .rs-combo-list { display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:300; max-height:220px; overflow-y:auto; background:var(--panel); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+      .rs-combo-list.open { display:block; }
+      .rs-combo-option { padding:7px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid rgba(255,255,255,.04); }
+      .rs-combo-option:last-child { border-bottom:none; }
+      .rs-combo-option:hover { background:rgba(59,130,246,.15); color:#93c5fd; }
+      .rs-combo-noresult { padding:10px 12px; font-size:12px; color:var(--muted); text-align:center; }
     </style>
 
     <h2 style="margin:0 0 18px">Roles — Search</h2>
@@ -218,15 +171,17 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     <div class="rs-controls" id="rsControls">
       <div class="rs-control-group">
         <span class="rs-label">Domain</span>
-        <select class="rs-select" id="rsDomain" disabled>
-          <option value="">Loading catalog…</option>
-        </select>
+        <div class="rs-combo">
+          <input class="rs-combo-input" id="rsDomainInput" placeholder="Loading…" autocomplete="off" disabled>
+          <div class="rs-combo-list" id="rsDomainList"></div>
+        </div>
       </div>
       <div class="rs-control-group">
         <span class="rs-label">Entity</span>
-        <select class="rs-select" id="rsEntity" disabled>
-          <option value="">Select domain first</option>
-        </select>
+        <div class="rs-combo">
+          <input class="rs-combo-input" id="rsEntityInput" placeholder="Select domain first" autocomplete="off" disabled>
+          <div class="rs-combo-list" id="rsEntityList"></div>
+        </div>
       </div>
       <div class="rs-control-group">
         <span class="rs-label">Actions</span>
@@ -250,24 +205,108 @@ export default function renderRolesSearch({ me, api, orgContext }) {
   `;
 
   // ── DOM refs ──────────────────────────────────────────────
-  const $domain    = el.querySelector("#rsDomain");
-  const $entity    = el.querySelector("#rsEntity");
   const $actions   = el.querySelector("#rsActions");
   const $searchBtn = el.querySelector("#rsSearchBtn");
   const $status    = el.querySelector("#rsStatus");
   const $results   = el.querySelector("#rsResults");
 
   // ── State ─────────────────────────────────────────────────
-  let catalog   = null;  // { domain: { entity: [action] } }
-  let searching = false;
-  let rowData   = [];    // all rendered rows: { userId, userName, email, roleId, roleName, division, checkedActions }
-  let filterText = "";
+  let catalog        = null;
+  let searching      = false;
+  let filterText     = "";
+  let selectedDomain = "";
+  let selectedEntity = "";
 
   // ── Status helper ─────────────────────────────────────────
   function setStatus(msg, cls = "") {
     $status.textContent = msg;
     $status.className = "rs-status" + (cls ? ` rs-status--${cls}` : "");
   }
+
+  // ── Combobox factory ──────────────────────────────────────
+  function createCombobox(inputId, listId, onSelect) {
+    const input = el.querySelector(`#${inputId}`);
+    const list  = el.querySelector(`#${listId}`);
+    let items   = [];
+    let current = "";
+
+    function renderList(filter) {
+      const q       = (filter ?? "").toLowerCase();
+      const matched = q ? items.filter(v => v.toLowerCase().includes(q)) : items;
+      list.innerHTML = matched.length
+        ? matched.map(v => `<div class="rs-combo-option" data-value="${escapeHtml(v)}">${escapeHtml(v)}</div>`).join("")
+        : `<div class="rs-combo-noresult">No results</div>`;
+      list.classList.add("open");
+    }
+
+    function close() {
+      list.classList.remove("open");
+      input.value = current;
+    }
+
+    function select(value) {
+      current = value; input.value = value;
+      list.classList.remove("open");
+      onSelect(value);
+    }
+
+    input.addEventListener("focus",  () => { if (!input.disabled) { input.select(); renderList(""); } });
+    input.addEventListener("input",  () => renderList(input.value));
+    input.addEventListener("blur",   () => setTimeout(close, 150));
+    list.addEventListener("mousedown", e => {
+      const opt = e.target.closest(".rs-combo-option");
+      if (opt) select(opt.dataset.value);
+    });
+
+    return {
+      setItems(newItems) {
+        items = newItems; current = "";
+        input.value = ""; input.disabled = false; input.placeholder = "Search…";
+      },
+      getValue() { return current; },
+      reset(placeholder = "") {
+        items = []; current = "";
+        input.value = ""; input.disabled = true; input.placeholder = placeholder;
+        list.classList.remove("open");
+      },
+    };
+  }
+
+  // ── Combobox wiring ───────────────────────────────────────
+  const domainCombo = createCombobox("rsDomainInput", "rsDomainList", value => {
+    selectedDomain = value;
+    selectedEntity = "";
+    $actions.innerHTML = `<span style="font-size:12px;color:var(--muted)">Select entity first</span>`;
+    $searchBtn.disabled = true;
+    if (value && catalog?.[value]) {
+      entityCombo.setItems(Object.keys(catalog[value]).sort());
+    } else {
+      entityCombo.reset("Select domain first");
+    }
+  });
+
+  const entityCombo = createCombobox("rsEntityInput", "rsEntityList", value => {
+    selectedEntity = value;
+    $searchBtn.disabled = true;
+    if (!value || !catalog?.[selectedDomain]?.[value]) {
+      $actions.innerHTML = `<span style="font-size:12px;color:var(--muted)">Select entity first</span>`;
+      return;
+    }
+    const actions = catalog[selectedDomain][value];
+    $actions.innerHTML = actions.map(a => `
+      <label class="rs-action-chip checked">
+        <input type="checkbox" value="${escapeHtml(a)}" checked>
+        ${escapeHtml(a)}
+      </label>
+    `).join("");
+    $actions.querySelectorAll("input[type=checkbox]").forEach(cb => {
+      cb.addEventListener("change", () => {
+        cb.parentElement.classList.toggle("checked", cb.checked);
+        updateSearchBtn();
+      });
+    });
+    updateSearchBtn();
+  });
 
   // ── Catalog loading ───────────────────────────────────────
   async function loadCatalog() {
@@ -276,10 +315,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     setStatus("Loading permission catalog…");
     try {
       catalog = await fetchPermissionCatalog(api, org.id);
-      const domains = Object.keys(catalog).sort();
-      $domain.innerHTML = `<option value="">Select domain…</option>` +
-        domains.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join("");
-      $domain.disabled = false;
+      domainCombo.setItems(Object.keys(catalog).sort());
       setStatus("");
     } catch (err) {
       setStatus(`Failed to load catalog: ${err.message}`, "error");
@@ -288,61 +324,12 @@ export default function renderRolesSearch({ me, api, orgContext }) {
 
   loadCatalog();
 
-  // ── Domain → Entity cascade ───────────────────────────────
-  $domain.addEventListener("change", () => {
-    const domain = $domain.value;
-    $entity.innerHTML = "";
-    $actions.innerHTML = `<span style="font-size:12px;color:var(--muted)">Select entity first</span>`;
-    $searchBtn.disabled = true;
-
-    if (!domain || !catalog?.[domain]) {
-      $entity.innerHTML = `<option value="">Select domain first</option>`;
-      $entity.disabled = true;
-      return;
-    }
-
-    const entities = Object.keys(catalog[domain]).sort();
-    $entity.innerHTML = `<option value="">Select entity…</option>` +
-      entities.map(e => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join("");
-    $entity.disabled = false;
-  });
-
-  // ── Entity → Action checkboxes ────────────────────────────
-  $entity.addEventListener("change", () => {
-    const domain = $domain.value;
-    const entity = $entity.value;
-    $searchBtn.disabled = true;
-
-    if (!entity || !catalog?.[domain]?.[entity]) {
-      $actions.innerHTML = `<span style="font-size:12px;color:var(--muted)">Select entity first</span>`;
-      return;
-    }
-
-    const actions = catalog[domain][entity];
-    $actions.innerHTML = actions.map(a => `
-      <label class="rs-action-chip checked">
-        <input type="checkbox" value="${escapeHtml(a)}" checked>
-        ${escapeHtml(a)}
-      </label>
-    `).join("");
-
-    // Toggle chip style on change
-    $actions.querySelectorAll("input[type=checkbox]").forEach(cb => {
-      cb.addEventListener("change", () => {
-        cb.parentElement.classList.toggle("checked", cb.checked);
-        updateSearchBtn();
-      });
-    });
-
-    updateSearchBtn();
-  });
-
   function getCheckedActions() {
     return [...$actions.querySelectorAll("input[type=checkbox]:checked")].map(c => c.value);
   }
 
   function updateSearchBtn() {
-    $searchBtn.disabled = searching || !$domain.value || !$entity.value || getCheckedActions().length === 0;
+    $searchBtn.disabled = searching || !selectedDomain || !selectedEntity || getCheckedActions().length === 0;
   }
 
   // ── Source badge renderer ─────────────────────────────────
@@ -413,36 +400,21 @@ export default function renderRolesSearch({ me, api, orgContext }) {
   }
 
   // ── Append a single user row ──────────────────────────────
-  function appendRow({ userId, userName, email, roleId, roleName, division, rowId }) {
+  function appendRow({ userName, email, roleName, division, source, rowId }) {
     const $tbody = el.querySelector("#rsTbody");
     if (!$tbody) return;
     const tr = document.createElement("tr");
     tr.id = rowId;
     tr.dataset.name  = userName;
     tr.dataset.email = email;
-    tr.dataset.roleId = roleId;
     tr.innerHTML = `
-      <td class="rs-name-cell">${userName ? escapeHtml(userName) : "<span style='color:var(--muted)'>Resolving…</span>"}</td>
-      <td class="rs-email-cell">${escapeHtml(email)}</td>
+      <td>${escapeHtml(userName)}</td>
+      <td>${escapeHtml(email)}</td>
       <td class="rs-role-cell">${escapeHtml(roleName)}</td>
       <td class="rs-div-cell">${escapeHtml(division || "")}</td>
-      <td class="rs-source-cell">${sourceBadge(null)}</td>
+      <td>${sourceBadge(source)}</td>
     `;
     $tbody.appendChild(tr);
-    applyFilter();
-  }
-
-  function updateRowAttribution(rowId, { name, email, source }) {
-    const tr = el.querySelector(`#${CSS.escape(rowId)}`);
-    if (!tr) return;
-    if (name) {
-      const nameCell = tr.querySelector(".rs-name-cell");
-      if (nameCell) { nameCell.textContent = name; tr.dataset.name = name; }
-      const emailCell = tr.querySelector(".rs-email-cell");
-      if (emailCell && !tr.dataset.email) { emailCell.textContent = email; tr.dataset.email = email; }
-    }
-    const sourceCell = tr.querySelector(".rs-source-cell");
-    if (sourceCell) sourceCell.innerHTML = sourceBadge(source);
   }
 
   // ── Main search ───────────────────────────────────────────
@@ -450,105 +422,110 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
 
-    const domain  = $domain.value;
-    const entity  = $entity.value;
+    const domain  = selectedDomain;
+    const entity  = selectedEntity;
     const actions = getCheckedActions();
     if (!domain || !entity || actions.length === 0) return;
 
     searching = true;
-    rowData = [];
     filterText = "";
     updateSearchBtn();
-    setStatus(`Searching for roles with permission ${domain}:${entity}…`);
-
-    // Render the table skeleton immediately
+    setStatus("Fetching roles and users…");
     $results.innerHTML = "";
-    $results.appendChild(buildResultsTable());
-
-    el.querySelector("#rsFilter").addEventListener("input", e => {
-      filterText = e.target.value;
-      applyFilter();
-    });
 
     try {
-      // ── Step 1: fetch all roles, filter client-side by permissionPolicies ──
-      setStatus("Fetching roles…");
-      const allRoles = await fetchAllAuthorizationRoles(api, org.id);
-      const matchingRoles = allRoles.filter(r => roleMatchesPermission(r, domain, entity, actions));
+      // ── Step 1: fetch all roles + all active org users in parallel ──
+      // fetchAllUsers returns only users in THIS org — trustee org users are
+      // automatically excluded because they are not in the local directory.
+      const [allRoles, allUsers] = await Promise.all([
+        fetchAllAuthorizationRoles(api, org.id),
+        fetchAllUsers(api, org.id, { expand: ["authorization", "groups"] }),
+      ]);
 
-      if (matchingRoles.length === 0) {
+      const matchingRoleIds = new Set(
+        allRoles
+          .filter(r => roleMatchesPermission(r, domain, entity, actions))
+          .map(r => r.id)
+      );
+      const roleNameMap = new Map(allRoles.map(r => [r.id, r.name || r.id]));
+
+      if (matchingRoleIds.size === 0) {
         setStatus("");
         $results.innerHTML = `<div class="rs-empty"><div class="rs-empty-icon">🔍</div>
           <p>No roles found with permission <strong>${escapeHtml(domain)}:${escapeHtml(entity)}</strong>.</p></div>`;
         return;
       }
 
-      setStatus(`Found ${matchingRoles.length} role${matchingRoles.length !== 1 ? "s" : ""} — loading users…`);
-
-      // ── Step 2: for each role, load its users (deduplicated) and stream rows ──
-      let totalUsers = 0;
-      const attributionTasks = []; // deferred source + name resolution tasks
-
-      await Promise.all(
-        matchingRoles.map(async (role) => {
-          const roleId   = role.id;
-          const roleName = role.name || role.id;
-          let users;
-          try {
-            users = await fetchUsersForRole(api, org.id, roleId);
-          } catch {
-            return; // skip role on error
-          }
-
-          for (const u of users) {
-            totalUsers++;
-            const rowId = `rs-row-${roleId}-${u.id}`;
-            appendRow({
-              userId:   u.id,
-              userName: u.name,   // may be empty — resolved in attribution step
-              email:    u.email,
-              roleId,
-              roleName,
-              division: "",
-              rowId,
+      // ── Step 2: filter local users who have a matching role ──
+      // user.authorization.roles[] may have .id or .roleId
+      const matchedUsers = [];
+      for (const user of allUsers) {
+        for (const ur of (user.authorization?.roles || [])) {
+          const rid = ur.id || ur.roleId;
+          if (rid && matchingRoleIds.has(rid)) {
+            matchedUsers.push({
+              userId:   user.id,
+              userName: user.name || user.username || user.id,
+              email:    user.email || "",
+              roleId:   rid,
+              roleName: roleNameMap.get(rid) || rid,
+              groups:   user.groups || [],
             });
-            attributionTasks.push({ userId: u.id, roleId, rowId });
           }
-        })
-      );
+        }
+      }
 
-      if (totalUsers === 0) {
+      if (matchedUsers.length === 0) {
         setStatus("");
         $results.innerHTML = `<div class="rs-empty"><div class="rs-empty-icon">👥</div>
-          <p>No users are currently assigned roles with permission <strong>${escapeHtml(domain)}:${escapeHtml(entity)}</strong>.</p></div>`;
+          <p>No users in this org have permission <strong>${escapeHtml(domain)}:${escapeHtml(entity)}</strong>.</p></div>`;
         return;
       }
 
-      updateSummary();
-      setStatus(`Found ${totalUsers} user assignment${totalUsers !== 1 ? "s" : ""} — resolving names and sources…`);
+      // Sort alphabetically by name
+      matchedUsers.sort((a, b) =>
+        a.userName.localeCompare(b.userName, undefined, { sensitivity: "base" })
+      );
 
-      // ── Step 3: resolve user name + source attribution in batches of 10 ──
-      // Rows that can't be resolved (deleted users, service accounts, bots)
-      // are silently removed from the table.
-      let resolved = 0;
+      // ── Step 3: fetch group subjects for all unique groups (batched) ──
+      setStatus(`Found ${matchedUsers.length} assignment${matchedUsers.length !== 1 ? "s" : ""} — resolving sources…`);
+
+      const allGroupIds      = new Set(matchedUsers.flatMap(u => u.groups.map(g => g.id)));
+      const groupGrantsCache = new Map(); // groupId → grants[]
+      const groupNameCache   = new Map(); // groupId → name
+
       await runBatched(
-        attributionTasks.map(({ userId, roleId, rowId }) => async () => {
+        [...allGroupIds].map(groupId => async () => {
           try {
-            const result = await resolveUserAttribution(api, org.id, userId, roleId);
-            updateRowAttribution(rowId, result);
-            resolved++;
+            const [gs, gd] = await Promise.all([
+              api.proxyGenesys(org.id, "GET", `/api/v2/authorization/subjects/${groupId}`),
+              api.proxyGenesys(org.id, "GET", `/api/v2/groups/${groupId}`),
+            ]);
+            groupGrantsCache.set(groupId, gs.grants || []);
+            groupNameCache.set(groupId, gd.name || groupId);
           } catch {
-            // User can't be fetched — likely deleted, a bot, or a service account.
-            // Remove the placeholder row rather than displaying junk.
-            const tr = el.querySelector(`#${CSS.escape(rowId)}`);
-            if (tr) tr.remove();
+            groupGrantsCache.set(groupId, []);
           }
         }),
         10
       );
 
+      // ── Step 4: render table (names + sources already known, sorted) ──
+      $results.appendChild(buildResultsTable());
+      el.querySelector("#rsFilter").addEventListener("input", e => {
+        filterText = e.target.value;
+        applyFilter();
+      });
+
+      for (const u of matchedUsers) {
+        const rowId  = `rs-row-${u.roleId}-${u.userId}`;
+        const source = buildSourceLabel(u.roleId, u.groups, groupGrantsCache, groupNameCache);
+        appendRow({ userName: u.userName, email: u.email, roleName: u.roleName, division: "", source, rowId });
+      }
+
+      applyFilter();
       updateSummary();
-      setStatus(`Done — ${resolved} user assignment${resolved !== 1 ? "s" : ""}.`);
+      setStatus(`Done — ${matchedUsers.length} assignment${matchedUsers.length !== 1 ? "s" : ""}.`);
 
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
