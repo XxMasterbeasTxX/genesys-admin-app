@@ -528,19 +528,27 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       setStatus(`Found ${totalUsers} user assignment${totalUsers !== 1 ? "s" : ""} — resolving names and sources…`);
 
       // ── Step 3: resolve user name + source attribution in batches of 10 ──
+      // Rows that can't be resolved (deleted users, service accounts, bots)
+      // are silently removed from the table.
+      let resolved = 0;
       await runBatched(
         attributionTasks.map(({ userId, roleId, rowId }) => async () => {
           try {
             const result = await resolveUserAttribution(api, org.id, userId, roleId);
             updateRowAttribution(rowId, result);
+            resolved++;
           } catch {
-            updateRowAttribution(rowId, { name: "", email: "", source: "Unknown" });
+            // User can't be fetched — likely deleted, a bot, or a service account.
+            // Remove the placeholder row rather than displaying junk.
+            const tr = el.querySelector(`#${CSS.escape(rowId)}`);
+            if (tr) tr.remove();
           }
         }),
         10
       );
 
-      setStatus(`Done — ${totalUsers} user assignment${totalUsers !== 1 ? "s" : ""}.`);
+      updateSummary();
+      setStatus(`Done — ${resolved} user assignment${resolved !== 1 ? "s" : ""}.`);
 
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
