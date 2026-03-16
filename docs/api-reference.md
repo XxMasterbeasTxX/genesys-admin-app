@@ -90,13 +90,15 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 
 ## 4. Authorization & Divisions
 
-Used by: Divisions (all object types), Data Tables — Create, export pages, Deployment — Basic
+Used by: Divisions (all object types), Data Tables — Create, export pages, Deployment — Basic, Roles — Compare
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/authorization/divisions` | List all divisions |
 | POST | `/api/v2/authorization/divisions` | **Create** a new division (Deployment — Basic) |
 | GET | `/api/v2/authorization/roles` | List all authorization roles |
+| GET | `/api/v2/authorization/roles/{roleId}` | Get a single role with full `permissionPolicies` (Roles — Compare) |
+| GET | `/api/v2/authorization/permissions` | List the full permission catalog — all concrete domain/entity/action entries; used by Roles — Compare to expand wildcard policies |
 | GET | `/api/v2/authorization/roles/{roleId}/users` | List users assigned a specific role |
 | POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to subjects with division scope (Deployment — Basic Users) |
 | GET | `/api/v2/authorization/subjects/{userId}` | Get a user's role assignments |
