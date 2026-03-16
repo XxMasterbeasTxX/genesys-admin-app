@@ -519,19 +519,21 @@ export default function renderRolesCompare({ me, api, orgContext }) {
 
     try {
       // 1. Fetch direct role assignments + group memberships for both users in parallel.
-      //    Use GET /api/v2/users/{userId}/groups (NOT /api/v2/groups?memberId=)
-      //    because the memberId query param is not a supported filter and returns all groups.
-      const [[subjectsA, groupsA], [subjectsB, groupsB]] = await Promise.all(
+      //    GET /api/v2/users/{userId}?expand=groups returns the user's groups inline.
+      const [[subjectsA, userA], [subjectsB, userB]] = await Promise.all(
         selectedUsers.map(u => Promise.all([
           api.proxyGenesys(org.id, "GET", `/api/v2/authorization/subjects/${u.id}`),
-          api.proxyGenesys(org.id, "GET", `/api/v2/users/${u.id}/groups`, { query: { pageSize: "100" } }),
+          api.proxyGenesys(org.id, "GET", `/api/v2/users/${u.id}`, { query: { expand: "groups" } }),
         ]))
       );
+      // groups are at userX.groups (array of { id, name })
+      const groupsA = { entities: userA.groups || [] };
+      const groupsB = { entities: userB.groups || [] };
 
       // 2. Fetch role assignments for every unique group across both users in parallel.
       //    Group-inherited roles live on the group's own subject record.
       const allGroups = new Map(); // groupId → groupName
-      for (const g of [...(groupsA.entities || []), ...(groupsB.entities || [])]) {
+      for (const g of [...groupsA.entities, ...groupsB.entities]) {
         if (g.id) allGroups.set(g.id, g.name || g.id);
       }
       const groupSubjectMap = {}; // groupId → grants[]
