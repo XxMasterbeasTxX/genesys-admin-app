@@ -10,7 +10,7 @@
  */
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
 import { createMultiSelect } from "../../components/multiSelect.js";
-import { fetchAllAuthorizationRoles, fetchAllPages } from "../../services/genesysApi.js";
+import { fetchAllAuthorizationRoles } from "../../services/genesysApi.js";
 
 const ENTITY_COL_W = 220; // px — entity column fixed width
 
@@ -21,18 +21,23 @@ const ENTITY_COL_W = 220; // px — entity column fixed width
  * Returns { domain: { entityName: string[] } } — all known (domain, entity, actions).
  */
 async function fetchPermissionCatalog(api, orgId) {
-  // Each entity in the response is a DomainPermissionCollection:
-  // { domain: string, permissionMap: { [entityName]: { entityType, actionSet } } }
-  const perms = await fetchAllPages(api, orgId, "/api/v2/authorization/permissions", { pageSize: 200 });
   const catalog = {};
-  for (const p of perms) {
-    if (!p.domain || !p.permissionMap) continue;
-    if (!catalog[p.domain]) catalog[p.domain] = {};
-    for (const [entityName, actionList] of Object.entries(p.permissionMap)) {
-      // actionList is an array of { domain, entityType, action, label, ... }
-      catalog[p.domain][entityName] = actionList.map(a => a.action).sort();
+  let page = 1;
+  let pageCount = null;
+  do {
+    const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/authorization/permissions", {
+      query: { pageSize: "100", pageNumber: String(page) },
+    });
+    pageCount = resp.pageCount ?? 1;
+    for (const p of (resp.entities || [])) {
+      if (!p.domain || !p.permissionMap) continue;
+      if (!catalog[p.domain]) catalog[p.domain] = {};
+      for (const [entityName, actionList] of Object.entries(p.permissionMap)) {
+        catalog[p.domain][entityName] = actionList.map(a => a.action).sort();
+      }
     }
-  }
+    page++;
+  } while (page <= pageCount);
   return catalog;
 }
 
