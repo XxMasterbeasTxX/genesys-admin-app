@@ -620,8 +620,12 @@ export default function renderRolesSearch({ me, api, orgContext }) {
         $exportBtn.disabled = false;
         $exportBtn.onclick = () => {
           const org     = orgContext?.getDetails?.();
-          const orgSlug = (org?.name || "").replace(/\s+/g, "_") || "org";
-          const filename = timestampedFilename(`Roles_Search_${orgSlug}`, "xlsx");
+          const safe    = s => s.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+          const orgSlug    = safe(org?.name || "") || "org";
+          const domainSlug = safe(domain);
+          const entitySlug = safe(entity);
+          const actionsSlug = actions.map(safe).join("-") || "all";
+          const filename = timestampedFilename(`Roles_Search_${orgSlug}_${domainSlug}_${entitySlug}_${actionsSlug}`, "xlsx");
           const columns = [
             { key: "user",   label: "User",   wch: 30 },
             { key: "email",  label: "Email",  wch: 36 },
