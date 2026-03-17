@@ -212,6 +212,17 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       .rc-remove-btn { padding: 3px 9px; background: transparent; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; transition: border-color .12s, color .12s; }
       .rc-remove-btn:hover { border-color: #ef4444; color: #f87171; }
 
+      /* ── Domain accordion ── */
+      .rc-domain { margin-bottom: 3px; }
+      .rc-domain-hdr { display:flex; align-items:center; gap:10px; padding:7px 12px; background:rgba(255,255,255,.03); border:1px solid var(--border); border-radius:8px; cursor:pointer; user-select:none; }
+      .rc-domain-hdr:hover { background:rgba(255,255,255,.05); }
+      .rc-chevron { font-size:10px; color:var(--muted); transition:transform .15s; width:12px; display:inline-block; }
+      .rc-domain.open .rc-chevron { transform:rotate(90deg); }
+      .rc-domain-name { font-weight:600; font-size:13px; color:#93c5fd; flex:1; }
+      .rc-domain-stats { font-size:12px; color:var(--muted); }
+      .rc-domain-body { display:none; padding:4px 0 2px; }
+      .rc-domain.open .rc-domain-body { display:block; }
+
       /* ── Conditions panel ── */
       .rc-cond-panel { border-top: 1px solid var(--border); padding: 12px 14px; background: rgba(0,0,0,.18); display: none; }
       .rc-cond-panel.open { display: block; }
@@ -310,6 +321,10 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         <div class="rc-policies-header">
           <span class="rc-policies-title">Permissions</span>
           <span class="rc-policies-count" id="rcPoliciesCount"></span>
+          <div style="display:flex;gap:6px;margin-left:auto">
+            <button class="rc-cond-toggle" id="rcExpandAll">Expand All</button>
+            <button class="rc-cond-toggle" id="rcCollapseAll">Collapse All</button>
+          </div>
         </div>
         <div class="rc-policy-list" id="rcPolicyList">
           <div class="rc-no-policies">No permissions added yet.</div>
@@ -339,6 +354,13 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   const $status     = el.querySelector("#rcStatus");
   const $saveBtn    = el.querySelector("#rcSaveBtn");
   const $cancelBtn  = el.querySelector("#rcCancelBtn");
+  const $expandAll  = el.querySelector("#rcExpandAll");
+  const $collapseAll = el.querySelector("#rcCollapseAll");
+
+  $expandAll?.addEventListener("click", () =>
+    $policyList.querySelectorAll(".rc-domain").forEach(d => d.classList.add("open")));
+  $collapseAll?.addEventListener("click", () =>
+    $policyList.querySelectorAll(".rc-domain").forEach(d => d.classList.remove("open")));
 
   // ── State ─────────────────────────────────────────────────────────────────
   let catalog       = null;          // { domain: { entity: { actions, condActions } } }
@@ -468,53 +490,90 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     }
     $polCount.textContent = `${policies.length} permission${policies.length !== 1 ? "s" : ""}`;
 
-    // Re-render all rows; preserve expanded condition panels
-    $policyList.innerHTML = "";
+    // Remember which domains were open before re-render
+    const prevOpen = new Set();
+    $policyList.querySelectorAll(".rc-domain.open").forEach(d => prevOpen.add(d.dataset.domain));
+    const isFirstRender = $policyList.querySelector(".rc-domain") === null
+      && $policyList.querySelector(".rc-no-policies") === null;
+
+    // Group by domain, sorted alphabetically
+    const byDomain = new Map();
     for (const pol of policies) {
-      const condCapable = policySupportsConds(pol);
-      const hasCondition = condCapable && pol.condVar && pol.condValues.length > 0;
+      if (!byDomain.has(pol.domain)) byDomain.set(pol.domain, []);
+      byDomain.get(pol.domain).push(pol);
+    }
+    const sortedDomains = [...byDomain.keys()].sort();
 
-      const row = document.createElement("div");
-      row.className = "rc-policy-row";
-      row.innerHTML = `
-        <div class="rc-policy-main">
-          <span class="rc-policy-domain">${escapeHtml(pol.domain)}</span>
-          <span class="rc-policy-entity">${escapeHtml(pol.entity)}</span>
-          <div class="rc-policy-actions">
-            ${[...pol.actions].sort().map(a => `<span class="rc-action-tag">${escapeHtml(a)}</span>`).join("")}
-          </div>
-          <div class="rc-policy-btns">
-            ${condCapable ? `<button class="rc-cond-toggle${hasCondition ? " active" : ""}" title="Configure conditions">⚙ Conditions${hasCondition ? " ●" : ""}</button>` : ""}
-            <button class="rc-remove-btn" title="Remove permission">✕</button>
-          </div>
+    $policyList.innerHTML = "";
+
+    for (const domain of sortedDomains) {
+      const domPolicies = byDomain.get(domain);
+      // Open by default on first render or if was open before
+      const startOpen = prevOpen.size === 0 || prevOpen.has(domain);
+
+      const domEl = document.createElement("div");
+      domEl.className = "rc-domain" + (startOpen ? " open" : "");
+      domEl.dataset.domain = domain;
+      domEl.innerHTML = `
+        <div class="rc-domain-hdr">
+          <span class="rc-chevron">&#9654;</span>
+          <span class="rc-domain-name">${escapeHtml(domain)}</span>
+          <span class="rc-domain-stats">${domPolicies.length} entit${domPolicies.length !== 1 ? "ies" : "y"}</span>
         </div>
-        <div class="rc-cond-panel${pol.condOpen ? " open" : ""}"></div>
+        <div class="rc-domain-body"></div>
       `;
-      pol.rowEl = row;
-
-      const $condPanel = row.querySelector(".rc-cond-panel");
-      const $condToggle = row.querySelector(".rc-cond-toggle");
-      const $removeBtn  = row.querySelector(".rc-remove-btn");
-
-      if ($condToggle) {
-        $condToggle.addEventListener("click", () => {
-          pol.condOpen = !pol.condOpen;
-          $condPanel.classList.toggle("open", pol.condOpen);
-          if (pol.condOpen && !$condPanel.dataset.built) {
-            buildCondPanel($condPanel, pol, $condToggle);
-          }
-        });
-        // If panel was already open (re-render case), build it
-        if (pol.condOpen) buildCondPanel($condPanel, pol, $condToggle);
-      }
-
-      $removeBtn.addEventListener("click", () => {
-        policies = policies.filter(p => p !== pol);
-        renderPolicyList();
-        updateSaveBtn();
+      domEl.querySelector(".rc-domain-hdr").addEventListener("click", () => {
+        domEl.classList.toggle("open");
       });
 
-      $policyList.appendChild(row);
+      const $body = domEl.querySelector(".rc-domain-body");
+
+      for (const pol of domPolicies) {
+        const condCapable = policySupportsConds(pol);
+        const hasCondition = condCapable && pol.condVar && pol.condValues.length > 0;
+
+        const row = document.createElement("div");
+        row.className = "rc-policy-row";
+        row.innerHTML = `
+          <div class="rc-policy-main">
+            <span class="rc-policy-entity">${escapeHtml(pol.entity)}</span>
+            <div class="rc-policy-actions">
+              ${[...pol.actions].sort().map(a => `<span class="rc-action-tag">${escapeHtml(a)}</span>`).join("")}
+            </div>
+            <div class="rc-policy-btns">
+              ${condCapable ? `<button class="rc-cond-toggle${hasCondition ? " active" : ""}" title="Configure conditions">&#9881; Conditions${hasCondition ? " ●" : ""}</button>` : ""}
+              <button class="rc-remove-btn" title="Remove permission">&#10005;</button>
+            </div>
+          </div>
+          <div class="rc-cond-panel${pol.condOpen ? " open" : ""}"></div>
+        `;
+        pol.rowEl = row;
+
+        const $condPanel = row.querySelector(".rc-cond-panel");
+        const $condToggle = row.querySelector(".rc-cond-toggle");
+        const $removeBtn  = row.querySelector(".rc-remove-btn");
+
+        if ($condToggle) {
+          $condToggle.addEventListener("click", () => {
+            pol.condOpen = !pol.condOpen;
+            $condPanel.classList.toggle("open", pol.condOpen);
+            if (pol.condOpen && !$condPanel.dataset.built) {
+              buildCondPanel($condPanel, pol, $condToggle);
+            }
+          });
+          if (pol.condOpen) buildCondPanel($condPanel, pol, $condToggle);
+        }
+
+        $removeBtn.addEventListener("click", () => {
+          policies = policies.filter(p => p !== pol);
+          renderPolicyList();
+          updateSaveBtn();
+        });
+
+        $body.appendChild(row);
+      }
+
+      $policyList.appendChild(domEl);
     }
   }
 
