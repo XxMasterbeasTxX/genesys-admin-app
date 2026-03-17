@@ -260,11 +260,14 @@ export default function renderTrusteeExport({ route, me, api }) {
 
     const b64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
     const filename = timestampedFilename("trustee_export", "xlsx");
+    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    window._xlsxDownload = window._xlsxDownload || {};
+    window._xlsxDownload[key] = { filename, b64 };
     const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = encodeURIComponent(filename) + "|" + b64;
-
+    helperUrl.hash = key;
     const popup = window.open(helperUrl.href, "_blank");
     if (!popup) {
+      delete window._xlsxDownload[key];
       throw new Error("Pop-up blocked. Please allow pop-ups for this site and try again.");
     }
   }

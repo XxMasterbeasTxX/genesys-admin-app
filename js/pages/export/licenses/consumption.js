@@ -386,14 +386,16 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
 
   // ── Download ──────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
-    if (!lastWorkbook) return;
-    const XLSX = window.XLSX;
-    const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = encodeURIComponent(lastFilename) + "|" + b64;
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
-  });
+  if (!lastWorkbook || !lastFilename) return;
+  const XLSX = window.XLSX;
+  const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
+  const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+  window._xlsxDownload = window._xlsxDownload || {};
+  window._xlsxDownload[key] = { filename: lastFilename, b64 };
+  const helperUrl = new URL("download.html", document.baseURI);
+  helperUrl.hash = key;
+  const popup = window.open(helperUrl.href, "_blank");
+  if (!popup) { delete window._xlsxDownload[key]; setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error"); }
 
   // ── Email toggle ──────────────────────────────────────
   $emailChk.addEventListener("change", () => {

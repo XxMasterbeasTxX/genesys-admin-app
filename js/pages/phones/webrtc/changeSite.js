@@ -378,11 +378,14 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
     const orgName = org.name || orgContext.get();
     const filename = timestampedFilename(`Phone_Site_Changes_${orgName}`, "xlsx");
     const b64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    window._xlsxDownload = window._xlsxDownload || {};
+    window._xlsxDownload[key] = { filename, b64 };
     const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = encodeURIComponent(filename) + "|" + b64;
-
+    helperUrl.hash = key;
     const popup = window.open(helperUrl.href, "_blank");
     if (!popup) {
+      delete window._xlsxDownload[key];
       alert("Pop-up blocked. Please allow pop-ups for this site and try again.");
     }
   });

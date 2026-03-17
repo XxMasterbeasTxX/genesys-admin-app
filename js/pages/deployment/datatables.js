@@ -323,9 +323,13 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
         let binary = "";
         for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
         const b64 = btoa(binary);
+        const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+        window._xlsxDownload = window._xlsxDownload || {};
+        window._xlsxDownload[key] = { filename: files[0], b64 };
         const helperUrl = new URL("download.html", document.baseURI);
-        helperUrl.hash = encodeURIComponent(files[0]) + "|" + b64;
-        window.open(helperUrl.href, "_blank");
+        helperUrl.hash = key;
+        const popup = window.open(helperUrl.href, "_blank");
+        if (!popup) { delete window._xlsxDownload[key]; setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error"); }
       } catch (err) {
         setStatus(`Could not download template: ${err.message}`, "error");
       }
@@ -339,9 +343,13 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
           zip.file(f, await res.arrayBuffer());
         }));
         const b64 = await zip.generateAsync({ type: "base64" });
+        const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+        window._xlsxDownload = window._xlsxDownload || {};
+        window._xlsxDownload[key] = { filename: "DataTables_Templates.zip", b64 };
         const helperUrl = new URL("download.html", document.baseURI);
-        helperUrl.hash = encodeURIComponent("DataTables_Templates.zip") + "|" + b64;
-        window.open(helperUrl.href, "_blank");
+        helperUrl.hash = key;
+        const popup = window.open(helperUrl.href, "_blank");
+        if (!popup) { delete window._xlsxDownload[key]; setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error"); }
       } catch (err) {
         setStatus(`Could not create template archive: ${err.message}`, "error");
       }
