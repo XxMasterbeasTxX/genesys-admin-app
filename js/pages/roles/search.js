@@ -177,7 +177,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       .rs-progress-detail { font-size:11px; color:var(--muted); margin-top:3px; }
     </style>
 
-    <h2 style="margin:0 0 18px">Roles — Search</h2>
+    <h2 style="margin:0 0 18px">Permissions — Search</h2>
 
     <div class="rs-controls" id="rsControls">
       <div class="rs-control-group">
