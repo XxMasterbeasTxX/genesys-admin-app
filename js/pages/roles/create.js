@@ -264,6 +264,18 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
 
       /* ── Empty policy list ── */
       .rc-no-policies { text-align: center; padding: 32px 16px; color: var(--muted); font-size: 13px; border: 1px dashed var(--border); border-radius: 10px; }
+
+      /* ── Add All Entities button ── */
+      .rc-add-all-btn { padding: 7px 16px; background: #1e3a5f; color: #93c5fd; border: 1px solid #3b82f6; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s; height: 34px; }
+      .rc-add-all-btn:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+      .rc-add-all-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+      /* ── Inline action editor ── */
+      .rc-edit-btn { padding: 3px 9px; background: transparent; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; transition: border-color .12s, color .12s; }
+      .rc-edit-btn:hover { border-color: #6b7280; color: var(--text); }
+      .rc-edit-btn.active { border-color: #3b82f6; color: #93c5fd; }
+      .rc-edit-panel { border-top: 1px solid var(--border); padding: 10px 14px; background: rgba(0,0,0,.12); display: none; }
+      .rc-edit-panel.open { display: block; }
     </style>
 
     <div class="rc-page">
@@ -314,6 +326,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
             </div>
           </div>
           <button class="rc-add-btn" id="rcAddBtn" disabled>Add</button>
+          <button class="rc-add-all-btn" id="rcAddAllBtn" disabled title="Add all entities for the selected domain with all their actions">Add All Entities</button>
         </div>
       </div>
 
@@ -349,6 +362,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   const $entityList = el.querySelector("#rcEntityList");
   const $pickerActions = el.querySelector("#rcPickerActions");
   const $addBtn     = el.querySelector("#rcAddBtn");
+  const $addAllBtn  = el.querySelector("#rcAddAllBtn");
   const $policyList = el.querySelector("#rcPolicyList");
   const $polCount   = el.querySelector("#rcPoliciesCount");
   const $status     = el.querySelector("#rcStatus");
@@ -443,6 +457,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     entityCombo.clear();
     $pickerActions.innerHTML = `<span style="font-size:12px;color:var(--muted)">Select entity first</span>`;
     $addBtn.disabled = true;
+    $addAllBtn.disabled = !domain;
     if (domain && catalog[domain]) {
       const entities = Object.keys(catalog[domain]).sort();
       entityCombo.setItems(entities);
@@ -539,21 +554,32 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         row.innerHTML = `
           <div class="rc-policy-main">
             <span class="rc-policy-entity">${escapeHtml(pol.entity)}</span>
-            <div class="rc-policy-actions">
+            <div class="rc-policy-actions" data-actions>
               ${[...pol.actions].sort().map(a => `<span class="rc-action-tag">${escapeHtml(a)}</span>`).join("")}
             </div>
             <div class="rc-policy-btns">
+              <button class="rc-edit-btn" title="Edit actions">&#9998;</button>
               ${condCapable ? `<button class="rc-cond-toggle${hasCondition ? " active" : ""}" title="Configure conditions">&#9881; Conditions${hasCondition ? " ●" : ""}</button>` : ""}
               <button class="rc-remove-btn" title="Remove permission">&#10005;</button>
             </div>
           </div>
+          <div class="rc-edit-panel"></div>
           <div class="rc-cond-panel${pol.condOpen ? " open" : ""}"></div>
         `;
         pol.rowEl = row;
 
-        const $condPanel = row.querySelector(".rc-cond-panel");
+        const $condPanel  = row.querySelector(".rc-cond-panel");
+        const $editPanel  = row.querySelector(".rc-edit-panel");
+        const $editBtn    = row.querySelector(".rc-edit-btn");
+        const $actionsDiv = row.querySelector("[data-actions]");
         const $condToggle = row.querySelector(".rc-cond-toggle");
         const $removeBtn  = row.querySelector(".rc-remove-btn");
+
+        $editBtn.addEventListener("click", () => {
+          const isOpen = $editPanel.classList.toggle("open");
+          $editBtn.classList.toggle("active", isOpen);
+          if (isOpen && !$editPanel.dataset.built) buildEditPanel($editPanel, pol, $actionsDiv);
+        });
 
         if ($condToggle) {
           $condToggle.addEventListener("click", () => {
@@ -577,6 +603,48 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
 
       $policyList.appendChild(domEl);
     }
+  }
+
+  // ── Inline action editor ─────────────────────────────────────────────────
+  function buildEditPanel($panel, pol, $actionsDiv) {
+    $panel.dataset.built = "1";
+    const entityData = catalog?.[pol.domain]?.[pol.entity];
+    if (!entityData) {
+      $panel.innerHTML = `<span style="font-size:12px;color:#f87171">No catalog data for this entity.</span>`;
+      return;
+    }
+    const { actions } = entityData;
+    $panel.innerHTML = `
+      <div class="rc-actions-wrap" style="align-items:center">
+        ${actions.map(a => `
+          <label class="rc-chip${pol.actions.has(a) ? " checked" : ""}">
+            <input type="checkbox" value="${escapeHtml(a)}"${pol.actions.has(a) ? " checked" : ""}>
+            ${escapeHtml(a)}
+          </label>
+        `).join("")}
+        <button class="rc-cond-toggle" style="margin-left:auto;padding:3px 14px">Done</button>
+      </div>
+    `;
+    $panel.querySelectorAll(".rc-chip input").forEach(cb => {
+      updateChipStyle(cb.closest(".rc-chip"), cb.checked);
+      cb.addEventListener("change", () => {
+        if (cb.checked) pol.actions.add(cb.value);
+        else            pol.actions.delete(cb.value);
+        updateChipStyle(cb.closest(".rc-chip"), cb.checked);
+        $actionsDiv.innerHTML = [...pol.actions].sort()
+          .map(a => `<span class="rc-action-tag">${escapeHtml(a)}</span>`).join("");
+        updateSaveBtn();
+      });
+    });
+    $panel.querySelector(".rc-cond-toggle").addEventListener("click", () => {
+      $panel.classList.remove("open");
+      $panel.closest(".rc-policy-row")?.querySelector(".rc-edit-btn")?.classList.remove("active");
+      if (pol.actions.size === 0) {
+        policies = policies.filter(p => p !== pol);
+        renderPolicyList();
+        updateSaveBtn();
+      }
+    });
   }
 
   function policySupportsConds(pol) {
@@ -808,11 +876,29 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     renderPolicyList();
     updateSaveBtn();
 
-    // Reset picker
-    pickerEntity = "";
-    entityCombo.clear();
-    $pickerActions.innerHTML = `<span style="font-size:12px;color:var(--muted)">Select entity first</span>`;
-    $addBtn.disabled = true;
+    // Keep domain, reset entity only so the next entity can be picked immediately
+    onDomainSelect(pickerDomain);
+  });
+
+  // ── Add All Entities ──────────────────────────────────────────────────────
+  $addAllBtn.addEventListener("click", () => {
+    if (!pickerDomain || !catalog?.[pickerDomain]) return;
+    for (const entity of Object.keys(catalog[pickerDomain]).sort()) {
+      const { actions } = catalog[pickerDomain][entity];
+      const allActions = new Set(actions);
+      const existing = policies.find(p => p.domain === pickerDomain && p.entity === entity);
+      if (existing) {
+        for (const a of allActions) existing.actions.add(a);
+      } else {
+        policies.push({
+          domain: pickerDomain, entity, actions: allActions,
+          condVar: "", condValues: [], condOp: "INCLUDES", condOpen: false, rowEl: null,
+        });
+      }
+    }
+    renderPolicyList();
+    updateSaveBtn();
+    onDomainSelect(pickerDomain);
   });
 
   // ── Cancel ────────────────────────────────────────────────────────────────

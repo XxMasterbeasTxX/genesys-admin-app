@@ -814,7 +814,7 @@ export async function getAuthorizationRole(api, orgId, roleId) {
  * body: { name, description?, permissionPolicies: [{ domain, entityName, actionSet, allowConditions?, resourceConditionNode? }] }
  */
 export async function createAuthorizationRole(api, orgId, body) {
-  return api.proxyGenesys(orgId, "PUT", "/api/v2/authorization/roles", { body });
+  return api.proxyGenesys(orgId, "POST", "/api/v2/authorization/roles", { body });
 }
 
 /**
