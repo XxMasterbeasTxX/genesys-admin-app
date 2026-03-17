@@ -2,16 +2,25 @@
  * Export › Users — All Roles
  *
  * Exports all users (active, inactive, and deleted) with their role
- * assignments for the selected org. One row per user-role combination.
- * Users with no roles appear as a single row with an empty Role field.
- * The same Index is shared across all role rows for the same user.
+ * assignments for the selected org. One row per (user, role, source)
+ * combination. Users with no roles are excluded entirely.
  *
  * Flow:
  *   1. Fetch all users with expand=authorization,dateLastLogin (state=any)
- *   2. Build one row per user-role combination
- *   3. Display as collapsible HTML table + downloadable Excel
+ *   2b. Fetch group memberships for users that have at least one role
+ *   3. Resolve group role grants + display names for all unique groups
+ *   4. Build rows with Assigned / Assigned by attribution
+ *   5. Display as collapsible HTML table + downloadable Excel
  *
- * Matches the Python script: GUI_Users_Export_All_Roles.py
+ * Assigned:    "Manually assigned" | "Inherited"
+ * Assigned by: "User"              | <group display name>
+ *
+ * Note: attribution is group-based. If a role is covered by one or more
+ * groups it is marked Inherited (one row per group). If it is not covered
+ * by any group it is marked Manually assigned. In the rare edge-case where
+ * a role is both directly assigned AND inherited via a group, only the
+ * Inherited rows are shown (matching the Roles › Permissions vs. Users page
+ * behaviour).
  */
 import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
@@ -26,8 +35,8 @@ const AUTOMATION_ENABLED = true;
 const AUTOMATION_EXPORT_TYPE = "allRoles";
 const AUTOMATION_EXPORT_LABEL = "Users All Roles";
 
-// ── Columns (matching Python) ───────────────────────────
-const HEADERS = ["Index", "Name", "Email", "Division", "Active", "Date Last Login", "Role"];
+// ── Columns ─────────────────────────────────────────────
+const HEADERS = ["Index", "Name", "Email", "Division", "Active", "Date Last Login", "Role", "Assigned", "Assigned by"];
 
 /** Format a dateLastLogin value to Danish locale. */
 function formatLastLogin(dateStr) {
@@ -43,35 +52,72 @@ function formatLastLogin(dateStr) {
   } catch { return "Never"; }
 }
 
+/** Run async tasks with bounded concurrency. */
+async function runBatched(tasks, concurrency = 10) {
+  let idx = 0;
+  async function worker() {
+    while (idx < tasks.length) await tasks[idx++]();
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
+}
+
 /**
- * Build rows: one row per user-role combination.
- * Users with multiple roles → multiple rows with the same Index.
- * Users with no roles → one row with an empty Role field.
+ * Build rows: one row per (user, role, source) combination.
+ * - Users with no roles are excluded entirely.
+ * - If a role is not covered by any group → 1 row: Manually assigned / User.
+ * - If a role is covered by N groups → N rows: Inherited / <group name> each.
  */
-function buildRows(users) {
+function buildRowsWithAttribution(users, userGroupMap, groupGrantsCache, groupNameCache) {
   const rows = [];
   let userIndex = 1;
 
   for (const user of users) {
-    const name      = user.name || "N/A";
-    const email     = user.email || "N/A";
-    const division  = user.division?.name || "N/A";
-    const active    = user.state || "N/A";
-    const lastLogin = formatLastLogin(user.dateLastLogin);
+    const roles = user.authorization?.roles || [];
+    if (roles.length === 0) continue;
 
-    const roleNames = [];
-    if (user.authorization?.roles?.length) {
-      for (const role of user.authorization.roles) {
-        if (role.name) roleNames.push(role.name);
+    const name       = user.name || "N/A";
+    const email      = user.email || "N/A";
+    const division   = user.division?.name || "N/A";
+    const active     = user.state || "N/A";
+    const lastLogin  = formatLastLogin(user.dateLastLogin);
+    const userGroups = userGroupMap.get(user.id) || [];
+
+    // Collect all role IDs that any of this user's groups grant
+    const groupRoleIds = new Set();
+    for (const g of userGroups) {
+      for (const grant of (groupGrantsCache.get(g.id) || [])) {
+        if (grant.role?.id) groupRoleIds.add(grant.role.id);
       }
     }
 
-    if (roleNames.length > 0) {
-      for (const role of roleNames) {
-        rows.push({ index: userIndex, name, email, division, active, lastLogin, role });
+    for (const roleObj of roles) {
+      const roleId   = roleObj.id || roleObj.roleId;
+      const roleName = roleObj.name || roleId || "";
+      if (!roleName) continue;
+
+      const sources = [];
+
+      // Not in any group → directly assigned
+      if (!groupRoleIds.has(roleId)) {
+        sources.push({ assigned: "Manually assigned", assignedBy: "User" });
       }
-    } else {
-      rows.push({ index: userIndex, name, email, division, active, lastLogin, role: "" });
+
+      // One row per group that grants this role
+      for (const g of userGroups) {
+        if ((groupGrantsCache.get(g.id) || []).some(gr => gr.role?.id === roleId)) {
+          sources.push({ assigned: "Inherited", assignedBy: groupNameCache.get(g.id) || g.name || g.id });
+        }
+      }
+
+      // Fallback — should not occur
+      if (sources.length === 0) {
+        sources.push({ assigned: "Manually assigned", assignedBy: "User" });
+      }
+
+      for (const src of sources) {
+        rows.push({ index: userIndex, name, email, division, active, lastLogin,
+                    role: roleName, assigned: src.assigned, assignedBy: src.assignedBy });
+      }
     }
 
     userIndex++;
@@ -87,7 +133,8 @@ function buildRows(users) {
 function buildWorkbook(rows) {
   const wsData = [HEADERS];
   for (const r of rows) {
-    wsData.push([r.index, r.name, r.email, r.division, r.active, r.lastLogin, r.role]);
+    wsData.push([r.index, r.name, r.email, r.division, r.active, r.lastLogin,
+                 r.role, r.assigned, r.assignedBy]);
   }
   return buildStyledWorkbook(wsData, "Users Roles Export");
 }
@@ -106,8 +153,10 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
     <hr class="hr">
     <p class="page-desc">
       Exports all users (active, inactive, and deleted) with their role
-      assignments for the selected org. One row per user-role combination.
-      Users with no roles appear as a single row with an empty Role field.
+      assignments for the selected org. One row per (user, role, source)
+      combination — users with no roles are excluded. Includes
+      <strong>Assigned</strong> (Manually assigned / Inherited) and
+      <strong>Assigned by</strong> (User / Group name) columns.
     </p>
 
     <div class="te-actions">
@@ -206,23 +255,74 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
     setProgress(0);
 
     try {
-      // Phase 1: Fetch all users with roles + dateLastLogin (0–80%)
+      // Phase 1: Fetch all users with roles + dateLastLogin (0–45%)
       setStatus("Fetching users and role assignments…");
       setProgress(5);
       const allUsers = await gc.fetchAllUsers(api, org.id, {
         expand: ["authorization", "dateLastLogin"],
         state: "any",
-        onProgress: (n) => setProgress(5 + Math.min((n / 500) * 65, 65)),
+        onProgress: (n) => setProgress(5 + Math.min((n / 500) * 38, 38)),
       });
       if (cancelled) return;
-      setProgress(75);
+      setProgress(45);
 
-      // Phase 2: Build rows (76–85%)
-      setStatus("Processing role data…");
-      const rows = buildRows(allUsers);
+      // Phase 2b: Fetch group memberships for users that have at least one role (45–70%)
+      const usersWithRoles = allUsers.filter(u => u.authorization?.roles?.length > 0);
+      const userGroupMap = new Map();
+      if (usersWithRoles.length > 0) {
+        setStatus(`Fetching group memberships for ${usersWithRoles.length} users…`);
+        let grpFetched = 0;
+        await runBatched(
+          usersWithRoles.map(user => async () => {
+            if (cancelled) return;
+            try {
+              const detail = await api.proxyGenesys(org.id, "GET", `/api/v2/users/${user.id}`, { query: { expand: "groups" } });
+              userGroupMap.set(user.id, detail.groups || []);
+            } catch {
+              userGroupMap.set(user.id, []);
+            }
+            setProgress(45 + Math.min((++grpFetched / usersWithRoles.length) * 25, 25));
+          }),
+          10
+        );
+      }
+      if (cancelled) return;
+      setProgress(70);
+
+      // Phase 3: Resolve group role grants + display names (70–85%)
+      const allGroupIds = new Set([...userGroupMap.values()].flatMap(gs => gs.map(g => g.id)));
+      const groupGrantsCache = new Map();
+      const groupNameCache   = new Map();
+      if (allGroupIds.size > 0) {
+        setStatus(`Resolving ${allGroupIds.size} group role grants…`);
+        let gsFetched = 0;
+        await runBatched(
+          [...allGroupIds].map(groupId => async () => {
+            if (cancelled) return;
+            try {
+              const [gs, gd] = await Promise.all([
+                api.proxyGenesys(org.id, "GET", `/api/v2/authorization/subjects/${groupId}`),
+                api.proxyGenesys(org.id, "GET", `/api/v2/groups/${groupId}`),
+              ]);
+              groupGrantsCache.set(groupId, gs.grants || []);
+              groupNameCache.set(groupId, gd.name || groupId);
+            } catch {
+              groupGrantsCache.set(groupId, []);
+            }
+            setProgress(70 + Math.min((++gsFetched / allGroupIds.size) * 15, 15));
+          }),
+          10
+        );
+      }
+      if (cancelled) return;
       setProgress(85);
 
-      // Phase 3: Build Excel (86–100%)
+      // Phase 4: Build rows with attribution (85–90%)
+      setStatus("Processing role data…");
+      const rows = buildRowsWithAttribution(allUsers, userGroupMap, groupGrantsCache, groupNameCache);
+      setProgress(90);
+
+      // Phase 5: Build Excel (90–95%)
       setStatus("Building Excel…");
       const wb = buildWorkbook(rows);
       setProgress(95);
@@ -237,7 +337,7 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
 
       // Summary
       const uniqueUsers = new Set(rows.map(r => r.email)).size;
-      $summary.textContent = `${uniqueUsers} users, ${rows.length} rows (incl. role duplicates)`;
+      $summary.textContent = `${uniqueUsers} users, ${rows.length} rows`;
       $summary.style.display = "";
 
       // Download button
@@ -332,6 +432,8 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
         <td>${escapeHtml(r.active)}</td>
         <td>${escapeHtml(r.lastLogin)}</td>
         <td>${escapeHtml(r.role)}</td>
+        <td>${escapeHtml(r.assigned)}</td>
+        <td>${escapeHtml(r.assignedBy)}</td>
       </tr>`;
     }
 
