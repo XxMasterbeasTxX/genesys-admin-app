@@ -71,7 +71,9 @@
  *
  *   ROLES
  *   roles.compare                      Compare permission policies across roles
- *   roles.search                       Search permissions and see which users hold them
+ *   roles.search                       Search permissions and see which users hold them (Permissions vs. Users)
+ *   roles.create                       Create a new role with permission policies
+ *   roles.edit                         Edit an existing role's permission policies
  *
  *   AUDIT
  *   audit.search                       Audit event search
@@ -108,7 +110,7 @@
 export const GROUP_ACCESS = {
   "Genesys App - Master Admin": ["*"],
   "Genesys App - Admin": ["*"],
-  "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*", "roles.compare", "roles.search"],
+  "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*", "roles.compare", "roles.search", "roles.create", "roles.edit"],
   "Genesys App - Export": ["export.*"],
 };
 

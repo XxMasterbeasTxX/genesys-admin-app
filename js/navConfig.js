@@ -213,8 +213,10 @@ export const NAV_TREE = [
     path: "roles",
     enabled: true,
     children: [
-      { label: "Compare", path: "compare", enabled: true, access: "roles.compare" },
-      { label: "Search",  path: "search",  enabled: true, access: "roles.search"  },
+      { label: "Compare",                path: "compare", enabled: true, access: "roles.compare" },
+      { label: "Permissions vs. Users",  path: "search",  enabled: true, access: "roles.search"  },
+      { label: "Create",                 path: "create",  enabled: true, access: "roles.create"  },
+      { label: "Edit",                   path: "edit",    enabled: true, access: "roles.edit"    },
     ],
   },
   {

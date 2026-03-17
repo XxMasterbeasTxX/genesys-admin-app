@@ -134,6 +134,10 @@ const registry = {
     import("./pages/roles/compare.js").then((m) => m.default(ctx)),
   "/roles/search": (ctx) =>
     import("./pages/roles/search.js").then((m) => m.default(ctx)),
+  "/roles/create": (ctx) =>
+    import("./pages/roles/create.js").then((m) => m.default({ ...ctx, mode: "create" })),
+  "/roles/edit": (ctx) =>
+    import("./pages/roles/create.js").then((m) => m.default({ ...ctx, mode: "edit" })),
 
   // ── Audit ─────────────────────────────────────────────
   "/audit/search": (ctx) =>

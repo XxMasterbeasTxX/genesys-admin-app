@@ -804,6 +804,27 @@ export async function fetchAllAuthorizationRoles(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/authorization/roles", opts);
 }
 
+/** Get a single role by ID — returns full object including permissionPolicies. */
+export async function getAuthorizationRole(api, orgId, roleId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/authorization/roles/${roleId}`);
+}
+
+/**
+ * Create a new authorization role.
+ * body: { name, description?, permissionPolicies: [{ domain, entityName, actionSet, allowConditions?, resourceConditionNode? }] }
+ */
+export async function createAuthorizationRole(api, orgId, body) {
+  return api.proxyGenesys(orgId, "PUT", "/api/v2/authorization/roles", { body });
+}
+
+/**
+ * Update (full replace) an existing authorization role.
+ * body must include all fields including permissionPolicies.
+ */
+export async function updateAuthorizationRole(api, orgId, roleId, body) {
+  return api.proxyGenesys(orgId, "PUT", `/api/v2/authorization/roles/${roleId}`, { body });
+}
+
 /**
  * Fetch all users assigned to a specific role (includes inactive/deleted/external).
  * Used for accurate member count: intersect result with active org users.
