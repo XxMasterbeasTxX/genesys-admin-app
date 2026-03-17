@@ -296,11 +296,11 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
 
       <div class="rc-section">
         <label class="rc-label" for="rcName">Role Name *</label>
-        <input class="rc-input" id="rcName" placeholder="Enter role name" maxlength="200" ${(isEdit || isCopy) ? "disabled" : ""}>
+        <input class="rc-input" id="rcName" placeholder="Enter role name" maxlength="200" ${isEdit ? "disabled" : ""}>
       </div>
       <div class="rc-section">
         <label class="rc-label" for="rcDesc">Description</label>
-        <textarea class="rc-input" id="rcDesc" placeholder="Optional description" maxlength="500" rows="2" ${(isEdit || isCopy) ? "disabled" : ""}></textarea>
+        <textarea class="rc-input" id="rcDesc" placeholder="Optional description" maxlength="500" rows="2" ${isEdit ? "disabled" : ""}></textarea>
       </div>
 
       <div class="rc-section">
@@ -910,11 +910,14 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     renderPolicyList();
     updateSaveBtn();
     setStatus("");
-    if (isEdit || isCopy) {
+    if (isEdit) {
       editRoleId = null;
       roleCombo?.setValue?.("");
       $name.disabled = true;
       $desc.disabled = true;
+    } else if (isCopy) {
+      editRoleId = null;
+      roleCombo?.setValue?.("");
     }
   });
 
@@ -965,8 +968,6 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         if (isCopy) {
           editRoleId = null;
           roleCombo?.setValue?.("");
-          $name.disabled = true;
-          $desc.disabled = true;
         }
       }
     } catch (err) {
@@ -982,8 +983,10 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     const $roleIn   = el.querySelector("#rcRoleInput");
     const $roleList = el.querySelector("#rcRoleList");
     roleCombo = makeCombobox($roleIn, $roleList, onRoleSelect);
-    $name.disabled = true;
-    $desc.disabled = true;
+    if (isEdit) {
+      $name.disabled = true;
+      $desc.disabled = true;
+    }
   }
 
   async function onRoleSelect(roleName) {
