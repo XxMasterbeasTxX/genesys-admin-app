@@ -218,7 +218,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       .rc-domain-hdr:hover { background:rgba(255,255,255,.05); }
       .rc-chevron { font-size:10px; color:var(--muted); transition:transform .15s; width:12px; display:inline-block; }
       .rc-domain.open .rc-chevron { transform:rotate(90deg); }
-      .rc-domain-name { font-weight:600; font-size:13px; color:#93c5fd; flex:1; }
+      .rc-domain-name { font-weight:600; font-size:13px; color:#fbbf24; flex:1; }
       .rc-domain-stats { font-size:12px; color:var(--muted); }
       .rc-domain-body { display:none; padding:4px 0 2px; }
       .rc-domain.open .rc-domain-body { display:block; }
@@ -508,8 +508,10 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
 
     for (const domain of sortedDomains) {
       const domPolicies = byDomain.get(domain);
-      // Open by default on first render or if was open before
-      const startOpen = prevOpen.size === 0 || prevOpen.has(domain);
+      // Edit mode: pre-collapsed; Create mode: open by default (or restore previous state)
+      const startOpen = isEdit
+        ? prevOpen.has(domain)  // only open if it was explicitly opened by the user
+        : (prevOpen.size === 0 || prevOpen.has(domain));
 
       const domEl = document.createElement("div");
       domEl.className = "rc-domain" + (startOpen ? " open" : "");
