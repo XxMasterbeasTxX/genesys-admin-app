@@ -90,25 +90,28 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 
 ## 4. Authorization & Divisions
 
-Used by: Divisions (all object types), Data Tables — Create, export pages, Deployment — Basic, Roles — Compare (both modes)
+Used by: Divisions (all object types), Data Tables — Create, export pages, Deployment — Basic, Roles — Compare (both modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/authorization/divisions` | List all divisions |
 | POST | `/api/v2/authorization/divisions` | **Create** a new division (Deployment — Basic) |
 | GET | `/api/v2/authorization/roles` | List all authorization roles |
-| GET | `/api/v2/authorization/roles/{roleId}` | Get a single role with full `permissionPolicies` (Roles — Compare) |
-| GET | `/api/v2/authorization/permissions` | List the full permission catalog — domain/entity/action entries; used by Roles — Compare to expand wildcard policies (paginated, `pageSize=100`, looped via `pageCount`) |
-| GET | `/api/v2/authorization/roles/{roleId}/users` | List users assigned a specific role |
+| GET | `/api/v2/authorization/roles?permission={domain}:{entity}:{action}` | Filter roles by a specific permission — returns roles whose policies match; used by Roles — Permissions vs. Users (Step 1) |
+| GET | `/api/v2/authorization/roles/{roleId}` | Get a single role with full `permissionPolicies` (Roles — Compare, Roles — Edit pre-fill) |
+| PUT | `/api/v2/authorization/roles` | **Create** a new authorization role — body: `{ name, description, permissionPolicies }` (Roles — Create) |
+| PUT | `/api/v2/authorization/roles/{roleId}` | **Full-replace** an existing authorization role — same body shape (Roles — Edit) |
+| GET | `/api/v2/authorization/permissions` | List the full permission catalog — domain/entity/action entries with `allowConditions` flag; used by Roles — Compare, Permissions vs. Users, Create, and Edit to expand wildcard policies (paginated, `pageSize=100`, looped via `pageCount`) |
+| GET | `/api/v2/authorization/roles/{roleId}/users` | List users assigned a specific role (Roles — Permissions vs. Users Step 2, Roles Export) |
 | POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to subjects with division scope (Deployment — Basic Users) |
-| GET | `/api/v2/authorization/subjects/{subjectId}` | Get effective role grants for a user or group — returns `{ grants: [{ role: { id, name }, division }] }` at top level (Compare Users) |
+| GET | `/api/v2/authorization/subjects/{subjectId}` | Get effective role grants for a user or group — returns `{ grants: [{ role: { id, name }, division }] }` at top level (Compare Users, Permissions vs. Users attribution) |
 | POST | `/api/v2/authorization/divisions/{divisionId}/objects/{type}` | Move objects between divisions (Divisions pages) |
 
 ---
 
 ## 5. Users & Groups
 
-Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Trustee Export, Divisions — Users, Documentation Export, WebRTC Phones, Roles — Compare Users
+Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Trustee Export, Divisions — Users, Documentation Export, WebRTC Phones, Roles — Compare Users, Roles — Permissions vs. Users
 
 | Method | Path | Purpose |
 | --- | --- | --- |
