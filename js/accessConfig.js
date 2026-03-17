@@ -74,6 +74,8 @@
  *   roles.search                       Search permissions and see which users hold them (Permissions vs. Users)
  *   roles.create                       Create a new role with permission policies
  *   roles.edit                         Edit an existing role's permission policies
+ *   roles.copy.singleOrg               Copy a role within the same org (pre-filled permission builder)
+ *   roles.copy.betweenOrgs             Copy a role from one org to another
  *
  *   AUDIT
  *   audit.search                       Audit event search

@@ -138,6 +138,10 @@ const registry = {
     import("./pages/roles/create.js").then((m) => m.default({ ...ctx, mode: "create" })),
   "/roles/edit": (ctx) =>
     import("./pages/roles/create.js").then((m) => m.default({ ...ctx, mode: "edit" })),
+  "/roles/copy/single-org": (ctx) =>
+    import("./pages/roles/copy/copySingleOrg.js").then((m) => m.default(ctx)),
+  "/roles/copy/between-orgs": (ctx) =>
+    import("./pages/roles/copy/copyBetweenOrgs.js").then((m) => m.default(ctx)),
 
   // ── Audit ─────────────────────────────────────────────
   "/audit/search": (ctx) =>

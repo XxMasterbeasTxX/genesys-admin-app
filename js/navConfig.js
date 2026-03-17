@@ -213,6 +213,15 @@ export const NAV_TREE = [
     path: "roles",
     enabled: true,
     children: [
+      {
+        label: "Copy",
+        path: "copy",
+        enabled: true,
+        children: [
+          { label: "Copy from current org", path: "single-org",   enabled: true, access: "roles.copy.singleOrg"   },
+          { label: "Copy between orgs",     path: "between-orgs", enabled: true, access: "roles.copy.betweenOrgs" },
+        ],
+      },
       { label: "Compare",                path: "compare", enabled: true, access: "roles.compare" },
       { label: "Permissions vs. Users",  path: "search",  enabled: true, access: "roles.search"  },
       { label: "Create",                 path: "create",  enabled: true, access: "roles.create"  },

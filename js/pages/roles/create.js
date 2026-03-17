@@ -147,7 +147,8 @@ function parseConditionNode(node) {
 
 export default function renderRolesCreate({ me, api, orgContext, mode = "create" }) {
   const isEdit   = mode === "edit";
-  const pageTitle = isEdit ? "Roles — Edit" : "Roles — Create";
+  const isCopy   = mode === "copySingle";
+  const pageTitle = isCopy ? "Roles — Copy (Same Org)" : isEdit ? "Roles — Edit" : "Roles — Create";
 
   const el = document.createElement("section");
   el.className = "card";
@@ -281,9 +282,9 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     <div class="rc-page">
       <h2 style="margin:0 0 20px">${escapeHtml(pageTitle)}</h2>
 
-      ${isEdit ? `
+      ${(isEdit || isCopy) ? `
       <div class="rc-section">
-        <span class="rc-label">Select Role to Edit</span>
+        <span class="rc-label">${isCopy ? "Source Role" : "Select Role to Edit"}</span>
         <div class="rc-role-pick">
           <div class="rc-combo" id="rcRoleCombo" style="flex:1;min-width:260px">
             <input class="rc-combo-input" id="rcRoleInput" placeholder="Loading roles…" autocomplete="off" disabled>
@@ -295,11 +296,11 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
 
       <div class="rc-section">
         <label class="rc-label" for="rcName">Role Name *</label>
-        <input class="rc-input" id="rcName" placeholder="Enter role name" maxlength="200" ${isEdit ? "disabled" : ""}>
+        <input class="rc-input" id="rcName" placeholder="Enter role name" maxlength="200" ${(isEdit || isCopy) ? "disabled" : ""}>
       </div>
       <div class="rc-section">
         <label class="rc-label" for="rcDesc">Description</label>
-        <textarea class="rc-input" id="rcDesc" placeholder="Optional description" maxlength="500" rows="2" ${isEdit ? "disabled" : ""}></textarea>
+        <textarea class="rc-input" id="rcDesc" placeholder="Optional description" maxlength="500" rows="2" ${(isEdit || isCopy) ? "disabled" : ""}></textarea>
       </div>
 
       <div class="rc-section">
@@ -348,7 +349,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
 
       <div class="rc-footer">
         <button class="rc-cancel-btn" id="rcCancelBtn">Cancel</button>
-        <button class="rc-save-btn" id="rcSaveBtn" disabled>${isEdit ? "Save Changes" : "Create Role"}</button>
+        <button class="rc-save-btn" id="rcSaveBtn" disabled>${isCopy ? "Create Copy" : isEdit ? "Save Changes" : "Create Role"}</button>
       </div>
     </div>
   `;
@@ -909,7 +910,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     renderPolicyList();
     updateSaveBtn();
     setStatus("");
-    if (isEdit) {
+    if (isEdit || isCopy) {
       editRoleId = null;
       roleCombo?.setValue?.("");
       $name.disabled = true;
@@ -955,12 +956,18 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         setStatus("Role updated successfully.", "success");
       } else {
         await createAuthorizationRole(api, org.id, body);
-        setStatus("Role created successfully.", "success");
+        setStatus(isCopy ? "Role copied successfully." : "Role created successfully.", "success");
         // Reset form
         $name.value = "";
         $desc.value = "";
         policies = [];
         renderPolicyList();
+        if (isCopy) {
+          editRoleId = null;
+          roleCombo?.setValue?.("");
+          $name.disabled = true;
+          $desc.disabled = true;
+        }
       }
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
@@ -969,9 +976,9 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     }
   });
 
-  // ── Edit mode: role picker ────────────────────────────────────────────────
+  // ── Edit / Copy mode: role picker ──────────────────────────────────────────
   let roleCombo = null;
-  if (isEdit) {
+  if (isEdit || isCopy) {
     const $roleIn   = el.querySelector("#rcRoleInput");
     const $roleList = el.querySelector("#rcRoleList");
     roleCombo = makeCombobox($roleIn, $roleList, onRoleSelect);
@@ -986,7 +993,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     setStatus("Loading role details…");
     try {
       const detail = await getAuthorizationRole(api, orgContext.getDetails().id, role.id);
-      $name.value = detail.name || "";
+      $name.value = isCopy ? `Copy of ${detail.name || ""}` : (detail.name || "");
       $desc.value = detail.description || "";
       $name.disabled = false;
       $desc.disabled = false;
@@ -1043,7 +1050,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     setStatus("Loading permission catalog…");
     try {
       const requests = [loadCatalog(api, org.id)];
-      if (isEdit) requests.push(fetchAllAuthorizationRoles(api, org.id));
+      if (isEdit || isCopy) requests.push(fetchAllAuthorizationRoles(api, org.id));
       const [cat, roles] = await Promise.all(requests);
       catalog = cat;
 
@@ -1052,7 +1059,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       $domainIn.placeholder = "Type or select…";
       $domainIn.disabled = false;
 
-      if (isEdit && roles) {
+      if ((isEdit || isCopy) && roles) {
         allRoles = roles.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         roleCombo.setItems(allRoles.map(r => r.name));
         el.querySelector("#rcRoleInput").placeholder = "Type to search roles…";
