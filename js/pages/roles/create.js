@@ -844,20 +844,40 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       $name.disabled = false;
       $desc.disabled = false;
 
-      // Build policies from existing permissionPolicies
-      policies = (detail.permissionPolicies || []).map(p => {
-        const cond = parseConditionNode(p.resourceConditionNode);
-        return {
-          domain:     p.domain,
-          entity:     p.entityName,
-          actions:    new Set(p.actionSet || []),
-          condVar:    cond?.condVar || "",
-          condValues: cond?.values  || [],
-          condOp:     cond?.operator || "INCLUDES",
-          condOpen:   false,
-          rowEl:      null,
-        };
-      });
+      // Build policies from existing permissionPolicies, expanding any wildcards
+      // against the catalog so "*" never appears as a raw action tag.
+      policies = [];
+      for (const p of (detail.permissionPolicies || [])) {
+        const cond         = parseConditionNode(p.resourceConditionNode);
+        const domainCat    = catalog[p.domain] || {};
+        const entityIsWild = p.entityName === "*";
+        const actionIsWild = (p.actionSet || []).includes("*");
+
+        const entities = entityIsWild ? Object.keys(domainCat) : [p.entityName];
+        for (const entity of entities) {
+          const catalogActions = (domainCat[entity]?.actions) || [];
+          const actions = actionIsWild
+            ? new Set(catalogActions)
+            : new Set((p.actionSet || []).filter(a => a !== "*"));
+
+          // Merge into existing policy for same (domain, entity) if already present
+          const existing = policies.find(q => q.domain === p.domain && q.entity === entity);
+          if (existing) {
+            for (const a of actions) existing.actions.add(a);
+          } else {
+            policies.push({
+              domain:     p.domain,
+              entity,
+              actions,
+              condVar:    cond?.condVar || "",
+              condValues: cond?.values  || [],
+              condOp:     cond?.operator || "INCLUDES",
+              condOpen:   false,
+              rowEl:      null,
+            });
+          }
+        }
+      }
       renderPolicyList();
       updateSaveBtn();
       setStatus("");
