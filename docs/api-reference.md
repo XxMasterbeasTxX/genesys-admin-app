@@ -90,7 +90,7 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 
 ## 4. Authorization & Divisions
 
-Used by: Divisions (all object types), Data Tables — Create, export pages, Deployment — Basic, Roles — Compare (both modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit
+Used by: Divisions (all object types), Data Tables — Create, export pages, All Roles Export, Deployment — Basic, Roles — Compare (both modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -104,7 +104,7 @@ Used by: Divisions (all object types), Data Tables — Create, export pages, Dep
 | GET | `/api/v2/authorization/permissions` | List the full permission catalog — domain/entity/action entries with `allowConditions` flag; used by Roles — Compare, Permissions vs. Users, Create, and Edit to expand wildcard policies (paginated, `pageSize=100`, looped via `pageCount`) |
 | GET | `/api/v2/authorization/roles/{roleId}/users` | List users assigned a specific role (Roles — Permissions vs. Users Step 2, Roles Export) |
 | POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to subjects with division scope (Deployment — Basic Users) |
-| GET | `/api/v2/authorization/subjects/{subjectId}` | Get effective role grants for a user or group — returns `{ grants: [{ role: { id, name }, division }] }` at top level (Compare Users, Permissions vs. Users attribution) |
+| GET | `/api/v2/authorization/subjects/{subjectId}` | Get effective role grants for a user or group — returns `{ grants: [{ role: { id, name }, division }] }` at top level (Compare Users, Permissions vs. Users attribution, All Roles Export step 3 attribution) |
 | POST | `/api/v2/authorization/divisions/{divisionId}/objects/{type}` | Move objects between divisions (Divisions pages) |
 
 ---
@@ -119,10 +119,10 @@ Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Truste
 | POST | `/api/v2/users/search` | Search users by name/email — body: `{ query: [{ type: "CONTAINS", fields: ["name","email"], value }] }` — response key is `results` (not `entities`); used by Compare Users picker |
 | GET | `/api/v2/users/me` | Get current authenticated user and group memberships |
 | GET | `/api/v2/users/{userId}` | Get a single user by ID |
-| GET | `/api/v2/users/{userId}?expand=groups` | Get user with `groups` array inline — used to resolve group memberships for Compare Users |
+| GET | `/api/v2/users/{userId}?expand=groups` | Get user with `groups` array inline — used to resolve group memberships for Compare Users and All Roles Export attribution (phase 2b) |
 | PATCH | `/api/v2/users/{userId}` | Update user (e.g., change division) |
 | GET | `/api/v2/groups` | List all groups |
-| GET | `/api/v2/groups/{groupId}` | Get a single group by ID — used to resolve group display name in Compare Users |
+| GET | `/api/v2/groups/{groupId}` | Get a single group by ID — used to resolve group display name in Compare Users and All Roles Export (group name for "Assigned by" column) |
 | GET | `/api/v2/groups/{groupId}/members` | List members of a group |
 | GET | `/api/v2/teams` | List work teams |
 
