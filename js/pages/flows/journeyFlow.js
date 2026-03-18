@@ -427,49 +427,73 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   });
 
   // ── Export PDF ────────────────────────────────────────────────────────────
-  $exportBtn.addEventListener("click", () => {
+  $exportBtn.addEventListener("click", async () => {
     const svgEl = $canvas.querySelector("svg");
     if (!svgEl) return;
 
-    const serialiser = new XMLSerializer();
-    const svgStr = serialiser.serializeToString(svgEl);
-    const W = svgEl.viewBox.baseVal.width  || $canvas.clientWidth  || 1200;
-    const H = svgEl.viewBox.baseVal.height || $canvas.clientHeight || 700;
-
-    const flowName = selectedFlow?.name || "Journey Flow";
-    const title = `Journey Flow — ${flowName} — ${$meta.textContent}`;
-    const safeTitle = title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>${safeTitle}</title>
-  <style>
-    @page { size: landscape; margin: 12mm; }
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:#1a1f2e; }
-    h1 { font-family:system-ui,sans-serif; font-size:12px; color:#cdd6f4; margin-bottom:6px; }
-    svg { width:100%; height:auto; display:block; }
-    @media print {
-      body { background:#1a1f2e !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    }
-  </style>
-</head>
-<body>
-  <h1>${safeTitle}</h1>
-  ${svgStr}
-  <script>window.addEventListener("load", () => { window.print(); });<\/script>
-</body>
-</html>`;
-
-    const popup = window.open("", "_blank", `width=${Math.min(W + 60, 1400)},height=${Math.min(H + 100, 900)}`);
-    if (!popup) {
-      setStatus("Pop-up blocked — please allow pop-ups for this site and try again.", "error");
+    if (typeof window.jspdf === "undefined" || typeof svg2pdf === "undefined") {
+      setStatus("PDF library not loaded — please reload the page.", "error");
       return;
     }
-    popup.document.write(html);
-    popup.document.close();
+
+    $exportBtn.disabled = true;
+    setStatus("Generating PDF…");
+
+    try {
+      const svgW  = svgEl.viewBox.baseVal.width  || $canvas.clientWidth  || 1200;
+      const svgH  = svgEl.viewBox.baseVal.height || $canvas.clientHeight || 700;
+
+      // A4 landscape in mm
+      const PAGE_W = 297, PAGE_H = 210, MARGIN = 10;
+      const drawW  = PAGE_W - MARGIN * 2;
+      const drawH  = PAGE_H - MARGIN * 2 - 8; // 8mm for title
+      const scale  = Math.min(drawW / svgW, drawH / svgH);
+
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+
+      // Title
+      const flowName = selectedFlow?.name || "Journey Flow";
+      doc.setFontSize(9);
+      doc.setTextColor(180, 180, 200);
+      doc.text(`Journey Flow — ${flowName} — ${$meta.textContent}`, MARGIN, MARGIN + 4);
+
+      // Clone SVG so we don't mutate the live diagram
+      const clone = svgEl.cloneNode(true);
+      clone.setAttribute("width",  String(svgW));
+      clone.setAttribute("height", String(svgH));
+      document.body.appendChild(clone); // must be in DOM for svg2pdf
+
+      await svg2pdf(clone, doc, {
+        x: MARGIN,
+        y: MARGIN + 8,
+        width:  svgW * scale,
+        height: svgH * scale,
+      });
+
+      document.body.removeChild(clone);
+
+      const b64      = doc.output("datauristring").split(",")[1];
+      const filename = `JourneyFlow_${(flowName).replace(/[^a-zA-Z0-9_-]/g, "_")}_${new Date().toISOString().slice(0,10)}.pdf`;
+
+      const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+      window._xlsxDownload = window._xlsxDownload || {};
+      window._xlsxDownload[key] = { filename, b64 };
+
+      const helperUrl = new URL("download.html", document.baseURI);
+      helperUrl.hash  = key;
+      const popup = window.open(helperUrl.href, "_blank");
+      if (!popup) {
+        delete window._xlsxDownload[key];
+        setStatus("Pop-up blocked — please allow pop-ups for this site.", "error");
+      } else {
+        setStatus("");
+      }
+    } catch (err) {
+      setStatus(`PDF export failed: ${err.message}`, "error");
+    } finally {
+      $exportBtn.disabled = false;
+    }
   });
 
   // ── Reset layout ─────────────────────────────────────────────────────────
