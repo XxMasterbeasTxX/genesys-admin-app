@@ -82,29 +82,28 @@ function buildRowsWithAttribution(users, userGroupMap, groupGrantsCache, groupNa
     const lastLogin  = formatLastLogin(user.dateLastLogin);
     const userGroups = userGroupMap.get(user.id) || [];
 
-    // Collect all role IDs that any of this user's groups grant
-    const groupRoleIds = new Set();
+    // Collect all role names that any of this user's groups grant
+    const groupRoleNames = new Set();
     for (const g of userGroups) {
       for (const grant of (groupGrantsCache.get(g.id) || [])) {
-        if (grant.role?.id) groupRoleIds.add(grant.role.id);
+        if (grant.role?.name) groupRoleNames.add(grant.role.name);
       }
     }
 
     for (const roleObj of roles) {
-      const roleId   = roleObj.id || roleObj.roleId;
-      const roleName = roleObj.name || roleId || "";
+      const roleName = roleObj.name || roleObj.id || "";
       if (!roleName) continue;
 
       const sources = [];
 
       // Not in any group → directly assigned
-      if (!groupRoleIds.has(roleId)) {
+      if (!groupRoleNames.has(roleName)) {
         sources.push({ assigned: "Manually assigned", assignedBy: "User" });
       }
 
       // One row per group that grants this role
       for (const g of userGroups) {
-        if ((groupGrantsCache.get(g.id) || []).some(gr => gr.role?.id === roleId)) {
+        if ((groupGrantsCache.get(g.id) || []).some(gr => gr.role?.name === roleName)) {
           sources.push({ assigned: "Inherited", assignedBy: groupNameCache.get(g.id) || g.name || g.id });
         }
       }
@@ -261,7 +260,10 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
       const allUsers = await gc.fetchAllUsers(api, org.id, {
         expand: ["authorization", "dateLastLogin"],
         state: "any",
-        onProgress: (n) => setProgress(5 + Math.min((n / 500) * 38, 38)),
+        onProgress: (n) => {
+          setStatus(`Fetching users… ${n} loaded`);
+          setProgress(5 + Math.min((n / 500) * 38, 38));
+        },
       });
       if (cancelled) return;
       setProgress(45);
@@ -270,7 +272,7 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
       const usersWithRoles = allUsers.filter(u => u.authorization?.roles?.length > 0);
       const userGroupMap = new Map();
       if (usersWithRoles.length > 0) {
-        setStatus(`Fetching group memberships for ${usersWithRoles.length} users…`);
+        setStatus(`Fetching group memberships… 0 / ${usersWithRoles.length}`);
         let grpFetched = 0;
         await runBatched(
           usersWithRoles.map(user => async () => {
@@ -281,9 +283,11 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
             } catch {
               userGroupMap.set(user.id, []);
             }
-            setProgress(45 + Math.min((++grpFetched / usersWithRoles.length) * 25, 25));
+            grpFetched++;
+            setStatus(`Fetching group memberships… ${grpFetched} / ${usersWithRoles.length}`);
+            setProgress(45 + Math.min((grpFetched / usersWithRoles.length) * 25, 25));
           }),
-          10
+          25
         );
       }
       if (cancelled) return;
@@ -294,7 +298,7 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
       const groupGrantsCache = new Map();
       const groupNameCache   = new Map();
       if (allGroupIds.size > 0) {
-        setStatus(`Resolving ${allGroupIds.size} group role grants…`);
+        setStatus(`Resolving group role grants… 0 / ${allGroupIds.size}`);
         let gsFetched = 0;
         await runBatched(
           [...allGroupIds].map(groupId => async () => {
@@ -309,9 +313,11 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
             } catch {
               groupGrantsCache.set(groupId, []);
             }
-            setProgress(70 + Math.min((++gsFetched / allGroupIds.size) * 15, 15));
+            gsFetched++;
+            setStatus(`Resolving group role grants… ${gsFetched} / ${allGroupIds.size}`);
+            setProgress(70 + Math.min((gsFetched / allGroupIds.size) * 15, 15));
           }),
-          10
+          25
         );
       }
       if (cancelled) return;
