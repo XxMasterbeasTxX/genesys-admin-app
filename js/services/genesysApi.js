@@ -1084,6 +1084,11 @@ export async function gdprGetRequests(api, orgId) {
   return resp.entities || [];
 }
 
+/** Fetch a single GDPR request by ID (includes resultsUrl for exports). */
+export async function gdprGetRequest(api, orgId, requestId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/gdpr/requests/${requestId}`);
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Audit
 // ─────────────────────────────────────────────────────────────────────

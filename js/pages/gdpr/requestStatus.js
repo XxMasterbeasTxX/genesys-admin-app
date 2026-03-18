@@ -73,6 +73,18 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
         return;
       }
 
+      // For completed Access requests, fetch individual details to get resultsUrl
+      const completedExports = requests.filter(r =>
+        r.requestType === "GDPR_EXPORT" && ["FULFILLED", "COMPLETE", "COMPLETED"].includes(r.status)
+      );
+      const detailMap = new Map();
+      await Promise.all(completedExports.map(async (r) => {
+        try {
+          const detail = await gc.gdprGetRequest(api, org.id, r.id);
+          detailMap.set(r.id, detail);
+        } catch { /* ignore — row will just show no link */ }
+      }));
+
       const rows = requests.map((r) => {
         const date        = r.createdDate ? new Date(r.createdDate).toLocaleString() : "\u2014";
         const type        = r.requestType ?? "\u2014";
@@ -94,10 +106,12 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
 
         // Details — contextual per request type
         let detailsHtml = "\u2014";
-        if (type === "GDPR_EXPORT" && r.resultsUrl?.length) {
-          detailsHtml = r.resultsUrl.map((url, i) =>
+        const detail = detailMap.get(r.id);
+        const resultsUrl = detail?.resultsUrl || r.resultsUrl;
+        if (type === "GDPR_EXPORT" && resultsUrl?.length) {
+          detailsHtml = resultsUrl.map((url, i) =>
             `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="gdpr-download-link">` +
-            `Download${r.resultsUrl.length > 1 ? ` (${i + 1})` : ""}</a>`
+            `Download${resultsUrl.length > 1 ? ` (${i + 1})` : ""}</a>`
           ).join("<br>");
         } else if (type === "GDPR_UPDATE" && r.replacements?.length) {
           const fieldList = r.replacements.map(rep => escapeHtml(rep.fieldName ?? "?")).join(", ");
