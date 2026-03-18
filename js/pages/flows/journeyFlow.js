@@ -211,6 +211,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
         <button class="jf-btn jf-btn-primary" id="jfLoadBtn" disabled>Load</button>
         <button class="jf-btn" id="jfResetBtn" disabled>Reset Layout</button>
         <span class="jf-meta" id="jfMeta"></span>
+        <button class="jf-btn" id="jfExportBtn" disabled style="margin-left:auto">Export PDF</button>
       </div>
       <div class="jf-status" id="jfStatus"></div>
       <div class="jf-canvas" id="jfCanvas">
@@ -229,6 +230,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   const $loadBtn   = el.querySelector("#jfLoadBtn");
   const $resetBtn     = el.querySelector("#jfResetBtn");
   const $meta         = el.querySelector("#jfMeta");
+  const $exportBtn    = el.querySelector("#jfExportBtn");
   const $resizeHandle = el.querySelector("#jfResizeHandle");
 
   // ── Canvas resize drag ─────────────────────────────────────────────────────
@@ -415,12 +417,59 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       renderDiagram();
       setStatus("");
       $resetBtn.disabled = false;
+      $exportBtn.disabled = false;
     } catch (err) {
       $canvas.innerHTML = `<div class="jf-empty">Error: ${escapeHtml(err.message)}</div>`;
       setStatus(`Error: ${err.message}`, "error");
     } finally {
       $loadBtn.disabled = false;
     }
+  });
+
+  // ── Export PDF ────────────────────────────────────────────────────────────
+  $exportBtn.addEventListener("click", () => {
+    const svgEl = $canvas.querySelector("svg");
+    if (!svgEl) return;
+
+    const serialiser = new XMLSerializer();
+    const svgStr = serialiser.serializeToString(svgEl);
+    const W = svgEl.viewBox.baseVal.width  || $canvas.clientWidth  || 1200;
+    const H = svgEl.viewBox.baseVal.height || $canvas.clientHeight || 700;
+
+    const flowName = selectedFlow?.name || "Journey Flow";
+    const title = `Journey Flow — ${flowName} — ${$meta.textContent}`;
+    const safeTitle = title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${safeTitle}</title>
+  <style>
+    @page { size: landscape; margin: 12mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#1a1f2e; }
+    h1 { font-family:system-ui,sans-serif; font-size:12px; color:#cdd6f4; margin-bottom:6px; }
+    svg { width:100%; height:auto; display:block; }
+    @media print {
+      body { background:#1a1f2e !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    }
+  </style>
+</head>
+<body>
+  <h1>${safeTitle}</h1>
+  ${svgStr}
+  <script>window.addEventListener("load", () => { window.print(); });<\/script>
+</body>
+</html>`;
+
+    const popup = window.open("", "_blank", `width=${Math.min(W + 60, 1400)},height=${Math.min(H + 100, 900)}`);
+    if (!popup) {
+      setStatus("Pop-up blocked — please allow pop-ups for this site and try again.", "error");
+      return;
+    }
+    popup.document.write(html);
+    popup.document.close();
   });
 
   // ── Reset layout ─────────────────────────────────────────────────────────
