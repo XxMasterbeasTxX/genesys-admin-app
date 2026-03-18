@@ -176,6 +176,10 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
                     box-shadow:0 4px 20px rgba(0,0,0,.5); transition:opacity .1s; }
       .jf-empty { display:flex; align-items:center; justify-content:center; height:100%;
                   font-size:14px; color:var(--muted); }
+      .jf-select { padding:7px 11px; border:1px solid var(--border); border-radius:8px;
+                   background:var(--bg,var(--panel)); color:var(--text); font:inherit; font-size:13px;
+                   cursor:pointer; outline:none; }
+      .jf-select:focus { border-color:#3b82f6; }
     </style>
 
     <div class="jf-page">
@@ -184,6 +188,16 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
           <input class="jf-combo-input" id="jfFlowInput" placeholder="Loading flows…" autocomplete="off" disabled>
           <div class="jf-combo-list" id="jfFlowList"></div>
         </div>
+        <select class="jf-select" id="jfCategory">
+          <option value="All">All</option>
+          <option value="Abandoned">Abandoned</option>
+          <option value="AgentEscalation">AgentEscalation</option>
+          <option value="Complete">Complete</option>
+          <option value="Disconnect">Disconnect</option>
+          <option value="Error">Error</option>
+          <option value="RecognitionFailure">RecognitionFailure</option>
+          <option value="Transfer">Transfer</option>
+        </select>
         <button class="jf-btn jf-btn-primary" id="jfLoadBtn" disabled>Load</button>
         <button class="jf-btn" id="jfResetBtn" disabled>Reset Layout</button>
         <span class="jf-meta" id="jfMeta"></span>
@@ -200,6 +214,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   // ── DOM refs ───────────────────────────────────────────────────────────────
   const $flowIn    = el.querySelector("#jfFlowInput");
   const $flowList  = el.querySelector("#jfFlowList");
+  const $category  = el.querySelector("#jfCategory");
   const $loadBtn   = el.querySelector("#jfLoadBtn");
   const $resetBtn  = el.querySelector("#jfResetBtn");
   const $meta      = el.querySelector("#jfMeta");
@@ -310,6 +325,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
         "/api/v2/journey/flows/paths/query", {
           body: {
             flowFilter: { type: "Flow", flows: [{ id: selectedFlow.id }] },
+            category: $category.value,
           },
         });
 
