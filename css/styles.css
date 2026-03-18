@@ -780,6 +780,7 @@ body {
 }
 .ts-legend-found::before    { background: #34d399; }
 .ts-legend-none::before     { background: #f87171; }
+.ts-legend-error::before    { background: #f59e0b; }
 .ts-legend-unchecked::before { background: rgba(255,255,255,0.15); }
 
 .ts-stacked-bar {
@@ -800,6 +801,11 @@ body {
   background: #f87171;
   transition: width 0.3s ease;
 }
+.ts-bar-error {
+  height: 100%;
+  background: #f59e0b;
+  transition: width 0.3s ease;
+}
 .ts-bar-unchecked {
   height: 100%;
   background: rgba(255,255,255,0.15);
@@ -813,6 +819,7 @@ body {
 }
 .ts-count-found     { color: #34d399; }
 .ts-count-none      { color: #f87171; }
+.ts-count-error     { color: #f59e0b; }
 .ts-count-unchecked { color: var(--muted); }
 
 /* Transcript filter bar */

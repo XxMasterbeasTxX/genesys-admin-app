@@ -29,7 +29,8 @@ import * as gc from "../../../services/genesysApi.js";
 import { createSingleSelect } from "../../../components/multiSelect.js";
 
 // ── Concurrency knob ─────────────────────────────────────────────────
-const CONCURRENCY = 10;
+const CONCURRENCY = 5;
+const MAX_RETRIES  = 3;
 
 // ── Column definitions ───────────────────────────────────────────────
 const COLUMNS = [
@@ -368,23 +369,19 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
         <div class="ts-chart-legend">
           <span class="ts-legend-item ts-legend-found">Transcript Found</span>
           <span class="ts-legend-item ts-legend-none">No Transcript</span>
+          <span class="ts-legend-item ts-legend-error">Error</span>
           <span class="ts-legend-item ts-legend-unchecked">Not Checked</span>
         </div>
       </div>
       <div class="ts-stacked-bar" id="tsStackedBar">
         <div class="ts-bar-found"     id="tsBarFound"     style="width:0%"></div>
         <div class="ts-bar-none"      id="tsBarNone"      style="width:0%"></div>
-        <div class="ts-bar-unchecked" id="tsBarUnchecked" style="width:100%"></div>
-      </div>
-      <div class="ts-chart-counts" id="tsChartCounts"></div>
-    </div>
-
-    <!-- Transcript filter toggle -->
-    <div class="ts-filter-bar" id="tsFilterBar" style="display:none">
+        <div class="ts-bar-error"     id="tsBarError"     style="width:0%"></div>
       <span class="ts-filter-label">Show:</span>
       <button class="ts-filter-btn ts-filter-active" data-filter="all">All</button>
       <button class="ts-filter-btn" data-filter="true">Transcript Found</button>
       <button class="ts-filter-btn" data-filter="false">No Transcript</button>
+      <button class="ts-filter-btn" data-filter="error">Error</button>
       <button class="ts-filter-btn" data-filter="unchecked">Not Checked</button>
     </div>
 
@@ -424,6 +421,7 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
   const $chartWrap    = el.querySelector("#tsChartWrap");
   const $barFound     = el.querySelector("#tsBarFound");
   const $barNone      = el.querySelector("#tsBarNone");
+  const $barError     = el.querySelector("#tsBarError");
   const $barUnchecked = el.querySelector("#tsBarUnchecked");
   const $chartCounts  = el.querySelector("#tsChartCounts");
   const $filterBar    = el.querySelector("#tsFilterBar");
@@ -478,20 +476,24 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
 
     const found     = rows.filter(r => r.transcriptStatus === TS.TRUE).length;
     const notFound  = rows.filter(r => r.transcriptStatus === TS.FALSE).length;
-    const unchecked = total - found - notFound;
+    const errored   = rows.filter(r => r.transcriptStatus === TS.ERROR).length;
+    const unchecked = total - found - notFound - errored;
 
     const pFound     = (found     / total * 100).toFixed(1);
     const pNone      = (notFound  / total * 100).toFixed(1);
+    const pError     = (errored   / total * 100).toFixed(1);
     const pUnchecked = (unchecked / total * 100).toFixed(1);
 
     $barFound.style.width     = `${pFound}%`;
     $barNone.style.width      = `${pNone}%`;
+    $barError.style.width     = `${pError}%`;
     $barUnchecked.style.width = `${pUnchecked}%`;
 
     $chartCounts.innerHTML = `
       <span class="ts-count-found">${found} found (${pFound}%)</span>
       <span class="ts-count-none">${notFound} none (${pNone}%)</span>
-      <span class="ts-count-unchecked">${unchecked} not checked (${pUnchecked}%)</span>
+      ${errored ? `<span class="ts-count-error">${errored} error (${pError}%)</span>` : ""}
+      ${unchecked ? `<span class="ts-count-unchecked">${unchecked} not checked (${pUnchecked}%)</span>` : ""}
     `;
     $chartWrap.style.display = "";
   }
@@ -520,9 +522,10 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
 
   // ── Render table rows ─────────────────────────────────
   function getVisibleRows() {
-    if (transcriptFilter === "all") return rows;
+    if (transcriptFilter === "all")       return rows;
     if (transcriptFilter === "true")      return rows.filter(r => r.transcriptStatus === TS.TRUE);
     if (transcriptFilter === "false")     return rows.filter(r => r.transcriptStatus === TS.FALSE);
+    if (transcriptFilter === "error")     return rows.filter(r => r.transcriptStatus === TS.ERROR);
     if (transcriptFilter === "unchecked") return rows.filter(r => r.transcriptStatus === TS.UNCHECKED || r.transcriptStatus === TS.CHECKING);
     return rows;
   }
@@ -725,8 +728,21 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
         await Promise.all(batch.map(async (row) => {
           if (signal.aborted) return;
           try {
-            const convDetail = await api.proxyGenesys(orgId, "GET",
-              `/api/v2/conversations/${row.conversationId}`);
+            // Retry loop for rate-limited calls
+            let convDetail;
+            for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+              try {
+                convDetail = await api.proxyGenesys(orgId, "GET",
+                  `/api/v2/conversations/${row.conversationId}`);
+                break;
+              } catch (err) {
+                if (err.status === 429 && attempt < MAX_RETRIES - 1) {
+                  await sleep(2000 * (attempt + 1));
+                } else {
+                  throw err;
+                }
+              }
+            }
 
             const commId = extractCustomerCommunicationId(convDetail, row.mediaType);
             row._communicationId = commId;
@@ -734,22 +750,30 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
             if (!commId) {
               row.transcriptStatus    = TS.FALSE;
               row.transcriptCheckedAt = formatDateTime(new Date());
-              return;
-            }
-
-            // Check if transcript URL exists (200 = exists, 404 = does not)
-            try {
-              await api.proxyGenesys(orgId, "GET",
-                `/api/v2/speechandtextanalytics/conversations/${row.conversationId}/communications/${commId}/transcripturl`);
-              row.transcriptStatus    = TS.TRUE;
-              row.transcriptCheckedAt = formatDateTime(new Date());
-            } catch (err) {
-              if (err.status === 404) {
-                row.transcriptStatus    = TS.FALSE;
-                row.transcriptCheckedAt = formatDateTime(new Date());
-              } else {
-                row.transcriptStatus    = TS.ERROR;
-                row.transcriptCheckedAt = formatDateTime(new Date());
+            } else {
+              // Check if transcript URL exists (200 = exists, 404 = does not)
+              let staAttempts = 0;
+              while (staAttempts < MAX_RETRIES) {
+                try {
+                  await api.proxyGenesys(orgId, "GET",
+                    `/api/v2/speechandtextanalytics/conversations/${row.conversationId}/communications/${commId}/transcripturl`);
+                  row.transcriptStatus    = TS.TRUE;
+                  row.transcriptCheckedAt = formatDateTime(new Date());
+                  break;
+                } catch (err) {
+                  if (err.status === 404) {
+                    row.transcriptStatus    = TS.FALSE;
+                    row.transcriptCheckedAt = formatDateTime(new Date());
+                    break;
+                  } else if (err.status === 429 && staAttempts < MAX_RETRIES - 1) {
+                    staAttempts++;
+                    await sleep(2000 * staAttempts);
+                  } else {
+                    row.transcriptStatus    = TS.ERROR;
+                    row.transcriptCheckedAt = formatDateTime(new Date());
+                    break;
+                  }
+                }
               }
             }
           } catch (err) {
@@ -775,8 +799,10 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
       if (signal.aborted) {
         setStatus(STATUS.cancelled);
       } else {
-        const found = rows.filter(r => r.transcriptStatus === TS.TRUE).length;
-        setStatus(STATUS.done(found, total), "success");
+        const found   = rows.filter(r => r.transcriptStatus === TS.TRUE).length;
+        const errored = rows.filter(r => r.transcriptStatus === TS.ERROR).length;
+        const doneSuffix = errored ? ` (${errored} error${errored !== 1 ? "s" : ""} — retry may help)` : "";
+        setStatus(STATUS.done(found, total) + doneSuffix, errored ? "" : "success");
       }
 
     } catch (err) {
