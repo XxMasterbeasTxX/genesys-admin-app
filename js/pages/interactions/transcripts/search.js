@@ -377,6 +377,13 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
         <div class="ts-bar-found"     id="tsBarFound"     style="width:0%"></div>
         <div class="ts-bar-none"      id="tsBarNone"      style="width:0%"></div>
         <div class="ts-bar-error"     id="tsBarError"     style="width:0%"></div>
+        <div class="ts-bar-unchecked" id="tsBarUnchecked" style="width:100%"></div>
+      </div>
+      <div class="ts-chart-counts" id="tsChartCounts"></div>
+    </div>
+
+    <!-- Transcript filter toggle -->
+    <div class="ts-filter-bar" id="tsFilterBar" style="display:none">
       <span class="ts-filter-label">Show:</span>
       <button class="ts-filter-btn ts-filter-active" data-filter="all">All</button>
       <button class="ts-filter-btn" data-filter="true">Transcript Found</button>
