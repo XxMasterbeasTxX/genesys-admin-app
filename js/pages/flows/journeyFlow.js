@@ -286,6 +286,10 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   let focusedNodeId  = null;
   let vp = { tx: 0, ty: 0, s: 1 };   // pan / zoom state
 
+  // Client-side category cache: keyed by category string → { elements, dateStart, dateEnd }
+  let categoryCache = {};
+  let lastLoadedFlowId = null;
+
   function setStatus(msg, cls = "") {
     $status.textContent = msg;
     $status.className = "jf-status" + (cls ? ` jf-status--${cls}` : "");
@@ -364,6 +368,53 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   setTimeout(pollOrg, 100);
 
   // ── Load journey data ──────────────────────────────────────────────────────
+
+  const CATEGORIES = ["All","Abandoned","AgentEscalation","Complete","Disconnect","Error","RecognitionFailure","Transfer"];
+
+  /** Fetch all category results in parallel and cache them. */
+  async function fetchAllCategories(org, flowId) {
+    setStatus("Querying journey flow paths (all categories)…");
+    const results = await Promise.all(
+      CATEGORIES.map(cat =>
+        api.proxyGenesys(org.id, "POST", "/api/v2/journey/flows/paths/query", {
+          body: { category: cat, flows: [{ id: flowId }] },
+        }).then(resp => ({ cat, resp }))
+      )
+    );
+    categoryCache = {};
+    for (const { cat, resp } of results) {
+      categoryCache[cat] = {
+        elements:  resp.elements || {},
+        dateStart: resp.dateStart,
+        dateEnd:   resp.dateEnd,
+      };
+    }
+    lastLoadedFlowId = flowId;
+  }
+
+  /** Render the currently selected category from cache. */
+  function showCategory(cat) {
+    const cached = categoryCache[cat];
+    if (!cached || Object.keys(cached.elements).length === 0) {
+      $canvas.innerHTML = `<div class="jf-empty">No journey path data for category "${cat}".</div>`;
+      $meta.textContent = "";
+      setStatus("");
+      return;
+    }
+    elements = cached.elements;
+
+    const dateStart = cached.dateStart ? cached.dateStart.slice(0, 10) : "–";
+    const dateEnd   = cached.dateEnd   ? cached.dateEnd.slice(0, 10)   : "–";
+    const rootNode  = Object.values(elements).find(n => n.type === "Root");
+    const total     = rootNode?.count ?? 0;
+    $meta.textContent = `${dateStart} → ${dateEnd}   ·   ${total.toLocaleString()} paths`;
+
+    focusedNodeId = null;
+    renderDiagram();
+    setStatus("");
+    $resetBtn.disabled = false;
+  }
+
   $loadBtn.addEventListener("click", async () => {
     const org = orgContext?.getDetails?.();
     if (!org || !selectedFlow) return;
@@ -372,27 +423,12 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
     $resetBtn.disabled = true;
     $canvas.innerHTML = `<div class="jf-empty">Loading…</div>`;
     $meta.textContent = "";
-    setStatus("Querying journey flow paths…");
 
     try {
-      // 1. Path query
-      const pathResp = await api.proxyGenesys(org.id, "POST",
-        "/api/v2/journey/flows/paths/query", {
-          body: {
-            category: $category.value,
-            flows: [{ id: selectedFlow.id }],
-          },
-        });
+      // Fetch all categories in parallel
+      await fetchAllCategories(org, selectedFlow.id);
 
-      elements = pathResp.elements || {};
-      if (Object.keys(elements).length === 0) {
-        $canvas.innerHTML = `<div class="jf-empty">No journey path data found for this flow.</div>`;
-        setStatus("");
-        $loadBtn.disabled = false;
-        return;
-      }
-
-      // 2. Milestone + outcome names in parallel
+      // Resolve milestone + outcome names
       setStatus("Resolving names…");
       const [mResp, oResp] = await Promise.all([
         api.proxyGenesys(org.id, "GET", "/api/v2/flows/milestones", { query: { pageSize: "200" } }),
@@ -403,24 +439,20 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       outcomeNames = {};
       for (const o of (oResp.entities || [])) outcomeNames[o.id] = o.name;
 
-      // 3. Date range from response
-      const dateStart = pathResp.dateStart ? pathResp.dateStart.slice(0, 10) : "–";
-      const dateEnd   = pathResp.dateEnd   ? pathResp.dateEnd.slice(0, 10)   : "–";
-      const rootNode  = Object.values(elements).find(n => n.type === "Root");
-      const total     = rootNode?.count ?? 0;
-      $meta.textContent = `${dateStart} → ${dateEnd}   ·   ${total.toLocaleString()} paths`;
-
-      // 4. Render
-      focusedNodeId = null;
-      renderDiagram();
-      setStatus("");
-      $resetBtn.disabled = false;
+      // Show the currently selected category
+      showCategory($category.value);
     } catch (err) {
       $canvas.innerHTML = `<div class="jf-empty">Error: ${escapeHtml(err.message)}</div>`;
       setStatus(`Error: ${err.message}`, "error");
     } finally {
       $loadBtn.disabled = false;
     }
+  });
+
+  // ── Client-side category switch ────────────────────────────────────────────
+  $category.addEventListener("change", () => {
+    if (!lastLoadedFlowId || !Object.keys(categoryCache).length) return;
+    showCategory($category.value);
   });
 
   // ── Reset layout ─────────────────────────────────────────────────────────
