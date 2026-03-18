@@ -156,7 +156,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       .jf-btn:disabled { opacity:.45; cursor:not-allowed; }
       .jf-btn-primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
       .jf-btn-primary:hover:not(:disabled) { background:#2563eb; border-color:#2563eb; }
-      .jf-meta   { font-size:12px; color:var(--muted); }
+      .jf-meta   { font-size:13px; color:var(--text); font-weight:600; letter-spacing:.01em; }
       .jf-status { font-size:13px; color:var(--muted); min-height:20px; }
       .jf-status--error   { color:#f87171; }
       .jf-canvas { height:880px; min-height:300px; flex:none; position:relative; overflow:hidden;
@@ -211,7 +211,6 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
         <button class="jf-btn jf-btn-primary" id="jfLoadBtn" disabled>Load</button>
         <button class="jf-btn" id="jfResetBtn" disabled>Reset Layout</button>
         <span class="jf-meta" id="jfMeta"></span>
-        <button class="jf-btn" id="jfExportBtn" disabled style="margin-left:auto">Export PDF</button>
       </div>
       <div class="jf-status" id="jfStatus"></div>
       <div class="jf-canvas" id="jfCanvas">
@@ -230,7 +229,6 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   const $loadBtn   = el.querySelector("#jfLoadBtn");
   const $resetBtn     = el.querySelector("#jfResetBtn");
   const $meta         = el.querySelector("#jfMeta");
-  const $exportBtn    = el.querySelector("#jfExportBtn");
   const $resizeHandle = el.querySelector("#jfResizeHandle");
 
   // ── Canvas resize drag ─────────────────────────────────────────────────────
@@ -335,7 +333,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       do {
         const r = await api.proxyGenesys(org.id, "GET", "/api/v2/flows", {
           query: { pageSize: "200", pageNumber: String(page),
-                   type: "INBOUNDCALL,INBOUNDCHAT,INBOUNDEMAIL,INBOUNDSHORTMESSAGE,OUTBOUNDCALL,COMMONMODULE,INQUEUECALL" },
+                   type: "INBOUNDCALL,INBOUNDCHAT,INBOUNDEMAIL,INBOUNDSHORTMESSAGE,OUTBOUNDCALL,COMMONMODULE,INQUEUECALL,BOT,DIGITALBOT" },
         });
         pageCount = r.pageCount ?? 1;
         for (const f of (r.entities || [])) flows.push({ id: f.id, name: f.name || f.id, type: f.type });
@@ -417,82 +415,11 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       renderDiagram();
       setStatus("");
       $resetBtn.disabled = false;
-      $exportBtn.disabled = false;
     } catch (err) {
       $canvas.innerHTML = `<div class="jf-empty">Error: ${escapeHtml(err.message)}</div>`;
       setStatus(`Error: ${err.message}`, "error");
     } finally {
       $loadBtn.disabled = false;
-    }
-  });
-
-  // ── Export PDF ────────────────────────────────────────────────────────────
-  $exportBtn.addEventListener("click", async () => {
-    const svgEl = $canvas.querySelector("svg");
-    if (!svgEl) return;
-
-    if (typeof window.jspdf === "undefined" || typeof window.svg2pdf === "undefined") {
-      setStatus("PDF library not loaded — please reload the page.", "error");
-      return;
-    }
-
-    $exportBtn.disabled = true;
-    setStatus("Generating PDF…");
-
-    try {
-      const svgW  = svgEl.viewBox.baseVal.width  || $canvas.clientWidth  || 1200;
-      const svgH  = svgEl.viewBox.baseVal.height || $canvas.clientHeight || 700;
-
-      // A4 landscape in mm
-      const PAGE_W = 297, PAGE_H = 210, MARGIN = 10;
-      const drawW  = PAGE_W - MARGIN * 2;
-      const drawH  = PAGE_H - MARGIN * 2 - 8; // 8mm for title
-      const scale  = Math.min(drawW / svgW, drawH / svgH);
-
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-
-      // Title
-      const flowName = selectedFlow?.name || "Journey Flow";
-      doc.setFontSize(9);
-      doc.setTextColor(180, 180, 200);
-      doc.text(`Journey Flow — ${flowName} — ${$meta.textContent}`, MARGIN, MARGIN + 4);
-
-      // Clone SVG so we don't mutate the live diagram
-      const clone = svgEl.cloneNode(true);
-      clone.setAttribute("width",  String(svgW));
-      clone.setAttribute("height", String(svgH));
-      document.body.appendChild(clone); // must be in DOM for svg2pdf
-
-      await doc.svg(clone, {
-        x: MARGIN,
-        y: MARGIN + 8,
-        width:  svgW * scale,
-        height: svgH * scale,
-      });
-
-      document.body.removeChild(clone);
-
-      const b64      = doc.output("datauristring").split(",")[1];
-      const filename = `JourneyFlow_${(flowName).replace(/[^a-zA-Z0-9_-]/g, "_")}_${new Date().toISOString().slice(0,10)}.pdf`;
-
-      const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-      window._xlsxDownload = window._xlsxDownload || {};
-      window._xlsxDownload[key] = { filename, b64 };
-
-      const helperUrl = new URL("download.html", document.baseURI);
-      helperUrl.hash  = key;
-      const popup = window.open(helperUrl.href, "_blank");
-      if (!popup) {
-        delete window._xlsxDownload[key];
-        setStatus("Pop-up blocked — please allow pop-ups for this site.", "error");
-      } else {
-        setStatus("");
-      }
-    } catch (err) {
-      setStatus(`PDF export failed: ${err.message}`, "error");
-    } finally {
-      $exportBtn.disabled = false;
     }
   });
 
