@@ -229,6 +229,14 @@ export const NAV_TREE = [
     ],
   },
   {
+    label: "Flows",
+    path: "flows",
+    enabled: true,
+    children: [
+      { label: "Journey Flow", path: "journey", enabled: true, access: "flows.journey" },
+    ],
+  },
+  {
     label: "Audit",
     path: "audit",
     enabled: true,

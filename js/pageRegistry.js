@@ -143,6 +143,10 @@ const registry = {
   "/roles/copy/between-orgs": (ctx) =>
     import("./pages/roles/copy/copyBetweenOrgs.js").then((m) => m.default(ctx)),
 
+  // ── Flows ─────────────────────────────────────────────
+  "/flows/journey": (ctx) =>
+    import("./pages/flows/journeyFlow.js").then((m) => m.default(ctx)),
+
   // ── Audit ─────────────────────────────────────────────
   "/audit/search": (ctx) =>
     import("./pages/audit/search.js").then((m) => m.default(ctx)),
