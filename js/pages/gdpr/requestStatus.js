@@ -37,6 +37,9 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
+  // Track current org for download handler
+  let currentOrg = null;
+
   el.innerHTML = `
     <h2>GDPR \u2014 Request Status</h2>
     <p class="page-desc">
@@ -61,6 +64,7 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
       $statusWrap.innerHTML = `<p class="gdpr-empty">Please select a customer org first.</p>`;
       return;
     }
+    currentOrg = org;
 
     $loadBtn.disabled = true;
     $statusWrap.innerHTML = `<p class="gdpr-loading">Loading\u2026</p>`;
@@ -113,7 +117,7 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
                    : [];
         if (type === "GDPR_EXPORT" && urls.length) {
           detailsHtml = urls.map((url, i) =>
-            `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="gdpr-download-link">` +
+            `<a href="#" class="gdpr-download-link" data-gdpr-url="${escapeHtml(url)}">` +
             `Download${urls.length > 1 ? ` (${i + 1})` : ""}</a>`
           ).join("<br>");
         } else if (type === "GDPR_UPDATE" && r.replacements?.length) {
@@ -157,6 +161,47 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
         </div>
         <p class="gdpr-last-loaded">Last loaded: ${new Date().toLocaleTimeString()}</p>
       `;
+
+      // Attach download handlers — fetch via proxy with auth, then trigger browser download
+      $statusWrap.querySelectorAll("a[data-gdpr-url]").forEach(link => {
+        link.addEventListener("click", async (e) => {
+          e.preventDefault();
+          const url = link.dataset.gdprUrl;
+          if (!currentOrg) return;
+          link.textContent = "Downloading…";
+          link.style.pointerEvents = "none";
+          try {
+            // Extract the API path from the full URL (strip the region host)
+            let apiPath = url;
+            try { apiPath = new URL(url).pathname + new URL(url).search; } catch { /* already a path */ }
+            const resp = await api.proxyGenesysRaw
+              ? api.proxyGenesysRaw(currentOrg.id, "GET", apiPath)
+              : await api.proxyGenesys(currentOrg.id, "GET", apiPath);
+            // If the response is a JSON with a downloadUrl or presignedUrl, open that
+            if (resp?.downloadUrl) {
+              window.open(resp.downloadUrl, "_blank");
+            } else if (resp?.presignedUrl) {
+              window.open(resp.presignedUrl, "_blank");
+            } else if (resp?.url) {
+              window.open(resp.url, "_blank");
+            } else {
+              // Response might be the data itself — try to download as JSON
+              const blob = new Blob([JSON.stringify(resp, null, 2)], { type: "application/json" });
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = `gdpr_export_${Date.now()}.json`;
+              a.click();
+              URL.revokeObjectURL(a.href);
+            }
+          } catch (err) {
+            alert(`Download failed: ${err.message}`);
+          } finally {
+            link.textContent = link.dataset.originalText || "Download";
+            link.style.pointerEvents = "";
+          }
+        });
+        link.dataset.originalText = link.textContent;
+      });
     } catch (err) {
       $statusWrap.innerHTML = `<p class="gdpr-empty gdpr-empty--error">Error loading requests: ${escapeHtml(err.message)}</p>`;
     } finally {
