@@ -259,6 +259,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   let elements      = {};      // the raw API elements map
   let milestoneNames = {};
   let outcomeNames   = {};
+  let focusedNodeId  = null;
 
   function setStatus(msg, cls = "") {
     $status.textContent = msg;
@@ -385,6 +386,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       $meta.textContent = `${dateStart} → ${dateEnd}   ·   ${total.toLocaleString()} paths`;
 
       // 4. Render
+      focusedNodeId = null;
       renderDiagram();
       setStatus("");
       $resetBtn.disabled = false;
@@ -398,8 +400,12 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
 
   // ── Reset layout ─────────────────────────────────────────────────────────
   $resetBtn.addEventListener("click", () => {
+    focusedNodeId = null;
     positions = JSON.parse(JSON.stringify(defaultPos));
+    const _svg = $canvas.querySelector("svg");
+    if (_svg) clearFocusVisuals(_svg);
     redrawAll();
+    setStatus("");
   });
 
   // ── Diagram rendering ─────────────────────────────────────────────────────
@@ -528,13 +534,14 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
 
       nodeG.appendChild(g);
 
-      // ── Drag ───────────────────────────────────────────────────────────
-      let dragging = false, ox = 0, oy = 0;
+      // ── Drag / Click ────────────────────────────────────────────────────
+      let dragging = false, ox = 0, oy = 0, startCX = 0, startCY = 0;
 
       g.addEventListener("mousedown", e => {
         if (e.button !== 0) return;
         e.preventDefault();
         dragging = true;
+        startCX = e.clientX; startCY = e.clientY;
         const svgRect = svg.getBoundingClientRect();
         const scaleX  = (svg.viewBox.baseVal.width  || W) / svgRect.width;
         const scaleY  = (svg.viewBox.baseVal.height || H) / svgRect.height;
@@ -542,6 +549,12 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
         oy = (e.clientY - svgRect.top)  * scaleY - positions[id].y;
         $tooltip.style.display = "none";
         g.style.cursor = "grabbing";
+      });
+
+      g.addEventListener("mouseup", e => {
+        if (!dragging) return;
+        const dx = e.clientX - startCX, dy = e.clientY - startCY;
+        if (Math.sqrt(dx * dx + dy * dy) < 5) applyFocus(id);
       });
 
       svg.addEventListener("mousemove", e => {
@@ -633,6 +646,64 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       const r2 = radius(elements[edge.to]?.count   || 0);
       pathEl.setAttribute("d", bezierPath(p1.x + r1, p1.y, p2.x - r2, p2.y));
     }
+  }
+
+  // ── Focus helpers ─────────────────────────────────────────────────────────
+  function clearFocusVisuals(svg) {
+    for (const id of Object.keys(elements)) {
+      const gEl = svg.querySelector(`#jf-node-${id}`);
+      if (gEl) gEl.removeAttribute("opacity");
+    }
+    for (const edge of buildEdges(elements)) {
+      const p = svg.querySelector(`#jf-edge-${edge.from}-${edge.to}`);
+      if (p) p.removeAttribute("opacity");
+    }
+  }
+
+  function applyFocus(nodeId) {
+    const svg = $canvas.querySelector("svg");
+    if (!svg) return;
+    // Toggle off if clicking the already-focused node
+    if (focusedNodeId === nodeId) {
+      focusedNodeId = null;
+      clearFocusVisuals(svg);
+      setStatus("");
+      return;
+    }
+    focusedNodeId = nodeId;
+
+    // Collect ancestors (walk parentId chain)
+    const inPath = new Set([nodeId]);
+    let cur = nodeId;
+    while (elements[cur]?.parentId) {
+      inPath.add(elements[cur].parentId);
+      cur = elements[cur].parentId;
+    }
+    // Collect descendants (BFS)
+    const queue = [nodeId];
+    while (queue.length) {
+      const parent = queue.shift();
+      for (const [cid, node] of Object.entries(elements)) {
+        if (node.parentId === parent && !inPath.has(cid)) {
+          inPath.add(cid);
+          queue.push(cid);
+        }
+      }
+    }
+
+    // Apply opacity to nodes
+    for (const id of Object.keys(elements)) {
+      const gEl = svg.querySelector(`#jf-node-${id}`);
+      if (gEl) gEl.setAttribute("opacity", inPath.has(id) ? "1" : "0.08");
+    }
+    // Apply opacity to edges
+    for (const edge of buildEdges(elements)) {
+      const p = svg.querySelector(`#jf-edge-${edge.from}-${edge.to}`);
+      if (p) p.setAttribute("opacity", (inPath.has(edge.from) && inPath.has(edge.to)) ? "1" : "0.04");
+    }
+
+    const label = nodeLabel(elements[nodeId], milestoneNames, outcomeNames);
+    setStatus(`Showing path for "${label}" — click node again or Reset Layout to show all`);
   }
 
   return el;
