@@ -106,12 +106,15 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
 
         // Details — contextual per request type
         let detailsHtml = "\u2014";
-        const detail = detailMap.get(r.id);
-        const resultsUrl = detail?.resultsUrl || r.resultsUrl;
-        if (type === "GDPR_EXPORT" && resultsUrl?.length) {
-          detailsHtml = resultsUrl.map((url, i) =>
+        const detail = detailMap.get(r.id) || r;
+        // API returns resultsUrl (single string) and/or resultsUrls (array of strings)
+        const urls = detail.resultsUrls?.length ? detail.resultsUrls
+                   : detail.resultsUrl           ? [detail.resultsUrl]
+                   : [];
+        if (type === "GDPR_EXPORT" && urls.length) {
+          detailsHtml = urls.map((url, i) =>
             `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="gdpr-download-link">` +
-            `Download${resultsUrl.length > 1 ? ` (${i + 1})` : ""}</a>`
+            `Download${urls.length > 1 ? ` (${i + 1})` : ""}</a>`
           ).join("<br>");
         } else if (type === "GDPR_UPDATE" && r.replacements?.length) {
           const fieldList = r.replacements.map(rep => escapeHtml(rep.fieldName ?? "?")).join(", ");
