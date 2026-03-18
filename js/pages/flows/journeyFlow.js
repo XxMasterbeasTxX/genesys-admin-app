@@ -431,7 +431,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
     const svgEl = $canvas.querySelector("svg");
     if (!svgEl) return;
 
-    if (typeof window.jspdf === "undefined" || typeof svg2pdf === "undefined") {
+    if (typeof window.jspdf === "undefined" || typeof window.svg2pdf === "undefined") {
       setStatus("PDF library not loaded — please reload the page.", "error");
       return;
     }
@@ -464,7 +464,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       clone.setAttribute("height", String(svgH));
       document.body.appendChild(clone); // must be in DOM for svg2pdf
 
-      await svg2pdf(clone, doc, {
+      await doc.svg(clone, {
         x: MARGIN,
         y: MARGIN + 8,
         width:  svgW * scale,
