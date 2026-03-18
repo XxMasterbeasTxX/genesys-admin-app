@@ -157,7 +157,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       .jf-meta   { font-size:12px; color:var(--muted); }
       .jf-status { font-size:13px; color:var(--muted); min-height:20px; }
       .jf-status--error   { color:#f87171; }
-      .jf-canvas { height:680px; min-height:300px; flex:none; position:relative; overflow:hidden;
+      .jf-canvas { height:880px; min-height:300px; flex:none; position:relative; overflow:hidden;
                    background:var(--bg,#1a1f2e); border:1px solid var(--border);
                    border-radius:12px 12px 0 0; }
       .jf-canvas svg { width:100%; height:100%; display:block; }
