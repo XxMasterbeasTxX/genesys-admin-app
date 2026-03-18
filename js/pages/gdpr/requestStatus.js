@@ -194,10 +194,21 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
               URL.revokeObjectURL(a.href);
             }
           } catch (err) {
-            alert(`Download failed: ${err.message}`);
+            const msg = err.message || "";
+            if (msg.includes("not be found") || msg.includes("not found") || msg.includes("expired")) {
+              link.textContent = "Expired";
+              link.style.pointerEvents = "none";
+              link.style.opacity = "0.5";
+              link.title = "This download has expired. Submit a new GDPR Access request.";
+              return;  // skip the finally restore
+            }
+            alert(`Download failed: ${msg}`);
           } finally {
-            link.textContent = link.dataset.originalText || "Download";
-            link.style.pointerEvents = "";
+            // Only restore if not marked as expired
+            if (link.textContent !== "Expired") {
+              link.textContent = link.dataset.originalText || "Download";
+              link.style.pointerEvents = "";
+            }
           }
         });
         link.dataset.originalText = link.textContent;
