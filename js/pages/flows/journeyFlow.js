@@ -86,13 +86,15 @@ function computeLayout(elements, svgW, svgH) {
 
   const PAD_X  = 90;
   const PAD_Y  = 60;
-  const colW   = (svgW - PAD_X * 2) / Math.max(maxDepth, 1);
+  const COL_W_MIN = 220;
+  const ROW_H_MIN = 110;
+  const colW   = Math.max((svgW - PAD_X * 2) / Math.max(maxDepth, 1), COL_W_MIN);
   const positions = {};
 
   for (const [depthStr, colIds] of Object.entries(byDepth)) {
     const d   = Number(depthStr);
     const n   = colIds.length;
-    const rowH = (svgH - PAD_Y * 2) / Math.max(n - 1, 1);
+    const rowH = Math.max((svgH - PAD_Y * 2) / Math.max(n - 1, 1), ROW_H_MIN);
     colIds.forEach((id, i) => {
       positions[id] = {
         x: PAD_X + d * colW,
@@ -243,11 +245,18 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
         requestAnimationFrame(() => {
           rafPending = false;
           if (!$canvas.querySelector("svg") || !Object.keys(elements).length) return;
+          vp = { tx: 0, ty: 0, s: 1 };
           const W = $canvas.clientWidth  || 900;
           const H = $canvas.clientHeight || 300;
           const layout = computeLayout(elements, W, H);
           positions   = layout.positions;
           defaultPos  = JSON.parse(JSON.stringify(positions));
+          const _svg = $canvas.querySelector("svg");
+          if (_svg) {
+            _svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+            const _vpG = _svg.querySelector("#jf-vp");
+            if (_vpG) _vpG.setAttribute("transform", "translate(0,0) scale(1)");
+          }
           redrawAll();
           if (focusedNodeId) applyFocus(focusedNodeId);
         });
@@ -275,6 +284,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   let milestoneNames = {};
   let outcomeNames   = {};
   let focusedNodeId  = null;
+  let vp = { tx: 0, ty: 0, s: 1 };   // pan / zoom state
 
   function setStatus(msg, cls = "") {
     $status.textContent = msg;
@@ -416,9 +426,17 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   // ── Reset layout ─────────────────────────────────────────────────────────
   $resetBtn.addEventListener("click", () => {
     focusedNodeId = null;
+    vp = { tx: 0, ty: 0, s: 1 };
     positions = JSON.parse(JSON.stringify(defaultPos));
     const _svg = $canvas.querySelector("svg");
-    if (_svg) clearFocusVisuals(_svg);
+    if (_svg) {
+      clearFocusVisuals(_svg);
+      const _vpG = _svg.querySelector("#jf-vp");
+      if (_vpG) _vpG.setAttribute("transform", "translate(0,0) scale(1)");
+      const W = $canvas.clientWidth  || 900;
+      const H = $canvas.clientHeight || 560;
+      _svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    }
     redrawAll();
     setStatus("");
   });
@@ -428,6 +446,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
     const W = $canvas.clientWidth  || 900;
     const H = $canvas.clientHeight || 560;
 
+    vp = { tx: 0, ty: 0, s: 1 };
     const layout = computeLayout(elements, W, H);
     positions   = layout.positions;
     defaultPos  = JSON.parse(JSON.stringify(positions));
@@ -446,17 +465,62 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
     `;
     svg.appendChild(defs);
 
+    // ── Viewport group (pan / zoom target) ─────────────────────────────
+    const vpG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    vpG.setAttribute("id", "jf-vp");
+    vpG.setAttribute("transform", `translate(${vp.tx},${vp.ty}) scale(${vp.s})`);
+    svg.appendChild(vpG);
+
     // ── Edge layer ──────────────────────────────────────────────────────
     const edgeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
     edgeG.setAttribute("id", "jf-edges");
-    svg.appendChild(edgeG);
+    vpG.appendChild(edgeG);
 
     // ── Node layer ─────────────────────────────────────────────────────
     const nodeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
     nodeG.setAttribute("id", "jf-nodes");
-    svg.appendChild(nodeG);
+    vpG.appendChild(nodeG);
 
     $canvas.appendChild(svg);
+    svg.style.cursor = "grab";
+
+    // ── Wheel zoom ──────────────────────────────────────────────────────
+    svg.addEventListener("wheel", e => {
+      e.preventDefault();
+      const sr = svg.getBoundingClientRect();
+      const rx = (svg.viewBox.baseVal.width  || W) / sr.width;
+      const ry = (svg.viewBox.baseVal.height || H) / sr.height;
+      const sx = (e.clientX - sr.left) * rx;
+      const sy = (e.clientY - sr.top)  * ry;
+      const factor = e.deltaY < 0 ? 1.12 : (1 / 1.12);
+      const ns = Math.min(Math.max(vp.s * factor, 0.08), 8);
+      vp.tx = sx * (1 - ns / vp.s) + vp.tx * (ns / vp.s);
+      vp.ty = sy * (1 - ns / vp.s) + vp.ty * (ns / vp.s);
+      vp.s  = ns;
+      vpG.setAttribute("transform", `translate(${vp.tx},${vp.ty}) scale(${vp.s})`);
+    }, { passive: false });
+
+    // ── Background pan ──────────────────────────────────────────────────
+    let panning = false, panSX = 0, panSY = 0, panSTx = 0, panSTy = 0;
+    svg.addEventListener("mousedown", e => {
+      if (e.button !== 0) return;
+      panning = true;
+      panSX = e.clientX; panSY = e.clientY;
+      panSTx = vp.tx;    panSTy = vp.ty;
+      svg.style.cursor = "grabbing";
+      e.preventDefault();
+    });
+    svg.addEventListener("mousemove", e => {
+      if (!panning) return;
+      const sr = svg.getBoundingClientRect();
+      const rx = (svg.viewBox.baseVal.width  || W) / sr.width;
+      const ry = (svg.viewBox.baseVal.height || H) / sr.height;
+      vp.tx = panSTx + (e.clientX - panSX) * rx;
+      vp.ty = panSTy + (e.clientY - panSY) * ry;
+      vpG.setAttribute("transform", `translate(${vp.tx},${vp.ty}) scale(${vp.s})`);
+    });
+    svg.addEventListener("mouseup",    () => { panning = false; svg.style.cursor = "grab"; });
+    svg.addEventListener("mouseleave", () => { panning = false; svg.style.cursor = "grab"; });
 
     const edges     = buildEdges(elements);
     const rootNode  = Object.values(elements).find(n => n.type === "Root");
@@ -555,13 +619,16 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       g.addEventListener("mousedown", e => {
         if (e.button !== 0) return;
         e.preventDefault();
+        e.stopPropagation(); // prevent background pan
         dragging = true;
         startCX = e.clientX; startCY = e.clientY;
-        const svgRect = svg.getBoundingClientRect();
-        const scaleX  = (svg.viewBox.baseVal.width  || W) / svgRect.width;
-        const scaleY  = (svg.viewBox.baseVal.height || H) / svgRect.height;
-        ox = (e.clientX - svgRect.left) * scaleX - positions[id].x;
-        oy = (e.clientY - svgRect.top)  * scaleY - positions[id].y;
+        const sr = svg.getBoundingClientRect();
+        const rx = (svg.viewBox.baseVal.width  || W) / sr.width;
+        const ry = (svg.viewBox.baseVal.height || H) / sr.height;
+        const svgX = (e.clientX - sr.left) * rx;
+        const svgY = (e.clientY - sr.top)  * ry;
+        ox = (svgX - vp.tx) / vp.s - positions[id].x;
+        oy = (svgY - vp.ty) / vp.s - positions[id].y;
         $tooltip.style.display = "none";
         g.style.cursor = "grabbing";
       });
@@ -574,11 +641,13 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
 
       svg.addEventListener("mousemove", e => {
         if (!dragging) return;
-        const svgRect = svg.getBoundingClientRect();
-        const scaleX  = (svg.viewBox.baseVal.width  || W) / svgRect.width;
-        const scaleY  = (svg.viewBox.baseVal.height || H) / svgRect.height;
-        const nx = (e.clientX - svgRect.left) * scaleX - ox;
-        const ny = (e.clientY - svgRect.top)  * scaleY - oy;
+        const sr = svg.getBoundingClientRect();
+        const rx = (svg.viewBox.baseVal.width  || W) / sr.width;
+        const ry = (svg.viewBox.baseVal.height || H) / sr.height;
+        const svgX = (e.clientX - sr.left) * rx;
+        const svgY = (e.clientY - sr.top)  * ry;
+        const nx = (svgX - vp.tx) / vp.s - ox;
+        const ny = (svgY - vp.ty) / vp.s - oy;
         positions[id] = { x: nx, y: ny };
         g.setAttribute("transform", `translate(${nx},${ny})`);
         updateEdgesForNode(id);
