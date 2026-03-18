@@ -29,8 +29,8 @@ import * as gc from "../../../services/genesysApi.js";
 import { createSingleSelect } from "../../../components/multiSelect.js";
 
 // ── Concurrency knob ─────────────────────────────────────────────────
-const CONCURRENCY = 5;
-const MAX_RETRIES  = 3;
+const CONCURRENCY = 3;
+const MAX_RETRIES  = 6;
 
 // ── Column definitions ───────────────────────────────────────────────
 const COLUMNS = [
@@ -744,7 +744,7 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
                 break;
               } catch (err) {
                 if (err.status === 429 && attempt < MAX_RETRIES - 1) {
-                  await sleep(2000 * (attempt + 1));
+                  await sleep(3000 * (attempt + 1) + Math.random() * 1000);
                 } else {
                   throw err;
                 }
@@ -768,13 +768,13 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
                   row.transcriptCheckedAt = formatDateTime(new Date());
                   break;
                 } catch (err) {
-                  if (err.status === 404) {
+                  if (err.status === 404 || err.status === 400 || err.status === 403) {
                     row.transcriptStatus    = TS.FALSE;
                     row.transcriptCheckedAt = formatDateTime(new Date());
                     break;
                   } else if (err.status === 429 && staAttempts < MAX_RETRIES - 1) {
                     staAttempts++;
-                    await sleep(2000 * staAttempts);
+                    await sleep(3000 * staAttempts + Math.random() * 1000);
                   } else {
                     row.transcriptStatus    = TS.ERROR;
                     row.transcriptCheckedAt = formatDateTime(new Date());
@@ -784,7 +784,12 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
               }
             }
           } catch (err) {
-            row.transcriptStatus    = TS.ERROR;
+            // 404 = conversation purged; 400/403 = not accessible — treat as "no transcript"
+            if (err.status === 404 || err.status === 400 || err.status === 403) {
+              row.transcriptStatus    = TS.FALSE;
+            } else {
+              row.transcriptStatus    = TS.ERROR;
+            }
             row.transcriptCheckedAt = formatDateTime(new Date());
           }
 
@@ -797,9 +802,9 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
         renderRows();
         updateChart();
 
-        // Small inter-batch delay to avoid rate limit spikes
+        // Inter-batch delay to stay under rate limits
         if (i + CONCURRENCY < total && !signal.aborted) {
-          await sleep(200);
+          await sleep(600);
         }
       }
 
