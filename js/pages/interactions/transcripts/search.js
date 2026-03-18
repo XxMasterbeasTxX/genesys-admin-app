@@ -29,7 +29,7 @@ import * as gc from "../../../services/genesysApi.js";
 import { createSingleSelect } from "../../../components/multiSelect.js";
 
 // ── Concurrency knob ─────────────────────────────────────────────────
-const CONCURRENCY = 3;
+const CONCURRENCY = 10;
 const MAX_RETRIES  = 6;
 
 // ── Column definitions ───────────────────────────────────────────────
@@ -804,7 +804,7 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
 
         // Inter-batch delay to stay under rate limits
         if (i + CONCURRENCY < total && !signal.aborted) {
-          await sleep(600);
+          await sleep(300);
         }
       }
 
