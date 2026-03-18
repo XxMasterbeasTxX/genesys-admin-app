@@ -35,6 +35,7 @@ All Genesys Cloud calls are proxied through `POST /api/genesys-proxy` on the Azu
 25. [Locations](#25-locations)
 26. [Utilities](#26-utilities)
 27. [Speech & Text Analytics](#27-speech--text-analytics)
+28. [Journey](#28-journey)
 
 ---
 
@@ -290,6 +291,7 @@ Used by: GDPR — Subject Request, GDPR — Request Status
 | GET | `/api/v2/gdpr/subjects` | Search for GDPR data subjects by identifier |
 | POST | `/api/v2/gdpr/requests` | Submit a GDPR data subject request (Articles 15, 16, 17) |
 | GET | `/api/v2/gdpr/requests` | List all previously submitted GDPR requests |
+| GET | `/api/v2/gdpr/requests/{requestId}` | Get a single GDPR request by ID — returns `resultsUrl` (string) and/or `resultsUrls` (array) for fulfilled Access exports; used by Request Status to retrieve download URLs |
 
 ---
 
@@ -439,6 +441,16 @@ Used by: Transcript Search
 | --- | --- | --- |
 | GET | `/api/v2/speechandtextanalytics/conversations/{id}/communications/{commId}/transcripturl` | Check whether a STA transcript exists for a specific communication. HTTP 200 = transcript exists and returns a pre-signed S3 URL; HTTP 404 = no transcript. Called in parallel batches of 10 per conversation result row. |
 | GET | `{s3PreSignedUrl}` | Fetch the full transcript JSON content from AWS S3 using the pre-signed URL returned above. Direct browser request — no Authorization header. Called on-demand when the user expands a row to read the transcript. |
+
+---
+
+## 28. Journey
+
+Used by: Flows — Journey Flow
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/v2/journey/flows/paths/query` | Query journey-flow path data for an Architect flow. Body includes `flowId`, `category` (All/Abandoned/AgentEscalation/Complete/Disconnect/Error/RecognitionFailure/Transfer), and date range. All 8 categories are fetched in parallel on load and cached client-side. |
 
 ---
 
