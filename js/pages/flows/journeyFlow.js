@@ -324,8 +324,8 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       const pathResp = await api.proxyGenesys(org.id, "POST",
         "/api/v2/journey/flows/paths/query", {
           body: {
-            flowFilter: { type: "Flow", flows: [{ id: selectedFlow.id }] },
             category: $category.value,
+            flows: [{ id: selectedFlow.id }],
           },
         });
 
