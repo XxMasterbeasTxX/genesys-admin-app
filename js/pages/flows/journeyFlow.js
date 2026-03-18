@@ -157,9 +157,17 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       .jf-meta   { font-size:12px; color:var(--muted); }
       .jf-status { font-size:13px; color:var(--muted); min-height:20px; }
       .jf-status--error   { color:#f87171; }
-      .jf-canvas { flex:1; min-height:520px; position:relative; overflow:hidden;
-                   background:var(--bg,#1a1f2e); border:1px solid var(--border); border-radius:12px; }
+      .jf-canvas { height:680px; min-height:300px; flex:none; position:relative; overflow:hidden;
+                   background:var(--bg,#1a1f2e); border:1px solid var(--border);
+                   border-radius:12px 12px 0 0; }
       .jf-canvas svg { width:100%; height:100%; display:block; }
+      .jf-resize-handle { height:8px; background:var(--panel); border:1px solid var(--border);
+                          border-top:none; border-radius:0 0 12px 12px; cursor:ns-resize;
+                          display:flex; align-items:center; justify-content:center; }
+      .jf-resize-handle::after { content:''; width:40px; height:3px; border-radius:2px;
+                                  background:var(--border); pointer-events:none; }
+      .jf-resize-handle:hover { background:rgba(59,130,246,.1); }
+      .jf-resize-handle:hover::after { background:#3b82f6; }
       .jf-node        { cursor:grab; }
       .jf-node:active { cursor:grabbing; }
       .jf-node-circle { transition:filter .1s; }
@@ -206,6 +214,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       <div class="jf-canvas" id="jfCanvas">
         <div class="jf-empty">Select a flow above and click Load</div>
       </div>
+      <div class="jf-resize-handle" id="jfResizeHandle" title="Drag to resize"></div>
     </div>
 
     <div class="jf-tooltip" id="jfTooltip" style="display:none"></div>
@@ -216,8 +225,28 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   const $flowList  = el.querySelector("#jfFlowList");
   const $category  = el.querySelector("#jfCategory");
   const $loadBtn   = el.querySelector("#jfLoadBtn");
-  const $resetBtn  = el.querySelector("#jfResetBtn");
-  const $meta      = el.querySelector("#jfMeta");
+  const $resetBtn     = el.querySelector("#jfResetBtn");
+  const $meta         = el.querySelector("#jfMeta");
+  const $resizeHandle = el.querySelector("#jfResizeHandle");
+
+  // ── Canvas resize drag ─────────────────────────────────────────────────────
+  $resizeHandle.addEventListener("mousedown", e => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = $canvas.getBoundingClientRect().height;
+    const onMove = mv => {
+      const newH = Math.max(300, startH + (mv.clientY - startY));
+      $canvas.style.height = newH + "px";
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
   const $status    = el.querySelector("#jfStatus");
   const $canvas    = el.querySelector("#jfCanvas");
   const $tooltip   = el.querySelector("#jfTooltip");
