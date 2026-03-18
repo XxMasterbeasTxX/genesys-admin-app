@@ -234,9 +234,24 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
     e.preventDefault();
     const startY = e.clientY;
     const startH = $canvas.getBoundingClientRect().height;
+    let rafPending = false;
     const onMove = mv => {
       const newH = Math.max(300, startH + (mv.clientY - startY));
       $canvas.style.height = newH + "px";
+      if (!rafPending) {
+        rafPending = true;
+        requestAnimationFrame(() => {
+          rafPending = false;
+          if (!$canvas.querySelector("svg") || !Object.keys(elements).length) return;
+          const W = $canvas.clientWidth  || 900;
+          const H = $canvas.clientHeight || 300;
+          const layout = computeLayout(elements, W, H);
+          positions   = layout.positions;
+          defaultPos  = JSON.parse(JSON.stringify(positions));
+          redrawAll();
+          if (focusedNodeId) applyFocus(focusedNodeId);
+        });
+      }
     };
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
