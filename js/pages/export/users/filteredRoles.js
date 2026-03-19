@@ -371,6 +371,7 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
   helperUrl.hash = key;
   const popup = window.open(helperUrl.href, "_blank");
   if (!popup) { delete window._xlsxDownload[key]; setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error"); }
+  });
 
   // ── Email toggle ──────────────────────────────────────
   $emailChk.addEventListener("change", () => {
