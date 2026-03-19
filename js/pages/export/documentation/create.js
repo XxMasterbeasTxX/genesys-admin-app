@@ -257,11 +257,15 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
     if (!lastResult) return;
 
     const { filename, base64 } = lastResult;
+    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    window._xlsxDownload = window._xlsxDownload || {};
+    window._xlsxDownload[key] = { filename, b64: base64 };
     const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash  = encodeURIComponent(filename) + "|" + base64;
+    helperUrl.hash = key;
 
     const popup = window.open(helperUrl.href, "_blank");
     if (!popup) {
+      delete window._xlsxDownload[key];
       setStatus(
         "Pop-up blocked. Please allow pop-ups for this site and try again.",
         "error"
