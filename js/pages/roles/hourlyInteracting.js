@@ -184,18 +184,6 @@ function sourceBadge(source) {
     .join(" ");
 }
 
-function forbiddenBadges(forbiddenRoles) {
-  if (!forbiddenRoles || forbiddenRoles.length === 0) {
-    return `<span class="hi-badge--none">None</span>`;
-  }
-  return forbiddenRoles
-    .map(
-      (r) =>
-        `<span class="hi-badge--forbidden" title="${escapeHtml(r.perms.join(", "))}">${escapeHtml(r.name)} (${r.perms.length})</span>`,
-    )
-    .join(" ");
-}
-
 // ── Public entry-point ────────────────────────────────────────────────────────
 
 export function renderHourlyContent(container, { me, api, orgContext }) {
@@ -493,9 +481,28 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
         10,
       );
 
-      // ── Step 4: render results ──
-      const hourlyCount = matchedUsers.filter((u) => u.category === "hourly").length;
-      const fullcxCount = matchedUsers.filter((u) => u.category === "fullcx").length;
+      // ── Step 4: expand into display rows ──
+      // One row per billing-role × forbidden-role for Full CX users,
+      // one row per billing-role for Hourly users.
+      const displayRows = [];
+      for (const u of matchedUsers) {
+        const source = buildSourceLabel(
+          u.roleId,
+          u.groups,
+          groupGrantsCache,
+          groupNameCache,
+        );
+        if (u.forbiddenRoles.length > 0) {
+          for (const fr of u.forbiddenRoles) {
+            displayRows.push({ ...u, source, forbiddenRole: fr });
+          }
+        } else {
+          displayRows.push({ ...u, source, forbiddenRole: null });
+        }
+      }
+
+      const hourlyCount = displayRows.filter((r) => r.category === "hourly").length;
+      const fullcxCount = displayRows.filter((r) => r.category === "fullcx").length;
 
       const wrap = document.createElement("div");
 
@@ -503,7 +510,7 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
       const pillsDiv = document.createElement("div");
       pillsDiv.className = "hi-pills";
       pillsDiv.innerHTML = `
-        <button class="hi-pill active" data-filter="all">All<span class="hi-pill-count">${matchedUsers.length}</span></button>
+        <button class="hi-pill active" data-filter="all">All<span class="hi-pill-count">${displayRows.length}</span></button>
         <button class="hi-pill" data-filter="hourly">Hourly<span class="hi-pill-count">${hourlyCount}</span></button>
         <button class="hi-pill" data-filter="fullcx">Full CX<span class="hi-pill-count">${fullcxCount}</span></button>
       `;
@@ -551,29 +558,27 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
 
       // Populate rows
       const $tbody = container.querySelector("#hiTbody");
-      for (const u of matchedUsers) {
-        const source = buildSourceLabel(
-          u.roleId,
-          u.groups,
-          groupGrantsCache,
-          groupNameCache,
-        );
+      for (const row of displayRows) {
         const catLabel =
-          u.category === "hourly"
+          row.category === "hourly"
             ? `<span class="hi-cat-hourly">Hourly</span>`
             : `<span class="hi-cat-fullcx">Full CX</span>`;
 
+        const forbiddenCell = row.forbiddenRole
+          ? `<span class="hi-badge--forbidden" title="${escapeHtml(row.forbiddenRole.perms.join(", "))}">${escapeHtml(row.forbiddenRole.name)} (${row.forbiddenRole.perms.length})</span>`
+          : `<span class="hi-badge--none">None</span>`;
+
         const tr = document.createElement("tr");
-        tr.dataset.name     = u.userName;
-        tr.dataset.email    = u.email;
-        tr.dataset.category = u.category;
+        tr.dataset.name     = row.userName;
+        tr.dataset.email    = row.email;
+        tr.dataset.category = row.category;
         tr.innerHTML = `
-          <td>${escapeHtml(u.userName)}</td>
-          <td>${escapeHtml(u.email)}</td>
+          <td>${escapeHtml(row.userName)}</td>
+          <td>${escapeHtml(row.email)}</td>
           <td>${catLabel}</td>
-          <td class="rs-role-cell">${escapeHtml(u.roleName)}</td>
-          <td>${sourceBadge(source)}</td>
-          <td>${forbiddenBadges(u.forbiddenRoles)}</td>
+          <td class="rs-role-cell">${escapeHtml(row.roleName)}</td>
+          <td>${sourceBadge(row.source)}</td>
+          <td>${forbiddenCell}</td>
         `;
         $tbody.appendChild(tr);
       }
@@ -584,7 +589,7 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
       applyFilters();
       hideProgress();
       setStatus(
-        `Done — ${matchedUsers.length} assignment${matchedUsers.length !== 1 ? "s" : ""} ` +
+        `Done — ${displayRows.length} row${displayRows.length !== 1 ? "s" : ""} ` +
           `(${hourlyCount} Hourly, ${fullcxCount} Full CX).`,
       );
 
