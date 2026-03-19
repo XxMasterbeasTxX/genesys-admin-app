@@ -47,7 +47,9 @@ These are the Azure Functions endpoints exposed by the app itself.
 | --- | --- | --- |
 | GET | `/api/customers` | Fetch the list of configured customer orgs |
 | POST | `/api/genesys-proxy` | Proxy any Genesys Cloud API call with injected org token |
+| POST | `/api/doc-export` | On-demand Documentation export — body: `{ orgId, includeDataTables? }` — returns base64 workbook (XLSX or ZIP) |
 | POST | `/api/send-email` | Send email with attachment via Mailjet |
+| GET | `/api/scrape-disqualifying-permissions` | Scrape Genesys Cloud help page for Hourly Interacting disqualifying permissions; returns sorted JSON array; 24 h cache |
 | GET | `/api/schedules` | List all saved export schedules (Azure Table Storage) |
 | POST | `/api/schedules` | Create a new export schedule |
 | PUT | `/api/schedules/{id}` | Update an existing schedule |
