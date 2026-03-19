@@ -29,6 +29,7 @@ import {
   getAuthorizationRole,
   createAuthorizationRole,
 } from "../../../services/genesysApi.js";
+import { HOURLY_DISQUALIFYING_PERMISSIONS } from "../../../lib/hourlyDisqualifyingPermissions.js";
 
 // ── Permission catalog ─────────────────────────────────────────────────────────
 async function loadCatalog(api, orgId) {
@@ -278,6 +279,16 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
         </div>
 
         <div class="rcb-section">
+          <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text)">
+            <input type="checkbox" id="rcbHourlyCheck">
+            Make Hourly Interacting
+          </label>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">
+            Remove disqualifying permissions and add <code>billing:user:hourlyInteracting</code>.
+          </div>
+        </div>
+
+        <div class="rcb-section">
           <span class="rcb-label">Add Permission</span>
           <div class="rcb-picker">
             <div class="rcb-picker-group rcb-picker-group--domain">
@@ -354,6 +365,7 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
   const $cancelBtn     = el.querySelector("#rcbCancelBtn");
   const $expandAll     = el.querySelector("#rcbExpandAll");
   const $collapseAll   = el.querySelector("#rcbCollapseAll");
+  const $hourlyCheck   = el.querySelector("#rcbHourlyCheck");
 
   $expandAll.addEventListener("click", () =>
     $policyList.querySelectorAll(".rcb-domain").forEach(d => d.classList.add("open")));
@@ -959,6 +971,54 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
     });
   }
 
+  // ── Hourly Interacting helpers ───────────────────────────────────────────
+  function buildDisqualifyingIndex() {
+    const idx = {};
+    for (const p of HOURLY_DISQUALIFYING_PERMISSIONS) {
+      const [domain, entity, action] = p.split(":");
+      if (!idx[domain]) idx[domain] = {};
+      if (!idx[domain][entity]) idx[domain][entity] = new Set();
+      idx[domain][entity].add(action);
+    }
+    return idx;
+  }
+
+  function applyHourlyFilter(permPolicies) {
+    const byDomain = buildDisqualifyingIndex();
+    const removed = [];
+    const kept = [];
+    for (const p of permPolicies) {
+      const domainEntry = byDomain[p.domain];
+      if (!domainEntry) { kept.push(p); continue; }
+      const entityActions = domainEntry[p.entityName];
+      if (!entityActions) { kept.push(p); continue; }
+      const badActions = p.actionSet.filter(a => entityActions.has(a) || entityActions.has("*"));
+      if (badActions.length === 0) { kept.push(p); continue; }
+      const goodActions = p.actionSet.filter(a => !entityActions.has(a) && !entityActions.has("*"));
+      for (const a of badActions) removed.push(`${p.domain}:${p.entityName}:${a}`);
+      if (goodActions.length > 0) kept.push({ ...p, actionSet: goodActions });
+    }
+    const hasBilling = kept.some(p => p.domain === "billing" && p.entityName === "user" && p.actionSet.includes("hourlyInteracting"));
+    if (!hasBilling) kept.push({ domain: "billing", entityName: "user", actionSet: ["hourlyInteracting"], allowConditions: false });
+    return { filtered: kept, removed: removed.sort() };
+  }
+
+  function renderHourlySummary(roleName, orgName, totalCount, removed) {
+    const removedHtml = removed.map(p => `<div style="font-size:12px;color:var(--muted);padding:2px 0 2px 12px">${escapeHtml(p)}</div>`).join("");
+    $status.innerHTML = `
+      <div style="color:#34d399;margin-bottom:8px">✅ Role "${escapeHtml(roleName)}" created in ${escapeHtml(orgName)} with ${totalCount} permission${totalCount !== 1 ? "s" : ""}.</div>
+      <details style="margin-bottom:4px">
+        <summary style="cursor:pointer;font-size:13px;color:var(--text)">${removed.length} disqualifying permission${removed.length !== 1 ? "s" : ""} removed</summary>
+        ${removedHtml}
+      </details>
+      <details>
+        <summary style="cursor:pointer;font-size:13px;color:var(--text)">1 permission added</summary>
+        <div style="font-size:12px;color:var(--muted);padding:2px 0 2px 12px">billing:user:hourlyInteracting</div>
+      </details>
+    `;
+    $status.className = "rcb-status";
+  }
+
   // ── Save ───────────────────────────────────────────────────────────────────
   $saveBtn.addEventListener("click", async () => {
     const tgtId = $tgtOrg.value;
@@ -967,16 +1027,29 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
     $saveBtn.disabled = true;
     setStatus("Creating role in target org…");
 
+    let permPolicies = buildPermissionPolicies();
+    let removed = [];
+    const hourlyMode = $hourlyCheck?.checked;
+    if (hourlyMode) {
+      const result = applyHourlyFilter(permPolicies);
+      permPolicies = result.filtered;
+      removed = result.removed;
+    }
+
     const body = {
       name:               $name.value.trim(),
       description:        $desc.value.trim(),
-      permissionPolicies: buildPermissionPolicies(),
+      permissionPolicies: permPolicies,
     };
 
     try {
       const tgtCustomer = customers.find(c => c.id === tgtId);
       await createAuthorizationRole(api, tgtId, body);
-      setStatus(`✓ Role "${body.name}" created in ${tgtCustomer?.name || "target org"}.`, "success");
+      if (hourlyMode && removed.length > 0) {
+        renderHourlySummary(body.name, tgtCustomer?.name || "target org", permPolicies.length, removed);
+      } else {
+        setStatus(`✓ Role "${body.name}" created in ${tgtCustomer?.name || "target org"}.`, "success");
+      }
       // Reset form for next copy
       $name.value = "";
       $desc.value = "";
@@ -985,6 +1058,7 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
       roleCombo.setValue("");
       $builderSection.style.display = "none";
       $incompatWarn.style.display   = "none";
+      if ($hourlyCheck) $hourlyCheck.checked = false;
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
     } finally {

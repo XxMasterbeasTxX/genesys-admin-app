@@ -32,6 +32,7 @@ import {
   createAuthorizationRole,
   updateAuthorizationRole,
 } from "../../services/genesysApi.js";
+import { HOURLY_DISQUALIFYING_PERMISSIONS } from "../../lib/hourlyDisqualifyingPermissions.js";
 
 // ── Permission catalog ────────────────────────────────────────────────────────
 
@@ -303,6 +304,18 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         <textarea class="rc-input" id="rcDesc" placeholder="Optional description" maxlength="500" rows="2" ${isEdit ? "disabled" : ""}></textarea>
       </div>
 
+      ${isCopy ? `
+      <div class="rc-section">
+        <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text)">
+          <input type="checkbox" id="rcHourlyCheck">
+          Make Hourly Interacting
+        </label>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">
+          Remove disqualifying permissions and add <code>billing:user:hourlyInteracting</code>.
+        </div>
+      </div>
+      ` : ""}
+
       <div class="rc-section">
         <span class="rc-label">Add Permission</span>
         <div class="rc-picker">
@@ -371,6 +384,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   const $cancelBtn  = el.querySelector("#rcCancelBtn");
   const $expandAll  = el.querySelector("#rcExpandAll");
   const $collapseAll = el.querySelector("#rcCollapseAll");
+  const $hourlyCheck = el.querySelector("#rcHourlyCheck");
 
   $expandAll?.addEventListener("click", () =>
     $policyList.querySelectorAll(".rc-domain").forEach(d => d.classList.add("open")));
@@ -939,6 +953,55 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     });
   }
 
+  // ── Hourly Interacting helpers ──────────────────────────────────────────
+  function buildDisqualifyingIndex() {
+    const idx = {};
+    for (const p of HOURLY_DISQUALIFYING_PERMISSIONS) {
+      const [domain, entity, action] = p.split(":");
+      if (!idx[domain]) idx[domain] = {};
+      if (!idx[domain][entity]) idx[domain][entity] = new Set();
+      idx[domain][entity].add(action);
+    }
+    return idx;
+  }
+
+  function applyHourlyFilter(permPolicies) {
+    const byDomain = buildDisqualifyingIndex();
+    const removed = [];
+    const kept = [];
+    for (const p of permPolicies) {
+      const domainEntry = byDomain[p.domain];
+      if (!domainEntry) { kept.push(p); continue; }
+      const entityActions = domainEntry[p.entityName];
+      if (!entityActions) { kept.push(p); continue; }
+      const badActions = p.actionSet.filter(a => entityActions.has(a) || entityActions.has("*"));
+      if (badActions.length === 0) { kept.push(p); continue; }
+      const goodActions = p.actionSet.filter(a => !entityActions.has(a) && !entityActions.has("*"));
+      for (const a of badActions) removed.push(`${p.domain}:${p.entityName}:${a}`);
+      if (goodActions.length > 0) kept.push({ ...p, actionSet: goodActions });
+    }
+    // Add billing:user:hourlyInteracting if not already present
+    const hasBilling = kept.some(p => p.domain === "billing" && p.entityName === "user" && p.actionSet.includes("hourlyInteracting"));
+    if (!hasBilling) kept.push({ domain: "billing", entityName: "user", actionSet: ["hourlyInteracting"], allowConditions: false });
+    return { filtered: kept, removed: removed.sort() };
+  }
+
+  function renderHourlySummary(roleName, totalCount, removed) {
+    const removedHtml = removed.map(p => `<div style="font-size:12px;color:var(--muted);padding:2px 0 2px 12px">${escapeHtml(p)}</div>`).join("");
+    $status.innerHTML = `
+      <div style="color:#34d399;margin-bottom:8px">✅ Role "${escapeHtml(roleName)}" created with ${totalCount} permission${totalCount !== 1 ? "s" : ""}.</div>
+      <details style="margin-bottom:4px">
+        <summary style="cursor:pointer;font-size:13px;color:var(--text)">${removed.length} disqualifying permission${removed.length !== 1 ? "s" : ""} removed</summary>
+        ${removedHtml}
+      </details>
+      <details>
+        <summary style="cursor:pointer;font-size:13px;color:var(--text)">1 permission added</summary>
+        <div style="font-size:12px;color:var(--muted);padding:2px 0 2px 12px">billing:user:hourlyInteracting</div>
+      </details>
+    `;
+    $status.className = "rc-status";
+  }
+
   // ── Save ──────────────────────────────────────────────────────────────────
   $saveBtn.addEventListener("click", async () => {
     const org = orgContext?.getDetails?.();
@@ -947,10 +1010,19 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     $saveBtn.disabled = true;
     setStatus(isEdit ? "Saving changes…" : "Creating role…");
 
+    let permPolicies = buildPermissionPolicies();
+    let removed = [];
+    const hourlyMode = $hourlyCheck?.checked;
+    if (hourlyMode) {
+      const result = applyHourlyFilter(permPolicies);
+      permPolicies = result.filtered;
+      removed = result.removed;
+    }
+
     const body = {
       name:               $name.value.trim(),
       description:        $desc.value.trim(),
-      permissionPolicies: buildPermissionPolicies(),
+      permissionPolicies: permPolicies,
     };
 
     try {
@@ -959,7 +1031,11 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         setStatus("Role updated successfully.", "success");
       } else {
         await createAuthorizationRole(api, org.id, body);
-        setStatus(isCopy ? "Role copied successfully." : "Role created successfully.", "success");
+        if (hourlyMode && removed.length > 0) {
+          renderHourlySummary(body.name, permPolicies.length, removed);
+        } else {
+          setStatus(isCopy ? "Role copied successfully." : "Role created successfully.", "success");
+        }
         // Reset form
         $name.value = "";
         $desc.value = "";
@@ -968,6 +1044,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         if (isCopy) {
           editRoleId = null;
           roleCombo?.setValue?.("");
+          if ($hourlyCheck) $hourlyCheck.checked = false;
         }
       }
     } catch (err) {
