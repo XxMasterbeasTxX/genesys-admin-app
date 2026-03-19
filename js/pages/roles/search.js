@@ -172,6 +172,11 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       .rs-progress-wrap { margin-bottom:6px; }
       .rs-progress-track { height:3px; background:rgba(255,255,255,.08); border-radius:2px; overflow:hidden; }
       .rs-progress-fill { height:100%; background:#3b82f6; border-radius:2px; width:0; transition:width .25s ease; }
+      /* ── Mode toggle ── */
+      .rs-mode-toggle { display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:22px; width:fit-content; }
+      .rs-mode-btn { padding:7px 22px; background:none; border:none; color:var(--muted); cursor:pointer; font:inherit; font-size:13px; font-weight:600; transition:background .12s,color .12s; }
+      .rs-mode-btn.active { background:rgba(59,130,246,.22); color:#60a5fa; }
+      .rs-mode-btn:not(.active):hover { background:rgba(255,255,255,.05); color:var(--text); }
       @keyframes rs-slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(280%)} }
       .rs-progress-fill.indeterminate { width:35%; animation:rs-slide 1.3s ease-in-out infinite; }
       .rs-progress-detail { font-size:11px; color:var(--muted); margin-top:3px; }
@@ -179,6 +184,12 @@ export default function renderRolesSearch({ me, api, orgContext }) {
 
     <h2 style="margin:0 0 18px">Permissions — Search</h2>
 
+    <div class="rs-mode-toggle">
+      <button class="rs-mode-btn active" id="rsModeSearch">Permission Search</button>
+      <button class="rs-mode-btn" id="rsModeHourly">Hourly Interacting</button>
+    </div>
+
+    <div id="rsSearchSection">
     <div class="rs-controls" id="rsControls">
       <div class="rs-control-group">
         <span class="rs-label">Domain</span>
@@ -217,6 +228,9 @@ export default function renderRolesSearch({ me, api, orgContext }) {
         <p>Select a domain and entity, then click <strong>Search</strong> to find who has the permission.</p>
       </div>
     </div>
+    </div><!-- /rsSearchSection -->
+
+    <div id="rsHourlySection" style="display:none"></div>
   `;
 
   // ── DOM refs ──────────────────────────────────────────────
@@ -657,6 +671,32 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     } finally {
       searching = false;
       updateSearchBtn();
+    }
+  });
+
+  // ── Mode toggle ──────────────────────────────────────────────
+  let hourlyInitialized = false;
+  const $modeSearch  = el.querySelector("#rsModeSearch");
+  const $modeHourly  = el.querySelector("#rsModeHourly");
+  const $searchSect  = el.querySelector("#rsSearchSection");
+  const $hourlySect  = el.querySelector("#rsHourlySection");
+
+  $modeSearch.addEventListener("click", () => {
+    $modeSearch.classList.add("active");
+    $modeHourly.classList.remove("active");
+    $searchSect.style.display = "";
+    $hourlySect.style.display = "none";
+  });
+
+  $modeHourly.addEventListener("click", async () => {
+    $modeSearch.classList.remove("active");
+    $modeHourly.classList.add("active");
+    $searchSect.style.display = "none";
+    $hourlySect.style.display = "";
+    if (!hourlyInitialized) {
+      hourlyInitialized = true;
+      const { renderHourlyContent } = await import("./hourlyInteracting.js");
+      renderHourlyContent($hourlySect, { me, api, orgContext });
     }
   });
 
