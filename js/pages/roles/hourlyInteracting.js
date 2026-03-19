@@ -501,8 +501,10 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
         }
       }
 
-      const hourlyCount = displayRows.filter((r) => r.category === "hourly").length;
-      const fullcxCount = displayRows.filter((r) => r.category === "fullcx").length;
+      // Unique user counts for pills and status
+      const uniqueAll    = new Set(displayRows.map((r) => r.userId)).size;
+      const uniqueHourly = new Set(displayRows.filter((r) => r.category === "hourly").map((r) => r.userId)).size;
+      const uniqueFullcx = new Set(displayRows.filter((r) => r.category === "fullcx").map((r) => r.userId)).size;
 
       const wrap = document.createElement("div");
 
@@ -510,9 +512,9 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
       const pillsDiv = document.createElement("div");
       pillsDiv.className = "hi-pills";
       pillsDiv.innerHTML = `
-        <button class="hi-pill active" data-filter="all">All<span class="hi-pill-count">${displayRows.length}</span></button>
-        <button class="hi-pill" data-filter="hourly">Hourly<span class="hi-pill-count">${hourlyCount}</span></button>
-        <button class="hi-pill" data-filter="fullcx">Full CX<span class="hi-pill-count">${fullcxCount}</span></button>
+        <button class="hi-pill active" data-filter="all">All<span class="hi-pill-count">${uniqueAll}</span></button>
+        <button class="hi-pill" data-filter="hourly">Hourly<span class="hi-pill-count">${uniqueHourly}</span></button>
+        <button class="hi-pill" data-filter="fullcx">Full CX<span class="hi-pill-count">${uniqueFullcx}</span></button>
       `;
       wrap.appendChild(pillsDiv);
 
@@ -589,8 +591,8 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
       applyFilters();
       hideProgress();
       setStatus(
-        `Done — ${displayRows.length} row${displayRows.length !== 1 ? "s" : ""} ` +
-          `(${hourlyCount} Hourly, ${fullcxCount} Full CX).`,
+        `Done — ${uniqueAll} user${uniqueAll !== 1 ? "s" : ""} ` +
+          `(${uniqueHourly} Hourly, ${uniqueFullcx} Full CX).`,
       );
 
       // Wire export
