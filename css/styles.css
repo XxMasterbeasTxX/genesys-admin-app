@@ -3284,12 +3284,22 @@ body {
   color: var(--muted);
   font-size: 13px;
 }
+.dr-addr-section { padding: 10px 0 4px 0; }
 .dr-addr-table {
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 6px;
   font-size: 14px;
+  table-layout: fixed;
 }
+.dr-addr-table th:nth-child(1),
+.dr-addr-table td:nth-child(1) { width: 20%; }
+.dr-addr-table th:nth-child(2),
+.dr-addr-table td:nth-child(2) { width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-addr-table th:nth-child(3),
+.dr-addr-table td:nth-child(3) { width: 15%; text-align: center; }
+.dr-addr-table th:nth-child(4),
+.dr-addr-table td:nth-child(4) { width: 25%; text-align: center; }
 .dr-addr-table th,
 .dr-addr-table td {
   padding: 6px 10px;
@@ -3315,6 +3325,13 @@ body {
   gap: 4px;
   font-size: 13px;
   color: var(--muted);
+}
+.dr-email-warn-row td { border-bottom: none; }
+.dr-email-warn {
+  color: #fb923c;
+  font-size: 12px;
+  padding-top: 0;
+  font-style: italic;
 }
 .dr-backup-toggle {
   cursor: pointer;

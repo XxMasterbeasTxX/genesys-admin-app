@@ -77,6 +77,7 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
   let cancelled = false;
   const loaded = new Map(); // userId → { user, backup, orig }
   let queuesCache = null;
+  let emailDomainsCache = null; // Set<string> of inbound email domains
 
   // ── User multi-select ───────────────────────────────
   const userSelect = createMultiSelect({
@@ -190,6 +191,29 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
     return queuesCache;
   }
 
+  async function loadEmailDomains() {
+    if (emailDomainsCache) return emailDomainsCache;
+    try {
+      const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/routing/email/domains");
+      const domains = resp.entities || [];
+      emailDomainsCache = new Set(domains.map(d => (d.id || d.name || "").toLowerCase()));
+    } catch {
+      emailDomainsCache = new Set();
+    }
+    return emailDomainsCache;
+  }
+
+  /** Make a radio deselectable: clicking a checked radio unchecks it. */
+  function makeDeselectable(radio, onDeselect) {
+    radio.addEventListener("mousedown", function () { this._wasChecked = this.checked; });
+    radio.addEventListener("click", function () {
+      if (this._wasChecked) {
+        this.checked = false;
+        if (onDeselect) onDeselect();
+      }
+    });
+  }
+
   // ── Render one user card ────────────────────────────
   function createUserCard(userId) {
     const { user, backup } = loaded.get(userId);
@@ -213,6 +237,20 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
     const primaryPhone = (user.primaryContactInfo || []).find(c => c.mediaType === "PHONE");
     const primaryPhoneType = primaryPhone?.type || null;
 
+    // ── Collapsible Addresses section ──
+    const addrToggle = document.createElement("div");
+    addrToggle.className = "dr-backup-toggle";
+    addrToggle.innerHTML = `<span class="dr-backup-arrow">&#x25B6;</span> Addresses`;
+
+    const addrSection = document.createElement("div");
+    addrSection.className = "dr-backup-section dr-addr-section";
+    addrSection.hidden = true;
+
+    addrToggle.addEventListener("click", () => {
+      addrSection.hidden = !addrSection.hidden;
+      addrToggle.querySelector(".dr-backup-arrow").innerHTML = addrSection.hidden ? "&#x25B6;" : "&#x25BC;";
+    });
+
     // Address table
     const table = document.createElement("table");
     table.className = "dr-addr-table";
@@ -226,6 +264,13 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
     for (const a of addrs) {
       if (a.mediaType === "PHONE") phoneByType[a.type] = a;
     }
+
+    // Create the NONE radio first so phone DR radios can reference it on deselect
+    const noneRadio = document.createElement("input");
+    noneRadio.type = "radio";
+    noneRadio.name = `dr_phone_${userId}`;
+    noneRadio.value = "NONE";
+    noneRadio.checked = drPhoneType === "NONE";
 
     // Phone rows
     for (const { type, label } of PHONE_TYPES) {
@@ -251,6 +296,7 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
         r.name = `primary_${userId}`;
         r.value = type;
         r.checked = primaryPhoneType === type;
+        makeDeselectable(r);
         tdPri.append(r);
       } else {
         tdPri.textContent = "—";
@@ -265,6 +311,7 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
         r.name = `dr_phone_${userId}`;
         r.value = type;
         r.checked = drPhoneType === type;
+        makeDeselectable(r, () => { noneRadio.checked = true; });
         tdDR.append(r);
       } else {
         tdDR.textContent = "—";
@@ -283,11 +330,6 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
     const noneTd = document.createElement("td");
     const noneLabel = document.createElement("label");
     noneLabel.className = "dr-none-label";
-    const noneRadio = document.createElement("input");
-    noneRadio.type = "radio";
-    noneRadio.name = `dr_phone_${userId}`;
-    noneRadio.value = "NONE";
-    noneRadio.checked = drPhoneType === "NONE";
     noneLabel.append(noneRadio, document.createTextNode(" None"));
     noneTd.append(noneLabel);
     noneRow.append(noneSpacerPhone, noneTd);
@@ -297,31 +339,52 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
     const emails = addrs.filter(a => a.mediaType === "EMAIL");
     for (const emailAddr of emails) {
       const tr = document.createElement("tr");
+      const address = emailAddr.display || emailAddr.address || "";
+      const domain = address.includes("@") ? address.split("@")[1].toLowerCase() : "";
+      const domainExists = domain && emailDomainsCache?.has(domain);
 
       const tdType = document.createElement("td");
       tdType.textContent = "Email" + (emailAddr.type && emailAddr.type !== "WORK" ? ` (${emailAddr.type})` : "");
 
       const tdAddr = document.createElement("td");
-      tdAddr.textContent = emailAddr.display || emailAddr.address || "—";
+      tdAddr.textContent = address || "—";
 
       const tdPri = document.createElement("td");
       tdPri.textContent = "—";
       tdPri.className = "dr-addr-na";
 
       const tdDR = document.createElement("td");
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.dataset.drEmail = userId;
-      cb.value = emailAddr.type || "WORK";
-      cb.checked = emailAddr.integration === "directrouting";
-      tdDR.append(cb);
+      if (domainExists) {
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.dataset.drEmail = userId;
+        cb.value = emailAddr.type || "WORK";
+        cb.checked = emailAddr.integration === "directrouting";
+        tdDR.append(cb);
+      } else {
+        tdDR.textContent = "—";
+        tdDR.className = "dr-addr-na";
+      }
 
       tr.append(tdType, tdAddr, tdPri, tdDR);
       tbody.append(tr);
+
+      // Warning row if domain not in Genesys
+      if (domain && !domainExists) {
+        const warnTr = document.createElement("tr");
+        warnTr.className = "dr-email-warn-row";
+        const warnTd = document.createElement("td");
+        warnTd.colSpan = 4;
+        warnTd.className = "dr-email-warn";
+        warnTd.textContent = `Domain "${domain}" is not configured as an inbound email domain in Genesys — emails cannot be routed to this address.`;
+        warnTr.append(warnTd);
+        tbody.append(warnTr);
+      }
     }
 
     table.append(tbody);
-    card.append(table);
+    addrSection.append(table);
+    card.append(addrToggle, addrSection);
 
     // ── Backup section ──
     const backupType = backup?.type || "NONE";
@@ -544,6 +607,9 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
     let completed = 0;
 
     try {
+      // Fetch email domains in parallel with user details
+      const emailDomainPromise = loadEmailDomains();
+
       for (let i = 0; i < selectedIds.length; i += BATCH) {
         if (cancelled) break;
         const batch = selectedIds.slice(i, i + BATCH);
@@ -561,8 +627,14 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
 
           if (userResult.status === "fulfilled") {
             const user = userResult.value;
-            const backup = bkResult.status === "fulfilled" ? bkResult.value : null;
-            loaded.set(uid, { user, backup, orig: takeSnapshot(user, backup) });
+            const userAddrs = user.addresses || [];
+            const hasPhone = userAddrs.some(a => a.mediaType === "PHONE");
+            const hasEmail = userAddrs.some(a => a.mediaType === "EMAIL");
+            // Skip users with no phone and no email addresses
+            if (hasPhone || hasEmail) {
+              const backup = bkResult.status === "fulfilled" ? bkResult.value : null;
+              loaded.set(uid, { user, backup, orig: takeSnapshot(user, backup) });
+            }
           }
 
           completed++;
@@ -572,8 +644,12 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
         }
       }
 
+      // Ensure email domains are loaded before rendering
+      await emailDomainPromise;
+
       if (!loaded.size) {
-        setStatus("No user details could be loaded.", "error");
+        const skipped = selectedIds.length - loaded.size;
+        setStatus(skipped ? `No users with phone or email addresses found (${skipped} skipped).` : "No user details could be loaded.", "error");
       } else {
         // Render cards
         $cards.innerHTML = "";
@@ -584,7 +660,9 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
         $bulkWrap.style.display = "";
         $bulkSelect.value = "";
         $applyWrap.style.display = "";
-        setStatus(`Loaded ${loaded.size} user${loaded.size > 1 ? "s" : ""}. Review settings and click Apply Changes.`);
+        const skipped = selectedIds.length - completed + (completed - loaded.size);
+        const skippedNote = selectedIds.length > loaded.size ? ` (${selectedIds.length - loaded.size} without addresses skipped)` : "";
+        setStatus(`Loaded ${loaded.size} user${loaded.size > 1 ? "s" : ""}${skippedNote}. Review settings and click Apply Changes.`);
       }
 
       setTimeout(hideProgress, 600);
@@ -677,17 +755,22 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
             const body = { version: data.user.version, addresses: updatedAddresses };
 
             // Update primary phone if changed
-            if (data.orig.primaryPhoneType !== curr.primaryPhoneType && curr.primaryPhoneType) {
-              const newPrimary = updatedAddresses.find(
-                a => a.mediaType === "PHONE" && a.type === curr.primaryPhoneType
-              );
-              if (newPrimary) {
-                const otherPrimary = (data.user.primaryContactInfo || [])
-                  .filter(c => c.mediaType !== "PHONE");
-                body.primaryContactInfo = [
-                  ...otherPrimary,
-                  { address: newPrimary.address, display: newPrimary.display, mediaType: "PHONE", type: newPrimary.type },
-                ];
+            if (data.orig.primaryPhoneType !== curr.primaryPhoneType) {
+              const otherPrimary = (data.user.primaryContactInfo || [])
+                .filter(c => c.mediaType !== "PHONE");
+              if (curr.primaryPhoneType) {
+                const newPrimary = updatedAddresses.find(
+                  a => a.mediaType === "PHONE" && a.type === curr.primaryPhoneType
+                );
+                if (newPrimary) {
+                  body.primaryContactInfo = [
+                    ...otherPrimary,
+                    { address: newPrimary.address, display: newPrimary.display, mediaType: "PHONE", type: newPrimary.type },
+                  ];
+                }
+              } else {
+                // Primary deselected — keep only non-phone primary entries
+                body.primaryContactInfo = otherPrimary;
               }
             }
 
