@@ -60,6 +60,7 @@
  *   export.users.filteredRoles         Filtered on Role(s) export
  *   export.users.lastLogin             Last Login export
  *   export.users.trustee               Trustee export
+ *   export.interactions.totals          Interaction Totals — bar charts by media/direction/routing
  *
  *   PHONES
  *   phones.webrtc.changeSite           WebRTC Phones — Change Site

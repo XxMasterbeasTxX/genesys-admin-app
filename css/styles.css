@@ -3418,3 +3418,75 @@ body {
   .dr-backup-search-item:hover { background: rgba(0,0,0,0.04); }
   .dr-btn-apply { color: #16a34a; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Interaction Totals — horizontal bar charts
+   ═══════════════════════════════════════════════════════════════════ */
+.it-date-row { display: flex; align-items: center; gap: 8px; }
+.it-presets  { display: flex; gap: 6px; margin-top: 6px; }
+
+.it-total-banner {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 18px 0 12px;
+  color: var(--fg);
+}
+
+.it-chart-group {
+  margin-bottom: 24px;
+}
+.it-chart-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--fg);
+}
+
+.it-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.it-bar-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 150px;
+  align-items: center;
+  gap: 10px;
+}
+.it-bar-label {
+  font-size: 13px;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--fg);
+}
+.it-bar-track {
+  height: 24px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.it-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.it-bar-value {
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.it-bar-empty {
+  color: var(--muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* Color variants */
+.it-fill-media   { background: #2dd4bf; }
+.it-fill-dir     { background: #60a5fa; }
+.it-fill-routing { background: #a78bfa; }
+
+@media (prefers-color-scheme: light) {
+  .it-bar-track { background: #e5e7eb; }
+}

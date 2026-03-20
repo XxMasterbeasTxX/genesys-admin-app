@@ -170,6 +170,14 @@ export const NAV_TREE = [
         ],
       },
       {
+        label: "Interactions",
+        path: "interactions",
+        enabled: true,
+        children: [
+          { label: "Totals", path: "totals", enabled: true, access: "export.interactions.totals" },
+        ],
+      },
+      {
         label: "Users",
         path: "users",
         enabled: true,

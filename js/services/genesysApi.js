@@ -228,6 +228,44 @@ export async function searchConversations(api, orgId, opts = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Conversations — Aggregates
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Query conversation aggregate metrics grouped by one or more dimensions.
+ *
+ * Uses `POST /api/v2/analytics/conversations/aggregates/query`.
+ * The response `results` array contains one entry per unique dimension
+ * combination, each with a `group` object and a `data` array of metric
+ * snapshots.  We extract `nConversations` from the first data entry.
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {string}   interval   ISO 8601 interval, e.g. "2026-02-01T00:00:00Z/2026-03-01T00:00:00Z"
+ * @param {string}   groupBy    Dimension to group by: "mediaType", "direction", "usedRouting", etc.
+ * @param {Object}   [filter]   Optional filter object, e.g. { mediaTypes: ["voice"] }
+ * @returns {Promise<Object[]>} Array of { key, count } sorted descending by count.
+ */
+export async function queryConversationAggregates(api, orgId, interval, groupBy, filter) {
+  const body = {
+    interval,
+    groupBy: [groupBy],
+    metrics: ["nConversations"],
+  };
+  if (filter) body.filter = filter;
+
+  const resp = await api.proxyGenesys(orgId, "POST",
+    "/api/v2/analytics/conversations/aggregates/query",
+    { body });
+
+  const results = resp.results || [];
+  return results.map(r => ({
+    key: r.group?.[groupBy] || "unknown",
+    count: r.data?.[0]?.metrics?.[0]?.stats?.count ?? 0,
+  })).sort((a, b) => b.count - a.count);
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Conversations — Actions
 // ─────────────────────────────────────────────────────────────────────
 
