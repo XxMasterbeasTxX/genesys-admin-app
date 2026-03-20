@@ -162,6 +162,10 @@ const registry = {
     import("./pages/phones/webrtc/changeSite.js").then((m) => m.default(ctx)),
   "/phones/webrtc/create": (ctx) =>
     import("./pages/phones/webrtc/createWebRtc.js").then((m) => m.default(ctx)),
+
+  // ── Users ──────────────────────────────────────────
+  "/users/direct-routing/add": (ctx) =>
+    import("./pages/users/directRouting/addUsers.js").then((m) => m.default(ctx)),
 };
 
 /**

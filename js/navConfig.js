@@ -253,6 +253,21 @@ export const NAV_TREE = [
       { label: "Data Tables", path: "datatables", enabled: true, access: "deployment.datatables" },
     ],
   },
+  {
+    label: "Users",
+    path: "users",
+    enabled: true,
+    children: [
+      {
+        label: "Direct Routing",
+        path: "direct-routing",
+        enabled: true,
+        children: [
+          { label: "Add user(s)", path: "add", enabled: true, access: "users.directRouting.add" },
+        ],
+      },
+    ],
+  },
 ];
 
 /** Collect all leaf routes from enabled nodes only. */

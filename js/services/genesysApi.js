@@ -383,7 +383,31 @@ export async function addUserRoutingSkillsBulk(api, orgId, userId, skills) {
   return api.proxyGenesys(orgId, "PATCH", `/api/v2/users/${userId}/routingskills/bulk`, { body: skills });
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Direct Routing — Backup settings
+// ─────────────────────────────────────────────────────────────────────
 
+/** Get agent-level direct routing backup settings. Returns null on 404. */
+export async function getDirectRoutingBackup(api, orgId, userId) {
+  try {
+    return await api.proxyGenesys(orgId, "GET",
+      `/api/v2/routing/users/${userId}/directroutingbackup/settings`);
+  } catch {
+    return null;
+  }
+}
+
+/** Set agent-level direct routing backup settings. */
+export async function putDirectRoutingBackup(api, orgId, userId, body) {
+  return api.proxyGenesys(orgId, "PUT",
+    `/api/v2/routing/users/${userId}/directroutingbackup/settings`, { body });
+}
+
+/** Remove agent-level direct routing backup settings. */
+export async function deleteDirectRoutingBackup(api, orgId, userId) {
+  return api.proxyGenesys(orgId, "DELETE",
+    `/api/v2/routing/users/${userId}/directroutingbackup/settings`);
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // Routing — Queues, Skills, Wrapup codes

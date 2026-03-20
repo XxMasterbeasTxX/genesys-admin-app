@@ -87,6 +87,9 @@
  *   deployment.basic                   Deployment — Basic (bulk-create core objects)
  *   deployment.datatables              Deployment — Data Tables (bulk-create data tables)
  *
+ *   USERS
+ *   users.directRouting.add            Direct Routing — Add user(s)
+ *
  *   DIVISIONS  (reassign objects between divisions)
  *   divisions.people.users             People — Users
  *   divisions.people.team              People — Work Teams
