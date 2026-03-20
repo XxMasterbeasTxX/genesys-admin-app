@@ -235,9 +235,10 @@ export async function searchConversations(api, orgId, opts = {}) {
  * Query conversation aggregate metrics grouped by one or more dimensions.
  *
  * Uses `POST /api/v2/analytics/conversations/aggregates/query`.
- * The response `results` array contains one entry per unique dimension
- * combination, each with a `group` object and a `data` array of metric
- * snapshots.  We extract `nConversations` from the first data entry.
+ * The response `results` array may contain multiple entries for the same
+ * group key (when the API splits the interval into sub-periods).  Each
+ * result's `data` array may also contain multiple interval buckets.  We
+ * sum `nConversations` across ALL data entries and merge duplicate keys.
  *
  * @param {Object}   api
  * @param {string}   orgId
@@ -258,11 +259,54 @@ export async function queryConversationAggregates(api, orgId, interval, groupBy,
     "/api/v2/analytics/conversations/aggregates/query",
     { body });
 
-  const results = resp.results || [];
-  return results.map(r => ({
-    key: r.group?.[groupBy] || "unknown",
-    count: r.data?.[0]?.metrics?.[0]?.stats?.count ?? 0,
-  })).sort((a, b) => b.count - a.count);
+  // Merge all results by group key, summing across all data/interval entries
+  const merged = new Map();
+  for (const r of resp.results || []) {
+    const key = r.group?.[groupBy] || "unknown";
+    let total = 0;
+    for (const d of r.data || []) {
+      for (const m of d.metrics || []) {
+        total += m.stats?.count ?? 0;
+      }
+    }
+    merged.set(key, (merged.get(key) || 0) + total);
+  }
+
+  return [...merged.entries()]
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/**
+ * Query total nConversations count without groupBy.
+ *
+ * Returns a single number — the sum of nConversations across all
+ * data/interval entries that match the given filter.
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {string}   interval
+ * @param {Object}   [filter]  Genesys AnalyticsQueryFilter, e.g.
+ *                              { type: "and", predicates: [...] }
+ * @returns {Promise<number>}
+ */
+export async function queryConversationCount(api, orgId, interval, filter) {
+  const body = { interval, metrics: ["nConversations"] };
+  if (filter) body.filter = filter;
+
+  const resp = await api.proxyGenesys(orgId, "POST",
+    "/api/v2/analytics/conversations/aggregates/query",
+    { body });
+
+  let total = 0;
+  for (const r of resp.results || []) {
+    for (const d of r.data || []) {
+      for (const m of d.metrics || []) {
+        total += m.stats?.count ?? 0;
+      }
+    }
+  }
+  return total;
 }
 
 // ─────────────────────────────────────────────────────────────────────

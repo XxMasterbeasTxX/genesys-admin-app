@@ -214,14 +214,19 @@ export default function renderTotals({ route, me, api, orgContext }) {
     return `${from}T00:00:00.000Z/${to}T23:59:59.999Z`;
   }
 
-  // ── Build filter object ─────────────────────────────
-  function buildFilter() {
-    const f = {};
+  // ── Build filter predicates ─────────────────────────
+  function buildPredicates() {
+    const preds = [];
     const mt  = $mediaFilter.value;
     const dir = $dirFilter.value;
-    if (mt)  f.mediaTypes  = [mt];
-    if (dir) f.directions  = [dir];
-    return Object.keys(f).length ? f : undefined;
+    if (mt)  preds.push({ dimension: "mediaType", value: mt });
+    if (dir) preds.push({ dimension: "direction", value: dir });
+    return preds;
+  }
+
+  function buildFilter() {
+    const preds = buildPredicates();
+    return preds.length ? { type: "and", predicates: preds } : undefined;
   }
 
   // ── Render bar chart ────────────────────────────────
@@ -279,12 +284,16 @@ export default function renderTotals({ route, me, api, orgContext }) {
     try {
       const filter = buildFilter();
 
+      // ACD = interactions where a queue was involved (queueId exists)
+      const acdPreds = [{ dimension: "queueId", operator: "exists" }, ...buildPredicates()];
+      const acdFilter = { type: "and", predicates: acdPreds };
+
       // Run three aggregation queries in parallel
       showProgress(10);
-      const [mediaData, dirData, routingData] = await Promise.all([
+      const [mediaData, dirData, acdCount] = await Promise.all([
         gc.queryConversationAggregates(api, orgId, interval, "mediaType", filter),
         gc.queryConversationAggregates(api, orgId, interval, "direction", filter),
-        gc.queryConversationAggregates(api, orgId, interval, "usedRouting", filter),
+        gc.queryConversationCount(api, orgId, interval, acdFilter),
       ]);
 
       showProgress(90);
@@ -297,12 +306,11 @@ export default function renderTotals({ route, me, api, orgContext }) {
       renderBars($chartMedia, mediaData, MEDIA_LABELS, "it-fill-media");
       renderBars($chartDir, dirData, DIRECTION_LABELS, "it-fill-dir");
 
-      // Map usedRouting values to ACD / Non-ACD
-      const acdCount    = routingData.filter(d => d.key === "ACD").reduce((s, d) => s + d.count, 0);
-      const nonAcdCount = routingData.filter(d => d.key !== "ACD").reduce((s, d) => s + d.count, 0);
+      // ACD = queue was involved, Non-ACD = no queue
+      const nonAcdCount = grandTotal - acdCount;
       const routingSummary = [
         { key: "acd", count: acdCount },
-        { key: "non-acd", count: nonAcdCount },
+        { key: "non-acd", count: nonAcdCount > 0 ? nonAcdCount : 0 },
       ].filter(d => d.count > 0).sort((a, b) => b.count - a.count);
 
       renderBars($chartRouting, routingSummary, ROUTING_LABELS, "it-fill-routing");
