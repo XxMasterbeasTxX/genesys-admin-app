@@ -5,12 +5,13 @@
  * into three horizontal bar chart groups:
  *   1. By Media Type  (voice, chat, email, message, callback, …)
  *   2. By Direction    (inbound, outbound)
- *   3. By Routing      (ACD / Non-ACD)
+ *   3. By Routing      (ACD / Non-ACD)  — based on segment purpose "acd"
  *
  * Date presets: Last Month, Last 3 Months, Last Year (calendar-aligned).
- * Filters: Media Type, Direction (server-side via the aggregation API).
+ * Filters: Media Type, Direction (server-side via the detail query).
  *
- * API: POST /api/v2/analytics/conversations/aggregates/query
+ * API: POST /api/v2/analytics/conversations/details/query
+ *      with termFrequency aggregations (counts all conversations).
  */
 
 import { escapeHtml } from "../../../utils.js";
@@ -207,26 +208,18 @@ export default function renderTotals({ route, me, api, orgContext }) {
     applyPreset(lastYearStart(), lastYearEnd()));
 
   // ── Build interval from date inputs ─────────────────
-  function getInterval() {
-    const from = $from.value;
-    const to   = $to.value;
-    if (!from || !to) return null;
-    return `${from}T00:00:00.000Z/${to}T23:59:59.999Z`;
+  function getDates() {
+    return { from: $from.value, to: $to.value };
   }
 
   // ── Build filter predicates ─────────────────────────
-  function buildPredicates() {
+  function buildConversationPredicates() {
     const preds = [];
     const mt  = $mediaFilter.value;
     const dir = $dirFilter.value;
     if (mt)  preds.push({ dimension: "mediaType", value: mt });
-    if (dir) preds.push({ dimension: "direction", value: dir });
+    if (dir) preds.push({ dimension: "originatingDirection", value: dir });
     return preds;
-  }
-
-  function buildFilter() {
-    const preds = buildPredicates();
-    return preds.length ? { type: "and", predicates: preds } : undefined;
   }
 
   // ── Render bar chart ────────────────────────────────
@@ -269,8 +262,8 @@ export default function renderTotals({ route, me, api, orgContext }) {
 
   // ── Load handler ────────────────────────────────────
   $loadBtn.addEventListener("click", async () => {
-    const interval = getInterval();
-    if (!interval) {
+    const { from, to } = getDates();
+    if (!from || !to) {
       setStatus("Please select a date range.", "error");
       return;
     }
@@ -282,34 +275,68 @@ export default function renderTotals({ route, me, api, orgContext }) {
     setStatus("Querying interaction totals…");
 
     try {
-      const filter = buildFilter();
+      const convPreds = buildConversationPredicates();
 
-      // ACD = interactions where a queue was involved (queueId exists)
-      const acdPreds = [{ dimension: "queueId", operator: "exists" }, ...buildPredicates()];
-      const acdFilter = { type: "and", predicates: acdPreds };
+      // Split long ranges into monthly chunks (32-day API limit)
+      const intervals = gc.splitIntoMonthlyIntervals(from, to);
+      const totalChunks = intervals.length;
 
-      // Run three aggregation queries in parallel
-      showProgress(10);
-      const [mediaData, dirData, acdCount] = await Promise.all([
-        gc.queryConversationAggregates(api, orgId, interval, "mediaType", filter),
-        gc.queryConversationAggregates(api, orgId, interval, "direction", filter),
-        gc.queryConversationCount(api, orgId, interval, acdFilter),
-      ]);
+      // Accumulators
+      let grandTotal = 0;
+      const mediaCounts = new Map();
+      const dirCounts   = new Map();
+      let acdHits = 0;
+
+      for (let i = 0; i < intervals.length; i++) {
+        setStatus(`Querying chunk ${i + 1} of ${totalChunks}…`);
+        showProgress(10 + (i / totalChunks) * 75);
+
+        // Two queries per chunk: one for media+direction, one for ACD count
+        const [mainResult, acdResult] = await Promise.all([
+          gc.queryConversationTotals(api, orgId, intervals[i], {
+            conversationPredicates: convPreds,
+            conversationAggDimensions: ["mediaType", "originatingDirection"],
+          }),
+          gc.queryConversationTotals(api, orgId, intervals[i], {
+            conversationPredicates: convPreds,
+            segmentPredicates: [{ dimension: "purpose", value: "acd" }],
+          }),
+        ]);
+
+        grandTotal += mainResult.totalHits;
+        acdHits    += acdResult.totalHits;
+
+        // Merge media type counts
+        for (const { value, count } of mainResult.aggregations.mediaType || []) {
+          mediaCounts.set(value, (mediaCounts.get(value) || 0) + count);
+        }
+        // Merge direction counts
+        for (const { value, count } of mainResult.aggregations.originatingDirection || []) {
+          dirCounts.set(value, (dirCounts.get(value) || 0) + count);
+        }
+      }
 
       showProgress(90);
 
-      // Grand total (from mediaType breakdown since it covers all)
-      const grandTotal = mediaData.reduce((s, d) => s + d.count, 0);
+      // Convert to sorted arrays
+      const mediaData = [...mediaCounts.entries()]
+        .map(([key, count]) => ({ key, count }))
+        .sort((a, b) => b.count - a.count);
+
+      const dirData = [...dirCounts.entries()]
+        .map(([key, count]) => ({ key, count }))
+        .sort((a, b) => b.count - a.count);
+
       $totalBanner.textContent = `Total Interactions: ${grandTotal.toLocaleString()}`;
 
       // Render charts
       renderBars($chartMedia, mediaData, MEDIA_LABELS, "it-fill-media");
       renderBars($chartDir, dirData, DIRECTION_LABELS, "it-fill-dir");
 
-      // ACD = queue was involved, Non-ACD = no queue
-      const nonAcdCount = grandTotal - acdCount;
+      // ACD = had an "acd" segment (went through a queue)
+      const nonAcdCount = grandTotal - acdHits;
       const routingSummary = [
-        { key: "acd", count: acdCount },
+        { key: "acd", count: acdHits },
         { key: "non-acd", count: nonAcdCount > 0 ? nonAcdCount : 0 },
       ].filter(d => d.count > 0).sort((a, b) => b.count - a.count);
 
