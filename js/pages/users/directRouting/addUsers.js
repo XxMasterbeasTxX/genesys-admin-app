@@ -656,6 +656,8 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
         $cards.innerHTML = "";
         for (const uid of loaded.keys()) {
           $cards.append(createUserCard(uid));
+          // Snapshot from DOM after rendering so baseline matches what the UI shows
+          loaded.get(uid).orig = readCurrentState(uid);
         }
         $cards.style.display = "";
         $bulkWrap.style.display = "";
