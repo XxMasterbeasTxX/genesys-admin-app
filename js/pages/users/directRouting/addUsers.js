@@ -628,7 +628,8 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
           if (userResult.status === "fulfilled") {
             const user = userResult.value;
             const userAddrs = user.addresses || [];
-            const hasPhone = userAddrs.some(a => a.mediaType === "PHONE");
+            const workPhoneTypes = new Set(PHONE_TYPES.map(t => t.type));
+            const hasPhone = userAddrs.some(a => a.mediaType === "PHONE" && workPhoneTypes.has(a.type));
             const hasEmail = userAddrs.some(a => a.mediaType === "EMAIL");
             // Skip users with no phone and no email addresses
             if (hasPhone || hasEmail) {
