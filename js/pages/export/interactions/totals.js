@@ -277,8 +277,8 @@ export default function renderTotals({ route, me, api, orgContext }) {
     try {
       const convPreds = buildConversationPredicates();
 
-      // Split long ranges into monthly chunks (32-day API limit)
-      const intervals = gc.splitIntoMonthlyIntervals(from, to);
+      // Split long ranges into 7-day chunks (API limit)
+      const intervals = gc.splitIntoWeeklyIntervals(from, to);
       const totalChunks = intervals.length;
 
       // Accumulators

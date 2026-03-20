@@ -288,12 +288,12 @@ export async function queryConversationTotals(api, orgId, interval, opts = {}) {
     body.segmentFilters = [filter];
   }
 
-  // If no filters at all, add an empty conversationFilter so the
-  // 32-day interval limit applies (7-day without any filter)
-  if (!body.conversationFilters && !body.segmentFilters) {
+  // If no filters were built, we still need conversationFilters for
+  // aggregations.  Always include it when we have dimensions to aggregate.
+  if (!body.conversationFilters && conversationAggDimensions.length) {
     body.conversationFilters = [{
       type: "and",
-      predicates: [],
+      predicates: conversationPredicates,
       aggregations: conversationAggDimensions.map(dim => ({
         type: "termFrequency", dimension: dim, size: 50,
       })),
@@ -333,34 +333,28 @@ export async function queryConversationTotals(api, orgId, interval, opts = {}) {
 }
 
 /**
- * Split a date range into monthly ISO 8601 intervals (max 31 days each).
+ * Split a date range into 7-day ISO 8601 intervals.
+ *
+ * The conversation detail query has a 7-day limit without filters.
+ * We always chunk to 7 days to be safe regardless of filter presence.
  *
  * @param {string} fromDate  YYYY-MM-DD
  * @param {string} toDate    YYYY-MM-DD
  * @returns {string[]}  Array of ISO 8601 interval strings.
  */
-export function splitIntoMonthlyIntervals(fromDate, toDate) {
+export function splitIntoWeeklyIntervals(fromDate, toDate) {
   const intervals = [];
   let cursor = new Date(fromDate + "T00:00:00.000Z");
   const end = new Date(toDate + "T23:59:59.999Z");
+  const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000 - 1; // 6d 23h 59m 59s 999ms
 
   while (cursor < end) {
-    const chunkEnd = new Date(cursor);
-    chunkEnd.setUTCMonth(chunkEnd.getUTCMonth() + 1);
-    chunkEnd.setUTCDate(0); // last day of cursor's month
-    chunkEnd.setUTCHours(23, 59, 59, 999);
-
+    const chunkEnd = new Date(cursor.getTime() + SEVEN_DAYS);
     const actualEnd = chunkEnd > end ? end : chunkEnd;
     intervals.push(
       `${cursor.toISOString()}/${actualEnd.toISOString()}`
     );
-
-    // Move to first day of next month
-    const next = new Date(cursor);
-    next.setUTCMonth(next.getUTCMonth() + 1);
-    next.setUTCDate(1);
-    next.setUTCHours(0, 0, 0, 0);
-    cursor = next;
+    cursor = new Date(actualEnd.getTime() + 1);
   }
   return intervals;
 }
