@@ -213,11 +213,16 @@ export default function renderTotals({ route, me, api, orgContext }) {
   }
 
   // ── Build filter predicates ─────────────────────────
+  // mediaType is a segment-level dimension; originatingDirection is conversation-level
+  function buildSegmentPredicates() {
+    const preds = [];
+    const mt = $mediaFilter.value;
+    if (mt) preds.push({ dimension: "mediaType", value: mt });
+    return preds;
+  }
   function buildConversationPredicates() {
     const preds = [];
-    const mt  = $mediaFilter.value;
     const dir = $dirFilter.value;
-    if (mt)  preds.push({ dimension: "mediaType", value: mt });
     if (dir) preds.push({ dimension: "originatingDirection", value: dir });
     return preds;
   }
@@ -276,6 +281,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
 
     try {
       const convPreds = buildConversationPredicates();
+      const segPreds  = buildSegmentPredicates();
 
       // Split long ranges into 7-day chunks (API limit)
       const intervals = gc.splitIntoWeeklyIntervals(from, to);
@@ -295,11 +301,16 @@ export default function renderTotals({ route, me, api, orgContext }) {
         const [mainResult, acdResult] = await Promise.all([
           gc.queryConversationTotals(api, orgId, intervals[i], {
             conversationPredicates: convPreds,
-            conversationAggDimensions: ["mediaType", "originatingDirection"],
+            conversationAggDimensions: ["originatingDirection"],
+            segmentPredicates: segPreds,
+            segmentAggDimensions: ["mediaType"],
           }),
           gc.queryConversationTotals(api, orgId, intervals[i], {
             conversationPredicates: convPreds,
-            segmentPredicates: [{ dimension: "purpose", value: "acd" }],
+            segmentPredicates: [
+              ...segPreds,
+              { dimension: "purpose", value: "acd" },
+            ],
           }),
         ]);
 
