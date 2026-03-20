@@ -114,7 +114,7 @@ Used by: Divisions (all object types), Data Tables — Create, export pages, All
 
 ## 5. Users & Groups
 
-Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Trustee Export, Divisions — Users, Documentation Export, WebRTC Phones, Roles — Compare Users, Roles — Permissions vs. Users
+Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Trustee Export, Divisions — Users, Documentation Export, WebRTC Phones, Roles — Compare Users, Roles — Permissions vs. Users, Direct Routing — Add user(s)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -144,7 +144,7 @@ Used by: Trustee Export
 
 ## 7. Routing
 
-Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisions — Queues/Wrapup/Skills, Documentation Export, Deployment — Basic
+Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisions — Queues/Wrapup/Skills, Documentation Export, Deployment — Basic, Direct Routing — Add user(s)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -169,8 +169,11 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | PUT | `/api/v2/routing/wrapupcodes/{codeId}` | **Update** a wrap-up code (Deployment — Basic) |
 | POST | `/api/v2/routing/queues/{queueId}/wrapupcodes` | **Assign** wrap-up codes to a queue (Deployment — Basic) |
 | GET | `/api/v2/routing/message/recipients` | List messaging recipients |
-| GET | `/api/v2/routing/email/domains` | List inbound email domains |
+| GET | `/api/v2/routing/email/domains` | List inbound email domains (also used by Direct Routing to validate email addresses) |
 | GET | `/api/v2/routing/email/outbound/domains` | List outbound email domains |
+| GET | `/api/v2/routing/users/{userId}/directroutingbackup/settings` | Get agent-level direct routing backup settings (Direct Routing — Add user(s)) |
+| PUT | `/api/v2/routing/users/{userId}/directroutingbackup/settings` | Set agent-level direct routing backup (type: USER/QUEUE, waitForAgent, agentWaitSeconds) |
+| DELETE | `/api/v2/routing/users/{userId}/directroutingbackup/settings` | Remove agent-level direct routing backup |
 | GET | `/api/v2/routing/email/domains/{domainId}/routes` | List email routes for a domain |
 
 ---
