@@ -304,6 +304,8 @@ export async function queryConversationTotals(api, orgId, interval, opts = {}) {
     "/api/v2/analytics/conversations/details/query",
     { body });
 
+  console.log("[queryConversationTotals] response keys:", Object.keys(resp), "resp:", JSON.stringify(resp).slice(0, 2000));
+
   // Parse aggregation results from the response
   const aggregations = {};
   const parseAggs = (filters) => {
