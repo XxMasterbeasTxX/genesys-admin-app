@@ -54,8 +54,23 @@ function lastYearEnd() {
   return `${new Date().getUTCFullYear() - 1}-12-31`;
 }
 
+function lastWeekStart() {
+  const d = new Date();
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() - day - 6);
+  return d.toISOString().slice(0, 10);
+}
+
+function lastWeekEnd() {
+  const d = new Date();
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() - day);
+  return d.toISOString().slice(0, 10);
+}
+
 function periodToInterval(preset) {
   switch (preset) {
+    case "lastWeek":    return { from: lastWeekStart(), to: lastWeekEnd() };
     case "last3Months": return { from: monthStart(3), to: lastDayOfPrevMonth() };
     case "lastYear":    return { from: lastYearStart(), to: lastYearEnd() };
     case "lastMonth":
@@ -182,8 +197,6 @@ async function execute(context, schedule) {
   const config = schedule?.exportConfig || {};
   const orgId = config.orgId;
   const periodPreset = config.periodPreset || "lastMonth";
-  const mediaType = config.mediaType || "";
-  const direction = config.direction || "";
 
   if (!orgId) {
     return { success: false, error: "No orgId specified in export config" };
@@ -194,27 +207,14 @@ async function execute(context, schedule) {
     return { success: false, error: `Unknown org: ${orgId}` };
   }
 
-  context.log(`Interaction Totals export for ${customer.name} (${orgId}), period: ${periodPreset}, media: ${mediaType || "all"}, direction: ${direction || "all"}`);
+  context.log(`Interaction Totals export for ${customer.name} (${orgId}), period: ${periodPreset}`);
 
   try {
     // Build interval
     const { from, to } = periodToInterval(periodPreset);
     const interval = `${from}T00:00:00.000Z/${to}T23:59:59.999Z`;
 
-    // Build job body with optional filters
     const jobBody = {};
-    if (mediaType) {
-      jobBody.segmentFilters = [{
-        type: "and",
-        predicates: [{ dimension: "mediaType", value: mediaType }],
-      }];
-    }
-    if (direction) {
-      jobBody.conversationFilters = [{
-        type: "and",
-        predicates: [{ dimension: "originatingDirection", value: direction }],
-      }];
-    }
 
     // Submit → Poll → Fetch
     context.log("Submitting analytics job…");
@@ -232,14 +232,9 @@ async function execute(context, schedule) {
     const grandTotal = conversations.length;
 
     // Build Excel
-    const filterParts = [];
-    if (mediaType)  filterParts.push(`Media: ${friendlyLabel(mediaType, MEDIA_LABELS)}`);
-    if (direction)  filterParts.push(`Direction: ${friendlyLabel(direction, DIRECTION_LABELS)}`);
-    const filterStr = filterParts.length ? filterParts.join(", ") : "None";
-
     const rows = [
       ["Interaction Totals"],
-      [`Org: ${customer.name}`, "", `Period: ${from} — ${to}`, `Filters: ${filterStr}`],
+      [`Org: ${customer.name}`, "", `Period: ${from} — ${to}`],
       [],
     ];
     const titleRowCount = rows.length;

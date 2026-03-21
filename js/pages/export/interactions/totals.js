@@ -54,6 +54,22 @@ function lastYearEnd() {
   return `${new Date().getUTCFullYear() - 1}-12-31`;
 }
 
+/** Monday of the previous complete week (ISO week, Mon–Sun). */
+function lastWeekStart() {
+  const d = new Date();
+  const day = d.getUTCDay() || 7; // Sun=7
+  d.setUTCDate(d.getUTCDate() - day - 6); // previous Monday
+  return d.toISOString().slice(0, 10);
+}
+
+/** Sunday of the previous complete week. */
+function lastWeekEnd() {
+  const d = new Date();
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() - day); // previous Sunday
+  return d.toISOString().slice(0, 10);
+}
+
 // ── Label maps ──────────────────────────────────────────────────────
 
 const MEDIA_LABELS = {
@@ -104,6 +120,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
           <input type="date" class="input is-date" id="itTo">
         </div>
         <div class="it-presets">
+          <button class="btn btn-sm" id="itPresetWeek">Last Week</button>
           <button class="btn btn-sm" id="itPresetMonth">Last Month</button>
           <button class="btn btn-sm" id="itPreset3Mo">Last 3 Months</button>
           <button class="btn btn-sm" id="itPresetYear">Last Year</button>
@@ -199,36 +216,12 @@ export default function renderTotals({ route, me, api, orgContext }) {
           label: "Period",
           type: "select",
           options: [
+            { value: "lastWeek",    label: "Last Week" },
             { value: "lastMonth",   label: "Last Month" },
             { value: "last3Months", label: "Last 3 Months" },
             { value: "lastYear",    label: "Last Year" },
           ],
           default: "lastMonth",
-        },
-        {
-          key: "mediaType",
-          label: "Media Type filter",
-          type: "select",
-          options: [
-            { value: "",        label: "All" },
-            { value: "voice",   label: "Voice" },
-            { value: "callback",label: "Callback" },
-            { value: "chat",    label: "Chat" },
-            { value: "email",   label: "Email" },
-            { value: "message", label: "Message" },
-          ],
-          default: "",
-        },
-        {
-          key: "direction",
-          label: "Direction filter",
-          type: "select",
-          options: [
-            { value: "",         label: "All" },
-            { value: "inbound",  label: "Inbound" },
-            { value: "outbound", label: "Outbound" },
-          ],
-          default: "",
         },
       ],
     });
@@ -289,7 +282,8 @@ export default function renderTotals({ route, me, api, orgContext }) {
   // Default to Last Month
   applyPreset(monthStart(1), lastDayOfPrevMonth());
 
-  // ── Presets ─────────────────────────────────────────
+  // ── Presets ─────────────────────────────────────────  el.querySelector("#itPresetWeek").addEventListener("click", () =>
+    applyPreset(lastWeekStart(), lastWeekEnd()));
   el.querySelector("#itPresetMonth").addEventListener("click", () =>
     applyPreset(monthStart(1), lastDayOfPrevMonth()));
 
