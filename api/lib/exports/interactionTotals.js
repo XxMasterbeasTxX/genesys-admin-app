@@ -15,7 +15,7 @@
 const customers = require("../customers.json");
 const { getGenesysToken } = require("../genesysAuth");
 const XLSX = require("xlsx-js-style");
-const { buildStyledWorkbook } = require("../excelStyles");
+const { buildStyledWorkbook, STYLE_HEADER } = require("../excelStyles");
 
 // ── Label maps ──────────────────────────────────────────
 
@@ -232,8 +232,20 @@ async function execute(context, schedule) {
     const grandTotal = conversations.length;
 
     // Build Excel
+    const filterParts = [];
+    if (mediaType)  filterParts.push(`Media: ${friendlyLabel(mediaType, MEDIA_LABELS)}`);
+    if (direction)  filterParts.push(`Direction: ${friendlyLabel(direction, DIRECTION_LABELS)}`);
+    const filterStr = filterParts.length ? filterParts.join(", ") : "None";
+
+    const rows = [
+      ["Interaction Totals"],
+      [`Org: ${customer.name}`, "", `Period: ${from} — ${to}`, `Filters: ${filterStr}`],
+      [],
+    ];
+    const titleRowCount = rows.length;
+
     const HEADERS = ["Category", "Value", "Count", "Percentage"];
-    const rows = [HEADERS];
+    rows.push(HEADERS);
     rows.push(["Total", "All Interactions", grandTotal, "100.0%"]);
     rows.push([]);
 
@@ -264,6 +276,28 @@ async function execute(context, schedule) {
     }
 
     const wb = buildStyledWorkbook(rows, "Interaction Totals");
+    const ws = wb.Sheets["Interaction Totals"];
+
+    // Re-style title rows (bold, not header-blue)
+    const titleStyle = { font: { bold: true, sz: 12, name: "Calibri" } };
+    for (let r = 0; r < titleRowCount; r++) {
+      for (let c = 0; c < 4; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        if (ws[addr]) ws[addr].s = titleStyle;
+      }
+    }
+    // Apply header style to real column header row
+    for (let c = 0; c < HEADERS.length; c++) {
+      const addr = XLSX.utils.encode_cell({ r: titleRowCount, c });
+      if (ws[addr]) ws[addr].s = STYLE_HEADER;
+    }
+    // Freeze pane below the header row
+    ws["!views"] = [{ state: "frozen", ySplit: titleRowCount + 1 }];
+    const lastRow = rows.length - 1;
+    ws["!autofilter"] = {
+      ref: `${XLSX.utils.encode_cell({ r: titleRowCount, c: 0 })}:${XLSX.utils.encode_cell({ r: lastRow, c: HEADERS.length - 1 })}`,
+    };
+
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
     const base64 = Buffer.from(buf).toString("base64");
     const filename = timestampedFilename(`InteractionTotals_${customer.name.replace(/\s+/g, "_")}`, "xlsx");

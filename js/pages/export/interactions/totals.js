@@ -19,6 +19,7 @@ import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
+import { STYLE_HEADER } from "../../../utils/excelStyles.js";
 import { logAction } from "../../../services/activityLogService.js";
 
 // ── Automation ──────────────────────────────────────────
@@ -452,7 +453,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
       renderBars($chartRouting, routingSummary, ROUTING_LABELS, "it-fill-routing");
 
       // Build summary data for Excel
-      lastSummaryData = { mediaCounts, dirCounts, acdCount, grandTotal };
+      lastSummaryData = { mediaCounts, dirCounts, acdCount, grandTotal, from, to };
 
       // Build workbook
       const wb = buildSummaryWorkbook(lastSummaryData);
@@ -522,10 +523,25 @@ export default function renderTotals({ route, me, api, orgContext }) {
   });
 
   // ── Build summary workbook ──────────────────────────
-  function buildSummaryWorkbook({ mediaCounts, dirCounts, acdCount, grandTotal }) {
-    const HEADERS = ["Category", "Value", "Count", "Percentage"];
-    const rows = [HEADERS];
+  function buildSummaryWorkbook({ mediaCounts, dirCounts, acdCount, grandTotal, from, to }) {
+    const mt  = $mediaFilter.value;
+    const dir = $dirFilter.value;
+    const filterParts = [];
+    if (mt)  filterParts.push(`Media: ${friendlyLabel(mt, MEDIA_LABELS)}`);
+    if (dir) filterParts.push(`Direction: ${friendlyLabel(dir, DIRECTION_LABELS)}`);
+    const filterStr = filterParts.length ? filterParts.join(", ") : "None";
 
+    // Title rows
+    const rows = [
+      ["Interaction Totals"],
+      [`Org: ${org.name}`, "", `Period: ${from} — ${to}`, `Filters: ${filterStr}`],
+      [],
+    ];
+    const titleRowCount = rows.length;
+
+    // Data header + body
+    const HEADERS = ["Category", "Value", "Count", "Percentage"];
+    rows.push(HEADERS);
     rows.push(["Total", "All Interactions", grandTotal, "100.0%"]);
     rows.push([]);
 
@@ -555,7 +571,33 @@ export default function renderTotals({ route, me, api, orgContext }) {
       rows.push(["Routing", friendlyLabel(key, ROUTING_LABELS), count, pct]);
     }
 
-    return buildStyledWorkbook(rows, "Interaction Totals");
+    // Build workbook, then style title rows over the top
+    const wb = buildStyledWorkbook(rows, "Interaction Totals");
+    const ws = wb.Sheets["Interaction Totals"];
+    const XLSX = window.XLSX;
+
+    // Re-style: title rows should be bold, not header-blue
+    const titleStyle = { font: { bold: true, sz: 12, name: "Calibri" } };
+    for (let r = 0; r < titleRowCount; r++) {
+      for (let c = 0; c < 4; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        if (ws[addr]) ws[addr].s = titleStyle;
+      }
+    }
+    // Apply header style to the real column header row
+    for (let c = 0; c < HEADERS.length; c++) {
+      const addr = XLSX.utils.encode_cell({ r: titleRowCount, c });
+      if (ws[addr]) ws[addr].s = STYLE_HEADER;
+    }
+    // Freeze pane below the header row (not row 0)
+    ws["!views"] = [{ state: "frozen", ySplit: titleRowCount + 1 }];
+    // Autofilter on header row
+    const lastRow = rows.length - 1;
+    ws["!autofilter"] = {
+      ref: `${XLSX.utils.encode_cell({ r: titleRowCount, c: 0 })}:${XLSX.utils.encode_cell({ r: lastRow, c: HEADERS.length - 1 })}`,
+    };
+
+    return wb;
   }
 
   return el;
