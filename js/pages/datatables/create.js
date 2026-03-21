@@ -511,7 +511,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
   }
 
   // ── Add column button ──────────────────────────────────────────
-  $addRowBtn.addEventListener("click", addSchemaRow);
+  $addRowBtn.addEventListener("click", () => addSchemaRow());
   initDragDrop();
 
   // ── Save button ────────────────────────────────────────────────
