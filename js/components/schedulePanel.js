@@ -105,15 +105,27 @@ export function buildScheduleForm(opts) {
       <div class="sp-form-group sp-form-wide" id="spDynamicFieldsSlot" style="display:none"></div>` : "";
 
   // Build extra config fields HTML
-  const extraFieldsHtml = extraConfigFields.map(f => `
+  const extraFieldsHtml = extraConfigFields.map(f => {
+    const currentVal = String(existingConfig[f.key] ?? f.default ?? "");
+    let fieldHtml;
+    if (f.type === "select" && f.options) {
+      const optionsHtml = f.options.map(o =>
+        `<option value="${escapeHtml(String(o.value))}"${String(o.value) === currentVal ? " selected" : ""}>${escapeHtml(o.label)}</option>`
+      ).join("");
+      fieldHtml = `<select class="sp-form-select" id="spExtra_${f.key}">${optionsHtml}</select>`;
+    } else {
+      fieldHtml = `<input class="sp-form-input" id="spExtra_${f.key}" type="${f.type || "number"}"
+               value="${escapeHtml(currentVal)}"
+               ${f.min != null ? `min="${f.min}"` : ""} ${f.max != null ? `max="${f.max}"` : ""}
+               placeholder="${escapeHtml(f.placeholder || "")}">`;
+    }
+    return `
       <div class="sp-form-group">
         <label class="sp-form-label" for="spExtra_${f.key}">${escapeHtml(f.label)}</label>
-        <input class="sp-form-input" id="spExtra_${f.key}" type="${f.type || "number"}"
-               value="${escapeHtml(String(existingConfig[f.key] ?? f.default ?? ""))}"
-               ${f.min != null ? `min="${f.min}"` : ""} ${f.max != null ? `max="${f.max}"` : ""}
-               placeholder="${escapeHtml(f.placeholder || "")}">
+        ${fieldHtml}
         ${f.hint ? `<span class="sp-form-hint">${escapeHtml(f.hint)}</span>` : ""}
-      </div>`).join("");
+      </div>`;
+  }).join("");
 
   form.innerHTML = `
     <h4 class="sp-form-title">${isEdit ? "Edit Schedule" : "New Schedule"}</h4>
