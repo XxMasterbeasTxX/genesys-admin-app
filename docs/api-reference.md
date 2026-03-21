@@ -62,7 +62,7 @@ These are the Azure Functions endpoints exposed by the app itself.
 
 ## 2. Analytics — Conversations
 
-Used by: Interaction Search (Recent + Historical), Disconnect Interactions, Move Interactions
+Used by: Interaction Search (Recent + Historical), Disconnect Interactions, Move Interactions, Interaction Totals
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -93,7 +93,7 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 
 ## 4. Authorization & Divisions
 
-Used by: Divisions (all object types), Data Tables — Create, export pages, All Roles Export, Deployment — Basic, Roles — Compare (both modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit
+Used by: Divisions (all object types), Data Tables — Create, Data Tables — Edit, export pages, All Roles Export, Deployment — Basic, Roles — Compare (both modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -180,7 +180,7 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 
 ## 8. Architect
 
-Used by: Data Tables — Create/Copy, Deployment — Data Tables, Divisions — Flows/DataTables/Schedules/etc., Documentation Export, Deployment — Basic
+Used by: Data Tables — Create/Copy/Edit, Deployment — Data Tables, Divisions — Flows/DataTables/Schedules/etc., Documentation Export, Deployment — Basic
 
 | Method | Path | Purpose |
 | --- | --- | --- |
