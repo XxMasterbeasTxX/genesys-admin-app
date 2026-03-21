@@ -282,7 +282,8 @@ export default function renderTotals({ route, me, api, orgContext }) {
   // Default to Last Month
   applyPreset(monthStart(1), lastDayOfPrevMonth());
 
-  // ── Presets ─────────────────────────────────────────  el.querySelector("#itPresetWeek").addEventListener("click", () =>
+  // ── Presets ─────────────────────────────────────────
+  el.querySelector("#itPresetWeek").addEventListener("click", () =>
     applyPreset(lastWeekStart(), lastWeekEnd()));
   el.querySelector("#itPresetMonth").addEventListener("click", () =>
     applyPreset(monthStart(1), lastDayOfPrevMonth()));
