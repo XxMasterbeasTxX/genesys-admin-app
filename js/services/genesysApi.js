@@ -180,7 +180,7 @@ export async function pollAnalyticsJob(api, orgId, jobId, opts = {}) {
 export async function fetchAnalyticsJobResults(api, orgId, jobId, opts = {}) {
   return fetchAllCursor(api, orgId,
     `/api/v2/analytics/conversations/details/jobs/${jobId}/results`,
-    { itemsKey: "conversations", ...opts }
+    { query: { pageSize: "10000" }, itemsKey: "conversations", ...opts }
   );
 }
 
@@ -227,139 +227,7 @@ export async function searchConversations(api, orgId, opts = {}) {
   return conversations;
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Conversations — Aggregates
-// ─────────────────────────────────────────────────────────────────────
 
-/**
- * Query conversation totals using the detail query with aggregations.
- *
- * Uses `POST /api/v2/analytics/conversations/details/query` with
- * `termFrequency` aggregations to get server-side counts by dimension.
- * This counts ALL conversations (connected, abandoned, errored, etc.)
- * unlike the aggregate API's `nConversations` which only counts connected.
- *
- * The detail query has a 32-day max interval (with filter) / 7-day (without).
- * For longer ranges the caller must split into monthly chunks.
- *
- * @param {Object}   api
- * @param {string}   orgId
- * @param {string}   interval  ISO 8601 interval
- * @param {Object}   [opts]
- * @param {Object[]} [opts.conversationPredicates]  Predicates for conversationFilters
- * @param {Object[]} [opts.segmentPredicates]       Predicates for segmentFilters
- * @param {string[]} [opts.conversationAggDimensions] Dimensions to aggregate on conversationFilters (e.g. ["mediaType","originatingDirection"])
- * @param {string[]} [opts.segmentAggDimensions]      Dimensions to aggregate on segmentFilters (e.g. ["purpose"])
- * @returns {Promise<{totalHits: number, aggregations: Object<string, Object[]>}>}
- *   aggregations maps dimension name → [{value, count}, …] sorted desc
- */
-export async function queryConversationTotals(api, orgId, interval, opts = {}) {
-  const {
-    conversationPredicates = [],
-    segmentPredicates = [],
-    conversationAggDimensions = [],
-    segmentAggDimensions = [],
-  } = opts;
-
-  const body = {
-    interval,
-    paging: { pageSize: 1, pageNumber: 1 },
-  };
-
-  // Build conversationFilters with aggregations
-  if (conversationPredicates.length || conversationAggDimensions.length) {
-    const filter = { type: "and", predicates: conversationPredicates };
-    if (conversationAggDimensions.length) {
-      filter.aggregations = conversationAggDimensions.map(dim => ({
-        type: "termFrequency", dimension: dim, size: 50,
-      }));
-    }
-    body.conversationFilters = [filter];
-  }
-
-  // Build segmentFilters with aggregations
-  if (segmentPredicates.length || segmentAggDimensions.length) {
-    const filter = { type: "and", predicates: segmentPredicates };
-    if (segmentAggDimensions.length) {
-      filter.aggregations = segmentAggDimensions.map(dim => ({
-        type: "termFrequency", dimension: dim, size: 50,
-      }));
-    }
-    body.segmentFilters = [filter];
-  }
-
-  // If no filters were built, we still need conversationFilters for
-  // aggregations.  Always include it when we have dimensions to aggregate.
-  if (!body.conversationFilters && conversationAggDimensions.length) {
-    body.conversationFilters = [{
-      type: "and",
-      predicates: conversationPredicates,
-      aggregations: conversationAggDimensions.map(dim => ({
-        type: "termFrequency", dimension: dim, size: 50,
-      })),
-    }];
-  }
-
-  const resp = await api.proxyGenesys(orgId, "POST",
-    "/api/v2/analytics/conversations/details/query",
-    { body });
-
-  console.log("[queryConversationTotals] response keys:", Object.keys(resp), "resp:", JSON.stringify(resp).slice(0, 2000));
-
-  // Parse aggregation results from the response
-  const aggregations = {};
-  const parseAggs = (filters) => {
-    for (const f of filters || []) {
-      for (const agg of f.aggregations || []) {
-        const dim = agg.dimension;
-        if (!aggregations[dim]) aggregations[dim] = new Map();
-        for (const entry of agg.results || []) {
-          const prev = aggregations[dim].get(entry.value) || 0;
-          aggregations[dim].set(entry.value, prev + (entry.count ?? 0));
-        }
-      }
-    }
-  };
-  parseAggs(resp.conversationFilters);
-  parseAggs(resp.segmentFilters);
-
-  // Convert Maps to sorted arrays
-  const result = {};
-  for (const [dim, map] of Object.entries(aggregations)) {
-    result[dim] = [...map.entries()]
-      .map(([value, count]) => ({ value, count }))
-      .sort((a, b) => b.count - a.count);
-  }
-
-  return { totalHits: resp.totalHits ?? 0, aggregations: result };
-}
-
-/**
- * Split a date range into 7-day ISO 8601 intervals.
- *
- * The conversation detail query has a 7-day limit without filters.
- * We always chunk to 7 days to be safe regardless of filter presence.
- *
- * @param {string} fromDate  YYYY-MM-DD
- * @param {string} toDate    YYYY-MM-DD
- * @returns {string[]}  Array of ISO 8601 interval strings.
- */
-export function splitIntoWeeklyIntervals(fromDate, toDate) {
-  const intervals = [];
-  let cursor = new Date(fromDate + "T00:00:00.000Z");
-  const end = new Date(toDate + "T23:59:59.999Z");
-  const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000 - 1; // 6d 23h 59m 59s 999ms
-
-  while (cursor < end) {
-    const chunkEnd = new Date(cursor.getTime() + SEVEN_DAYS);
-    const actualEnd = chunkEnd > end ? end : chunkEnd;
-    intervals.push(
-      `${cursor.toISOString()}/${actualEnd.toISOString()}`
-    );
-    cursor = new Date(actualEnd.getTime() + 1);
-  }
-  return intervals;
-}
 
 // ─────────────────────────────────────────────────────────────────────
 // Conversations — Actions
