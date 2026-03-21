@@ -27,6 +27,7 @@ const handlers = {
   lastLogin: () => require("./exports/lastLogin"),
   trustee: () => require("./exports/trustee"),
   documentation:          () => require("./exports/documentation"),
+  interactionTotals:      () => require("./exports/interactionTotals"),
 };
 
 /**

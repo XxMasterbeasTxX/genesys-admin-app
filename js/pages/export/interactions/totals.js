@@ -14,8 +14,17 @@
  *      Fetches all conversation records, counts breakdowns client-side.
  */
 
-import { escapeHtml } from "../../../utils.js";
+import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
+import { sendEmail } from "../../../services/emailService.js";
+import { createSchedulePanel } from "../../../components/schedulePanel.js";
+import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
+import { logAction } from "../../../services/activityLogService.js";
+
+// ── Automation ──────────────────────────────────────────
+const AUTOMATION_ENABLED = true;
+const AUTOMATION_EXPORT_TYPE = "interactionTotals";
+const AUTOMATION_EXPORT_LABEL = "Interaction Totals";
 
 // ── Date helpers ────────────────────────────────────────────────────
 
@@ -122,8 +131,9 @@ export default function renderTotals({ route, me, api, orgContext }) {
       </div>
     </div>
 
-    <div class="cs-actions">
+    <div class="cs-actions" style="display:flex;justify-content:space-between;align-items:center">
       <button class="btn" id="itLoadBtn">Load Totals</button>
+      <button class="btn te-btn-export" id="itExportBtn" style="display:none">Export Excel</button>
     </div>
 
     <!-- Status -->
@@ -153,7 +163,76 @@ export default function renderTotals({ route, me, api, orgContext }) {
         <div id="itChartRouting" class="it-bars"></div>
       </div>
     </div>
+
+    <div class="em-section">
+      <label class="em-toggle">
+        <input type="checkbox" id="itEmailChk">
+        <span>Send email with export</span>
+      </label>
+      <div class="em-fields" id="itEmailFields" style="display:none">
+        <div class="em-field">
+          <label class="em-label" for="itEmailTo">Recipients</label>
+          <input type="text" class="em-input" id="itEmailTo"
+                 placeholder="user@example.com, user2@example.com">
+          <span class="em-hint">Separate multiple addresses with , or ;</span>
+        </div>
+        <div class="em-field">
+          <label class="em-label" for="itEmailBody">Message (optional)</label>
+          <textarea class="em-textarea" id="itEmailBody" rows="3"
+                    placeholder="Leave empty for default message"></textarea>
+        </div>
+      </div>
+    </div>
   `;
+
+  // ── Automation panel ──────────────────────────────────
+  if (AUTOMATION_ENABLED) {
+    const schedulePanel = createSchedulePanel({
+      exportType: AUTOMATION_EXPORT_TYPE,
+      exportLabel: AUTOMATION_EXPORT_LABEL,
+      me,
+      requiresOrg: true,
+      extraConfigFields: [
+        {
+          key: "periodPreset",
+          label: "Period",
+          type: "select",
+          options: [
+            { value: "lastMonth",   label: "Last Month" },
+            { value: "last3Months", label: "Last 3 Months" },
+            { value: "lastYear",    label: "Last Year" },
+          ],
+          default: "lastMonth",
+        },
+        {
+          key: "mediaType",
+          label: "Media Type filter",
+          type: "select",
+          options: [
+            { value: "",        label: "All" },
+            { value: "voice",   label: "Voice" },
+            { value: "callback",label: "Callback" },
+            { value: "chat",    label: "Chat" },
+            { value: "email",   label: "Email" },
+            { value: "message", label: "Message" },
+          ],
+          default: "",
+        },
+        {
+          key: "direction",
+          label: "Direction filter",
+          type: "select",
+          options: [
+            { value: "",         label: "All" },
+            { value: "inbound",  label: "Inbound" },
+            { value: "outbound", label: "Outbound" },
+          ],
+          default: "",
+        },
+      ],
+    });
+    el.appendChild(schedulePanel);
+  }
 
   // ── DOM refs ────────────────────────────────────────
   const $from         = el.querySelector("#itFrom");
@@ -169,6 +248,11 @@ export default function renderTotals({ route, me, api, orgContext }) {
   const $chartMedia   = el.querySelector("#itChartMedia");
   const $chartDir     = el.querySelector("#itChartDir");
   const $chartRouting = el.querySelector("#itChartRouting");
+  const $exportBtn = el.querySelector("#itExportBtn");
+  const $emailChk  = el.querySelector("#itEmailChk");
+  const $emailFld  = el.querySelector("#itEmailFields");
+  const $emailTo   = el.querySelector("#itEmailTo");
+  const $emailBody = el.querySelector("#itEmailBody");
 
   const orgId = orgContext.get();
 
@@ -277,6 +361,16 @@ export default function renderTotals({ route, me, api, orgContext }) {
     }
   }
 
+  // ── Email toggle ────────────────────────────────────
+  $emailChk.addEventListener("change", () => {
+    $emailFld.style.display = $emailChk.checked ? "" : "none";
+  });
+
+  // ── Last export data (for download / email) ─────────
+  let lastWorkbook = null;
+  let lastFilename = null;
+  let lastSummaryData = null;
+
   // ── Count breakdowns from conversation records ─────
   function tallyConversations(conversations) {
     const mediaCounts = new Map();
@@ -357,9 +451,50 @@ export default function renderTotals({ route, me, api, orgContext }) {
 
       renderBars($chartRouting, routingSummary, ROUTING_LABELS, "it-fill-routing");
 
+      // Build summary data for Excel
+      lastSummaryData = { mediaCounts, dirCounts, acdCount, grandTotal };
+
+      // Build workbook
+      const wb = buildSummaryWorkbook(lastSummaryData);
+      const fname = timestampedFilename(
+        `InteractionTotals_${org.name.replace(/\s+/g, "_")}`, "xlsx"
+      );
+      lastWorkbook = wb;
+      lastFilename = fname;
+
+      $exportBtn.style.display = "";
+
+      logAction({ me, orgId: org?.id || "", orgName: org?.name || "",
+        action: "export_run",
+        description: `Loaded '${AUTOMATION_EXPORT_LABEL}' for '${org?.name || ""}'` });
+
+      // Send email if enabled
+      if ($emailChk.checked && $emailTo.value.trim()) {
+        setStatus("Sending email…");
+        try {
+          const XLSX = window.XLSX;
+          const xlsxB64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+          const result = await sendEmail(api, {
+            recipients: $emailTo.value,
+            subject: `Interaction Totals — ${org.name} — ${from} to ${to}`,
+            body: $emailBody.value,
+            attachment: { filename: fname, base64: xlsxB64,
+              mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+          });
+          if (result.success) {
+            setStatus(`Done. Email sent to: ${$emailTo.value.trim()}`, "success");
+          } else {
+            setStatus(`Export completed but email failed: ${result.error}`, "error");
+          }
+        } catch (emailErr) {
+          setStatus(`Export completed but email failed: ${emailErr.message}`, "error");
+        }
+      } else {
+        hideStatus();
+      }
+
       showProgress(100);
       $charts.style.display = "";
-      hideStatus();
       setTimeout(hideProgress, 600);
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
@@ -368,6 +503,60 @@ export default function renderTotals({ route, me, api, orgContext }) {
       $loadBtn.disabled = false;
     }
   });
+
+  // ── Export Excel (download) ─────────────────────────
+  $exportBtn.addEventListener("click", () => {
+    if (!lastWorkbook || !lastFilename) return;
+    const XLSX = window.XLSX;
+    const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
+    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    window._xlsxDownload = window._xlsxDownload || {};
+    window._xlsxDownload[key] = { filename: lastFilename, b64 };
+    const helperUrl = new URL("download.html", document.baseURI);
+    helperUrl.hash = key;
+    const popup = window.open(helperUrl.href, "_blank");
+    if (!popup) {
+      delete window._xlsxDownload[key];
+      setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
+    }
+  });
+
+  // ── Build summary workbook ──────────────────────────
+  function buildSummaryWorkbook({ mediaCounts, dirCounts, acdCount, grandTotal }) {
+    const HEADERS = ["Category", "Value", "Count", "Percentage"];
+    const rows = [HEADERS];
+
+    rows.push(["Total", "All Interactions", grandTotal, "100.0%"]);
+    rows.push([]);
+
+    const mediaArr = mapToSorted(mediaCounts);
+    const mediaTotal = mediaArr.reduce((s, d) => s + d.count, 0);
+    for (const { key, count } of mediaArr) {
+      const pct = mediaTotal > 0 ? ((count / mediaTotal) * 100).toFixed(1) + "%" : "0.0%";
+      rows.push(["Media Type", friendlyLabel(key, MEDIA_LABELS), count, pct]);
+    }
+    rows.push([]);
+
+    const dirArr = mapToSorted(dirCounts);
+    const dirTotal = dirArr.reduce((s, d) => s + d.count, 0);
+    for (const { key, count } of dirArr) {
+      const pct = dirTotal > 0 ? ((count / dirTotal) * 100).toFixed(1) + "%" : "0.0%";
+      rows.push(["Direction", friendlyLabel(key, DIRECTION_LABELS), count, pct]);
+    }
+    rows.push([]);
+
+    const nonAcd = grandTotal - acdCount;
+    const routingData = [
+      { key: "acd", count: acdCount },
+      { key: "non-acd", count: nonAcd > 0 ? nonAcd : 0 },
+    ].filter(d => d.count > 0).sort((a, b) => b.count - a.count);
+    for (const { key, count } of routingData) {
+      const pct = grandTotal > 0 ? ((count / grandTotal) * 100).toFixed(1) + "%" : "0.0%";
+      rows.push(["Routing", friendlyLabel(key, ROUTING_LABELS), count, pct]);
+    }
+
+    return buildStyledWorkbook(rows, "Interaction Totals");
+  }
 
   return el;
 }
