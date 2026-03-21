@@ -23,6 +23,7 @@ export const NAV_TREE = [
     enabled: true,
     children: [
       { label: "Create",             path: "create",       enabled: true, access: "data-tables.create"           },
+      { label: "Edit",               path: "edit",         enabled: true, access: "data-tables.edit"             },
       { label: "Copy - Between Orgs", path: "copy-between", enabled: true, access: "data-tables.copy.betweenOrgs" },
       { label: "Copy - Single Org",   path: "copy-single",  enabled: true, access: "data-tables.copy.singleOrg"  },
     ],

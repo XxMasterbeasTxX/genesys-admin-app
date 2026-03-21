@@ -36,6 +36,7 @@
  *
  *   DATA TABLES
  *   data-tables.create                 Create a new data table
+ *   data-tables.edit                   Edit an existing data table
  *   data-tables.copy.betweenOrgs       Copy a data table between orgs
  *   data-tables.copy.singleOrg         Copy a data table within the same org
  *
@@ -60,7 +61,7 @@
  *   export.users.filteredRoles         Filtered on Role(s) export
  *   export.users.lastLogin             Last Login export
  *   export.users.trustee               Trustee export
- *   export.interactions.totals          Interaction Totals — bar charts by media/direction/routing
+ *   export.interactions.totals         Interaction Totals — bar charts by media/direction/routing
  *
  *   PHONES
  *   phones.webrtc.changeSite           WebRTC Phones — Change Site
