@@ -150,10 +150,10 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   function showConfirmModal({ title, bodyHTML, confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false }) {
     return new Promise((resolve) => {
       const overlay = document.createElement("div");
-      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center";
       const confirmClass = danger ? "btn btn--danger" : "btn";
       overlay.innerHTML = `
-        <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border,#334);border-radius:8px;padding:24px;min-width:340px;max-width:640px;width:90%">
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:340px;max-width:640px;width:90%;box-shadow:var(--shadow);color:var(--text)">
           <h3 style="margin:0 0 16px;font-size:1.1rem">${escapeHtml(title)}</h3>
           <div style="font-size:.9rem;line-height:1.6">${bodyHTML}</div>
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
@@ -1204,9 +1204,23 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     }
 
     const totalUsers = users.length;
+
+    // Build detailed confirmation body
+    const detailRows = [];
+    detailRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Users</td><td style="padding:3px 0"><strong>${totalUsers}</strong> (${users.map((u) => u.name).slice(0, 5).join(", ")}${totalUsers > 5 ? ` + ${totalUsers - 5} more` : ""})</td></tr>`);
+    if (selectedTemplates.length) detailRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Templates</td><td style="padding:3px 0">${selectedTemplates.map((t) => escapeHtml(t.name)).join(", ")}</td></tr>`);
+    if (finalRoles.length) detailRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Roles</td><td style="padding:3px 0">${finalRoles.map((r) => escapeHtml(r.roleName)).join(", ")}</td></tr>`);
+    if (finalSkills.length) detailRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Skills</td><td style="padding:3px 0">${finalSkills.map((s) => escapeHtml(s.skillName)).join(", ")}</td></tr>`);
+    if (finalLanguages.length) detailRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Languages</td><td style="padding:3px 0">${finalLanguages.map((l) => escapeHtml(l.languageName)).join(", ")}</td></tr>`);
+    if (finalQueueIds.size) {
+      const queueNames = [...finalQueueIds].map((id) => { const q = allQueues.find((q) => q.id === id); return q ? escapeHtml(q.name) : id; }).join(", ");
+      detailRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Queues</td><td style="padding:3px 0">${queueNames}</td></tr>`);
+    }
+    const addBody = `<table style="width:100%;border-collapse:collapse;font-size:.9rem">${detailRows.join("")}</table>`;
+
     const confirmed = await showConfirmModal({
       title: "Confirm Add",
-      bodyHTML: `<p>Add configuration to <strong>${totalUsers} user${totalUsers > 1 ? "s" : ""}</strong>?</p>`,
+      bodyHTML: addBody,
       confirmLabel: "Add",
     });
     if (!confirmed) return;
@@ -1341,47 +1355,52 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
     // Build confirmation message
     if (selectedTemplates.length) {
-      const lines = [];
-      lines.push(`Templates: ${selectedTemplates.map((t) => t.name).join(", ")}`);
+      const removeRows = [];
+      removeRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Users</td><td style="padding:3px 0"><strong>${users.length}</strong> (${users.map((u) => u.name).slice(0, 5).join(", ")}${users.length > 5 ? ` + ${users.length - 5} more` : ""})</td></tr>`);
+      if (selectedTemplates.length) removeRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Templates</td><td style="padding:3px 0">${selectedTemplates.map((t) => escapeHtml(t.name)).join(", ")}</td></tr>`);
       if (uniqueRoleIds.length) {
-        const names = uniqueRoleIds.map((id) => {
-          const r = allRemoveRoles.find((r) => r.roleId === id);
-          return r?.roleName || id;
-        });
-        lines.push(`  → Roles: ${names.join(", ")}`);
+        const names = uniqueRoleIds.map((id) => { const r = allRemoveRoles.find((r) => r.roleId === id); return r ? escapeHtml(r.roleName || id) : id; }).join(", ");
+        removeRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Roles</td><td style="padding:3px 0">${names}</td></tr>`);
       }
       if (uniqueSkillIds.length) {
-        const names = uniqueSkillIds.map((id) => {
-          const s = allRemoveSkills.find((s) => s.skillId === id);
-          return s?.skillName || id;
-        });
-        lines.push(`  → Skills: ${names.join(", ")}`);
+        const names = uniqueSkillIds.map((id) => { const s = allRemoveSkills.find((s) => s.skillId === id); return s ? escapeHtml(s.skillName || id) : id; }).join(", ");
+        removeRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Skills</td><td style="padding:3px 0">${names}</td></tr>`);
       }
       if (uniqueLangIds.length) {
-        const names = uniqueLangIds.map((id) => {
-          const l = allRemoveLangs.find((l) => l.languageId === id);
-          return l?.languageName || id;
-        });
-        lines.push(`  → Languages: ${names.join(", ")}`);
+        const names = uniqueLangIds.map((id) => { const l = allRemoveLangs.find((l) => l.languageId === id); return l ? escapeHtml(l.languageName || id) : id; }).join(", ");
+        removeRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Languages</td><td style="padding:3px 0">${names}</td></tr>`);
       }
       if (allRemoveQueueIds.size) {
-        const names = [...allRemoveQueueIds].map((id) => {
-          const q = allQueues.find((q) => q.id === id);
-          return q?.name || id;
-        });
-        lines.push(`  → Queues: ${names.join(", ")}`);
+        const names = [...allRemoveQueueIds].map((id) => { const q = allQueues.find((q) => q.id === id); return q ? escapeHtml(q.name) : id; }).join(", ");
+        removeRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Queues</td><td style="padding:3px 0">${names}</td></tr>`);
       }
-
-      const detailLines = lines.map((l) => escapeHtml(l)).join("<br>");
-      const bodyHTML = `<p style="color:#f59e0b;font-weight:600">⚠ Removing templates will also remove all associated properties:</p>
-        <div style="margin:10px 0;padding:8px 12px;background:rgba(0,0,0,.15);border-radius:4px;font-size:.85rem;line-height:1.7">${detailLines}</div>
-        <p>This will affect <strong>${users.length} user${users.length > 1 ? "s" : ""}</strong>.</p>`;
+      const bodyHTML = `<p style="color:#f59e0b;font-weight:600">⚠ Removing templates will also remove all associated properties.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-top:10px">${removeRows.join("")}</table>`;
       const confirmed = await showConfirmModal({ title: "Confirm Remove", bodyHTML, confirmLabel: "Remove", danger: true });
       if (!confirmed) return;
     } else {
+      const simpleRows = [];
+      simpleRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Users</td><td style="padding:3px 0"><strong>${users.length}</strong> (${users.map((u) => u.name).slice(0, 5).join(", ")}${users.length > 5 ? ` + ${users.length - 5} more` : ""})</td></tr>`);
+      if (uniqueRoleIds.length) {
+        const names = uniqueRoleIds.map((id) => { const r = allRemoveRoles.find((r) => r.roleId === id); return r ? escapeHtml(r.roleName || id) : id; }).join(", ");
+        simpleRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Roles</td><td style="padding:3px 0">${names}</td></tr>`);
+      }
+      if (uniqueSkillIds.length) {
+        const names = uniqueSkillIds.map((id) => { const s = allRemoveSkills.find((s) => s.skillId === id); return s ? escapeHtml(s.skillName || id) : id; }).join(", ");
+        simpleRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Skills</td><td style="padding:3px 0">${names}</td></tr>`);
+      }
+      if (uniqueLangIds.length) {
+        const names = uniqueLangIds.map((id) => { const l = allRemoveLangs.find((l) => l.languageId === id); return l ? escapeHtml(l.languageName || id) : id; }).join(", ");
+        simpleRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Languages</td><td style="padding:3px 0">${names}</td></tr>`);
+      }
+      if (allRemoveQueueIds.size) {
+        const names = [...allRemoveQueueIds].map((id) => { const q = allQueues.find((q) => q.id === id); return q ? escapeHtml(q.name) : id; }).join(", ");
+        simpleRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Queues</td><td style="padding:3px 0">${names}</td></tr>`);
+      }
+      const bodyHTML = `<table style="width:100%;border-collapse:collapse;font-size:.9rem">${simpleRows.join("")}</table>`;
       const confirmed = await showConfirmModal({
         title: "Confirm Remove",
-        bodyHTML: `<p>Remove selected items from <strong>${users.length} user${users.length > 1 ? "s" : ""}</strong>?</p>`,
+        bodyHTML,
         confirmLabel: "Remove",
         danger: true,
       });
