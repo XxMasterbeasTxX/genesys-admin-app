@@ -55,14 +55,10 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       </div>
       <div class="cu-panel cu-panel--right" id="cuRight">
         <div class="cu-apply-bar" id="cuApplyBar">
-          <div class="cu-mode-toggle">
-            <label class="cu-mode-option">
-              <input type="radio" name="cuMode" value="add" checked /> Add
-            </label>
-            <label class="cu-mode-option cu-mode-option--remove">
-              <input type="radio" name="cuMode" value="remove" /> Remove
-            </label>
-          </div>
+          <button type="button" class="cu-mode-toggle" id="cuModeToggle">
+            <span class="cu-mode-label cu-mode-label--add cu-mode-label--active">Add</span>
+            <span class="cu-mode-label cu-mode-label--remove">Remove</span>
+          </button>
           <button class="btn cu-btn-apply" id="cuBtnApply" disabled>Apply to Selected Users</button>
         </div>
         <div class="cu-sections-row">
@@ -150,15 +146,16 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   let selectedTemplates = [];
 
   // ── Mode toggle ───────────────────────────────────────
-  el.querySelectorAll('input[name="cuMode"]').forEach((radio) => {
-    radio.addEventListener("change", (e) => {
-      mode = e.target.value;
-      $btnApply.textContent = mode === "add" ? "Apply to Selected Users" : "Remove from Selected Users";
-      $btnApply.className = mode === "add"
-        ? "btn cu-btn-apply"
-        : "btn cu-btn-apply cu-btn-apply--remove";
-      updateApplyButton();
-    });
+  const $toggle = el.querySelector("#cuModeToggle");
+  $toggle.addEventListener("click", () => {
+    mode = mode === "add" ? "remove" : "add";
+    $toggle.querySelector(".cu-mode-label--add").classList.toggle("cu-mode-label--active", mode === "add");
+    $toggle.querySelector(".cu-mode-label--remove").classList.toggle("cu-mode-label--active", mode === "remove");
+    $btnApply.textContent = mode === "add" ? "Apply to Selected Users" : "Remove from Selected Users";
+    $btnApply.className = mode === "add"
+      ? "btn cu-btn-apply"
+      : "btn cu-btn-apply cu-btn-apply--remove";
+    updateApplyButton();
   });
 
   // ── Status helper ─────────────────────────────────────

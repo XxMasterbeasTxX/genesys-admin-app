@@ -2845,24 +2845,29 @@ body {
   margin-bottom: 16px;
 }
 .cu-mode-toggle {
-  display: flex;
-  gap: 12px;
-}
-.cu-mode-option {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  border: 1px solid var(--border, #444);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+}
+.cu-mode-label {
+  padding: 5px 14px;
   font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  color: var(--text-muted, #999);
+}
+.cu-mode-label--add.cu-mode-label--active {
+  background: rgba(52, 211, 153, 0.18);
   color: #34d399;
 }
-.cu-mode-option--remove {
+.cu-mode-label--remove.cu-mode-label--active {
+  background: rgba(248, 113, 113, 0.18);
   color: #f87171;
-}
-.cu-mode-option input[type="radio"] {
-  accent-color: currentColor;
-  margin: 0;
 }
 .cu-btn-apply {
   background: rgba(52, 211, 153, 0.12);
