@@ -438,8 +438,7 @@ export async function deleteUserLanguage(api, orgId, userId, languageId) {
  */
 export async function removeQueueMember(api, orgId, queueId, userId) {
   return api.proxyGenesys(orgId, "DELETE",
-    `/api/v2/routing/queues/${queueId}/members`,
-    { body: [{ id: userId }] });
+    `/api/v2/routing/queues/${queueId}/members/${userId}`);
 }
 
 /**

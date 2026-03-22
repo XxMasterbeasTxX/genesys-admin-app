@@ -661,13 +661,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
           if (action === "remove-role") {
             const grant = detail.grants[idx];
             if (!grant) return;
-            await api.proxyGenesys(orgId, "POST",
-              `/api/v2/authorization/subjects/${user.id}/bulkremove`, {
-                body: {
-                  subjectId: user.id,
-                  grants: [{ role: { id: grant.roleId }, division: { id: grant.divisionId } }],
-                },
-              });
+            await gc.deleteUserRoleGrant(api, orgId, user.id, grant.roleId, grant.divisionId);
             detail.grants.splice(idx, 1);
           } else if (action === "remove-skill") {
             const skill = user.skills[idx];
