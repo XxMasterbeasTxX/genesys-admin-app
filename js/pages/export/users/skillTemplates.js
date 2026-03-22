@@ -423,8 +423,8 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
   function renderPreview(templates, assignMap) {
     let html = `<details class="te-details">`;
     html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${templates.length} template(s)</span></summary>`;
-    html += `<div class="te-table-scroll"><table class="data-table"><thead><tr>`;
-    html += `<th>Template</th><th>Roles</th><th>Skills</th><th>Languages</th><th>Queues</th><th>Members</th>`;
+    html += `<div class="te-table-scroll"><table class="data-table" style="width:auto"><thead><tr>`;
+    html += `<th>Template</th><th style="width:80px">Roles</th><th style="width:80px">Skills</th><th style="width:80px">Languages</th><th style="width:80px">Queues</th><th style="width:80px">Members</th>`;
     html += `</tr></thead><tbody>`;
     for (const t of templates) {
       html += `<tr>
