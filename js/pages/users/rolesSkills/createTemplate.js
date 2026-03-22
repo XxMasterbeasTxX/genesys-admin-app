@@ -209,19 +209,25 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
         <input class="input st-input-name" id="stName" type="text" placeholder="e.g. L1 Support Agent" />
       </div>
       <div class="st-section">
-        <h3 class="st-section-title">Roles</h3>
-        <div class="st-picker" id="stRolePicker"></div>
-        <div class="st-role-list" id="stRoleList"></div>
+        <h3 class="st-section-title st-collapsible" id="stToggleRoles"><span class="st-chevron">▸</span> Roles</h3>
+        <div class="st-section-body" id="stSectionRoles" hidden>
+          <div class="st-picker" id="stRolePicker"></div>
+          <div class="st-role-list" id="stRoleList"></div>
+        </div>
       </div>
       <div class="st-section">
-        <h3 class="st-section-title">Skills</h3>
-        <div class="st-picker" id="stSkillPicker"></div>
-        <div class="st-skill-list" id="stSkillList"></div>
+        <h3 class="st-section-title st-collapsible" id="stToggleSkills"><span class="st-chevron">▸</span> Skills</h3>
+        <div class="st-section-body" id="stSectionSkills" hidden>
+          <div class="st-picker" id="stSkillPicker"></div>
+          <div class="st-skill-list" id="stSkillList"></div>
+        </div>
       </div>
       <div class="st-section">
-        <h3 class="st-section-title">Queues</h3>
-        <div class="st-picker" id="stQueuePicker"></div>
-        <div class="st-queue-list" id="stQueueList"></div>
+        <h3 class="st-section-title st-collapsible" id="stToggleQueues"><span class="st-chevron">▸</span> Queues</h3>
+        <div class="st-section-body" id="stSectionQueues" hidden>
+          <div class="st-picker" id="stQueuePicker"></div>
+          <div class="st-queue-list" id="stQueueList"></div>
+        </div>
       </div>
       <div class="st-editor-actions">
         <button class="btn st-btn-cancel" id="stBtnCancel">Cancel</button>
@@ -235,6 +241,21 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
       const t = templates.find((x) => x.id === editingId);
       if (t) $name.value = t.name;
     }
+
+    // ── Collapsible section toggles ───────────────────
+    function initToggle(toggleId, sectionId) {
+      const $toggle = $editor.querySelector(`#${toggleId}`);
+      const $section = $editor.querySelector(`#${sectionId}`);
+      $toggle.addEventListener("click", () => {
+        const open = !$section.hidden;
+        $section.hidden = open;
+        $toggle.querySelector(".st-chevron").textContent = open ? "▸" : "▾";
+        $toggle.classList.toggle("st-collapsible--open", !open);
+      });
+    }
+    initToggle("stToggleRoles", "stSectionRoles");
+    initToggle("stToggleSkills", "stSectionSkills");
+    initToggle("stToggleQueues", "stSectionQueues");
 
     // ── Role multi-select ─────────────────────────────
     const roleSelect = createMultiSelect({

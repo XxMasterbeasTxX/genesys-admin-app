@@ -2467,6 +2467,25 @@ body {
   font-weight: 600;
   margin-bottom: 8px;
 }
+.st-collapsible {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.st-collapsible:hover {
+  color: var(--text);
+  opacity: 0.85;
+}
+.st-chevron {
+  font-size: 14px;
+  display: inline-block;
+  transition: transform 0.15s;
+}
+.st-section-body {
+  padding-left: 2px;
+}
 .st-picker {
   margin-bottom: 10px;
   max-width: 400px;
