@@ -9,6 +9,7 @@
  */
 import { escapeHtml } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
+import { createSingleSelect } from "../../../components/multiSelect.js";
 import { fetchTemplates } from "../../../services/templateService.js";
 import {
   fetchAssignments,
@@ -66,6 +67,8 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
   let templates = [];
   let allAssignments = [];
   let selectedTemplate = null; // currently active template object
+  let allGroups = [];
+  let allDivisions = [];
 
   // ── Status helper ─────────────────────────────────────
   function setStatus(msg, type) {
@@ -99,12 +102,16 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
   init();
   async function init() {
     try {
-      const [tpls, assigns] = await Promise.all([
+      const [tpls, assigns, groups, divisions] = await Promise.all([
         fetchTemplates(orgId),
         fetchAssignments(orgId),
+        gc.fetchAllPages(api, orgId, "/api/v2/groups"),
+        gc.fetchAllPages(api, orgId, "/api/v2/authorization/divisions"),
       ]);
       templates = tpls.sort((a, b) => a.name.localeCompare(b.name));
       allAssignments = assigns;
+      allGroups = groups.map((g) => ({ id: g.id, name: g.name }));
+      allDivisions = divisions.map((d) => ({ id: d.id, name: d.name }));
       $loading.hidden = true;
       $layout.hidden = false;
       renderTemplateList();
@@ -185,10 +192,8 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
       <!-- Add users -->
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
         <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px">Add Users</h3>
-        <div class="cu-search-row">
-          <input type="text" class="input cu-search-input" id="autSearchInput" placeholder="Search by name… (empty = all users)" />
-          <button class="btn cu-btn-search" id="autSearchBtn">Search</button>
-        </div>
+        <div id="autModePicker" style="margin-bottom:10px"></div>
+        <div id="autSecondary"></div>
         <div id="autSearchResults"></div>
         <div class="cu-pagination" id="autPagination"></div>
         <button class="btn btn-sm" id="autBtnAdd" hidden style="margin-top:8px">Assign Selected to Template</button>
@@ -313,9 +318,53 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
   let searchPage = 1;
   let searchTotalPages = 1;
 
+  let currentAddMode = "";
+
   function wireSearch() {
-    const $input = $detail.querySelector("#autSearchInput");
-    const $btn   = $detail.querySelector("#autSearchBtn");
+    // Build mode picker
+    const modes = [
+      { id: "search", label: "Search" },
+      { id: "group", label: "By Group" },
+      { id: "division", label: "By Division" },
+    ];
+    const modeSelect = createSingleSelect({
+      placeholder: "Search",
+      searchable: false,
+      onChange: (id) => switchAddMode(id || "search"),
+    });
+    modeSelect.setItems(modes);
+    $detail.querySelector("#autModePicker").append(modeSelect.el);
+    switchAddMode("search");
+  }
+
+  function switchAddMode(mode) {
+    currentAddMode = mode;
+    const $secondary = $detail.querySelector("#autSecondary");
+    $secondary.innerHTML = "";
+    searchResults = [];
+    searchChecked = new Set();
+    renderSearchResults();
+
+    if (mode === "search") {
+      buildAddSearchMode($secondary);
+    } else if (mode === "group") {
+      buildAddFilterMode($secondary, "Group", allGroups, loadGroupUsers);
+    } else if (mode === "division") {
+      buildAddFilterMode($secondary, "Division", allDivisions, loadDivisionUsers);
+    }
+  }
+
+  function buildAddSearchMode($secondary) {
+    const searchRow = document.createElement("div");
+    searchRow.className = "cu-search-row";
+    searchRow.innerHTML = `
+      <input type="text" class="input cu-search-input" id="autSearchInput" placeholder="Search by name… (empty = all users)" />
+      <button class="btn cu-btn-search" id="autSearchBtn">Search</button>
+    `;
+    $secondary.append(searchRow);
+
+    const $input = searchRow.querySelector("#autSearchInput");
+    const $btn   = searchRow.querySelector("#autSearchBtn");
 
     async function doSearch(page = 1) {
       const term = $input.value.trim();
@@ -355,9 +404,52 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
 
     $btn.addEventListener("click", () => doSearch());
     $input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
-
-    // Store doSearch so pagination can call it
     $detail._doSearch = doSearch;
+  }
+
+  function buildAddFilterMode($secondary, label, items, loader) {
+    const filterSelect = createSingleSelect({
+      placeholder: `Select ${label}…`,
+      searchable: true,
+      onChange: async (id) => {
+        if (!id) {
+          searchResults = [];
+          searchChecked = new Set();
+          renderSearchResults();
+          return;
+        }
+        setStatus(`Loading ${label.toLowerCase()} members…`);
+        try {
+          const users = await loader(id);
+          searchResults = users;
+          searchTotalPages = 1;
+          searchChecked = new Set();
+          renderSearchResults();
+          setStatus("");
+        } catch (err) {
+          setStatus(`Failed to load members: ${err.message}`, "error");
+        }
+      },
+    });
+    filterSelect.setItems(
+      items.map((i) => ({ id: i.id, label: i.name })).sort((a, b) => a.label.localeCompare(b.label))
+    );
+    const row = document.createElement("div");
+    row.className = "cu-filter-row";
+    row.append(filterSelect.el);
+    $secondary.append(row);
+  }
+
+  async function loadGroupUsers(groupId) {
+    const members = await gc.fetchGroupMembers(api, orgId, groupId);
+    return members.map((u) => ({ id: u.id, name: u.name, email: u.email || "" }));
+  }
+
+  async function loadDivisionUsers(divisionId) {
+    const allUsers = await gc.fetchAllUsers(api, orgId);
+    return allUsers
+      .filter((u) => u.division?.id === divisionId)
+      .map((u) => ({ id: u.id, name: u.name, email: u.email || "" }));
   }
 
   function renderSearchResults() {
