@@ -2644,7 +2644,16 @@ body {
 
 /* ── Left panel — user selection ──────────────────────── */
 .cu-mode-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
   margin-bottom: 12px;
+}
+.cu-btn-refresh {
+  font-size: 16px;
+  padding: 4px 8px;
+  line-height: 1;
+  cursor: pointer;
 }
 .cu-label {
   display: block;

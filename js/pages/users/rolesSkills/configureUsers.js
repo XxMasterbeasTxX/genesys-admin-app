@@ -51,6 +51,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         <div class="cu-mode-row">
           <label class="cu-label">Find users by</label>
           <div id="cuModePicker"></div>
+          <button class="btn btn-sm cu-btn-refresh" id="cuBtnRefresh" title="Refresh user list">↻</button>
         </div>
         <div id="cuSecondary" class="cu-secondary"></div>
       </div>
@@ -259,6 +260,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     });
     modeSelect.setItems(modes);
     el.querySelector("#cuModePicker").append(modeSelect.el);
+    el.querySelector("#cuBtnRefresh").addEventListener("click", () => switchMode(currentMode || "search"));
     switchMode("search");
   }
 
