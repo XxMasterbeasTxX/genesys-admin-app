@@ -216,6 +216,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       { id: "search", label: "Search" },
       { id: "group", label: "By Group" },
       { id: "role", label: "By Role" },
+      { id: "template", label: "By Template" },
       { id: "reports-to", label: "Reports To" },
       { id: "location", label: "Location" },
       { id: "division", label: "By Division" },
@@ -243,6 +244,10 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       buildFilterMode($secondary, "Group", allGroups, loadGroupMembers);
     } else if (mode === "role") {
       buildFilterMode($secondary, "Role", allRoles, loadRoleMembers);
+    } else if (mode === "template") {
+      buildFilterMode($secondary, "Template",
+        templates.map((t) => ({ id: t.id, name: t.name })),
+        loadTemplateUsers);
     } else if (mode === "reports-to") {
       buildReportsToMode($secondary);
     } else if (mode === "location") {
@@ -474,6 +479,23 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     return allUsers
       .filter((u) => u.division?.id === divisionId)
       .map((u) => mapUser(u));
+  }
+
+  async function loadTemplateUsers(templateId) {
+    const userIds = allAssignments
+      .filter((a) => a.templateId === templateId)
+      .map((a) => a.userId);
+    if (!userIds.length) return [];
+    const users = [];
+    for (const uid of userIds) {
+      try {
+        const u = await api.proxyGenesys(orgId, "GET", `/api/v2/users/${uid}`, {
+          query: { expand: "skills,languages" },
+        });
+        users.push(mapUser(u));
+      } catch { /* user may have been deleted */ }
+    }
+    return users;
   }
 
   // ════════════════════════════════════════════════════════
