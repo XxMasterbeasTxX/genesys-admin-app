@@ -409,14 +409,11 @@ export async function deleteUserRole(api, orgId, userId, roleId) {
 
 /**
  * Remove a single role+division grant from a user.
- * Calls DELETE /api/v2/authorization/subjects/{subjectId}/roles/{roleId}
- * with query divisionId.
+ * Calls DELETE /api/v2/authorization/subjects/{subjectId}/divisions/{divisionId}/roles/{roleId}
  */
 export async function deleteUserRoleGrant(api, orgId, userId, roleId, divisionId) {
-  const query = divisionId ? { divisionId } : undefined;
   return api.proxyGenesys(orgId, "DELETE",
-    `/api/v2/authorization/subjects/${userId}/roles/${roleId}`,
-    { query });
+    `/api/v2/authorization/subjects/${userId}/divisions/${divisionId}/roles/${roleId}`);
 }
 
 /**
