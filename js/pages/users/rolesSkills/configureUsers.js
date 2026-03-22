@@ -1278,7 +1278,13 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
           }
         }
 
-        logLine(`✓ ${user.name}`, "success");
+        const parts = [];
+        if (finalRoles.length) parts.push(`${finalRoles.length} role${finalRoles.length > 1 ? "s" : ""}`);
+        if (finalSkills.length) parts.push(`${finalSkills.length} skill${finalSkills.length > 1 ? "s" : ""}`);
+        if (finalLanguages.length) parts.push(`${finalLanguages.length} language${finalLanguages.length > 1 ? "s" : ""}`);
+        if (finalQueueIds.size) parts.push(`${finalQueueIds.size} queue${finalQueueIds.size > 1 ? "s" : ""}`);
+        if (selectedTemplates.length) parts.push(`template${selectedTemplates.length > 1 ? "s" : ""}: ${selectedTemplates.map((t) => t.name).join(", ")}`);
+        logLine(`✓ ${user.name} — ${parts.join(", ")}`, "success");
       } catch (err) {
         errors++;
         logLine(`✗ ${user.name}: ${err.message}`, "error");
@@ -1291,7 +1297,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
     const summary = errors
       ? `Completed with ${errors} error${errors > 1 ? "s" : ""}. ${completed - errors}/${totalUsers} users configured.`
-      : `Successfully configured ${totalUsers} user${totalUsers > 1 ? "s" : ""}.`;
+      : `Successfully configured ${totalUsers} user${totalUsers > 1 ? "s" : ""}. Added ${[finalRoles.length ? finalRoles.length + " roles" : "", finalSkills.length ? finalSkills.length + " skills" : "", finalLanguages.length ? finalLanguages.length + " languages" : "", finalQueueIds.size ? finalQueueIds.size + " queues" : "", selectedTemplates.length ? selectedTemplates.map((t) => t.name).join(", ") : ""].filter(Boolean).join(", ")}.`;
     setStatus(summary, errors ? "error" : "success");
     $btnApply.disabled = false;
 
@@ -1437,7 +1443,13 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
           }
         }
 
-        logLine(`✓ ${user.name}`, "success");
+        const parts = [];
+        if (uniqueRoleIds.length) parts.push(`${uniqueRoleIds.length} role${uniqueRoleIds.length > 1 ? "s" : ""}`);
+        if (uniqueSkillIds.length) parts.push(`${uniqueSkillIds.length} skill${uniqueSkillIds.length > 1 ? "s" : ""}`);
+        if (uniqueLangIds.length) parts.push(`${uniqueLangIds.length} language${uniqueLangIds.length > 1 ? "s" : ""}`);
+        if (allRemoveQueueIds.size) parts.push(`${allRemoveQueueIds.size} queue${allRemoveQueueIds.size > 1 ? "s" : ""}`);
+        if (selectedTemplates.length) parts.push(`template${selectedTemplates.length > 1 ? "s" : ""}: ${selectedTemplates.map((t) => t.name).join(", ")}`);
+        logLine(`✓ ${user.name} — removed ${parts.join(", ")}`, "success");
       } catch (err) {
         errors++;
         logLine(`✗ ${user.name}: ${err.message}`, "error");
@@ -1450,7 +1462,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
     const summary = errors
       ? `Completed with ${errors} error${errors > 1 ? "s" : ""}. ${completed - errors}/${totalUsers} users updated.`
-      : `Successfully removed items from ${totalUsers} user${totalUsers > 1 ? "s" : ""}.`;
+      : `Successfully removed from ${totalUsers} user${totalUsers > 1 ? "s" : ""}. Removed ${[uniqueRoleIds.length ? uniqueRoleIds.length + " roles" : "", uniqueSkillIds.length ? uniqueSkillIds.length + " skills" : "", uniqueLangIds.length ? uniqueLangIds.length + " languages" : "", allRemoveQueueIds.size ? allRemoveQueueIds.size + " queues" : "", selectedTemplates.length ? selectedTemplates.map((t) => t.name).join(", ") : ""].filter(Boolean).join(", ")}.`;
     setStatus(summary, errors ? "error" : "success");
     $btnApply.disabled = false;
 
