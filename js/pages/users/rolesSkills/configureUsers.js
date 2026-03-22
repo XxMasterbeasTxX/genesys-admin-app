@@ -101,14 +101,14 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       </div>
     </div>
     <div class="cu-user-section">
+      <div class="cu-progress" id="cuProgress" hidden>
+        <div class="cu-progress-bar"><div class="cu-progress-fill" id="cuProgressFill"></div></div>
+        <p class="cu-progress-text" id="cuProgressText"></p>
+        <div class="cu-progress-log" id="cuProgressLog"></div>
+      </div>
       <div class="cu-user-summary" id="cuUserSummary"></div>
       <div id="cuUserList" class="cu-user-list"></div>
       <div class="cu-pagination" id="cuPagination"></div>
-    </div>
-    <div class="cu-progress" id="cuProgress" hidden>>
-      <div class="cu-progress-bar"><div class="cu-progress-fill" id="cuProgressFill"></div></div>
-      <p class="cu-progress-text" id="cuProgressText"></p>
-      <div class="cu-progress-log" id="cuProgressLog"></div>
     </div>
   `;
 
