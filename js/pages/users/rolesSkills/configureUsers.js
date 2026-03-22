@@ -399,7 +399,10 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         }
       },
     });
-    filterSelect.setItems(items.map((i) => ({ id: i.id, label: i.name })));
+    filterSelect.setItems(
+      items.map((i) => ({ id: i.id, label: i.name }))
+        .sort((a, b) => a.label.localeCompare(b.label))
+    );
     const row = document.createElement("div");
     row.className = "cu-filter-row";
     row.append(filterSelect.el);
