@@ -528,10 +528,18 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   }
 
   async function loadLocationUsers(locationId) {
-    // Fetch members of this location, then hydrate with full user details
-    const members = await gc.fetchAllPages(api, orgId, `/api/v2/locations/${locationId}/members`);
-    if (!members.length) return [];
-    return fetchUsersByIds(members.map((m) => m.id), { statusLabel: "location members" });
+    const allUsers = await gc.fetchAllUsers(api, orgId, { expand: ["skills", "languages", "locations"] });
+    // Debug: log the first few users that have a locations array to verify structure
+    const withLoc = allUsers.filter((u) => u.locations && u.locations.length > 0);
+    if (withLoc.length) {
+      console.log("[Location filter] Sample user location data:", JSON.stringify(withLoc[0].locations, null, 2));
+    } else {
+      console.warn("[Location filter] No users have locations assigned. Expand response sample:",
+        JSON.stringify({ id: allUsers[0]?.id, name: allUsers[0]?.name, locationKeys: Object.keys(allUsers[0] || {}).filter(k => k.toLowerCase().includes("loc")) }, null, 2));
+    }
+    return allUsers
+      .filter((u) => u.locations?.some((l) => l.locationDefinition?.id === locationId))
+      .map((u) => mapUser(u));
   }
 
   async function loadDivisionUsers(divisionId) {
