@@ -146,6 +146,28 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   let selectedQueues = [];
   let selectedTemplates = [];
 
+  // ── Confirm modal (replaces browser confirm) ──────────
+  function showConfirmModal({ title, bodyHTML, confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false }) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+      const confirmClass = danger ? "btn btn--danger" : "btn";
+      overlay.innerHTML = `
+        <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border,#334);border-radius:8px;padding:24px;min-width:340px;max-width:640px;width:90%">
+          <h3 style="margin:0 0 16px;font-size:1.1rem">${escapeHtml(title)}</h3>
+          <div style="font-size:.9rem;line-height:1.6">${bodyHTML}</div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+            <button id="cuModalCancel" class="btn btn--secondary">${escapeHtml(cancelLabel)}</button>
+            <button id="cuModalConfirm" class="${confirmClass}">${escapeHtml(confirmLabel)}</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      overlay.querySelector("#cuModalCancel").addEventListener("click", () => { document.body.removeChild(overlay); resolve(false); });
+      overlay.querySelector("#cuModalConfirm").addEventListener("click", () => { document.body.removeChild(overlay); resolve(true); });
+    });
+  }
+
   // ── Mode toggle ───────────────────────────────────────
   const $toggle = el.querySelector("#cuModeToggle");
   $toggle.addEventListener("click", () => {
@@ -1182,7 +1204,12 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     }
 
     const totalUsers = users.length;
-    if (!confirm(`Add configuration to ${totalUsers} user${totalUsers > 1 ? "s" : ""}?`)) return;
+    const confirmed = await showConfirmModal({
+      title: "Confirm Add",
+      bodyHTML: `<p>Add configuration to <strong>${totalUsers} user${totalUsers > 1 ? "s" : ""}</strong>?</p>`,
+      confirmLabel: "Add",
+    });
+    if (!confirmed) return;
 
     let completed = 0;
     let errors = 0;
@@ -1339,10 +1366,20 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         lines.push(`  → Queues: ${names.join(", ")}`);
       }
 
-      const msg = `⚠ Removing templates will also remove all associated properties:\n\n${lines.join("\n")}\n\nThis will affect ${users.length} user${users.length > 1 ? "s" : ""}. Continue?`;
-      if (!confirm(msg)) return;
+      const detailLines = lines.map((l) => escapeHtml(l)).join("<br>");
+      const bodyHTML = `<p style="color:#f59e0b;font-weight:600">⚠ Removing templates will also remove all associated properties:</p>
+        <div style="margin:10px 0;padding:8px 12px;background:rgba(0,0,0,.15);border-radius:4px;font-size:.85rem;line-height:1.7">${detailLines}</div>
+        <p>This will affect <strong>${users.length} user${users.length > 1 ? "s" : ""}</strong>.</p>`;
+      const confirmed = await showConfirmModal({ title: "Confirm Remove", bodyHTML, confirmLabel: "Remove", danger: true });
+      if (!confirmed) return;
     } else {
-      if (!confirm(`Remove selected items from ${users.length} user${users.length > 1 ? "s" : ""}?`)) return;
+      const confirmed = await showConfirmModal({
+        title: "Confirm Remove",
+        bodyHTML: `<p>Remove selected items from <strong>${users.length} user${users.length > 1 ? "s" : ""}</strong>?</p>`,
+        confirmLabel: "Remove",
+        danger: true,
+      });
+      if (!confirmed) return;
     }
 
     let completed = 0;
