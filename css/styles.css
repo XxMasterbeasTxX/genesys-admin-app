@@ -2657,9 +2657,12 @@ body {
 }
 
 /* ── User row list ────────────────────────────────────── */
+.cu-user-section {
+  margin-top: 20px;
+}
 .cu-user-list {
   margin-top: 10px;
-  max-height: 520px;
+  max-height: 60vh;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -2799,6 +2802,38 @@ body {
 .cu-detail-error {
   font-size: 12px;
   color: #f87171;
+}
+
+/* ── Inline remove buttons in detail ──────────────────── */
+.cu-btn-inline-remove {
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  font-size: 11px;
+  padding: 1px 6px;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+.cu-btn-inline-remove:hover {
+  opacity: 1;
+  background: rgba(239, 68, 68, 0.12);
+}
+.cu-tag--removable {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cu-tag-remove {
+  background: none;
+  border: none;
+  color: #f87171;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+.cu-tag-remove:hover {
+  opacity: 1;
 }
 
 /* ── Right panel — config sections ────────────────────── */

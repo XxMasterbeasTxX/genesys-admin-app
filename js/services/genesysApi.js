@@ -394,12 +394,24 @@ export async function addUserRoutingLanguagesBulk(api, orgId, userId, languages)
 }
 
 /**
- * Remove a role grant from a user.
- * Calls DELETE /api/v2/authorization/roles/{roleId}/subjectuser/{userId}
+ * Remove a role grant from a user (all divisions for that role).
+ * Uses POST /api/v2/authorization/subjects/{userId}/bulkremove with grant list.
  */
 export async function deleteUserRole(api, orgId, userId, roleId) {
-  return api.proxyGenesys(orgId, "DELETE",
-    `/api/v2/authorization/roles/${roleId}/subjectuser/${userId}`);
+  // First fetch user's grants so we know which division(s) to remove for this role
+  const grants = await getUserGrants(api, orgId, userId);
+  const matching = grants.filter((g) => g.roleId === roleId);
+  if (!matching.length) return; // role not assigned
+
+  const body = {
+    subjectId: userId,
+    grants: matching.map((g) => ({
+      role: { id: g.roleId },
+      division: { id: g.divisionId },
+    })),
+  };
+  return api.proxyGenesys(orgId, "POST",
+    `/api/v2/authorization/subjects/${userId}/bulkremove`, { body });
 }
 
 /**
@@ -436,10 +448,9 @@ export async function removeQueueMember(api, orgId, queueId, userId) {
  */
 export async function getUserGrants(api, orgId, userId) {
   const resp = await api.proxyGenesys(orgId, "GET",
-    `/api/v2/authorization/subjects/${userId}/grants`,
-    { query: { pageSize: "500" } });
+    `/api/v2/authorization/subjects/${userId}`);
   const grants = [];
-  for (const g of (resp.entities || [])) {
+  for (const g of (resp.grants || [])) {
     const roleId = g.role?.id;
     const roleName = g.role?.name || "";
     const divisionId = g.division?.id || "";

@@ -52,8 +52,6 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
           <div id="cuModePicker"></div>
         </div>
         <div id="cuSecondary" class="cu-secondary"></div>
-        <div class="cu-user-summary" id="cuUserSummary"></div>
-        <div id="cuUserList" class="cu-user-list"></div>
       </div>
       <div class="cu-panel cu-panel--right" id="cuRight">
         <div class="cu-apply-bar" id="cuApplyBar">
@@ -104,7 +102,11 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         </div>
       </div>
     </div>
-    <div class="cu-progress" id="cuProgress" hidden>
+    <div class="cu-user-section">
+      <div class="cu-user-summary" id="cuUserSummary"></div>
+      <div id="cuUserList" class="cu-user-list"></div>
+    </div>
+    <div class="cu-progress" id="cuProgress" hidden>>
       <div class="cu-progress-bar"><div class="cu-progress-fill" id="cuProgressFill"></div></div>
       <p class="cu-progress-text" id="cuProgressText"></p>
       <div class="cu-progress-log" id="cuProgressLog"></div>
@@ -544,6 +546,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         const detailEl = document.createElement("div");
         detailEl.className = "cu-detail";
         detailEl.innerHTML = buildDetailHTML(user, detail);
+        wireDetailRemoveButtons(detailEl, user);
         $userList.append(detailEl);
       } else if (isExpanded && !detail?.loaded) {
         const loadingEl = document.createElement("div");
@@ -598,8 +601,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     if (detail.grants?.length) {
       html += `<div class="cu-detail-section">
         <h4 class="cu-detail-heading">Roles (${detail.grants.length})</h4>
-        <table class="data-table cu-detail-table"><thead><tr><th>Role</th><th>Division</th></tr></thead><tbody>
-        ${detail.grants.map((g) => `<tr><td>${escapeHtml(g.roleName)}</td><td>${escapeHtml(g.divisionName)}</td></tr>`).join("")}
+        <table class="data-table cu-detail-table"><thead><tr><th>Role</th><th>Division</th><th></th></tr></thead><tbody>
+        ${detail.grants.map((g, i) => `<tr><td>${escapeHtml(g.roleName)}</td><td>${escapeHtml(g.divisionName)}</td><td><button class="btn btn-sm cu-btn-inline-remove" data-action="remove-role" data-idx="${i}" title="Remove this role grant">✕</button></td></tr>`).join("")}
         </tbody></table>
       </div>`;
     }
@@ -608,8 +611,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     if (user.skills?.length) {
       html += `<div class="cu-detail-section">
         <h4 class="cu-detail-heading">Skills (${user.skills.length})</h4>
-        <table class="data-table cu-detail-table"><thead><tr><th>Skill</th><th>Proficiency</th></tr></thead><tbody>
-        ${user.skills.map((s) => `<tr><td>${escapeHtml(s.skillName)}</td><td>${s.proficiency}</td></tr>`).join("")}
+        <table class="data-table cu-detail-table"><thead><tr><th>Skill</th><th>Proficiency</th><th></th></tr></thead><tbody>
+        ${user.skills.map((s, i) => `<tr><td>${escapeHtml(s.skillName)}</td><td>${s.proficiency}</td><td><button class="btn btn-sm cu-btn-inline-remove" data-action="remove-skill" data-idx="${i}" title="Remove this skill">✕</button></td></tr>`).join("")}
         </tbody></table>
       </div>`;
     }
@@ -618,8 +621,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     if (user.languages?.length) {
       html += `<div class="cu-detail-section">
         <h4 class="cu-detail-heading">Languages (${user.languages.length})</h4>
-        <table class="data-table cu-detail-table"><thead><tr><th>Language</th><th>Proficiency</th></tr></thead><tbody>
-        ${user.languages.map((l) => `<tr><td>${escapeHtml(l.languageName)}</td><td>${l.proficiency}</td></tr>`).join("")}
+        <table class="data-table cu-detail-table"><thead><tr><th>Language</th><th>Proficiency</th><th></th></tr></thead><tbody>
+        ${user.languages.map((l, i) => `<tr><td>${escapeHtml(l.languageName)}</td><td>${l.proficiency}</td><td><button class="btn btn-sm cu-btn-inline-remove" data-action="remove-language" data-idx="${i}" title="Remove this language">✕</button></td></tr>`).join("")}
         </tbody></table>
       </div>`;
     }
@@ -628,8 +631,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     if (detail.queues?.length) {
       html += `<div class="cu-detail-section">
         <h4 class="cu-detail-heading">Queues (${detail.queues.length})</h4>
-        <div class="cu-detail-tags">${detail.queues.map((q) =>
-          `<span class="cu-tag">${escapeHtml(q.queueName)}</span>`
+        <div class="cu-detail-tags">${detail.queues.map((q, i) =>
+          `<span class="cu-tag cu-tag--removable">${escapeHtml(q.queueName)}<button class="cu-tag-remove" data-action="remove-queue" data-idx="${i}" title="Remove from queue">✕</button></span>`
         ).join("")}</div>
       </div>`;
     }
@@ -641,6 +644,55 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     if (!html) html = `<p class="muted">No assignments found.</p>`;
 
     return html;
+  }
+
+  function wireDetailRemoveButtons(detailEl, user) {
+    detailEl.querySelectorAll("[data-action]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        const idx = parseInt(btn.dataset.idx, 10);
+        const detail = userDetails[user.id];
+
+        btn.disabled = true;
+        btn.textContent = "…";
+
+        try {
+          if (action === "remove-role") {
+            const grant = detail.grants[idx];
+            if (!grant) return;
+            await api.proxyGenesys(orgId, "POST",
+              `/api/v2/authorization/subjects/${user.id}/bulkremove`, {
+                body: {
+                  subjectId: user.id,
+                  grants: [{ role: { id: grant.roleId }, division: { id: grant.divisionId } }],
+                },
+              });
+            detail.grants.splice(idx, 1);
+          } else if (action === "remove-skill") {
+            const skill = user.skills[idx];
+            if (!skill) return;
+            await gc.deleteUserSkill(api, orgId, user.id, skill.skillId);
+            user.skills.splice(idx, 1);
+          } else if (action === "remove-language") {
+            const lang = user.languages[idx];
+            if (!lang) return;
+            await gc.deleteUserLanguage(api, orgId, user.id, lang.languageId);
+            user.languages.splice(idx, 1);
+          } else if (action === "remove-queue") {
+            const queue = detail.queues[idx];
+            if (!queue) return;
+            await gc.removeQueueMember(api, orgId, queue.queueId, user.id);
+            detail.queues.splice(idx, 1);
+          }
+          renderUserList();
+        } catch (err) {
+          btn.textContent = "✕";
+          btn.disabled = false;
+          setStatus(`Failed to remove: ${err.message}`, "error");
+        }
+      });
+    });
   }
 
   function updateUserSummary() {

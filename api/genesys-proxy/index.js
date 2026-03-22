@@ -97,7 +97,7 @@ module.exports = async function (context, req) {
       // Let fetch set Content-Type with correct multipart boundary
     } else {
       fetchOpts.headers["Content-Type"] = "application/json";
-      if (body && !["GET", "DELETE"].includes(method.toUpperCase())) {
+      if (body && !["GET"].includes(method.toUpperCase())) {
         fetchOpts.body = JSON.stringify(body);
       }
     }
