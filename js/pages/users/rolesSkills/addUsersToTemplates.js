@@ -173,7 +173,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
       <p class="muted" style="margin:0 0 16px;font-size:12px">Created by: ${escapeHtml(t.createdByName || t.createdBy || "—")}</p>
 
       <!-- Read-only template setup -->
-      <div class="cu-sections-row" id="autSetup"></div>
+      <div id="autSetup" style="display:flex;flex-direction:column;gap:4px;margin-top:16px"></div>
 
       <!-- Assigned users -->
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
