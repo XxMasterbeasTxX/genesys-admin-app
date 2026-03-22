@@ -2936,6 +2936,16 @@ body {
 .cu-detail-table {
   width: 100%;
   margin-top: 6px;
+  table-layout: fixed;
+}
+.cu-detail-table th:last-child,
+.cu-detail-table td:last-child {
+  width: 40px;
+  text-align: right;
+}
+.cu-detail-table th:first-child,
+.cu-detail-table td:first-child {
+  width: 30%;
 }
 .cu-cell-count {
   width: 70px;
