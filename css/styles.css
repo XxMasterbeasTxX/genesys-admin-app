@@ -2598,6 +2598,26 @@ body {
 .cu-status--success { color: #34d399; }
 .cu-status--error   { color: #f87171; }
 
+.cu-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 0;
+}
+.cu-loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent, #3b82f6);
+  border-radius: 50%;
+  animation: cu-spin 0.7s linear infinite;
+}
+@keyframes cu-spin {
+  to { transform: rotate(360deg); }
+}
+
 .cu-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;

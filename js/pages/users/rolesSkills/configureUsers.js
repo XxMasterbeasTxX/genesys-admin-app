@@ -44,7 +44,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       and queue memberships — individually or by applying templates.
     </p>
     <div class="cu-status" id="cuStatus"></div>
-    <div class="cu-layout">
+    <div class="cu-loading" id="cuLoading"><div class="cu-loading-spinner"></div><p class="muted">Loading data from Genesys…</p></div>
+    <div class="cu-layout" id="cuLayout" hidden>
       <div class="cu-panel cu-panel--left" id="cuLeft">
         <h2 class="cu-panel-title">Select Users</h2>
         <div class="cu-mode-row">
@@ -100,7 +101,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         </div>
       </div>
     </div>
-    <div class="cu-user-section">
+    <div class="cu-user-section" id="cuUserSection" hidden>
       <div class="cu-progress" id="cuProgress" hidden>
         <div class="cu-progress-bar"><div class="cu-progress-fill" id="cuProgressFill"></div></div>
         <p class="cu-progress-text" id="cuProgressText"></p>
@@ -218,14 +219,22 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   }
 
   // ── Initialise ────────────────────────────────────────
+  const $loading = el.querySelector("#cuLoading");
+  const $layout = el.querySelector("#cuLayout");
+  const $userSection = el.querySelector("#cuUserSection");
+
   init();
   async function init() {
     try {
       await ensureGenesysData();
     } catch (err) {
+      $loading.hidden = true;
       setStatus(`Failed to load Genesys data: ${err.message}`, "error");
       return;
     }
+    $loading.hidden = true;
+    $layout.hidden = false;
+    $userSection.hidden = false;
     buildLeftPanel();
     buildRightPanel();
   }
