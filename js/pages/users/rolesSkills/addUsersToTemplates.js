@@ -192,11 +192,13 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
       <!-- Add users -->
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
         <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px">Add Users</h3>
-        <div id="autModePicker" style="margin-bottom:10px"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div id="autModePicker"></div>
+          <button class="btn btn-sm" id="autBtnAdd" hidden>Assign Selected to Template</button>
+        </div>
         <div id="autSecondary"></div>
         <div id="autSearchResults"></div>
         <div class="cu-pagination" id="autPagination"></div>
-        <button class="btn btn-sm" id="autBtnAdd" hidden style="margin-top:8px">Assign Selected to Template</button>
       </div>
 
       <!-- Progress -->
