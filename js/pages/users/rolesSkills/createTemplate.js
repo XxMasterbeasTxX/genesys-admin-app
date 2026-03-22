@@ -1,16 +1,19 @@
 /**
- * Users › Roles & Skills › Create Template
+ * Users › Roles, Queues & Skills › Create Template
  *
- * Create, edit, and delete skill/queue templates stored in Azure Table Storage.
- * Templates bundle a set of skills (with proficiency levels 1–5) and queues
+ * Create, edit, and delete templates stored in Azure Table Storage.
+ * Templates bundle a set of roles (with division assignments),
+ * skills (with proficiency levels 1–5) and queues
  * that can later be applied to users in bulk.
  *
  * API endpoints (internal):
  *   GET/POST/PUT/DELETE  /api/templates
  *
  * Genesys endpoints (via proxy):
- *   GET /api/v2/routing/skills  — list available skills
- *   GET /api/v2/routing/queues  — list available queues
+ *   GET /api/v2/authorization/roles      — list available roles
+ *   GET /api/v2/authorization/divisions  — list available divisions
+ *   GET /api/v2/routing/skills           — list available skills
+ *   GET /api/v2/routing/queues           — list available queues
  */
 import { escapeHtml } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
@@ -29,7 +32,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
   const org = orgContext?.getDetails?.();
   if (!org) {
     el.innerHTML = `
-      <h1 class="h1">Skill & Queue Templates</h1>
+      <h1 class="h1">Role, Queue & Skill Templates</h1>
       <hr class="hr">
       <p class="p">Please select a customer org from the dropdown above.</p>`;
     return el;
@@ -38,11 +41,11 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
   const orgId = org.id;
 
   el.innerHTML = `
-    <h1 class="h1">Skill & Queue Templates</h1>
+    <h1 class="h1">Role, Queue & Skill Templates</h1>
     <hr class="hr">
     <p class="page-desc">
-      Create templates consisting of skills (with proficiency) and queues.
-      Templates can be applied to users to assign skills and queue memberships in bulk.
+      Create templates consisting of roles (with division access), skills (with proficiency) and queues.
+      Templates can be applied to users to assign roles, skills and queue memberships in bulk.
     </p>
     <div class="st-status" id="stStatus"></div>
     <div class="st-body" id="stBody">
@@ -56,13 +59,16 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
   const $status = el.querySelector("#stStatus");
 
   let templates = [];
-  let allSkills = [];  // [{ id, name }]
-  let allQueues = [];  // [{ id, name }]
-  let editingId = null; // null = creating new, string = editing existing
+  let allSkills = [];     // [{ id, name }]
+  let allQueues = [];     // [{ id, name }]
+  let allRoles = [];      // [{ id, name }]
+  let allDivisions = [];  // [{ id, name }]
+  let editingId = null;
 
   // Editor state
   let selectedSkills = []; // [{ skillId, skillName, proficiency }]
   let selectedQueues = []; // [{ queueId, queueName }]
+  let selectedRoles = [];  // [{ roleId, roleName, divisions: [{ divisionId, divisionName }] }]
 
   // ── Status helper ─────────────────────────────────────
   function setStatus(msg, type) {
@@ -70,16 +76,20 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     $status.className = "st-status" + (type ? ` st-status--${type}` : "");
   }
 
-  // ── Load Genesys data (skills + queues) ───────────────
+  // ── Load Genesys data ─────────────────────────────────
   let genesysDataLoaded = false;
   async function ensureGenesysData() {
     if (genesysDataLoaded) return;
-    const [skills, queues] = await Promise.all([
+    const [skills, queues, roles, divisions] = await Promise.all([
       gc.fetchAllPages(api, orgId, "/api/v2/routing/skills"),
       gc.fetchAllPages(api, orgId, "/api/v2/routing/queues"),
+      gc.fetchAllPages(api, orgId, "/api/v2/authorization/roles", { query: { sortBy: "name" } }),
+      gc.fetchAllPages(api, orgId, "/api/v2/authorization/divisions"),
     ]);
     allSkills = skills.map((s) => ({ id: s.id, name: s.name }));
     allQueues = queues.map((q) => ({ id: q.id, name: q.name }));
+    allRoles = roles.map((r) => ({ id: r.id, name: r.name }));
+    allDivisions = divisions.map((d) => ({ id: d.id, name: d.name }));
     genesysDataLoaded = true;
   }
 
@@ -99,6 +109,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
         const editable = canEdit(t);
         return `<tr>
           <td class="st-cell-name">${escapeHtml(t.name)}</td>
+          <td class="st-cell-count">${(t.roles || []).length}</td>
           <td class="st-cell-count">${(t.skills || []).length}</td>
           <td class="st-cell-count">${(t.queues || []).length}</td>
           <td class="st-cell-owner">${escapeHtml(t.createdByName || t.createdBy)}</td>
@@ -117,6 +128,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
         <thead>
           <tr>
             <th>Name</th>
+            <th>Roles</th>
             <th>Skills</th>
             <th>Queues</th>
             <th>Created By</th>
@@ -172,9 +184,12 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     selectedQueues = existing
       ? (existing.queues || []).map((q) => ({ ...q }))
       : [];
+    selectedRoles = existing
+      ? (existing.roles || []).map((r) => ({ ...r, divisions: (r.divisions || []).map((d) => ({ ...d })) }))
+      : [];
 
     $editor.hidden = false;
-    $editor.innerHTML = `<p class="muted">Loading skills & queues from Genesys…</p>`;
+    $editor.innerHTML = `<p class="muted">Loading data from Genesys…</p>`;
 
     try {
       await ensureGenesysData();
@@ -192,6 +207,11 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
       <div class="st-field">
         <label class="st-label" for="stName">Template Name</label>
         <input class="input st-input-name" id="stName" type="text" placeholder="e.g. L1 Support Agent" />
+      </div>
+      <div class="st-section">
+        <h3 class="st-section-title">Roles</h3>
+        <div class="st-picker" id="stRolePicker"></div>
+        <div class="st-role-list" id="stRoleList"></div>
       </div>
       <div class="st-section">
         <h3 class="st-section-title">Skills</h3>
@@ -216,12 +236,32 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
       if (t) $name.value = t.name;
     }
 
+    // ── Role multi-select ─────────────────────────────
+    const roleSelect = createMultiSelect({
+      placeholder: "Add roles…",
+      searchable: true,
+      onChange: (ids) => {
+        for (const id of ids) {
+          if (!selectedRoles.find((r) => r.roleId === id)) {
+            const role = allRoles.find((r) => r.id === id);
+            if (role) {
+              selectedRoles.push({ roleId: id, roleName: role.name, divisions: [] });
+            }
+          }
+        }
+        selectedRoles = selectedRoles.filter((r) => ids.has(r.roleId));
+        renderRoleList();
+      },
+    });
+    roleSelect.setItems(allRoles.map((r) => ({ id: r.id, label: r.name })));
+    roleSelect.setSelected(new Set(selectedRoles.map((r) => r.roleId)));
+    $editor.querySelector("#stRolePicker").append(roleSelect.el);
+
     // ── Skill multi-select ────────────────────────────
     const skillSelect = createMultiSelect({
       placeholder: "Add skills…",
       searchable: true,
       onChange: (ids) => {
-        // Add newly selected skills (skip already present)
         for (const id of ids) {
           if (!selectedSkills.find((s) => s.skillId === id)) {
             const skill = allSkills.find((s) => s.id === id);
@@ -230,7 +270,6 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
             }
           }
         }
-        // Remove deselected skills
         selectedSkills = selectedSkills.filter((s) => ids.has(s.skillId));
         renderSkillList();
       },
@@ -260,12 +299,75 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     queueSelect.setSelected(new Set(selectedQueues.map((q) => q.queueId)));
     $editor.querySelector("#stQueuePicker").append(queueSelect.el);
 
+    renderRoleList();
     renderSkillList();
     renderQueueList();
 
     // ── Buttons ───────────────────────────────────────
     $editor.querySelector("#stBtnCancel").addEventListener("click", closeEditor);
     $editor.querySelector("#stBtnSave").addEventListener("click", handleSave);
+  }
+
+  // ── Role list with per-role division picker ───────────
+  function renderRoleList() {
+    const $list = $editor.querySelector("#stRoleList");
+    if (!selectedRoles.length) {
+      $list.innerHTML = `<p class="muted">No roles added yet.</p>`;
+      return;
+    }
+
+    $list.innerHTML = `
+      <div class="st-role-cards">
+        ${selectedRoles.map((r, i) => `
+          <div class="st-role-card" data-idx="${i}">
+            <div class="st-role-header">
+              <span class="st-role-name">${escapeHtml(r.roleName)}</span>
+              <button class="btn btn-sm st-btn-remove" data-idx="${i}" data-type="role">✕</button>
+            </div>
+            <div class="st-role-divs">
+              <label class="st-label">Divisions</label>
+              <div class="st-div-picker" id="stDivPicker_${i}"></div>
+              <div class="st-div-tags" id="stDivTags_${i}">
+                ${r.divisions.length
+                  ? r.divisions.map((d) => `<span class="st-div-tag">${escapeHtml(d.divisionName)}</span>`).join("")
+                  : `<span class="muted" style="font-size:12px">No divisions selected</span>`}
+              </div>
+            </div>
+          </div>`).join("")}
+      </div>`;
+
+    // Attach a division multi-select to each role card
+    selectedRoles.forEach((r, i) => {
+      const divSelect = createMultiSelect({
+        placeholder: "Select divisions…",
+        searchable: true,
+        onChange: (ids) => {
+          r.divisions = Array.from(ids).map((id) => {
+            const div = allDivisions.find((d) => d.id === id);
+            return { divisionId: id, divisionName: div ? div.name : id };
+          });
+          // Update tags inline
+          const $tags = $list.querySelector(`#stDivTags_${i}`);
+          if ($tags) {
+            $tags.innerHTML = r.divisions.length
+              ? r.divisions.map((d) => `<span class="st-div-tag">${escapeHtml(d.divisionName)}</span>`).join("")
+              : `<span class="muted" style="font-size:12px">No divisions selected</span>`;
+          }
+        },
+      });
+      divSelect.setItems(allDivisions.map((d) => ({ id: d.id, label: d.name })));
+      divSelect.setSelected(new Set(r.divisions.map((d) => d.divisionId)));
+      const $pickerSlot = $list.querySelector(`#stDivPicker_${i}`);
+      if ($pickerSlot) $pickerSlot.append(divSelect.el);
+    });
+
+    // Remove role
+    $list.querySelectorAll('.st-btn-remove[data-type="role"]').forEach((btn) =>
+      btn.addEventListener("click", () => {
+        selectedRoles.splice(parseInt(btn.dataset.idx, 10), 1);
+        renderRoleList();
+      }),
+    );
   }
 
   // ── Skill list with proficiency radios ────────────────
@@ -298,7 +400,6 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
         </tbody>
       </table>`;
 
-    // Proficiency change
     $list.querySelectorAll('input[type="radio"]').forEach((radio) =>
       radio.addEventListener("change", (e) => {
         const idx = parseInt(e.target.name.split("_")[1], 10);
@@ -306,15 +407,9 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
       }),
     );
 
-    // Remove skill
     $list.querySelectorAll('.st-btn-remove[data-type="skill"]').forEach((btn) =>
       btn.addEventListener("click", () => {
         selectedSkills.splice(parseInt(btn.dataset.idx, 10), 1);
-        // Re-sync the multi-select dropdown
-        const picker = $editor.querySelector("#stSkillPicker .ms-dropdown");
-        if (picker?.__msInstance) {
-          picker.__msInstance.setSelected(new Set(selectedSkills.map((s) => s.skillId)));
-        }
         renderSkillList();
       }),
     );
@@ -342,10 +437,6 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     $list.querySelectorAll('.st-btn-remove[data-type="queue"]').forEach((btn) =>
       btn.addEventListener("click", () => {
         selectedQueues.splice(parseInt(btn.dataset.idx, 10), 1);
-        const picker = $editor.querySelector("#stQueuePicker .ms-dropdown");
-        if (picker?.__msInstance) {
-          picker.__msInstance.setSelected(new Set(selectedQueues.map((q) => q.queueId)));
-        }
         renderQueueList();
       }),
     );
@@ -364,8 +455,8 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
       setStatus("Please enter a template name.", "error");
       return;
     }
-    if (!selectedSkills.length && !selectedQueues.length) {
-      setStatus("Add at least one skill or queue.", "error");
+    if (!selectedRoles.length && !selectedSkills.length && !selectedQueues.length) {
+      setStatus("Add at least one role, skill or queue.", "error");
       return;
     }
 
@@ -377,6 +468,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
         await updateTemplate(editingId, {
           orgId,
           name,
+          roles: selectedRoles,
           skills: selectedSkills,
           queues: selectedQueues,
           userEmail: me.email,
@@ -386,6 +478,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
         await createTemplate({
           orgId,
           name,
+          roles: selectedRoles,
           skills: selectedSkills,
           queues: selectedQueues,
           userEmail: me.email,

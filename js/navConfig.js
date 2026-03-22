@@ -276,7 +276,7 @@ export const NAV_TREE = [
         ],
       },
       {
-        label: "Roles & Skills",
+        label: "Roles, Queues & Skills",
         path: "roles-skills",
         enabled: true,
         children: [

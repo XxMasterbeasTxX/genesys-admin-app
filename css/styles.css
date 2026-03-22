@@ -2506,6 +2506,54 @@ body {
   gap: 10px;
   justify-content: flex-end;
 }
+
+/* ── Role cards with division pickers ──────────────────── */
+.st-role-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+.st-role-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--panel-2);
+}
+.st-role-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.st-role-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.st-role-divs {
+  margin-top: 4px;
+}
+.st-role-divs .st-label {
+  margin-bottom: 4px;
+}
+.st-div-picker {
+  max-width: 350px;
+  margin-bottom: 6px;
+}
+.st-div-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 22px;
+}
+.st-div-tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
 .st-btn-save {
   background: rgba(52, 211, 153, 0.12);
   border-color: rgba(52, 211, 153, 0.3);
