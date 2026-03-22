@@ -2606,6 +2606,7 @@ body {
   gap: 16px;
   padding: 60px 0;
 }
+.cu-loading[hidden] { display: none; }
 .cu-loading-spinner {
   width: 36px;
   height: 36px;
