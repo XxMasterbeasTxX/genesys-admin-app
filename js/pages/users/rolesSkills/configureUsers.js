@@ -103,6 +103,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     <div class="cu-user-section">
       <div class="cu-user-summary" id="cuUserSummary"></div>
       <div id="cuUserList" class="cu-user-list"></div>
+      <div class="cu-pagination" id="cuPagination"></div>
     </div>
     <div class="cu-progress" id="cuProgress" hidden>>
       <div class="cu-progress-bar"><div class="cu-progress-fill" id="cuProgressFill"></div></div>
@@ -256,7 +257,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     const searchRow = document.createElement("div");
     searchRow.className = "cu-search-row";
     searchRow.innerHTML = `
-      <input type="text" class="input cu-search-input" id="cuSearchInput" placeholder="Search by name…" />
+      <input type="text" class="input cu-search-input" id="cuSearchInput" placeholder="Search by name… (empty = all users)" />
       <button class="btn cu-btn-search" id="cuSearchBtn">Search</button>
     `;
     $secondary.append(searchRow);
@@ -264,22 +265,39 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     const $input = searchRow.querySelector("#cuSearchInput");
     const $btn = searchRow.querySelector("#cuSearchBtn");
 
-    async function doSearch() {
+    let lastSearchTerm = "";
+    let totalPages = 1;
+    let currentPage = 1;
+
+    async function doSearch(page = 1) {
       const term = $input.value.trim();
-      if (!term) return;
+      lastSearchTerm = term;
+      currentPage = page;
       $btn.disabled = true;
       $btn.textContent = "Searching…";
       try {
-        const results = await api.proxyGenesys(orgId, "POST", "/api/v2/users/search", {
-          body: {
-            pageSize: 100,
-            pageNumber: 1,
-            query: [{ type: "QUERY_STRING", value: term, fields: ["name", "email"] }],
-            expand: ["skills", "languages"],
-          },
-        });
-        const users = (results.results || []).map((u) => mapUser(u));
+        let users, total;
+        if (term) {
+          const results = await api.proxyGenesys(orgId, "POST", "/api/v2/users/search", {
+            body: {
+              pageSize: 100,
+              pageNumber: page,
+              query: [{ type: "QUERY_STRING", value: term, fields: ["name", "email"] }],
+              expand: ["skills", "languages"],
+            },
+          });
+          users = (results.results || []).map((u) => mapUser(u));
+          total = results.total || users.length;
+        } else {
+          const results = await api.proxyGenesys(orgId, "GET", "/api/v2/users", {
+            query: { pageSize: "100", pageNumber: String(page), expand: "skills,languages", sortOrder: "ASC" },
+          });
+          users = (results.entities || []).map((u) => mapUser(u));
+          total = results.total || users.length;
+        }
+        totalPages = Math.max(1, Math.ceil(total / 100));
         setUserList(users);
+        renderPagination(currentPage, totalPages, doSearch);
       } catch (err) {
         setStatus(`Search failed: ${err.message}`, "error");
       } finally {
@@ -288,8 +306,42 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       }
     }
 
-    $btn.addEventListener("click", doSearch);
-    $input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+    $btn.addEventListener("click", () => doSearch(1));
+    $input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(1); });
+  }
+
+  function renderPagination(current, total, goToPage) {
+    const $pag = el.querySelector("#cuPagination");
+    $pag.innerHTML = "";
+    if (total <= 1) return;
+
+    const frag = document.createDocumentFragment();
+
+    const addBtn = (label, page, disabled, active) => {
+      const btn = document.createElement("button");
+      btn.className = "btn btn-sm cu-page-btn" + (active ? " cu-page-btn--active" : "");
+      btn.textContent = label;
+      btn.disabled = disabled;
+      if (!disabled && !active) btn.addEventListener("click", () => goToPage(page));
+      frag.append(btn);
+    };
+
+    addBtn("«", 1, current === 1, false);
+    addBtn("‹", current - 1, current === 1, false);
+
+    // Show up to 7 page numbers around current
+    let start = Math.max(1, current - 3);
+    let end = Math.min(total, start + 6);
+    if (end - start < 6) start = Math.max(1, end - 6);
+
+    for (let p = start; p <= end; p++) {
+      addBtn(String(p), p, false, p === current);
+    }
+
+    addBtn("›", current + 1, current === total, false);
+    addBtn("»", total, current === total, false);
+
+    $pag.append(frag);
   }
 
   // ── Filter mode (group, role, location, division) ─────

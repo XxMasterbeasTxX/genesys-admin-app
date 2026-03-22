@@ -2840,6 +2840,24 @@ body {
   flex-wrap: wrap;
   gap: 4px;
 }
+.cu-pagination {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 0;
+  flex-wrap: wrap;
+}
+.cu-page-btn {
+  min-width: 32px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.cu-page-btn--active {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  border-color: var(--accent, #3b82f6);
+  pointer-events: none;
+}
 
 /* ── Right panel — config sections ────────────────────── */
 .cu-apply-bar {
