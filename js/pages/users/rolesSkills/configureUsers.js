@@ -498,21 +498,33 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     return members.map((u) => mapUser(u));
   }
 
-  async function fetchUsersByIds(ids) {
+  async function fetchUsersByIds(ids, { statusLabel = "users" } = {}) {
+    const total = ids.length;
+    let loaded = 0;
+    setStatus(`Loading ${statusLabel}… (0/${total})`);
     const results = await Promise.all(
       ids.map((id) =>
         api.proxyGenesys(orgId, "GET", `/api/v2/users/${id}`, {
           query: { expand: "skills,languages" },
-        }).then(mapUser).catch(() => null)
+        }).then((u) => {
+          loaded++;
+          setStatus(`Loading ${statusLabel}… (${loaded}/${total})`);
+          return mapUser(u);
+        }).catch(() => {
+          loaded++;
+          setStatus(`Loading ${statusLabel}… (${loaded}/${total})`);
+          return null;
+        })
       )
     );
+    setStatus("");
     return results.filter(Boolean);
   }
 
   async function loadRoleMembers(roleId) {
     const members = await gc.fetchRoleUsers(api, orgId, roleId);
     if (!members.length) return [];
-    return fetchUsersByIds(members.map((m) => m.id || m));
+    return fetchUsersByIds(members.map((m) => m.id || m), { statusLabel: "role members" });
   }
 
   async function loadLocationUsers(locationId) {
@@ -534,7 +546,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       .filter((a) => a.templateId === templateId)
       .map((a) => a.userId);
     if (!userIds.length) return [];
-    return fetchUsersByIds(userIds);
+    return fetchUsersByIds(userIds, { statusLabel: "template users" });
   }
 
   // ════════════════════════════════════════════════════════
