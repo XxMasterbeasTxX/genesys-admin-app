@@ -129,7 +129,6 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   let allRoles = [];
   let allDivisions = [];
   let allGroups = [];
-  let allLocations = [];
   let templates = [];
   let allAssignments = []; // template assignment records from Azure Table
 
@@ -194,7 +193,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   async function ensureGenesysData() {
     if (genesysDataLoaded) return;
     setStatus("Loading data from Genesys…");
-    const [skills, languages, queues, roles, divisions, groups, locations, tpls, assigns] =
+    const [skills, languages, queues, roles, divisions, groups, tpls, assigns] =
       await Promise.all([
         gc.fetchAllPages(api, orgId, "/api/v2/routing/skills"),
         gc.fetchAllPages(api, orgId, "/api/v2/routing/languages"),
@@ -202,7 +201,6 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         gc.fetchAllPages(api, orgId, "/api/v2/authorization/roles", { query: { sortBy: "name" } }),
         gc.fetchAllPages(api, orgId, "/api/v2/authorization/divisions"),
         gc.fetchAllPages(api, orgId, "/api/v2/groups"),
-        gc.fetchAllLocations(api, orgId),
         fetchTemplates(orgId),
         fetchAssignments(orgId),
       ]);
@@ -212,7 +210,6 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     allRoles = roles.map((r) => ({ id: r.id, name: r.name }));
     allDivisions = divisions.map((d) => ({ id: d.id, name: d.name }));
     allGroups = groups.map((g) => ({ id: g.id, name: g.name }));
-    allLocations = locations.map((l) => ({ id: l.id, name: l.name }));
     templates = tpls;
     allAssignments = assigns;
     genesysDataLoaded = true;
@@ -250,7 +247,6 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       { id: "role", label: "By Role" },
       { id: "template", label: "By Template" },
       { id: "reports-to", label: "Reports To" },
-      { id: "location", label: "Location" },
       { id: "division", label: "By Division" },
     ];
     const modeSelect = createSingleSelect({
@@ -283,8 +279,6 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         loadTemplateUsers);
     } else if (mode === "reports-to") {
       buildReportsToMode($secondary);
-    } else if (mode === "location") {
-      buildFilterMode($secondary, "Location", allLocations, loadLocationUsers);
     } else if (mode === "division") {
       buildFilterMode($secondary, "Division", allDivisions, loadDivisionUsers);
     }
@@ -525,21 +519,6 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     const members = await gc.fetchRoleUsers(api, orgId, roleId);
     if (!members.length) return [];
     return fetchUsersByIds(members.map((m) => m.id || m), { statusLabel: "role members" });
-  }
-
-  async function loadLocationUsers(locationId) {
-    const allUsers = await gc.fetchAllUsers(api, orgId, { expand: ["skills", "languages", "locations"] });
-    // Debug: log the first few users that have a locations array to verify structure
-    const withLoc = allUsers.filter((u) => u.locations && u.locations.length > 0);
-    if (withLoc.length) {
-      console.log("[Location filter] Sample user location data:", JSON.stringify(withLoc[0].locations, null, 2));
-    } else {
-      console.warn("[Location filter] No users have locations assigned. Expand response sample:",
-        JSON.stringify({ id: allUsers[0]?.id, name: allUsers[0]?.name, locationKeys: Object.keys(allUsers[0] || {}).filter(k => k.toLowerCase().includes("loc")) }, null, 2));
-    }
-    return allUsers
-      .filter((u) => u.locations?.some((l) => l.locationDefinition?.id === locationId))
-      .map((u) => mapUser(u));
   }
 
   async function loadDivisionUsers(divisionId) {
