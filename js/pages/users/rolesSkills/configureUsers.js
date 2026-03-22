@@ -65,39 +65,41 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
           </div>
           <button class="btn cu-btn-apply" id="cuBtnApply" disabled>Apply to Selected Users</button>
         </div>
-        <div class="cu-section">
-          <h3 class="cu-section-title cu-collapsible" id="cuToggleTemplates"><span class="cu-chevron">▸</span> Templates</h3>
-          <div class="cu-section-body" id="cuSectionTemplates" hidden>
-            <div class="cu-picker" id="cuTemplatePicker"></div>
-            <div class="cu-template-list" id="cuTemplateList"></div>
+        <div class="cu-sections-row">
+          <div class="cu-section">
+            <h3 class="cu-section-title cu-collapsible" id="cuToggleTemplates"><span class="cu-chevron">▸</span> Templates</h3>
+            <div class="cu-section-body" id="cuSectionTemplates" hidden>
+              <div class="cu-picker" id="cuTemplatePicker"></div>
+              <div class="cu-template-list" id="cuTemplateList"></div>
+            </div>
           </div>
-        </div>
-        <div class="cu-section">
-          <h3 class="cu-section-title cu-collapsible" id="cuToggleRoles"><span class="cu-chevron">▸</span> Roles</h3>
-          <div class="cu-section-body" id="cuSectionRoles" hidden>
-            <div class="cu-picker" id="cuRolePicker"></div>
-            <div class="cu-role-list" id="cuRoleList"></div>
+          <div class="cu-section">
+            <h3 class="cu-section-title cu-collapsible" id="cuToggleRoles"><span class="cu-chevron">▸</span> Roles</h3>
+            <div class="cu-section-body" id="cuSectionRoles" hidden>
+              <div class="cu-picker" id="cuRolePicker"></div>
+              <div class="cu-role-list" id="cuRoleList"></div>
+            </div>
           </div>
-        </div>
-        <div class="cu-section">
-          <h3 class="cu-section-title cu-collapsible" id="cuToggleSkills"><span class="cu-chevron">▸</span> Skills</h3>
-          <div class="cu-section-body" id="cuSectionSkills" hidden>
-            <div class="cu-picker" id="cuSkillPicker"></div>
-            <div class="cu-skill-list" id="cuSkillList"></div>
+          <div class="cu-section">
+            <h3 class="cu-section-title cu-collapsible" id="cuToggleSkills"><span class="cu-chevron">▸</span> Skills</h3>
+            <div class="cu-section-body" id="cuSectionSkills" hidden>
+              <div class="cu-picker" id="cuSkillPicker"></div>
+              <div class="cu-skill-list" id="cuSkillList"></div>
+            </div>
           </div>
-        </div>
-        <div class="cu-section">
-          <h3 class="cu-section-title cu-collapsible" id="cuToggleLanguages"><span class="cu-chevron">▸</span> Language Skills</h3>
-          <div class="cu-section-body" id="cuSectionLanguages" hidden>
-            <div class="cu-picker" id="cuLanguagePicker"></div>
-            <div class="cu-language-list" id="cuLanguageList"></div>
+          <div class="cu-section">
+            <h3 class="cu-section-title cu-collapsible" id="cuToggleLanguages"><span class="cu-chevron">▸</span> Language Skills</h3>
+            <div class="cu-section-body" id="cuSectionLanguages" hidden>
+              <div class="cu-picker" id="cuLanguagePicker"></div>
+              <div class="cu-language-list" id="cuLanguageList"></div>
+            </div>
           </div>
-        </div>
-        <div class="cu-section">
-          <h3 class="cu-section-title cu-collapsible" id="cuToggleQueues"><span class="cu-chevron">▸</span> Queues</h3>
-          <div class="cu-section-body" id="cuSectionQueues" hidden>
-            <div class="cu-picker" id="cuQueuePicker"></div>
-            <div class="cu-queue-list" id="cuQueueList"></div>
+          <div class="cu-section">
+            <h3 class="cu-section-title cu-collapsible" id="cuToggleQueues"><span class="cu-chevron">▸</span> Queues</h3>
+            <div class="cu-section-body" id="cuSectionQueues" hidden>
+              <div class="cu-picker" id="cuQueuePicker"></div>
+              <div class="cu-queue-list" id="cuQueueList"></div>
+            </div>
           </div>
         </div>
       </div>
