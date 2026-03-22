@@ -28,6 +28,7 @@ const handlers = {
   trustee: () => require("./exports/trustee"),
   documentation:          () => require("./exports/documentation"),
   interactionTotals:      () => require("./exports/interactionTotals"),
+  skillTemplates:         () => require("./exports/skillTemplates"),
 };
 
 /**

@@ -60,6 +60,7 @@
  *   export.users.allRoles              All Roles export
  *   export.users.filteredRoles         Filtered on Role(s) export
  *   export.users.lastLogin             Last Login export
+ *   export.users.skillTemplates        Skill/Role/Queue Templates export
  *   export.users.trustee               Trustee export
  *   export.interactions.totals         Interaction Totals — bar charts by media/direction/routing
  *

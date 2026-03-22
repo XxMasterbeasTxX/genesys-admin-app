@@ -187,6 +187,7 @@ export const NAV_TREE = [
           { label: "All Roles", path: "all-roles", enabled: true, access: "export.users.allRoles" },
           { label: "Filtered on Role(s)", path: "filtered-roles", enabled: true, access: "export.users.filteredRoles" },
           { label: "Last Login", path: "last-login", enabled: true, access: "export.users.lastLogin" },
+          { label: "Skill/Role/Queue Templates", path: "skill-templates", enabled: true, access: "export.users.skillTemplates" },
           { label: "Trustee", path: "trustee", enabled: true, access: "export.users.trustee" },
         ],
       },
