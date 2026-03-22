@@ -237,12 +237,12 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
       ? `<table class="data-table cu-detail-table"><thead><tr><th>Language</th><th>Prof.</th></tr></thead><tbody>${langLines}</tbody></table>`
       : `<p class="muted">None</p>`));
 
-    // Queues
+    // Queues (single-column — skip cu-detail-table to avoid 40px width constraint)
     const queueLines = (t.queues || []).map((q) =>
       `<tr><td>${escapeHtml(q.queueName)}</td></tr>`
     ).join("");
     sections.push(buildSection("Queues", `(${(t.queues || []).length})`, queueLines
-      ? `<table class="data-table cu-detail-table"><thead><tr><th>Queue</th></tr></thead><tbody>${queueLines}</tbody></table>`
+      ? `<table class="data-table"><thead><tr><th>Queue</th></tr></thead><tbody>${queueLines}</tbody></table>`
       : `<p class="muted">None</p>`));
 
     $setup.innerHTML = sections.join("");
