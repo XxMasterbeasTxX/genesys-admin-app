@@ -596,12 +596,22 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       </div>`;
     }
 
-    // Roles
+    // Roles – group by roleId, show divisions as tags
     if (detail.grants?.length) {
+      const roleMap = new Map();
+      for (const g of detail.grants) {
+        if (!roleMap.has(g.roleId)) roleMap.set(g.roleId, { roleName: g.roleName, roleId: g.roleId, divs: [] });
+        roleMap.get(g.roleId).divs.push(g);
+      }
+      const uniqueRoles = [...roleMap.values()];
       html += `<div class="cu-detail-section">
-        <h4 class="cu-detail-heading">Roles (${detail.grants.length})</h4>
-        <table class="data-table cu-detail-table"><thead><tr><th>Role</th><th>Division</th><th></th></tr></thead><tbody>
-        ${detail.grants.map((g, i) => `<tr><td>${escapeHtml(g.roleName)}</td><td>${escapeHtml(g.divisionName)}</td><td><button class="btn btn-sm cu-btn-inline-remove" data-action="remove-role" data-idx="${i}" title="Remove this role grant">✕</button></td></tr>`).join("")}
+        <h4 class="cu-detail-heading">Roles (${uniqueRoles.length})</h4>
+        <table class="data-table cu-detail-table"><thead><tr><th>Role</th><th>Divisions</th><th></th></tr></thead><tbody>
+        ${uniqueRoles.map((r) => `<tr>
+          <td>${escapeHtml(r.roleName)}</td>
+          <td class="cu-div-tags">${r.divs.map((d) => `<span class="cu-tag cu-tag--removable cu-tag--div">${escapeHtml(d.divisionName)}<button class="cu-tag-remove" data-action="remove-role-division" data-role-id="${r.roleId}" data-division-id="${d.divisionId}" title="Remove from this division">✕</button></span>`).join("")}</td>
+          <td><button class="btn btn-sm cu-btn-inline-remove" data-action="remove-role-all" data-role-id="${r.roleId}" title="Remove role from all divisions">✕</button></td>
+        </tr>`).join("")}
         </tbody></table>
       </div>`;
     }
@@ -657,11 +667,18 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         btn.textContent = "…";
 
         try {
-          if (action === "remove-role") {
-            const grant = detail.grants[idx];
-            if (!grant) return;
-            await gc.deleteUserRoleGrant(api, orgId, user.id, grant.roleId, grant.divisionId);
-            detail.grants.splice(idx, 1);
+          if (action === "remove-role-division") {
+            const roleId = btn.dataset.roleId;
+            const divisionId = btn.dataset.divisionId;
+            await gc.deleteUserRoleGrant(api, orgId, user.id, roleId, divisionId);
+            detail.grants = detail.grants.filter((g) => !(g.roleId === roleId && g.divisionId === divisionId));
+          } else if (action === "remove-role-all") {
+            const roleId = btn.dataset.roleId;
+            const matching = detail.grants.filter((g) => g.roleId === roleId);
+            for (const g of matching) {
+              await gc.deleteUserRoleGrant(api, orgId, user.id, g.roleId, g.divisionId);
+            }
+            detail.grants = detail.grants.filter((g) => g.roleId !== roleId);
           } else if (action === "remove-skill") {
             const skill = user.skills[idx];
             if (!skill) return;

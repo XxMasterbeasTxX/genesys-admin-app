@@ -2835,6 +2835,11 @@ body {
 .cu-tag-remove:hover {
   opacity: 1;
 }
+.cu-div-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 
 /* ── Right panel — config sections ────────────────────── */
 .cu-apply-bar {
