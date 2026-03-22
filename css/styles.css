@@ -2624,6 +2624,7 @@ body {
   gap: 24px;
   align-items: start;
 }
+.cu-layout[hidden] { display: none; }
 @media (max-width: 960px) {
   .cu-layout { grid-template-columns: 1fr; }
 }
