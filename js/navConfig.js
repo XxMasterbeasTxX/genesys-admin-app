@@ -281,7 +281,7 @@ export const NAV_TREE = [
         enabled: true,
         children: [
           { label: "Configure Users", path: "configure-users", enabled: true, access: "users.rolesSkills.configureUsers" },
-          { label: "Create Template", path: "create-template", enabled: true, access: "users.rolesSkills.createTemplate" },
+          { label: "Create/Edit Template", path: "create-template", enabled: true, access: "users.rolesSkills.createTemplate" },
         ],
       },
     ],
