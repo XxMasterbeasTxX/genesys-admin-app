@@ -1225,12 +1225,26 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     });
     if (!confirmed) return;
 
-    let completed = 0;
+    let usersCompleted = 0;
     let errors = 0;
+
+    // Count total operations for granular progress
+    const stepsPerUser = (finalRoles.length > 0 ? 1 : 0) + (finalSkills.length > 0 ? 1 : 0) + (finalLanguages.length > 0 ? 1 : 0) + finalQueueIds.size + selectedTemplates.length;
+    const totalSteps = totalUsers * stepsPerUser;
+    let currentStep = 0;
 
     $btnApply.disabled = true;
     $progress.hidden = false;
     $progressLog.innerHTML = "";
+    $progressFill.style.width = "0%";
+    $progressText.textContent = "Starting...";
+
+    function updateProgress(stepLabel) {
+      currentStep++;
+      const pct = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
+      $progressFill.style.width = `${pct}%`;
+      $progressText.textContent = `${stepLabel} (${currentStep}/${totalSteps})`;
+    }
 
     function logLine(msg, type) {
       const line = document.createElement("div");
@@ -1254,11 +1268,13 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
               rolePayloads.push({ roleId: r.roleId, divisionId: undefined });
             }
           }
+          updateProgress(`Assigning roles to ${user.name}`);
           await gc.grantUserRoles(api, orgId, user.id, rolePayloads);
         }
 
         // Skills
         if (finalSkills.length) {
+          updateProgress(`Adding skills to ${user.name}`);
           await gc.addUserRoutingSkillsBulk(api, orgId, user.id,
             finalSkills.map((s) => ({ id: s.skillId, proficiency: s.proficiency })),
           );
@@ -1266,6 +1282,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
         // Languages
         if (finalLanguages.length) {
+          updateProgress(`Adding languages to ${user.name}`);
           await gc.addUserRoutingLanguagesBulk(api, orgId, user.id,
             finalLanguages.map((l) => ({ id: l.languageId, proficiency: l.proficiency })),
           );
@@ -1273,11 +1290,14 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
         // Queues
         for (const queueId of finalQueueIds) {
+          const queueName = allQueues.find((q) => q.id === queueId)?.name || queueId;
+          updateProgress(`Adding ${user.name} to queue ${queueName}`);
           await gc.addQueueMembers(api, orgId, queueId, [{ id: user.id }]);
         }
 
         // Record template assignments
         for (const tpl of selectedTemplates) {
+          updateProgress(`Recording template ${tpl.name} for ${user.name}`);
           try {
             await createAssignment({
               orgId,
@@ -1302,16 +1322,18 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       } catch (err) {
         errors++;
         logLine(`✗ ${user.name}: ${err.message}`, "error");
+        // Advance progress past this user's remaining steps
+        currentStep = (usersCompleted + 1) * stepsPerUser;
       }
-      completed++;
-      const pct = Math.round((completed / totalUsers) * 100);
-      $progressFill.style.width = `${pct}%`;
-      $progressText.textContent = `${completed} / ${totalUsers} users processed`;
+      usersCompleted++;
     }
+    $progressFill.style.width = "100%";
+    $progressText.textContent = `${usersCompleted} / ${totalUsers} users processed`;
 
     const summary = errors
       ? `Completed with ${errors} error${errors > 1 ? "s" : ""}. ${completed - errors}/${totalUsers} users configured.`
       : `Successfully configured ${totalUsers} user${totalUsers > 1 ? "s" : ""}. Added ${[finalRoles.length ? finalRoles.length + " roles" : "", finalSkills.length ? finalSkills.length + " skills" : "", finalLanguages.length ? finalLanguages.length + " languages" : "", finalQueueIds.size ? finalQueueIds.size + " queues" : "", selectedTemplates.length ? selectedTemplates.map((t) => t.name).join(", ") : ""].filter(Boolean).join(", ")}.`;
+    logLine(summary, errors ? "error" : "success");
     setStatus(summary, errors ? "error" : "success");
     $btnApply.disabled = false;
 
@@ -1407,13 +1429,27 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       if (!confirmed) return;
     }
 
-    let completed = 0;
+    let usersCompleted = 0;
     let errors = 0;
     const totalUsers = users.length;
+
+    // Count total operations for granular progress
+    const stepsPerUser = uniqueRoleIds.length + uniqueSkillIds.length + uniqueLangIds.length + allRemoveQueueIds.size + selectedTemplates.length;
+    const totalSteps = totalUsers * stepsPerUser;
+    let currentStep = 0;
 
     $btnApply.disabled = true;
     $progress.hidden = false;
     $progressLog.innerHTML = "";
+    $progressFill.style.width = "0%";
+    $progressText.textContent = "Starting...";
+
+    function updateProgress(stepLabel) {
+      currentStep++;
+      const pct = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
+      $progressFill.style.width = `${pct}%`;
+      $progressText.textContent = `${stepLabel} (${currentStep}/${totalSteps})`;
+    }
 
     function logLine(msg, type) {
       const line = document.createElement("div");
@@ -1427,6 +1463,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       try {
         // Remove roles
         for (const roleId of uniqueRoleIds) {
+          const roleName = allRemoveRoles.find((r) => r.roleId === roleId)?.roleName || roleId;
+          updateProgress(`Removing role ${roleName} from ${user.name}`);
           try {
             await gc.deleteUserRole(api, orgId, user.id, roleId);
           } catch { /* role may not be assigned */ }
@@ -1434,6 +1472,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
         // Remove skills
         for (const skillId of uniqueSkillIds) {
+          const skillName = allRemoveSkills.find((s) => s.skillId === skillId)?.skillName || skillId;
+          updateProgress(`Removing skill ${skillName} from ${user.name}`);
           try {
             await gc.deleteUserSkill(api, orgId, user.id, skillId);
           } catch { /* skill may not be assigned */ }
@@ -1441,6 +1481,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
         // Remove languages
         for (const langId of uniqueLangIds) {
+          const langName = allRemoveLangs.find((l) => l.languageId === langId)?.languageName || langId;
+          updateProgress(`Removing language ${langName} from ${user.name}`);
           try {
             await gc.deleteUserLanguage(api, orgId, user.id, langId);
           } catch { /* language may not be assigned */ }
@@ -1448,6 +1490,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
         // Remove from queues
         for (const queueId of allRemoveQueueIds) {
+          const queueName = allQueues.find((q) => q.id === queueId)?.name || queueId;
+          updateProgress(`Removing ${user.name} from queue ${queueName}`);
           try {
             await gc.removeQueueMember(api, orgId, queueId, user.id);
           } catch { /* may not be a member */ }
@@ -1455,6 +1499,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
         // Remove template assignment records
         for (const tpl of selectedTemplates) {
+          updateProgress(`Removing template ${tpl.name} for ${user.name}`);
           try {
             await deleteAssignmentByUserTemplate(orgId, user.id, tpl.id);
           } catch (delErr) {
@@ -1473,15 +1518,15 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         errors++;
         logLine(`✗ ${user.name}: ${err.message}`, "error");
       }
-      completed++;
-      const pct = Math.round((completed / totalUsers) * 100);
-      $progressFill.style.width = `${pct}%`;
-      $progressText.textContent = `${completed} / ${totalUsers} users processed`;
+      usersCompleted++;
     }
+    $progressFill.style.width = "100%";
+    $progressText.textContent = `${usersCompleted} / ${totalUsers} users processed`;
 
     const summary = errors
       ? `Completed with ${errors} error${errors > 1 ? "s" : ""}. ${completed - errors}/${totalUsers} users updated.`
       : `Successfully removed from ${totalUsers} user${totalUsers > 1 ? "s" : ""}. Removed ${[uniqueRoleIds.length ? uniqueRoleIds.length + " roles" : "", uniqueSkillIds.length ? uniqueSkillIds.length + " skills" : "", uniqueLangIds.length ? uniqueLangIds.length + " languages" : "", allRemoveQueueIds.size ? allRemoveQueueIds.size + " queues" : "", selectedTemplates.length ? selectedTemplates.map((t) => t.name).join(", ") : ""].filter(Boolean).join(", ")}.`;
+    logLine(summary, errors ? "error" : "success");
     setStatus(summary, errors ? "error" : "success");
     $btnApply.disabled = false;
 
