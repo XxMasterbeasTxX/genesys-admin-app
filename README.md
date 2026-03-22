@@ -54,6 +54,7 @@ Internal web application for the Genesys Team to perform administrative actions 
   - **Outbound:** Campaigns — Contact Lists — DNC Lists — Email Campaigns — Messaging Campaigns
   - **Workforce Management:** Business Units — Management Units
   - **Task Management:** Workbins — Work Types
+- **Skill Templates — Create Template** — Create reusable templates of roles (with per-role division access), skills (with proficiency levels 1–5), and queues for bulk user provisioning. Templates are stored in Azure Table Storage (not in Genesys, which has no native template concept). Two-panel page: left panel lists all templates for the selected org (columns: Name, Roles, Skills, Queues, Created By, Actions); right panel is an inline editor with three collapsible sections (Roles, Skills, Queues). Roles section shows a role card per added role, each with an embedded division multi-select. Skills section has a searchable multi-select plus per-skill proficiency radio buttons (1–5, default 3). Queues section has a searchable multi-select. Full CRUD: create, edit (owner or admin only), delete (owner or admin only). Data is partitioned by org in the `skilltemplates` Azure Table. Access key: `users.rolesSkills.createTemplate`.
 - **Activity Log** — Internal log of all write/mutative actions performed through the tool. Every create, copy, move, disconnect, publish, and GDPR submit records who did it, for which org, when, and a plain-language description. Visible to all logged-in users at `/activity-log` via the header link. Client-side filters: action type, org (admin only), user (admin only), and free-text search. Entries are stored in Azure Table Storage and fetched via `/api/activity-log`. Retention is indefinite; the log cannot be cleared from the UI.
 - **Audit — Search** — Query Genesys Cloud audit events across any date range. Ranges ≤ 14 days automatically query **all realtime-supported services** concurrently using the synchronous `POST /api/v2/audits/query/realtime` endpoint (no polling, cursor-paginated to retrieve all results) — results appear in seconds. For ≤ 14-day ranges with a specific service not supported by the realtime endpoint, falls back to the standard async query API automatically. Ranges > 14 days require a service selection and always use the async chunked pipeline (`POST /api/v2/audits/query` → poll → cursor-paginated results, 30-day chunks). Preset quick-filters: Today, Last 7 days, Last month, Last 3 months. Auto-runs today's query on page load with no service pre-selected (all services). Client-side filters: Entity Type → Action (cascading) + Changed By. Results table: Date & Time, Service, Entity Type, Entity Name (resolved via 40+ mapped API paths with `(deleted)` label on 404), Action, Changed By (user or OAuth client name). Click any row to expand a detail panel showing metadata, changed properties (old → new values), additional context, and a raw API response dump. Sticky table header, sortable latest-first, configurable rows per page (50/100/150/200). A blue/amber hint below the service dropdown indicates the current query mode. **Export to Excel** button (far right of filter bar) exports all filtered results — one row per property change — with columns: Date & Time, Service, Entity Type, Entity Name, Action, Changed By, Level, Remote IP, Property, Old Value, New Value, Additional Context.
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
@@ -98,8 +99,9 @@ Browser (SPA)                    Azure Static Web App (Standard)
                               ┌──────▼───────┐   ┌──────────────┐
                               │  Azure Key   │   │ Azure Table  │
                               │  Vault       │   │ Storage      │
-                              │  (source of  │   │ (schedules)  │
-                              │   truth)     │   │              │
+                              │  (source of  │   │ (schedules,  │
+                              │   truth)     │   │  templates,  │
+                              │              │   │  activitylog)│
                               └──────────────┘   └──────────────┘
 ```
 
@@ -119,7 +121,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
 | Auth (team) | Genesys Cloud OAuth 2.0 PKCE |
 | Auth (customers) | OAuth 2.0 Client Credentials (via backend) |
 | Email | Mailjet v3.1 Send API (EU, GDPR-compliant) |
-| Schedule storage | Azure Table Storage |
+| Schedule & template storage | Azure Table Storage |
 | Scheduled runner | GitHub Actions cron (hourly) |
 | CI/CD | GitHub Actions |
 
@@ -215,6 +217,9 @@ genesys-admin-app/
 │   │   │   └── copy/
 │   │   │       ├── copySingleOrg.js  Thin wrapper: calls create.js with mode="copySingle"
 │   │   │       └── copyBetweenOrgs.js Copy role between orgs — own builder, target-org catalog comparison
+│   │   ├── users/
+│   │   │   └── rolesSkills/
+│   │   │       └── createTemplate.js Skill Templates — Create/Edit/Delete templates (roles, skills, queues)
 │   │   ├── flows/
 │   │   │   └── journeyFlow.js       Journey Flow — interactive SVG flow-path diagram (client-side category cache)
 │   │   ├── export/
@@ -246,7 +251,8 @@ genesys-admin-app/
 │       ├── genesysApi.js         Centralized Genesys Cloud API service
 │       ├── activityLogService.js  Write entries to the internal activity log
 │       ├── orgContext.js         Selected org state management
-│       └── scheduleService.js    Schedule CRUD API wrappers
+│       ├── scheduleService.js    Schedule CRUD API wrappers
+│       └── templateService.js    Template CRUD API wrappers
 ├── api/                          Azure Functions backend
 │   ├── customers/                GET /api/customers
 │   ├── doc-export/               POST /api/doc-export (on-demand documentation export)
@@ -255,10 +261,12 @@ genesys-admin-app/
 │   ├── send-email/               POST /api/send-email (Mailjet)
 │   ├── schedules/                CRUD /api/schedules (schedules management)
 │   ├── scheduled-runner/         POST /api/scheduled-runner (export execution)
+│   ├── templates/                CRUD /api/templates (skill template management)
 │   └── lib/
 │       ├── customers.json        Customer metadata (15 orgs)
 │       ├── genesysAuth.js        Client Credentials token cache per org
 │       ├── scheduleStore.js      Azure Table Storage CRUD for schedules
+│       ├── templateStore.js      Azure Table Storage CRUD for skill templates
 │       ├── exportHandlers.js     Export type → handler registry
 │       └── exports/
 │           ├── allGroups.js         Server-side All Groups export handler
