@@ -52,7 +52,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     </p>
     <div class="st-status" id="stStatus"></div>
     <div class="st-body" id="stBody">
-      <p class="muted">Loading…</p>
+      <div class="cu-loading" id="stLoading"><div class="cu-loading-spinner"></div><p class="muted">Loading templates…</p></div>
     </div>
     <div class="st-editor" id="stEditor" hidden></div>
   `;
@@ -201,7 +201,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
       : [];
 
     $editor.hidden = false;
-    $editor.innerHTML = `<p class="muted">Loading data from Genesys…</p>`;
+    $editor.innerHTML = `<div class="cu-loading"><div class="cu-loading-spinner"></div><p class="muted">Loading data from Genesys…</p></div>`;
 
     try {
       await ensureGenesysData();
