@@ -497,15 +497,22 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
   async function loadRoleMembers(roleId) {
     const members = await gc.fetchRoleUsers(api, orgId, roleId);
+    if (!members.length) return [];
+    const ids = members.map((m) => m.id || m);
+    // Batch-fetch user details in chunks of 100
     const users = [];
-    for (const m of members) {
-      const uid = m.id || m;
-      try {
-        const u = await api.proxyGenesys(orgId, "GET", `/api/v2/users/${uid}`, {
-          query: { expand: "skills,languages" },
-        });
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/users/search", {
+        body: {
+          query: [{ type: "EXACT", fields: ["id"], values: chunk }],
+          expand: ["skills", "languages"],
+          pageSize: 100,
+        },
+      });
+      for (const u of (resp.results || [])) {
         users.push(mapUser(u));
-      } catch { /* user may have been deleted */ }
+      }
     }
     return users;
   }
@@ -530,13 +537,18 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       .map((a) => a.userId);
     if (!userIds.length) return [];
     const users = [];
-    for (const uid of userIds) {
-      try {
-        const u = await api.proxyGenesys(orgId, "GET", `/api/v2/users/${uid}`, {
-          query: { expand: "skills,languages" },
-        });
+    for (let i = 0; i < userIds.length; i += 100) {
+      const chunk = userIds.slice(i, i + 100);
+      const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/users/search", {
+        body: {
+          query: [{ type: "EXACT", fields: ["id"], values: chunk }],
+          expand: ["skills", "languages"],
+          pageSize: 100,
+        },
+      });
+      for (const u of (resp.results || [])) {
         users.push(mapUser(u));
-      } catch { /* user may have been deleted */ }
+      }
     }
     return users;
   }
