@@ -3,7 +3,8 @@
  *
  * Create, edit, and delete templates stored in Azure Table Storage.
  * Templates bundle a set of roles (with division assignments),
- * skills (with proficiency levels 1–5) and queues
+ * skills (with proficiency levels 1–5), language skills (with
+ * proficiency levels 1–5), and queues
  * that can later be applied to users in bulk.
  *
  * API endpoints (internal):
@@ -13,6 +14,7 @@
  *   GET /api/v2/authorization/roles      — list available roles
  *   GET /api/v2/authorization/divisions  — list available divisions
  *   GET /api/v2/routing/skills           — list available skills
+ *   GET /api/v2/routing/languages        — list available language skills
  *   GET /api/v2/routing/queues           — list available queues
  */
 import { escapeHtml } from "../../../utils.js";
@@ -44,8 +46,9 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     <h1 class="h1">Role, Queue & Skill Templates</h1>
     <hr class="hr">
     <p class="page-desc">
-      Create templates consisting of roles (with division access), skills (with proficiency) and queues.
-      Templates can be applied to users to assign roles, skills and queue memberships in bulk.
+      Create templates consisting of roles (with division access), skills (with proficiency),
+      language skills (with proficiency) and queues.
+      Templates can be applied to users to assign roles, skills, languages and queue memberships in bulk.
     </p>
     <div class="st-status" id="stStatus"></div>
     <div class="st-body" id="stBody">
@@ -60,6 +63,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
 
   let templates = [];
   let allSkills = [];     // [{ id, name }]
+  let allLanguages = [];  // [{ id, name }]
   let allQueues = [];     // [{ id, name }]
   let allRoles = [];      // [{ id, name }]
   let allDivisions = [];  // [{ id, name }]
@@ -67,6 +71,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
 
   // Editor state
   let selectedSkills = []; // [{ skillId, skillName, proficiency }]
+  let selectedLanguages = []; // [{ languageId, languageName, proficiency }]
   let selectedQueues = []; // [{ queueId, queueName }]
   let selectedRoles = [];  // [{ roleId, roleName, divisions: [{ divisionId, divisionName }] }]
 
@@ -80,13 +85,15 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
   let genesysDataLoaded = false;
   async function ensureGenesysData() {
     if (genesysDataLoaded) return;
-    const [skills, queues, roles, divisions] = await Promise.all([
+    const [skills, languages, queues, roles, divisions] = await Promise.all([
       gc.fetchAllPages(api, orgId, "/api/v2/routing/skills"),
+      gc.fetchAllPages(api, orgId, "/api/v2/routing/languages"),
       gc.fetchAllPages(api, orgId, "/api/v2/routing/queues"),
       gc.fetchAllPages(api, orgId, "/api/v2/authorization/roles", { query: { sortBy: "name" } }),
       gc.fetchAllPages(api, orgId, "/api/v2/authorization/divisions"),
     ]);
     allSkills = skills.map((s) => ({ id: s.id, name: s.name }));
+    allLanguages = languages.map((l) => ({ id: l.id, name: l.name }));
     allQueues = queues.map((q) => ({ id: q.id, name: q.name }));
     allRoles = roles.map((r) => ({ id: r.id, name: r.name }));
     allDivisions = divisions.map((d) => ({ id: d.id, name: d.name }));
@@ -111,6 +118,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
           <td class="st-cell-name">${escapeHtml(t.name)}</td>
           <td class="st-cell-count">${(t.roles || []).length}</td>
           <td class="st-cell-count">${(t.skills || []).length}</td>
+          <td class="st-cell-count">${(t.languages || []).length}</td>
           <td class="st-cell-count">${(t.queues || []).length}</td>
           <td class="st-cell-owner">${escapeHtml(t.createdByName || t.createdBy)}</td>
           <td class="st-cell-actions">${
@@ -130,6 +138,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
             <th>Name</th>
             <th>Roles</th>
             <th>Skills</th>
+            <th>Languages</th>
             <th>Queues</th>
             <th>Created By</th>
             <th></th>
@@ -184,6 +193,9 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     selectedQueues = existing
       ? (existing.queues || []).map((q) => ({ ...q }))
       : [];
+    selectedLanguages = existing
+      ? (existing.languages || []).map((l) => ({ ...l }))
+      : [];
     selectedRoles = existing
       ? (existing.roles || []).map((r) => ({ ...r, divisions: (r.divisions || []).map((d) => ({ ...d })) }))
       : [];
@@ -223,6 +235,13 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
         </div>
       </div>
       <div class="st-section">
+        <h3 class="st-section-title st-collapsible" id="stToggleLanguages"><span class="st-chevron">▸</span> Language Skills</h3>
+        <div class="st-section-body" id="stSectionLanguages" hidden>
+          <div class="st-picker" id="stLanguagePicker"></div>
+          <div class="st-language-list" id="stLanguageList"></div>
+        </div>
+      </div>
+      <div class="st-section">
         <h3 class="st-section-title st-collapsible" id="stToggleQueues"><span class="st-chevron">▸</span> Queues</h3>
         <div class="st-section-body" id="stSectionQueues" hidden>
           <div class="st-picker" id="stQueuePicker"></div>
@@ -255,6 +274,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     }
     initToggle("stToggleRoles", "stSectionRoles");
     initToggle("stToggleSkills", "stSectionSkills");
+    initToggle("stToggleLanguages", "stSectionLanguages");
     initToggle("stToggleQueues", "stSectionQueues");
 
     // ── Role multi-select ─────────────────────────────
@@ -320,8 +340,30 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     queueSelect.setSelected(new Set(selectedQueues.map((q) => q.queueId)));
     $editor.querySelector("#stQueuePicker").append(queueSelect.el);
 
+    // ── Language multi-select ──────────────────────────
+    const langSelect = createMultiSelect({
+      placeholder: "Add language skills…",
+      searchable: true,
+      onChange: (ids) => {
+        for (const id of ids) {
+          if (!selectedLanguages.find((l) => l.languageId === id)) {
+            const lang = allLanguages.find((l) => l.id === id);
+            if (lang) {
+              selectedLanguages.push({ languageId: id, languageName: lang.name, proficiency: 3 });
+            }
+          }
+        }
+        selectedLanguages = selectedLanguages.filter((l) => ids.has(l.languageId));
+        renderLanguageList();
+      },
+    });
+    langSelect.setItems(allLanguages.map((l) => ({ id: l.id, label: l.name })));
+    langSelect.setSelected(new Set(selectedLanguages.map((l) => l.languageId)));
+    $editor.querySelector("#stLanguagePicker").append(langSelect.el);
+
     renderRoleList();
     renderSkillList();
+    renderLanguageList();
     renderQueueList();
 
     // ── Buttons ───────────────────────────────────────
@@ -463,6 +505,51 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     );
   }
 
+  // ── Language skill list with proficiency radios ────────
+  function renderLanguageList() {
+    const $list = $editor.querySelector("#stLanguageList");
+    if (!selectedLanguages.length) {
+      $list.innerHTML = `<p class="muted">No language skills added yet.</p>`;
+      return;
+    }
+
+    $list.innerHTML = `
+      <table class="data-table st-detail-table">
+        <thead><tr><th>Language</th><th>Proficiency</th><th></th></tr></thead>
+        <tbody>${selectedLanguages.map((l, i) => `
+          <tr>
+            <td>${escapeHtml(l.languageName)}</td>
+            <td class="st-proficiency-cell">
+              ${[1, 2, 3, 4, 5]
+                .map(
+                  (p) =>
+                    `<label class="st-radio-label">
+                      <input type="radio" name="lang_${i}" value="${p}" ${p === l.proficiency ? "checked" : ""} />
+                      ${p}
+                    </label>`,
+                )
+                .join("")}
+            </td>
+            <td><button class="btn btn-sm st-btn-remove" data-idx="${i}" data-type="language">✕</button></td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`;
+
+    $list.querySelectorAll('input[type="radio"]').forEach((radio) =>
+      radio.addEventListener("change", (e) => {
+        const idx = parseInt(e.target.name.split("_")[1], 10);
+        selectedLanguages[idx].proficiency = parseInt(e.target.value, 10);
+      }),
+    );
+
+    $list.querySelectorAll('.st-btn-remove[data-type="language"]').forEach((btn) =>
+      btn.addEventListener("click", () => {
+        selectedLanguages.splice(parseInt(btn.dataset.idx, 10), 1);
+        renderLanguageList();
+      }),
+    );
+  }
+
   function closeEditor() {
     editingId = null;
     $editor.hidden = true;
@@ -476,8 +563,8 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
       setStatus("Please enter a template name.", "error");
       return;
     }
-    if (!selectedRoles.length && !selectedSkills.length && !selectedQueues.length) {
-      setStatus("Add at least one role, skill or queue.", "error");
+    if (!selectedRoles.length && !selectedSkills.length && !selectedLanguages.length && !selectedQueues.length) {
+      setStatus("Add at least one role, skill, language or queue.", "error");
       return;
     }
 
@@ -491,6 +578,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
           name,
           roles: selectedRoles,
           skills: selectedSkills,
+          languages: selectedLanguages,
           queues: selectedQueues,
           userEmail: me.email,
         });
@@ -501,6 +589,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
           name,
           roles: selectedRoles,
           skills: selectedSkills,
+          languages: selectedLanguages,
           queues: selectedQueues,
           userEmail: me.email,
           userName: me.name || me.email,

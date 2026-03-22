@@ -63,6 +63,7 @@ module.exports = async function (context, req) {
         skills: b.skills || [],
         queues: b.queues || [],
         roles: b.roles || [],
+        languages: b.languages || [],
         createdBy: b.userEmail,
         createdByName: b.userName || "",
       });
@@ -102,6 +103,7 @@ module.exports = async function (context, req) {
         skills: b.skills,
         queues: b.queues,
         roles: b.roles,
+        languages: b.languages,
       });
 
       context.res = json(200, updated);

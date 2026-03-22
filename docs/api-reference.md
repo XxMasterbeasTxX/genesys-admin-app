@@ -58,7 +58,7 @@ These are the Azure Functions endpoints exposed by the app itself.
 | GET | `/api/activity-log` | Fetch internal activity log entries |
 | POST | `/api/activity-log` | Write a new internal activity log entry |
 | GET | `/api/templates?orgId={orgId}` | List all skill templates for an org (Azure Table Storage) |
-| POST | `/api/templates` | Create a new skill template — body: `{ orgId, name, userEmail, roles, skills, queues }` |
+| POST | `/api/templates` | Create a new skill template — body: `{ orgId, name, userEmail, roles, skills, languages, queues }` |
 | PUT | `/api/templates/{id}` | Update an existing skill template (owner or admin only) |
 | DELETE | `/api/templates/{id}?orgId={orgId}&userEmail={email}` | Delete a skill template (owner or admin only) |
 
