@@ -275,14 +275,19 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       }
       setProgress(20);
 
-      // Sheet 2: Roles
-      const rolesData = [["Template", "Role", "Divisions"]];
+      // Sheet 2: Roles (one row per role × division)
+      const rolesData = [["Template", "Role", "Division"]];
       for (const t of templates) {
         for (const r of (t.roles || [])) {
-          const divs = Array.isArray(r.divisions)
-            ? r.divisions.map(d => d.name || d).join(", ")
-            : "";
-          rolesData.push([t.name, r.name || r, divs]);
+          const roleName = r.roleName || r.name || String(r);
+          const divs = r.divisions || [];
+          if (divs.length) {
+            for (const d of divs) {
+              rolesData.push([t.name, roleName, d.divisionName || d.name || String(d)]);
+            }
+          } else {
+            rolesData.push([t.name, roleName, ""]);
+          }
         }
       }
       setProgress(35);
@@ -291,7 +296,7 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       const skillsData = [["Template", "Skill", "Proficiency"]];
       for (const t of templates) {
         for (const s of (t.skills || [])) {
-          skillsData.push([t.name, s.name || s, s.proficiency ?? ""]);
+          skillsData.push([t.name, s.skillName || s.name || String(s), s.proficiency ?? ""]);
         }
       }
       setProgress(50);
@@ -300,7 +305,7 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       const langsData = [["Template", "Language", "Proficiency"]];
       for (const t of templates) {
         for (const l of (t.languages || [])) {
-          langsData.push([t.name, l.name || l, l.proficiency ?? ""]);
+          langsData.push([t.name, l.languageName || l.name || String(l), l.proficiency ?? ""]);
         }
       }
       setProgress(60);
@@ -309,7 +314,7 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       const queuesData = [["Template", "Queue"]];
       for (const t of templates) {
         for (const q of (t.queues || [])) {
-          queuesData.push([t.name, q.name || q]);
+          queuesData.push([t.name, q.queueName || q.name || String(q)]);
         }
       }
       setProgress(70);
