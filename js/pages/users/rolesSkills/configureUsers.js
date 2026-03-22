@@ -497,7 +497,17 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
   async function loadRoleMembers(roleId) {
     const members = await gc.fetchRoleUsers(api, orgId, roleId);
-    return members.map((u) => mapUser(u));
+    const users = [];
+    for (const m of members) {
+      const uid = m.id || m;
+      try {
+        const u = await api.proxyGenesys(orgId, "GET", `/api/v2/users/${uid}`, {
+          query: { expand: "skills,languages" },
+        });
+        users.push(mapUser(u));
+      } catch { /* user may have been deleted */ }
+    }
+    return users;
   }
 
   async function loadLocationUsers(locationId) {
