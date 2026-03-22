@@ -2399,6 +2399,122 @@ body {
   background: rgba(239, 68, 68, 0.22);
 }
 
+/* ══════════════════════════════════════════════════════════
+   Skill & Queue Templates (st-)
+   ══════════════════════════════════════════════════════════ */
+
+.st-status {
+  font-size: 13px;
+  margin-bottom: 12px;
+  min-height: 18px;
+}
+.st-status--success { color: #34d399; }
+.st-status--error   { color: #f87171; }
+
+.st-table { width: 100%; }
+.st-cell-name   { min-width: 180px; }
+.st-cell-count  { width: 80px; text-align: center; }
+.st-cell-owner  { min-width: 160px; }
+.st-cell-actions {
+  white-space: nowrap;
+  text-align: right;
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.st-btn-new {
+  margin-top: 14px;
+}
+
+.st-btn-delete {
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #f87171;
+}
+.st-btn-delete:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+/* ── Editor panel ─────────────────────────────────────── */
+.st-editor {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.st-editor-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.st-field {
+  margin-bottom: 16px;
+}
+.st-label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.st-input-name {
+  width: 100%;
+  max-width: 400px;
+}
+.st-section {
+  margin-top: 20px;
+}
+.st-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.st-picker {
+  margin-bottom: 10px;
+  max-width: 400px;
+}
+.st-detail-table {
+  width: 100%;
+  margin-top: 6px;
+}
+.st-proficiency-cell {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.st-radio-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.st-radio-label input[type="radio"] {
+  margin: 0;
+  accent-color: var(--accent, #3b82f6);
+}
+.st-btn-remove {
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #f87171;
+  font-size: 12px;
+  padding: 2px 8px;
+}
+.st-btn-remove:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+.st-editor-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.st-btn-save {
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.3);
+  color: #34d399;
+}
+.st-btn-save:hover {
+  background: rgba(52, 211, 153, 0.22);
+}
+
 /* ── Scheduled Exports overview page ──────────────────── */
 .se-status {
   font-size: 13px;

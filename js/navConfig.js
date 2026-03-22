@@ -275,6 +275,14 @@ export const NAV_TREE = [
           { label: "Add user(s)", path: "add", enabled: true, access: "users.directRouting.add" },
         ],
       },
+      {
+        label: "Roles & Skills",
+        path: "roles-skills",
+        enabled: true,
+        children: [
+          { label: "Create Template", path: "create-template", enabled: true, access: "users.rolesSkills.createTemplate" },
+        ],
+      },
     ],
   },
 ];

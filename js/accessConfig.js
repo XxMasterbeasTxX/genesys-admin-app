@@ -91,6 +91,7 @@
  *
  *   USERS
  *   users.directRouting.add            Direct Routing — Add user(s)
+ *   users.rolesSkills.createTemplate    Roles & Skills — Create Template
  *
  *   DIVISIONS  (reassign objects between divisions)
  *   divisions.people.users             People — Users
