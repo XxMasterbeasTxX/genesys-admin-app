@@ -1162,7 +1162,9 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
               templateName: tpl.name,
               assignedBy: me?.email || "",
             });
-          } catch { /* non-critical */ }
+          } catch (assignErr) {
+            logLine(`  ⚠ Template "${tpl.name}" assignment record failed: ${assignErr.message}`, "error");
+          }
         }
 
         logLine(`✓ ${user.name}`, "success");
@@ -1183,7 +1185,11 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     $btnApply.disabled = false;
 
     // Refresh assignments
-    try { allAssignments = await fetchAssignments(orgId); } catch { /* ignore */ }
+    try {
+      allAssignments = await fetchAssignments(orgId);
+    } catch (refreshErr) {
+      setStatus(`Warning: could not refresh template assignments: ${refreshErr.message}`, "error");
+    }
     userDetails = {};
     renderUserList();
   }
@@ -1305,7 +1311,9 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         for (const tpl of selectedTemplates) {
           try {
             await deleteAssignmentByUserTemplate(orgId, user.id, tpl.id);
-          } catch { /* non-critical */ }
+          } catch (delErr) {
+            logLine(`  ⚠ Template "${tpl.name}" assignment record removal failed: ${delErr.message}`, "error");
+          }
         }
 
         logLine(`✓ ${user.name}`, "success");
@@ -1326,7 +1334,11 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     $btnApply.disabled = false;
 
     // Refresh assignments and user list
-    try { allAssignments = await fetchAssignments(orgId); } catch { /* ignore */ }
+    try {
+      allAssignments = await fetchAssignments(orgId);
+    } catch (refreshErr) {
+      setStatus(`Warning: could not refresh template assignments: ${refreshErr.message}`, "error");
+    }
     userDetails = {};
     renderUserList();
   }
