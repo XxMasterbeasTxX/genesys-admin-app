@@ -123,9 +123,10 @@ Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Truste
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/users` | List users (paginated; supports `expand=skills,languages,station,division`) |
-| POST | `/api/v2/users/search` | Search users by name/email — body: `{ query: [{ type: "CONTAINS", fields: ["name","email"], value }] }` — response key is `results` (not `entities`); used by Compare Users picker |
+| POST | `/api/v2/users/search` | Search users by name/email — body: `{ query: [{ type: "CONTAINS"/"QUERY_STRING", fields: ["name","email"], value }] }` — response key is `results` (not `entities`); used by Compare Users picker, Configure Users |
 | GET | `/api/v2/users/me` | Get current authenticated user and group memberships |
 | GET | `/api/v2/users/{userId}` | Get a single user by ID |
+| GET | `/api/v2/users/{userId}/directreports` | Get direct reports of a user (Configure Users — Reports To mode) |
 | GET | `/api/v2/users/{userId}?expand=groups` | Get user with `groups` array inline — used to resolve group memberships for Compare Users and All Roles Export attribution (phase 2b) |
 | PATCH | `/api/v2/users/{userId}` | Update user (e.g., change division) |
 | GET | `/api/v2/groups` | List all groups |
@@ -157,7 +158,7 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | GET | `/api/v2/routing/queues/{queueId}` | Get a single queue (full object, includes version) |
 | PATCH | `/api/v2/routing/queues/{queueId}` | Partial update a queue (e.g., division change) |
 | PUT | `/api/v2/routing/queues/{queueId}` | Full queue update |
-| POST | `/api/v2/routing/queues/{queueId}/members` | **Bulk-add members** to a queue (Deployment — Basic Users, batches of 100) |
+| POST | `/api/v2/routing/queues/{queueId}/members` | **Bulk-add members** to a queue (Deployment — Basic Users, Configure Users, batches of 100) |
 | GET | `/api/v2/routing/skills` | List routing skills |
 | POST | `/api/v2/routing/skills` | **Create** a routing skill (Deployment — Basic) |
 | GET | `/api/v2/routing/languages` | List routing languages |
@@ -166,8 +167,9 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | POST | `/api/v2/users` | **Create** a user (Deployment — Basic) |
 | GET | `/api/v2/users/{userId}` | **Get** a single user — version refresh before address PATCH (Deployment — Basic) |
 | PATCH | `/api/v2/users/{userId}` | **Update** a user — name, state (restore deleted), addresses, extension, DID (Deployment — Basic) |
-| POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to a user per-role with division scope (Deployment — Basic) |
-| PATCH | `/api/v2/users/{userId}/routingskills/bulk` | **Add** routing skills to a user (Deployment — Basic) |
+| POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to a user per-role with division scope (Deployment — Basic, Configure Users) |
+| PATCH | `/api/v2/users/{userId}/routingskills/bulk` | **Add** routing skills to a user (Deployment — Basic, Configure Users) |
+| PATCH | `/api/v2/users/{userId}/routinglanguages/bulk` | **Add** routing languages to a user (Configure Users) |
 | GET | `/api/v2/routing/wrapupcodes` | List wrapup codes |
 | POST | `/api/v2/routing/wrapupcodes` | **Create** a wrap-up code (Deployment — Basic) |
 | PUT | `/api/v2/routing/wrapupcodes/{codeId}` | **Update** a wrap-up code (Deployment — Basic) |

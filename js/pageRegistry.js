@@ -170,6 +170,8 @@ const registry = {
   // ── Users ──────────────────────────────────────────
   "/users/direct-routing/add": (ctx) =>
     import("./pages/users/directRouting/addUsers.js").then((m) => m.default(ctx)),
+  "/users/roles-skills/configure-users": (ctx) =>
+    import("./pages/users/rolesSkills/configureUsers.js").then((m) => m.default(ctx)),
   "/users/roles-skills/create-template": (ctx) =>
     import("./pages/users/rolesSkills/createTemplate.js").then((m) => m.default(ctx)),
 };

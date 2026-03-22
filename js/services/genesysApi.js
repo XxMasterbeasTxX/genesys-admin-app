@@ -385,6 +385,14 @@ export async function addUserRoutingSkillsBulk(api, orgId, userId, skills) {
   return api.proxyGenesys(orgId, "PATCH", `/api/v2/users/${userId}/routingskills/bulk`, { body: skills });
 }
 
+/**
+ * Add or update routing languages for a user (additive bulk patch).
+ * languages = [{ id, proficiency }]
+ */
+export async function addUserRoutingLanguagesBulk(api, orgId, userId, languages) {
+  return api.proxyGenesys(orgId, "PATCH", `/api/v2/users/${userId}/routinglanguages/bulk`, { body: languages });
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Direct Routing — Backup settings
 // ─────────────────────────────────────────────────────────────────────
