@@ -293,11 +293,9 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
     $list.innerHTML = assigned
       .sort((a, b) => (a.userName || "").localeCompare(b.userName || ""))
       .map((a) => `
-        <label class="cu-user-row" style="cursor:pointer">
+        <label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);cursor:pointer">
           <input type="checkbox" class="aut-assigned-cb" data-uid="${a.userId}" />
-          <div class="cu-user-info">
-            <span class="cu-user-name">${escapeHtml(a.userName || a.userId)}</span>
-          </div>
+          <span>${escapeHtml(a.userName || a.userId)}</span>
         </label>`).join("");
 
     $list.querySelectorAll(".aut-assigned-cb").forEach((cb) => {
@@ -471,12 +469,10 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
     $results.innerHTML = searchResults.map((u) => {
       const already = assignedIds.has(u.id);
       return `
-        <label class="cu-user-row${already ? " cu-user-row--disabled" : ""}" style="cursor:${already ? "default" : "pointer"}">
+        <label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);cursor:${already ? "default" : "pointer"}">
           <input type="checkbox" class="aut-search-cb" data-uid="${u.id}" ${already ? "disabled" : ""} />
-          <div class="cu-user-info">
-            <span class="cu-user-name">${escapeHtml(u.name)}${already ? ' <span class="muted" style="font-size:11px">(already assigned)</span>' : ""}</span>
-            <span class="cu-user-email">${escapeHtml(u.email)}</span>
-          </div>
+          <span>${escapeHtml(u.name)}${already ? ' <span class="muted" style="font-size:11px">(already assigned)</span>' : ""}</span>
+          <span class="muted" style="margin-left:auto;font-size:12px">${escapeHtml(u.email)}</span>
         </label>`;
     }).join("");
 
