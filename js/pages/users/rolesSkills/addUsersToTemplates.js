@@ -197,15 +197,14 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
           <button class="btn btn-sm" id="autBtnAdd" hidden>Assign Selected to Template</button>
         </div>
         <div id="autSecondary"></div>
+        <!-- Progress -->
+        <div class="cu-progress" id="autProgress" hidden>
+          <div class="cu-progress-bar"><div class="cu-progress-fill" id="autProgressFill"></div></div>
+          <p class="cu-progress-text" id="autProgressText"></p>
+          <div class="cu-progress-log" id="autProgressLog"></div>
+        </div>
         <div id="autSearchResults"></div>
         <div class="cu-pagination" id="autPagination"></div>
-      </div>
-
-      <!-- Progress -->
-      <div class="cu-progress" id="autProgress" hidden>
-        <div class="cu-progress-bar"><div class="cu-progress-fill" id="autProgressFill"></div></div>
-        <p class="cu-progress-text" id="autProgressText"></p>
-        <div class="cu-progress-log" id="autProgressLog"></div>
       </div>
     `;
 
