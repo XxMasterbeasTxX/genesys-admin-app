@@ -528,10 +528,10 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   }
 
   async function loadLocationUsers(locationId) {
-    const allUsers = await gc.fetchAllUsers(api, orgId, { expand: ["skills", "languages", "locations"] });
-    return allUsers
-      .filter((u) => u.locations?.some((l) => l.locationDefinition?.id === locationId))
-      .map((u) => mapUser(u));
+    // Fetch members of this location, then hydrate with full user details
+    const members = await gc.fetchAllPages(api, orgId, `/api/v2/locations/${locationId}/members`);
+    if (!members.length) return [];
+    return fetchUsersByIds(members.map((m) => m.id), { statusLabel: "location members" });
   }
 
   async function loadDivisionUsers(divisionId) {

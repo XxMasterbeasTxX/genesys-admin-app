@@ -4,7 +4,7 @@
 
 ### How Authentication Works Today
 
-```
+```text
 Browser                  Azure Function              Genesys Cloud
 ───────                  ──────────────              ─────────────
 User logs in via         
@@ -88,11 +88,13 @@ if (!meResp.ok) {
 ```
 
 **Protects against:**
+
 - Expired tokens
 - Fabricated/invalid tokens
 - Unauthenticated callers
 
 **Does NOT protect against:**
+
 - Authorized users exceeding their intended permissions (e.g., Support users making write calls)
 
 **Performance consideration:** Adds one API call per proxy request. Can be mitigated with a short-lived cache (token → user identity, 5-minute TTL).
@@ -159,11 +161,13 @@ async function resolveUserAccess(userToken) {
 ```
 
 **Protects against:**
+
 - Everything in Option 1
 - Users calling endpoints their group membership doesn't permit
 - Support users performing write operations they shouldn't have access to
 
 **Trade-offs:**
+
 - Must maintain the `ROUTE_ACCESS` map whenever new features use new endpoints
 - Extra API call per unique token (cached for 5 minutes)
 - Group→access key resolution logic is duplicated from the frontend
@@ -192,14 +196,17 @@ const ALLOWED_ROUTES = [
 ```
 
 **Protects against:**
+
 - All of Option 1
 - Users calling endpoints the app doesn't use at all (e.g., DELETE on any resource)
 - Arbitrary API access through the proxy
 
 **Does NOT protect against:**
+
 - Support users calling write endpoints that exist in the allowlist but their group shouldn't have access to (for that, combine with Option 2)
 
 **Trade-offs:**
+
 - Simpler than Option 2 (no group resolution needed)
 - Must update whenever a new feature adds an endpoint
 - No per-user distinction — all authenticated users can use all allowed routes
