@@ -61,6 +61,11 @@ These are the Azure Functions endpoints exposed by the app itself.
 | POST | `/api/templates` | Create a new skill template — body: `{ orgId, name, userEmail, roles, skills, languages, queues }` |
 | PUT | `/api/templates/{id}` | Update an existing skill template (owner or admin only) |
 | DELETE | `/api/templates/{id}?orgId={orgId}&userEmail={email}` | Delete a skill template (owner or admin only) |
+| GET | `/api/template-assignments?orgId={orgId}` | List all template-user assignments for an org |
+| GET | `/api/template-assignments?orgId={orgId}&userId={userId}` | List template assignments for a specific user |
+| POST | `/api/template-assignments` | Create a template assignment — body: `{ orgId, userId, userName, templateId, templateName, assignedBy }` |
+| DELETE | `/api/template-assignments/{id}?orgId={orgId}` | Delete a template assignment by ID |
+| DELETE | `/api/template-assignments?orgId={orgId}&userId={userId}&templateId={templateId}` | Delete a template assignment by user+template combo |
 
 ---
 
@@ -159,6 +164,7 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | PATCH | `/api/v2/routing/queues/{queueId}` | Partial update a queue (e.g., division change) |
 | PUT | `/api/v2/routing/queues/{queueId}` | Full queue update |
 | POST | `/api/v2/routing/queues/{queueId}/members` | **Bulk-add members** to a queue (Deployment — Basic Users, Configure Users, batches of 100) |
+| DELETE | `/api/v2/routing/queues/{queueId}/members` | **Remove** a member from a queue — body: `[{ id }]` (Configure Users — remove mode) |
 | GET | `/api/v2/routing/skills` | List routing skills |
 | POST | `/api/v2/routing/skills` | **Create** a routing skill (Deployment — Basic) |
 | GET | `/api/v2/routing/languages` | List routing languages |
@@ -168,8 +174,13 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | GET | `/api/v2/users/{userId}` | **Get** a single user — version refresh before address PATCH (Deployment — Basic) |
 | PATCH | `/api/v2/users/{userId}` | **Update** a user — name, state (restore deleted), addresses, extension, DID (Deployment — Basic) |
 | POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to a user per-role with division scope (Deployment — Basic, Configure Users) |
+| DELETE | `/api/v2/authorization/roles/{roleId}/subjectuser/{userId}` | **Remove** a role grant from a user (Configure Users — remove mode) |
 | PATCH | `/api/v2/users/{userId}/routingskills/bulk` | **Add** routing skills to a user (Deployment — Basic, Configure Users) |
+| DELETE | `/api/v2/users/{userId}/routingskills/{skillId}` | **Remove** a routing skill from a user (Configure Users — remove mode) |
 | PATCH | `/api/v2/users/{userId}/routinglanguages/bulk` | **Add** routing languages to a user (Configure Users) |
+| DELETE | `/api/v2/users/{userId}/routinglanguages/{languageId}` | **Remove** a routing language from a user (Configure Users — remove mode) |
+| GET | `/api/v2/authorization/subjects/{userId}/grants` | Get all role grants for a user — returns structured `{ roleId, roleName, divisionId, divisionName }` array (Configure Users — user detail) |
+| GET | `/api/v2/users/{userId}/queues` | Get queues a user is a member of (Configure Users — user detail) |
 | GET | `/api/v2/routing/wrapupcodes` | List wrapup codes |
 | POST | `/api/v2/routing/wrapupcodes` | **Create** a wrap-up code (Deployment — Basic) |
 | PUT | `/api/v2/routing/wrapupcodes/{codeId}` | **Update** a wrap-up code (Deployment — Basic) |

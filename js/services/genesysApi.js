@@ -393,6 +393,72 @@ export async function addUserRoutingLanguagesBulk(api, orgId, userId, languages)
   return api.proxyGenesys(orgId, "PATCH", `/api/v2/users/${userId}/routinglanguages/bulk`, { body: languages });
 }
 
+/**
+ * Remove a role grant from a user.
+ * Calls DELETE /api/v2/authorization/roles/{roleId}/subjectuser/{userId}
+ */
+export async function deleteUserRole(api, orgId, userId, roleId) {
+  return api.proxyGenesys(orgId, "DELETE",
+    `/api/v2/authorization/roles/${roleId}/subjectuser/${userId}`);
+}
+
+/**
+ * Remove a routing skill from a user.
+ * Calls DELETE /api/v2/users/{userId}/routingskills/{skillId}
+ */
+export async function deleteUserSkill(api, orgId, userId, skillId) {
+  return api.proxyGenesys(orgId, "DELETE",
+    `/api/v2/users/${userId}/routingskills/${skillId}`);
+}
+
+/**
+ * Remove a routing language from a user.
+ * Calls DELETE /api/v2/users/{userId}/routinglanguages/{languageId}
+ */
+export async function deleteUserLanguage(api, orgId, userId, languageId) {
+  return api.proxyGenesys(orgId, "DELETE",
+    `/api/v2/users/${userId}/routinglanguages/${languageId}`);
+}
+
+/**
+ * Remove a user from a queue.
+ * Calls DELETE /api/v2/routing/queues/{queueId}/members with body [{ id }].
+ */
+export async function removeQueueMember(api, orgId, queueId, userId) {
+  return api.proxyGenesys(orgId, "DELETE",
+    `/api/v2/routing/queues/${queueId}/members`,
+    { body: [{ id: userId }] });
+}
+
+/**
+ * Fetch role grants for a user (all roles and divisions).
+ * Returns { roles: [{ roleId, roleName, divisionId, divisionName }] }
+ */
+export async function getUserGrants(api, orgId, userId) {
+  const resp = await api.proxyGenesys(orgId, "GET",
+    `/api/v2/authorization/subjects/${userId}/grants`,
+    { query: { pageSize: "500" } });
+  const grants = [];
+  for (const g of (resp.entities || [])) {
+    const roleId = g.role?.id;
+    const roleName = g.role?.name || "";
+    const divisionId = g.division?.id || "";
+    const divisionName = g.division?.name || "";
+    if (roleId) grants.push({ roleId, roleName, divisionId, divisionName });
+  }
+  return grants;
+}
+
+/**
+ * Fetch queue memberships for a user.
+ * Returns array of { queueId, queueName }.
+ */
+export async function getUserQueues(api, orgId, userId) {
+  const queues = await fetchAllPages(api, orgId,
+    `/api/v2/users/${userId}/queues`, { query: { pageSize: "100" } });
+  return queues.map((q) => ({ queueId: q.id, queueName: q.name }));
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Direct Routing — Backup settings
 // ─────────────────────────────────────────────────────────────────────
@@ -865,13 +931,6 @@ export async function updateAuthorizationRole(api, orgId, roleId, body) {
  */
 export async function fetchRoleUsers(api, orgId, roleId, opts = {}) {
   return fetchAllPages(api, orgId, `/api/v2/authorization/roles/${roleId}/users`, opts);
-}
-
-/** Get authorization grants (roles) for a specific user. Returns grants[]. */
-export async function getUserGrants(api, orgId, userId) {
-  const resp = await api.proxyGenesys(orgId, "GET",
-    `/api/v2/authorization/subjects/${userId}`);
-  return resp.grants || [];
 }
 
 // ─────────────────────────────────────────────────────────────────────

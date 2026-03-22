@@ -2639,10 +2639,6 @@ body {
   margin-bottom: 10px;
   max-width: 350px;
 }
-.cu-user-picker {
-  margin-top: 8px;
-  max-width: 400px;
-}
 .cu-user-summary {
   margin-top: 8px;
   font-size: 13px;
@@ -2660,11 +2656,178 @@ body {
   font-size: 12px;
 }
 
+/* ── User row list ────────────────────────────────────── */
+.cu-user-list {
+  margin-top: 10px;
+  max-height: 520px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.cu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: default;
+  transition: background 0.12s;
+}
+.cu-row:last-child { border-bottom: none; }
+.cu-row:hover { background: rgba(255,255,255,0.03); }
+.cu-row--expanded { background: rgba(59, 130, 246, 0.06); }
+.cu-row--header {
+  background: var(--panel-2);
+  font-size: 13px;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.cu-row-check {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.cu-row-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent, #3b82f6);
+  cursor: pointer;
+}
+.cu-row-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.cu-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cu-row-name {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.cu-row-name--header { font-size: 13px; }
+.cu-row-email {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+.cu-row-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cu-row-counts {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.cu-count-badge {
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.cu-row-chevron {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  user-select: none;
+}
+.cu-row-chevron:hover { color: var(--text); }
+
+/* ── Tags ─────────────────────────────────────────────── */
+.cu-tag {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.cu-tag--template {
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.25);
+}
+
+/* ── Expanded detail panel ────────────────────────────── */
+.cu-detail {
+  padding: 12px 16px 14px 42px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(59, 130, 246, 0.03);
+  animation: cu-detail-in 0.15s ease;
+}
+.cu-detail--loading {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+}
+@keyframes cu-detail-in {
+  from { opacity: 0; max-height: 0; }
+  to   { opacity: 1; max-height: 600px; }
+}
+.cu-detail-section {
+  margin-bottom: 12px;
+}
+.cu-detail-section:last-child { margin-bottom: 0; }
+.cu-detail-heading {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+.cu-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.cu-detail-error {
+  font-size: 12px;
+  color: #f87171;
+}
+
 /* ── Right panel — config sections ────────────────────── */
 .cu-apply-bar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 16px;
+}
+.cu-mode-toggle {
+  display: flex;
+  gap: 12px;
+}
+.cu-mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #34d399;
+}
+.cu-mode-option--remove {
+  color: #f87171;
+}
+.cu-mode-option input[type="radio"] {
+  accent-color: currentColor;
+  margin: 0;
 }
 .cu-btn-apply {
   background: rgba(52, 211, 153, 0.12);
@@ -2674,6 +2837,14 @@ body {
 }
 .cu-btn-apply:hover:not(:disabled) {
   background: rgba(52, 211, 153, 0.22);
+}
+.cu-btn-apply--remove {
+  background: rgba(239, 68, 68, 0.10);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+.cu-btn-apply--remove:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.20);
 }
 .cu-btn-apply:disabled {
   opacity: 0.4;

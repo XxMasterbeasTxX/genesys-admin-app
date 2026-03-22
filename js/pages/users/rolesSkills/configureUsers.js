@@ -1,38 +1,25 @@
 /**
  * Users › Roles, Queues & Skills › Configure Users
  *
- * Select users (by search, group, role, reports-to, location, or division)
- * and assign roles (with divisions), skills (with proficiency),
- * language skills (with proficiency), and queues — either individually
- * or by selecting one or more templates.
- *
- * Genesys endpoints (via proxy):
- *   GET  /api/v2/users                           — paginated user list
- *   POST /api/v2/users/search                    — user search
- *   GET  /api/v2/groups                          — list groups
- *   GET  /api/v2/groups/{id}/members             — group members
- *   GET  /api/v2/authorization/roles             — list roles
- *   GET  /api/v2/authorization/roles/{id}/users  — role members
- *   GET  /api/v2/users/{id}/directreports        — direct reports
- *   GET  /api/v2/locations                        — list locations
- *   GET  /api/v2/authorization/divisions          — list divisions
- *   GET  /api/v2/routing/skills                   — list skills
- *   GET  /api/v2/routing/languages                — list languages
- *   GET  /api/v2/routing/queues                   — list queues
- *
- *   POST  /api/v2/authorization/roles/{roleId}               — grant role
- *   PATCH /api/v2/users/{userId}/routingskills/bulk           — assign skills
- *   PATCH /api/v2/users/{userId}/routinglanguages/bulk        — assign languages
- *   POST  /api/v2/routing/queues/{queueId}/members            — add queue members
- *
- * Internal API:
- *   GET /api/templates?orgId=…  — fetch templates
+ * Two-panel layout:
+ *   Left:  Find users by search/group/role/reports-to/location/division.
+ *          Results shown as expandable rows with checkboxes showing
+ *          template tags, role/skill/language/queue counts.
+ *   Right: Add/Remove mode toggle. Apply button at top.
+ *          5 collapsible sections: Templates, Roles, Skills, Languages, Queues.
+ *          In Add mode — adds items. In Remove mode — removes items.
+ *          Removing a template cascade-removes all its properties with confirmation.
  */
 import { escapeHtml } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { createSingleSelect } from "../../../components/multiSelect.js";
 import { fetchTemplates } from "../../../services/templateService.js";
+import {
+  fetchAssignments,
+  createAssignment,
+  deleteAssignmentByUserTemplate,
+} from "../../../services/templateAssignmentService.js";
 
 export default function renderConfigureUsers({ route, me, api, orgContext }) {
   const el = document.createElement("section");
@@ -53,8 +40,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     <h1 class="h1">Configure Users</h1>
     <hr class="hr">
     <p class="page-desc">
-      Select users and assign roles (with division access), skills, language skills, and queue
-      memberships — individually or by applying templates.
+      Select users and assign or remove roles (with division access), skills, language skills,
+      and queue memberships — individually or by applying templates.
     </p>
     <div class="cu-status" id="cuStatus"></div>
     <div class="cu-layout">
@@ -65,11 +52,19 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
           <div id="cuModePicker"></div>
         </div>
         <div id="cuSecondary" class="cu-secondary"></div>
-        <div id="cuUserPicker" class="cu-user-picker"></div>
         <div class="cu-user-summary" id="cuUserSummary"></div>
+        <div id="cuUserList" class="cu-user-list"></div>
       </div>
       <div class="cu-panel cu-panel--right" id="cuRight">
         <div class="cu-apply-bar" id="cuApplyBar">
+          <div class="cu-mode-toggle">
+            <label class="cu-mode-option">
+              <input type="radio" name="cuMode" value="add" checked /> Add
+            </label>
+            <label class="cu-mode-option cu-mode-option--remove">
+              <input type="radio" name="cuMode" value="remove" /> Remove
+            </label>
+          </div>
           <button class="btn cu-btn-apply" id="cuBtnApply" disabled>Apply to Selected Users</button>
         </div>
         <div class="cu-section">
@@ -122,6 +117,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   const $progressText = el.querySelector("#cuProgressText");
   const $progressLog = el.querySelector("#cuProgressLog");
   const $btnApply = el.querySelector("#cuBtnApply");
+  const $userList = el.querySelector("#cuUserList");
 
   // ── State ─────────────────────────────────────────────
   let allSkills = [];
@@ -132,15 +128,34 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   let allGroups = [];
   let allLocations = [];
   let templates = [];
+  let allAssignments = []; // template assignment records from Azure Table
 
-  let selectedUsers = [];      // [{ id, name, email }]
+  let displayedUsers = [];      // users shown in the row list
+  let checkedUserIds = new Set(); // user IDs that have their checkbox checked
+  let expandedUserId = null;    // which user row is expanded (null = none)
+  let userDetails = {};         // userId → { skills, languages, queues, grants, loaded }
 
-  // Configuration state (manual items)
-  let selectedRoles = [];      // [{ roleId, roleName, divisions: [{ divisionId, divisionName }] }]
-  let selectedSkills = [];     // [{ skillId, skillName, proficiency }]
-  let selectedLanguages = [];  // [{ languageId, languageName, proficiency }]
-  let selectedQueues = [];     // [{ queueId, queueName }]
-  let selectedTemplates = [];  // full template objects
+  // Mode
+  let mode = "add"; // "add" | "remove"
+
+  // Configuration state (manual items picked in right panel)
+  let selectedRoles = [];
+  let selectedSkills = [];
+  let selectedLanguages = [];
+  let selectedQueues = [];
+  let selectedTemplates = [];
+
+  // ── Mode toggle ───────────────────────────────────────
+  el.querySelectorAll('input[name="cuMode"]').forEach((radio) => {
+    radio.addEventListener("change", (e) => {
+      mode = e.target.value;
+      $btnApply.textContent = mode === "add" ? "Apply to Selected Users" : "Remove from Selected Users";
+      $btnApply.className = mode === "add"
+        ? "btn cu-btn-apply"
+        : "btn cu-btn-apply cu-btn-apply--remove";
+      updateApplyButton();
+    });
+  });
 
   // ── Status helper ─────────────────────────────────────
   function setStatus(msg, type) {
@@ -153,7 +168,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   async function ensureGenesysData() {
     if (genesysDataLoaded) return;
     setStatus("Loading data from Genesys…");
-    const [skills, languages, queues, roles, divisions, groups, locations, tpls] =
+    const [skills, languages, queues, roles, divisions, groups, locations, tpls, assigns] =
       await Promise.all([
         gc.fetchAllPages(api, orgId, "/api/v2/routing/skills"),
         gc.fetchAllPages(api, orgId, "/api/v2/routing/languages"),
@@ -163,6 +178,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         gc.fetchAllPages(api, orgId, "/api/v2/groups"),
         gc.fetchAllLocations(api, orgId),
         fetchTemplates(orgId),
+        fetchAssignments(orgId),
       ]);
     allSkills = skills.map((s) => ({ id: s.id, name: s.name }));
     allLanguages = languages.map((l) => ({ id: l.id, name: l.name }));
@@ -172,6 +188,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     allGroups = groups.map((g) => ({ id: g.id, name: g.name }));
     allLocations = locations.map((l) => ({ id: l.id, name: l.name }));
     templates = tpls;
+    allAssignments = assigns;
     genesysDataLoaded = true;
     setStatus("");
   }
@@ -193,7 +210,6 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   // LEFT PANEL — User selection
   // ════════════════════════════════════════════════════════
   function buildLeftPanel() {
-    // Mode picker
     const modes = [
       { id: "search", label: "Search" },
       { id: "group", label: "By Group" },
@@ -209,38 +225,33 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     });
     modeSelect.setItems(modes);
     el.querySelector("#cuModePicker").append(modeSelect.el);
-
-    // Start in "search" mode
     switchMode("search");
   }
 
   let currentMode = "";
-  let userMultiSelect = null;
 
   function switchMode(mode) {
     currentMode = mode;
     const $secondary = el.querySelector("#cuSecondary");
-    const $userPicker = el.querySelector("#cuUserPicker");
     $secondary.innerHTML = "";
-    $userPicker.innerHTML = "";
 
     if (mode === "search") {
-      buildSearchMode($secondary, $userPicker);
+      buildSearchMode($secondary);
     } else if (mode === "group") {
-      buildFilterMode($secondary, $userPicker, "Group", allGroups, loadGroupMembers);
+      buildFilterMode($secondary, "Group", allGroups, loadGroupMembers);
     } else if (mode === "role") {
-      buildFilterMode($secondary, $userPicker, "Role", allRoles, loadRoleMembers);
+      buildFilterMode($secondary, "Role", allRoles, loadRoleMembers);
     } else if (mode === "reports-to") {
-      buildReportsToMode($secondary, $userPicker);
+      buildReportsToMode($secondary);
     } else if (mode === "location") {
-      buildFilterMode($secondary, $userPicker, "Location", allLocations, loadLocationUsers);
+      buildFilterMode($secondary, "Location", allLocations, loadLocationUsers);
     } else if (mode === "division") {
-      buildFilterMode($secondary, $userPicker, "Division", allDivisions, loadDivisionUsers);
+      buildFilterMode($secondary, "Division", allDivisions, loadDivisionUsers);
     }
   }
 
   // ── Search mode ───────────────────────────────────────
-  function buildSearchMode($secondary, $userPicker) {
+  function buildSearchMode($secondary) {
     const searchRow = document.createElement("div");
     searchRow.className = "cu-search-row";
     searchRow.innerHTML = `
@@ -263,10 +274,11 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
             pageSize: 100,
             pageNumber: 1,
             query: [{ type: "QUERY_STRING", value: term, fields: ["name", "email"] }],
+            expand: ["skills", "languages"],
           },
         });
-        const users = (results.results || []).map((u) => ({ id: u.id, name: u.name, email: u.email }));
-        showUserPicker($userPicker, users);
+        const users = (results.results || []).map((u) => mapUser(u));
+        setUserList(users);
       } catch (err) {
         setStatus(`Search failed: ${err.message}`, "error");
       } finally {
@@ -280,16 +292,16 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   }
 
   // ── Filter mode (group, role, location, division) ─────
-  function buildFilterMode($secondary, $userPicker, label, items, loader) {
+  function buildFilterMode($secondary, label, items, loader) {
     const filterSelect = createSingleSelect({
       placeholder: `Select ${label}…`,
       searchable: true,
       onChange: async (id) => {
-        if (!id) { showUserPicker($userPicker, []); return; }
+        if (!id) { setUserList([]); return; }
         setStatus(`Loading ${label.toLowerCase()} members…`);
         try {
           const users = await loader(id);
-          showUserPicker($userPicker, users);
+          setUserList(users);
           setStatus("");
         } catch (err) {
           setStatus(`Failed to load members: ${err.message}`, "error");
@@ -304,7 +316,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   }
 
   // ── Reports To mode ───────────────────────────────────
-  function buildReportsToMode($secondary, $userPicker) {
+  function buildReportsToMode($secondary) {
     const searchRow = document.createElement("div");
     searchRow.className = "cu-search-row";
     searchRow.innerHTML = `
@@ -331,7 +343,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
           },
         });
         const managers = (results.results || []).map((u) => ({ id: u.id, name: u.name }));
-        showManagerList(managers, $userPicker);
+        showManagerList(managers);
       } catch (err) {
         setStatus(`Search failed: ${err.message}`, "error");
       } finally {
@@ -340,7 +352,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       }
     }
 
-    function showManagerList(managers, $userPicker) {
+    function showManagerList(managers) {
       if (managerListEl) managerListEl.remove();
       if (!managers.length) { setStatus("No managers found.", "error"); return; }
 
@@ -353,9 +365,11 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         btn.addEventListener("click", async () => {
           setStatus("Loading direct reports…");
           try {
-            const resp = await api.proxyGenesys(orgId, "GET", `/api/v2/users/${m.id}/directreports`);
-            const users = (resp.entities || []).map((u) => ({ id: u.id, name: u.name, email: u.email }));
-            showUserPicker($userPicker, users);
+            const resp = await api.proxyGenesys(orgId, "GET", `/api/v2/users/${m.id}/directreports`, {
+              query: { expand: "skills,languages" },
+            });
+            const users = (resp.entities || []).map((u) => mapUser(u));
+            setUserList(users);
             setStatus("");
           } catch (err) {
             setStatus(`Failed to load reports: ${err.message}`, "error");
@@ -371,61 +385,268 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   }
 
   // ── User loader helpers ───────────────────────────────
+  function mapUser(u) {
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email || "",
+      skills: (u.skills || []).map((s) => ({
+        skillId: s.id, skillName: s.name, proficiency: s.proficiency || 0,
+      })),
+      languages: (u.languages || []).map((l) => ({
+        languageId: l.id, languageName: l.name, proficiency: l.proficiency || 0,
+      })),
+    };
+  }
+
   async function loadGroupMembers(groupId) {
     const members = await gc.fetchGroupMembers(api, orgId, groupId);
-    return members.map((u) => ({ id: u.id, name: u.name, email: u.email }));
+    return members.map((u) => mapUser(u));
   }
 
   async function loadRoleMembers(roleId) {
     const members = await gc.fetchRoleUsers(api, orgId, roleId);
-    return members.map((u) => ({ id: u.id, name: u.name, email: u.email }));
+    return members.map((u) => mapUser(u));
   }
 
   async function loadLocationUsers(locationId) {
-    const allUsers = await gc.fetchAllUsers(api, orgId);
+    const allUsers = await gc.fetchAllUsers(api, orgId, { expand: ["skills", "languages"] });
     return allUsers
       .filter((u) => u.locations?.some((l) => l.locationDefinition?.id === locationId))
-      .map((u) => ({ id: u.id, name: u.name, email: u.email }));
+      .map((u) => mapUser(u));
   }
 
   async function loadDivisionUsers(divisionId) {
-    const allUsers = await gc.fetchAllUsers(api, orgId);
+    const allUsers = await gc.fetchAllUsers(api, orgId, { expand: ["skills", "languages"] });
     return allUsers
       .filter((u) => u.division?.id === divisionId)
-      .map((u) => ({ id: u.id, name: u.name, email: u.email }));
+      .map((u) => mapUser(u));
   }
 
-  // ── User multi-select ─────────────────────────────────
-  function showUserPicker($container, users) {
-    $container.innerHTML = "";
-    if (!users.length) {
-      $container.innerHTML = `<p class="muted">No users found.</p>`;
-      updateUserSummary();
+  // ════════════════════════════════════════════════════════
+  // USER ROW LIST
+  // ════════════════════════════════════════════════════════
+
+  function getTemplatesForUser(userId) {
+    return allAssignments
+      .filter((a) => a.userId === userId)
+      .map((a) => {
+        const tpl = templates.find((t) => t.id === a.templateId);
+        return { templateId: a.templateId, templateName: a.templateName || tpl?.name || "Unknown" };
+      });
+  }
+
+  function setUserList(users) {
+    displayedUsers = users;
+    // Preserve checked users that are still in the new list
+    const newIds = new Set(users.map((u) => u.id));
+    for (const id of checkedUserIds) {
+      if (!newIds.has(id)) checkedUserIds.delete(id);
+    }
+    expandedUserId = null;
+    userDetails = {};
+    renderUserList();
+    updateUserSummary();
+    updateApplyButton();
+  }
+
+  function renderUserList() {
+    $userList.innerHTML = "";
+    if (!displayedUsers.length) {
+      $userList.innerHTML = `<p class="muted">No users found.</p>`;
       return;
     }
 
-    userMultiSelect = createMultiSelect({
-      placeholder: `${users.length} users available — select…`,
-      searchable: true,
-      onChange: (ids) => {
-        selectedUsers = users.filter((u) => ids.has(u.id));
+    // Select-all row
+    const selectAll = document.createElement("div");
+    selectAll.className = "cu-row cu-row--header";
+    const allChecked = displayedUsers.length > 0 && displayedUsers.every((u) => checkedUserIds.has(u.id));
+    selectAll.innerHTML = `
+      <label class="cu-row-check">
+        <input type="checkbox" ${allChecked ? "checked" : ""} id="cuSelectAll" />
+      </label>
+      <span class="cu-row-name cu-row-name--header">Select All (${displayedUsers.length})</span>
+    `;
+    selectAll.querySelector("#cuSelectAll").addEventListener("change", (e) => {
+      if (e.target.checked) {
+        displayedUsers.forEach((u) => checkedUserIds.add(u.id));
+      } else {
+        displayedUsers.forEach((u) => checkedUserIds.delete(u.id));
+      }
+      renderUserList();
+      updateUserSummary();
+      updateApplyButton();
+    });
+    $userList.append(selectAll);
+
+    // User rows
+    for (const user of displayedUsers) {
+      const isChecked = checkedUserIds.has(user.id);
+      const isExpanded = expandedUserId === user.id;
+      const userTemplates = getTemplatesForUser(user.id);
+
+      const row = document.createElement("div");
+      row.className = "cu-row" + (isExpanded ? " cu-row--expanded" : "");
+
+      const skillCount = user.skills?.length || 0;
+      const langCount = user.languages?.length || 0;
+      const tplTags = userTemplates.map((t) =>
+        `<span class="cu-tag cu-tag--template">${escapeHtml(t.templateName)}</span>`
+      ).join("");
+
+      // For grants and queues, show counts from detail cache if loaded
+      const detail = userDetails[user.id];
+      const grantCount = detail?.grants?.length ?? "…";
+      const queueCount = detail?.queues?.length ?? "…";
+
+      row.innerHTML = `
+        <label class="cu-row-check">
+          <input type="checkbox" class="cu-user-cb" data-uid="${user.id}" ${isChecked ? "checked" : ""} />
+        </label>
+        <div class="cu-row-main" data-uid="${user.id}">
+          <div class="cu-row-top">
+            <span class="cu-row-name">${escapeHtml(user.name)}</span>
+            <span class="cu-row-email">${escapeHtml(user.email)}</span>
+            <span class="cu-row-tags">${tplTags}</span>
+          </div>
+          <div class="cu-row-counts">
+            <span class="cu-count-badge" title="Roles">${grantCount} roles</span>
+            <span class="cu-count-badge" title="Skills">${skillCount} skills</span>
+            <span class="cu-count-badge" title="Languages">${langCount} langs</span>
+            <span class="cu-count-badge" title="Queues">${queueCount} queues</span>
+          </div>
+        </div>
+        <span class="cu-row-chevron">${isExpanded ? "▾" : "▸"}</span>
+      `;
+
+      // Checkbox handler
+      row.querySelector(".cu-user-cb").addEventListener("change", (e) => {
+        if (e.target.checked) {
+          checkedUserIds.add(user.id);
+        } else {
+          checkedUserIds.delete(user.id);
+        }
         updateUserSummary();
         updateApplyButton();
-      },
-    });
-    userMultiSelect.setItems(users.map((u) => ({ id: u.id, label: `${u.name}${u.email ? ` (${u.email})` : ""}` })));
-    // Preserve previously selected users that appear in this list
-    const prevIds = new Set(selectedUsers.map((u) => u.id));
-    const intersection = new Set(users.filter((u) => prevIds.has(u.id)).map((u) => u.id));
-    if (intersection.size) userMultiSelect.setSelected(intersection);
-    $container.append(userMultiSelect.el);
-    updateUserSummary();
+        // Update "select all" checkbox state
+        const allCb = $userList.querySelector("#cuSelectAll");
+        if (allCb) allCb.checked = displayedUsers.every((u) => checkedUserIds.has(u.id));
+      });
+
+      // Click row to expand/collapse
+      row.querySelector(".cu-row-main").addEventListener("click", () => toggleExpand(user));
+      row.querySelector(".cu-row-chevron").addEventListener("click", () => toggleExpand(user));
+
+      $userList.append(row);
+
+      // Expanded detail panel
+      if (isExpanded && detail?.loaded) {
+        const detailEl = document.createElement("div");
+        detailEl.className = "cu-detail";
+        detailEl.innerHTML = buildDetailHTML(user, detail);
+        $userList.append(detailEl);
+      } else if (isExpanded && !detail?.loaded) {
+        const loadingEl = document.createElement("div");
+        loadingEl.className = "cu-detail cu-detail--loading";
+        loadingEl.textContent = "Loading details…";
+        $userList.append(loadingEl);
+      }
+    }
+  }
+
+  async function toggleExpand(user) {
+    if (expandedUserId === user.id) {
+      expandedUserId = null;
+      renderUserList();
+      return;
+    }
+    expandedUserId = user.id;
+
+    // Lazy-load detail data if not cached
+    if (!userDetails[user.id]?.loaded) {
+      userDetails[user.id] = { grants: [], queues: [], loaded: false };
+      renderUserList(); // show loading
+      try {
+        const [grants, queues] = await Promise.all([
+          gc.getUserGrants(api, orgId, user.id),
+          gc.getUserQueues(api, orgId, user.id),
+        ]);
+        userDetails[user.id] = { grants, queues, loaded: true };
+      } catch (err) {
+        userDetails[user.id] = { grants: [], queues: [], loaded: true, error: err.message };
+      }
+    }
+    renderUserList();
+  }
+
+  function buildDetailHTML(user, detail) {
+    const userTemplates = getTemplatesForUser(user.id);
+
+    let html = "";
+
+    // Templates section
+    if (userTemplates.length) {
+      html += `<div class="cu-detail-section">
+        <h4 class="cu-detail-heading">Templates</h4>
+        <div class="cu-detail-tags">${userTemplates.map((t) =>
+          `<span class="cu-tag cu-tag--template">${escapeHtml(t.templateName)}</span>`
+        ).join("")}</div>
+      </div>`;
+    }
+
+    // Roles
+    if (detail.grants?.length) {
+      html += `<div class="cu-detail-section">
+        <h4 class="cu-detail-heading">Roles (${detail.grants.length})</h4>
+        <table class="data-table cu-detail-table"><thead><tr><th>Role</th><th>Division</th></tr></thead><tbody>
+        ${detail.grants.map((g) => `<tr><td>${escapeHtml(g.roleName)}</td><td>${escapeHtml(g.divisionName)}</td></tr>`).join("")}
+        </tbody></table>
+      </div>`;
+    }
+
+    // Skills
+    if (user.skills?.length) {
+      html += `<div class="cu-detail-section">
+        <h4 class="cu-detail-heading">Skills (${user.skills.length})</h4>
+        <table class="data-table cu-detail-table"><thead><tr><th>Skill</th><th>Proficiency</th></tr></thead><tbody>
+        ${user.skills.map((s) => `<tr><td>${escapeHtml(s.skillName)}</td><td>${s.proficiency}</td></tr>`).join("")}
+        </tbody></table>
+      </div>`;
+    }
+
+    // Languages
+    if (user.languages?.length) {
+      html += `<div class="cu-detail-section">
+        <h4 class="cu-detail-heading">Languages (${user.languages.length})</h4>
+        <table class="data-table cu-detail-table"><thead><tr><th>Language</th><th>Proficiency</th></tr></thead><tbody>
+        ${user.languages.map((l) => `<tr><td>${escapeHtml(l.languageName)}</td><td>${l.proficiency}</td></tr>`).join("")}
+        </tbody></table>
+      </div>`;
+    }
+
+    // Queues
+    if (detail.queues?.length) {
+      html += `<div class="cu-detail-section">
+        <h4 class="cu-detail-heading">Queues (${detail.queues.length})</h4>
+        <div class="cu-detail-tags">${detail.queues.map((q) =>
+          `<span class="cu-tag">${escapeHtml(q.queueName)}</span>`
+        ).join("")}</div>
+      </div>`;
+    }
+
+    if (detail.error) {
+      html += `<p class="cu-detail-error">Error loading details: ${escapeHtml(detail.error)}</p>`;
+    }
+
+    if (!html) html = `<p class="muted">No assignments found.</p>`;
+
+    return html;
   }
 
   function updateUserSummary() {
     const $summary = el.querySelector("#cuUserSummary");
-    $summary.textContent = selectedUsers.length
-      ? `${selectedUsers.length} user${selectedUsers.length > 1 ? "s" : ""} selected`
+    $summary.textContent = checkedUserIds.size
+      ? `${checkedUserIds.size} user${checkedUserIds.size > 1 ? "s" : ""} selected`
       : "";
   }
 
@@ -433,14 +654,13 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   // RIGHT PANEL — Configuration
   // ════════════════════════════════════════════════════════
   function buildRightPanel() {
-    // ── Collapsible toggles ─────────────────────────────
     initToggle("cuToggleTemplates", "cuSectionTemplates");
     initToggle("cuToggleRoles", "cuSectionRoles");
     initToggle("cuToggleSkills", "cuSectionSkills");
     initToggle("cuToggleLanguages", "cuSectionLanguages");
     initToggle("cuToggleQueues", "cuSectionQueues");
 
-    // ── Template multi-select ───────────────────────────
+    // Template multi-select
     const tplSelect = createMultiSelect({
       placeholder: "Select templates…",
       searchable: true,
@@ -454,9 +674,9 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     el.querySelector("#cuTemplatePicker").append(tplSelect.el);
     renderTemplateList();
 
-    // ── Role multi-select ───────────────────────────────
+    // Role multi-select
     const roleSelect = createMultiSelect({
-      placeholder: "Add roles…",
+      placeholder: "Select roles…",
       searchable: true,
       onChange: (ids) => {
         for (const id of ids) {
@@ -473,9 +693,9 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     roleSelect.setItems(allRoles.map((r) => ({ id: r.id, label: r.name })));
     el.querySelector("#cuRolePicker").append(roleSelect.el);
 
-    // ── Skill multi-select ──────────────────────────────
+    // Skill multi-select
     const skillSelect = createMultiSelect({
-      placeholder: "Add skills…",
+      placeholder: "Select skills…",
       searchable: true,
       onChange: (ids) => {
         for (const id of ids) {
@@ -492,9 +712,9 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     skillSelect.setItems(allSkills.map((s) => ({ id: s.id, label: s.name })));
     el.querySelector("#cuSkillPicker").append(skillSelect.el);
 
-    // ── Language multi-select ───────────────────────────
+    // Language multi-select
     const langSelect = createMultiSelect({
-      placeholder: "Add language skills…",
+      placeholder: "Select language skills…",
       searchable: true,
       onChange: (ids) => {
         for (const id of ids) {
@@ -511,9 +731,9 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     langSelect.setItems(allLanguages.map((l) => ({ id: l.id, label: l.name })));
     el.querySelector("#cuLanguagePicker").append(langSelect.el);
 
-    // ── Queue multi-select ──────────────────────────────
+    // Queue multi-select
     const queueSelect = createMultiSelect({
-      placeholder: "Add queues…",
+      placeholder: "Select queues…",
       searchable: true,
       onChange: (ids) => {
         for (const id of ids) {
@@ -536,7 +756,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     renderLanguageList();
     renderQueueList();
 
-    // ── Apply button ────────────────────────────────────
+    // Apply button
     $btnApply.addEventListener("click", handleApply);
   }
 
@@ -578,7 +798,29 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   function renderRoleList() {
     const $list = el.querySelector("#cuRoleList");
     if (!selectedRoles.length) {
-      $list.innerHTML = `<p class="muted">No roles added yet.</p>`;
+      $list.innerHTML = `<p class="muted">No roles selected.</p>`;
+      return;
+    }
+
+    // In remove mode, divisions are not needed
+    if (mode === "remove") {
+      $list.innerHTML = `
+        <table class="data-table cu-detail-table">
+          <thead><tr><th>Role</th><th></th></tr></thead>
+          <tbody>${selectedRoles.map((r, i) => `
+            <tr>
+              <td>${escapeHtml(r.roleName)}</td>
+              <td><button class="btn btn-sm cu-btn-remove" data-idx="${i}" data-type="role">✕</button></td>
+            </tr>`).join("")}
+          </tbody>
+        </table>`;
+      $list.querySelectorAll('.cu-btn-remove[data-type="role"]').forEach((btn) =>
+        btn.addEventListener("click", () => {
+          selectedRoles.splice(parseInt(btn.dataset.idx, 10), 1);
+          renderRoleList();
+          updateApplyButton();
+        }),
+      );
       return;
     }
 
@@ -638,34 +880,37 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   function renderSkillList() {
     const $list = el.querySelector("#cuSkillList");
     if (!selectedSkills.length) {
-      $list.innerHTML = `<p class="muted">No skills added yet.</p>`;
+      $list.innerHTML = `<p class="muted">No skills selected.</p>`;
       return;
     }
 
+    const showProf = mode === "add";
     $list.innerHTML = `
       <table class="data-table cu-detail-table">
-        <thead><tr><th>Skill</th><th>Proficiency</th><th></th></tr></thead>
+        <thead><tr><th>Skill</th>${showProf ? "<th>Proficiency</th>" : ""}<th></th></tr></thead>
         <tbody>${selectedSkills.map((s, i) => `
           <tr>
             <td>${escapeHtml(s.skillName)}</td>
-            <td class="cu-proficiency-cell">
+            ${showProf ? `<td class="cu-proficiency-cell">
               ${[1, 2, 3, 4, 5].map((p) =>
                 `<label class="cu-radio-label">
                   <input type="radio" name="cuProf_${i}" value="${p}" ${p === s.proficiency ? "checked" : ""} />
                   ${p}
                 </label>`).join("")}
-            </td>
+            </td>` : ""}
             <td><button class="btn btn-sm cu-btn-remove" data-idx="${i}" data-type="skill">✕</button></td>
           </tr>`).join("")}
         </tbody>
       </table>`;
 
-    $list.querySelectorAll('input[type="radio"]').forEach((radio) =>
-      radio.addEventListener("change", (e) => {
-        const idx = parseInt(e.target.name.split("_")[1], 10);
-        selectedSkills[idx].proficiency = parseInt(e.target.value, 10);
-      }),
-    );
+    if (showProf) {
+      $list.querySelectorAll('input[type="radio"]').forEach((radio) =>
+        radio.addEventListener("change", (e) => {
+          const idx = parseInt(e.target.name.split("_")[1], 10);
+          selectedSkills[idx].proficiency = parseInt(e.target.value, 10);
+        }),
+      );
+    }
     $list.querySelectorAll('.cu-btn-remove[data-type="skill"]').forEach((btn) =>
       btn.addEventListener("click", () => {
         selectedSkills.splice(parseInt(btn.dataset.idx, 10), 1);
@@ -679,34 +924,37 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   function renderLanguageList() {
     const $list = el.querySelector("#cuLanguageList");
     if (!selectedLanguages.length) {
-      $list.innerHTML = `<p class="muted">No language skills added yet.</p>`;
+      $list.innerHTML = `<p class="muted">No language skills selected.</p>`;
       return;
     }
 
+    const showProf = mode === "add";
     $list.innerHTML = `
       <table class="data-table cu-detail-table">
-        <thead><tr><th>Language</th><th>Proficiency</th><th></th></tr></thead>
+        <thead><tr><th>Language</th>${showProf ? "<th>Proficiency</th>" : ""}<th></th></tr></thead>
         <tbody>${selectedLanguages.map((l, i) => `
           <tr>
             <td>${escapeHtml(l.languageName)}</td>
-            <td class="cu-proficiency-cell">
+            ${showProf ? `<td class="cu-proficiency-cell">
               ${[1, 2, 3, 4, 5].map((p) =>
                 `<label class="cu-radio-label">
                   <input type="radio" name="cuLang_${i}" value="${p}" ${p === l.proficiency ? "checked" : ""} />
                   ${p}
                 </label>`).join("")}
-            </td>
+            </td>` : ""}
             <td><button class="btn btn-sm cu-btn-remove" data-idx="${i}" data-type="language">✕</button></td>
           </tr>`).join("")}
         </tbody>
       </table>`;
 
-    $list.querySelectorAll('input[type="radio"]').forEach((radio) =>
-      radio.addEventListener("change", (e) => {
-        const idx = parseInt(e.target.name.split("_")[1], 10);
-        selectedLanguages[idx].proficiency = parseInt(e.target.value, 10);
-      }),
-    );
+    if (showProf) {
+      $list.querySelectorAll('input[type="radio"]').forEach((radio) =>
+        radio.addEventListener("change", (e) => {
+          const idx = parseInt(e.target.name.split("_")[1], 10);
+          selectedLanguages[idx].proficiency = parseInt(e.target.value, 10);
+        }),
+      );
+    }
     $list.querySelectorAll('.cu-btn-remove[data-type="language"]').forEach((btn) =>
       btn.addEventListener("click", () => {
         selectedLanguages.splice(parseInt(btn.dataset.idx, 10), 1);
@@ -720,7 +968,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   function renderQueueList() {
     const $list = el.querySelector("#cuQueueList");
     if (!selectedQueues.length) {
-      $list.innerHTML = `<p class="muted">No queues added yet.</p>`;
+      $list.innerHTML = `<p class="muted">No queues selected.</p>`;
       return;
     }
 
@@ -746,7 +994,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
   // ── Apply button state ────────────────────────────────
   function updateApplyButton() {
-    const hasUsers = selectedUsers.length > 0;
+    const hasUsers = checkedUserIds.size > 0;
     const hasConfig = selectedTemplates.length > 0 ||
       selectedRoles.length > 0 ||
       selectedSkills.length > 0 ||
@@ -756,10 +1004,21 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   }
 
   // ════════════════════════════════════════════════════════
-  // APPLY — execute the assignments
+  // APPLY — execute ADD or REMOVE
   // ════════════════════════════════════════════════════════
   async function handleApply() {
-    // Merge template items + manual items into final assignment sets
+    const selectedUsersArr = displayedUsers.filter((u) => checkedUserIds.has(u.id));
+
+    if (mode === "add") {
+      await handleAdd(selectedUsersArr);
+    } else {
+      await handleRemove(selectedUsersArr);
+    }
+  }
+
+  // ── ADD ───────────────────────────────────────────────
+  async function handleAdd(users) {
+    // Merge template items + manual items
     const finalRoles = [...selectedRoles.map((r) => ({ ...r, divisions: [...r.divisions] }))];
     const finalSkills = [...selectedSkills.map((s) => ({ ...s }))];
     const finalLanguages = [...selectedLanguages.map((l) => ({ ...l }))];
@@ -786,12 +1045,11 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       }
     }
 
-    const totalUsers = selectedUsers.length;
-    const totalOps = totalUsers; // one "unit" per user
+    const totalUsers = users.length;
+    if (!confirm(`Add configuration to ${totalUsers} user${totalUsers > 1 ? "s" : ""}?`)) return;
+
     let completed = 0;
     let errors = 0;
-
-    if (!confirm(`Apply configuration to ${totalUsers} user${totalUsers > 1 ? "s" : ""}?`)) return;
 
     $btnApply.disabled = true;
     $progress.hidden = false;
@@ -805,16 +1063,9 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       $progressLog.scrollTop = $progressLog.scrollHeight;
     }
 
-    function updateProgress() {
-      completed++;
-      const pct = Math.round((completed / totalOps) * 100);
-      $progressFill.style.width = `${pct}%`;
-      $progressText.textContent = `${completed} / ${totalOps} users processed`;
-    }
-
-    for (const user of selectedUsers) {
+    for (const user of users) {
       try {
-        // Roles — one call per role
+        // Roles
         if (finalRoles.length) {
           const rolePayloads = [];
           for (const r of finalRoles) {
@@ -843,9 +1094,23 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
           );
         }
 
-        // Queues — add user to each queue
+        // Queues
         for (const queueId of finalQueueIds) {
           await gc.addQueueMembers(api, orgId, queueId, [{ id: user.id }]);
+        }
+
+        // Record template assignments
+        for (const tpl of selectedTemplates) {
+          try {
+            await createAssignment({
+              orgId,
+              userId: user.id,
+              userName: user.name,
+              templateId: tpl.id,
+              templateName: tpl.name,
+              assignedBy: me?.email || "",
+            });
+          } catch { /* non-critical */ }
         }
 
         logLine(`✓ ${user.name}`, "success");
@@ -853,7 +1118,10 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
         errors++;
         logLine(`✗ ${user.name}: ${err.message}`, "error");
       }
-      updateProgress();
+      completed++;
+      const pct = Math.round((completed / totalUsers) * 100);
+      $progressFill.style.width = `${pct}%`;
+      $progressText.textContent = `${completed} / ${totalUsers} users processed`;
     }
 
     const summary = errors
@@ -861,6 +1129,154 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       : `Successfully configured ${totalUsers} user${totalUsers > 1 ? "s" : ""}.`;
     setStatus(summary, errors ? "error" : "success");
     $btnApply.disabled = false;
+
+    // Refresh assignments
+    try { allAssignments = await fetchAssignments(orgId); } catch { /* ignore */ }
+    userDetails = {};
+    renderUserList();
+  }
+
+  // ── REMOVE ────────────────────────────────────────────
+  async function handleRemove(users) {
+    // Build the list of things to remove
+    const rolesFromTemplates = [];
+    const skillsFromTemplates = [];
+    const langsFromTemplates = [];
+    const queuesFromTemplates = new Set();
+
+    for (const tpl of selectedTemplates) {
+      for (const r of tpl.roles || []) rolesFromTemplates.push(r);
+      for (const s of tpl.skills || []) skillsFromTemplates.push(s);
+      for (const l of tpl.languages || []) langsFromTemplates.push(l);
+      for (const q of tpl.queues || []) queuesFromTemplates.add(q.queueId);
+    }
+
+    const allRemoveRoles = [...selectedRoles, ...rolesFromTemplates];
+    const allRemoveSkills = [...selectedSkills, ...skillsFromTemplates];
+    const allRemoveLangs = [...selectedLanguages, ...langsFromTemplates];
+    const allRemoveQueueIds = new Set([
+      ...selectedQueues.map((q) => q.queueId),
+      ...queuesFromTemplates,
+    ]);
+
+    // Deduplicate
+    const uniqueRoleIds = [...new Set(allRemoveRoles.map((r) => r.roleId))];
+    const uniqueSkillIds = [...new Set(allRemoveSkills.map((s) => s.skillId))];
+    const uniqueLangIds = [...new Set(allRemoveLangs.map((l) => l.languageId))];
+
+    // Build confirmation message
+    if (selectedTemplates.length) {
+      const lines = [];
+      lines.push(`Templates: ${selectedTemplates.map((t) => t.name).join(", ")}`);
+      if (uniqueRoleIds.length) {
+        const names = uniqueRoleIds.map((id) => {
+          const r = allRemoveRoles.find((r) => r.roleId === id);
+          return r?.roleName || id;
+        });
+        lines.push(`  → Roles: ${names.join(", ")}`);
+      }
+      if (uniqueSkillIds.length) {
+        const names = uniqueSkillIds.map((id) => {
+          const s = allRemoveSkills.find((s) => s.skillId === id);
+          return s?.skillName || id;
+        });
+        lines.push(`  → Skills: ${names.join(", ")}`);
+      }
+      if (uniqueLangIds.length) {
+        const names = uniqueLangIds.map((id) => {
+          const l = allRemoveLangs.find((l) => l.languageId === id);
+          return l?.languageName || id;
+        });
+        lines.push(`  → Languages: ${names.join(", ")}`);
+      }
+      if (allRemoveQueueIds.size) {
+        const names = [...allRemoveQueueIds].map((id) => {
+          const q = allQueues.find((q) => q.id === id);
+          return q?.name || id;
+        });
+        lines.push(`  → Queues: ${names.join(", ")}`);
+      }
+
+      const msg = `⚠ Removing templates will also remove all associated properties:\n\n${lines.join("\n")}\n\nThis will affect ${users.length} user${users.length > 1 ? "s" : ""}. Continue?`;
+      if (!confirm(msg)) return;
+    } else {
+      if (!confirm(`Remove selected items from ${users.length} user${users.length > 1 ? "s" : ""}?`)) return;
+    }
+
+    let completed = 0;
+    let errors = 0;
+    const totalUsers = users.length;
+
+    $btnApply.disabled = true;
+    $progress.hidden = false;
+    $progressLog.innerHTML = "";
+
+    function logLine(msg, type) {
+      const line = document.createElement("div");
+      line.className = "cu-log-line" + (type ? ` cu-log-line--${type}` : "");
+      line.textContent = msg;
+      $progressLog.append(line);
+      $progressLog.scrollTop = $progressLog.scrollHeight;
+    }
+
+    for (const user of users) {
+      try {
+        // Remove roles
+        for (const roleId of uniqueRoleIds) {
+          try {
+            await gc.deleteUserRole(api, orgId, user.id, roleId);
+          } catch { /* role may not be assigned */ }
+        }
+
+        // Remove skills
+        for (const skillId of uniqueSkillIds) {
+          try {
+            await gc.deleteUserSkill(api, orgId, user.id, skillId);
+          } catch { /* skill may not be assigned */ }
+        }
+
+        // Remove languages
+        for (const langId of uniqueLangIds) {
+          try {
+            await gc.deleteUserLanguage(api, orgId, user.id, langId);
+          } catch { /* language may not be assigned */ }
+        }
+
+        // Remove from queues
+        for (const queueId of allRemoveQueueIds) {
+          try {
+            await gc.removeQueueMember(api, orgId, queueId, user.id);
+          } catch { /* may not be a member */ }
+        }
+
+        // Remove template assignment records
+        for (const tpl of selectedTemplates) {
+          try {
+            await deleteAssignmentByUserTemplate(orgId, user.id, tpl.id);
+          } catch { /* non-critical */ }
+        }
+
+        logLine(`✓ ${user.name}`, "success");
+      } catch (err) {
+        errors++;
+        logLine(`✗ ${user.name}: ${err.message}`, "error");
+      }
+      completed++;
+      const pct = Math.round((completed / totalUsers) * 100);
+      $progressFill.style.width = `${pct}%`;
+      $progressText.textContent = `${completed} / ${totalUsers} users processed`;
+    }
+
+    const summary = errors
+      ? `Completed with ${errors} error${errors > 1 ? "s" : ""}. ${completed - errors}/${totalUsers} users updated.`
+      : `Successfully removed items from ${totalUsers} user${totalUsers > 1 ? "s" : ""}.`;
+    setStatus(summary, errors ? "error" : "success");
+    $btnApply.disabled = false;
+
+    // Refresh assignments and user list
+    try { allAssignments = await fetchAssignments(orgId); } catch { /* ignore */ }
+    userDetails = {};
+    renderUserList();
   }
 
   return el;
