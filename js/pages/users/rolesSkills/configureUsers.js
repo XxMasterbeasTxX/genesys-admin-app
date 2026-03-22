@@ -528,7 +528,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   }
 
   async function loadLocationUsers(locationId) {
-    const allUsers = await gc.fetchAllUsers(api, orgId, { expand: ["skills", "languages"] });
+    const allUsers = await gc.fetchAllUsers(api, orgId, { expand: ["skills", "languages", "locations"] });
     return allUsers
       .filter((u) => u.locations?.some((l) => l.locationDefinition?.id === locationId))
       .map((u) => mapUser(u));
