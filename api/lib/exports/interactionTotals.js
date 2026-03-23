@@ -85,7 +85,7 @@ function timestampedFilename(prefix, ext) {
   return `${prefix}_${ts}.${ext}`;
 }
 
-// ── Genesys API wrappers (server-side) ──────────────────
+// ── Genesys API wrapper (server-side) ──────────────────
 
 async function genesysFetch(customerId, method, path, body) {
   const customer = customers.find((c) => c.id === customerId);
@@ -115,74 +115,46 @@ async function genesysFetch(customerId, method, path, body) {
   return resp.json();
 }
 
-async function submitJob(orgId, interval, jobBody) {
-  const body = { ...jobBody, interval };
-  const resp = await genesysFetch(orgId, "POST",
-    "/api/v2/analytics/conversations/details/jobs", body);
-  return resp.jobId;
-}
+// ── Aggregates helper ───────────────────────────────────
 
-async function pollJob(orgId, jobId, context) {
-  const MAX_WAIT = 10 * 60 * 1000; // 10 minutes
-  const POLL_INTERVAL = 3000;
-  const start = Date.now();
+async function fetchAggregates(orgId, interval, context) {
+  const path = "/api/v2/analytics/conversations/aggregates/query";
+  const makeBody = (groupBy, extraPreds = []) => {
+    const body = { interval, metrics: ["nConversations"] };
+    if (groupBy) body.groupBy = [groupBy];
+    if (extraPreds.length) body.filter = { type: "and", predicates: extraPreds };
+    return body;
+  };
 
-  while (Date.now() - start < MAX_WAIT) {
-    const status = await genesysFetch(orgId, "GET",
-      `/api/v2/analytics/conversations/details/jobs/${jobId}`);
-    if (status.state === "FULFILLED") return;
-    if (status.state === "FAILED") throw new Error(`Job ${jobId} failed: ${status.errorMessage || "unknown"}`);
-    context.log(`Job ${jobId}: ${status.state}, waiting…`);
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+  context.log("Querying aggregates…");
+  const [mediaResp, dirResp, acdResp, totalResp] = await Promise.all([
+    genesysFetch(orgId, "POST", path, makeBody("mediaType")),
+    genesysFetch(orgId, "POST", path, makeBody("originatingDirection")),
+    genesysFetch(orgId, "POST", path, makeBody(null,
+      [{ type: "dimension", dimension: "purpose", value: "acd" }])),
+    genesysFetch(orgId, "POST", path, makeBody(null)),
+  ]);
+
+  function parseGrouped(resp, key) {
+    const map = new Map();
+    for (const r of resp.results || []) {
+      const v = r.group?.[key];
+      if (!v) continue;
+      const c = r.data?.[0]?.metrics?.[0]?.stats?.count || 0;
+      map.set(v, c);
+    }
+    return map;
   }
-  throw new Error(`Job ${jobId} timed out after 10 minutes`);
-}
-
-async function fetchJobResults(orgId, jobId, context) {
-  const allConversations = [];
-  let cursor = null;
-
-  do {
-    const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}&pageSize=10000` : "?pageSize=10000";
-    const resp = await genesysFetch(orgId, "GET",
-      `/api/v2/analytics/conversations/details/jobs/${jobId}/results${qs}`);
-    const items = resp.conversations || [];
-    allConversations.push(...items);
-    cursor = resp.cursor || null;
-    context.log(`Fetched ${allConversations.length} conversations so far…`);
-  } while (cursor);
-
-  return allConversations;
-}
-
-// ── Tally conversations ─────────────────────────────────
-
-function tallyConversations(conversations) {
-  const mediaCounts = new Map();
-  const dirCounts = new Map();
-  let acdCount = 0;
-
-  for (const conv of conversations) {
-    const dir = conv.originatingDirection;
-    if (dir) dirCounts.set(dir, (dirCounts.get(dir) || 0) + 1);
-
-    const mediaTypes = new Set();
-    let hasAcd = false;
-
-    for (const p of conv.participants || []) {
-      if (p.purpose === "acd") hasAcd = true;
-      for (const s of p.sessions || []) {
-        if (s.mediaType) mediaTypes.add(s.mediaType);
-      }
-    }
-
-    for (const mt of mediaTypes) {
-      mediaCounts.set(mt, (mediaCounts.get(mt) || 0) + 1);
-    }
-    if (hasAcd) acdCount++;
+  function parseTotal(resp) {
+    return resp.results?.[0]?.data?.[0]?.metrics?.[0]?.stats?.count || 0;
   }
 
-  return { mediaCounts, dirCounts, acdCount };
+  return {
+    mediaCounts: parseGrouped(mediaResp, "mediaType"),
+    dirCounts: parseGrouped(dirResp, "originatingDirection"),
+    acdCount: parseTotal(acdResp),
+    grandTotal: parseTotal(totalResp),
+  };
 }
 
 function mapToSorted(map) {
@@ -214,22 +186,9 @@ async function execute(context, schedule) {
     const { from, to } = periodToInterval(periodPreset);
     const interval = `${from}T00:00:00.000Z/${to}T23:59:59.999Z`;
 
-    const jobBody = {};
-
-    // Submit → Poll → Fetch
-    context.log("Submitting analytics job…");
-    const jobId = await submitJob(orgId, interval, jobBody);
-    context.log(`Job submitted: ${jobId}`);
-
-    await pollJob(orgId, jobId, context);
-    context.log("Job fulfilled, fetching results…");
-
-    const conversations = await fetchJobResults(orgId, jobId, context);
-    context.log(`Total conversations: ${conversations.length}`);
-
-    // Tally
-    const { mediaCounts, dirCounts, acdCount } = tallyConversations(conversations);
-    const grandTotal = conversations.length;
+    const { mediaCounts, dirCounts, acdCount, grandTotal } =
+      await fetchAggregates(orgId, interval, context);
+    context.log(`Total conversations: ${grandTotal}`);
 
     // Build Excel
     const rows = [

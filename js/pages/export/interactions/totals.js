@@ -8,14 +8,13 @@
  *   3. By Routing      (ACD / Non-ACD)  — based on participant purpose "acd"
  *
  * Date presets: Last Month, Last 3 Months, Last Year (calendar-aligned).
- * Filters: Media Type, Direction (server-side via the async jobs API).
+ * Filters: Media Type, Direction.
  *
- * API: POST /api/v2/analytics/conversations/details/jobs  (async)
- *      Fetches all conversation records, counts breakdowns client-side.
+ * API: POST /api/v2/analytics/conversations/aggregates/query
+ *      Returns pre-computed counts grouped by dimension — fast at any scale.
  */
 
 import { escapeHtml, timestampedFilename } from "../../../utils.js";
-import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
@@ -299,24 +298,48 @@ export default function renderTotals({ route, me, api, orgContext }) {
     return { from: $from.value, to: $to.value };
   }
 
-  // ── Build job body with server-side filters ────────
-  function buildJobBody() {
-    const body = {};
-    const mt  = $mediaFilter.value;
-    const dir = $dirFilter.value;
-    if (mt) {
-      body.segmentFilters = [{
-        type: "and",
-        predicates: [{ dimension: "mediaType", value: mt }],
-      }];
+  // ── Aggregates helper ─────────────────────────────
+  async function fetchAggregates(interval, mt, dir) {
+    const makeBody = (groupBy, extraPreds = []) => {
+      const body = { interval, metrics: ["nConversations"] };
+      if (groupBy) body.groupBy = [groupBy];
+      const preds = [...extraPreds];
+      if (mt)  preds.push({ type: "dimension", dimension: "mediaType", value: mt });
+      if (dir) preds.push({ type: "dimension", dimension: "originatingDirection", value: dir });
+      if (preds.length) body.filter = { type: "and", predicates: preds };
+      return body;
+    };
+
+    const path = "/api/v2/analytics/conversations/aggregates/query";
+    const [mediaResp, dirResp, acdResp, totalResp] = await Promise.all([
+      api.proxyGenesys(orgId, "POST", path, { body: makeBody("mediaType") }),
+      api.proxyGenesys(orgId, "POST", path, { body: makeBody("originatingDirection") }),
+      api.proxyGenesys(orgId, "POST", path, {
+        body: makeBody(null, [{ type: "dimension", dimension: "purpose", value: "acd" }]),
+      }),
+      api.proxyGenesys(orgId, "POST", path, { body: makeBody(null) }),
+    ]);
+
+    function parseGrouped(resp, key) {
+      const map = new Map();
+      for (const r of resp.results || []) {
+        const v = r.group?.[key];
+        if (!v) continue;
+        const c = r.data?.[0]?.metrics?.[0]?.stats?.count || 0;
+        map.set(v, c);
+      }
+      return map;
     }
-    if (dir) {
-      body.conversationFilters = [{
-        type: "and",
-        predicates: [{ dimension: "originatingDirection", value: dir }],
-      }];
+    function parseTotal(resp) {
+      return resp.results?.[0]?.data?.[0]?.metrics?.[0]?.stats?.count || 0;
     }
-    return body;
+
+    return {
+      mediaCounts: parseGrouped(mediaResp, "mediaType"),
+      dirCounts:   parseGrouped(dirResp, "originatingDirection"),
+      acdCount:    parseTotal(acdResp),
+      grandTotal:  parseTotal(totalResp),
+    };
   }
 
   // ── Render bar chart ────────────────────────────────
@@ -367,36 +390,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
   let lastFilename = null;
   let lastSummaryData = null;
 
-  // ── Count breakdowns from conversation records ─────
-  function tallyConversations(conversations) {
-    const mediaCounts = new Map();
-    const dirCounts   = new Map();
-    let acdCount = 0;
 
-    for (const conv of conversations) {
-      // Direction — conversation-level field
-      const dir = conv.originatingDirection;
-      if (dir) dirCounts.set(dir, (dirCounts.get(dir) || 0) + 1);
-
-      // Media type — collect unique types across all sessions
-      const mediaTypes = new Set();
-      let hasAcd = false;
-
-      for (const p of conv.participants || []) {
-        if (p.purpose === "acd") hasAcd = true;
-        for (const s of p.sessions || []) {
-          if (s.mediaType) mediaTypes.add(s.mediaType);
-        }
-      }
-
-      for (const mt of mediaTypes) {
-        mediaCounts.set(mt, (mediaCounts.get(mt) || 0) + 1);
-      }
-      if (hasAcd) acdCount++;
-    }
-
-    return { mediaCounts, dirCounts, acdCount };
-  }
 
   /** Convert a Map to sorted [{key, count}] array. */
   function mapToSorted(map) {
@@ -420,19 +414,12 @@ export default function renderTotals({ route, me, api, orgContext }) {
 
     try {
       const interval = `${from}T00:00:00.000Z/${to}T23:59:59.999Z`;
-      const jobBody  = buildJobBody();
 
-      // Fetch ALL conversation records via the async jobs API
-      const conversations = await gc.searchConversations(api, orgId, {
-        interval,
-        jobBody,
-        onStatus: (msg) => setStatus(msg),
-        onProgress: (pct) => showProgress(pct),
-      });
+      setStatus("Querying aggregates…");
+      showProgress(30);
 
-      // Tally breakdowns client-side
-      const { mediaCounts, dirCounts, acdCount } = tallyConversations(conversations);
-      const grandTotal = conversations.length;
+      const { mediaCounts, dirCounts, acdCount, grandTotal } =
+        await fetchAggregates(interval, $mediaFilter.value, $dirFilter.value);
 
       $totalBanner.textContent = `Total Interactions: ${grandTotal.toLocaleString()}`;
 
