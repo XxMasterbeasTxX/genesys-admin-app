@@ -311,10 +311,22 @@ export default function renderTotals({ route, me, api, orgContext }) {
     };
 
     const path = "/api/v2/analytics/conversations/aggregates/query";
-    const [mediaResp, dirResp, routingResp] = await Promise.all([
+    const [mediaResp, dirResp, routingResp, offeredResp] = await Promise.all([
       api.proxyGenesys(orgId, "POST", path, { body: makeBody("mediaType") }),
       api.proxyGenesys(orgId, "POST", path, { body: makeBody("originatingDirection") }),
       api.proxyGenesys(orgId, "POST", path, { body: makeBody("interactionType") }),
+      api.proxyGenesys(orgId, "POST", path, {
+        body: {
+          interval,
+          metrics: ["nOffered"],
+          groupBy: ["mediaType"],
+          filter: { type: "and", predicates: [
+            { type: "dimension", dimension: "firstQueue", value: "true" },
+            ...(mt  ? [{ type: "dimension", dimension: "mediaType", value: mt }] : []),
+            ...(dir ? [{ type: "dimension", dimension: "originatingDirection", value: dir }] : []),
+          ]},
+        },
+      }),
     ]);
 
     function parseGrouped(resp, key) {
@@ -331,10 +343,28 @@ export default function renderTotals({ route, me, api, orgContext }) {
     let grandTotal = 0;
     for (const c of mediaCounts.values()) grandTotal += c;
 
+    // Hybrid ACD/Non-ACD: interactionType for voice + nOffered for non-voice
+    const voiceRouting = parseGrouped(routingResp, "interactionType");
+    let acdTotal = voiceRouting.get("contactCenter") || 0;
+    let nonAcdTotal = voiceRouting.get("enterprise") || 0;
+
+    // Non-voice: nOffered (firstQueue) = ACD, remainder = Non-ACD
+    const offeredByMedia = parseGrouped(offeredResp, "mediaType");
+    for (const [type, count] of mediaCounts) {
+      if (type === "voice") continue;
+      const offered = offeredByMedia.get(type) || 0;
+      acdTotal += Math.min(offered, count);
+      nonAcdTotal += Math.max(count - offered, 0);
+    }
+
+    const routingCounts = new Map();
+    if (acdTotal > 0) routingCounts.set("contactcenter", acdTotal);
+    if (nonAcdTotal > 0) routingCounts.set("enterprise", nonAcdTotal);
+
     return {
       mediaCounts,
       dirCounts:     parseGrouped(dirResp, "originatingDirection"),
-      routingCounts: parseGrouped(routingResp, "interactionType"),
+      routingCounts,
       grandTotal,
     };
   }
