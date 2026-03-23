@@ -179,6 +179,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     $btnApply.className = mode === "add"
       ? "btn cu-btn-apply"
       : "btn cu-btn-apply cu-btn-apply--remove";
+    renderSkillList();
+    renderLanguageList();
     updateApplyButton();
   });
 
