@@ -78,7 +78,7 @@ const MEDIA_LABELS = {
 };
 
 const DIRECTION_LABELS = { inbound: "Inbound", outbound: "Outbound" };
-const ROUTING_LABELS   = { contactCenter: "ACD", enterprise: "Non-ACD" };
+const ROUTING_LABELS   = { contactcenter: "ACD", enterprise: "Non-ACD" };
 
 function friendlyLabel(key, map) {
   return map[key?.toLowerCase?.()] || key || "Unknown";
@@ -171,7 +171,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
       </div>
 
       <div class="it-chart-group">
-        <h3 class="it-chart-title">By Direction</h3>
+        <h3 class="it-chart-title">Voice - By Direction</h3>
         <div id="itChartDir" class="it-bars"></div>
       </div>
 

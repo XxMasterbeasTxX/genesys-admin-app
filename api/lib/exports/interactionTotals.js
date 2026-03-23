@@ -25,7 +25,7 @@ const MEDIA_LABELS = {
   screenshare: "Screen Share", internalmessage: "Internal Message",
 };
 const DIRECTION_LABELS = { inbound: "Inbound", outbound: "Outbound" };
-const ROUTING_LABELS   = { contactCenter: "ACD", enterprise: "Non-ACD" };
+const ROUTING_LABELS   = { contactcenter: "ACD", enterprise: "Non-ACD" };
 
 function friendlyLabel(key, map) {
   return map[key?.toLowerCase?.()] || key || "Unknown";
