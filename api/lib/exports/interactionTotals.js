@@ -25,7 +25,7 @@ const MEDIA_LABELS = {
   screenshare: "Screen Share", internalmessage: "Internal Message",
 };
 const DIRECTION_LABELS = { inbound: "Inbound", outbound: "Outbound" };
-const ROUTING_LABELS   = { acd: "ACD", "non-acd": "Non-ACD" };
+const ROUTING_LABELS   = { contactCenter: "ACD", enterprise: "Non-ACD" };
 
 function friendlyLabel(key, map) {
   return map[key?.toLowerCase?.()] || key || "Unknown";
@@ -127,11 +127,10 @@ async function fetchAggregates(orgId, interval, context) {
   };
 
   context.log("Querying aggregates…");
-  const [mediaResp, dirResp, acdResp, totalResp] = await Promise.all([
+  const [mediaResp, dirResp, routingResp, totalResp] = await Promise.all([
     genesysFetch(orgId, "POST", path, makeBody("mediaType")),
     genesysFetch(orgId, "POST", path, makeBody("originatingDirection")),
-    genesysFetch(orgId, "POST", path, makeBody(null,
-      [{ type: "dimension", dimension: "purpose", value: "acd" }])),
+    genesysFetch(orgId, "POST", path, makeBody("interactionType")),
     genesysFetch(orgId, "POST", path, makeBody(null)),
   ]);
 
@@ -150,10 +149,10 @@ async function fetchAggregates(orgId, interval, context) {
   }
 
   return {
-    mediaCounts: parseGrouped(mediaResp, "mediaType"),
-    dirCounts: parseGrouped(dirResp, "originatingDirection"),
-    acdCount: parseTotal(acdResp),
-    grandTotal: parseTotal(totalResp),
+    mediaCounts:   parseGrouped(mediaResp, "mediaType"),
+    dirCounts:     parseGrouped(dirResp, "originatingDirection"),
+    routingCounts: parseGrouped(routingResp, "interactionType"),
+    grandTotal:    parseTotal(totalResp),
   };
 }
 
@@ -186,7 +185,7 @@ async function execute(context, schedule) {
     const { from, to } = periodToInterval(periodPreset);
     const interval = `${from}T00:00:00.000Z/${to}T23:59:59.999Z`;
 
-    const { mediaCounts, dirCounts, acdCount, grandTotal } =
+    const { mediaCounts, dirCounts, routingCounts, grandTotal } =
       await fetchAggregates(orgId, interval, context);
     context.log(`Total conversations: ${grandTotal}`);
 
@@ -219,13 +218,10 @@ async function execute(context, schedule) {
     }
     rows.push([]);
 
-    const nonAcd = grandTotal - acdCount;
-    const routingData = [
-      { key: "acd", count: acdCount },
-      { key: "non-acd", count: nonAcd > 0 ? nonAcd : 0 },
-    ].filter(d => d.count > 0).sort((a, b) => b.count - a.count);
-    for (const { key, count } of routingData) {
-      const pct = grandTotal > 0 ? ((count / grandTotal) * 100).toFixed(1) + "%" : "0.0%";
+    const routingArr = mapToSorted(routingCounts);
+    const routingTotal = routingArr.reduce((s, d) => s + d.count, 0);
+    for (const { key, count } of routingArr) {
+      const pct = routingTotal > 0 ? ((count / routingTotal) * 100).toFixed(1) + "%" : "0.0%";
       rows.push(["Routing", friendlyLabel(key, ROUTING_LABELS), count, pct]);
     }
 

@@ -5,7 +5,7 @@
  * into three horizontal bar chart groups:
  *   1. By Media Type  (voice, chat, email, message, callback, …)
  *   2. By Direction    (inbound, outbound)
- *   3. By Routing      (ACD / Non-ACD)  — based on participant purpose "acd"
+ *   3. By Routing      (ACD / Non-ACD)  — based on interactionType dimension
  *
  * Date presets: Last Month, Last 3 Months, Last Year (calendar-aligned).
  * Filters: Media Type, Direction.
@@ -78,7 +78,7 @@ const MEDIA_LABELS = {
 };
 
 const DIRECTION_LABELS = { inbound: "Inbound", outbound: "Outbound" };
-const ROUTING_LABELS   = { acd: "ACD", "non-acd": "Non-ACD" };
+const ROUTING_LABELS   = { contactCenter: "ACD", enterprise: "Non-ACD" };
 
 function friendlyLabel(key, map) {
   return map[key?.toLowerCase?.()] || key || "Unknown";
@@ -311,12 +311,10 @@ export default function renderTotals({ route, me, api, orgContext }) {
     };
 
     const path = "/api/v2/analytics/conversations/aggregates/query";
-    const [mediaResp, dirResp, acdResp, totalResp] = await Promise.all([
+    const [mediaResp, dirResp, routingResp, totalResp] = await Promise.all([
       api.proxyGenesys(orgId, "POST", path, { body: makeBody("mediaType") }),
       api.proxyGenesys(orgId, "POST", path, { body: makeBody("originatingDirection") }),
-      api.proxyGenesys(orgId, "POST", path, {
-        body: makeBody(null, [{ type: "dimension", dimension: "purpose", value: "acd" }]),
-      }),
+      api.proxyGenesys(orgId, "POST", path, { body: makeBody("interactionType") }),
       api.proxyGenesys(orgId, "POST", path, { body: makeBody(null) }),
     ]);
 
@@ -335,10 +333,10 @@ export default function renderTotals({ route, me, api, orgContext }) {
     }
 
     return {
-      mediaCounts: parseGrouped(mediaResp, "mediaType"),
-      dirCounts:   parseGrouped(dirResp, "originatingDirection"),
-      acdCount:    parseTotal(acdResp),
-      grandTotal:  parseTotal(totalResp),
+      mediaCounts:   parseGrouped(mediaResp, "mediaType"),
+      dirCounts:     parseGrouped(dirResp, "originatingDirection"),
+      routingCounts: parseGrouped(routingResp, "interactionType"),
+      grandTotal:    parseTotal(totalResp),
     };
   }
 
@@ -418,24 +416,17 @@ export default function renderTotals({ route, me, api, orgContext }) {
       setStatus("Querying aggregates…");
       showProgress(30);
 
-      const { mediaCounts, dirCounts, acdCount, grandTotal } =
+      const { mediaCounts, dirCounts, routingCounts, grandTotal } =
         await fetchAggregates(interval, $mediaFilter.value, $dirFilter.value);
 
       $totalBanner.textContent = `Total Interactions: ${grandTotal.toLocaleString()}`;
 
       renderBars($chartMedia, mapToSorted(mediaCounts), MEDIA_LABELS, "it-fill-media");
       renderBars($chartDir, mapToSorted(dirCounts), DIRECTION_LABELS, "it-fill-dir");
-
-      const nonAcdCount = grandTotal - acdCount;
-      const routingSummary = [
-        { key: "acd", count: acdCount },
-        { key: "non-acd", count: nonAcdCount > 0 ? nonAcdCount : 0 },
-      ].filter(d => d.count > 0).sort((a, b) => b.count - a.count);
-
-      renderBars($chartRouting, routingSummary, ROUTING_LABELS, "it-fill-routing");
+      renderBars($chartRouting, mapToSorted(routingCounts), ROUTING_LABELS, "it-fill-routing");
 
       // Build summary data for Excel
-      lastSummaryData = { mediaCounts, dirCounts, acdCount, grandTotal, from, to };
+      lastSummaryData = { mediaCounts, dirCounts, routingCounts, grandTotal, from, to };
 
       // Build workbook
       const wb = buildSummaryWorkbook(lastSummaryData);
@@ -505,7 +496,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
   });
 
   // ── Build summary workbook ──────────────────────────
-  function buildSummaryWorkbook({ mediaCounts, dirCounts, acdCount, grandTotal, from, to }) {
+  function buildSummaryWorkbook({ mediaCounts, dirCounts, routingCounts, grandTotal, from, to }) {
     const mt  = $mediaFilter.value;
     const dir = $dirFilter.value;
     const filterParts = [];
@@ -543,13 +534,10 @@ export default function renderTotals({ route, me, api, orgContext }) {
     }
     rows.push([]);
 
-    const nonAcd = grandTotal - acdCount;
-    const routingData = [
-      { key: "acd", count: acdCount },
-      { key: "non-acd", count: nonAcd > 0 ? nonAcd : 0 },
-    ].filter(d => d.count > 0).sort((a, b) => b.count - a.count);
-    for (const { key, count } of routingData) {
-      const pct = grandTotal > 0 ? ((count / grandTotal) * 100).toFixed(1) + "%" : "0.0%";
+    const routingArr = mapToSorted(routingCounts);
+    const routingTotal = routingArr.reduce((s, d) => s + d.count, 0);
+    for (const { key, count } of routingArr) {
+      const pct = routingTotal > 0 ? ((count / routingTotal) * 100).toFixed(1) + "%" : "0.0%";
       rows.push(["Routing", friendlyLabel(key, ROUTING_LABELS), count, pct]);
     }
 
