@@ -102,7 +102,7 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 
 ## 4. Authorization & Divisions
 
-Used by: Divisions (all object types), Data Tables — Create, Data Tables — Edit, export pages, All Roles Export, Deployment — Basic, Roles — Compare (both modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit
+Used by: Divisions (all object types), Data Tables — Create, Data Tables — Edit, export pages, All Roles Export, Deployment — Basic, Roles — Compare (both modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit, Skill Templates — Add Users To Templates
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -123,7 +123,7 @@ Used by: Divisions (all object types), Data Tables — Create, Data Tables — E
 
 ## 5. Users & Groups
 
-Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Trustee Export, Divisions — Users, Documentation Export, WebRTC Phones, Roles — Compare Users, Roles — Permissions vs. Users, Direct Routing — Add user(s)
+Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Trustee Export, Divisions — Users, Documentation Export, WebRTC Phones, Roles — Compare Users, Roles — Permissions vs. Users, Direct Routing — Add user(s), Skill Templates — Add Users To Templates
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -482,3 +482,4 @@ Used by: Flows — Journey Flow
 - **Proxying**: All Genesys calls go through `POST /api/genesys-proxy`, which adds `Authorization: Bearer <token>` for the selected org and forwards the request to the correct Genesys region.
 - **Entity name resolution**: The Audit — Search page resolves entity names for 40+ entity types by calling the appropriate `GET /api/v2/{path}/{id}` endpoint on-demand when a row is expanded.
 - **Server-side endpoints**: Endpoints in sections 2, 4, 5, 7–27 that are also called from `api/lib/exports/` run server-side during scheduled export execution (including Documentation Export) — not from the browser.
+- **Registered export handlers**: The `api/lib/exportHandlers.js` registry maps export type strings to handler modules. Registered types: `allGroups`, `allRoles`, `documentation`, `filteredRoles`, `interactionTotals`, `licensesConsumption`, `rolesSingleOrg`, `lastLogin`, `trustee`, `skillTemplates`.
