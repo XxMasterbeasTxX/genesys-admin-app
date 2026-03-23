@@ -75,6 +75,7 @@ Used by: Interaction Search (Recent + Historical), Disconnect Interactions, Move
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| POST | `/api/v2/analytics/conversations/aggregates/query` | Conversation aggregates — pre-computed counts by dimension (Interaction Totals: `nConversations` grouped by `mediaType`, `originatingDirection`, `interactionType`; `nOffered` with `firstQueue` filter for non-voice ACD counts) |
 | POST | `/api/v2/analytics/conversations/details/jobs` | Submit an async conversation search job (Historical Search — >48h) |
 | GET | `/api/v2/analytics/conversations/details/jobs/{jobId}` | Poll async job status |
 | GET | `/api/v2/analytics/conversations/details/jobs/{jobId}/results` | Fetch async job results (paginated) |
