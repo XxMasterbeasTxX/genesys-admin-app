@@ -2951,12 +2951,12 @@ body {
 
 .cu-sections-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 12px;
   margin-top: 16px;
 }
 .cu-section {
-  flex: 0 0 auto;
+  width: 100%;
 }
 .cu-section-title {
   font-size: 15px;

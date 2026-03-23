@@ -735,7 +735,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       html += `<div class="cu-detail-section">
         <h4 class="cu-detail-heading">Skills (${user.skills.length})</h4>
         <table class="data-table cu-detail-table"><thead><tr><th>Skill</th><th>Proficiency</th><th></th></tr></thead><tbody>
-        ${user.skills.map((s, i) => `<tr><td>${escapeHtml(s.skillName)}</td><td>${s.proficiency}</td><td><button class="btn btn-sm cu-btn-inline-remove" data-action="remove-skill" data-idx="${i}" title="Remove this skill">✕</button></td></tr>`).join("")}
+        ${user.skills.map((s, i) => `<tr><td>${escapeHtml(s.skillName)}</td><td class="cu-proficiency-cell">${[1, 2, 3, 4, 5].map((p) =>
+          `<label class="cu-radio-label"><input type="radio" name="detSkill_${user.id}_${i}" value="${p}" ${p === s.proficiency ? "checked" : ""} data-action="update-skill-prof" data-idx="${i}" />${p}</label>`).join("")}</td><td><button class="btn btn-sm cu-btn-inline-remove" data-action="remove-skill" data-idx="${i}" title="Remove this skill">✕</button></td></tr>`).join("")}
         </tbody></table>
       </div>`;
     }
@@ -745,7 +746,8 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       html += `<div class="cu-detail-section">
         <h4 class="cu-detail-heading">Languages (${user.languages.length})</h4>
         <table class="data-table cu-detail-table"><thead><tr><th>Language</th><th>Proficiency</th><th></th></tr></thead><tbody>
-        ${user.languages.map((l, i) => `<tr><td>${escapeHtml(l.languageName)}</td><td>${l.proficiency}</td><td><button class="btn btn-sm cu-btn-inline-remove" data-action="remove-language" data-idx="${i}" title="Remove this language">✕</button></td></tr>`).join("")}
+        ${user.languages.map((l, i) => `<tr><td>${escapeHtml(l.languageName)}</td><td class="cu-proficiency-cell">${[1, 2, 3, 4, 5].map((p) =>
+          `<label class="cu-radio-label"><input type="radio" name="detLang_${user.id}_${i}" value="${p}" ${p === l.proficiency ? "checked" : ""} data-action="update-lang-prof" data-idx="${i}" />${p}</label>`).join("")}</td><td><button class="btn btn-sm cu-btn-inline-remove" data-action="remove-language" data-idx="${i}" title="Remove this language">✕</button></td></tr>`).join("")}
         </tbody></table>
       </div>`;
     }
@@ -770,7 +772,46 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   }
 
   function wireDetailRemoveButtons(detailEl, user) {
+    // Proficiency radio changes for skills
+    detailEl.querySelectorAll('[data-action="update-skill-prof"]').forEach((radio) => {
+      radio.addEventListener("change", async (e) => {
+        const idx = parseInt(radio.dataset.idx, 10);
+        const skill = user.skills[idx];
+        if (!skill) return;
+        const newProf = parseInt(e.target.value, 10);
+        const oldProf = skill.proficiency;
+        skill.proficiency = newProf;
+        try {
+          await gc.addUserRoutingSkillsBulk(api, orgId, user.id, [{ id: skill.skillId, proficiency: newProf }]);
+        } catch (err) {
+          skill.proficiency = oldProf;
+          renderUserList();
+          setStatus(`Failed to update proficiency: ${err.message}`, "error");
+        }
+      });
+    });
+
+    // Proficiency radio changes for languages
+    detailEl.querySelectorAll('[data-action="update-lang-prof"]').forEach((radio) => {
+      radio.addEventListener("change", async (e) => {
+        const idx = parseInt(radio.dataset.idx, 10);
+        const lang = user.languages[idx];
+        if (!lang) return;
+        const newProf = parseInt(e.target.value, 10);
+        const oldProf = lang.proficiency;
+        lang.proficiency = newProf;
+        try {
+          await gc.addUserRoutingLanguagesBulk(api, orgId, user.id, [{ id: lang.languageId, proficiency: newProf }]);
+        } catch (err) {
+          lang.proficiency = oldProf;
+          renderUserList();
+          setStatus(`Failed to update proficiency: ${err.message}`, "error");
+        }
+      });
+    });
+
     detailEl.querySelectorAll("[data-action]").forEach((btn) => {
+      if (btn.tagName === "INPUT") return; // skip radios handled above
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const action = btn.dataset.action;
