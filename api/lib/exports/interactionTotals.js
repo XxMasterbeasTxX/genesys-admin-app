@@ -127,11 +127,10 @@ async function fetchAggregates(orgId, interval, context) {
   };
 
   context.log("Querying aggregates…");
-  const [mediaResp, dirResp, routingResp, totalResp] = await Promise.all([
+  const [mediaResp, dirResp, routingResp] = await Promise.all([
     genesysFetch(orgId, "POST", path, makeBody("mediaType")),
     genesysFetch(orgId, "POST", path, makeBody("originatingDirection")),
     genesysFetch(orgId, "POST", path, makeBody("interactionType")),
-    genesysFetch(orgId, "POST", path, makeBody(null)),
   ]);
 
   function parseGrouped(resp, key) {
@@ -144,15 +143,15 @@ async function fetchAggregates(orgId, interval, context) {
     }
     return map;
   }
-  function parseTotal(resp) {
-    return resp.results?.[0]?.data?.[0]?.metrics?.[0]?.stats?.count || 0;
-  }
+  const mediaCounts = parseGrouped(mediaResp, "mediaType");
+  let grandTotal = 0;
+  for (const c of mediaCounts.values()) grandTotal += c;
 
   return {
-    mediaCounts:   parseGrouped(mediaResp, "mediaType"),
+    mediaCounts,
     dirCounts:     parseGrouped(dirResp, "originatingDirection"),
     routingCounts: parseGrouped(routingResp, "interactionType"),
-    grandTotal:    parseTotal(totalResp),
+    grandTotal,
   };
 }
 
