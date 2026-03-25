@@ -2,12 +2,12 @@
  * Export › Users — Skill/Role/Queue Templates
  *
  * Exports selected templates to a multi-sheet Excel workbook:
- *   1. Overview — template name, counts per category, member count
+ *   1. Overview — template name, counts per category, user/group/team counts
  *   2. Roles — template × role × divisions
  *   3. Skills — template × skill × proficiency
  *   4. Languages — template × language × proficiency
  *   5. Queues — template × queue
- *   6. Members — template × user × assignedBy
+ *   6. Members — template × type (User/Group/Work Team) × name × assignedBy
  *
  * Flow:
  *   1. Load Templates → fetch all templates + assignments for the selected org
@@ -262,15 +262,21 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       if (cancelled) return;
 
       // Sheet 1: Overview
-      const overviewData = [["Template", "Roles", "Skills", "Languages", "Queues", "Members"]];
+      const overviewData = [["Template", "Roles", "Skills", "Languages", "Queues", "Users", "Groups", "Teams"]];
       for (const t of templates) {
+        const assigns = assignMap.get(t.id) || [];
+        const users  = assigns.filter(a => !a.type || a.type === "user").length;
+        const groups = assigns.filter(a => a.type === "group").length;
+        const teams  = assigns.filter(a => a.type === "workteam").length;
         overviewData.push([
           t.name,
           (t.roles || []).length,
           (t.skills || []).length,
           (t.languages || []).length,
           (t.queues || []).length,
-          (assignMap.get(t.id) || []).length,
+          users,
+          groups,
+          teams,
         ]);
       }
       setProgress(20);
@@ -320,10 +326,15 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       setProgress(70);
 
       // Sheet 6: Members
-      const membersData = [["Template", "User", "Assigned By"]];
+      const membersData = [["Template", "Type", "Name", "Assigned By"]];
       for (const t of templates) {
         for (const a of (assignMap.get(t.id) || [])) {
-          membersData.push([t.name, a.userName || a.userId, a.assignedBy || ""]);
+          const type = a.type || "user";
+          const label = type === "group" ? "Group" : type === "workteam" ? "Work Team" : "User";
+          const name  = type === "group" ? (a.groupName || a.groupId)
+                      : type === "workteam" ? (a.workteamName || a.workteamId)
+                      : (a.userName || a.userId);
+          membersData.push([t.name, label, name, a.assignedBy || ""]);
         }
       }
       setProgress(80);
@@ -347,8 +358,11 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       renderPreview(templates, assignMap);
       $tableWrap.style.display = "";
 
-      const totalMembers = templates.reduce((n, t) => n + (assignMap.get(t.id) || []).length, 0);
-      $summary.textContent = `${templates.length} template(s) exported — ${totalMembers} member assignment(s)`;
+      const allAssigns = templates.flatMap(t => assignMap.get(t.id) || []);
+      const uCt = allAssigns.filter(a => !a.type || a.type === "user").length;
+      const gCt = allAssigns.filter(a => a.type === "group").length;
+      const tCt = allAssigns.filter(a => a.type === "workteam").length;
+      $summary.textContent = `${templates.length} template(s) exported — ${uCt} user(s), ${gCt} group(s), ${tCt} team(s)`;
       $summary.style.display = "";
       $dlWrap.style.display = "";
       setProgress(100);
@@ -424,16 +438,22 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
     let html = `<details class="te-details">`;
     html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${templates.length} template(s)</span></summary>`;
     html += `<div class="te-table-scroll"><table class="data-table" style="width:auto"><thead><tr>`;
-    html += `<th>Template</th><th style="width:80px">Roles</th><th style="width:80px">Skills</th><th style="width:80px">Languages</th><th style="width:80px">Queues</th><th style="width:80px">Members</th>`;
+    html += `<th>Template</th><th style="width:80px">Roles</th><th style="width:80px">Skills</th><th style="width:80px">Languages</th><th style="width:80px">Queues</th><th style="width:80px">Users</th><th style="width:80px">Groups</th><th style="width:80px">Teams</th>`;
     html += `</tr></thead><tbody>`;
     for (const t of templates) {
+      const assigns = assignMap.get(t.id) || [];
+      const uCt = assigns.filter(a => !a.type || a.type === "user").length;
+      const gCt = assigns.filter(a => a.type === "group").length;
+      const tCt = assigns.filter(a => a.type === "workteam").length;
       html += `<tr>
         <td>${escapeHtml(t.name)}</td>
         <td style="text-align:center">${(t.roles || []).length}</td>
         <td style="text-align:center">${(t.skills || []).length}</td>
         <td style="text-align:center">${(t.languages || []).length}</td>
         <td style="text-align:center">${(t.queues || []).length}</td>
-        <td style="text-align:center">${(assignMap.get(t.id) || []).length}</td>
+        <td style="text-align:center">${uCt}</td>
+        <td style="text-align:center">${gCt}</td>
+        <td style="text-align:center">${tCt}</td>
       </tr>`;
     }
     html += `</tbody></table></div></details>`;

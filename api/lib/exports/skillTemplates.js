@@ -62,15 +62,21 @@ async function execute(context, schedule) {
     context.log(`Processing ${templates.length} templates, ${allAssignments.length} total assignments`);
 
     // Sheet 1: Overview
-    const overviewData = [["Template", "Roles", "Skills", "Languages", "Queues", "Members"]];
+    const overviewData = [["Template", "Roles", "Skills", "Languages", "Queues", "Users", "Groups", "Teams"]];
     for (const t of templates) {
+      const assigns = assignMap.get(t.id) || [];
+      const users  = assigns.filter(a => !a.type || a.type === "user").length;
+      const groups = assigns.filter(a => a.type === "group").length;
+      const teams  = assigns.filter(a => a.type === "workteam").length;
       overviewData.push([
         t.name,
         (t.roles || []).length,
         (t.skills || []).length,
         (t.languages || []).length,
         (t.queues || []).length,
-        (assignMap.get(t.id) || []).length,
+        users,
+        groups,
+        teams,
       ]);
     }
 
@@ -115,10 +121,15 @@ async function execute(context, schedule) {
     }
 
     // Sheet 6: Members
-    const membersData = [["Template", "User", "Assigned By"]];
+    const membersData = [["Template", "Type", "Name", "Assigned By"]];
     for (const t of templates) {
       for (const a of (assignMap.get(t.id) || [])) {
-        membersData.push([t.name, a.userName || a.userId, a.assignedBy || ""]);
+        const type = a.type || "user";
+        const label = type === "group" ? "Group" : type === "workteam" ? "Work Team" : "User";
+        const name  = type === "group" ? (a.groupName || a.groupId)
+                    : type === "workteam" ? (a.workteamName || a.workteamId)
+                    : (a.userName || a.userId);
+        membersData.push([t.name, label, name, a.assignedBy || ""]);
       }
     }
 
@@ -134,8 +145,11 @@ async function execute(context, schedule) {
     const base64 = Buffer.from(buf).toString("base64");
     const filename = timestampedFilename("SkillTemplates", "xlsx");
 
-    const totalMembers = templates.reduce((n, t) => n + (assignMap.get(t.id) || []).length, 0);
-    const summary = `${templates.length} template(s), ${totalMembers} member assignment(s)`;
+    const allAssigns = templates.flatMap(t => assignMap.get(t.id) || []);
+    const uCt = allAssigns.filter(a => !a.type || a.type === "user").length;
+    const gCt = allAssigns.filter(a => a.type === "group").length;
+    const tCt = allAssigns.filter(a => a.type === "workteam").length;
+    const summary = `${templates.length} template(s), ${uCt} user(s), ${gCt} group(s), ${tCt} team(s)`;
 
     return {
       success: true,
