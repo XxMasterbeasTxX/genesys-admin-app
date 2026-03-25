@@ -142,12 +142,12 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
       const active = selectedTemplate && selectedTemplate.id === t.id;
       const assignedCount = allAssignments.filter((a) => a.templateId === t.id).length;
       return `
-        <div class="cu-user-row${active ? " cu-user-row--checked" : ""}" data-id="${t.id}" style="cursor:pointer">
-          <div class="cu-user-info">
-            <span class="cu-user-name">${escapeHtml(t.name)}</span>
-            <span class="cu-user-email">${(t.roles || []).length} roles · ${(t.skills || []).length} skills · ${(t.languages || []).length} langs · ${(t.queues || []).length} queues</span>
+        <div class="cu-user-row${active ? " cu-user-row--checked" : ""}" data-id="${t.id}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border)">
+          <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="cu-user-name" style="font-weight:600">${escapeHtml(t.name)}</span>
+            <span class="cu-user-email" style="color:var(--muted);font-size:13px">${(t.roles || []).length} roles · ${(t.skills || []).length} skills · ${(t.languages || []).length} langs · ${(t.queues || []).length} queues</span>
           </div>
-          <span class="cu-user-email" style="white-space:nowrap">${assignedCount} user${assignedCount !== 1 ? "s" : ""}</span>
+          <span class="cu-user-email" style="white-space:nowrap;color:var(--muted);font-size:13px">${assignedCount} user${assignedCount !== 1 ? "s" : ""}</span>
         </div>`;
     }).join("");
 
