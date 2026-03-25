@@ -43,6 +43,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Roles — Copy (Between Orgs)** — Copy an authorization role from one customer org to another. Select a source org and target org, then click **Load Source Roles** — this fetches all roles from the source org and loads the permission catalog from both orgs in parallel. Selecting a source role pre-fills the name ("Copy of {name}"), description, and permission builder. Permissions that exist in the source org's catalog but are absent from the target org's catalog are flagged with ⚠ (kept by default, removable). The full permission builder is available to review and edit before creating. Optional **Make Hourly Interacting** checkbox: when checked, the created role has all disqualifying permissions stripped and `billing:user:hourlyInteracting` added at create-time; a collapsible post-creation summary lists every removed and added permission. Submit posts to `POST /api/v2/authorization/roles` on the **target** org. Access key: `roles.copy.betweenOrgs`.
 - **Documentation Export** — Generate a full Genesys Cloud configuration export for a selected org, mirroring the Python `Export_All.py` output. Produces up to 42 alphabetically sorted configuration sheets (Agent Copilots, DID Numbers, Flows, Queues, Users, OAuth clients, Outbound, etc.) plus a styled Index cover sheet with table of contents and clickable hyperlinks. A second workbook containing all DataTable contents (one sheet per table with its rows, plus an Index cover sheet showing row counts) is bundled as a ZIP when present. Export can take 5–10 minutes for large orgs. Supports per-org scheduled automation.
 - **Scheduled Exports** — Automate any export on a daily, weekly, or monthly schedule with email delivery. Per-export automation toggle, reusable schedule panel with org selector and custom config fields, "All Scheduled Exports" overview page with Last Run and Last Run Status columns (Success / Failure — error description). Server-side execution via Azure Timer Trigger (every 5 minutes) + Azure Functions. Catch-up logic ensures missed runs are retried. All times in Danish time (Europe/Copenhagen, CET/CEST).
+- **Template Scheduling** — Automate template application to users via Azure Durable Functions for precise time-based execution. Supports Reset mode (wipe skills/languages/queues, re-apply template) and Add mode (additive). Schedule types: One-time, Daily, Weekly, Monthly. Durable Functions orchestrator computes exact fire times in Copenhagen timezone and sleeps via `createTimer` — no polling required.
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant). Centralized email service reusable by any page.
 - **GDPR — Subject Request** — Submit GDPR data subject requests for a selected customer org. Guided step-by-step flow: choose request type (Article 15 Right of Access, Article 16 Right to Rectification, Article 17 Right to Erasure), enter known identifiers (name, email, phone, address, social handles), review matched subjects returned by Genesys, enter replacement values for rectification requests, then confirm and submit. After submission, a direct link to Request Status is shown.
 - **GDPR — Request Status** — View all previously submitted GDPR requests for a selected customer org. Columns: Date, Type, Subject, Subject Type, Status, Completed, Details, and full Request ID. For fulfilled Article 15 Access requests, individual request details are fetched to retrieve download URLs; files are downloaded via the authenticated proxy (not direct links). Expired downloads (Genesys retains exports for ~7 days) display a greyed-out "Expired" label with a tooltip instead of a broken link.
@@ -55,8 +56,9 @@ Internal web application for the Genesys Team to perform administrative actions 
   - **Outbound:** Campaigns — Contact Lists — DNC Lists — Email Campaigns — Messaging Campaigns
   - **Workforce Management:** Business Units — Management Units
   - **Task Management:** Workbins — Work Types
-- **Skill Templates — Create Template** — Create reusable templates of roles (with per-role division access), skills (with proficiency levels 1–5), language skills (with proficiency levels 1–5), and queues for bulk user provisioning. Templates are stored in Azure Table Storage (not in Genesys, which has no native template concept). Two-panel page: left panel lists all templates for the selected org (columns: Name, Roles, Skills, Languages, Queues, Created By, Actions); right panel is an inline editor with four collapsible sections (Roles, Skills, Language Skills, Queues). Roles section shows a role card per added role, each with an embedded division multi-select. Skills section has a searchable multi-select plus per-skill proficiency radio buttons (1–5, default 3). Language Skills section has a searchable multi-select plus per-language proficiency radio buttons (1–5, default 3). Queues section has a searchable multi-select. Full CRUD: create, edit (owner or admin only), delete (owner or admin only). Data is partitioned by org in the `skilltemplates` Azure Table. Access key: `users.rolesSkills.createTemplate`.
+- **Skill Templates — Create Template** — Create reusable templates of roles (with per-role division access), skills (with proficiency levels 1–5), language skills (with proficiency levels 1–5), and queues for bulk user provisioning. Templates are stored in Azure Table Storage (not in Genesys, which has no native template concept). Two-panel page: left panel lists all templates for the selected org (columns: Name, Roles, Skills, Languages, Queues, Created By, Actions); right panel is an inline editor with four collapsible sections (Roles, Skills, Language Skills, Queues). Roles section shows a role card per added role, each with an embedded division multi-select. Skills section has a searchable multi-select plus per-skill proficiency radio buttons (1–5, default 3). Language Skills section has a searchable multi-select plus per-language proficiency radio buttons (1–5, default 3). Queues section has a searchable multi-select. Full CRUD: create, edit (owner or admin only), delete (owner or admin only). Data is partitioned by org in the `skilltemplates` Azure Table. A 🕐 schedule button in each template row opens an inline schedule panel for automated template application. Access key: `users.rolesSkills.createTemplate`.
 - **Skill Templates — Add Users To Templates** — Assign and remove users, groups, and work teams from skill templates. Two-panel page: left panel lists all templates for the selected org with a search filter (template list shows breakdown by type — e.g. "3 users · 1 group · 2 teams"); right panel shows template details (read-only horizontal collapsible sections for Roles, Skills, Languages, Queues), three side-by-side assigned columns (Users, Groups, Work Teams) with individual remove and bulk-remove via checkboxes, and three equal-width add sections (Add Users, Add Group, Add Work Team). Add Users supports three modes: Search (by name/email), By Group, and By Division. Add Group and Add Work Team use searchable single-select dropdowns (already-assigned entries are excluded). Adding a group or work team fetches all members and applies the template to each member automatically, with a confirm modal listing the member count before proceeding. Removing a group or work team strips the template from all members and deletes the assignment record. Granular progress bar for all operations. Template assignments are stored in Azure Table Storage (`templateassignments` table) with a `type` field (`user`, `group`, or `workteam`) plus entity metadata (`groupId`/`groupName` or `workteamId`/`workteamName`). Access key: `users.rolesSkills.addUsersToTemplates`.
+- **Template Schedules** — Automate template application to users, groups, and work teams on a precise schedule. Two modes: **Reset** (wipe ALL existing skills, languages, and queue memberships, then re-apply only the template — roles are untouched) and **Add** (additive — merge template items on top of existing assignments). Schedule types: One-time, Daily, Weekly, Monthly. All times in Danish time (Europe/Copenhagen). Schedules are managed via an inline panel on the Create Template page (🕐 button) and a dedicated **Template Schedules** overview page showing all schedules with enable/disable toggle, mode badge (Reset/Add), next run time, and last run status. Execution uses Azure Durable Functions for precise scheduling — an HTTP-triggered starter manages orchestrator instances that sleep via `context.df.createTimer(exactDateTime)` until the exact fire time, then call an activity that triggers the SWA template runner endpoint. Access key: `users.rolesSkills.templateSchedules`.
 - **Configure Users** — Assign roles, skills, language skills, and queue memberships to one or more users at once. Two-panel layout: left panel for user selection, right panel for configuration. User selection modes: Search (by name/email), By Group, By Role, Reports To (search manager → pick → load direct reports), Location, and By Division — matching Genesys's native filter options. Right panel has an Apply button at the top, followed by five collapsible sections: Templates (multi-select to apply one or more saved templates), Roles (with per-role division picker), Skills (with proficiency 1–5), Language Skills (with proficiency 1–5), and Queues. Template items and manual items are merged additively (no duplicates) on apply. Progress bar and per-user log (✓/✗) shown during execution. Genesys APIs used: `POST /api/v2/authorization/roles/{roleId}` (grant roles), `PATCH /api/v2/users/{userId}/routingskills/bulk` (skills), `PATCH /api/v2/users/{userId}/routinglanguages/bulk` (languages), `POST /api/v2/routing/queues/{queueId}/members` (queues). Access key: `users.rolesSkills.configureUsers`.
 - **Activity Log** — Internal log of all write/mutative actions performed through the tool. Every create, copy, move, disconnect, publish, and GDPR submit records who did it, for which org, when, and a plain-language description. Visible to all logged-in users at `/activity-log` via the header link. Client-side filters: action type, org (admin only), user (admin only), and free-text search. Entries are stored in Azure Table Storage and fetched via `/api/activity-log`. Retention is indefinite; the log cannot be cleared from the UI.
 - **Audit — Search** — Query Genesys Cloud audit events across any date range. Ranges ≤ 14 days automatically query **all realtime-supported services** concurrently using the synchronous `POST /api/v2/audits/query/realtime` endpoint (no polling, cursor-paginated to retrieve all results) — results appear in seconds. For ≤ 14-day ranges with a specific service not supported by the realtime endpoint, falls back to the standard async query API automatically. Ranges > 14 days require a service selection and always use the async chunked pipeline (`POST /api/v2/audits/query` → poll → cursor-paginated results, 30-day chunks). Preset quick-filters: Today, Last 7 days, Last month, Last 3 months. Auto-runs today's query on page load with no service pre-selected (all services). Client-side filters: Entity Type → Action (cascading) + Changed By. Results table: Date & Time, Service, Entity Type, Entity Name (resolved via 40+ mapped API paths with `(deleted)` label on 404), Action, Changed By (user or OAuth client name). Click any row to expand a detail panel showing metadata, changed properties (old → new values), additional context, and a raw API response dump. Sticky table header, sortable latest-first, configurable rows per page (50/100/150/200). A blue/amber hint below the service dropdown indicates the current query mode. **Export to Excel** button (far right of filter bar) exports all filtered results — one row per property change — with columns: Date & Time, Service, Entity Type, Entity Name, Action, Changed By, Level, Remote IP, Property, Old Value, New Value, Additional Context.
@@ -86,24 +88,38 @@ Browser (SPA)                    Azure Static Web App (Standard)
 │             │                 │    ├─ POST /api/genesys-proxy│
 │  Org select │                 │    ├─ POST /api/send-email   │──▶ Mailjet API
 │  dropdown   │                 │    ├─ * /api/schedules       │    (EU servers)
-└─────────────┘                 │    └─ POST /api/scheduled-   │
-                                │         runner               │
- Azure Timer Trigger            └────┬─────────────────────────┘
-┌─────────────┐                      │
-│  Every 5min │── POST /api/ ───────▶│
-│ genesys-    │   scheduled-runner   │
-│ admin-timer │                      │
-└─────────────┘              Encrypted app settings
+└─────────────┘                 │    ├─ POST /api/scheduled-   │
+                                │    │    runner               │
+ Azure Timer Trigger            │    ├─ * /api/template-       │
+┌─────────────┐                 │    │    schedules             │
+│  Every 5min │── POST /api/ ──▶│    └─ POST /api/template-    │
+│ genesys-    │   scheduled-    │         runner                │
+│ admin-timer │   runner        └────┬─────────────────────────┘
+└─────────────┘                      │
+                                     │
+ Durable Functions                   │
+┌─────────────────┐                  │
+│ genesys-admin-  │── POST /api/ ───▶│
+│ timer           │   template-runner│
+│ (Flex Consump.) │                  │
+│                 │◀── notify ───────│ (on schedule CRUD)
+│ Starter →       │                  │
+│ Orchestrator →  │                  │
+│ Activity        │                  │
+└─────────────────┘          Encrypted app settings
                              (GENESYS_<ORG>_CLIENT_ID/SECRET)
                              (MAILJET_API_KEY / SECRET_KEY)
                              (AZURE_STORAGE_CONNECTION_STRING)
                              (SCHEDULE_RUNNER_KEY)
+                             (TIMER_FUNCTION_URL)
                                      │
                               ┌──────▼───────┐   ┌──────────────┐
                               │  Azure Key   │   │ Azure Table  │
                               │  Vault       │   │ Storage      │
                               │  (source of  │   │ (schedules,  │
                               │   truth)     │   │  templates,  │
+                              │              │   │  template-   │
+                              │              │   │   schedules  │
                               │              │   │  activitylog)│
                               └──────────────┘   └──────────────┘
 ```
@@ -126,6 +142,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
 | Email | Mailjet v3.1 Send API (EU, GDPR-compliant) |
 | Schedule & template storage | Azure Table Storage |
 | Scheduled runner | Azure Timer Trigger (every 5 min, Flex Consumption Function App) |
+| Template scheduling | Azure Durable Functions (precise timer-based orchestration) |
 | CI/CD | GitHub Actions |
 
 ## Project Structure
@@ -224,7 +241,8 @@ genesys-admin-app/
 │   │   │   └── rolesSkills/
 │   │   │       ├── addUsersToTemplates.js Add Users To Templates — assign/remove users from templates
 │   │   │       ├── configureUsers.js Configure Users — Assign roles, skills, languages, queues to users (single or bulk)
-│   │   │       └── createTemplate.js Skill Templates — Create/Edit/Delete templates (roles, skills, languages, queues)
+│   │   │       ├── createTemplate.js Skill Templates — Create/Edit/Delete templates (roles, skills, languages, queues) + schedule button
+│   │   │       └── templateSchedules.js Template Schedules overview — enable/disable, status, delete
 │   │   ├── flows/
 │   │   │   └── journeyFlow.js       Journey Flow — interactive SVG flow-path diagram (client-side category cache)
 │   │   ├── export/
@@ -258,6 +276,7 @@ genesys-admin-app/
 │       ├── activityLogService.js  Write entries to the internal activity log
 │       ├── orgContext.js         Selected org state management
 │       ├── scheduleService.js    Schedule CRUD API wrappers
+│       ├── templateScheduleService.js  Template schedule CRUD API wrappers
 │       ├── templateService.js    Template CRUD API wrappers
 │       └── templateAssignmentService.js  Template assignment CRUD (users, groups, work teams)
 ├── api/                          Azure Functions backend
@@ -268,12 +287,15 @@ genesys-admin-app/
 │   ├── send-email/               POST /api/send-email (Mailjet)
 │   ├── schedules/                CRUD /api/schedules (schedules management)
 │   ├── scheduled-runner/         POST /api/scheduled-runner (export execution)
+│   ├── template-schedules/       CRUD /api/template-schedules (template schedule management)
+│   ├── template-runner/          POST /api/template-runner (template execution engine — reset/add modes)
 │   ├── templates/                CRUD /api/templates (skill template management)
 │   ├── template-assignments/     CRUD /api/template-assignments (user/group/workteam ↔ template mapping)
 │   └── lib/
 │       ├── customers.json        Customer metadata (15 orgs)
 │       ├── genesysAuth.js        Client Credentials token cache per org
 │       ├── scheduleStore.js      Azure Table Storage CRUD for schedules
+│       ├── templateScheduleStore.js  Azure Table Storage CRUD for template schedules
 │       ├── templateStore.js      Azure Table Storage CRUD for skill templates
 │       ├── templateAssignmentStore.js  Azure Table Storage CRUD for template assignments (users, groups, work teams)
 │       ├── exportHandlers.js     Export type → handler registry
@@ -306,6 +328,16 @@ The app supports automated, server-side export execution with email delivery.
 4. **Catch-up logic** — If a run is missed, the next cycle picks it up automatically. Only one run per schedule per day.
 5. **All times are Danish time** — Europe/Copenhagen (CET in winter, CEST in summer)
 
+### Template Schedules
+
+Template schedules use Azure Durable Functions for precise scheduling instead of polling.
+
+1. **Schedule creation** — On the Create Template page, click the 🕐 button to open an inline schedule panel. Choose Reset or Add mode, schedule type (One-time, Daily, Weekly, Monthly), and time/day settings.
+2. **Durable Functions orchestrator** — When a schedule is created or updated, the SWA API notifies the `genesys-admin-timer` Function App via an HTTP starter endpoint. The starter launches a Durable Functions orchestrator that computes the exact next fire time in Copenhagen timezone and sleeps via `context.df.createTimer(exactDateTime)` — no polling.
+3. **Activity execution** — When the timer fires, the orchestrator calls an activity function that POSTs to `/api/template-runner` on the SWA with the schedule ID.
+4. **Template runner** — The SWA endpoint resolves the schedule, loads the template, resolves group/work team members, and applies the template in the configured mode (Reset: wipe skills/languages/queues then re-apply; Add: merge additively). Roles are never touched.
+5. **Recurring schedules** — After execution, the orchestrator calls `context.df.continueAsNew()` to loop and compute the next fire time. One-time schedules complete after a single execution.
+
 ### Permissions
 
 - Any logged-in user can create a schedule
@@ -319,8 +351,9 @@ See [docs/setup-guide.md](docs/setup-guide.md) for full details. In summary:
 | Setting | Where | Purpose |
 | --- | --- | --- |
 | `AZURE_STORAGE_CONNECTION_STRING` | Azure SWA app settings | Azure Table Storage for schedule data |
-| `SCHEDULE_RUNNER_KEY` | Azure SWA app settings + GitHub secret | Shared secret to protect the runner endpoint |
+| `SCHEDULE_RUNNER_KEY` | Azure SWA app settings + Timer Function App | Shared secret to protect the runner endpoints |
 | `SWA_URL` | Azure Timer Function App setting | Static Web App URL for the timer trigger to call |
+| `TIMER_FUNCTION_URL` | Azure SWA app settings | Timer Function App URL for Durable Functions notifications |
 
 ## Quick Start (local development)
 
