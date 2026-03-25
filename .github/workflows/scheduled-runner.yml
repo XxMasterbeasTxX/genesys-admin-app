@@ -1,21 +1,9 @@
 name: Scheduled Export Runner
 
 on:
-  schedule:
-    # Cron format: minute hour day-of-month month day-of-week
-    #   minute:       0–59   (*/5 = every 5 minutes — minimum GitHub allows)
-    #   hour:         0–23
-    #   day-of-month: 1–31
-    #   month:        1–12
-    #   day-of-week:  0–6    (0 = Sunday)
-    #
-    # Examples:
-    #   "*/5 * * * *"   → every 5 minutes
-    #   "*/15 * * * *"  → every 15 minutes
-    #   "0 * * * *"     → every hour (on the hour)
-    #   "0 */2 * * *"   → every 2 hours
-    #   "0 8 * * 1-5"   → weekdays at 08:00
-    - cron: "0 * * * *"
+  # schedule disabled — replaced by Azure Timer Trigger (genesys-admin-timer)
+  # schedule:
+  #   - cron: "0 * * * *"
   workflow_dispatch: # Allow manual trigger for testing
 
 jobs:
