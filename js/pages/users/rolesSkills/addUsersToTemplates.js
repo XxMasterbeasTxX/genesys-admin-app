@@ -223,7 +223,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           <!-- Add Users -->
-          <div style="flex:2;min-width:280px">
+          <div style="flex:1 1 0;min-width:220px">
             <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px">Add Users</h3>
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
               <div id="autModePicker"></div>
@@ -234,12 +234,12 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
             <div class="cu-pagination" id="autPagination"></div>
           </div>
           <!-- Add Group -->
-          <div style="flex:1;min-width:220px">
+          <div style="flex:1 1 0;min-width:220px">
             <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px">Add Group</h3>
             <div id="autAddGroupPicker"></div>
           </div>
           <!-- Add Work Team -->
-          <div style="flex:1;min-width:220px">
+          <div style="flex:1 1 0;min-width:220px">
             <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px">Add Work Team</h3>
             <div id="autAddTeamPicker"></div>
           </div>
@@ -481,7 +481,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
     const searchRow = document.createElement("div");
     searchRow.className = "cu-search-row";
     searchRow.innerHTML = `
-      <input type="text" class="input cu-search-input" id="autSearchInput" placeholder="Search by name… (empty = all users)" />
+      <input type="text" class="input cu-search-input" id="autSearchInput" placeholder="Search by name…" style="max-width:260px" />
       <button class="btn cu-btn-search" id="autSearchBtn">Search</button>
     `;
     $secondary.append(searchRow);
