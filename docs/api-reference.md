@@ -61,11 +61,13 @@ These are the Azure Functions endpoints exposed by the app itself.
 | POST | `/api/templates` | Create a new skill template — body: `{ orgId, name, userEmail, roles, skills, languages, queues }` |
 | PUT | `/api/templates/{id}` | Update an existing skill template (owner or admin only) |
 | DELETE | `/api/templates/{id}?orgId={orgId}&userEmail={email}` | Delete a skill template (owner or admin only) |
-| GET | `/api/template-assignments?orgId={orgId}` | List all template-user assignments for an org |
+| GET | `/api/template-assignments?orgId={orgId}` | List all template assignments for an org (users, groups, and work teams) |
 | GET | `/api/template-assignments?orgId={orgId}&userId={userId}` | List template assignments for a specific user |
-| POST | `/api/template-assignments` | Create a template assignment — body: `{ orgId, userId, userName, templateId, templateName, assignedBy }` |
+| POST | `/api/template-assignments` | Create a template assignment — body: `{ orgId, type, userId?, userName?, groupId?, groupName?, workteamId?, workteamName?, templateId, templateName, assignedBy }` — `type` is `"user"` (default), `"group"`, or `"workteam"`; the corresponding ID field is required per type |
 | DELETE | `/api/template-assignments/{id}?orgId={orgId}` | Delete a template assignment by ID |
 | DELETE | `/api/template-assignments?orgId={orgId}&userId={userId}&templateId={templateId}` | Delete a template assignment by user+template combo |
+| DELETE | `/api/template-assignments?orgId={orgId}&groupId={groupId}&templateId={templateId}` | Delete a template assignment by group+template combo |
+| DELETE | `/api/template-assignments?orgId={orgId}&workteamId={workteamId}&templateId={templateId}` | Delete a template assignment by work team+template combo |
 
 ---
 
@@ -138,7 +140,8 @@ Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Truste
 | GET | `/api/v2/groups` | List all groups |
 | GET | `/api/v2/groups/{groupId}` | Get a single group by ID — used to resolve group display name in Compare Users and All Roles Export (group name for "Assigned by" column) |
 | GET | `/api/v2/groups/{groupId}/members` | List members of a group |
-| GET | `/api/v2/teams` | List work teams |
+| GET | `/api/v2/teams` | List all work teams (paginated) — used by Skill Templates — Add Users To Templates for work team assignment |
+| GET | `/api/v2/teams/{teamId}/members` | List members of a work team — used by Add Users To Templates to apply/remove template for all team members |
 
 ---
 
