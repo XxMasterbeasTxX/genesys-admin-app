@@ -15,6 +15,8 @@ import {
   fetchAssignments,
   createAssignment,
   deleteAssignmentByUserTemplate,
+  deleteAssignmentByGroupTemplate,
+  deleteAssignmentByWorkteamTemplate,
 } from "../../../services/templateAssignmentService.js";
 
 export default function renderAddUsersToTemplates({ route, me, api, orgContext }) {
@@ -69,6 +71,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
   let selectedTemplate = null; // currently active template object
   let allGroups = [];
   let allDivisions = [];
+  let allTeams = [];
 
   // ── Status helper ─────────────────────────────────────
   function setStatus(msg, type) {
@@ -102,16 +105,18 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
   init();
   async function init() {
     try {
-      const [tpls, assigns, groups, divisions] = await Promise.all([
+      const [tpls, assigns, groups, divisions, teams] = await Promise.all([
         fetchTemplates(orgId),
         fetchAssignments(orgId),
         gc.fetchAllPages(api, orgId, "/api/v2/groups"),
         gc.fetchAllPages(api, orgId, "/api/v2/authorization/divisions"),
+        gc.fetchAllTeams(api, orgId),
       ]);
       templates = tpls.sort((a, b) => a.name.localeCompare(b.name));
       allAssignments = assigns;
       allGroups = groups.map((g) => ({ id: g.id, name: g.name }));
       allDivisions = divisions.map((d) => ({ id: d.id, name: d.name }));
+      allTeams = teams.map((t) => ({ id: t.id, name: t.name }));
       $loading.hidden = true;
       $layout.hidden = false;
       renderTemplateList();
@@ -140,14 +145,22 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
 
     $tplList.innerHTML = filtered.map((t) => {
       const active = selectedTemplate && selectedTemplate.id === t.id;
-      const assignedCount = allAssignments.filter((a) => a.templateId === t.id).length;
+      const tplAssigns = allAssignments.filter((a) => a.templateId === t.id);
+      const userCount = tplAssigns.filter((a) => !a.type || a.type === "user").length;
+      const groupCount = tplAssigns.filter((a) => a.type === "group").length;
+      const teamCount = tplAssigns.filter((a) => a.type === "workteam").length;
+      const parts = [];
+      if (userCount) parts.push(`${userCount} user${userCount !== 1 ? "s" : ""}`);
+      if (groupCount) parts.push(`${groupCount} group${groupCount !== 1 ? "s" : ""}`);
+      if (teamCount) parts.push(`${teamCount} team${teamCount !== 1 ? "s" : ""}`);
+      const assignedLabel = parts.length ? parts.join(" · ") : "0 users";
       return `
         <div class="cu-user-row${active ? " cu-user-row--checked" : ""}" data-id="${t.id}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border)">
           <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="cu-user-name" style="font-weight:600">${escapeHtml(t.name)}</span>
             <span class="cu-user-email" style="color:var(--muted);font-size:13px">${(t.roles || []).length} roles · ${(t.skills || []).length} skills · ${(t.languages || []).length} langs · ${(t.queues || []).length} queues</span>
           </div>
-          <span class="cu-user-email" style="white-space:nowrap;color:var(--muted);font-size:13px">${assignedCount} user${assignedCount !== 1 ? "s" : ""}</span>
+          <span class="cu-user-email" style="white-space:nowrap;color:var(--muted);font-size:13px">${assignedLabel}</span>
         </div>`;
     }).join("");
 
@@ -179,38 +192,75 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
       <h2 class="cu-panel-title" style="margin-bottom:4px">${escapeHtml(t.name)}</h2>
       <p class="muted" style="margin:0 0 16px;font-size:12px">Created by: ${escapeHtml(t.createdByName || t.createdBy || "—")}</p>
 
-      <!-- Read-only template setup -->
-      <div id="autSetup" style="display:flex;flex-direction:column;gap:4px;margin-top:16px"></div>
+      <!-- Read-only template setup (horizontal) -->
+      <div id="autSetup" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px"></div>
 
-      <!-- Assigned users -->
+      <!-- Assigned: 3 columns -->
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-        <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px" id="autAssignedTitle">Assigned Users</h3>
-        <div id="autAssignedList"></div>
-        <button class="btn btn--danger btn-sm" id="autBtnRemove" hidden>Remove Selected from Template</button>
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <!-- Assigned Users -->
+          <div style="flex:1;min-width:220px">
+            <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px" id="autAssignedTitle">Assigned Users</h3>
+            <div id="autAssignedList"></div>
+            <button class="btn btn--danger btn-sm" id="autBtnRemove" hidden style="margin-top:6px">Remove Selected</button>
+          </div>
+          <!-- Assigned Groups -->
+          <div style="flex:1;min-width:220px">
+            <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px" id="autAssignedGroupsTitle">Assigned Groups</h3>
+            <div id="autAssignedGroupsList"></div>
+            <button class="btn btn--danger btn-sm" id="autBtnRemoveGroups" hidden style="margin-top:6px">Remove Selected</button>
+          </div>
+          <!-- Assigned Work Teams -->
+          <div style="flex:1;min-width:220px">
+            <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px" id="autAssignedTeamsTitle">Assigned Work Teams</h3>
+            <div id="autAssignedTeamsList"></div>
+            <button class="btn btn--danger btn-sm" id="autBtnRemoveTeams" hidden style="margin-top:6px">Remove Selected</button>
+          </div>
+        </div>
       </div>
 
-      <!-- Add users -->
+      <!-- Add: 3 columns -->
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-        <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px">Add Users</h3>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-          <div id="autModePicker"></div>
-          <button class="btn btn-sm" id="autBtnAdd" hidden>Assign Selected to Template</button>
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <!-- Add Users -->
+          <div style="flex:2;min-width:280px">
+            <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px">Add Users</h3>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <div id="autModePicker"></div>
+              <button class="btn btn-sm" id="autBtnAdd" hidden>Assign Selected to Template</button>
+            </div>
+            <div id="autSecondary"></div>
+            <div id="autSearchResults"></div>
+            <div class="cu-pagination" id="autPagination"></div>
+          </div>
+          <!-- Add Group -->
+          <div style="flex:1;min-width:220px">
+            <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px">Add Group</h3>
+            <div id="autAddGroupPicker"></div>
+          </div>
+          <!-- Add Work Team -->
+          <div style="flex:1;min-width:220px">
+            <h3 class="cu-panel-title" style="font-size:14px;margin-bottom:10px">Add Work Team</h3>
+            <div id="autAddTeamPicker"></div>
+          </div>
         </div>
-        <div id="autSecondary"></div>
-        <!-- Progress -->
-        <div class="cu-progress" id="autProgress" hidden>
-          <div class="cu-progress-bar"><div class="cu-progress-fill" id="autProgressFill"></div></div>
-          <p class="cu-progress-text" id="autProgressText"></p>
-          <div class="cu-progress-log" id="autProgressLog"></div>
-        </div>
-        <div id="autSearchResults"></div>
-        <div class="cu-pagination" id="autPagination"></div>
+      </div>
+
+      <!-- Progress (shared) -->
+      <div class="cu-progress" id="autProgress" hidden>
+        <div class="cu-progress-bar"><div class="cu-progress-fill" id="autProgressFill"></div></div>
+        <p class="cu-progress-text" id="autProgressText"></p>
+        <div class="cu-progress-log" id="autProgressLog"></div>
       </div>
     `;
 
     renderSetup(t);
     renderAssignedUsers();
+    renderAssignedGroups();
+    renderAssignedTeams();
     wireSearch();
+    wireGroupDropdown();
+    wireTeamDropdown();
   }
 
   // ── Template setup (read-only, collapsible) ───────────
@@ -266,7 +316,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
 
   function buildSection(label, countLabel, contentHTML) {
     return `
-      <div class="cu-section">
+      <div class="cu-section" style="flex:1;min-width:160px">
         <h3 class="cu-section-title cu-collapsible"><span class="cu-chevron">▸</span> ${escapeHtml(label)} ${escapeHtml(countLabel)}</h3>
         <div class="cu-section-body" hidden>${contentHTML}</div>
       </div>`;
@@ -274,11 +324,13 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
 
   // ── Assigned users list ───────────────────────────────
   let assignedChecked = new Set();
+  let assignedGroupsChecked = new Set();
+  let assignedTeamsChecked = new Set();
 
   function renderAssignedUsers() {
     const t = selectedTemplate;
     if (!t) return;
-    const assigned = allAssignments.filter((a) => a.templateId === t.id);
+    const assigned = allAssignments.filter((a) => a.templateId === t.id && (!a.type || a.type === "user"));
     const $list = $detail.querySelector("#autAssignedList");
     const $btnRemove = $detail.querySelector("#autBtnRemove");
     const $title = $detail.querySelector("#autAssignedTitle");
@@ -286,7 +338,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
     assignedChecked = new Set();
 
     if (!assigned.length) {
-      $list.innerHTML = `<p class="muted">No users assigned to this template.</p>`;
+      $list.innerHTML = `<p class="muted">No users assigned.</p>`;
       $btnRemove.hidden = true;
       return;
     }
@@ -309,6 +361,78 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
 
     $btnRemove.hidden = true;
     $btnRemove.onclick = () => handleRemove();
+  }
+
+  function renderAssignedGroups() {
+    const t = selectedTemplate;
+    if (!t) return;
+    const assigned = allAssignments.filter((a) => a.templateId === t.id && a.type === "group");
+    const $list = $detail.querySelector("#autAssignedGroupsList");
+    const $btnRemove = $detail.querySelector("#autBtnRemoveGroups");
+    const $title = $detail.querySelector("#autAssignedGroupsTitle");
+    $title.textContent = `Assigned Groups (${assigned.length})`;
+    assignedGroupsChecked = new Set();
+
+    if (!assigned.length) {
+      $list.innerHTML = `<p class="muted">No groups assigned.</p>`;
+      $btnRemove.hidden = true;
+      return;
+    }
+
+    $list.innerHTML = assigned
+      .sort((a, b) => (a.groupName || "").localeCompare(b.groupName || ""))
+      .map((a) => `
+        <label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);cursor:pointer">
+          <input type="checkbox" class="aut-assigned-group-cb" data-gid="${a.groupId}" />
+          <span>${escapeHtml(a.groupName || a.groupId)}</span>
+        </label>`).join("");
+
+    $list.querySelectorAll(".aut-assigned-group-cb").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        if (cb.checked) assignedGroupsChecked.add(cb.dataset.gid);
+        else assignedGroupsChecked.delete(cb.dataset.gid);
+        $btnRemove.hidden = assignedGroupsChecked.size === 0;
+      });
+    });
+
+    $btnRemove.hidden = true;
+    $btnRemove.onclick = () => handleRemoveGroups();
+  }
+
+  function renderAssignedTeams() {
+    const t = selectedTemplate;
+    if (!t) return;
+    const assigned = allAssignments.filter((a) => a.templateId === t.id && a.type === "workteam");
+    const $list = $detail.querySelector("#autAssignedTeamsList");
+    const $btnRemove = $detail.querySelector("#autBtnRemoveTeams");
+    const $title = $detail.querySelector("#autAssignedTeamsTitle");
+    $title.textContent = `Assigned Work Teams (${assigned.length})`;
+    assignedTeamsChecked = new Set();
+
+    if (!assigned.length) {
+      $list.innerHTML = `<p class="muted">No work teams assigned.</p>`;
+      $btnRemove.hidden = true;
+      return;
+    }
+
+    $list.innerHTML = assigned
+      .sort((a, b) => (a.workteamName || "").localeCompare(b.workteamName || ""))
+      .map((a) => `
+        <label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);cursor:pointer">
+          <input type="checkbox" class="aut-assigned-team-cb" data-tid="${a.workteamId}" />
+          <span>${escapeHtml(a.workteamName || a.workteamId)}</span>
+        </label>`).join("");
+
+    $list.querySelectorAll(".aut-assigned-team-cb").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        if (cb.checked) assignedTeamsChecked.add(cb.dataset.tid);
+        else assignedTeamsChecked.delete(cb.dataset.tid);
+        $btnRemove.hidden = assignedTeamsChecked.size === 0;
+      });
+    });
+
+    $btnRemove.hidden = true;
+    $btnRemove.onclick = () => handleRemoveTeams();
   }
 
   // ── User search (Add Users) ───────────────────────────
@@ -464,7 +588,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
 
     // Filter out already-assigned users
     const assignedIds = new Set(
-      allAssignments.filter((a) => a.templateId === selectedTemplate.id).map((a) => a.userId)
+      allAssignments.filter((a) => a.templateId === selectedTemplate.id && (!a.type || a.type === "user")).map((a) => a.userId)
     );
 
     $results.innerHTML = searchResults.map((u) => {
@@ -501,6 +625,394 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
     $pag.querySelector("#autNext")?.addEventListener("click", () => $detail._doSearch(searchPage + 1));
   }
 
+  // ── Group & Work Team dropdowns ────────────────────────
+  function wireGroupDropdown() {
+    const $picker = $detail.querySelector("#autAddGroupPicker");
+    const alreadyAssigned = new Set(
+      allAssignments.filter((a) => a.templateId === selectedTemplate.id && a.type === "group").map((a) => a.groupId)
+    );
+    const available = allGroups.filter((g) => !alreadyAssigned.has(g.id));
+    const dd = createSingleSelect({
+      placeholder: "Select a group…",
+      searchable: true,
+      onChange: (id) => { if (id) handleAddGroup(id); },
+    });
+    dd.setItems(available.map((g) => ({ id: g.id, label: g.name })).sort((a, b) => a.label.localeCompare(b.label)));
+    $picker.innerHTML = "";
+    $picker.append(dd.el);
+  }
+
+  function wireTeamDropdown() {
+    const $picker = $detail.querySelector("#autAddTeamPicker");
+    const alreadyAssigned = new Set(
+      allAssignments.filter((a) => a.templateId === selectedTemplate.id && a.type === "workteam").map((a) => a.workteamId)
+    );
+    const available = allTeams.filter((t) => !alreadyAssigned.has(t.id));
+    const dd = createSingleSelect({
+      placeholder: "Select a work team…",
+      searchable: true,
+      onChange: (id) => { if (id) handleAddWorkteam(id); },
+    });
+    dd.setItems(available.map((t) => ({ id: t.id, label: t.name })).sort((a, b) => a.label.localeCompare(b.label)));
+    $picker.innerHTML = "";
+    $picker.append(dd.el);
+  }
+
+  // ── Add Group ─────────────────────────────────────────
+  async function handleAddGroup(groupId) {
+    const t = selectedTemplate;
+    if (!t) return;
+    const group = allGroups.find((g) => g.id === groupId);
+    if (!group) return;
+
+    setStatus(`Loading members of group "${group.name}"…`);
+    let members;
+    try {
+      members = await gc.fetchGroupMembers(api, orgId, groupId);
+    } catch (err) {
+      setStatus(`Failed to load group members: ${err.message}`, "error");
+      return;
+    }
+
+    const confirmed = await showConfirmModal({
+      title: "Assign Group to Template",
+      bodyHTML: `
+        <table style="width:100%;border-collapse:collapse;font-size:.9rem">
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Template</td><td><strong>${escapeHtml(t.name)}</strong></td></tr>
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Group</td><td><strong>${escapeHtml(group.name)}</strong></td></tr>
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Members</td><td><strong>${members.length}</strong></td></tr>
+        </table>
+        <p style="margin-top:10px;font-size:.85rem;color:var(--muted)">All ${members.length} members will receive the template's roles, skills, languages, and queue memberships.</p>`,
+      confirmLabel: "Assign Group",
+    });
+    if (!confirmed) { setStatus(""); return; }
+
+    await applyTemplateToUsers(t, members.map((u) => ({ id: u.id, name: u.name, email: u.email || "" })));
+
+    // Record group assignment
+    try {
+      await createAssignment({
+        orgId,
+        type: "group",
+        groupId: group.id,
+        groupName: group.name,
+        templateId: t.id,
+        templateName: t.name,
+        assignedBy: me?.email || "",
+      });
+    } catch (err) {
+      setStatus(`Group recorded but assignment record failed: ${err.message}`, "error");
+    }
+
+    // Refresh
+    try { allAssignments = await fetchAssignments(orgId); } catch (_) {}
+    renderTemplateList();
+    renderAssignedUsers();
+    renderAssignedGroups();
+    renderAssignedTeams();
+    wireGroupDropdown();
+    wireTeamDropdown();
+  }
+
+  // ── Add Work Team ─────────────────────────────────────
+  async function handleAddWorkteam(teamId) {
+    const t = selectedTemplate;
+    if (!t) return;
+    const team = allTeams.find((wt) => wt.id === teamId);
+    if (!team) return;
+
+    setStatus(`Loading members of work team "${team.name}"…`);
+    let members;
+    try {
+      members = await gc.fetchTeamMembers(api, orgId, teamId);
+    } catch (err) {
+      setStatus(`Failed to load work team members: ${err.message}`, "error");
+      return;
+    }
+
+    const confirmed = await showConfirmModal({
+      title: "Assign Work Team to Template",
+      bodyHTML: `
+        <table style="width:100%;border-collapse:collapse;font-size:.9rem">
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Template</td><td><strong>${escapeHtml(t.name)}</strong></td></tr>
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Work Team</td><td><strong>${escapeHtml(team.name)}</strong></td></tr>
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Members</td><td><strong>${members.length}</strong></td></tr>
+        </table>
+        <p style="margin-top:10px;font-size:.85rem;color:var(--muted)">All ${members.length} members will receive the template's roles, skills, languages, and queue memberships.</p>`,
+      confirmLabel: "Assign Work Team",
+    });
+    if (!confirmed) { setStatus(""); return; }
+
+    await applyTemplateToUsers(t, members.map((u) => ({ id: u.id, name: u.name, email: u.email || "" })));
+
+    // Record work team assignment
+    try {
+      await createAssignment({
+        orgId,
+        type: "workteam",
+        workteamId: team.id,
+        workteamName: team.name,
+        templateId: t.id,
+        templateName: t.name,
+        assignedBy: me?.email || "",
+      });
+    } catch (err) {
+      setStatus(`Team recorded but assignment record failed: ${err.message}`, "error");
+    }
+
+    // Refresh
+    try { allAssignments = await fetchAssignments(orgId); } catch (_) {}
+    renderTemplateList();
+    renderAssignedUsers();
+    renderAssignedGroups();
+    renderAssignedTeams();
+    wireGroupDropdown();
+    wireTeamDropdown();
+  }
+
+  // ── Remove Groups ─────────────────────────────────────
+  async function handleRemoveGroups() {
+    const t = selectedTemplate;
+    if (!t) return;
+    const groupIds = [...assignedGroupsChecked];
+    const assigned = allAssignments.filter((a) => a.templateId === t.id && a.type === "group");
+    const toRemove = assigned.filter((a) => groupIds.includes(a.groupId));
+    if (!toRemove.length) return;
+
+    // Fetch members for all selected groups
+    const confirmed = await showConfirmModal({
+      title: "Remove Groups from Template",
+      bodyHTML: `
+        <p style="color:#f59e0b;font-weight:600">⚠ This will remove all template properties from members of ${toRemove.length} group${toRemove.length > 1 ? "s" : ""}.</p>
+        <p style="margin-top:8px"><strong>Groups:</strong> ${toRemove.map((a) => escapeHtml(a.groupName || a.groupId)).join(", ")}</p>`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    const $progress = $detail.querySelector("#autProgress");
+    const $fill = $detail.querySelector("#autProgressFill");
+    const $text = $detail.querySelector("#autProgressText");
+    const $log  = $detail.querySelector("#autProgressLog");
+    $progress.hidden = false;
+    $fill.style.width = "0%";
+    $text.textContent = "Loading group members…";
+    $log.innerHTML = "";
+    let errors = 0;
+
+    function logLine(msg, type) {
+      const line = document.createElement("div");
+      line.className = "cu-log-line" + (type ? ` cu-log-line--${type}` : "");
+      line.textContent = msg;
+      $log.append(line);
+      $log.scrollTop = $log.scrollHeight;
+    }
+
+    for (const assignment of toRemove) {
+      try {
+        const members = await gc.fetchGroupMembers(api, orgId, assignment.groupId);
+        $text.textContent = `Removing template from ${members.length} members of "${assignment.groupName}"…`;
+        await removeTemplateFromUsers(t, members);
+        await deleteAssignmentByGroupTemplate(orgId, assignment.groupId, t.id);
+        logLine(`✓ Group "${assignment.groupName}" removed`, "success");
+      } catch (err) {
+        errors++;
+        logLine(`✗ Group "${assignment.groupName}": ${err.message}`, "error");
+      }
+    }
+
+    $fill.style.width = "100%";
+    const summary = errors
+      ? `Completed with ${errors} error${errors > 1 ? "s" : ""}.`
+      : `Removed ${toRemove.length} group${toRemove.length > 1 ? "s" : ""} from "${t.name}".`;
+    $text.textContent = summary;
+    logLine(summary, errors ? "error" : "success");
+    setStatus(summary, errors ? "error" : "success");
+
+    try { allAssignments = await fetchAssignments(orgId); } catch (_) {}
+    renderTemplateList();
+    renderAssignedUsers();
+    renderAssignedGroups();
+    renderAssignedTeams();
+    wireGroupDropdown();
+    wireTeamDropdown();
+  }
+
+  // ── Remove Work Teams ─────────────────────────────────
+  async function handleRemoveTeams() {
+    const t = selectedTemplate;
+    if (!t) return;
+    const teamIds = [...assignedTeamsChecked];
+    const assigned = allAssignments.filter((a) => a.templateId === t.id && a.type === "workteam");
+    const toRemove = assigned.filter((a) => teamIds.includes(a.workteamId));
+    if (!toRemove.length) return;
+
+    const confirmed = await showConfirmModal({
+      title: "Remove Work Teams from Template",
+      bodyHTML: `
+        <p style="color:#f59e0b;font-weight:600">⚠ This will remove all template properties from members of ${toRemove.length} work team${toRemove.length > 1 ? "s" : ""}.</p>
+        <p style="margin-top:8px"><strong>Work Teams:</strong> ${toRemove.map((a) => escapeHtml(a.workteamName || a.workteamId)).join(", ")}</p>`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    const $progress = $detail.querySelector("#autProgress");
+    const $fill = $detail.querySelector("#autProgressFill");
+    const $text = $detail.querySelector("#autProgressText");
+    const $log  = $detail.querySelector("#autProgressLog");
+    $progress.hidden = false;
+    $fill.style.width = "0%";
+    $text.textContent = "Loading work team members…";
+    $log.innerHTML = "";
+    let errors = 0;
+
+    function logLine(msg, type) {
+      const line = document.createElement("div");
+      line.className = "cu-log-line" + (type ? ` cu-log-line--${type}` : "");
+      line.textContent = msg;
+      $log.append(line);
+      $log.scrollTop = $log.scrollHeight;
+    }
+
+    for (const assignment of toRemove) {
+      try {
+        const members = await gc.fetchTeamMembers(api, orgId, assignment.workteamId);
+        $text.textContent = `Removing template from ${members.length} members of "${assignment.workteamName}"…`;
+        await removeTemplateFromUsers(t, members);
+        await deleteAssignmentByWorkteamTemplate(orgId, assignment.workteamId, t.id);
+        logLine(`✓ Work Team "${assignment.workteamName}" removed`, "success");
+      } catch (err) {
+        errors++;
+        logLine(`✗ Work Team "${assignment.workteamName}": ${err.message}`, "error");
+      }
+    }
+
+    $fill.style.width = "100%";
+    const summary = errors
+      ? `Completed with ${errors} error${errors > 1 ? "s" : ""}.`
+      : `Removed ${toRemove.length} work team${toRemove.length > 1 ? "s" : ""} from "${t.name}".`;
+    $text.textContent = summary;
+    logLine(summary, errors ? "error" : "success");
+    setStatus(summary, errors ? "error" : "success");
+
+    try { allAssignments = await fetchAssignments(orgId); } catch (_) {}
+    renderTemplateList();
+    renderAssignedUsers();
+    renderAssignedGroups();
+    renderAssignedTeams();
+    wireGroupDropdown();
+    wireTeamDropdown();
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Shared: Apply / Remove template to/from user list
+  // ═══════════════════════════════════════════════════════
+  async function applyTemplateToUsers(t, users) {
+    const $progress = $detail.querySelector("#autProgress");
+    const $fill = $detail.querySelector("#autProgressFill");
+    const $text = $detail.querySelector("#autProgressText");
+    const $log  = $detail.querySelector("#autProgressLog");
+
+    const rolesStep = (t.roles || []).length > 0 ? 1 : 0;
+    const skillsStep = (t.skills || []).length > 0 ? 1 : 0;
+    const langsStep = (t.languages || []).length > 0 ? 1 : 0;
+    const queueSteps = (t.queues || []).length;
+    const stepsPerUser = rolesStep + skillsStep + langsStep + queueSteps;
+    const totalSteps = users.length * stepsPerUser;
+    let currentStep = 0;
+    let errors = 0;
+
+    $progress.hidden = false;
+    $fill.style.width = "0%";
+    $text.textContent = "Starting…";
+    $log.innerHTML = "";
+
+    function advance(label) {
+      currentStep++;
+      const pct = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
+      $fill.style.width = `${pct}%`;
+      $text.textContent = `${label} (${currentStep}/${totalSteps})`;
+    }
+    function logLine(msg, type) {
+      const line = document.createElement("div");
+      line.className = "cu-log-line" + (type ? ` cu-log-line--${type}` : "");
+      line.textContent = msg;
+      $log.append(line);
+      $log.scrollTop = $log.scrollHeight;
+    }
+
+    for (const user of users) {
+      try {
+        if ((t.roles || []).length) {
+          advance(`Assigning roles to ${user.name}`);
+          const rolePayloads = [];
+          for (const r of t.roles) {
+            if (r.divisions?.length) {
+              for (const d of r.divisions) rolePayloads.push({ roleId: r.roleId, divisionId: d.divisionId });
+            } else {
+              rolePayloads.push({ roleId: r.roleId });
+            }
+          }
+          await gc.grantUserRoles(api, orgId, user.id, rolePayloads);
+        }
+        if ((t.skills || []).length) {
+          advance(`Adding skills to ${user.name}`);
+          await gc.addUserRoutingSkillsBulk(api, orgId, user.id,
+            t.skills.map((s) => ({ id: s.skillId, proficiency: s.proficiency || 0 })),
+          );
+        }
+        if ((t.languages || []).length) {
+          advance(`Adding languages to ${user.name}`);
+          await gc.addUserRoutingLanguagesBulk(api, orgId, user.id,
+            t.languages.map((l) => ({ id: l.languageId, proficiency: l.proficiency || 0 })),
+          );
+        }
+        for (const q of t.queues || []) {
+          advance(`Adding ${user.name} to queue ${q.queueName}`);
+          await gc.addQueueMembers(api, orgId, q.queueId, [{ id: user.id }]);
+        }
+        logLine(`✓ ${user.name} — template applied`, "success");
+      } catch (err) {
+        errors++;
+        logLine(`✗ ${user.name}: ${err.message}`, "error");
+      }
+    }
+
+    $fill.style.width = "100%";
+    $text.textContent = `${users.length} / ${users.length} users processed`;
+    const summary = errors
+      ? `Completed with ${errors} error${errors > 1 ? "s" : ""}.`
+      : `Successfully applied template to ${users.length} user${users.length > 1 ? "s" : ""}.`;
+    logLine(summary, errors ? "error" : "success");
+    setStatus(summary, errors ? "error" : "success");
+  }
+
+  async function removeTemplateFromUsers(t, members) {
+    const uniqueRoleIds = [...new Set((t.roles || []).map((r) => r.roleId))];
+    const uniqueSkillIds = [...new Set((t.skills || []).map((s) => s.skillId))];
+    const uniqueLangIds = [...new Set((t.languages || []).map((l) => l.languageId))];
+    const uniqueQueueIds = [...new Set((t.queues || []).map((q) => q.queueId))];
+
+    for (const member of members) {
+      const userName = member.name || member.id;
+      try {
+        for (const roleId of uniqueRoleIds) {
+          try { await gc.deleteUserRole(api, orgId, member.id, roleId); } catch (_) {}
+        }
+        for (const skillId of uniqueSkillIds) {
+          try { await gc.deleteUserSkill(api, orgId, member.id, skillId); } catch (_) {}
+        }
+        for (const langId of uniqueLangIds) {
+          try { await gc.deleteUserLanguage(api, orgId, member.id, langId); } catch (_) {}
+        }
+        for (const queueId of uniqueQueueIds) {
+          try { await gc.removeQueueMember(api, orgId, queueId, member.id); } catch (_) {}
+        }
+      } catch (_) {}
+    }
+  }
+
   // ═══════════════════════════════════════════════════════
   // ADD — Assign selected search users to the template
   // ═══════════════════════════════════════════════════════
@@ -526,107 +1038,30 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
     });
     if (!confirmed) return;
 
-    // Calculate steps
-    const rolesStep = (t.roles || []).length > 0 ? 1 : 0;
-    const skillsStep = (t.skills || []).length > 0 ? 1 : 0;
-    const langsStep = (t.languages || []).length > 0 ? 1 : 0;
-    const queueSteps = (t.queues || []).length;
-    const stepsPerUser = rolesStep + skillsStep + langsStep + queueSteps + 1; // +1 for assignment record
-    const totalSteps = users.length * stepsPerUser;
-    let currentStep = 0;
-    let errors = 0;
+    // Apply template to users
+    await applyTemplateToUsers(t, users);
 
-    const $progress = $detail.querySelector("#autProgress");
-    const $fill = $detail.querySelector("#autProgressFill");
-    const $text = $detail.querySelector("#autProgressText");
-    const $log  = $detail.querySelector("#autProgressLog");
-    $progress.hidden = false;
-    $fill.style.width = "0%";
-    $text.textContent = "Starting…";
-    $log.innerHTML = "";
-
-    function advance(label) {
-      currentStep++;
-      const pct = totalSteps > 0 ? Math.round((currentStep / totalSteps) * 100) : 0;
-      $fill.style.width = `${pct}%`;
-      $text.textContent = `${label} (${currentStep}/${totalSteps})`;
-    }
-    function logLine(msg, type) {
-      const line = document.createElement("div");
-      line.className = "cu-log-line" + (type ? ` cu-log-line--${type}` : "");
-      line.textContent = msg;
-      $log.append(line);
-      $log.scrollTop = $log.scrollHeight;
-    }
-
+    // Record individual user assignment records
     for (const user of users) {
       try {
-        // Roles
-        if ((t.roles || []).length) {
-          advance(`Assigning roles to ${user.name}`);
-          const rolePayloads = [];
-          for (const r of t.roles) {
-            if (r.divisions?.length) {
-              for (const d of r.divisions) rolePayloads.push({ roleId: r.roleId, divisionId: d.divisionId });
-            } else {
-              rolePayloads.push({ roleId: r.roleId });
-            }
-          }
-          await gc.grantUserRoles(api, orgId, user.id, rolePayloads);
-        }
-
-        // Skills
-        if ((t.skills || []).length) {
-          advance(`Adding skills to ${user.name}`);
-          await gc.addUserRoutingSkillsBulk(api, orgId, user.id,
-            t.skills.map((s) => ({ id: s.skillId, proficiency: s.proficiency || 0 })),
-          );
-        }
-
-        // Languages
-        if ((t.languages || []).length) {
-          advance(`Adding languages to ${user.name}`);
-          await gc.addUserRoutingLanguagesBulk(api, orgId, user.id,
-            t.languages.map((l) => ({ id: l.languageId, proficiency: l.proficiency || 0 })),
-          );
-        }
-
-        // Queues
-        for (const q of t.queues || []) {
-          advance(`Adding ${user.name} to queue ${q.queueName}`);
-          await gc.addQueueMembers(api, orgId, q.queueId, [{ id: user.id }]);
-        }
-
-        // Record assignment
-        advance(`Recording assignment for ${user.name}`);
         await createAssignment({
           orgId,
+          type: "user",
           userId: user.id,
           userName: user.name,
           templateId: t.id,
           templateName: t.name,
           assignedBy: me?.email || "",
         });
-
-        logLine(`✓ ${user.name} — assigned to ${t.name}`, "success");
-      } catch (err) {
-        errors++;
-        logLine(`✗ ${user.name}: ${err.message}`, "error");
-      }
+      } catch (_) {}
     }
-
-    $fill.style.width = "100%";
-    $text.textContent = `${users.length} / ${users.length} users processed`;
-    const summary = errors
-      ? `Completed with ${errors} error${errors > 1 ? "s" : ""}.`
-      : `Successfully assigned ${users.length} user${users.length > 1 ? "s" : ""} to "${t.name}".`;
-    logLine(summary, errors ? "error" : "success");
-    setStatus(summary, errors ? "error" : "success");
 
     // Refresh
     try { allAssignments = await fetchAssignments(orgId); } catch (_) {}
     renderTemplateList();
     renderAssignedUsers();
+    renderAssignedGroups();
+    renderAssignedTeams();
     renderSearchResults();
   }
 
@@ -637,7 +1072,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
     const t = selectedTemplate;
     if (!t) return;
     const userIds = [...assignedChecked];
-    const assigned = allAssignments.filter((a) => a.templateId === t.id);
+    const assigned = allAssignments.filter((a) => a.templateId === t.id && (!a.type || a.type === "user"));
     const toRemove = assigned.filter((a) => userIds.includes(a.userId));
     if (!toRemove.length) return;
 
@@ -748,6 +1183,8 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
     try { allAssignments = await fetchAssignments(orgId); } catch (_) {}
     renderTemplateList();
     renderAssignedUsers();
+    renderAssignedGroups();
+    renderAssignedTeams();
     renderSearchResults();
   }
 

@@ -78,3 +78,37 @@ export async function deleteAssignmentByUserTemplate(orgId, userId, templateId) 
   if (!res.ok) throw new Error(json.error || `Delete assignment failed (${res.status})`);
   return json;
 }
+
+/**
+ * Delete all assignments for a group+template combination.
+ * @param {string} orgId
+ * @param {string} groupId
+ * @param {string} templateId
+ * @returns {Promise<Object>}
+ */
+export async function deleteAssignmentByGroupTemplate(orgId, groupId, templateId) {
+  const qs = new URLSearchParams({ orgId, groupId, templateId }).toString();
+  const res = await fetch(`${BASE}?${qs}`, {
+    method: "DELETE",
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `Delete assignment failed (${res.status})`);
+  return json;
+}
+
+/**
+ * Delete all assignments for a workteam+template combination.
+ * @param {string} orgId
+ * @param {string} workteamId
+ * @param {string} templateId
+ * @returns {Promise<Object>}
+ */
+export async function deleteAssignmentByWorkteamTemplate(orgId, workteamId, templateId) {
+  const qs = new URLSearchParams({ orgId, workteamId, templateId }).toString();
+  const res = await fetch(`${BASE}?${qs}`, {
+    method: "DELETE",
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `Delete assignment failed (${res.status})`);
+  return json;
+}

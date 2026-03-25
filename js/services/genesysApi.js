@@ -1052,6 +1052,11 @@ export async function fetchAllTeams(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/teams", opts);
 }
 
+/** Fetch members of a team. */
+export async function fetchTeamMembers(api, orgId, teamId, opts = {}) {
+  return fetchAllPages(api, orgId, `/api/v2/teams/${teamId}/members`, opts);
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Outbound
 // ─────────────────────────────────────────────────────────────────────

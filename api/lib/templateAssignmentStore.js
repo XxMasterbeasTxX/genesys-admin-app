@@ -49,8 +49,13 @@ function entityToAssignment(entity) {
   return {
     id: entity.rowKey,
     orgId: entity.partitionKey,
-    userId: entity.userId,
+    type: entity.type || "user",
+    userId: entity.userId || "",
     userName: entity.userName || "",
+    groupId: entity.groupId || "",
+    groupName: entity.groupName || "",
+    workteamId: entity.workteamId || "",
+    workteamName: entity.workteamName || "",
     templateId: entity.templateId,
     templateName: entity.templateName || "",
     assignedAt: entity.assignedAt,
@@ -62,12 +67,17 @@ function assignmentToEntity(a) {
   return {
     partitionKey: a.orgId,
     rowKey: a.id,
-    userId: a.userId,
-    userName: a.userName,
+    type: a.type || "user",
+    userId: a.userId || "",
+    userName: a.userName || "",
+    groupId: a.groupId || "",
+    groupName: a.groupName || "",
+    workteamId: a.workteamId || "",
+    workteamName: a.workteamName || "",
     templateId: a.templateId,
-    templateName: a.templateName,
+    templateName: a.templateName || "",
     assignedAt: a.assignedAt,
-    assignedBy: a.assignedBy,
+    assignedBy: a.assignedBy || "",
   };
 }
 
@@ -109,8 +119,13 @@ async function create(data) {
   const assignment = {
     id,
     orgId: data.orgId,
-    userId: data.userId,
+    type: data.type || "user",
+    userId: data.userId || "",
     userName: data.userName || "",
+    groupId: data.groupId || "",
+    groupName: data.groupName || "",
+    workteamId: data.workteamId || "",
+    workteamName: data.workteamName || "",
     templateId: data.templateId,
     templateName: data.templateName || "",
     assignedAt: now,
@@ -147,6 +162,19 @@ async function removeByUserAndTemplate(orgId, userId, templateId) {
   return removed;
 }
 
+/** Remove assignment for a group or workteam + template combination. */
+async function removeByEntityAndTemplate(orgId, entityId, entityField, templateId) {
+  const assignments = await listByOrg(orgId);
+  const toRemove = assignments.filter(
+    (a) => a[entityField] === entityId && a.templateId === templateId
+  );
+  let removed = 0;
+  for (const a of toRemove) {
+    if (await remove(orgId, a.id)) removed++;
+  }
+  return removed;
+}
+
 module.exports = {
   listByOrg,
   listByUser,
@@ -154,4 +182,5 @@ module.exports = {
   create,
   remove,
   removeByUserAndTemplate,
+  removeByEntityAndTemplate,
 };

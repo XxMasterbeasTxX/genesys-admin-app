@@ -42,18 +42,37 @@ module.exports = async function (context, req) {
     // ── POST ────────────────────────────────────────────
     if (method === "POST") {
       const b = req.body || {};
+      const type = b.type || "user";
 
-      if (!b.orgId || !b.userId || !b.templateId) {
+      if (!b.orgId || !b.templateId) {
         context.res = json(400, {
-          error: "Missing required fields: orgId, userId, templateId",
+          error: "Missing required fields: orgId, templateId",
         });
+        return;
+      }
+
+      if (type === "user" && !b.userId) {
+        context.res = json(400, { error: "Missing required field: userId" });
+        return;
+      }
+      if (type === "group" && !b.groupId) {
+        context.res = json(400, { error: "Missing required field: groupId" });
+        return;
+      }
+      if (type === "workteam" && !b.workteamId) {
+        context.res = json(400, { error: "Missing required field: workteamId" });
         return;
       }
 
       const assignment = await store.create({
         orgId: b.orgId,
-        userId: b.userId,
+        type,
+        userId: b.userId || "",
         userName: b.userName || "",
+        groupId: b.groupId || "",
+        groupName: b.groupName || "",
+        workteamId: b.workteamId || "",
+        workteamName: b.workteamName || "",
         templateId: b.templateId,
         templateName: b.templateName || "",
         assignedBy: b.assignedBy || "",
@@ -89,8 +108,24 @@ module.exports = async function (context, req) {
         return;
       }
 
+      // Delete by groupId + templateId
+      const groupId = req.query.groupId;
+      if (groupId && templateId) {
+        const removed = await store.removeByEntityAndTemplate(orgId, groupId, "groupId", templateId);
+        context.res = json(200, { ok: true, removed });
+        return;
+      }
+
+      // Delete by workteamId + templateId
+      const workteamId = req.query.workteamId;
+      if (workteamId && templateId) {
+        const removed = await store.removeByEntityAndTemplate(orgId, workteamId, "workteamId", templateId);
+        context.res = json(200, { ok: true, removed });
+        return;
+      }
+
       context.res = json(400, {
-        error: "Provide assignment ID in URL, or userId and templateId query params",
+        error: "Provide assignment ID in URL, or userId/groupId/workteamId and templateId query params",
       });
       return;
     }
