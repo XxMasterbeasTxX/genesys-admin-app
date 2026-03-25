@@ -42,7 +42,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Roles — Copy (Same Org)** — Copy an authorization role within the same org. A searchable combobox loads all roles; selecting one pre-fills the name with "Copy of {name}", the description, and the full permission builder with all policies expanded against the permission catalog. Name and description are freely editable before submitting. The complete permission builder (domain/entity/action picker, **Add All Entities**, inline **✎ edit**, Conditions panels) is available for review and adjustment. Optional **Make Hourly Interacting** checkbox: when checked, the created role has all disqualifying permissions stripped and `billing:user:hourlyInteracting` added at create-time; a collapsible post-creation summary lists every removed and added permission. Submit creates a new role via `POST /api/v2/authorization/roles`. Access key: `roles.copy.singleOrg`.
 - **Roles — Copy (Between Orgs)** — Copy an authorization role from one customer org to another. Select a source org and target org, then click **Load Source Roles** — this fetches all roles from the source org and loads the permission catalog from both orgs in parallel. Selecting a source role pre-fills the name ("Copy of {name}"), description, and permission builder. Permissions that exist in the source org's catalog but are absent from the target org's catalog are flagged with ⚠ (kept by default, removable). The full permission builder is available to review and edit before creating. Optional **Make Hourly Interacting** checkbox: when checked, the created role has all disqualifying permissions stripped and `billing:user:hourlyInteracting` added at create-time; a collapsible post-creation summary lists every removed and added permission. Submit posts to `POST /api/v2/authorization/roles` on the **target** org. Access key: `roles.copy.betweenOrgs`.
 - **Documentation Export** — Generate a full Genesys Cloud configuration export for a selected org, mirroring the Python `Export_All.py` output. Produces up to 42 alphabetically sorted configuration sheets (Agent Copilots, DID Numbers, Flows, Queues, Users, OAuth clients, Outbound, etc.) plus a styled Index cover sheet with table of contents and clickable hyperlinks. A second workbook containing all DataTable contents (one sheet per table with its rows, plus an Index cover sheet showing row counts) is bundled as a ZIP when present. Export can take 5–10 minutes for large orgs. Supports per-org scheduled automation.
-- **Scheduled Exports** — Automate any export on a daily, weekly, or monthly schedule with email delivery. Per-export automation toggle, reusable schedule panel with org selector and custom config fields, "All Scheduled Exports" overview page with Last Run and Last Run Status columns (Success / Failure — error description). Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic ensures missed runs are retried. All times in Danish time (Europe/Copenhagen, CET/CEST).
+- **Scheduled Exports** — Automate any export on a daily, weekly, or monthly schedule with email delivery. Per-export automation toggle, reusable schedule panel with org selector and custom config fields, "All Scheduled Exports" overview page with Last Run and Last Run Status columns (Success / Failure — error description). Server-side execution via Azure Timer Trigger (every 5 minutes) + Azure Functions. Catch-up logic ensures missed runs are retried. All times in Danish time (Europe/Copenhagen, CET/CEST).
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant). Centralized email service reusable by any page.
 - **GDPR — Subject Request** — Submit GDPR data subject requests for a selected customer org. Guided step-by-step flow: choose request type (Article 15 Right of Access, Article 16 Right to Rectification, Article 17 Right to Erasure), enter known identifiers (name, email, phone, address, social handles), review matched subjects returned by Genesys, enter replacement values for rectification requests, then confirm and submit. After submission, a direct link to Request Status is shown.
 - **GDPR — Request Status** — View all previously submitted GDPR requests for a selected customer org. Columns: Date, Type, Subject, Subject Type, Status, Completed, Details, and full Request ID. For fulfilled Article 15 Access requests, individual request details are fetched to retrieve download URLs; files are downloaded via the authenticated proxy (not direct links). Expired downloads (Genesys retains exports for ~7 days) display a greyed-out "Expired" label with a tooltip instead of a broken link.
@@ -88,11 +88,11 @@ Browser (SPA)                    Azure Static Web App (Standard)
 │  dropdown   │                 │    ├─ * /api/schedules       │    (EU servers)
 └─────────────┘                 │    └─ POST /api/scheduled-   │
                                 │         runner               │
- GitHub Actions (cron)          └────┬─────────────────────────┘
+ Azure Timer Trigger            └────┬─────────────────────────┘
 ┌─────────────┐                      │
-│  Every hour │── POST /api/ ───────▶│
-│ scheduled-  │   scheduled-runner   │
-│ runner.yml  │                      │
+│  Every 5min │── POST /api/ ───────▶│
+│ genesys-    │   scheduled-runner   │
+│ admin-timer │                      │
 └─────────────┘              Encrypted app settings
                              (GENESYS_<ORG>_CLIENT_ID/SECRET)
                              (MAILJET_API_KEY / SECRET_KEY)
@@ -125,7 +125,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
 | Auth (customers) | OAuth 2.0 Client Credentials (via backend) |
 | Email | Mailjet v3.1 Send API (EU, GDPR-compliant) |
 | Schedule & template storage | Azure Table Storage |
-| Scheduled runner | GitHub Actions cron (hourly) |
+| Scheduled runner | Azure Timer Trigger (every 5 min, Flex Consumption Function App) |
 | CI/CD | GitHub Actions |
 
 ## Project Structure
@@ -139,7 +139,7 @@ genesys-admin-app/
 ├── .github/
 │   └── workflows/
 │       ├── azure-static-web-apps-*.yml   SWA CI/CD (auto-generated)
-│       └── scheduled-runner.yml          Cron trigger for scheduled exports
+│       └── scheduled-runner.yml          Manual trigger for scheduled exports (cron disabled)
 ├── js/
 │   ├── app.js                    App entry point (auth, routing, org selector)
 │   ├── config.js                 OAuth & region config
@@ -301,9 +301,9 @@ The app supports automated, server-side export execution with email delivery.
 ### How it works
 
 1. **Schedule creation** — On any export page with automation enabled (e.g. Trustee, Last Login, All Roles, All Groups, Filtered on Role(s), License Consumption, Skill Templates), toggle on automation and configure a daily/weekly/monthly schedule with email recipients. Per-org exports include an org selector in the schedule form; Filtered on Role(s) also shows a dynamic role picker; License Consumption also shows a dynamic licence filter; Last Login also has an inactivity filter; Skill Templates also shows a dynamic template picker.
-2. **GitHub Actions cron** — A workflow runs every hour and POSTs to `/api/scheduled-runner` with a shared secret
+2. **Azure Timer Trigger** — A standalone Azure Function App (`genesys-admin-timer`) fires every 5 minutes and POSTs to `/api/scheduled-runner` with a shared secret
 3. **Server-side execution** — The Azure Function checks Azure Table Storage for due schedules, runs the export using client credentials, and emails the result via Mailjet
-4. **Catch-up logic** — If a run is missed (GitHub Actions delays), the next cycle picks it up automatically. Only one run per schedule per day.
+4. **Catch-up logic** — If a run is missed, the next cycle picks it up automatically. Only one run per schedule per day.
 5. **All times are Danish time** — Europe/Copenhagen (CET in winter, CEST in summer)
 
 ### Permissions
@@ -320,7 +320,7 @@ See [docs/setup-guide.md](docs/setup-guide.md) for full details. In summary:
 | --- | --- | --- |
 | `AZURE_STORAGE_CONNECTION_STRING` | Azure SWA app settings | Azure Table Storage for schedule data |
 | `SCHEDULE_RUNNER_KEY` | Azure SWA app settings + GitHub secret | Shared secret to protect the runner endpoint |
-| `SWA_URL` | GitHub secret | Static Web App URL for the cron workflow to call |
+| `SWA_URL` | Azure Timer Function App setting | Static Web App URL for the timer trigger to call |
 
 ## Quick Start (local development)
 

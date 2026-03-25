@@ -2,5 +2,8 @@
   "name": "genesys-admin-timer",
   "version": "1.0.0",
   "private": true,
-  "description": "Timer trigger to call the SWA scheduled-runner endpoint"
+  "description": "Timer trigger + Durable Functions for scheduled exports and template schedules",
+  "dependencies": {
+    "durable-functions": "^2.0.0"
+  }
 }

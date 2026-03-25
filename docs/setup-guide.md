@@ -37,7 +37,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Roles — Copy (Same Org)** — Copy a role within the same org. Select a source role from a combobox; the name is pre-filled as "Copy of {name}" and the description and all permissions are loaded into the full permission builder for review. Name and description are editable before submitting. Optional **Make Hourly Interacting** checkbox: when checked, the created role has all disqualifying permissions stripped and `billing:user:hourlyInteracting` added; a collapsible post-creation summary lists removed and added permissions. Submit posts a new role via `POST /api/v2/authorization/roles`. Access key: `roles.copy.singleOrg`.
 - **Roles — Copy (Between Orgs)** — Copy a role from one org to another. Select source and target orgs, click **Load Source Roles** (fetches roles and both permission catalogs in parallel), then pick a source role. The builder is pre-filled; permissions absent from the target org's catalog are flagged ⚠. Full permission builder available for editing before submit. Optional **Make Hourly Interacting** checkbox: when checked, the created role has all disqualifying permissions stripped and `billing:user:hourlyInteracting` added; a collapsible post-creation summary lists removed and added permissions. Posts to target org via `POST /api/v2/authorization/roles`. Access key: `roles.copy.betweenOrgs`.
 - **Documentation Export** — Generate a full Genesys Cloud configuration export for a selected org, mirroring the Python `Export_All.py` output. Produces up to 42 alphabetically sorted configuration sheets (Agent Copilots, DID Numbers, Flows, Queues, Users, OAuth clients, Outbound, and more) plus a styled Index cover sheet with table of contents and clickable hyperlinks. A second workbook containing all DataTable contents (one alphabetically sorted sheet per table with its rows, plus an Index cover sheet showing row counts per table) is bundled alongside the main workbook as a ZIP when present. Export can take 5–10 minutes for large orgs. Supports per-org scheduled automation.
-- **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via GitHub Actions cron + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, org selector for per-org exports, “All Scheduled Exports” overview with Last Run and Last Run Status columns (Success / Failure — error description).
+- **Scheduled Exports** — Automate any export on a daily/weekly/monthly schedule with email delivery. Server-side execution via Azure Timer Trigger (every 5 minutes) + Azure Functions. Catch-up logic, Danish time (CET/CEST), per-export automation toggle, org selector for per-org exports, “All Scheduled Exports” overview with Last Run and Last Run Status columns (Success / Failure — error description).
 - **Email notifications** — Send export results as email with attachments via Mailjet (EU-based, GDPR-compliant)
 - **GDPR — Subject Request** — Submit GDPR data subject requests for a selected customer org. Guided step-by-step flow: choose request type (Article 15 Right of Access, Article 16 Right to Rectification, Article 17 Right to Erasure), enter known identifiers (name, email, phone, address, social handles), review matched subjects returned by Genesys, enter replacement values for rectification requests, then confirm and submit. After submission, a direct link to Request Status is shown. Processing is asynchronous — Genesys handles requests in the background (up to 14 days for deletions).
 - **GDPR — Request Status** — View all previously submitted GDPR requests for a selected customer org. Columns: Date, Type, Subject, Subject Type, Status, Completed, Details, and full Request ID. For fulfilled Article 15 Access requests, individual request details are fetched to retrieve download URLs; files are downloaded via the authenticated proxy (not direct links). Expired downloads (Genesys retains exports for ~7 days) display a greyed-out "Expired" label with a tooltip instead of a broken link.
@@ -558,7 +558,7 @@ az staticwebapp appsettings set --name genesys-admin-app \
 
 ## 14. Configure Scheduled Exports
 
-Scheduled exports let users automate any export (e.g. Trustee) on a daily, weekly, or monthly schedule with email delivery. The system uses Azure Table Storage for schedule data, and a GitHub Actions cron workflow to trigger the server-side runner every hour.
+Scheduled exports let users automate any export (e.g. Trustee) on a daily, weekly, or monthly schedule with email delivery. The system uses Azure Table Storage for schedule data, and an Azure Timer Trigger Function App (`genesys-admin-timer`) to call the server-side runner every 5 minutes.
 
 ### 14a. Create an Azure Storage Account
 
@@ -603,30 +603,35 @@ python -c "import uuid; print(uuid.uuid4())"
 Add this value to **both** locations:
 
 1. **Azure SWA app setting:** `SCHEDULE_RUNNER_KEY` = `<your-secret>`
-2. **GitHub repository secret:** `SCHEDULE_RUNNER_KEY` = `<your-secret>` (same value)
+2. **Azure Timer Function App setting:** `SCHEDULE_RUNNER_KEY` = `<your-secret>` (same value)
 
-### 14d. Add GitHub repository secrets
+### 14d. Configure the Azure Timer Function App
 
-Go to your GitHub repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
+Create a Flex Consumption Azure Function App (e.g. `genesys-admin-timer`, Node.js, Linux) and add the following **Application settings**:
 
-| Secret name | Value |
+| Setting | Value |
 | --- | --- |
 | `SCHEDULE_RUNNER_KEY` | The shared secret from step 14c |
 | `SWA_URL` | Your Static Web App URL (e.g. `https://happy-sky-abc123.azurestaticapps.net`) |
+| `FUNCTIONS_EXTENSION_VERSION` | `~4` |
+
+Deploy the `timer-functions/` folder to this Function App (e.g. via VS Code → Azure Functions: Deploy to Function App).
 
 ### 14e. How it works
 
-1. A GitHub Actions workflow (`.github/workflows/scheduled-runner.yml`) runs every hour via cron
+1. An Azure Timer Trigger (`genesys-admin-timer` Function App) fires every 5 minutes
 2. It POSTs to `/api/scheduled-runner` with the shared secret in the `x-runner-key` header
 3. The Azure Function verifies the secret, loads enabled schedules from Azure Table Storage, checks which are due (in Danish time — Europe/Copenhagen, CET/CEST)
 4. For each due schedule, it runs the export server-side using client credentials, builds the Excel file, and emails it via Mailjet
-5. Catch-up logic: if a run is missed (GitHub Actions delays), the next cycle picks it up. Only one run per schedule per day.
+5. Catch-up logic: if a run is missed, the next cycle picks it up. Only one run per schedule per day.
 
 ### 14f. Test the runner
 
-1. Go to GitHub → **Actions** → **Scheduled Export Runner** workflow
-2. Click **Run workflow** → **Run workflow** (manual trigger)
-3. Check the workflow log — it should show HTTP 200 and the response body
+1. Go to the Azure Portal → **genesys-admin-timer** Function App → **Functions** → **schedule-trigger**
+2. Click **Code + Test** → **Test/Run** to trigger manually
+3. Check the function logs — it should show HTTP 200 from the SWA endpoint
+
+Alternatively, go to GitHub → **Actions** → **Scheduled Export Runner** workflow → **Run workflow** (manual `workflow_dispatch` trigger is still available for testing).
 
 ---
 
@@ -679,7 +684,7 @@ After pushing the config update:
 | 30 | Last Login scheduled export creation | Toggle automation on Last Login page; org selector and inactivity filter shown in schedule form; schedule saved with exportConfig |
 | 31 | All Roles scheduled export creation | Toggle automation on All Roles page; org selector shown in schedule form; schedule saved with exportConfig |
 | 32 | Scheduled Exports overview | All schedules visible on "Scheduled Exports" page; Organisation column shown for per-org exports; edit/delete restricted to owner + admin |
-| 33 | Automated runner fires | GitHub Actions cron calls `/api/scheduled-runner`; response body visible in workflow logs |
+| 33 | Automated runner fires | Azure Timer Trigger calls `/api/scheduled-runner` every 5 min; response visible in Function App logs |
 | 34 | Automated email received | Scheduled export runs at configured time; email with Excel attachment arrives |
 | 35 | Theme adapts | Dark/light matches OS setting |
 | 35 | Filtered on Role(s) Export | Select org; load roles; pick ≥1 role; export runs (active users only); collapsible preview; Excel with Name, Email, Division + boolean role columns; sheet "User Roles" |
@@ -879,11 +884,12 @@ After pushing the config update:
 
 ### Scheduled exports not firing
 
-- **Cause:** GitHub Actions cron workflow may be disabled or delayed
+- **Cause:** The Azure Timer Function App (`genesys-admin-timer`) may be stopped or misconfigured
 - **Fix:**
-  1. Go to GitHub → Actions → check if "Scheduled Export Runner" is enabled (GitHub auto-disables cron workflows on inactive repos)
-  2. GitHub cron can be delayed up to 15-20 minutes — the catch-up logic ensures exports still run
-  3. Manually trigger the workflow to verify it works
+  1. Go to Azure Portal → `genesys-admin-timer` → **Overview** — verify the app is running
+  2. Check **Functions** → `schedule-trigger` → **Monitor** for recent invocations
+  3. Verify the `SWA_URL` and `SCHEDULE_RUNNER_KEY` app settings are correct
+  4. Manually test via **Code + Test** → **Test/Run**
 
 ### Schedule not picked up despite being due
 

@@ -1,8 +1,8 @@
 /**
  * Scheduled Export Runner — HTTP-triggered Azure Function.
  *
- * Called by a GitHub Actions cron workflow every 5 minutes via POST.
- * Protected by a shared secret (SCHEDULE_RUNNER_KEY env var).
+ * Called every 5 minutes by an Azure Timer Trigger (genesys-admin-timer
+ * Function App) via POST. Protected by a shared secret (SCHEDULE_RUNNER_KEY).
  *
  * For each enabled schedule whose time is due, it runs the corresponding
  * export handler, builds the Excel file, and emails the result via Mailjet.

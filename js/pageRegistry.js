@@ -178,6 +178,8 @@ const registry = {
     import("./pages/users/rolesSkills/createTemplate.js").then((m) => m.default(ctx)),
   "/users/roles-skills/add-users-to-templates": (ctx) =>
     import("./pages/users/rolesSkills/addUsersToTemplates.js").then((m) => m.default(ctx)),
+  "/users/roles-skills/template-schedules": (ctx) =>
+    import("./pages/users/rolesSkills/templateSchedules.js").then((m) => m.default(ctx)),
 };
 
 /**

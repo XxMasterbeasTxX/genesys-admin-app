@@ -26,6 +26,12 @@ import {
   updateTemplate,
   deleteTemplate,
 } from "../../../services/templateService.js";
+import {
+  fetchTemplateSchedules,
+  createTemplateSchedule,
+  updateTemplateSchedule,
+  deleteTemplateSchedule,
+} from "../../../services/templateScheduleService.js";
 
 export default function renderCreateTemplate({ route, me, api, orgContext }) {
   const el = document.createElement("section");
@@ -54,14 +60,17 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     <div class="st-body" id="stBody">
       <div class="cu-loading" id="stLoading"><div class="cu-loading-spinner"></div><p class="muted">Loading templates…</p></div>
     </div>
+    <div class="st-schedule-panel" id="stSchedulePanel" hidden></div>
     <div class="st-editor" id="stEditor" hidden></div>
   `;
 
   const $body = el.querySelector("#stBody");
   const $editor = el.querySelector("#stEditor");
+  const $schedulePanel = el.querySelector("#stSchedulePanel");
   const $status = el.querySelector("#stStatus");
 
   let templates = [];
+  let templateSchedules = [];
   let allSkills = [];     // [{ id, name }]
   let allLanguages = [];  // [{ id, name }]
   let allQueues = [];     // [{ id, name }]
@@ -114,6 +123,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((t) => {
         const editable = canEdit(t);
+        const schedCount = templateSchedules.filter((s) => s.templateId === t.id).length;
         return `<tr>
           <td class="st-cell-name">${escapeHtml(t.name)}</td>
           <td class="st-cell-count">${(t.roles || []).length}</td>
@@ -121,9 +131,10 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
           <td class="st-cell-count">${(t.languages || []).length}</td>
           <td class="st-cell-count">${(t.queues || []).length}</td>
           <td class="st-cell-owner">${escapeHtml(t.createdByName || t.createdBy)}</td>
-          <td class="st-cell-actions">${
+          <td class="st-cell-actions">
+            <button class="btn btn-sm st-btn-schedule" data-id="${t.id}" title="Schedule">🕐${schedCount ? ` (${schedCount})` : ""}</button>${
             editable
-              ? `<button class="btn btn-sm st-btn-edit" data-id="${t.id}">Edit</button>
+              ? ` <button class="btn btn-sm st-btn-edit" data-id="${t.id}">Edit</button>
                  <button class="btn btn-sm st-btn-delete" data-id="${t.id}">Delete</button>`
               : ""
           }</td>
@@ -159,6 +170,13 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
 
     $body.querySelectorAll(".st-btn-delete").forEach((btn) =>
       btn.addEventListener("click", () => handleDelete(btn.dataset.id)),
+    );
+
+    $body.querySelectorAll(".st-btn-schedule").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const t = templates.find((x) => x.id === btn.dataset.id);
+        if (t) openSchedulePanel(t);
+      }),
     );
   }
 
@@ -607,11 +625,200 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
   // ── Initial load ──────────────────────────────────────
   async function loadTemplates() {
     try {
-      templates = await fetchTemplates(orgId);
+      const [tpls, scheds] = await Promise.all([
+        fetchTemplates(orgId),
+        fetchTemplateSchedules(orgId),
+      ]);
+      templates = tpls;
+      templateSchedules = scheds;
       renderTable();
     } catch (err) {
       $body.innerHTML = `<p class="st-status--error">Failed to load templates: ${escapeHtml(err.message)}</p>`;
     }
+  }
+
+  // ── Schedule panel ────────────────────────────────────
+
+  const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  function openSchedulePanel(template) {
+    closeEditor();
+    $schedulePanel.hidden = false;
+
+    const existing = templateSchedules.filter((s) => s.templateId === template.id);
+
+    $schedulePanel.innerHTML = `
+      <h3 style="margin:0 0 12px">Schedules for "${escapeHtml(template.name)}"</h3>
+      ${existing.length ? `
+        <table class="data-table" style="margin-bottom:16px">
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th>Type</th>
+              <th>Time</th>
+              <th>Day</th>
+              <th>Date</th>
+              <th>Enabled</th>
+              <th>Last Run</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${existing.map((s) => {
+              const canDel = canEdit(template);
+              const dayLabel = s.scheduleType === "weekly" ? (DAYS_OF_WEEK[s.scheduleDayOfWeek] || "—") :
+                               s.scheduleType === "monthly" ? (s.scheduleDayOfMonth || "—") : "—";
+              return `<tr>
+                <td>${escapeHtml(s.mode)}</td>
+                <td>${escapeHtml(s.scheduleType)}</td>
+                <td>${escapeHtml(s.scheduleTime || "—")}</td>
+                <td>${escapeHtml(String(dayLabel))}</td>
+                <td>${s.scheduleDate ? escapeHtml(s.scheduleDate) : "—"}</td>
+                <td>${s.enabled ? "✓" : "✗"}</td>
+                <td>${s.lastRun ? new Date(s.lastRun).toLocaleString() : "—"}</td>
+                <td>${escapeHtml(s.lastStatus || "—")}</td>
+                <td>${canDel ? `<button class="btn btn-sm st-btn-del-sched" data-sid="${s.id}">Delete</button>` : ""}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>` : `<p class="muted" style="margin-bottom:12px">No schedules yet.</p>`}
+
+      <h4 style="margin:0 0 10px">New Schedule</h4>
+      <div class="sp-form-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:12px">
+        <div>
+          <label class="sp-form-label" for="stSchedMode">Mode</label>
+          <select class="sp-form-select" id="stSchedMode">
+            <option value="reset">Reset</option>
+            <option value="add">Add</option>
+          </select>
+        </div>
+        <div>
+          <label class="sp-form-label" for="stSchedType">Schedule Type</label>
+          <select class="sp-form-select" id="stSchedType">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="once">One-time</option>
+          </select>
+        </div>
+        <div>
+          <label class="sp-form-label" for="stSchedTime">Time (Danish)</label>
+          <input class="sp-form-input" id="stSchedTime" type="time" value="08:00">
+        </div>
+        <div id="stSchedDayWeekGrp" style="display:none">
+          <label class="sp-form-label" for="stSchedDayWeek">Day of week</label>
+          <select class="sp-form-select" id="stSchedDayWeek">
+            ${DAYS_OF_WEEK.map((d, i) => `<option value="${i}"${i === 1 ? " selected" : ""}>${d}</option>`).join("")}
+          </select>
+        </div>
+        <div id="stSchedDayMonthGrp" style="display:none">
+          <label class="sp-form-label" for="stSchedDayMonth">Day of month</label>
+          <select class="sp-form-select" id="stSchedDayMonth">
+            ${Array.from({ length: 31 }, (_, i) => i + 1).map((d) => `<option value="${d}">${d}</option>`).join("")}
+          </select>
+        </div>
+        <div id="stSchedDateGrp" style="display:none">
+          <label class="sp-form-label" for="stSchedDate">Date</label>
+          <input class="sp-form-input" id="stSchedDate" type="date">
+        </div>
+      </div>
+
+      <div id="stSchedResetWarning" class="st-status st-status--warning" style="margin-bottom:12px;display:none">
+        ⚠ <strong>Reset mode</strong> will remove ALL skills, languages, and queue memberships from every assigned user, then re-apply only this template's properties. Roles are not touched. If users are assigned to multiple templates, only this template's properties will remain.
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="stSchedBtnCreate">Create Schedule</button>
+        <button class="btn st-btn-cancel" id="stSchedBtnClose">Close</button>
+      </div>
+      <div class="st-status" id="stSchedStatus" style="margin-top:8px"></div>
+    `;
+
+    // Wire schedule type toggle
+    const $type = $schedulePanel.querySelector("#stSchedType");
+    const $mode = $schedulePanel.querySelector("#stSchedMode");
+    const $warning = $schedulePanel.querySelector("#stSchedResetWarning");
+
+    function toggleFields() {
+      const t = $type.value;
+      $schedulePanel.querySelector("#stSchedDayWeekGrp").style.display = t === "weekly" ? "" : "none";
+      $schedulePanel.querySelector("#stSchedDayMonthGrp").style.display = t === "monthly" ? "" : "none";
+      $schedulePanel.querySelector("#stSchedDateGrp").style.display = t === "once" ? "" : "none";
+    }
+    $type.addEventListener("change", toggleFields);
+
+    function toggleWarning() {
+      $warning.style.display = $mode.value === "reset" ? "" : "none";
+    }
+    $mode.addEventListener("change", toggleWarning);
+    toggleWarning();
+
+    // Delete existing schedule
+    $schedulePanel.querySelectorAll(".st-btn-del-sched").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        if (!confirm("Delete this schedule?")) return;
+        try {
+          await deleteTemplateSchedule(btn.dataset.sid, me.email);
+          setStatus("Schedule deleted.", "success");
+          await loadTemplates();
+          openSchedulePanel(template);
+        } catch (err) {
+          setStatus(err.message, "error");
+        }
+      }),
+    );
+
+    // Create schedule
+    $schedulePanel.querySelector("#stSchedBtnCreate").addEventListener("click", async () => {
+      const $schedStatus = $schedulePanel.querySelector("#stSchedStatus");
+      const schedType = $type.value;
+      const schedMode = $mode.value;
+      const schedTime = $schedulePanel.querySelector("#stSchedTime").value;
+
+      if (!schedTime) {
+        $schedStatus.textContent = "Please set a time.";
+        $schedStatus.className = "st-status st-status--error";
+        return;
+      }
+
+      if (schedType === "once") {
+        const date = $schedulePanel.querySelector("#stSchedDate").value;
+        if (!date) {
+          $schedStatus.textContent = "Please select a date for one-time schedule.";
+          $schedStatus.className = "st-status st-status--error";
+          return;
+        }
+      }
+
+      try {
+        await createTemplateSchedule({
+          templateId: template.id,
+          templateName: template.name,
+          orgId,
+          mode: schedMode,
+          scheduleType: schedType,
+          scheduleTime: schedTime,
+          scheduleDayOfWeek: schedType === "weekly" ? parseInt($schedulePanel.querySelector("#stSchedDayWeek").value, 10) : null,
+          scheduleDayOfMonth: schedType === "monthly" ? parseInt($schedulePanel.querySelector("#stSchedDayMonth").value, 10) : null,
+          scheduleDate: schedType === "once" ? $schedulePanel.querySelector("#stSchedDate").value : null,
+          userEmail: me.email,
+          userName: me.name || me.email,
+        });
+        setStatus("Schedule created.", "success");
+        await loadTemplates();
+        openSchedulePanel(template);
+      } catch (err) {
+        $schedStatus.textContent = err.message;
+        $schedStatus.className = "st-status st-status--error";
+      }
+    });
+
+    // Close
+    $schedulePanel.querySelector("#stSchedBtnClose").addEventListener("click", () => {
+      $schedulePanel.hidden = true;
+      $schedulePanel.innerHTML = "";
+    });
   }
 
   loadTemplates();

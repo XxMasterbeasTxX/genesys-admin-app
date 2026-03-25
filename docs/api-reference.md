@@ -54,7 +54,7 @@ These are the Azure Functions endpoints exposed by the app itself.
 | POST | `/api/schedules` | Create a new export schedule |
 | PUT | `/api/schedules/{id}` | Update an existing schedule |
 | DELETE | `/api/schedules/{id}` | Delete a schedule |
-| POST | `/api/scheduled-runner` | Trigger the scheduled export runner (called hourly by GitHub Actions) |
+| POST | `/api/scheduled-runner` | Trigger the scheduled export runner (called every 5 min by Azure Timer Trigger) |
 | GET | `/api/activity-log` | Fetch internal activity log entries |
 | POST | `/api/activity-log` | Write a new internal activity log entry |
 | GET | `/api/templates?orgId={orgId}` | List all skill templates for an org (Azure Table Storage) |
