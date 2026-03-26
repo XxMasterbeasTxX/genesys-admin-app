@@ -18,7 +18,6 @@
  *   { scheduleId }   — the template schedule to execute
  */
 const templateStore = require("../lib/templateStore");
-const assignmentStore = require("../lib/templateAssignmentStore");
 const scheduleStore = require("../lib/templateScheduleStore");
 const customers = require("../lib/customers.json");
 const { getGenesysToken } = require("../lib/genesysAuth");
@@ -91,39 +90,39 @@ module.exports = async function (context, req) {
     const token = await getGenesysToken(orgId, customer.region, clientId, clientSecret);
     const baseUrl = `https://api.${customer.region}`;
 
-    // 4. Load assignments for this template → resolve all users
-    const assignments = await assignmentStore.listByTemplate(orgId, templateId);
-    if (!assignments.length) {
+    // 4. Resolve targets from the schedule
+    const targets = Array.isArray(schedule.targets) ? schedule.targets : [];
+    if (!targets.length) {
       await scheduleStore.updateRunStatus(scheduleId, "success", null);
-      context.res = json(200, { message: "No users assigned to template", ran: true, users: 0 });
+      context.res = json(200, { message: "No targets in schedule", ran: true, users: 0 });
       return;
     }
 
     const userIds = new Set();
     const errors = [];
 
-    // Direct user assignments
-    for (const a of assignments.filter((a) => !a.type || a.type === "user")) {
-      if (a.userId) userIds.add(a.userId);
+    // Direct user targets
+    for (const t of targets.filter((t) => t.type === "user")) {
+      if (t.id) userIds.add(t.id);
     }
 
-    // Group assignments — resolve members
-    for (const a of assignments.filter((a) => a.type === "group")) {
+    // Group targets — resolve members
+    for (const t of targets.filter((t) => t.type === "group")) {
       try {
-        const members = await fetchGroupMembers(baseUrl, token, a.groupId);
+        const members = await fetchGroupMembers(baseUrl, token, t.id);
         for (const m of members) userIds.add(m.id);
       } catch (err) {
-        errors.push(`Failed to resolve group ${a.groupName || a.groupId}: ${err.message}`);
+        errors.push(`Failed to resolve group ${t.name || t.id}: ${err.message}`);
       }
     }
 
-    // Work team assignments — resolve members
-    for (const a of assignments.filter((a) => a.type === "workteam")) {
+    // Work team targets — resolve members
+    for (const t of targets.filter((t) => t.type === "workteam")) {
       try {
-        const members = await fetchTeamMembers(baseUrl, token, a.workteamId);
+        const members = await fetchTeamMembers(baseUrl, token, t.id);
         for (const m of members) userIds.add(m.id);
       } catch (err) {
-        errors.push(`Failed to resolve work team ${a.workteamName || a.workteamId}: ${err.message}`);
+        errors.push(`Failed to resolve work team ${t.name || t.id}: ${err.message}`);
       }
     }
 

@@ -19,7 +19,7 @@
  */
 import { escapeHtml } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
-import { createMultiSelect } from "../../../components/multiSelect.js";
+import { createMultiSelect, createSingleSelect } from "../../../components/multiSelect.js";
 import {
   fetchTemplates,
   createTemplate,
@@ -658,6 +658,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
               <th>Time</th>
               <th>Day</th>
               <th>Date</th>
+              <th>Targets</th>
               <th>Enabled</th>
               <th>Last Run</th>
               <th>Status</th>
@@ -669,12 +670,18 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
               const canDel = canEdit(template);
               const dayLabel = s.scheduleType === "weekly" ? (DAYS_OF_WEEK[s.scheduleDayOfWeek] || "—") :
                                s.scheduleType === "monthly" ? (s.scheduleDayOfMonth || "—") : "—";
+              const targets = Array.isArray(s.targets) ? s.targets : [];
+              const typeLabels = { user: "U", group: "G", workteam: "WT" };
+              const targetSummary = targets.length
+                ? targets.map((t) => `${typeLabels[t.type] || t.type}: ${escapeHtml(t.name)}`).join(", ")
+                : "—";
               return `<tr>
                 <td>${escapeHtml(s.mode)}</td>
                 <td>${escapeHtml(s.scheduleType)}</td>
                 <td>${escapeHtml(s.scheduleTime || "—")}</td>
                 <td>${escapeHtml(String(dayLabel))}</td>
                 <td>${s.scheduleDate ? escapeHtml(s.scheduleDate) : "—"}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(targetSummary)}">${targetSummary}</td>
                 <td>${s.enabled ? "✓" : "✗"}</td>
                 <td>${s.lastRun ? new Date(s.lastRun).toLocaleString() : "—"}</td>
                 <td>${escapeHtml(s.lastStatus || "—")}</td>
@@ -728,6 +735,30 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
         ⚠ <strong>Reset mode</strong> will remove ALL skills, languages, and queue memberships from every assigned user, then re-apply only this template's properties. Roles are not touched. If users are assigned to multiple templates, only this template's properties will remain.
       </div>
 
+      <h4 style="margin:16px 0 10px">Targets</h4>
+      <p class="muted" style="margin:0 0 8px;font-size:13px">Select which users, groups, and/or work teams this schedule should apply to.</p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:10px">
+        <div>
+          <label class="sp-form-label">Add User</label>
+          <div style="display:flex;gap:4px">
+            <input class="sp-form-input" id="stSchedUserSearch" type="text" placeholder="Search by name…" style="flex:1" />
+            <button class="btn btn-sm" id="stSchedUserSearchBtn">Search</button>
+          </div>
+          <div id="stSchedUserResults" style="max-height:150px;overflow-y:auto;margin-top:4px"></div>
+        </div>
+        <div>
+          <label class="sp-form-label">Add Group</label>
+          <div id="stSchedGroupPicker"></div>
+        </div>
+        <div>
+          <label class="sp-form-label">Add Work Team</label>
+          <div id="stSchedTeamPicker"></div>
+        </div>
+      </div>
+
+      <div id="stSchedTargetList" style="margin-bottom:12px"></div>
+
       <div style="display:flex;gap:8px">
         <button class="btn" id="stSchedBtnCreate">Create Schedule</button>
         <button class="btn st-btn-cancel" id="stSchedBtnClose">Close</button>
@@ -753,6 +784,131 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     }
     $mode.addEventListener("change", toggleWarning);
     toggleWarning();
+
+    // ── Target picker state & helpers ──────────────────
+    let scheduleTargets = [];
+
+    function renderTargetList() {
+      const $tl = $schedulePanel.querySelector("#stSchedTargetList");
+      if (!scheduleTargets.length) {
+        $tl.innerHTML = `<p class="muted" style="font-size:13px">No targets added yet.</p>`;
+        return;
+      }
+      const typeLabels = { user: "User", group: "Group", workteam: "Work Team" };
+      $tl.innerHTML = `
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${scheduleTargets.map((t, i) => `
+            <span class="st-div-tag" style="display:inline-flex;align-items:center;gap:4px">
+              <strong style="font-size:11px">${typeLabels[t.type] || t.type}:</strong> ${escapeHtml(t.name)}
+              <button class="btn btn-sm" data-idx="${i}" style="padding:0 3px;font-size:11px;line-height:1;min-width:auto">✕</button>
+            </span>`).join("")}
+        </div>`;
+      $tl.querySelectorAll("button[data-idx]").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          scheduleTargets.splice(parseInt(btn.dataset.idx, 10), 1);
+          renderTargetList();
+        }),
+      );
+    }
+
+    function addTarget(type, id, name) {
+      if (scheduleTargets.some((t) => t.type === type && t.id === id)) return;
+      scheduleTargets.push({ type, id, name });
+      renderTargetList();
+    }
+
+    renderTargetList();
+
+    // ── User search ───────────────────────────────────
+    const $userInput = $schedulePanel.querySelector("#stSchedUserSearch");
+    const $userBtn = $schedulePanel.querySelector("#stSchedUserSearchBtn");
+    const $userResults = $schedulePanel.querySelector("#stSchedUserResults");
+
+    async function doUserSearch() {
+      const term = $userInput.value.trim();
+      $userBtn.disabled = true;
+      $userBtn.textContent = "…";
+      try {
+        let users;
+        if (term) {
+          const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/users/search", {
+            body: {
+              pageSize: 25,
+              pageNumber: 1,
+              query: [{ type: "QUERY_STRING", value: term, fields: ["name", "email"] }],
+            },
+          });
+          users = (resp.results || []).map((u) => ({ id: u.id, name: u.name }));
+        } else {
+          const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/users", {
+            query: { pageSize: "25", pageNumber: "1", sortOrder: "ASC" },
+          });
+          users = (resp.entities || []).map((u) => ({ id: u.id, name: u.name }));
+        }
+        $userResults.innerHTML = users.length
+          ? users.map((u) => `<div class="ms-dropdown__item" data-uid="${u.id}" data-uname="${escapeHtml(u.name)}" style="cursor:pointer;padding:4px 6px;font-size:13px">${escapeHtml(u.name)}</div>`).join("")
+          : `<p class="muted" style="font-size:12px;padding:4px">No results.</p>`;
+        $userResults.querySelectorAll("[data-uid]").forEach((row) =>
+          row.addEventListener("click", () => {
+            addTarget("user", row.dataset.uid, row.dataset.uname);
+            $userResults.innerHTML = "";
+            $userInput.value = "";
+          }),
+        );
+      } catch (err) {
+        $userResults.innerHTML = `<p class="muted" style="font-size:12px;color:#c33">Search failed</p>`;
+      } finally {
+        $userBtn.disabled = false;
+        $userBtn.textContent = "Search";
+      }
+    }
+
+    $userBtn.addEventListener("click", doUserSearch);
+    $userInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doUserSearch(); });
+
+    // ── Group dropdown ────────────────────────────────
+    (async () => {
+      try {
+        const groups = await gc.fetchAllPages(api, orgId, "/api/v2/groups");
+        const groupSelect = createSingleSelect({
+          placeholder: "Select group…",
+          searchable: true,
+          onChange: (id) => {
+            if (!id) return;
+            const g = groups.find((g) => g.id === id);
+            if (g) addTarget("group", g.id, g.name);
+          },
+        });
+        groupSelect.setItems(
+          groups.map((g) => ({ id: g.id, label: g.name })).sort((a, b) => a.label.localeCompare(b.label)),
+        );
+        $schedulePanel.querySelector("#stSchedGroupPicker").append(groupSelect.el);
+      } catch (err) {
+        $schedulePanel.querySelector("#stSchedGroupPicker").innerHTML = `<p class="muted" style="font-size:12px">Failed to load groups</p>`;
+      }
+    })();
+
+    // ── Work Team dropdown ────────────────────────────
+    (async () => {
+      try {
+        const teams = await gc.fetchAllTeams(api, orgId);
+        const teamSelect = createSingleSelect({
+          placeholder: "Select work team…",
+          searchable: true,
+          onChange: (id) => {
+            if (!id) return;
+            const t = teams.find((t) => t.id === id);
+            if (t) addTarget("workteam", t.id, t.name);
+          },
+        });
+        teamSelect.setItems(
+          teams.map((t) => ({ id: t.id, label: t.name })).sort((a, b) => a.label.localeCompare(b.label)),
+        );
+        $schedulePanel.querySelector("#stSchedTeamPicker").append(teamSelect.el);
+      } catch (err) {
+        $schedulePanel.querySelector("#stSchedTeamPicker").innerHTML = `<p class="muted" style="font-size:12px">Failed to load teams</p>`;
+      }
+    })();
 
     // Delete existing schedule
     $schedulePanel.querySelectorAll(".st-btn-del-sched").forEach((btn) =>
@@ -791,6 +947,12 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
         }
       }
 
+      if (!scheduleTargets.length) {
+        $schedStatus.textContent = "Please add at least one target (user, group, or work team).";
+        $schedStatus.className = "st-status st-status--error";
+        return;
+      }
+
       try {
         await createTemplateSchedule({
           templateId: template.id,
@@ -802,6 +964,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
           scheduleDayOfWeek: schedType === "weekly" ? parseInt($schedulePanel.querySelector("#stSchedDayWeek").value, 10) : null,
           scheduleDayOfMonth: schedType === "monthly" ? parseInt($schedulePanel.querySelector("#stSchedDayMonth").value, 10) : null,
           scheduleDate: schedType === "once" ? $schedulePanel.querySelector("#stSchedDate").value : null,
+          targets: scheduleTargets,
           userEmail: me.email,
           userName: me.name || me.email,
         });

@@ -47,6 +47,10 @@ async function ensureTable() {
 // ── Entity ↔ Schedule mapping ───────────────────────────
 
 function entityToSchedule(entity) {
+  let targets = [];
+  if (entity.targets) {
+    try { targets = JSON.parse(entity.targets); } catch (_) { targets = []; }
+  }
   return {
     id: entity.rowKey,
     templateId: entity.templateId,
@@ -59,6 +63,7 @@ function entityToSchedule(entity) {
     scheduleDayOfMonth: entity.scheduleDayOfMonth ?? null,
     scheduleDate: entity.scheduleDate || null, // ISO date for "once"
     enabled: entity.enabled === true,
+    targets,
     createdBy: entity.createdBy,
     createdByName: entity.createdByName || "",
     createdAt: entity.createdAt,
@@ -83,6 +88,7 @@ function scheduleToEntity(schedule) {
     scheduleDayOfMonth: schedule.scheduleDayOfMonth,
     scheduleDate: schedule.scheduleDate,
     enabled: schedule.enabled,
+    targets: JSON.stringify(schedule.targets || []),
     createdBy: schedule.createdBy,
     createdByName: schedule.createdByName,
     createdAt: schedule.createdAt,
@@ -143,6 +149,7 @@ async function create(data) {
     scheduleDayOfMonth: data.scheduleDayOfMonth ?? null,
     scheduleDate: data.scheduleDate || null,
     enabled: data.enabled !== false,
+    targets: data.targets || [],
     createdBy: data.createdBy,
     createdByName: data.createdByName || "",
     createdAt: now,
@@ -174,6 +181,7 @@ async function update(id, data) {
     scheduleDayOfMonth: data.scheduleDayOfMonth ?? existing.scheduleDayOfMonth,
     scheduleDate: data.scheduleDate ?? existing.scheduleDate,
     enabled: data.enabled ?? existing.enabled,
+    targets: data.targets ?? existing.targets,
     // Preserve immutable fields
     id,
     createdBy: existing.createdBy,

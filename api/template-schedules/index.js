@@ -112,6 +112,7 @@ module.exports = async function (context, req) {
         scheduleDayOfMonth: b.scheduleDayOfMonth ?? null,
         scheduleDate: b.scheduleDate || null,
         enabled: b.enabled !== false,
+        targets: Array.isArray(b.targets) ? b.targets : [],
         createdBy: b.userEmail,
         createdByName: b.userName || "",
       });
@@ -167,6 +168,7 @@ module.exports = async function (context, req) {
         scheduleDayOfMonth: b.scheduleDayOfMonth,
         scheduleDate: b.scheduleDate,
         enabled: b.enabled,
+        targets: b.targets,
       });
 
       // Restart or stop the orchestrator depending on enabled state
