@@ -1713,7 +1713,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
       const dataRows = rows.slice(1).filter(r => String(r[0] || "").trim() !== "");
       const upsertNote = UPSERT_TABS.has(tabName)
-        ? ` <span style="color:var(--text-muted,#888);font-size:.82em">(existing will be updated)</span>`
+        ? ` <span style="color:var(--muted);font-size:.82em">(existing will be updated)</span>`
         : "";
       const safeTab = escapeHtml(tabName);
       return `<tr>
@@ -1728,7 +1728,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     }).join("");
 
     const skippedHtml = skipped.length
-      ? `<p style="margin:10px 0 0;color:var(--text-muted,#888);font-size:.875rem">
+      ? `<p style="margin:10px 0 0;color:var(--muted);font-size:.875rem">
            Unrecognised tabs (will be skipped): ${skipped.map(s => escapeHtml(s)).join(", ")}
          </p>`
       : "";
@@ -1737,15 +1737,15 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
     overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
 
     overlay.innerHTML = `
-      <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border,#334);border-radius:8px;padding:24px;min-width:340px;max-width:640px;width:90%">
+      <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:340px;max-width:640px;width:90%">
         <h3 style="margin:0 0 16px;font-size:1.1rem">Confirm Deployment</h3>
         <table style="width:100%;border-collapse:collapse;font-size:.9rem">
-          <tr><td style="padding:3px 10px 3px 0;color:var(--text-muted,#888)">Org</td>
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Org</td>
               <td style="padding:3px 0"><strong>${escapeHtml(orgName)}</strong></td></tr>
-          <tr><td style="padding:3px 10px 3px 0;color:var(--text-muted,#888)">File</td>
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">File</td>
               <td style="padding:3px 0">${escapeHtml(fileName)}</td></tr>
         </table>
-        <hr style="border:none;border-top:1px solid var(--border,#334);margin:14px 0">
+        <hr style="border:none;border-top:1px solid var(--border);margin:14px 0">
         <table style="width:100%;border-collapse:collapse;font-size:.9rem">
           ${tabRows}
         </table>
