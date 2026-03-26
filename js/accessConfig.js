@@ -96,6 +96,7 @@
  *   users.rolesSkills.createTemplate    Roles & Skills — Create Template
  *   users.rolesSkills.addUsersToTemplates  Roles & Skills — Add Users To Templates
  *   users.rolesSkills.templateSchedules    Roles & Skills — Template Schedules
+ *   users.rolesSkills.copyFromUser          Roles & Skills — Copy from User
  *
  *   DIVISIONS  (reassign objects between divisions)
  *   divisions.people.users             People — Users

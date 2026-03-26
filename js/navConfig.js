@@ -285,6 +285,7 @@ export const NAV_TREE = [
           { label: "Create/Edit Template", path: "create-template", enabled: true, access: "users.rolesSkills.createTemplate" },
           { label: "Manage Templates", path: "add-users-to-templates", enabled: true, access: "users.rolesSkills.addUsersToTemplates" },
           { label: "Template Schedules", path: "template-schedules", enabled: true, access: "users.rolesSkills.templateSchedules" },
+          { label: "Copy from User", path: "copy-from-user", enabled: true, access: "users.rolesSkills.copyFromUser" },
         ],
       },
     ],
