@@ -67,23 +67,23 @@ export default function renderCopyFromUser({ route, me, api, orgContext }) {
       <div id="cfuTargetChips" class="cfu-chips"></div>
     </div>
 
+    <!-- Actions + status -->
+    <div class="cfu-step" id="cfuActions" hidden>
+      <button class="btn" id="cfuCopyBtn">Copy</button>
+      <button class="btn btn--secondary" id="cfuCancelBtn" style="display:none">Cancel</button>
+    </div>
+    <div id="cfuStatus" class="cfu-status"></div>
+    <div id="cfuProgressWrap" class="cfu-progress-wrap" hidden>
+      <div id="cfuProgressBar" class="cfu-progress-bar"></div>
+    </div>
+
     <!-- Preview -->
     <div class="cfu-step" id="cfuPreview" hidden>
       <h2 class="cfu-step-title">Preview</h2>
       <div id="cfuPreviewContent"></div>
     </div>
 
-    <!-- Actions -->
-    <div class="cfu-step" id="cfuActions" hidden>
-      <button class="btn" id="cfuCopyBtn">Copy</button>
-      <button class="btn btn--secondary" id="cfuCancelBtn" style="display:none">Cancel</button>
-    </div>
-
-    <!-- Progress / status -->
-    <div id="cfuStatus" class="cfu-status"></div>
-    <div id="cfuProgressWrap" class="cfu-progress-wrap" hidden>
-      <div id="cfuProgressBar" class="cfu-progress-bar"></div>
-    </div>
+    <!-- Log -->
     <div id="cfuLog" class="cfu-log" hidden></div>
   `;
 
