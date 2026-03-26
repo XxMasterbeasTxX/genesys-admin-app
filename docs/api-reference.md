@@ -70,8 +70,8 @@ These are the Azure Functions endpoints exposed by the app itself.
 | DELETE | `/api/template-assignments?orgId={orgId}&workteamId={workteamId}&templateId={templateId}` | Delete a template assignment by work team+template combo |
 | GET | `/api/template-schedules?orgId={orgId}` | List all template schedules for an org (Azure Table Storage) |
 | GET | `/api/template-schedules/{id}` | Get a single template schedule by ID |
-| POST | `/api/template-schedules` | Create a template schedule — body: `{ templateId, templateName, orgId, mode, scheduleType, scheduleTime, scheduleDayOfWeek?, scheduleDayOfMonth?, scheduleDate?, enabled?, userEmail, userName }` — `mode` is `"reset"` or `"add"`; `scheduleType` is `"once"`, `"daily"`, `"weekly"`, or `"monthly"` |
-| PUT | `/api/template-schedules/{id}` | Update a template schedule (owner or admin only) — body includes `userEmail` for ownership check |
+| POST | `/api/template-schedules` | Create a template schedule — body: `{ templateId, templateName, orgId, mode, scheduleType, scheduleTime, scheduleDayOfWeek?, scheduleDayOfMonth?, scheduleDate?, targets, enabled?, userEmail, userName }` — `mode` is `"reset"` or `"add"`; `scheduleType` is `"once"`, `"daily"`, `"weekly"`, or `"monthly"`; `targets` is an array of `{ type: "user"|"group"|"workteam", id, name }` (at least one required) |
+| PUT | `/api/template-schedules/{id}` | Update a template schedule (owner or admin only) — body includes `userEmail` for ownership check; `targets` array can be updated |
 | DELETE | `/api/template-schedules/{id}?userEmail={email}` | Delete a template schedule (owner or admin only) |
 | POST | `/api/template-runner` | Execute a template schedule — body: `{ scheduleId }` — called by Azure Durable Functions activity; protected by `x-runner-key` header |
 
