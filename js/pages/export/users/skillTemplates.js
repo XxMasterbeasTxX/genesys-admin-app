@@ -2,17 +2,18 @@
  * Export › Users — Skill/Role/Queue Templates
  *
  * Exports selected templates to a multi-sheet Excel workbook:
- *   1. Overview — template name, counts per category, user/group/team counts
+ *   1. Overview — template name, counts per category, user/group/team/schedule counts
  *   2. Roles — template × role × divisions
  *   3. Skills — template × skill × proficiency
  *   4. Languages — template × language × proficiency
  *   5. Queues — template × queue
  *   6. Members — template × type (User/Group/Work Team) × name × assignedBy
+ *   7. Schedules — template × mode × schedule type × time × targets
  *
  * Flow:
- *   1. Load Templates → fetch all templates + assignments for the selected org
+ *   1. Load Templates → fetch all templates + assignments + schedules for the selected org
  *   2. User picks one or more templates via checkboxes (Select All / None)
- *   3. Export → build 6-sheet workbook, preview, download
+ *   3. Export → build 7-sheet workbook, preview, download
  */
 import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import { sendEmail } from "../../../services/emailService.js";
@@ -21,6 +22,7 @@ import { buildStyledWorkbook, addStyledSheet } from "../../../utils/excelStyles.
 import { logAction } from "../../../services/activityLogService.js";
 import { fetchTemplates } from "../../../services/templateService.js";
 import { fetchAssignments } from "../../../services/templateAssignmentService.js";
+import { fetchTemplateSchedules } from "../../../services/templateScheduleService.js";
 
 // ── Automation ──────────────────────────────────────────
 const AUTOMATION_ENABLED = true;
@@ -155,6 +157,7 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
 
   let allTemplates = [];
   let allAssignments = [];
+  let allSchedules = [];
   let lastWorkbook = null;
   let lastFilename = null;
 
@@ -187,9 +190,10 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
     $exportWrap.style.display = "none";
 
     try {
-      [allTemplates, allAssignments] = await Promise.all([
+      [allTemplates, allAssignments, allSchedules] = await Promise.all([
         fetchTemplates(org.id),
         fetchAssignments(org.id),
+        fetchTemplateSchedules(org.id),
       ]);
 
       allTemplates.sort((a, b) =>
@@ -258,11 +262,19 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
         if (!assignMap.has(a.templateId)) assignMap.set(a.templateId, []);
         assignMap.get(a.templateId).push(a);
       }
+
+      // Build schedule lookup: templateId → [schedule]
+      const schedMap = new Map();
+      for (const s of allSchedules) {
+        if (!selected.has(s.templateId)) continue;
+        if (!schedMap.has(s.templateId)) schedMap.set(s.templateId, []);
+        schedMap.get(s.templateId).push(s);
+      }
       setProgress(10);
       if (cancelled) return;
 
       // Sheet 1: Overview
-      const overviewData = [["Template", "Roles", "Skills", "Languages", "Queues", "Users", "Groups", "Teams"]];
+      const overviewData = [["Template", "Roles", "Skills", "Languages", "Queues", "Users", "Groups", "Teams", "Schedules"]];
       for (const t of templates) {
         const assigns = assignMap.get(t.id) || [];
         const users  = assigns.filter(a => !a.type || a.type === "user").length;
@@ -277,6 +289,7 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
           users,
           groups,
           teams,
+          (schedMap.get(t.id) || []).length,
         ]);
       }
       setProgress(20);
@@ -340,6 +353,30 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       setProgress(80);
       if (cancelled) return;
 
+      // Sheet 7: Schedules
+      const schedulesData = [["Template", "Mode", "Schedule Type", "Time", "Day/Date", "Enabled", "Targets", "Last Run", "Last Run Status", "Created By"]];
+      for (const t of templates) {
+        for (const s of (schedMap.get(t.id) || [])) {
+          const dayDate = s.scheduleType === "weekly" ? (s.scheduleDayOfWeek || "")
+                        : s.scheduleType === "monthly" ? (s.scheduleDayOfMonth || "")
+                        : s.scheduleType === "once" ? (s.scheduleDate || "")
+                        : "";
+          const targets = (s.targets || []).map(tgt => tgt.name || tgt.id).join(", ");
+          schedulesData.push([
+            t.name,
+            s.mode || "",
+            s.scheduleType || "",
+            s.scheduleTime || "",
+            dayDate,
+            s.enabled ? "Yes" : "No",
+            targets || "All assigned",
+            s.lastRun || "",
+            s.lastStatus || "",
+            s.createdByName || s.createdBy || "",
+          ]);
+        }
+      }
+
       // Build multi-sheet workbook
       setStatus("Building Excel workbook…");
       const wb = buildStyledWorkbook(overviewData, "Overview");
@@ -348,6 +385,7 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       addStyledSheet(wb, langsData, "Languages");
       addStyledSheet(wb, queuesData, "Queues");
       addStyledSheet(wb, membersData, "Members");
+      addStyledSheet(wb, schedulesData, "Schedules");
       setProgress(95);
 
       const fname = timestampedFilename(`SkillTemplates_${org.name.replace(/\s+/g, "_")}`, "xlsx");
@@ -355,7 +393,7 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       lastFilename = fname;
 
       // Preview
-      renderPreview(templates, assignMap);
+      renderPreview(templates, assignMap, schedMap);
       $tableWrap.style.display = "";
 
       const allAssigns = templates.flatMap(t => assignMap.get(t.id) || []);
@@ -434,17 +472,18 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
   });
 
   // ── Preview ───────────────────────────────────────────
-  function renderPreview(templates, assignMap) {
+  function renderPreview(templates, assignMap, schedMap) {
     let html = `<details class="te-details">`;
     html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${templates.length} template(s)</span></summary>`;
     html += `<div class="te-table-scroll"><table class="data-table" style="width:auto"><thead><tr>`;
-    html += `<th>Template</th><th style="width:80px">Roles</th><th style="width:80px">Skills</th><th style="width:80px">Languages</th><th style="width:80px">Queues</th><th style="width:80px">Users</th><th style="width:80px">Groups</th><th style="width:80px">Teams</th>`;
+    html += `<th>Template</th><th style="width:80px">Roles</th><th style="width:80px">Skills</th><th style="width:80px">Languages</th><th style="width:80px">Queues</th><th style="width:80px">Users</th><th style="width:80px">Groups</th><th style="width:80px">Teams</th><th style="width:80px">Schedules</th>`;
     html += `</tr></thead><tbody>`;
     for (const t of templates) {
       const assigns = assignMap.get(t.id) || [];
       const uCt = assigns.filter(a => !a.type || a.type === "user").length;
       const gCt = assigns.filter(a => a.type === "group").length;
       const tCt = assigns.filter(a => a.type === "workteam").length;
+      const sCt = (schedMap.get(t.id) || []).length;
       html += `<tr>
         <td>${escapeHtml(t.name)}</td>
         <td style="text-align:center">${(t.roles || []).length}</td>
@@ -454,6 +493,7 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
         <td style="text-align:center">${uCt}</td>
         <td style="text-align:center">${gCt}</td>
         <td style="text-align:center">${tCt}</td>
+        <td style="text-align:center">${sCt}</td>
       </tr>`;
     }
     html += `</tbody></table></div></details>`;

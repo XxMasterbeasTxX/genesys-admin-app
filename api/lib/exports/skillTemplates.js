@@ -2,13 +2,14 @@
  * Export Handler — Skill/Role/Queue Templates
  *
  * Reads templates and assignments from Azure Table Storage and produces
- * a 6-sheet Excel workbook: Overview, Roles, Skills, Languages, Queues, Members.
+ * a 7-sheet Excel workbook: Overview, Roles, Skills, Languages, Queues, Members, Schedules.
  */
 
 const XLSX = require("xlsx-js-style");
 const { buildStyledWorkbook, addStyledSheet } = require("../excelStyles");
 const templateStore = require("../templateStore");
 const assignmentStore = require("../templateAssignmentStore");
+const templateScheduleStore = require("../templateScheduleStore");
 
 function timestampedFilename(prefix, ext) {
   const d = new Date();
@@ -31,10 +32,11 @@ async function execute(context, schedule) {
   context.log(`Skill Templates export for org ${orgId}`);
 
   try {
-    // Fetch templates and assignments
-    const [allTemplates, allAssignments] = await Promise.all([
+    // Fetch templates, assignments, and schedules
+    const [allTemplates, allAssignments, allSchedules] = await Promise.all([
       templateStore.listByOrg(orgId),
       assignmentStore.listByOrg(orgId),
+      templateScheduleStore.listByOrg(orgId),
     ]);
 
     // Filter to selected templates (if specified)
@@ -59,10 +61,18 @@ async function execute(context, schedule) {
       assignMap.get(a.templateId).push(a);
     }
 
-    context.log(`Processing ${templates.length} templates, ${allAssignments.length} total assignments`);
+    // Build schedule lookup: templateId → [schedule]
+    const schedMap = new Map();
+    for (const s of allSchedules) {
+      if (!templateIds.has(s.templateId)) continue;
+      if (!schedMap.has(s.templateId)) schedMap.set(s.templateId, []);
+      schedMap.get(s.templateId).push(s);
+    }
+
+    context.log(`Processing ${templates.length} templates, ${allAssignments.length} total assignments, ${allSchedules.length} total schedules`);
 
     // Sheet 1: Overview
-    const overviewData = [["Template", "Roles", "Skills", "Languages", "Queues", "Users", "Groups", "Teams"]];
+    const overviewData = [["Template", "Roles", "Skills", "Languages", "Queues", "Users", "Groups", "Teams", "Schedules"]];
     for (const t of templates) {
       const assigns = assignMap.get(t.id) || [];
       const users  = assigns.filter(a => !a.type || a.type === "user").length;
@@ -77,6 +87,7 @@ async function execute(context, schedule) {
         users,
         groups,
         teams,
+        (schedMap.get(t.id) || []).length,
       ]);
     }
 
@@ -133,6 +144,30 @@ async function execute(context, schedule) {
       }
     }
 
+    // Sheet 7: Schedules
+    const schedulesData = [["Template", "Mode", "Schedule Type", "Time", "Day/Date", "Enabled", "Targets", "Last Run", "Last Run Status", "Created By"]];
+    for (const t of templates) {
+      for (const s of (schedMap.get(t.id) || [])) {
+        const dayDate = s.scheduleType === "weekly" ? (s.scheduleDayOfWeek || "")
+                      : s.scheduleType === "monthly" ? (s.scheduleDayOfMonth || "")
+                      : s.scheduleType === "once" ? (s.scheduleDate || "")
+                      : "";
+        const targets = (s.targets || []).map(tgt => tgt.name || tgt.id).join(", ");
+        schedulesData.push([
+          t.name,
+          s.mode || "",
+          s.scheduleType || "",
+          s.scheduleTime || "",
+          dayDate,
+          s.enabled ? "Yes" : "No",
+          targets || "All assigned",
+          s.lastRun || "",
+          s.lastStatus || "",
+          s.createdByName || s.createdBy || "",
+        ]);
+      }
+    }
+
     // Build multi-sheet workbook
     const wb = buildStyledWorkbook(overviewData, "Overview");
     addStyledSheet(wb, rolesData, "Roles");
@@ -140,6 +175,7 @@ async function execute(context, schedule) {
     addStyledSheet(wb, langsData, "Languages");
     addStyledSheet(wb, queuesData, "Queues");
     addStyledSheet(wb, membersData, "Members");
+    addStyledSheet(wb, schedulesData, "Schedules");
 
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
     const base64 = Buffer.from(buf).toString("base64");
