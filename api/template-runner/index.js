@@ -200,7 +200,9 @@ async function genesysCall(baseUrl, token, method, path, body) {
     const text = await resp.text().catch(() => "");
     throw new Error(`Genesys ${method} ${path} → ${resp.status}: ${text.substring(0, 200)}`);
   }
-  return resp.json();
+  const text = await resp.text();
+  if (!text) return null;
+  return JSON.parse(text);
 }
 
 async function fetchAllPages(baseUrl, token, path, pageSize = 100) {
