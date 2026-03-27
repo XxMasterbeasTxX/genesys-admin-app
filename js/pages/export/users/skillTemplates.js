@@ -1,7 +1,7 @@
 /**
  * Export › Users — Skill/Role/Queue Templates
  *
- * Exports selected templates to a multi-sheet Excel workbook:
+ * Exports all templates for the selected org to a multi-sheet Excel workbook:
  *   1. Overview — template name, counts per category, user/group/team/schedule counts
  *   2. Roles — template × role × divisions
  *   3. Skills — template × skill × proficiency
@@ -11,9 +11,8 @@
  *   7. Schedules — template × mode × schedule type × time × targets
  *
  * Flow:
- *   1. Load Templates → fetch all templates + assignments + schedules for the selected org
- *   2. User picks one or more templates via checkboxes (Select All / None)
- *   3. Export → build 7-sheet workbook, preview, download
+ *   1. Click Export → fetch all templates + assignments + schedules for the selected org
+ *   2. Build 7-sheet workbook, preview, download
  */
 import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import { sendEmail } from "../../../services/emailService.js";
@@ -42,31 +41,14 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
     <h1 class="h1">Export — Users — Skill/Role/Queue Templates</h1>
     <hr class="hr">
     <p class="page-desc">
-      Exports selected templates to a multi-sheet Excel workbook containing
-      an overview, roles, skills, languages, queues and assigned members.
+      Exports all templates for the selected org to a multi-sheet Excel workbook
+      containing an overview, roles, skills, languages, queues and assigned members.
     </p>
 
-    <!-- Phase 1: Load templates -->
+    <!-- Export -->
     <div class="te-actions">
-      <button class="btn te-btn-export" id="stLoadBtn">Load Templates</button>
-    </div>
-
-    <div id="stTemplatesWrap" style="display:none;margin-top:10px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span id="stCount" class="te-user-count"></span>
-        <button class="btn btn-sm" id="stSelectAll">Select All</button>
-        <button class="btn btn-sm" id="stSelectNone">Select None</button>
-      </div>
-      <div id="stList"
-           style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:6px 10px"></div>
-    </div>
-
-    <!-- Phase 2: Export -->
-    <div id="stExportWrap" style="display:none;margin-top:14px">
-      <div class="te-actions">
-        <button class="btn te-btn-export" id="stExportBtn" disabled>Export Templates</button>
-        <button class="btn te-btn-cancel" id="stCancelBtn" style="display:none">Cancel</button>
-      </div>
+      <button class="btn te-btn-export" id="stExportBtn">Export Templates</button>
+      <button class="btn te-btn-cancel" id="stCancelBtn" style="display:none">Cancel</button>
     </div>
 
     <div class="te-status" id="stStatus"></div>
@@ -117,13 +99,6 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
   }
 
   // ── References ────────────────────────────────────────
-  const $loadBtn      = el.querySelector("#stLoadBtn");
-  const $templWrap    = el.querySelector("#stTemplatesWrap");
-  const $count        = el.querySelector("#stCount");
-  const $list         = el.querySelector("#stList");
-  const $selectAll    = el.querySelector("#stSelectAll");
-  const $selectNone   = el.querySelector("#stSelectNone");
-  const $exportWrap   = el.querySelector("#stExportWrap");
   const $exportBtn    = el.querySelector("#stExportBtn");
   const $cancelBtn    = el.querySelector("#stCancelBtn");
   const $status       = el.querySelector("#stStatus");
@@ -138,9 +113,6 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
   const $emailTo      = el.querySelector("#stEmailTo");
   const $emailBody    = el.querySelector("#stEmailBody");
 
-  let allTemplates = [];
-  let allAssignments = [];
-  let allSchedules = [];
   let lastWorkbook = null;
   let lastFilename = null;
 
@@ -154,78 +126,10 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
     $progBar.style.width = `${pct}%`;
   }
 
-  function getChecked() {
-    return Array.from($list.querySelectorAll(".st-chk:checked")).map(cb => cb.value);
-  }
-
-  function updateExportBtn() {
-    $exportBtn.disabled = getChecked().length === 0;
-  }
-
-  // ── Phase 1: Load Templates ───────────────────────────
-  $loadBtn.addEventListener("click", async () => {
-    const org = orgContext?.getDetails?.();
-    if (!org) { setStatus("Please select a customer org first.", "error"); return; }
-
-    setStatus("Loading templates…");
-    $loadBtn.disabled = true;
-    $templWrap.style.display = "none";
-    $exportWrap.style.display = "none";
-
-    try {
-      [allTemplates, allAssignments, allSchedules] = await Promise.all([
-        fetchTemplates(org.id),
-        fetchAssignments(org.id),
-        fetchTemplateSchedules(org.id),
-      ]);
-
-      allTemplates.sort((a, b) =>
-        (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })
-      );
-
-      $list.innerHTML = allTemplates.map(t =>
-        `<label style="display:block;white-space:nowrap;margin-bottom:3px">
-          <input type="checkbox" class="st-chk" value="${escapeHtml(t.id)}">
-          ${escapeHtml(t.name || "Unnamed")}
-        </label>`
-      ).join("");
-
-      $list.querySelectorAll(".st-chk").forEach(cb =>
-        cb.addEventListener("change", updateExportBtn)
-      );
-
-      $count.textContent = `${allTemplates.length} template(s)`;
-      $templWrap.style.display = "";
-      $exportWrap.style.display = "";
-      $exportBtn.disabled = true;
-      setStatus(`Loaded ${allTemplates.length} templates for ${org.name}. Select at least one and click Export.`);
-    } catch (err) {
-      setStatus(`Error loading templates: ${err.message}`, "error");
-    } finally {
-      $loadBtn.disabled = false;
-    }
-  });
-
-  $selectAll.addEventListener("click", () => {
-    $list.querySelectorAll(".st-chk").forEach(cb => { cb.checked = true; });
-    updateExportBtn();
-  });
-
-  $selectNone.addEventListener("click", () => {
-    $list.querySelectorAll(".st-chk").forEach(cb => { cb.checked = false; });
-    updateExportBtn();
-  });
-
-  // ── Phase 2: Export ───────────────────────────────────
+  // ── Export ────────────────────────────────────────────
   $exportBtn.addEventListener("click", async () => {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
-
-    const selectedIds = getChecked();
-    if (!selectedIds.length) { setStatus("Select at least one template.", "error"); return; }
-
-    const selected = new Set(selectedIds);
-    const templates = allTemplates.filter(t => selected.has(t.id));
 
     isRunning = true;
     cancelled = false;
@@ -234,14 +138,33 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
     $tableWrap.style.display = "none";
     $dlWrap.style.display = "none";
     $summary.style.display = "none";
-    setStatus("Building export…");
+    setStatus("Loading templates…");
     setProgress(0);
 
     try {
+      // Fetch all templates, assignments and schedules for the org
+      const [allTemplates, allAssignments, allSchedules] = await Promise.all([
+        fetchTemplates(org.id),
+        fetchAssignments(org.id),
+        fetchTemplateSchedules(org.id),
+      ]);
+
+      const templates = allTemplates.sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })
+      );
+
+      if (!templates.length) {
+        setStatus("No templates found for this org.", "error");
+        return;
+      }
+      setProgress(5);
+      if (cancelled) return;
+
+      setStatus("Building export…");
+
       // Build assignment lookup: templateId → [assignment]
       const assignMap = new Map();
       for (const a of allAssignments) {
-        if (!selected.has(a.templateId)) continue;
         if (!assignMap.has(a.templateId)) assignMap.set(a.templateId, []);
         assignMap.get(a.templateId).push(a);
       }
@@ -249,7 +172,6 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       // Build schedule lookup: templateId → [schedule]
       const schedMap = new Map();
       for (const s of allSchedules) {
-        if (!selected.has(s.templateId)) continue;
         if (!schedMap.has(s.templateId)) schedMap.set(s.templateId, []);
         schedMap.get(s.templateId).push(s);
       }
