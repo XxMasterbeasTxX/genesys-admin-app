@@ -27,30 +27,18 @@ async function execute(context, schedule) {
     return { success: false, error: "No orgId specified in export config" };
   }
 
-  const selectedNames = config.templates || [];
-
-  context.log(`Skill Templates export for org ${orgId}, selectedNames=${JSON.stringify(selectedNames)}`);
+  context.log(`Skill Templates export for org ${orgId}`);
 
   try {
-    // Fetch templates, assignments, and schedules
-    const [allTemplates, allAssignments, allSchedules] = await Promise.all([
+    // Fetch templates, assignments, and schedules — always export all
+    const [templates, allAssignments, allSchedules] = await Promise.all([
       templateStore.listByOrg(orgId),
       assignmentStore.listByOrg(orgId),
       templateScheduleStore.listByOrg(orgId),
     ]);
 
-    context.log(`Found ${allTemplates.length} templates in store for org ${orgId}: ${allTemplates.map(t => t.name).join(", ")}`);
-
-    // Filter to selected templates (if specified)
-    const templates = selectedNames.length
-      ? allTemplates.filter(t => selectedNames.includes(t.name))
-      : allTemplates;
-
     if (!templates.length) {
-      const detail = allTemplates.length
-        ? `Store has ${allTemplates.length} templates [${allTemplates.map(t => t.name).join(", ")}] but none match selected [${selectedNames.join(", ")}]`
-        : `No templates found in store for orgId "${orgId}"`;
-      return { success: false, error: `No matching templates found — ${detail}` };
+      return { success: false, error: `No templates found for orgId "${orgId}"` };
     }
 
     templates.sort((a, b) =>
