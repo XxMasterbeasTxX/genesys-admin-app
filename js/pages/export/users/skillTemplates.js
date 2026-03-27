@@ -112,23 +112,6 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       exportLabel: AUTOMATION_EXPORT_LABEL,
       me,
       requiresOrg: true,
-      dynamicOrgFields: async (orgId) => {
-        const templates = await fetchTemplates(orgId);
-        return [{
-          key: "templates",
-          label: "Templates to export",
-          options: templates
-            .map(t => t.name)
-            .filter(Boolean)
-            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
-        }];
-      },
-      configSummary: (cfg) => {
-        const templates = cfg.templates || [];
-        if (!templates.length) return "—";
-        const shown = templates.slice(0, 2).join(", ");
-        return templates.length > 2 ? `${shown} +${templates.length - 2} more` : shown;
-      },
     });
     el.appendChild(schedulePanel);
   }
