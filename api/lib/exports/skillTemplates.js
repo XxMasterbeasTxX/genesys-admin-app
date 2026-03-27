@@ -29,7 +29,7 @@ async function execute(context, schedule) {
 
   const selectedNames = config.templates || [];
 
-  context.log(`Skill Templates export for org ${orgId}`);
+  context.log(`Skill Templates export for org ${orgId}, selectedNames=${JSON.stringify(selectedNames)}`);
 
   try {
     // Fetch templates, assignments, and schedules
@@ -39,13 +39,18 @@ async function execute(context, schedule) {
       templateScheduleStore.listByOrg(orgId),
     ]);
 
+    context.log(`Found ${allTemplates.length} templates in store for org ${orgId}: ${allTemplates.map(t => t.name).join(", ")}`);
+
     // Filter to selected templates (if specified)
     const templates = selectedNames.length
       ? allTemplates.filter(t => selectedNames.includes(t.name))
       : allTemplates;
 
     if (!templates.length) {
-      return { success: false, error: "No matching templates found" };
+      const detail = allTemplates.length
+        ? `Store has ${allTemplates.length} templates [${allTemplates.map(t => t.name).join(", ")}] but none match selected [${selectedNames.join(", ")}]`
+        : `No templates found in store for orgId "${orgId}"`;
+      return { success: false, error: `No matching templates found — ${detail}` };
     }
 
     templates.sort((a, b) =>
