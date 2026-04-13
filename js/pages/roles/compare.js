@@ -1,17 +1,23 @@
 /**
  * Roles > Compare
  *
- * Two modes selectable via a top toggle:
+ * Three modes selectable via a top toggle:
  *
- *   "roles" — Compare permission policies across 2–10 roles side by side.
- *             Fetches GET /api/v2/authorization/roles/{id} for each role.
+ *   "roles"  — Compare permission policies across 2–10 roles side by side.
+ *              Fetches GET /api/v2/authorization/roles/{id} for each role.
  *
- *   "users" — Compare effective permissions of exactly 2 users.
- *             Fetches GET /api/v2/authorization/subjects/{id} to get each
- *             user's role assignments, then fetches each unique role's full
- *             permissionPolicies. Permissions are unioned per user; each cell
- *             shows which role(s) grant the permission. Missing permissions
- *             show which role the other user gets them from.
+ *   "users"  — Compare effective permissions of exactly 2 users.
+ *              Fetches GET /api/v2/authorization/subjects/{id} to get each
+ *              user's role assignments, then fetches each unique role's full
+ *              permissionPolicies. Permissions are unioned per user; each cell
+ *              shows which role(s) grant the permission. Missing permissions
+ *              show which role the other user gets them from.
+ *
+ *   "hourly" — Check all or selected roles for CX Cloud readiness.
+ *              Roles whose permission policies contain any disqualifying
+ *              permission are classified as "Full CX"; all others are
+ *              "CX Cloud Ready". Disqualifying permissions are scraped live
+ *              from Genesys help docs with a static fallback.
  *
  * Wildcard permissions (* entity or * action) are expanded against the full
  * Genesys permission catalog (GET /api/v2/authorization/permissions).
@@ -22,6 +28,58 @@
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
 import { createMultiSelect } from "../../components/multiSelect.js";
 import { fetchAllAuthorizationRoles } from "../../services/genesysApi.js";
+import {
+  HOURLY_DISQUALIFYING_PERMISSIONS,
+} from "../../lib/hourlyDisqualifyingPermissions.js";
+
+// ── Disqualifying-permission helpers (for Hourly Interacting mode) ────────────
+
+const SCRAPE_ENDPOINT = "/api/scrape-disqualifying-permissions";
+
+async function fetchDisqualifyingPermissions() {
+  try {
+    const resp = await fetch(SCRAPE_ENDPOINT);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (Array.isArray(data) && data.length > 0) return data;
+  } catch { /* fall through to static list */ }
+  return [...HOURLY_DISQUALIFYING_PERMISSIONS];
+}
+
+function buildDisqualifyingIndex(permArr) {
+  const byDomain = {};
+  for (const p of permArr) {
+    const [domain, entity, action] = p.split(":");
+    if (!byDomain[domain]) byDomain[domain] = {};
+    if (!byDomain[domain][entity]) byDomain[domain][entity] = new Set();
+    byDomain[domain][entity].add(action);
+  }
+  return byDomain;
+}
+
+function getDisqualifyingFromRole(role, byDomain) {
+  const found = [];
+  for (const p of role.permissionPolicies || []) {
+    const domains =
+      p.domain === "*" ? Object.keys(byDomain)
+        : byDomain[p.domain] ? [p.domain] : [];
+    for (const domain of domains) {
+      const domainEntry = byDomain[domain];
+      const entities =
+        p.entityName === "*" ? Object.keys(domainEntry)
+          : domainEntry[p.entityName] ? [p.entityName] : [];
+      for (const entity of entities) {
+        const entityActions = domainEntry[entity];
+        if (!entityActions) continue;
+        const actions = (p.actionSet || []).includes("*")
+          ? [...entityActions]
+          : (p.actionSet || []).filter((a) => entityActions.has(a));
+        for (const action of actions) found.push(`${domain}:${entity}:${action}`);
+      }
+    }
+  }
+  return [...new Set(found)];
+}
 
 const ENTITY_COL_W = 220; // px — entity column fixed width
 
@@ -84,13 +142,14 @@ export default function renderRolesCompare({ me, api, orgContext }) {
   el.className = "card";
 
   // ── Internal state ───────────────────────────────────────
-  let mode            = "roles"; // "roles" | "users"
+  let mode            = "roles"; // "roles" | "users" | "hourly"
   let comparedCols    = []; // column keys (role names or disambiguated user names)
   let comparedDomains = []; // [{ name, rows:[{entity, perms:{col:{actions,via}}}], hasDiff }]
   let viewMode        = "all";  // "all" | "diff"
   let filterText      = "";
   let rolesLoaded     = false;
   let selectedUsers   = [null, null]; // [{id,name}, {id,name}]
+  let hourlyResults   = null; // { roles: [{name, ready, forbidden:[{domain,entity,actions}]}] }
 
   // ── HTML skeleton ────────────────────────────────────────
   el.innerHTML = `
@@ -173,6 +232,45 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       .rc-empty { padding:48px 24px; text-align:center; color:var(--muted); }
       .rc-empty-icon { font-size:2.2rem; margin-bottom:10px; }
       .rc-results-wrap { max-height:calc(100vh - 300px); overflow-y:auto; }
+      /* ── Hourly Interacting mode ── */
+      .rc-hi-pills { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
+      .rc-hi-pill { padding:6px 18px; border-radius:20px; border:1px solid var(--border); background:transparent;
+                    color:var(--muted); cursor:pointer; font:inherit; font-size:13px; font-weight:600;
+                    transition:background .12s, color .12s, border-color .12s; user-select:none; }
+      .rc-hi-pill:hover:not(.active) { border-color:#6b7280; color:var(--text); }
+      .rc-hi-pill.active { background:rgba(59,130,246,.22); border-color:#3b82f6; color:#60a5fa; }
+      .rc-hi-pill .rc-hi-pill-count { margin-left:6px; font-size:11px; opacity:.7; }
+      .rc-hi-summary { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:9px 12px;
+                       background:var(--panel-2,rgba(255,255,255,.03)); border:1px solid var(--border);
+                       border-radius:8px; margin-bottom:12px; font-size:13px; color:var(--muted); }
+      .rc-hi-summary strong { color:var(--text); }
+      .rc-hi-role { margin-bottom:3px; }
+      .rc-hi-role-hdr { display:flex; align-items:center; gap:10px; padding:7px 12px;
+                        background:var(--panel-2,rgba(255,255,255,.03)); border:1px solid var(--border);
+                        border-radius:8px; user-select:none; }
+      .rc-hi-role-hdr.expandable { cursor:pointer; }
+      .rc-hi-role-hdr.expandable:hover { background:rgba(255,255,255,.05); }
+      .rc-hi-role-name { flex:1; font-weight:600; font-size:13px; color:#93c5fd; }
+      .rc-hi-ready-yes { border-radius:10px; padding:1px 8px; font-size:11px; font-weight:600;
+                         background:rgba(22,163,74,.12); color:#86efac; }
+      .rc-hi-ready-no  { border-radius:10px; padding:1px 8px; font-size:11px; font-weight:600;
+                         background:rgba(217,119,6,.18); color:#fbbf24; }
+      .rc-hi-count { font-size:12px; color:var(--muted); }
+      .rc-hi-role-body { display:none; margin-top:2px; margin-bottom:6px; }
+      .rc-hi-role.open .rc-hi-role-body { display:block; }
+      .rc-hi-role.open .rc-chevron { transform:rotate(90deg); }
+      .rc-hi-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+      .rc-hi-filter { padding:5px 10px; border:1px solid var(--border); border-radius:8px;
+                      background:var(--bg,var(--panel)); color:var(--text); font:inherit; font-size:13px;
+                      width:200px; outline:none; }
+      .rc-hi-filter:focus { border-color:#3b82f6; }
+      .rc-hi-filter::placeholder { color:var(--muted); }
+      .rc-hi-progress-wrap { margin-bottom:12px; }
+      .rc-hi-progress-track { height:4px; background:var(--border); border-radius:4px; overflow:hidden; }
+      .rc-hi-progress-fill { height:100%; background:#3b82f6; border-radius:4px; width:0; transition:width .2s; }
+      .rc-hi-progress-fill.indeterminate { width:30%; animation:rc-indeterminate 1.2s ease-in-out infinite; }
+      @keyframes rc-indeterminate { 0%{margin-left:0;width:30%} 50%{margin-left:35%;width:30%} 100%{margin-left:70%;width:30%} }
+      .rc-hi-progress-detail { font-size:11px; color:var(--muted); margin-top:3px; }
     </style>
 
     <h1 class="h1">Roles — Compare</h1>
@@ -181,6 +279,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     <div class="rc-mode-toggle">
       <button class="rc-mode-btn active" id="rcModeRoles">Compare Roles</button>
       <button class="rc-mode-btn"        id="rcModeUsers">Compare Users</button>
+      <button class="rc-mode-btn"        id="rcModeHourly">Hourly Interacting</button>
     </div>
 
     <!-- ── Role mode ── -->
@@ -231,6 +330,32 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       </div>
     </div>
 
+    <!-- ── Hourly Interacting mode ── -->
+    <div id="rcHourlySection" style="display:none">
+      <p class="page-desc">
+        Check all or selected roles for CX Cloud readiness.
+        Roles containing any disqualifying permission are classified as <strong>Full CX</strong>;
+        all others are <strong>CX Cloud Ready</strong>.
+      </p>
+      <div class="rc-controls">
+        <div class="rc-control-group">
+          <span class="rc-label">Roles to check</span>
+          <div id="rcHourlyRolePicker"></div>
+          <span class="rc-note">Select specific roles, or leave empty and check "All roles".</span>
+        </div>
+        <div class="rc-control-group" style="justify-content:flex-end;gap:8px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer">
+            <input type="checkbox" id="rcHourlyAllRoles"> All roles
+          </label>
+          <button class="btn" id="rcHourlySearchBtn" disabled>Search</button>
+        </div>
+      </div>
+      <div class="rc-hi-progress-wrap" id="rcHourlyProgressWrap" style="display:none">
+        <div class="rc-hi-progress-track"><div class="rc-hi-progress-fill" id="rcHourlyProgressFill"></div></div>
+        <div class="rc-hi-progress-detail" id="rcHourlyProgressDetail"></div>
+      </div>
+    </div>
+
     <div class="rc-status-bar" id="rcStatusBar" style="display:none">
       <span id="rcStatPrefix">Roles:</span> <strong id="rcStatCols">—</strong>
       <span>Permission rows: <strong id="rcStatTotal">—</strong></span>
@@ -264,6 +389,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
   // ── DOM refs ─────────────────────────────────────────────
   const $roleSection    = el.querySelector("#rcRoleSection");
   const $userSection    = el.querySelector("#rcUserSection");
+  const $hourlySection  = el.querySelector("#rcHourlySection");
   const $rolePicker     = el.querySelector("#rcRolePicker");
   const $compareBtn     = el.querySelector("#rcCompareBtn");
   const $userCompareBtn = el.querySelector("#rcUserCompareBtn");
@@ -282,6 +408,11 @@ export default function renderRolesCompare({ me, api, orgContext }) {
   const $expandAll      = el.querySelector("#rcExpandAll");
   const $collapseAll    = el.querySelector("#rcCollapseAll");
   const $exportBtn      = el.querySelector("#rcExportBtn");
+  const $hourlyAllRoles   = el.querySelector("#rcHourlyAllRoles");
+  const $hourlySearchBtn  = el.querySelector("#rcHourlySearchBtn");
+  const $hourlyProgressWrap   = el.querySelector("#rcHourlyProgressWrap");
+  const $hourlyProgressFill   = el.querySelector("#rcHourlyProgressFill");
+  const $hourlyProgressDetail = el.querySelector("#rcHourlyProgressDetail");
 
   function setStatus(msg, cls = "") {
     $status.textContent = msg;
@@ -291,21 +422,32 @@ export default function renderRolesCompare({ me, api, orgContext }) {
   function resetResults() {
     comparedCols    = [];
     comparedDomains = [];
+    hourlyResults   = null;
     $statusBar.style.display = "none";
     $toolbar.style.display   = "none";
-    $results.innerHTML = `<div class="rc-empty"><div class="rc-empty-icon">⚖️</div>
-      <p>Select ${mode === "roles" ? "roles" : "two users"} and click <strong>Compare</strong>.</p></div>`;
+    if (mode === "hourly") {
+      $results.innerHTML = `<div class="rc-empty"><div class="rc-empty-icon">⚡</div>
+        <p>Select roles and click <strong>Search</strong> to check CX Cloud readiness.</p></div>`;
+    } else {
+      $results.innerHTML = `<div class="rc-empty"><div class="rc-empty-icon">⚖️</div>
+        <p>Select ${mode === "roles" ? "roles" : "two users"} and click <strong>Compare</strong>.</p></div>`;
+    }
     setStatus("");
   }
 
   // ── Mode toggle ──────────────────────────────────────────
+  function activateMode(btn) {
+    el.querySelectorAll(".rc-mode-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+  }
+
   el.querySelector("#rcModeRoles").addEventListener("click", () => {
     if (mode === "roles") return;
     mode = "roles";
-    el.querySelector("#rcModeRoles").classList.add("active");
-    el.querySelector("#rcModeUsers").classList.remove("active");
-    $roleSection.style.display = "";
-    $userSection.style.display = "none";
+    activateMode(el.querySelector("#rcModeRoles"));
+    $roleSection.style.display    = "";
+    $userSection.style.display    = "none";
+    $hourlySection.style.display  = "none";
     viewMode = "all";
     $btnAll.classList.add("active");
     $btnDiff.classList.remove("active");
@@ -317,16 +459,29 @@ export default function renderRolesCompare({ me, api, orgContext }) {
   el.querySelector("#rcModeUsers").addEventListener("click", () => {
     if (mode === "users") return;
     mode = "users";
-    el.querySelector("#rcModeUsers").classList.add("active");
-    el.querySelector("#rcModeRoles").classList.remove("active");
-    $userSection.style.display = "";
-    $roleSection.style.display = "none";
+    activateMode(el.querySelector("#rcModeUsers"));
+    $userSection.style.display    = "";
+    $roleSection.style.display    = "none";
+    $hourlySection.style.display  = "none";
     viewMode = "diff"; // finding gaps is the primary use case
     $btnDiff.classList.add("active");
     $btnAll.classList.remove("active");
     $filter.value = "";
     filterText    = "";
     resetResults();
+  });
+
+  el.querySelector("#rcModeHourly").addEventListener("click", () => {
+    if (mode === "hourly") return;
+    mode = "hourly";
+    activateMode(el.querySelector("#rcModeHourly"));
+    $hourlySection.style.display  = "";
+    $roleSection.style.display    = "none";
+    $userSection.style.display    = "none";
+    $filter.value = "";
+    filterText    = "";
+    resetResults();
+    loadHourlyRoles();
   });
 
   // ── Role multi-select ────────────────────────────────────
@@ -883,6 +1038,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
 
   // ── Export to Excel ──────────────────────────────────────
   $exportBtn.addEventListener("click", () => {
+    if (mode === "hourly") { exportHourly(); return; }
     if (!comparedCols.length) return;
     const org = orgContext?.getDetails?.();
     const q = filterText.toLowerCase();
@@ -924,6 +1080,323 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       setStatus(err.message, "error");
     }
   });
+
+  // ── Hourly Interacting mode ──────────────────────────────
+
+  const hourlyRoleSelect = createMultiSelect({
+    placeholder: "Select roles…",
+    searchable: true,
+    onChange: () => updateHourlySearchBtn(),
+  });
+  hourlyRoleSelect.el.style.minWidth = "320px";
+  el.querySelector("#rcHourlyRolePicker").appendChild(hourlyRoleSelect.el);
+
+  let hourlyRolesLoaded = false;
+  let hourlyFilter      = "all"; // "all" | "ready" | "fullcx"
+
+  function updateHourlySearchBtn() {
+    $hourlySearchBtn.disabled = !$hourlyAllRoles.checked && hourlyRoleSelect.getSelected().size === 0;
+  }
+
+  $hourlyAllRoles.addEventListener("change", () => updateHourlySearchBtn());
+
+  async function loadHourlyRoles() {
+    const org = orgContext?.getDetails?.();
+    if (!org || hourlyRolesLoaded) return;
+    hourlyRolesLoaded = true;
+    setStatus("Loading roles…");
+    try {
+      const roles = await fetchAllAuthorizationRoles(api, org.id);
+      roles.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      hourlyRoleSelect.setItems(roles.map(r => ({ id: r.id, label: r.name || r.id })));
+      setStatus("");
+    } catch (err) {
+      setStatus(`Failed to load roles: ${err.message}`, "error");
+      hourlyRolesLoaded = false;
+    }
+  }
+
+  function showHourlyProgress(fetched, total) {
+    $hourlyProgressWrap.style.display = "";
+    if (total && total > 0) {
+      const pct = Math.min(100, Math.round((fetched / total) * 100));
+      $hourlyProgressFill.style.width = `${pct}%`;
+      $hourlyProgressFill.classList.remove("indeterminate");
+      $hourlyProgressDetail.textContent = `${fetched.toLocaleString()} / ${total.toLocaleString()}`;
+    } else {
+      $hourlyProgressFill.classList.add("indeterminate");
+      $hourlyProgressFill.style.width = "";
+      $hourlyProgressDetail.textContent = fetched > 0 ? `${fetched.toLocaleString()} loaded…` : "";
+    }
+  }
+
+  function hideHourlyProgress() {
+    $hourlyProgressWrap.style.display = "none";
+    $hourlyProgressFill.style.width = "0";
+    $hourlyProgressFill.classList.remove("indeterminate");
+    $hourlyProgressDetail.textContent = "";
+  }
+
+  // ── Hourly search handler ────────────────────────────────
+  $hourlySearchBtn.addEventListener("click", async () => {
+    const org = orgContext?.getDetails?.();
+    if (!org) { setStatus("Please select a customer org first.", "error"); return; }
+
+    $hourlySearchBtn.disabled = true;
+    $statusBar.style.display  = "none";
+    $toolbar.style.display    = "none";
+    $results.innerHTML        = "";
+    hourlyResults             = null;
+    hourlyFilter              = "all";
+
+    try {
+      // Step 1: fetch disqualifying permissions
+      setStatus("Fetching disqualifying permissions…");
+      const dqPerms  = await fetchDisqualifyingPermissions();
+      const byDomain = buildDisqualifyingIndex(dqPerms);
+      setStatus(`Loaded ${dqPerms.length} disqualifying permissions. Fetching roles…`);
+
+      // Step 2: determine which roles to check
+      let rolesToCheck;
+      const useAll = $hourlyAllRoles.checked;
+      if (useAll) {
+        showHourlyProgress(0, null);
+        rolesToCheck = await fetchAllAuthorizationRoles(api, org.id, {
+          onProgress: (f, t) => showHourlyProgress(f, t),
+        });
+      } else {
+        const selectedIds = [...hourlyRoleSelect.getSelected()];
+        if (selectedIds.length === 0) {
+          setStatus("Select at least one role or check 'All roles'.", "error");
+          $hourlySearchBtn.disabled = false;
+          return;
+        }
+        setStatus(`Fetching ${selectedIds.length} role${selectedIds.length !== 1 ? "s" : ""}…`);
+        showHourlyProgress(0, selectedIds.length);
+        rolesToCheck = [];
+        for (let i = 0; i < selectedIds.length; i++) {
+          const role = await api.proxyGenesys(org.id, "GET", `/api/v2/authorization/roles/${selectedIds[i]}`);
+          rolesToCheck.push(role);
+          showHourlyProgress(i + 1, selectedIds.length);
+        }
+      }
+
+      hideHourlyProgress();
+      setStatus("Analysing roles…");
+
+      // Step 3: classify each role
+      const results = [];
+      for (const role of rolesToCheck) {
+        const forbidden = getDisqualifyingFromRole(role, byDomain);
+        // Group forbidden permissions by domain → entity
+        const grouped = {};
+        for (const perm of forbidden) {
+          const [domain, entity, action] = perm.split(":");
+          const key = `${domain}::${entity}`;
+          if (!grouped[key]) grouped[key] = { domain, entity, actions: [] };
+          grouped[key].actions.push(action);
+        }
+        const forbiddenRows = Object.values(grouped).sort((a, b) =>
+          a.domain.localeCompare(b.domain) || a.entity.localeCompare(b.entity)
+        );
+        forbiddenRows.forEach(r => r.actions.sort());
+
+        results.push({
+          name: role.name || role.id,
+          ready: forbidden.length === 0,
+          forbiddenCount: forbidden.length,
+          forbiddenRows,
+        });
+      }
+
+      results.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      hourlyResults = { roles: results };
+
+      setStatus("");
+      renderHourlyResults();
+    } catch (err) {
+      hideHourlyProgress();
+      setStatus(`Error: ${err.message}`, "error");
+    } finally {
+      $hourlySearchBtn.disabled = false;
+    }
+  });
+
+  // ── Hourly results rendering ─────────────────────────────
+  function renderHourlyResults() {
+    if (!hourlyResults) return;
+    const roles = hourlyResults.roles;
+    const totalReady  = roles.filter(r => r.ready).length;
+    const totalFullCx = roles.filter(r => !r.ready).length;
+
+    const filterQ = ($results.querySelector(".rc-hi-filter")?.value || "").toLowerCase();
+
+    let filtered = roles;
+    if (hourlyFilter === "ready")  filtered = filtered.filter(r => r.ready);
+    if (hourlyFilter === "fullcx") filtered = filtered.filter(r => !r.ready);
+    if (filterQ) filtered = filtered.filter(r => r.name.toLowerCase().includes(filterQ));
+
+    $results.innerHTML = "";
+
+    // Summary bar
+    const summary = document.createElement("div");
+    summary.className = "rc-hi-summary";
+    summary.innerHTML = `
+      <span>Roles checked: <strong>${roles.length}</strong></span>
+      <span class="rc-hi-ready-yes">CX Cloud Ready: ${totalReady}</span>
+      <span class="rc-hi-ready-no">Full CX: ${totalFullCx}</span>
+    `;
+    $results.appendChild(summary);
+
+    // Filter pills
+    const pills = document.createElement("div");
+    pills.className = "rc-hi-pills";
+    pills.innerHTML = `
+      <button class="rc-hi-pill${hourlyFilter === "all" ? " active" : ""}" data-filter="all">All<span class="rc-hi-pill-count">${roles.length}</span></button>
+      <button class="rc-hi-pill${hourlyFilter === "ready" ? " active" : ""}" data-filter="ready">CX Cloud Ready<span class="rc-hi-pill-count">${totalReady}</span></button>
+      <button class="rc-hi-pill${hourlyFilter === "fullcx" ? " active" : ""}" data-filter="fullcx">Full CX<span class="rc-hi-pill-count">${totalFullCx}</span></button>
+    `;
+    pills.querySelectorAll(".rc-hi-pill").forEach(btn => {
+      btn.addEventListener("click", () => {
+        hourlyFilter = btn.dataset.filter;
+        renderHourlyResults();
+      });
+    });
+    $results.appendChild(pills);
+
+    // Toolbar: text filter + expand/collapse + export
+    const toolbar = document.createElement("div");
+    toolbar.className = "rc-hi-toolbar";
+    toolbar.innerHTML = `
+      <input type="text" class="rc-hi-filter" placeholder="Filter by role name…" value="${escapeHtml(filterQ)}">
+      <div class="rc-ml-auto" style="display:flex;gap:8px">
+        <button class="btn btn-sm" id="rcHiExpandAll">Expand all</button>
+        <button class="btn btn-sm" id="rcHiCollapseAll">Collapse all</button>
+        <button class="btn btn-sm" id="rcHiExportBtn">Export to Excel</button>
+      </div>
+    `;
+    toolbar.querySelector(".rc-hi-filter").addEventListener("input", () => renderHourlyResults());
+    toolbar.querySelector("#rcHiExpandAll").addEventListener("click", () => {
+      $results.querySelectorAll(".rc-hi-role.expandable").forEach(d => d.classList.add("open"));
+    });
+    toolbar.querySelector("#rcHiCollapseAll").addEventListener("click", () => {
+      $results.querySelectorAll(".rc-hi-role").forEach(d => d.classList.remove("open"));
+    });
+    toolbar.querySelector("#rcHiExportBtn").addEventListener("click", () => exportHourly());
+    $results.appendChild(toolbar);
+
+    if (filtered.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "rc-empty";
+      empty.innerHTML = `<div class="rc-empty-icon">✅</div><p>No roles match the current filter.</p>`;
+      $results.appendChild(empty);
+      return;
+    }
+
+    // Role accordions
+    const wrap = document.createElement("div");
+    wrap.className = "rc-results-wrap";
+
+    for (const role of filtered) {
+      const roleEl = document.createElement("div");
+      roleEl.className = role.ready ? "rc-hi-role" : "rc-hi-role expandable";
+
+      const readyBadge = role.ready
+        ? `<span class="rc-hi-ready-yes">Yes</span>`
+        : `<span class="rc-hi-ready-no">No</span>`;
+
+      const chevron = role.ready ? `<span style="width:12px;display:inline-block"></span>` : `<span class="rc-chevron">▶</span>`;
+      const countLabel = role.ready ? "" : `<span class="rc-hi-count">${role.forbiddenCount} forbidden permission${role.forbiddenCount !== 1 ? "s" : ""}</span>`;
+
+      let bodyHtml = "";
+      if (!role.ready) {
+        const rows = role.forbiddenRows.map(r => `
+          <tr>
+            <td class="rc-td-entity">${escapeHtml(r.domain)}</td>
+            <td class="rc-td-entity">${escapeHtml(r.entity)}</td>
+            <td class="rc-td-actions has">${r.actions.map(a => `<span class="rc-action-tag">${escapeHtml(a)}</span>`).join("")}</td>
+          </tr>
+        `).join("");
+
+        bodyHtml = `
+          <div class="rc-hi-role-body">
+            <table class="rc-table">
+              <colgroup><col style="width:180px"><col style="width:200px"><col></colgroup>
+              <thead><tr>
+                <th>Domain</th>
+                <th>Entity</th>
+                <th>Forbidden Permissions</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`;
+      }
+
+      roleEl.innerHTML = `
+        <div class="rc-hi-role-hdr${role.ready ? "" : " expandable"}">
+          ${chevron}
+          <span class="rc-hi-role-name">${escapeHtml(role.name)}</span>
+          ${countLabel}
+          ${readyBadge}
+        </div>
+        ${bodyHtml}`;
+
+      if (!role.ready) {
+        roleEl.querySelector(".rc-hi-role-hdr").addEventListener("click", () => {
+          roleEl.classList.toggle("open");
+        });
+      }
+
+      wrap.appendChild(roleEl);
+    }
+
+    $results.appendChild(wrap);
+  }
+
+  // ── Hourly Excel export ──────────────────────────────────
+  function exportHourly() {
+    if (!hourlyResults) return;
+    const org = orgContext?.getDetails?.();
+    const orgSlug = ((org?.name || "").replace(/\s+/g, "_")) || "org";
+    const filename = timestampedFilename(`Hourly_Interacting_Roles_${orgSlug}`, "xlsx");
+
+    const columns = [
+      { key: "role",       label: "Role",                   wch: 40 },
+      { key: "domain",     label: "Domain",                 wch: 24 },
+      { key: "entity",     label: "Entity",                 wch: 24 },
+      { key: "forbidden",  label: "Forbidden Permissions",  wch: 50 },
+      { key: "ready",      label: "CX Cloud Ready",         wch: 16 },
+    ];
+
+    const rows = [];
+    for (const role of hourlyResults.roles) {
+      if (role.forbiddenRows.length > 0) {
+        for (const fr of role.forbiddenRows) {
+          rows.push({
+            role:      role.name,
+            domain:    fr.domain,
+            entity:    fr.entity,
+            forbidden: fr.actions.join(", "),
+            ready:     "No",
+          });
+        }
+      } else {
+        rows.push({
+          role:      role.name,
+          domain:    "",
+          entity:    "",
+          forbidden: "",
+          ready:     "Yes",
+        });
+      }
+    }
+
+    try {
+      exportXlsx([{ name: "Hourly Interacting", rows, columns }], filename);
+    } catch (err) {
+      setStatus(err.message, "error");
+    }
+  }
 
   return el;
 }
