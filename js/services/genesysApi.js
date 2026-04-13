@@ -180,7 +180,7 @@ export async function pollAnalyticsJob(api, orgId, jobId, opts = {}) {
 export async function fetchAnalyticsJobResults(api, orgId, jobId, opts = {}) {
   return fetchAllCursor(api, orgId,
     `/api/v2/analytics/conversations/details/jobs/${jobId}/results`,
-    { query: { pageSize: "10000" }, itemsKey: "conversations", ...opts }
+    { query: { pageSize: "2000" }, itemsKey: "conversations", ...opts }
   );
 }
 

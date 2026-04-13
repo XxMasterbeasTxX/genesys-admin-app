@@ -827,13 +827,38 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       }
 
       // Use the centralized genesysApi service for the full search flow
-      const interval = buildInterval(dateFrom, dateTo);
-      const allConvs = await gc.searchConversations(api, orgId, {
-        interval,
-        jobBody: Object.keys(jobBody).length ? jobBody : undefined,
-        onStatus: (msg) => setStatus(msg),
-        onProgress: (pct) => showProgress(pct),
-      });
+      // Split large date ranges into 7-day chunks to avoid Azure SWA proxy timeouts
+      const CHUNK_DAYS = 7;
+      const startMs = new Date(`${dateFrom}T00:00:00.000Z`).getTime();
+      const endMs   = new Date(`${dateTo}T23:59:59.999Z`).getTime();
+      const msPerDay = 86_400_000;
+      const totalDays = Math.ceil((endMs - startMs) / msPerDay);
+      const chunks = [];
+      for (let d = 0; d < totalDays; d += CHUNK_DAYS) {
+        const cStart = new Date(startMs + d * msPerDay).toISOString().slice(0, 10);
+        const cEndMs = Math.min(startMs + (d + CHUNK_DAYS) * msPerDay - 1, endMs);
+        const cEnd   = new Date(cEndMs).toISOString().slice(0, 10);
+        chunks.push({ from: cStart, to: cEnd });
+      }
+
+      const allConvs = [];
+      const chunkJobBody = Object.keys(jobBody).length ? jobBody : undefined;
+      for (let ci = 0; ci < chunks.length; ci++) {
+        const { from: cFrom, to: cTo } = chunks[ci];
+        const chunkLabel = chunks.length > 1
+          ? `Chunk ${ci + 1}/${chunks.length} (${cFrom} to ${cTo}): `
+          : "";
+        const chunkBase = (ci / chunks.length) * 100;
+        const chunkSpan = 100 / chunks.length;
+
+        const chunkConvs = await gc.searchConversations(api, orgId, {
+          interval: buildInterval(cFrom, cTo),
+          jobBody: chunkJobBody,
+          onStatus: (msg) => setStatus(`${chunkLabel}${msg}`),
+          onProgress: (pct) => showProgress(chunkBase + (pct / 100) * chunkSpan),
+        });
+        allConvs.push(...chunkConvs);
+      }
 
       // Client-side: keep only conversations that STARTED within the selected range
       // (The analytics API interval matches on end time, not start time)
