@@ -73,7 +73,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Proxied API calls** — All Genesys API calls go through an Azure Functions backend that handles authentication
 - **Centralized API service** — Shared `genesysApi.js` module with helpers for analytics, users, queues, flows, data tables, data actions, integrations, divisions, and more
 - **OAuth PKCE login** — Team members authenticate via Genesys Cloud (your own org)
-- **Sign Out** — Header Sign Out button clears the current session and forces a fresh PKCE login, useful when switching between orgs or clearing a stale token
+- **Refresh Token** — Header button clears the current session and forces a fresh PKCE login, useful for clearing a stale token
 - **Welcome page** — App always starts on a clean welcome screen; no page or org is pre-selected
 - **Dark/light theme** — Adapts to OS preference automatically
 - **Iframe-safe Excel export** — Uses SheetJS (xlsx-js-style) with a `download.html` helper page for reliable downloads inside Genesys Cloud iframes. Data is passed via `window.opener` (not the URL hash) to support large exports without hitting browser URL-length limits. All exports use standard cell styling: blue header, alternating rows, auto-filter, frozen row.
