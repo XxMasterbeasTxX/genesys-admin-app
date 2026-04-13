@@ -111,7 +111,7 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 
 ## 4. Authorization & Divisions
 
-Used by: Divisions (all object types), Data Tables — Create, Data Tables — Edit, export pages, All Roles Export, Deployment — Basic, Roles — Compare (both modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit, Skill Templates — Add Users To Templates
+Used by: Divisions (all object types), Data Tables — Create, Data Tables — Edit, export pages, All Roles Export, Deployment — Basic, Roles — Compare (all three modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit, Skill Templates — Add Users To Templates
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -119,10 +119,10 @@ Used by: Divisions (all object types), Data Tables — Create, Data Tables — E
 | POST | `/api/v2/authorization/divisions` | **Create** a new division (Deployment — Basic) |
 | GET | `/api/v2/authorization/roles` | List all authorization roles |
 | GET | `/api/v2/authorization/roles?permission={domain}:{entity}:{action}` | Filter roles by a specific permission — returns roles whose policies match; used by Roles — Permissions vs. Users (Step 1) |
-| GET | `/api/v2/authorization/roles/{roleId}` | Get a single role with full `permissionPolicies` (Roles — Compare, Roles — Edit pre-fill, Roles — Copy source pre-fill) |
+| GET | `/api/v2/authorization/roles/{roleId}` | Get a single role with full `permissionPolicies` (Roles — Compare, Roles — Compare Hourly Interacting, Roles — Edit pre-fill, Roles — Copy source pre-fill) |
 | POST | `/api/v2/authorization/roles` | **Create** a new authorization role — body: `{ name, description, permissionPolicies }` (Roles — Create, Roles — Copy Same Org, Roles — Copy Between Orgs target) |
 | PUT | `/api/v2/authorization/roles/{roleId}` | **Full-replace** an existing authorization role — same body shape (Roles — Edit) |
-| GET | `/api/v2/authorization/permissions` | List the full permission catalog — domain/entity/action entries with `allowConditions` flag; used by Roles — Compare, Permissions vs. Users, Create, and Edit to expand wildcard policies (paginated, `pageSize=100`, looped via `pageCount`) |
+| GET | `/api/v2/authorization/permissions` | List the full permission catalog — domain/entity/action entries with `allowConditions` flag; used by Roles — Compare (Compare Roles + Hourly Interacting), Permissions vs. Users, Create, and Edit to expand wildcard policies (paginated, `pageSize=100`, looped via `pageCount`) |
 | GET | `/api/v2/authorization/roles/{roleId}/users` | List users assigned a specific role (Roles — Permissions vs. Users Step 2, Roles Export) |
 | POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to subjects with division scope (Deployment — Basic Users) |
 | GET | `/api/v2/authorization/subjects/{subjectId}` | Get effective role grants for a user or group — returns `{ grants: [{ role: { id, name }, division }] }` at top level (Compare Users, Permissions vs. Users attribution, All Roles Export step 3 attribution) |
