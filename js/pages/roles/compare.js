@@ -197,6 +197,10 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       .rc-filter-input:focus { border-color:#3b82f6; }
       .rc-filter-input::placeholder { color:var(--muted); }
       .rc-ml-auto { margin-left:auto; }
+      /* ── Export btn (matches Permissions vs. Users style) ── */
+      .rc-export-btn { margin-left:auto; padding:5px 16px; background:transparent; color:#93c5fd; border:1px solid #3b82f6; border-radius:8px; font:inherit; font-size:12px; font-weight:600; cursor:pointer; transition:background .15s,color .15s; white-space:nowrap; }
+      .rc-export-btn:hover:not(:disabled) { background:rgba(59,130,246,.18); }
+      .rc-export-btn:disabled { opacity:.4; cursor:not-allowed; }
       /* ── Domain accordions ── */
       .rc-domain { margin-bottom:3px; }
       .rc-domain-hdr { display:flex; align-items:center; gap:10px; padding:7px 12px; background:var(--panel-2,rgba(255,255,255,.03)); border:1px solid var(--border); border-radius:8px; cursor:pointer; user-select:none; }
@@ -372,8 +376,8 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       <div class="rc-ml-auto" style="display:flex;gap:8px">
         <button class="btn btn-sm" id="rcExpandAll">Expand all</button>
         <button class="btn btn-sm" id="rcCollapseAll">Collapse all</button>
-        <button class="btn btn-sm" id="rcExportBtn">Export to Excel</button>
       </div>
+      <button class="rc-export-btn" id="rcExportBtn">Export to Excel</button>
     </div>
 
     <div id="rcStatus" class="te-status"></div>
@@ -1150,9 +1154,12 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     hourlyFilter              = "all";
 
     try {
-      // Step 1: fetch disqualifying permissions
+      // Step 1: fetch disqualifying permissions + permission catalog (for wildcard expansion)
       setStatus("Fetching disqualifying permissions…");
-      const dqPerms  = await fetchDisqualifyingPermissions();
+      const [dqPerms, catalog] = await Promise.all([
+        fetchDisqualifyingPermissions(),
+        fetchPermissionCatalog(api, org.id),
+      ]);
       const byDomain = buildDisqualifyingIndex(dqPerms);
       setStatus(`Loaded ${dqPerms.length} disqualifying permissions. Fetching roles…`);
 
@@ -1199,12 +1206,21 @@ export default function renderRolesCompare({ me, api, orgContext }) {
         const forbiddenRows = Object.values(grouped).sort((a, b) =>
           a.domain.localeCompare(b.domain) || a.entity.localeCompare(b.entity)
         );
-        forbiddenRows.forEach(r => r.actions.sort());
+        // Expand wildcard (*) actions to actual permission names from catalog
+        for (const row of forbiddenRows) {
+          if (row.actions.includes("*")) {
+            const catalogActions = catalog[row.domain]?.[row.entity] || [];
+            row.actions = catalogActions.length > 0 ? [...catalogActions].sort() : row.actions.filter(a => a !== "*");
+          } else {
+            row.actions.sort();
+          }
+        }
 
+        const expandedCount = forbiddenRows.reduce((sum, r) => sum + r.actions.length, 0);
         results.push({
           name: role.name || role.id,
           ready: forbidden.length === 0,
-          forbiddenCount: forbidden.length,
+          forbiddenCount: expandedCount,
           forbiddenRows,
         });
       }
@@ -1272,8 +1288,8 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       <div class="rc-ml-auto" style="display:flex;gap:8px">
         <button class="btn btn-sm" id="rcHiExpandAll">Expand all</button>
         <button class="btn btn-sm" id="rcHiCollapseAll">Collapse all</button>
-        <button class="btn btn-sm" id="rcHiExportBtn">Export to Excel</button>
       </div>
+      <button class="rc-export-btn" id="rcHiExportBtn">Export to Excel</button>
     `;
     toolbar.querySelector(".rc-hi-filter").addEventListener("input", () => renderHourlyResults());
     toolbar.querySelector("#rcHiExpandAll").addEventListener("click", () => {
