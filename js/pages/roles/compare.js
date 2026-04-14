@@ -16,7 +16,7 @@
  *   "hourly" — Check all or selected roles for CX Cloud readiness.
  *              Roles whose permission policies contain any disqualifying
  *              permission are classified as "Full CX"; all others are
- *              "CX Cloud Ready". Disqualifying permissions are scraped live
+ *              "Hourly". Disqualifying permissions are scraped live
  *              from Genesys help docs with a static fallback.
  *
  * Wildcard permissions (* entity or * action) are expanded against the full
@@ -339,7 +339,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       <p class="page-desc">
         Check all or selected roles for CX Cloud readiness.
         Roles containing any disqualifying permission are classified as <strong>Full CX</strong>;
-        all others are <strong>CX Cloud Ready</strong>.
+        all others are <strong>Hourly</strong>.
       </p>
       <div class="rc-controls">
         <div class="rc-control-group">
@@ -1259,7 +1259,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     summary.className = "rc-hi-summary";
     summary.innerHTML = `
       <span>Roles checked: <strong>${roles.length}</strong></span>
-      <span class="rc-hi-ready-yes">CX Cloud Ready: ${totalReady}</span>
+      <span class="rc-hi-ready-yes">Hourly: ${totalReady}</span>
       <span class="rc-hi-ready-no">Full CX: ${totalFullCx}</span>
     `;
     $results.appendChild(summary);
@@ -1269,7 +1269,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
     pills.className = "rc-hi-pills";
     pills.innerHTML = `
       <button class="rc-hi-pill${hourlyFilter === "all" ? " active" : ""}" data-filter="all">All<span class="rc-hi-pill-count">${roles.length}</span></button>
-      <button class="rc-hi-pill${hourlyFilter === "ready" ? " active" : ""}" data-filter="ready">CX Cloud Ready<span class="rc-hi-pill-count">${totalReady}</span></button>
+      <button class="rc-hi-pill${hourlyFilter === "ready" ? " active" : ""}" data-filter="ready">Hourly<span class="rc-hi-pill-count">${totalReady}</span></button>
       <button class="rc-hi-pill${hourlyFilter === "fullcx" ? " active" : ""}" data-filter="fullcx">Full CX<span class="rc-hi-pill-count">${totalFullCx}</span></button>
     `;
     pills.querySelectorAll(".rc-hi-pill").forEach(btn => {
@@ -1381,7 +1381,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
       { key: "domain",     label: "Domain",                 wch: 24 },
       { key: "entity",     label: "Entity",                 wch: 24 },
       { key: "forbidden",  label: "Forbidden Permissions",  wch: 50 },
-      { key: "ready",      label: "CX Cloud Ready",         wch: 16 },
+      { key: "ready",      label: "Hourly",                wch: 16 },
     ];
 
     const rows = [];
