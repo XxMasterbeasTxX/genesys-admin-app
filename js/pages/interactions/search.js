@@ -506,40 +506,58 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         ${COLUMNS.map((c) => `<td>${escapeHtml(r[c.key])}</td>`).join("")}
       </tr>`;
 
-      if (isExpanded && pdFilters.length) {
-        // Find matched participant attributes for active filters
+      if (isExpanded) {
         const conv = r._raw;
         const sections = [];
-        for (const f of pdFilters) {
-          const fKeyLower = f.key.toLowerCase();
-          // Collect all values across all participants for this key
-          const values = new Set();
+        if (pdFilters.length) {
+          // Show matched participant attributes for active filters
+          for (const f of pdFilters) {
+            const fKeyLower = f.key.toLowerCase();
+            const values = new Set();
+            for (const p of conv.participants || []) {
+              const attrs = p.attributes || {};
+              const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
+              if (matchedKey != null) values.add(attrs[matchedKey]);
+            }
+            if (values.size === 0) continue;
+            const rawVal = [...values].join(", ");
+            let pillsHtml;
+            if (multiVal) {
+              const tokens = rawVal.split(",").map(t => t.trim()).filter(Boolean);
+              pillsHtml = tokens.map(t =>
+                `<span class="is-pill">${escapeHtml(t)}</span>`
+              ).join("");
+            } else {
+              pillsHtml = `<span class="is-expand-raw">${escapeHtml(rawVal)}</span>`;
+            }
+            sections.push(`<div class="is-expand-attr">
+              <span class="is-expand-key">${escapeHtml(f.key)}</span>
+              <div class="is-expand-vals">${pillsHtml}</div>
+            </div>`);
+          }
+        } else {
+          // No filters — show all participant attributes
+          const attrMap = new Map();
           for (const p of conv.participants || []) {
-            const attrs = p.attributes || {};
-            const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-            if (matchedKey != null) values.add(attrs[matchedKey]);
+            for (const [k, v] of Object.entries(p.attributes || {})) {
+              if (!attrMap.has(k)) attrMap.set(k, new Set());
+              attrMap.get(k).add(v);
+            }
           }
-          if (values.size === 0) continue;
-          const rawVal = [...values].join(", ");
-          let pillsHtml;
-          if (multiVal) {
-            const tokens = rawVal.split(",").map(t => t.trim()).filter(Boolean);
-            pillsHtml = tokens.map(t =>
-              `<span class="is-pill">${escapeHtml(t)}</span>`
-            ).join("");
-          } else {
-            pillsHtml = `<span class="is-expand-raw">${escapeHtml(rawVal)}</span>`;
+          for (const [k, vals] of [...attrMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+            const rawVal = [...vals].join(", ");
+            const pillsHtml = `<span class="is-expand-raw">${escapeHtml(rawVal)}</span>`;
+            sections.push(`<div class="is-expand-attr">
+              <span class="is-expand-key">${escapeHtml(k)}</span>
+              <div class="is-expand-vals">${pillsHtml}</div>
+            </div>`);
           }
-          sections.push(`<div class="is-expand-attr">
-            <span class="is-expand-key">${escapeHtml(f.key)}</span>
-            <div class="is-expand-vals">${pillsHtml}</div>
-          </div>`);
         }
         const colSpan = COLUMNS.length;
         html += `<tr class="is-expand-row" data-expand-idx="${i}">
           <td colspan="${colSpan}">
             <div class="is-expand-panel">
-              <div class="is-expand-attrs">${sections.join("")}</div>
+              <div class="is-expand-attrs">${sections.length ? sections.join("") : '<span class="is-expand-none">(no participant data)</span>'}</div>
               <button class="is-expand-detail-btn" data-idx="${i}" title="Open conversation detail">&#10697;</button>
             </div>
           </td>
