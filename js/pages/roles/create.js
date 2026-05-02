@@ -537,7 +537,9 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     $policyList.innerHTML = "";
 
     for (const domain of sortedDomains) {
-      const domPolicies = byDomain.get(domain);
+      const domPolicies = byDomain.get(domain).slice().sort((a, b) =>
+        (a.entity || "").localeCompare(b.entity || "")
+      );
       // Edit mode: pre-collapsed; Create mode: open by default (or restore previous state)
       const startOpen = isEdit
         ? prevOpen.has(domain)  // only open if it was explicitly opened by the user
@@ -1087,7 +1089,9 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         const entityIsWild = p.entityName === "*";
         const actionIsWild = (p.actionSet || []).includes("*");
 
-        const entities = entityIsWild ? Object.keys(domainCat) : [p.entityName];
+        const entities = entityIsWild
+          ? Object.keys(domainCat).sort((a, b) => a.localeCompare(b))
+          : [p.entityName];
         for (const entity of entities) {
           const catalogActions = (domainCat[entity]?.actions) || [];
           const actions = actionIsWild
