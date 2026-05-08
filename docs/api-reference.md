@@ -124,7 +124,7 @@ Used by: Divisions (all object types), Data Tables — Create, Data Tables — E
 | PUT | `/api/v2/authorization/roles/{roleId}` | **Full-replace** an existing authorization role — same body shape (Roles — Edit) |
 | GET | `/api/v2/authorization/permissions` | List the full permission catalog — domain/entity/action entries with `allowConditions` flag; used by Roles — Compare (Compare Roles + Hourly Interacting), Permissions vs. Users, Create, and Edit to expand wildcard policies (paginated, `pageSize=100`, looped via `pageCount`) |
 | GET | `/api/v2/authorization/roles/{roleId}/users` | List users assigned a specific role (Roles — Permissions vs. Users Step 2, Roles Export) |
-| POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to subjects with division scope (Deployment — Basic Users) |
+| POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to subjects with division scope. Payload must include real division IDs when scoping by division; do not send synthetic zero-GUID scope IDs (Deployment — Basic Users, Configure Users) |
 | GET | `/api/v2/authorization/subjects/{subjectId}` | Get effective role grants for a user or group — returns `{ grants: [{ role: { id, name }, division }] }` at top level (Compare Users, Permissions vs. Users attribution, All Roles Export step 3 attribution) |
 | POST | `/api/v2/authorization/divisions/{divisionId}/objects/{type}` | Move objects between divisions (Divisions pages) |
 
@@ -183,7 +183,7 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | POST | `/api/v2/users` | **Create** a user (Deployment — Basic) |
 | GET | `/api/v2/users/{userId}` | **Get** a single user — version refresh before address PATCH (Deployment — Basic) |
 | PATCH | `/api/v2/users/{userId}` | **Update** a user — name, state (restore deleted), addresses, extension, DID (Deployment — Basic) |
-| POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to a user per-role with division scope (Deployment — Basic, Configure Users) |
+| POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to a user per-role with division scope. In Configure Users (Add mode), each selected role requires at least one division before apply; requests only send real division IDs (Deployment — Basic, Configure Users) |
 | DELETE | `/api/v2/authorization/roles/{roleId}/subjectuser/{userId}` | **Remove** a role grant from a user (Configure Users — remove mode) |
 | PATCH | `/api/v2/users/{userId}/routingskills/bulk` | **Add** routing skills to a user (Deployment — Basic, Configure Users) |
 | DELETE | `/api/v2/users/{userId}/routingskills/{skillId}` | **Remove** a routing skill from a user (Configure Users — remove mode) |

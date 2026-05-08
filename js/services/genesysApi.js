@@ -367,12 +367,17 @@ export async function updateUserDivision(api, orgId, userId, divisionObj, versio
  */
 export async function grantUserRoles(api, orgId, userId, roles) {
   for (const { roleId, divisionId } of roles) {
+    const body = {
+      subjectIds: [userId],
+    };
+    // Avoid sending an invalid synthetic scope id when no division is supplied.
+    if (divisionId) {
+      body.divisionIds = [divisionId];
+    }
+
     await api.proxyGenesys(orgId, "POST", `/api/v2/authorization/roles/${roleId}`, {
       query: { subjectType: "PC_USER" },
-      body: {
-        subjectIds: [userId],
-        divisionIds: [divisionId ?? "00000000-0000-0000-0000-000000000000"],
-      },
+      body,
     });
   }
 }

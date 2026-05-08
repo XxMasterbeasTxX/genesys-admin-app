@@ -1210,6 +1210,15 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   }
 
   // ── Apply button state ────────────────────────────────
+  const ROLE_DIVISION_VALIDATION_PREFIX = "Select at least one division for:";
+
+  function getRolesMissingDivisions() {
+    if (mode !== "add") return [];
+    return selectedRoles
+      .filter((r) => !(r.divisions || []).length)
+      .map((r) => r.roleName || r.roleId);
+  }
+
   function updateApplyButton() {
     const hasUsers = checkedUserIds.size > 0;
     const hasConfig = selectedTemplates.length > 0 ||
@@ -1217,7 +1226,17 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
       selectedSkills.length > 0 ||
       selectedLanguages.length > 0 ||
       selectedQueues.length > 0;
-    $btnApply.disabled = !(hasUsers && hasConfig);
+
+    const missingRoleDivisions = getRolesMissingDivisions();
+    const hasValidRoleDivisions = missingRoleDivisions.length === 0;
+
+    if (!hasValidRoleDivisions) {
+      setStatus(`${ROLE_DIVISION_VALIDATION_PREFIX} ${missingRoleDivisions.join(", ")}`, "error");
+    } else if (($status.textContent || "").startsWith(ROLE_DIVISION_VALIDATION_PREFIX)) {
+      setStatus("");
+    }
+
+    $btnApply.disabled = !(hasUsers && hasConfig && hasValidRoleDivisions);
   }
 
   // ════════════════════════════════════════════════════════
@@ -1235,6 +1254,12 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
 
   // ── ADD ───────────────────────────────────────────────
   async function handleAdd(users) {
+    const missingRoleDivisions = getRolesMissingDivisions();
+    if (missingRoleDivisions.length) {
+      setStatus(`${ROLE_DIVISION_VALIDATION_PREFIX} ${missingRoleDivisions.join(", ")}`, "error");
+      return;
+    }
+
     // Merge template items + manual items
     const finalRoles = [...selectedRoles.map((r) => ({ ...r, divisions: [...r.divisions] }))];
     const finalSkills = [...selectedSkills.map((s) => ({ ...s }))];
@@ -1390,7 +1415,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     $progressText.textContent = `${usersCompleted} / ${totalUsers} users processed`;
 
     const summary = errors
-      ? `Completed with ${errors} error${errors > 1 ? "s" : ""}. ${completed - errors}/${totalUsers} users configured.`
+      ? `Completed with ${errors} error${errors > 1 ? "s" : ""}. ${usersCompleted - errors}/${totalUsers} users configured.`
       : `Successfully configured ${totalUsers} user${totalUsers > 1 ? "s" : ""}. Added ${[finalRoles.length ? finalRoles.length + " roles" : "", finalSkills.length ? finalSkills.length + " skills" : "", finalLanguages.length ? finalLanguages.length + " languages" : "", finalQueueIds.size ? finalQueueIds.size + " queues" : "", selectedTemplates.length ? selectedTemplates.map((t) => t.name).join(", ") : ""].filter(Boolean).join(", ")}.`;
     logLine(summary, errors ? "error" : "success");
     setStatus(summary, errors ? "error" : "success");
@@ -1583,7 +1608,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
     $progressText.textContent = `${usersCompleted} / ${totalUsers} users processed`;
 
     const summary = errors
-      ? `Completed with ${errors} error${errors > 1 ? "s" : ""}. ${completed - errors}/${totalUsers} users updated.`
+      ? `Completed with ${errors} error${errors > 1 ? "s" : ""}. ${usersCompleted - errors}/${totalUsers} users updated.`
       : `Successfully removed from ${totalUsers} user${totalUsers > 1 ? "s" : ""}. Removed ${[uniqueRoleIds.length ? uniqueRoleIds.length + " roles" : "", uniqueSkillIds.length ? uniqueSkillIds.length + " skills" : "", uniqueLangIds.length ? uniqueLangIds.length + " languages" : "", allRemoveQueueIds.size ? allRemoveQueueIds.size + " queues" : "", selectedTemplates.length ? selectedTemplates.map((t) => t.name).join(", ") : ""].filter(Boolean).join(", ")}.`;
     logLine(summary, errors ? "error" : "success");
     setStatus(summary, errors ? "error" : "success");
