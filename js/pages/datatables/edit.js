@@ -40,6 +40,104 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
   el.className = "card";
 
   el.innerHTML = `
+    <style>
+      .dte-mode-toggle {
+        display: flex;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        width: fit-content;
+      }
+      .dte-mode-btn {
+        padding: 7px 22px;
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        transition: background .12s, color .12s;
+      }
+      .dte-mode-btn.active {
+        background: rgba(59,130,246,.22);
+        color: #60a5fa;
+      }
+      .dte-mode-btn:not(.active):hover {
+        background: rgba(255,255,255,.05);
+        color: var(--text);
+      }
+
+      .dte-row-grid-wrap {
+        width: 100%;
+        overflow-x: auto;
+      }
+      .dte-row-grid {
+        width: 100%;
+        min-width: 900px;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+      .dte-row-grid thead th {
+        text-align: left;
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg, var(--panel));
+      }
+      .dte-row-grid tbody td {
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      .dte-row-grid .dt-input {
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      @media (max-width: 900px) {
+        .dte-row-grid {
+          min-width: 100%;
+        }
+        .dte-row-grid thead {
+          display: none;
+        }
+        .dte-row-grid,
+        .dte-row-grid tbody,
+        .dte-row-grid tr,
+        .dte-row-grid td {
+          display: block;
+          width: 100%;
+        }
+        .dte-row-grid tbody tr {
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          margin-bottom: 10px;
+          background: var(--bg, var(--panel));
+          overflow: hidden;
+        }
+        .dte-row-grid tbody td {
+          border-bottom: 1px solid var(--border);
+        }
+        .dte-row-grid tbody td:last-child {
+          border-bottom: none;
+        }
+        .dte-row-grid tbody td::before {
+          content: attr(data-label);
+          display: block;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: .04em;
+          color: var(--muted);
+          margin-bottom: 6px;
+          font-weight: 600;
+        }
+      }
+    </style>
+
     <h2>Data Tables — Edit</h2>
     <p class="page-desc">
       Edit an existing data table in the selected org.
@@ -63,9 +161,9 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     <div class="dt-controls" style="margin-bottom:12px">
       <div class="dt-control-group">
         <label class="dt-label">Edit Mode</label>
-        <div class="dt-actions" style="gap:8px">
-          <button class="btn" id="dteModeSchema" type="button">Schema</button>
-          <button class="btn btn-secondary" id="dteModeRows" type="button">Rows</button>
+        <div class="dte-mode-toggle">
+          <button class="dte-mode-btn active" id="dteModeSchema" type="button">Schema</button>
+          <button class="dte-mode-btn" id="dteModeRows" type="button">Rows</button>
         </div>
       </div>
     </div>
@@ -145,7 +243,7 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
             <div class="dt-status" id="dteRowHint" style="margin-bottom:8px">
               Edit any value. If key changes, save performs create new row + delete old row.
             </div>
-            <div id="dteRowFields" class="dt-controls"></div>
+            <div id="dteRowFields"></div>
           </div>
         </div>
       </div>
@@ -202,13 +300,13 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     $schemaSaveBtn.hidden = !isSchema;
     $rowSaveBtn.hidden = isSchema;
 
-    $modeSchemaBtn.className = isSchema ? "btn" : "btn btn-secondary";
-    $modeRowsBtn.className = isSchema ? "btn btn-secondary" : "btn";
+    $modeSchemaBtn.classList.toggle("active", isSchema);
+    $modeRowsBtn.classList.toggle("active", !isSchema);
 
     validateSchemaSave();
     validateRowSave();
 
-    if (!isSchema && _currentTableId && !$rowsRefreshBtn.disabled && !$rowSelect.options.length) {
+    if (!isSchema && _currentTableId && !_rows.length) {
       loadRowsList();
     }
   }
@@ -366,20 +464,34 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       return;
     }
 
-    $rowFields.innerHTML = columns.map((col, idx) => {
+    const headerRow = columns.map((col) => {
+      const required = col.name === "key" ? " *" : "";
+      return `<th>${escapeHtml(col.title + required)}</th>`;
+    }).join("");
+
+    const valueRow = columns.map((col, idx) => {
       const isBool = col.type === "boolean";
       const isInt = col.type === "integer";
       const isNum = col.type === "number";
       const inputHtml = isBool
         ? `<label class="dtc-bool-wrap"><input type="checkbox" data-row-col="${escapeHtml(col.name)}" data-row-type="boolean" /><span class="dtc-bool-label">false</span></label>`
         : `<input class="dt-input" type="${isInt || isNum ? "number" : "text"}" ${isInt ? "step=\"1\"" : ""} ${isNum ? "step=\"any\"" : ""} data-row-col="${escapeHtml(col.name)}" data-row-type="${escapeHtml(col.type)}" autocomplete="off" />`;
-      return `
-        <div class="dt-control-group" style="min-width:220px">
-          <label class="dt-label" for="dte-row-${idx}">${escapeHtml(col.title)}${col.name === "key" ? " <span style=\"color:#f87171\">*</span>" : ""}</label>
-          <div id="dte-row-${idx}">${inputHtml}</div>
-        </div>
-      `;
+      const mobileLabel = `${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}`;
+      return `<td data-label="${mobileLabel}"><div id="dte-row-${idx}">${inputHtml}</div></td>`;
     }).join("");
+
+    $rowFields.innerHTML = `
+      <div class="dte-row-grid-wrap">
+        <table class="dte-row-grid">
+          <thead>
+            <tr>${headerRow}</tr>
+          </thead>
+          <tbody>
+            <tr>${valueRow}</tr>
+          </tbody>
+        </table>
+      </div>
+    `;
 
     columns.forEach((col) => {
       const input = $rowFields.querySelector(`[data-row-col="${CSS.escape(col.name)}"]`);
