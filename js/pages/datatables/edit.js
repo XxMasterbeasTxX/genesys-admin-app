@@ -177,6 +177,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
     <div class="dt-actions" id="dteActions" hidden>
       <button class="btn" id="dteSchemaSaveBtn" disabled>Save Schema</button>
+      <button class="btn btn-secondary" id="dteRowsUndoBtn" hidden disabled>Undo All</button>
       <button class="btn" id="dteRowsSaveBtn" hidden disabled>Save Changes</button>
     </div>
 
@@ -241,6 +242,9 @@ export default function renderEditDataTable({ me, api, orgContext }) {
           <div class="dt-control-group" style="align-self:flex-end">
             <button class="btn btn-secondary" id="dteRowsRefreshBtn" type="button" disabled>Refresh Rows</button>
           </div>
+          <div class="dt-control-group" style="align-self:flex-end">
+            <button class="btn" id="dteRowsAddBtn" type="button" disabled>Add Row</button>
+          </div>
         </div>
 
         <div class="dt-status" id="dteRowsSummary" style="margin-bottom:10px"></div>
@@ -260,6 +264,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
   const $modeRowsBtn = el.querySelector("#dteModeRows");
   const $actions = el.querySelector("#dteActions");
   const $schemaSaveBtn = el.querySelector("#dteSchemaSaveBtn");
+  const $rowsUndoBtn = el.querySelector("#dteRowsUndoBtn");
   const $rowsSaveBtn = el.querySelector("#dteRowsSaveBtn");
   const $status = el.querySelector("#dteStatus");
   const $form = el.querySelector("#dteForm");
@@ -276,6 +281,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
   const $rowsSearch = el.querySelector("#dteRowsSearch");
   const $rowsPageSize = el.querySelector("#dteRowsPageSize");
   const $rowsRefreshBtn = el.querySelector("#dteRowsRefreshBtn");
+  const $rowsAddBtn = el.querySelector("#dteRowsAddBtn");
   const $rowsSummary = el.querySelector("#dteRowsSummary");
   const $rowsGrid = el.querySelector("#dteRowsGrid");
   const $rowsPrevBtn = el.querySelector("#dteRowsPrevBtn");
@@ -308,6 +314,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
     $schemaMode.hidden = !isSchema;
     $rowsMode.hidden = isSchema;
     $schemaSaveBtn.hidden = !isSchema;
+    $rowsUndoBtn.hidden = isSchema;
     $rowsSaveBtn.hidden = isSchema;
 
     $modeSchemaBtn.classList.toggle("active", isSchema);
@@ -474,7 +481,10 @@ export default function renderEditDataTable({ me, api, orgContext }) {
   }
 
   function validateRowsSave() {
-    $rowsSaveBtn.disabled = !_currentTableId || _isLoadingTable || getDirtyRowsCount() === 0;
+    const disabled = !_currentTableId || _isLoadingTable || getDirtyRowsCount() === 0;
+    $rowsSaveBtn.disabled = disabled;
+    $rowsUndoBtn.disabled = disabled;
+    $rowsAddBtn.disabled = !_currentTableId || _isLoadingTable || !_rowsColumns.length;
   }
 
   function resetRowsModeUi() {
@@ -592,7 +602,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
       }).join("");
 
       const rowClass = model.isDirty ? "dte-row-dirty" : "";
-      const statusLabel = model.status || (model.isDirty ? "Pending changes" : "Clean");
+      const statusLabel = model.status || (model.isNew ? "New row" : (model.isDirty ? "Pending changes" : "Clean"));
 
       return `
         <tr class="${rowClass}">
@@ -648,11 +658,11 @@ export default function renderEditDataTable({ me, api, orgContext }) {
       model.data[colName] = target.value;
     }
 
-    model.isDirty = isRowDirty(model);
+    model.isDirty = model.isNew ? true : isRowDirty(model);
     if (model.isDirty && (!model.status || model.status === "Clean")) {
-      model.status = "Pending changes";
+      model.status = model.isNew ? "New row" : "Pending changes";
     }
-    if (!model.isDirty) {
+    if (!model.isDirty && !model.isNew) {
       model.status = "Clean";
     }
 
@@ -768,6 +778,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
           originalKey: String(row?.key ?? ""),
           originalData: cloneData(data),
           data,
+          isNew: false,
           isDirty: false,
           status: "Clean",
         };
@@ -929,6 +940,31 @@ export default function renderEditDataTable({ me, api, orgContext }) {
     await loadRowsList();
   });
 
+  $rowsAddBtn.addEventListener("click", () => {
+    if (!_currentTableId || !_rowsColumns.length) return;
+
+    const data = {};
+    for (const col of _rowsColumns) {
+      data[col.name] = col.type === "boolean" ? false : "";
+    }
+
+    const newModel = {
+      id: _nextRowId++,
+      originalKey: "",
+      originalData: cloneData(data),
+      data,
+      isNew: true,
+      isDirty: true,
+      status: "New row",
+    };
+
+    _rowsModels.unshift(newModel);
+    _rowsPage = 1;
+    renderRowsGrid();
+    validateRowsSave();
+    setStatus("New row added. Fill values and click Save Changes.");
+  });
+
   $rowsSearch.addEventListener("input", () => {
     _rowsSearchText = $rowsSearch.value.trim().toLowerCase();
     _rowsPage = 1;
@@ -955,6 +991,23 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
   $rowsGrid.addEventListener("input", onRowsGridInput);
   $rowsGrid.addEventListener("change", onRowsGridInput);
+
+  $rowsUndoBtn.addEventListener("click", () => {
+    if (!_rowsModels.length) return;
+
+    _rowsModels = _rowsModels
+      .filter((model) => !model.isNew)
+      .map((model) => {
+        model.data = cloneData(model.originalData);
+        model.isDirty = false;
+        model.status = "Clean";
+        return model;
+      });
+
+    renderRowsGrid();
+    validateRowsSave();
+    setStatus("All unsaved row changes were reverted.");
+  });
 
   $schemaSaveBtn.addEventListener("click", async () => {
     const orgId = orgContext.get();
@@ -1033,7 +1086,9 @@ export default function renderEditDataTable({ me, api, orgContext }) {
         const newKey = String(payload.key ?? "");
         const keyChanged = newKey !== oldKey;
 
-        if (keyChanged) {
+        if (model.isNew) {
+          await gc.createDataTableRow(api, orgId, _currentTableId, payload);
+        } else if (keyChanged) {
           await gc.createDataTableRow(api, orgId, _currentTableId, payload);
           await gc.deleteDataTableRow(api, orgId, _currentTableId, oldKey);
         } else {
@@ -1051,6 +1106,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
         model.originalKey = newKey;
         model.originalData = cloneData(model.data);
+        model.isNew = false;
         model.isDirty = false;
         model.status = "Saved";
         ok++;
