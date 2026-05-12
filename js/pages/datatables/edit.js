@@ -92,10 +92,32 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
       .dte-rows-toolbar {
         display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+
+      .dte-rows-primary,
+      .dte-rows-secondary {
+        display: flex;
         gap: 10px;
         align-items: flex-end;
         flex-wrap: wrap;
-        margin-bottom: 10px;
+      }
+
+      .dte-rows-primary {
+        flex: 1 1 560px;
+      }
+
+      .dte-rows-search-group {
+        min-width: 240px;
+        flex: 0 1 420px;
+      }
+
+      .dte-rows-secondary {
+        margin-left: auto;
       }
 
       .dte-pager {
@@ -227,26 +249,31 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
       <div id="dteRowsMode" hidden>
         <div class="dte-rows-toolbar">
-          <div class="dt-control-group" style="min-width:240px;flex:1">
-            <label class="dt-label" for="dteRowsSearch">Search all fields</label>
-            <input class="dt-input" id="dteRowsSearch" type="text" placeholder="Type to filter rows (e.g. +45)" autocomplete="off" />
+          <div class="dte-rows-primary">
+            <div class="dt-control-group dte-rows-search-group">
+              <label class="dt-label" for="dteRowsSearch">Search all fields</label>
+              <input class="dt-input" id="dteRowsSearch" type="text" placeholder="Type to filter rows (e.g. +45)" autocomplete="off" />
+            </div>
+            <div class="dt-control-group" style="align-self:flex-end">
+              <button class="btn" id="dteRowsAddBtn" type="button" disabled>Add Row</button>
+            </div>
+            <div class="dt-control-group" style="align-self:flex-end">
+              <button class="btn btn-secondary" id="dteRowsDeleteBtn" type="button" disabled>Delete Selected</button>
+            </div>
           </div>
-          <div class="dt-control-group" style="align-self:flex-end">
-            <button class="btn" id="dteRowsAddBtn" type="button" disabled>Add Row</button>
-          </div>
-          <div class="dt-control-group" style="align-self:flex-end">
-            <button class="btn btn-secondary" id="dteRowsDeleteBtn" type="button" disabled>Delete Selected</button>
-          </div>
-          <div class="dt-control-group" style="min-width:120px">
-            <label class="dt-label" for="dteRowsPageSize">Rows per page</label>
-            <select class="dt-select" id="dteRowsPageSize">
-              <option value="50">50</option>
-              <option value="100" selected>100</option>
-              <option value="200">200</option>
-            </select>
-          </div>
-          <div class="dt-control-group" style="align-self:flex-end">
-            <button class="btn btn-secondary" id="dteRowsRefreshBtn" type="button" disabled>Refresh Rows</button>
+
+          <div class="dte-rows-secondary">
+            <div class="dt-control-group" style="min-width:120px">
+              <label class="dt-label" for="dteRowsPageSize">Rows per page</label>
+              <select class="dt-select" id="dteRowsPageSize">
+                <option value="50">50</option>
+                <option value="100" selected>100</option>
+                <option value="200">200</option>
+              </select>
+            </div>
+            <div class="dt-control-group" style="align-self:flex-end">
+              <button class="btn btn-secondary" id="dteRowsRefreshBtn" type="button" disabled>Refresh Rows</button>
+            </div>
           </div>
         </div>
 
