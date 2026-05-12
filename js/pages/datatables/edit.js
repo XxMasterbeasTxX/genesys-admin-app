@@ -231,6 +231,12 @@ export default function renderEditDataTable({ me, api, orgContext }) {
             <label class="dt-label" for="dteRowsSearch">Search all fields</label>
             <input class="dt-input" id="dteRowsSearch" type="text" placeholder="Type to filter rows (e.g. +45)" autocomplete="off" />
           </div>
+          <div class="dt-control-group" style="align-self:flex-end">
+            <button class="btn" id="dteRowsAddBtn" type="button" disabled>Add Row</button>
+          </div>
+          <div class="dt-control-group" style="align-self:flex-end">
+            <button class="btn btn-secondary" id="dteRowsDeleteBtn" type="button" disabled>Delete Selected</button>
+          </div>
           <div class="dt-control-group" style="min-width:120px">
             <label class="dt-label" for="dteRowsPageSize">Rows per page</label>
             <select class="dt-select" id="dteRowsPageSize">
@@ -241,9 +247,6 @@ export default function renderEditDataTable({ me, api, orgContext }) {
           </div>
           <div class="dt-control-group" style="align-self:flex-end">
             <button class="btn btn-secondary" id="dteRowsRefreshBtn" type="button" disabled>Refresh Rows</button>
-          </div>
-          <div class="dt-control-group" style="align-self:flex-end">
-            <button class="btn" id="dteRowsAddBtn" type="button" disabled>Add Row</button>
           </div>
         </div>
 
@@ -282,6 +285,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
   const $rowsPageSize = el.querySelector("#dteRowsPageSize");
   const $rowsRefreshBtn = el.querySelector("#dteRowsRefreshBtn");
   const $rowsAddBtn = el.querySelector("#dteRowsAddBtn");
+  const $rowsDeleteBtn = el.querySelector("#dteRowsDeleteBtn");
   const $rowsSummary = el.querySelector("#dteRowsSummary");
   const $rowsGrid = el.querySelector("#dteRowsGrid");
   const $rowsPrevBtn = el.querySelector("#dteRowsPrevBtn");
@@ -301,6 +305,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
   let _rowsSearchText = "";
   let _rowsPageSizeValue = 100;
   let _rowsPage = 1;
+  let _selectedRowIds = new Set();
 
   function setStatus(msg, type = "") {
     $status.textContent = msg;
@@ -485,6 +490,10 @@ export default function renderEditDataTable({ me, api, orgContext }) {
     $rowsSaveBtn.disabled = disabled;
     $rowsUndoBtn.disabled = disabled;
     $rowsAddBtn.disabled = !_currentTableId || _isLoadingTable || !_rowsColumns.length;
+    $rowsDeleteBtn.disabled = !_currentTableId || _isLoadingTable || _selectedRowIds.size === 0;
+    $rowsDeleteBtn.textContent = _selectedRowIds.size > 0
+      ? `Delete Selected (${_selectedRowIds.size})`
+      : "Delete Selected";
   }
 
   function resetRowsModeUi() {
@@ -493,6 +502,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
     _nextRowId = 1;
     _rowsSearchText = "";
     _rowsPage = 1;
+    _selectedRowIds = new Set();
     $rowsSearch.value = "";
     $rowsGrid.innerHTML = "";
     $rowsSummary.textContent = "";
@@ -547,7 +557,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
   function updateRowsSummary(filteredCount, totalCount) {
     const dirty = getDirtyRowsCount();
-    $rowsSummary.textContent = `Showing ${filteredCount} of ${totalCount} row(s). Dirty rows: ${dirty}.`;
+    $rowsSummary.textContent = `Showing ${filteredCount} of ${totalCount} row(s). Dirty rows: ${dirty}. Selected rows: ${_selectedRowIds.size}.`;
   }
 
   function renderRowsGrid() {
@@ -576,6 +586,8 @@ export default function renderEditDataTable({ me, api, orgContext }) {
       .map(col => `<th>${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}</th>`)
       .join("");
 
+    const allSelectedOnPage = pageRows.length > 0 && pageRows.every(m => _selectedRowIds.has(m.id));
+
     const body = pageRows.map((model) => {
       const tds = _rowsColumns.map((col, idx) => {
         const value = model.data[col.name];
@@ -603,9 +615,13 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
       const rowClass = model.isDirty ? "dte-row-dirty" : "";
       const statusLabel = model.status || (model.isNew ? "New row" : (model.isDirty ? "Pending changes" : "Clean"));
+      const selected = _selectedRowIds.has(model.id) ? "checked" : "";
 
       return `
         <tr class="${rowClass}">
+          <td data-label="Select">
+            <input type="checkbox" data-row-select-id="${model.id}" ${selected} />
+          </td>
           ${tds}
           <td data-label="Status"><span class="dte-row-status">${escapeHtml(statusLabel)}</span></td>
         </tr>
@@ -617,6 +633,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
         <table class="dte-row-grid">
           <thead>
             <tr>
+              <th><input type="checkbox" data-select-all-page="1" ${allSelectedOnPage ? "checked" : ""} /></th>
               ${header}
               <th>Status</th>
             </tr>
@@ -642,6 +659,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
   function onRowsGridInput(evt) {
     const target = evt.target;
     if (!target || !target.dataset) return;
+    if (target.dataset.rowSelectId || target.dataset.selectAllPage) return;
     if (!target.dataset.rowId || !target.dataset.colName) return;
 
     const model = getModelById(target.dataset.rowId);
@@ -671,6 +689,33 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
     const tr = target.closest("tr");
     if (tr) tr.classList.toggle("dte-row-dirty", model.isDirty);
+  }
+
+  function onRowsGridSelectionChange(evt) {
+    const target = evt.target;
+    if (!target || !target.dataset) return;
+
+    if (target.dataset.rowSelectId) {
+      const id = Number(target.dataset.rowSelectId);
+      if (target.checked) _selectedRowIds.add(id);
+      else _selectedRowIds.delete(id);
+      updateRowsSummary(getFilteredRows().length, _rowsModels.length);
+      validateRowsSave();
+      return;
+    }
+
+    if (target.dataset.selectAllPage) {
+      const all = getFilteredRows();
+      const start = (_rowsPage - 1) * _rowsPageSizeValue;
+      const end = start + _rowsPageSizeValue;
+      const pageRows = all.slice(start, end);
+      for (const model of pageRows) {
+        if (target.checked) _selectedRowIds.add(model.id);
+        else _selectedRowIds.delete(model.id);
+      }
+      renderRowsGrid();
+      return;
+    }
   }
 
   function parseRowPayload(model) {
@@ -786,6 +831,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
       _rowsSearchText = "";
       _rowsPage = 1;
+      _selectedRowIds = new Set();
       $rowsSearch.value = "";
 
       renderRowsGrid();
@@ -991,6 +1037,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
   $rowsGrid.addEventListener("input", onRowsGridInput);
   $rowsGrid.addEventListener("change", onRowsGridInput);
+  $rowsGrid.addEventListener("change", onRowsGridSelectionChange);
 
   $rowsUndoBtn.addEventListener("click", () => {
     if (!_rowsModels.length) return;
@@ -1004,9 +1051,73 @@ export default function renderEditDataTable({ me, api, orgContext }) {
         return model;
       });
 
+    _selectedRowIds = new Set();
+
     renderRowsGrid();
     validateRowsSave();
     setStatus("All unsaved row changes were reverted.");
+  });
+
+  $rowsDeleteBtn.addEventListener("click", async () => {
+    const orgId = orgContext.get();
+    if (!orgId) { setStatus("No org selected.", "error"); return; }
+    if (!_currentTableId) { setStatus("No table loaded.", "error"); return; }
+    if (_selectedRowIds.size === 0) return;
+
+    const selected = _rowsModels.filter(m => _selectedRowIds.has(m.id));
+    if (!selected.length) return;
+
+    const accepted = window.confirm(`Delete ${selected.length} selected row(s)?`);
+    if (!accepted) return;
+
+    $rowsDeleteBtn.disabled = true;
+    setStatus(`Deleting ${selected.length} row(s)…`);
+
+    let ok = 0;
+    let fail = 0;
+    const keepIds = new Set();
+
+    for (const model of selected) {
+      if (model.isNew) {
+        ok++;
+        continue;
+      }
+
+      try {
+        const keyToDelete = String(model.originalKey || model.data.key || "").trim();
+        if (!keyToDelete) throw new Error("Missing row key for delete.");
+        await gc.deleteDataTableRow(api, orgId, _currentTableId, keyToDelete);
+        ok++;
+      } catch (err) {
+        model.status = `Error: ${err.message}`;
+        keepIds.add(model.id);
+        fail++;
+      }
+    }
+
+    _rowsModels = _rowsModels.filter((m) => {
+      if (!_selectedRowIds.has(m.id)) return true;
+      return keepIds.has(m.id);
+    });
+    _selectedRowIds = keepIds;
+
+    if (fail === 0) {
+      setStatus(`✓ Deleted ${ok} row(s).`, "success");
+    } else {
+      setStatus(`Deleted ${ok} row(s), ${fail} failed.`, "error");
+    }
+
+    renderRowsGrid();
+    validateRowsSave();
+
+    logAction({
+      me,
+      orgId,
+      action: "datatable_edit",
+      description: `Deleted selected rows in '${_currentTable?.name || _currentTableId}'. Success: ${ok}, Failed: ${fail}`,
+      result: fail ? "failure" : "success",
+      errorMessage: fail ? `${fail} row(s) failed to delete` : undefined,
+    });
   });
 
   $schemaSaveBtn.addEventListener("click", async () => {
