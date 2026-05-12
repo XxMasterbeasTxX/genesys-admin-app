@@ -440,13 +440,33 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       setProgress(40);
 
       const full = source._full;
+      const sourceRequest = full.config?.request || {};
+      const sourceResponse = full.config?.response || {};
       const body = {
         name: newName,
         category: categoryVal || full.category || "",
         integrationId: targetIntegId,
         secure: full.secure || false,
         contract: full.contract,
-        config: full.config,
+        config: {
+          request: {
+            requestType:        sourceRequest.requestType || "GET",
+            requestUrlTemplate: sourceRequest.requestUrlTemplate || "",
+            requestTemplate:    sourceRequest.requestTemplate || "",
+            headers:            sourceRequest.headers && Object.keys(sourceRequest.headers).length
+              ? sourceRequest.headers
+              : {},
+          },
+          response: {
+            translationMap:         sourceResponse.translationMap && Object.keys(sourceResponse.translationMap).length
+              ? sourceResponse.translationMap
+              : {},
+            translationMapDefaults: sourceResponse.translationMapDefaults && Object.keys(sourceResponse.translationMapDefaults).length
+              ? sourceResponse.translationMapDefaults
+              : {},
+            successTemplate:        sourceResponse.successTemplate || "",
+          },
+        },
       };
 
       // 3. Create action in destination (draft or published)
