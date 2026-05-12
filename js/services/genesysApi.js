@@ -684,6 +684,20 @@ export async function createDataTableRow(api, orgId, tableId, row) {
     `/api/v2/flows/datatables/${tableId}/rows`, { body: row });
 }
 
+/** Replace a single row in a data table by row key. */
+export async function putDataTableRow(api, orgId, tableId, rowKey, row) {
+  const key = encodeURIComponent(String(rowKey ?? ""));
+  return api.proxyGenesys(orgId, "PUT",
+    `/api/v2/flows/datatables/${tableId}/rows/${key}`, { body: row });
+}
+
+/** Delete a single row from a data table by row key. */
+export async function deleteDataTableRow(api, orgId, tableId, rowKey) {
+  const key = encodeURIComponent(String(rowKey ?? ""));
+  return api.proxyGenesys(orgId, "DELETE",
+    `/api/v2/flows/datatables/${tableId}/rows/${key}`);
+}
+
 /** Fetch rows from a data table. Add query.showbrief = "false" for full rows. */
 export async function fetchDataTableRows(api, orgId, tableId, opts = {}) {
   return fetchAllPages(api, orgId,

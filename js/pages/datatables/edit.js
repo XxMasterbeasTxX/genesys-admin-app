@@ -43,7 +43,7 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     <h2>Data Tables — Edit</h2>
     <p class="page-desc">
       Edit an existing data table in the selected org.
-      Select a table, then modify Name, Division, Description, or schema columns.
+      Use Schema mode for table structure, or Rows mode for row values.
     </p>
 
     <!-- Table picker -->
@@ -59,9 +59,21 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       </div>
     </div>
 
+    <!-- Mode switch -->
+    <div class="dt-controls" style="margin-bottom:12px">
+      <div class="dt-control-group">
+        <label class="dt-label">Edit Mode</label>
+        <div class="dt-actions" style="gap:8px">
+          <button class="btn" id="dteModeSchema" type="button">Schema</button>
+          <button class="btn btn-secondary" id="dteModeRows" type="button">Rows</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Top action buttons -->
     <div class="dt-actions" id="dteActions" hidden>
-      <button class="btn" id="dteSaveBtn" disabled>Save</button>
+      <button class="btn" id="dteSchemaSaveBtn" disabled>Save Schema</button>
+      <button class="btn" id="dteRowSaveBtn" hidden disabled>Save Row</button>
     </div>
 
     <!-- Status -->
@@ -71,82 +83,155 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     <div id="dteForm" hidden>
       <hr class="hr" style="margin-bottom:18px">
 
-      <!-- Core fields -->
-      <div class="dt-controls">
-        <div class="dt-control-group">
-          <label class="dt-label" for="dteName">Name <span style="color:#f87171">*</span></label>
-          <input class="dt-input" id="dteName" type="text" placeholder="e.g. AgentSkillMatrix" autocomplete="off" />
+      <!-- Schema mode -->
+      <div id="dteSchemaMode">
+        <div class="dt-controls">
+          <div class="dt-control-group">
+            <label class="dt-label" for="dteName">Name <span style="color:#f87171">*</span></label>
+            <input class="dt-input" id="dteName" type="text" placeholder="e.g. AgentSkillMatrix" autocomplete="off" />
+          </div>
+          <div class="dt-control-group">
+            <label class="dt-label" for="dteDivision">Division <span style="color:#f87171">*</span></label>
+            <select class="dt-select" id="dteDivision">
+              <option value="">Loading divisions…</option>
+            </select>
+          </div>
+          <div class="dt-control-group">
+            <label class="dt-label" for="dteDescription">Description</label>
+            <input class="dt-input" id="dteDescription" type="text" placeholder="Optional description" autocomplete="off" />
+          </div>
+          <div class="dt-control-group">
+            <label class="dt-label" for="dteKey">Key</label>
+            <input class="dt-input" id="dteKey" type="text" readonly style="opacity:0.6;cursor:not-allowed" />
+            <span class="dt-field-hint">Primary key column — cannot be changed on an existing table.</span>
+          </div>
         </div>
-        <div class="dt-control-group">
-          <label class="dt-label" for="dteDivision">Division <span style="color:#f87171">*</span></label>
-          <select class="dt-select" id="dteDivision">
-            <option value="">Loading divisions…</option>
-          </select>
-        </div>
-        <div class="dt-control-group">
-          <label class="dt-label" for="dteDescription">Description</label>
-          <input class="dt-input" id="dteDescription" type="text" placeholder="Optional description" autocomplete="off" />
-        </div>
-        <div class="dt-control-group">
-          <label class="dt-label" for="dteKey">Key</label>
-          <input class="dt-input" id="dteKey" type="text" readonly style="opacity:0.6;cursor:not-allowed" />
-          <span class="dt-field-hint">Primary key column — cannot be changed on an existing table.</span>
+
+        <div class="dtc-schema-section">
+          <div class="dtc-schema-header">
+            <span class="dt-label">Schema Columns</span>
+          </div>
+          <div class="dtc-schema-cols-header">
+            <span></span>
+            <span class="dtc-col-label">Column Name</span>
+            <span class="dtc-col-label">Type</span>
+            <span class="dtc-col-label">Default</span>
+            <span></span>
+          </div>
+          <div id="dteSchemaRows"></div>
+          <button class="btn btn-sm dtc-add-btn" id="dteAddSchemaRow" style="margin-top:8px">+ Add column</button>
         </div>
       </div>
 
-      <!-- Schema columns -->
-      <div class="dtc-schema-section">
-        <div class="dtc-schema-header">
-          <span class="dt-label">Schema Columns</span>
+      <!-- Rows mode -->
+      <div id="dteRowsMode" hidden>
+        <div class="dt-controls" style="margin-bottom:12px">
+          <div class="dt-control-group" style="flex:1;max-width:420px">
+            <label class="dt-label" for="dteRowSelect">Row</label>
+            <select class="dt-select" id="dteRowSelect">
+              <option value="">Load a table first…</option>
+            </select>
+          </div>
+          <div class="dt-control-group" style="align-self:flex-end">
+            <button class="btn btn-secondary" id="dteRowsRefreshBtn" type="button" disabled>Refresh Rows</button>
+          </div>
         </div>
-        <div class="dtc-schema-cols-header">
-          <span></span>
-          <span class="dtc-col-label">Column Name</span>
-          <span class="dtc-col-label">Type</span>
-          <span class="dtc-col-label">Default</span>
-          <span></span>
+
+        <div id="dteRowEditor" hidden>
+          <div class="dtc-schema-section">
+            <div class="dtc-schema-header">
+              <span class="dt-label">Row Values</span>
+            </div>
+            <div class="dt-status" id="dteRowHint" style="margin-bottom:8px">
+              Edit any value. If key changes, save performs create new row + delete old row.
+            </div>
+            <div id="dteRowFields" class="dt-controls"></div>
+          </div>
         </div>
-        <div id="dteRows"></div>
-        <button class="btn btn-sm dtc-add-btn" id="dteAddRow" style="margin-top:8px">+ Add column</button>
       </div>
     </div>
   `;
 
-  // ── Refs ───────────────────────────────────────────────────────
-  const $tableSelect  = el.querySelector("#dteTableSelect");
-  const $loadBtn      = el.querySelector("#dteLoadBtn");
-  const $actions      = el.querySelector("#dteActions");
-  const $saveBtn      = el.querySelector("#dteSaveBtn");
-  const $status       = el.querySelector("#dteStatus");
-  const $form         = el.querySelector("#dteForm");
-  const $name         = el.querySelector("#dteName");
-  const $division     = el.querySelector("#dteDivision");
-  const $description  = el.querySelector("#dteDescription");
-  const $key          = el.querySelector("#dteKey");
-  const $rowsContainer= el.querySelector("#dteRows");
-  const $addRowBtn    = el.querySelector("#dteAddRow");
+  const $tableSelect = el.querySelector("#dteTableSelect");
+  const $loadBtn = el.querySelector("#dteLoadBtn");
+  const $modeSchemaBtn = el.querySelector("#dteModeSchema");
+  const $modeRowsBtn = el.querySelector("#dteModeRows");
+  const $actions = el.querySelector("#dteActions");
+  const $schemaSaveBtn = el.querySelector("#dteSchemaSaveBtn");
+  const $rowSaveBtn = el.querySelector("#dteRowSaveBtn");
+  const $status = el.querySelector("#dteStatus");
+  const $form = el.querySelector("#dteForm");
+  const $schemaMode = el.querySelector("#dteSchemaMode");
+  const $rowsMode = el.querySelector("#dteRowsMode");
+
+  const $name = el.querySelector("#dteName");
+  const $division = el.querySelector("#dteDivision");
+  const $description = el.querySelector("#dteDescription");
+  const $key = el.querySelector("#dteKey");
+  const $schemaRowsContainer = el.querySelector("#dteSchemaRows");
+  const $addSchemaRowBtn = el.querySelector("#dteAddSchemaRow");
+
+  const $rowSelect = el.querySelector("#dteRowSelect");
+  const $rowsRefreshBtn = el.querySelector("#dteRowsRefreshBtn");
+  const $rowEditor = el.querySelector("#dteRowEditor");
+  const $rowFields = el.querySelector("#dteRowFields");
 
   let divisionsLoaded = false;
-  let rowCounter = 0;
+  let schemaRowCounter = 0;
+  let _mode = "schema";
   let _currentTableId = null;
-  let _currentTable   = null;
+  let _currentTable = null;
+  let _rows = [];
+  let _currentRowOriginalKey = "";
 
-  // ── Helpers ────────────────────────────────────────────────────
   function setStatus(msg, type = "") {
     $status.textContent = msg;
     $status.className = "dt-status" + (type ? ` dt-status--${type}` : "");
   }
 
-  function validateSave() {
+  function getSafeRowKey(row) {
+    return String(row?.key ?? "");
+  }
+
+  function setMode(nextMode) {
+    _mode = nextMode === "rows" ? "rows" : "schema";
+
+    const isSchema = _mode === "schema";
+    $schemaMode.hidden = !isSchema;
+    $rowsMode.hidden = isSchema;
+    $schemaSaveBtn.hidden = !isSchema;
+    $rowSaveBtn.hidden = isSchema;
+
+    $modeSchemaBtn.className = isSchema ? "btn" : "btn btn-secondary";
+    $modeRowsBtn.className = isSchema ? "btn btn-secondary" : "btn";
+
+    validateSchemaSave();
+    validateRowSave();
+
+    if (!isSchema && _currentTableId && !$rowsRefreshBtn.disabled && !$rowSelect.options.length) {
+      loadRowsList();
+    }
+  }
+
+  function validateSchemaSave() {
     const ok = $name.value.trim() !== ""
       && $division.value !== ""
       && divisionsLoaded
       && _currentTableId;
-    $saveBtn.disabled = !ok;
+    $schemaSaveBtn.disabled = !ok;
   }
 
-  function makeRowId() {
-    return `dterow-${++rowCounter}`;
+  function validateRowSave() {
+    if (_mode !== "rows") {
+      $rowSaveBtn.disabled = true;
+      return;
+    }
+    const keyInput = $rowFields.querySelector('[data-row-col="key"]');
+    $rowSaveBtn.disabled = !(_currentTableId && keyInput && keyInput.value.trim() !== "");
+  }
+
+  function makeSchemaRowId() {
+    return `dterow-${++schemaRowCounter}`;
   }
 
   function makeDefaultInput(type) {
@@ -195,7 +280,7 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
   }
 
   function addSchemaRow(prefillName = "", prefillType = "", prefillDefault = undefined) {
-    const id = makeRowId();
+    const id = makeSchemaRowId();
     const row = document.createElement("div");
     row.className = "dtc-schema-row";
     row.id = id;
@@ -227,17 +312,16 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       row.querySelector(".dtc-col-default-wrap").innerHTML = makeDefaultInput(e.target.value);
       wireDefaultHandlers(row);
     });
-    $rowsContainer.appendChild(row);
+    $schemaRowsContainer.appendChild(row);
     if (!prefillName) row.querySelector(".dtc-col-name").focus();
   }
 
   function collectSchema(keyTitle) {
     const properties = {};
-
-    properties["key"] = { title: keyTitle, type: "string" };
+    properties.key = { title: keyTitle, type: "string" };
 
     let displayOrder = 0;
-    $rowsContainer.querySelectorAll(".dtc-schema-row").forEach(row => {
+    $schemaRowsContainer.querySelectorAll(".dtc-schema-row").forEach(row => {
       const name = row.querySelector(".dtc-col-name").value.trim();
       const type = row.querySelector(".dtc-col-type").value;
       if (!name) return;
@@ -263,7 +347,112 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     };
   }
 
-  // ── Load divisions ─────────────────────────────────────────────
+  function getOrderedSchemaColumns() {
+    const props = _currentTable?.schema?.properties || {};
+    const cols = Object.entries(props).map(([name, def]) => ({
+      name,
+      title: def?.title || name,
+      type: def?.type || "string",
+      order: name === "key" ? -1 : (def?.displayOrder ?? 9999),
+    }));
+    cols.sort((a, b) => a.order - b.order);
+    return cols;
+  }
+
+  function renderRowEditor(row) {
+    const columns = getOrderedSchemaColumns();
+    if (!columns.length) {
+      $rowEditor.hidden = true;
+      return;
+    }
+
+    $rowFields.innerHTML = columns.map((col, idx) => {
+      const isBool = col.type === "boolean";
+      const isInt = col.type === "integer";
+      const isNum = col.type === "number";
+      const inputHtml = isBool
+        ? `<label class="dtc-bool-wrap"><input type="checkbox" data-row-col="${escapeHtml(col.name)}" data-row-type="boolean" /><span class="dtc-bool-label">false</span></label>`
+        : `<input class="dt-input" type="${isInt || isNum ? "number" : "text"}" ${isInt ? "step=\"1\"" : ""} ${isNum ? "step=\"any\"" : ""} data-row-col="${escapeHtml(col.name)}" data-row-type="${escapeHtml(col.type)}" autocomplete="off" />`;
+      return `
+        <div class="dt-control-group" style="min-width:220px">
+          <label class="dt-label" for="dte-row-${idx}">${escapeHtml(col.title)}${col.name === "key" ? " <span style=\"color:#f87171\">*</span>" : ""}</label>
+          <div id="dte-row-${idx}">${inputHtml}</div>
+        </div>
+      `;
+    }).join("");
+
+    columns.forEach((col) => {
+      const input = $rowFields.querySelector(`[data-row-col="${CSS.escape(col.name)}"]`);
+      if (!input) return;
+      const currentValue = row?.[col.name];
+      if (col.type === "boolean") {
+        input.checked = currentValue === true;
+        if (input.nextElementSibling) {
+          input.nextElementSibling.textContent = input.checked ? "true" : "false";
+        }
+        input.addEventListener("change", () => {
+          if (input.nextElementSibling) {
+            input.nextElementSibling.textContent = input.checked ? "true" : "false";
+          }
+          validateRowSave();
+        });
+      } else {
+        input.value = currentValue === undefined || currentValue === null ? "" : String(currentValue);
+        input.addEventListener("input", validateRowSave);
+      }
+    });
+
+    $rowEditor.hidden = false;
+    validateRowSave();
+  }
+
+  function parseInputValue(type, input) {
+    if (type === "boolean") return !!input.checked;
+
+    const raw = input.value.trim();
+    if (type === "integer") {
+      if (raw === "") return null;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) throw new Error("Integer field contains an invalid number.");
+      return Math.trunc(parsed);
+    }
+
+    if (type === "number") {
+      if (raw === "") return null;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) throw new Error("Decimal field contains an invalid number.");
+      return parsed;
+    }
+
+    return raw;
+  }
+
+  function collectRowPayload() {
+    const payload = {};
+    const inputs = $rowFields.querySelectorAll("[data-row-col]");
+    inputs.forEach((input) => {
+      const col = input.dataset.rowCol;
+      const type = input.dataset.rowType || "string";
+      payload[col] = parseInputValue(type, input);
+    });
+
+    if (!payload.key || String(payload.key).trim() === "") {
+      throw new Error("Key is required for a row.");
+    }
+    payload.key = String(payload.key).trim();
+    return payload;
+  }
+
+  function resetRowsModeUi() {
+    _rows = [];
+    _currentRowOriginalKey = "";
+    $rowSelect.innerHTML = `<option value="">Load a table first…</option>`;
+    $rowEditor.hidden = true;
+    $rowFields.innerHTML = "";
+    $rowsRefreshBtn.disabled = true;
+    validateRowSave();
+  }
+
   async function loadDivisions() {
     const orgId = orgContext.get();
     if (!orgId) {
@@ -286,7 +475,6 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     }
   }
 
-  // ── Load tables list ───────────────────────────────────────────
   async function loadTablesList() {
     const orgId = orgContext.get();
     if (!orgId) {
@@ -310,10 +498,63 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     }
   }
 
-  // ── Table picker events ────────────────────────────────────────
+  async function loadRowsList(preferredKey = "") {
+    const orgId = orgContext.get();
+    if (!orgId || !_currentTableId) return;
+
+    $rowsRefreshBtn.disabled = true;
+    $rowSaveBtn.disabled = true;
+    setStatus("Loading rows…");
+
+    try {
+      const rows = await gc.fetchDataTableRows(api, orgId, _currentTableId, {
+        query: { showbrief: "false" },
+      });
+      _rows = Array.isArray(rows) ? rows.slice() : [];
+      _rows.sort((a, b) => getSafeRowKey(a).localeCompare(getSafeRowKey(b), undefined, { sensitivity: "base" }));
+
+      if (!_rows.length) {
+        $rowSelect.innerHTML = `<option value="">No rows found in this table</option>`;
+        $rowEditor.hidden = true;
+        $rowFields.innerHTML = "";
+        _currentRowOriginalKey = "";
+        setStatus("This table has no rows yet.");
+        return;
+      }
+
+      $rowSelect.innerHTML = `<option value="">Select a row by key…</option>`
+        + _rows.map((row) => {
+          const keyVal = getSafeRowKey(row);
+          return `<option value="${escapeHtml(keyVal)}">${escapeHtml(keyVal)}</option>`;
+        }).join("");
+
+      const nextKey = preferredKey && _rows.some(r => getSafeRowKey(r) === preferredKey)
+        ? preferredKey
+        : getSafeRowKey(_rows[0]);
+
+      $rowSelect.value = nextKey;
+      const active = _rows.find(r => getSafeRowKey(r) === nextKey) || _rows[0];
+      _currentRowOriginalKey = getSafeRowKey(active);
+      renderRowEditor(active);
+      setStatus(`Loaded ${_rows.length} row(s).`, "success");
+    } catch (err) {
+      setStatus(`Failed to load rows: ${err.message}`, "error");
+      $rowSelect.innerHTML = `<option value="">Failed to load rows</option>`;
+      $rowEditor.hidden = true;
+      $rowFields.innerHTML = "";
+      _currentRowOriginalKey = "";
+    } finally {
+      $rowsRefreshBtn.disabled = !_currentTableId;
+      validateRowSave();
+    }
+  }
+
   $tableSelect.addEventListener("change", () => {
     $loadBtn.disabled = !$tableSelect.value;
   });
+
+  $modeSchemaBtn.addEventListener("click", () => setMode("schema"));
+  $modeRowsBtn.addEventListener("click", () => setMode("rows"));
 
   $loadBtn.addEventListener("click", async () => {
     const orgId = orgContext.get();
@@ -325,66 +566,66 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     setStatus("Loading data table…");
 
     try {
-      // Fetch table + divisions in parallel
-      const [table, divsOk] = await Promise.all([
+      const [table] = await Promise.all([
         gc.getDataTable(api, orgId, tableId),
         divisionsLoaded ? true : loadDivisions(),
       ]);
 
       _currentTableId = tableId;
-      _currentTable   = table;
+      _currentTable = table;
 
-      // Populate form
-      $name.value        = table.name || "";
+      $name.value = table.name || "";
       $description.value = table.description || "";
-      $key.value         = table.schema?.properties?.key?.title || "key";
-
-      // Select division
+      $key.value = table.schema?.properties?.key?.title || "key";
       if (table.division?.id) {
         $division.value = table.division.id;
       }
 
-      // Populate schema columns (skip "key")
-      $rowsContainer.innerHTML = "";
+      $schemaRowsContainer.innerHTML = "";
       const props = table.schema?.properties || {};
-      const columns = Object.entries(props)
+      const schemaColumns = Object.entries(props)
         .filter(([k]) => k !== "key")
         .map(([k, v]) => ({ name: v.title || k, type: v.type, default: v.default, order: v.displayOrder ?? 9999 }))
         .sort((a, b) => a.order - b.order);
+      schemaColumns.forEach(col => addSchemaRow(col.name, col.type, col.default));
 
-      columns.forEach(col => {
-        addSchemaRow(col.name, col.type, col.default);
-      });
-
-      $form.hidden    = false;
+      $form.hidden = false;
       $actions.hidden = false;
-      validateSave();
-      setStatus("Edit the fields below and click Save.");
+      $rowsRefreshBtn.disabled = false;
+      validateSchemaSave();
+
+      if (_mode === "rows") {
+        await loadRowsList();
+        setStatus("Rows mode loaded. Edit values and click Save Row.");
+      } else {
+        setStatus("Schema mode loaded. Edit fields and click Save Schema.");
+      }
     } catch (err) {
       setStatus(`Failed to load data table: ${err.message}`, "error");
       _currentTableId = null;
-      _currentTable   = null;
+      _currentTable = null;
+      resetRowsModeUi();
     } finally {
       $loadBtn.disabled = !$tableSelect.value;
+      validateSchemaSave();
+      validateRowSave();
     }
   });
 
-  // ── Live validation ────────────────────────────────────────────
   [$name, $division].forEach(input => {
-    input.addEventListener("input",  validateSave);
-    input.addEventListener("change", validateSave);
+    input.addEventListener("input", validateSchemaSave);
+    input.addEventListener("change", validateSchemaSave);
   });
 
-  // ── Drag-to-reorder ────────────────────────────────────────────
   function initDragDrop() {
     let dragging = null;
 
     function clearIndicators() {
-      $rowsContainer.querySelectorAll(".dtc--drop-above, .dtc--drop-below")
+      $schemaRowsContainer.querySelectorAll(".dtc--drop-above, .dtc--drop-below")
         .forEach(r => r.classList.remove("dtc--drop-above", "dtc--drop-below"));
     }
 
-    $rowsContainer.addEventListener("dragstart", (e) => {
+    $schemaRowsContainer.addEventListener("dragstart", (e) => {
       const row = e.target.closest(".dtc-schema-row");
       if (!row) return;
       dragging = row;
@@ -392,7 +633,7 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       e.dataTransfer.effectAllowed = "move";
     });
 
-    $rowsContainer.addEventListener("dragover", (e) => {
+    $schemaRowsContainer.addEventListener("dragover", (e) => {
       e.preventDefault();
       const row = e.target.closest(".dtc-schema-row");
       if (!row || row === dragging) return;
@@ -401,59 +642,84 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       row.classList.add(e.clientY < rect.top + rect.height / 2 ? "dtc--drop-above" : "dtc--drop-below");
     });
 
-    $rowsContainer.addEventListener("dragleave", (e) => {
-      if (!$rowsContainer.contains(e.relatedTarget)) clearIndicators();
+    $schemaRowsContainer.addEventListener("dragleave", (e) => {
+      if (!$schemaRowsContainer.contains(e.relatedTarget)) clearIndicators();
     });
 
-    $rowsContainer.addEventListener("drop", (e) => {
+    $schemaRowsContainer.addEventListener("drop", (e) => {
       e.preventDefault();
       const target = e.target.closest(".dtc-schema-row");
       if (!target || target === dragging) { clearIndicators(); return; }
       const above = target.classList.contains("dtc--drop-above");
       clearIndicators();
       if (above) {
-        $rowsContainer.insertBefore(dragging, target);
+        $schemaRowsContainer.insertBefore(dragging, target);
       } else {
         target.insertAdjacentElement("afterend", dragging);
       }
     });
 
-    $rowsContainer.addEventListener("dragend", () => {
-      if (dragging) { dragging.classList.remove("dtc--dragging"); dragging.draggable = false; }
+    $schemaRowsContainer.addEventListener("dragend", () => {
+      if (dragging) {
+        dragging.classList.remove("dtc--dragging");
+        dragging.draggable = false;
+      }
       dragging = null;
       clearIndicators();
     });
   }
 
-  // ── Add column button ──────────────────────────────────────────
-  $addRowBtn.addEventListener("click", () => addSchemaRow());
+  $addSchemaRowBtn.addEventListener("click", () => addSchemaRow());
   initDragDrop();
 
-  // ── Save button ────────────────────────────────────────────────
-  $saveBtn.addEventListener("click", async () => {
+  $rowsRefreshBtn.addEventListener("click", async () => {
+    if (!_currentTableId) return;
+    const keep = $rowSelect.value;
+    await loadRowsList(keep);
+  });
+
+  $rowSelect.addEventListener("change", () => {
+    const keyVal = $rowSelect.value;
+    if (!keyVal) {
+      $rowEditor.hidden = true;
+      $rowFields.innerHTML = "";
+      _currentRowOriginalKey = "";
+      validateRowSave();
+      return;
+    }
+    const row = _rows.find(r => getSafeRowKey(r) === keyVal);
+    if (!row) {
+      setStatus("Selected row could not be found.", "error");
+      return;
+    }
+    _currentRowOriginalKey = getSafeRowKey(row);
+    renderRowEditor(row);
+    setStatus(`Editing row with key "${escapeHtml(_currentRowOriginalKey)}".`);
+  });
+
+  $schemaSaveBtn.addEventListener("click", async () => {
     const orgId = orgContext.get();
     if (!orgId) { setStatus("No org selected.", "error"); return; }
     if (!_currentTableId) { setStatus("No table loaded.", "error"); return; }
 
-    const name        = $name.value.trim();
-    const divisionId  = $division.value;
+    const name = $name.value.trim();
+    const divisionId = $division.value;
     const description = $description.value.trim();
-    const keyTitle    = $key.value.trim();
+    const keyTitle = $key.value.trim();
 
     if (!name || !divisionId) {
       setStatus("Name and Division are required.", "error");
       return;
     }
 
-    $saveBtn.disabled = true;
+    $schemaSaveBtn.disabled = true;
     $loadBtn.disabled = true;
-    setStatus("Saving data table…");
+    setStatus("Saving data table schema…");
 
     try {
       const schema = collectSchema(keyTitle);
-
       const body = {
-        id:   _currentTableId,
+        id: _currentTableId,
         name,
         description: description || undefined,
         division: { id: divisionId },
@@ -464,21 +730,105 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
 
       const divName = $division.options[$division.selectedIndex]?.text || divisionId;
       setStatus(`✓ Data table "${escapeHtml(name)}" saved successfully.`, "success");
-      logAction({ me, orgId, action: "datatable_edit",
-        description: `Edited data table '${name}' in division '${divName}'` });
+      logAction({
+        me,
+        orgId,
+        action: "datatable_edit",
+        description: `Edited data table '${name}' in division '${divName}'`,
+      });
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
-      logAction({ me, orgId, action: "datatable_edit",
+      logAction({
+        me,
+        orgId,
+        action: "datatable_edit",
         description: `Failed to edit data table '${$name.value.trim()}': ${err.message}`,
-        result: "failure", errorMessage: err.message });
+        result: "failure",
+        errorMessage: err.message,
+      });
     } finally {
       $loadBtn.disabled = !$tableSelect.value;
-      validateSave();
+      validateSchemaSave();
     }
   });
 
-  // ── Init: load table list on mount ─────────────────────────────
+  $rowSaveBtn.addEventListener("click", async () => {
+    const orgId = orgContext.get();
+    if (!orgId) { setStatus("No org selected.", "error"); return; }
+    if (!_currentTableId) { setStatus("No table loaded.", "error"); return; }
+    if (!_currentRowOriginalKey) { setStatus("No row selected.", "error"); return; }
+
+    let payload;
+    try {
+      payload = collectRowPayload();
+    } catch (err) {
+      setStatus(err.message, "error");
+      return;
+    }
+
+    const oldKey = _currentRowOriginalKey;
+    const newKey = String(payload.key);
+    const keyChanged = newKey !== oldKey;
+
+    if (keyChanged) {
+      const accepted = window.confirm(
+        `Key will change from "${oldKey}" to "${newKey}". This will create a new row and delete the old row. Continue?`
+      );
+      if (!accepted) return;
+    }
+
+    $rowSaveBtn.disabled = true;
+    $loadBtn.disabled = true;
+    $rowsRefreshBtn.disabled = true;
+    setStatus("Saving row…");
+
+    try {
+      if (keyChanged) {
+        await gc.createDataTableRow(api, orgId, _currentTableId, payload);
+        await gc.deleteDataTableRow(api, orgId, _currentTableId, oldKey);
+      } else {
+        try {
+          await gc.putDataTableRow(api, orgId, _currentTableId, oldKey, payload);
+        } catch (err) {
+          if (err?.status === 404 || err?.status === 405) {
+            await gc.deleteDataTableRow(api, orgId, _currentTableId, oldKey);
+            await gc.createDataTableRow(api, orgId, _currentTableId, payload);
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      await loadRowsList(newKey);
+      setStatus(`✓ Row saved successfully (key: "${escapeHtml(newKey)}").`, "success");
+      logAction({
+        me,
+        orgId,
+        action: "datatable_edit",
+        description: keyChanged
+          ? `Edited data table row key from '${oldKey}' to '${newKey}' in table '${_currentTable?.name || _currentTableId}'`
+          : `Edited data table row '${newKey}' in table '${_currentTable?.name || _currentTableId}'`,
+      });
+    } catch (err) {
+      setStatus(`Failed to save row: ${err.message}`, "error");
+      logAction({
+        me,
+        orgId,
+        action: "datatable_edit",
+        description: `Failed to edit data table row '${oldKey}': ${err.message}`,
+        result: "failure",
+        errorMessage: err.message,
+      });
+    } finally {
+      $loadBtn.disabled = !$tableSelect.value;
+      $rowsRefreshBtn.disabled = !_currentTableId;
+      validateRowSave();
+    }
+  });
+
   loadTablesList();
+  resetRowsModeUi();
+  setMode("schema");
 
   return el;
 }
