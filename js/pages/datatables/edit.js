@@ -1,41 +1,26 @@
 /**
  * Data Tables › Edit
  *
- * Edits an existing data table in the currently-selected customer org.
- *
- * Flow:
- *   1. User selects an org (via orgContext)
- *   2. Picks a data table from the dropdown → clicks "Load"
- *   3. Form populates with Name, Division, Description, Key (read-only),
- *      and schema columns (draggable)
- *   4. "Save" is enabled once Name + Division are non-empty
- *   5. On save: PUT /api/v2/flows/datatables/{tableId}
- *
- * API endpoints:
- *   GET  /api/v2/flows/datatables                 — list tables for picker
- *   GET  /api/v2/flows/datatables/{id}?expand=schema — fetch single table
- *   GET  /api/v2/authorization/divisions           — list divisions for dropdown
- *   PUT  /api/v2/flows/datatables/{id}             — update table
+ * Two modes:
+ *  - Schema: edit table metadata and schema columns
+ *  - Rows: edit multiple row values in a paged grid with full-table search
  */
 import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 
-// Column type options (alphabetical) → { label, jsonType }
 const COLUMN_TYPES = [
   { label: "Boolean", type: "boolean" },
-  { label: "Decimal", type: "number"  },
+  { label: "Decimal", type: "number" },
   { label: "Integer", type: "integer" },
-  { label: "String",  type: "string"  },
+  { label: "String", type: "string" },
 ];
 
 const TYPE_OPTIONS_HTML = COLUMN_TYPES
   .map(t => `<option value="${t.type}">${t.label}</option>`)
   .join("");
 
-// ── Page renderer ──────────────────────────────────────────────────
-
-export default function renderEditDataTable({ route, me, api, orgContext }) {
+export default function renderEditDataTable({ me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -74,7 +59,7 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       }
       .dte-row-grid {
         width: 100%;
-        min-width: 900px;
+        min-width: 980px;
         border-collapse: collapse;
         table-layout: fixed;
       }
@@ -96,6 +81,33 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       .dte-row-grid .dt-input {
         width: 100%;
         box-sizing: border-box;
+      }
+      .dte-row-grid tr.dte-row-dirty {
+        background: rgba(59,130,246,.08);
+      }
+      .dte-row-status {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .dte-rows-toolbar {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+
+      .dte-pager {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .dte-pager-info {
+        font-size: 12px;
+        color: var(--muted);
       }
 
       @media (max-width: 900px) {
@@ -141,23 +153,18 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     <h2>Data Tables — Edit</h2>
     <p class="page-desc">
       Edit an existing data table in the selected org.
-      Use Schema mode for table structure, or Rows mode for row values.
+      Use Schema mode for structure, or Rows mode for bulk value editing.
     </p>
 
-    <!-- Table picker -->
     <div class="dt-controls" style="margin-bottom:12px">
-      <div class="dt-control-group" style="flex:1;max-width:400px">
+      <div class="dt-control-group" style="flex:1;max-width:420px">
         <label class="dt-label" for="dteTableSelect">Data Table</label>
         <select class="dt-select" id="dteTableSelect">
           <option value="">Select a data table…</option>
         </select>
       </div>
-      <div class="dt-control-group" style="align-self:flex-end">
-        <button class="btn" id="dteLoadBtn" disabled>Load</button>
-      </div>
     </div>
 
-    <!-- Mode switch -->
     <div class="dt-controls" style="margin-bottom:12px">
       <div class="dt-control-group">
         <label class="dt-label">Edit Mode</label>
@@ -168,20 +175,16 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       </div>
     </div>
 
-    <!-- Top action buttons -->
     <div class="dt-actions" id="dteActions" hidden>
       <button class="btn" id="dteSchemaSaveBtn" disabled>Save Schema</button>
-      <button class="btn" id="dteRowSaveBtn" hidden disabled>Save Row</button>
+      <button class="btn" id="dteRowsSaveBtn" hidden disabled>Save Changes</button>
     </div>
 
-    <!-- Status -->
     <div class="dt-status" id="dteStatus"></div>
 
-    <!-- Expandable form -->
     <div id="dteForm" hidden>
       <hr class="hr" style="margin-bottom:18px">
 
-      <!-- Schema mode -->
       <div id="dteSchemaMode">
         <div class="dt-controls">
           <div class="dt-control-group">
@@ -221,13 +224,18 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
         </div>
       </div>
 
-      <!-- Rows mode -->
       <div id="dteRowsMode" hidden>
-        <div class="dt-controls" style="margin-bottom:12px">
-          <div class="dt-control-group" style="flex:1;max-width:420px">
-            <label class="dt-label" for="dteRowSelect">Row</label>
-            <select class="dt-select" id="dteRowSelect">
-              <option value="">Load a table first…</option>
+        <div class="dte-rows-toolbar">
+          <div class="dt-control-group" style="min-width:240px;flex:1">
+            <label class="dt-label" for="dteRowsSearch">Search all fields</label>
+            <input class="dt-input" id="dteRowsSearch" type="text" placeholder="Type to filter rows (e.g. +45)" autocomplete="off" />
+          </div>
+          <div class="dt-control-group" style="min-width:120px">
+            <label class="dt-label" for="dteRowsPageSize">Rows per page</label>
+            <select class="dt-select" id="dteRowsPageSize">
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="200">200</option>
             </select>
           </div>
           <div class="dt-control-group" style="align-self:flex-end">
@@ -235,28 +243,24 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
           </div>
         </div>
 
-        <div id="dteRowEditor" hidden>
-          <div class="dtc-schema-section">
-            <div class="dtc-schema-header">
-              <span class="dt-label">Row Values</span>
-            </div>
-            <div class="dt-status" id="dteRowHint" style="margin-bottom:8px">
-              Edit any value. If key changes, save performs create new row + delete old row.
-            </div>
-            <div id="dteRowFields"></div>
-          </div>
+        <div class="dt-status" id="dteRowsSummary" style="margin-bottom:10px"></div>
+        <div id="dteRowsGrid"></div>
+
+        <div class="dte-pager">
+          <button class="btn btn-secondary" id="dteRowsPrevBtn" type="button">Prev</button>
+          <button class="btn btn-secondary" id="dteRowsNextBtn" type="button">Next</button>
+          <span class="dte-pager-info" id="dteRowsPagerInfo"></span>
         </div>
       </div>
     </div>
   `;
 
   const $tableSelect = el.querySelector("#dteTableSelect");
-  const $loadBtn = el.querySelector("#dteLoadBtn");
   const $modeSchemaBtn = el.querySelector("#dteModeSchema");
   const $modeRowsBtn = el.querySelector("#dteModeRows");
   const $actions = el.querySelector("#dteActions");
   const $schemaSaveBtn = el.querySelector("#dteSchemaSaveBtn");
-  const $rowSaveBtn = el.querySelector("#dteRowSaveBtn");
+  const $rowsSaveBtn = el.querySelector("#dteRowsSaveBtn");
   const $status = el.querySelector("#dteStatus");
   const $form = el.querySelector("#dteForm");
   const $schemaMode = el.querySelector("#dteSchemaMode");
@@ -269,63 +273,52 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
   const $schemaRowsContainer = el.querySelector("#dteSchemaRows");
   const $addSchemaRowBtn = el.querySelector("#dteAddSchemaRow");
 
-  const $rowSelect = el.querySelector("#dteRowSelect");
+  const $rowsSearch = el.querySelector("#dteRowsSearch");
+  const $rowsPageSize = el.querySelector("#dteRowsPageSize");
   const $rowsRefreshBtn = el.querySelector("#dteRowsRefreshBtn");
-  const $rowEditor = el.querySelector("#dteRowEditor");
-  const $rowFields = el.querySelector("#dteRowFields");
+  const $rowsSummary = el.querySelector("#dteRowsSummary");
+  const $rowsGrid = el.querySelector("#dteRowsGrid");
+  const $rowsPrevBtn = el.querySelector("#dteRowsPrevBtn");
+  const $rowsNextBtn = el.querySelector("#dteRowsNextBtn");
+  const $rowsPagerInfo = el.querySelector("#dteRowsPagerInfo");
 
   let divisionsLoaded = false;
   let schemaRowCounter = 0;
   let _mode = "schema";
   let _currentTableId = null;
   let _currentTable = null;
-  let _rows = [];
-  let _currentRowOriginalKey = "";
+  let _isLoadingTable = false;
+
+  let _rowsColumns = [];
+  let _rowsModels = [];
+  let _nextRowId = 1;
+  let _rowsSearchText = "";
+  let _rowsPageSizeValue = 100;
+  let _rowsPage = 1;
 
   function setStatus(msg, type = "") {
     $status.textContent = msg;
     $status.className = "dt-status" + (type ? ` dt-status--${type}` : "");
   }
 
-  function getSafeRowKey(row) {
-    return String(row?.key ?? "");
-  }
-
   function setMode(nextMode) {
     _mode = nextMode === "rows" ? "rows" : "schema";
-
     const isSchema = _mode === "schema";
+
     $schemaMode.hidden = !isSchema;
     $rowsMode.hidden = isSchema;
     $schemaSaveBtn.hidden = !isSchema;
-    $rowSaveBtn.hidden = isSchema;
+    $rowsSaveBtn.hidden = isSchema;
 
     $modeSchemaBtn.classList.toggle("active", isSchema);
     $modeRowsBtn.classList.toggle("active", !isSchema);
 
     validateSchemaSave();
-    validateRowSave();
+    validateRowsSave();
 
-    if (!isSchema && _currentTableId && !_rows.length) {
+    if (!isSchema && _currentTableId && !_rowsModels.length) {
       loadRowsList();
     }
-  }
-
-  function validateSchemaSave() {
-    const ok = $name.value.trim() !== ""
-      && $division.value !== ""
-      && divisionsLoaded
-      && _currentTableId;
-    $schemaSaveBtn.disabled = !ok;
-  }
-
-  function validateRowSave() {
-    if (_mode !== "rows") {
-      $rowSaveBtn.disabled = true;
-      return;
-    }
-    const keyInput = $rowFields.querySelector('[data-row-col="key"]');
-    $rowSaveBtn.disabled = !(_currentTableId && keyInput && keyInput.value.trim() !== "");
   }
 
   function makeSchemaRowId() {
@@ -382,6 +375,7 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     const row = document.createElement("div");
     row.className = "dtc-schema-row";
     row.id = id;
+
     const initialType = prefillType || COLUMN_TYPES[0].type;
     row.innerHTML = `
       <div class="dtc-drag-handle" title="Drag to reorder">⠿</div>
@@ -390,11 +384,15 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       <div class="dtc-col-default-wrap">${makeDefaultInput(initialType)}</div>
       <button class="btn btn-sm dtc-del-btn" title="Remove column">×</button>
     `;
+
     row.querySelector(".dtc-drag-handle").addEventListener("mousedown", () => { row.draggable = true; });
     row.addEventListener("dragend", () => { row.draggable = false; });
+
     if (prefillName) row.querySelector(".dtc-col-name").value = prefillName;
     if (prefillType) row.querySelector(".dtc-col-type").value = prefillType;
+
     row.querySelector(".dtc-del-btn").addEventListener("click", () => row.remove());
+
     wireDefaultHandlers(row);
     if (prefillDefault !== undefined) {
       const boolInput = row.querySelector(".dtc-col-default-bool");
@@ -406,10 +404,12 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
         textInput.value = String(prefillDefault);
       }
     }
+
     row.querySelector(".dtc-col-type").addEventListener("change", (e) => {
       row.querySelector(".dtc-col-default-wrap").innerHTML = makeDefaultInput(e.target.value);
       wireDefaultHandlers(row);
     });
+
     $schemaRowsContainer.appendChild(row);
     if (!prefillName) row.querySelector(".dtc-col-name").focus();
   }
@@ -419,12 +419,14 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     properties.key = { title: keyTitle, type: "string" };
 
     let displayOrder = 0;
-    $schemaRowsContainer.querySelectorAll(".dtc-schema-row").forEach(row => {
+    $schemaRowsContainer.querySelectorAll(".dtc-schema-row").forEach((row) => {
       const name = row.querySelector(".dtc-col-name").value.trim();
       const type = row.querySelector(".dtc-col-type").value;
       if (!name) return;
+
       const prop = { title: name, type, displayOrder };
       displayOrder++;
+
       const boolInput = row.querySelector(".dtc-col-default-bool");
       const textInput = row.querySelector(".dtc-col-default");
       if (boolInput) {
@@ -433,6 +435,7 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
         const raw = textInput.value.trim();
         prop.default = (type === "integer" || type === "number") ? Number(raw) : raw;
       }
+
       properties[name] = prop;
     });
 
@@ -457,112 +460,250 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     return cols;
   }
 
-  function renderRowEditor(row) {
-    const columns = getOrderedSchemaColumns();
-    if (!columns.length) {
-      $rowEditor.hidden = true;
+  function validateSchemaSave() {
+    const ok = $name.value.trim() !== ""
+      && $division.value !== ""
+      && divisionsLoaded
+      && !!_currentTableId
+      && !_isLoadingTable;
+    $schemaSaveBtn.disabled = !ok;
+  }
+
+  function getDirtyRowsCount() {
+    return _rowsModels.filter(r => r.isDirty).length;
+  }
+
+  function validateRowsSave() {
+    $rowsSaveBtn.disabled = !_currentTableId || _isLoadingTable || getDirtyRowsCount() === 0;
+  }
+
+  function resetRowsModeUi() {
+    _rowsColumns = [];
+    _rowsModels = [];
+    _nextRowId = 1;
+    _rowsSearchText = "";
+    _rowsPage = 1;
+    $rowsSearch.value = "";
+    $rowsGrid.innerHTML = "";
+    $rowsSummary.textContent = "";
+    $rowsPagerInfo.textContent = "";
+    $rowsRefreshBtn.disabled = true;
+    validateRowsSave();
+  }
+
+  function buildUiValue(type, sourceValue) {
+    if (type === "boolean") return sourceValue === true;
+    if (type === "integer" || type === "number") {
+      return sourceValue === null || sourceValue === undefined ? "" : String(sourceValue);
+    }
+    return sourceValue === null || sourceValue === undefined ? "" : String(sourceValue);
+  }
+
+  function buildRowUiData(row) {
+    const data = {};
+    for (const col of _rowsColumns) {
+      data[col.name] = buildUiValue(col.type, row?.[col.name]);
+    }
+    if (!Object.prototype.hasOwnProperty.call(data, "key")) {
+      data.key = row?.key === null || row?.key === undefined ? "" : String(row.key);
+    }
+    return data;
+  }
+
+  function cloneData(data) {
+    return JSON.parse(JSON.stringify(data));
+  }
+
+  function isRowDirty(model) {
+    for (const col of _rowsColumns) {
+      const name = col.name;
+      if (model.data[name] !== model.originalData[name]) return true;
+    }
+    return false;
+  }
+
+  function getFilteredRows() {
+    if (!_rowsSearchText) return _rowsModels;
+    const q = _rowsSearchText.toLowerCase();
+    return _rowsModels.filter((model) => {
+      for (const col of _rowsColumns) {
+        const raw = model.data[col.name];
+        const txt = String(raw ?? "").toLowerCase();
+        if (txt.includes(q)) return true;
+      }
+      return false;
+    });
+  }
+
+  function updateRowsSummary(filteredCount, totalCount) {
+    const dirty = getDirtyRowsCount();
+    $rowsSummary.textContent = `Showing ${filteredCount} of ${totalCount} row(s). Dirty rows: ${dirty}.`;
+  }
+
+  function renderRowsGrid() {
+    const all = getFilteredRows();
+    const total = all.length;
+    const pageCount = Math.max(1, Math.ceil(total / _rowsPageSizeValue));
+    if (_rowsPage > pageCount) _rowsPage = pageCount;
+    if (_rowsPage < 1) _rowsPage = 1;
+
+    const start = (_rowsPage - 1) * _rowsPageSizeValue;
+    const end = start + _rowsPageSizeValue;
+    const pageRows = all.slice(start, end);
+
+    updateRowsSummary(total, _rowsModels.length);
+
+    if (!pageRows.length) {
+      $rowsGrid.innerHTML = `<div class="dt-status">No rows match your search.</div>`;
+      $rowsPagerInfo.textContent = `Page 1/1`;
+      $rowsPrevBtn.disabled = true;
+      $rowsNextBtn.disabled = true;
+      validateRowsSave();
       return;
     }
 
-    const headerRow = columns.map((col) => {
-      const required = col.name === "key" ? " *" : "";
-      return `<th>${escapeHtml(col.title + required)}</th>`;
+    const header = _rowsColumns
+      .map(col => `<th>${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}</th>`)
+      .join("");
+
+    const body = pageRows.map((model) => {
+      const tds = _rowsColumns.map((col, idx) => {
+        const value = model.data[col.name];
+        const inputId = `dte-r-${model.id}-${idx}`;
+        const label = `${col.title}${col.name === "key" ? " *" : ""}`;
+        if (col.type === "boolean") {
+          return `
+            <td data-label="${escapeHtml(label)}">
+              <label class="dtc-bool-wrap" for="${inputId}">
+                <input id="${inputId}" type="checkbox" data-row-id="${model.id}" data-col-name="${escapeHtml(col.name)}" data-col-type="boolean" ${value === true ? "checked" : ""} />
+                <span class="dtc-bool-label">${value === true ? "true" : "false"}</span>
+              </label>
+            </td>
+          `;
+        }
+
+        const inputType = (col.type === "integer" || col.type === "number") ? "number" : "text";
+        const step = col.type === "integer" ? "step=\"1\"" : (col.type === "number" ? "step=\"any\"" : "");
+        return `
+          <td data-label="${escapeHtml(label)}">
+            <input id="${inputId}" class="dt-input" type="${inputType}" ${step} data-row-id="${model.id}" data-col-name="${escapeHtml(col.name)}" data-col-type="${escapeHtml(col.type)}" value="${escapeHtml(String(value ?? ""))}" autocomplete="off" />
+          </td>
+        `;
+      }).join("");
+
+      const rowClass = model.isDirty ? "dte-row-dirty" : "";
+      const statusLabel = model.status || (model.isDirty ? "Pending changes" : "Clean");
+
+      return `
+        <tr class="${rowClass}">
+          ${tds}
+          <td data-label="Status"><span class="dte-row-status">${escapeHtml(statusLabel)}</span></td>
+        </tr>
+      `;
     }).join("");
 
-    const valueRow = columns.map((col, idx) => {
-      const isBool = col.type === "boolean";
-      const isInt = col.type === "integer";
-      const isNum = col.type === "number";
-      const inputHtml = isBool
-        ? `<label class="dtc-bool-wrap"><input type="checkbox" data-row-col="${escapeHtml(col.name)}" data-row-type="boolean" /><span class="dtc-bool-label">false</span></label>`
-        : `<input class="dt-input" type="${isInt || isNum ? "number" : "text"}" ${isInt ? "step=\"1\"" : ""} ${isNum ? "step=\"any\"" : ""} data-row-col="${escapeHtml(col.name)}" data-row-type="${escapeHtml(col.type)}" autocomplete="off" />`;
-      const mobileLabel = `${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}`;
-      return `<td data-label="${mobileLabel}"><div id="dte-row-${idx}">${inputHtml}</div></td>`;
-    }).join("");
-
-    $rowFields.innerHTML = `
+    $rowsGrid.innerHTML = `
       <div class="dte-row-grid-wrap">
         <table class="dte-row-grid">
           <thead>
-            <tr>${headerRow}</tr>
+            <tr>
+              ${header}
+              <th>Status</th>
+            </tr>
           </thead>
           <tbody>
-            <tr>${valueRow}</tr>
+            ${body}
           </tbody>
         </table>
       </div>
     `;
 
-    columns.forEach((col) => {
-      const input = $rowFields.querySelector(`[data-row-col="${CSS.escape(col.name)}"]`);
-      if (!input) return;
-      const currentValue = row?.[col.name];
-      if (col.type === "boolean") {
-        input.checked = currentValue === true;
-        if (input.nextElementSibling) {
-          input.nextElementSibling.textContent = input.checked ? "true" : "false";
-        }
-        input.addEventListener("change", () => {
-          if (input.nextElementSibling) {
-            input.nextElementSibling.textContent = input.checked ? "true" : "false";
-          }
-          validateRowSave();
-        });
-      } else {
-        input.value = currentValue === undefined || currentValue === null ? "" : String(currentValue);
-        input.addEventListener("input", validateRowSave);
-      }
-    });
-
-    $rowEditor.hidden = false;
-    validateRowSave();
+    $rowsPagerInfo.textContent = `Page ${_rowsPage}/${pageCount}`;
+    $rowsPrevBtn.disabled = _rowsPage <= 1;
+    $rowsNextBtn.disabled = _rowsPage >= pageCount;
+    validateRowsSave();
   }
 
-  function parseInputValue(type, input) {
-    if (type === "boolean") return !!input.checked;
-
-    const raw = input.value.trim();
-    if (type === "integer") {
-      if (raw === "") return null;
-      const parsed = Number(raw);
-      if (!Number.isFinite(parsed)) throw new Error("Integer field contains an invalid number.");
-      return Math.trunc(parsed);
-    }
-
-    if (type === "number") {
-      if (raw === "") return null;
-      const parsed = Number(raw);
-      if (!Number.isFinite(parsed)) throw new Error("Decimal field contains an invalid number.");
-      return parsed;
-    }
-
-    return raw;
+  function getModelById(idStr) {
+    const id = Number(idStr);
+    return _rowsModels.find(r => r.id === id) || null;
   }
 
-  function collectRowPayload() {
+  function onRowsGridInput(evt) {
+    const target = evt.target;
+    if (!target || !target.dataset) return;
+    if (!target.dataset.rowId || !target.dataset.colName) return;
+
+    const model = getModelById(target.dataset.rowId);
+    if (!model) return;
+
+    const colName = target.dataset.colName;
+    const colType = target.dataset.colType || "string";
+
+    if (colType === "boolean") {
+      model.data[colName] = !!target.checked;
+      const label = target.closest("label")?.querySelector(".dtc-bool-label");
+      if (label) label.textContent = target.checked ? "true" : "false";
+    } else {
+      model.data[colName] = target.value;
+    }
+
+    model.isDirty = isRowDirty(model);
+    if (model.isDirty && (!model.status || model.status === "Clean")) {
+      model.status = "Pending changes";
+    }
+    if (!model.isDirty) {
+      model.status = "Clean";
+    }
+
+    updateRowsSummary(getFilteredRows().length, _rowsModels.length);
+    validateRowsSave();
+
+    const tr = target.closest("tr");
+    if (tr) tr.classList.toggle("dte-row-dirty", model.isDirty);
+  }
+
+  function parseRowPayload(model) {
     const payload = {};
-    const inputs = $rowFields.querySelectorAll("[data-row-col]");
-    inputs.forEach((input) => {
-      const col = input.dataset.rowCol;
-      const type = input.dataset.rowType || "string";
-      payload[col] = parseInputValue(type, input);
-    });
 
-    if (!payload.key || String(payload.key).trim() === "") {
-      throw new Error("Key is required for a row.");
+    for (const col of _rowsColumns) {
+      const raw = model.data[col.name];
+      if (col.type === "boolean") {
+        payload[col.name] = !!raw;
+        continue;
+      }
+
+      const text = String(raw ?? "").trim();
+      if (col.type === "integer") {
+        if (text === "") {
+          payload[col.name] = null;
+        } else {
+          const parsed = Number(text);
+          if (!Number.isFinite(parsed)) throw new Error(`Invalid integer in column '${col.title}'.`);
+          payload[col.name] = Math.trunc(parsed);
+        }
+        continue;
+      }
+
+      if (col.type === "number") {
+        if (text === "") {
+          payload[col.name] = null;
+        } else {
+          const parsed = Number(text);
+          if (!Number.isFinite(parsed)) throw new Error(`Invalid decimal in column '${col.title}'.`);
+          payload[col.name] = parsed;
+        }
+        continue;
+      }
+
+      payload[col.name] = String(raw ?? "");
     }
-    payload.key = String(payload.key).trim();
-    return payload;
-  }
 
-  function resetRowsModeUi() {
-    _rows = [];
-    _currentRowOriginalKey = "";
-    $rowSelect.innerHTML = `<option value="">Load a table first…</option>`;
-    $rowEditor.hidden = true;
-    $rowFields.innerHTML = "";
-    $rowsRefreshBtn.disabled = true;
-    validateRowSave();
+    const key = String(payload.key ?? "").trim();
+    if (!key) throw new Error("Row key is required.");
+    payload.key = key;
+
+    return payload;
   }
 
   async function loadDivisions() {
@@ -571,14 +712,13 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       setStatus("Please select a customer org first.", "error");
       return false;
     }
+
     try {
       const divs = await gc.fetchAllDivisions(api, orgId);
       const sorted = (divs || []).sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       $division.innerHTML = `<option value="">Select division…</option>`
-        + sorted.map(d =>
-          `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`
-        ).join("");
+        + sorted.map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`).join("");
       divisionsLoaded = true;
       return true;
     } catch (err) {
@@ -593,16 +733,14 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       setStatus("Please select a customer org first.", "error");
       return;
     }
+
     $tableSelect.innerHTML = `<option value="">Loading…</option>`;
-    $loadBtn.disabled = true;
     try {
       const tables = await gc.fetchAllDataTables(api, orgId);
       const sorted = (tables || []).sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       $tableSelect.innerHTML = `<option value="">Select a data table…</option>`
-        + sorted.map(t =>
-          `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`
-        ).join("");
+        + sorted.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("");
       setStatus(sorted.length ? "" : "No data tables found in this org.");
     } catch (err) {
       setStatus(`Failed to load data tables: ${err.message}`, "error");
@@ -610,71 +748,65 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     }
   }
 
-  async function loadRowsList(preferredKey = "") {
+  async function loadRowsList() {
     const orgId = orgContext.get();
     if (!orgId || !_currentTableId) return;
 
     $rowsRefreshBtn.disabled = true;
-    $rowSaveBtn.disabled = true;
     setStatus("Loading rows…");
 
     try {
       const rows = await gc.fetchDataTableRows(api, orgId, _currentTableId, {
         query: { showbrief: "false" },
       });
-      _rows = Array.isArray(rows) ? rows.slice() : [];
-      _rows.sort((a, b) => getSafeRowKey(a).localeCompare(getSafeRowKey(b), undefined, { sensitivity: "base" }));
 
-      if (!_rows.length) {
-        $rowSelect.innerHTML = `<option value="">No rows found in this table</option>`;
-        $rowEditor.hidden = true;
-        $rowFields.innerHTML = "";
-        _currentRowOriginalKey = "";
-        setStatus("This table has no rows yet.");
-        return;
-      }
+      _rowsColumns = getOrderedSchemaColumns();
+      _rowsModels = (Array.isArray(rows) ? rows : []).map((row) => {
+        const data = buildRowUiData(row);
+        return {
+          id: _nextRowId++,
+          originalKey: String(row?.key ?? ""),
+          originalData: cloneData(data),
+          data,
+          isDirty: false,
+          status: "Clean",
+        };
+      });
 
-      $rowSelect.innerHTML = `<option value="">Select a row by key…</option>`
-        + _rows.map((row) => {
-          const keyVal = getSafeRowKey(row);
-          return `<option value="${escapeHtml(keyVal)}">${escapeHtml(keyVal)}</option>`;
-        }).join("");
+      _rowsSearchText = "";
+      _rowsPage = 1;
+      $rowsSearch.value = "";
 
-      const nextKey = preferredKey && _rows.some(r => getSafeRowKey(r) === preferredKey)
-        ? preferredKey
-        : getSafeRowKey(_rows[0]);
-
-      $rowSelect.value = nextKey;
-      const active = _rows.find(r => getSafeRowKey(r) === nextKey) || _rows[0];
-      _currentRowOriginalKey = getSafeRowKey(active);
-      renderRowEditor(active);
-      setStatus(`Loaded ${_rows.length} row(s).`, "success");
+      renderRowsGrid();
+      setStatus(`Rows loaded (${_rowsModels.length}).`, "success");
     } catch (err) {
       setStatus(`Failed to load rows: ${err.message}`, "error");
-      $rowSelect.innerHTML = `<option value="">Failed to load rows</option>`;
-      $rowEditor.hidden = true;
-      $rowFields.innerHTML = "";
-      _currentRowOriginalKey = "";
+      resetRowsModeUi();
     } finally {
       $rowsRefreshBtn.disabled = !_currentTableId;
-      validateRowSave();
+      validateRowsSave();
     }
   }
 
-  $tableSelect.addEventListener("change", () => {
-    $loadBtn.disabled = !$tableSelect.value;
-  });
-
-  $modeSchemaBtn.addEventListener("click", () => setMode("schema"));
-  $modeRowsBtn.addEventListener("click", () => setMode("rows"));
-
-  $loadBtn.addEventListener("click", async () => {
+  async function loadSelectedTable(tableId) {
     const orgId = orgContext.get();
-    if (!orgId) { setStatus("Please select a customer org first.", "error"); return; }
-    const tableId = $tableSelect.value;
-    if (!tableId) return;
+    if (!orgId) {
+      setStatus("Please select a customer org first.", "error");
+      return;
+    }
+    if (!tableId) {
+      _currentTableId = null;
+      _currentTable = null;
+      $form.hidden = true;
+      $actions.hidden = true;
+      resetRowsModeUi();
+      validateSchemaSave();
+      return;
+    }
 
-    $loadBtn.disabled = true;
+    _isLoadingTable = true;
+    validateSchemaSave();
+    validateRowsSave();
     setStatus("Loading data table…");
 
     try {
@@ -704,32 +836,28 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
       $form.hidden = false;
       $actions.hidden = false;
       $rowsRefreshBtn.disabled = false;
-      validateSchemaSave();
 
       if (_mode === "rows") {
         await loadRowsList();
-        setStatus("Rows mode loaded. Edit values and click Save Row.");
+        setStatus("Rows mode loaded.", "success");
       } else {
-        setStatus("Schema mode loaded. Edit fields and click Save Schema.");
+        setStatus("Schema mode loaded.", "success");
       }
     } catch (err) {
       setStatus(`Failed to load data table: ${err.message}`, "error");
       _currentTableId = null;
       _currentTable = null;
+      $form.hidden = true;
+      $actions.hidden = true;
       resetRowsModeUi();
     } finally {
-      $loadBtn.disabled = !$tableSelect.value;
+      _isLoadingTable = false;
       validateSchemaSave();
-      validateRowSave();
+      validateRowsSave();
     }
-  });
+  }
 
-  [$name, $division].forEach(input => {
-    input.addEventListener("input", validateSchemaSave);
-    input.addEventListener("change", validateSchemaSave);
-  });
-
-  function initDragDrop() {
+  function initSchemaDragDrop() {
     let dragging = null;
 
     function clearIndicators() {
@@ -781,33 +909,52 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     });
   }
 
+  $tableSelect.addEventListener("change", () => {
+    loadSelectedTable($tableSelect.value);
+  });
+
+  $modeSchemaBtn.addEventListener("click", () => setMode("schema"));
+  $modeRowsBtn.addEventListener("click", () => setMode("rows"));
+
+  [$name, $division].forEach((input) => {
+    input.addEventListener("input", validateSchemaSave);
+    input.addEventListener("change", validateSchemaSave);
+  });
+
   $addSchemaRowBtn.addEventListener("click", () => addSchemaRow());
-  initDragDrop();
+  initSchemaDragDrop();
 
   $rowsRefreshBtn.addEventListener("click", async () => {
     if (!_currentTableId) return;
-    const keep = $rowSelect.value;
-    await loadRowsList(keep);
+    await loadRowsList();
   });
 
-  $rowSelect.addEventListener("change", () => {
-    const keyVal = $rowSelect.value;
-    if (!keyVal) {
-      $rowEditor.hidden = true;
-      $rowFields.innerHTML = "";
-      _currentRowOriginalKey = "";
-      validateRowSave();
-      return;
-    }
-    const row = _rows.find(r => getSafeRowKey(r) === keyVal);
-    if (!row) {
-      setStatus("Selected row could not be found.", "error");
-      return;
-    }
-    _currentRowOriginalKey = getSafeRowKey(row);
-    renderRowEditor(row);
-    setStatus(`Editing row with key "${escapeHtml(_currentRowOriginalKey)}".`);
+  $rowsSearch.addEventListener("input", () => {
+    _rowsSearchText = $rowsSearch.value.trim().toLowerCase();
+    _rowsPage = 1;
+    renderRowsGrid();
   });
+
+  $rowsPageSize.addEventListener("change", () => {
+    const nextSize = Number($rowsPageSize.value);
+    if (![50, 100, 200].includes(nextSize)) return;
+    _rowsPageSizeValue = nextSize;
+    _rowsPage = 1;
+    renderRowsGrid();
+  });
+
+  $rowsPrevBtn.addEventListener("click", () => {
+    _rowsPage = Math.max(1, _rowsPage - 1);
+    renderRowsGrid();
+  });
+
+  $rowsNextBtn.addEventListener("click", () => {
+    _rowsPage = _rowsPage + 1;
+    renderRowsGrid();
+  });
+
+  $rowsGrid.addEventListener("input", onRowsGridInput);
+  $rowsGrid.addEventListener("change", onRowsGridInput);
 
   $schemaSaveBtn.addEventListener("click", async () => {
     const orgId = orgContext.get();
@@ -825,7 +972,6 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
     }
 
     $schemaSaveBtn.disabled = true;
-    $loadBtn.disabled = true;
     setStatus("Saving data table schema…");
 
     try {
@@ -859,83 +1005,78 @@ export default function renderEditDataTable({ route, me, api, orgContext }) {
         errorMessage: err.message,
       });
     } finally {
-      $loadBtn.disabled = !$tableSelect.value;
       validateSchemaSave();
     }
   });
 
-  $rowSaveBtn.addEventListener("click", async () => {
+  $rowsSaveBtn.addEventListener("click", async () => {
     const orgId = orgContext.get();
     if (!orgId) { setStatus("No org selected.", "error"); return; }
     if (!_currentTableId) { setStatus("No table loaded.", "error"); return; }
-    if (!_currentRowOriginalKey) { setStatus("No row selected.", "error"); return; }
 
-    let payload;
-    try {
-      payload = collectRowPayload();
-    } catch (err) {
-      setStatus(err.message, "error");
+    const dirtyRows = _rowsModels.filter(r => r.isDirty);
+    if (!dirtyRows.length) {
+      setStatus("No row changes to save.");
       return;
     }
 
-    const oldKey = _currentRowOriginalKey;
-    const newKey = String(payload.key);
-    const keyChanged = newKey !== oldKey;
+    $rowsSaveBtn.disabled = true;
+    setStatus(`Saving ${dirtyRows.length} row change(s)…`);
 
-    if (keyChanged) {
-      const accepted = window.confirm(
-        `Key will change from "${oldKey}" to "${newKey}". This will create a new row and delete the old row. Continue?`
-      );
-      if (!accepted) return;
-    }
+    let ok = 0;
+    let fail = 0;
 
-    $rowSaveBtn.disabled = true;
-    $loadBtn.disabled = true;
-    $rowsRefreshBtn.disabled = true;
-    setStatus("Saving row…");
+    for (const model of dirtyRows) {
+      try {
+        const payload = parseRowPayload(model);
+        const oldKey = String(model.originalKey ?? "");
+        const newKey = String(payload.key ?? "");
+        const keyChanged = newKey !== oldKey;
 
-    try {
-      if (keyChanged) {
-        await gc.createDataTableRow(api, orgId, _currentTableId, payload);
-        await gc.deleteDataTableRow(api, orgId, _currentTableId, oldKey);
-      } else {
-        try {
-          await gc.putDataTableRow(api, orgId, _currentTableId, oldKey, payload);
-        } catch (err) {
-          if (err?.status === 404 || err?.status === 405) {
-            await gc.deleteDataTableRow(api, orgId, _currentTableId, oldKey);
-            await gc.createDataTableRow(api, orgId, _currentTableId, payload);
-          } else {
-            throw err;
+        if (keyChanged) {
+          await gc.createDataTableRow(api, orgId, _currentTableId, payload);
+          await gc.deleteDataTableRow(api, orgId, _currentTableId, oldKey);
+        } else {
+          try {
+            await gc.putDataTableRow(api, orgId, _currentTableId, oldKey, payload);
+          } catch (err) {
+            if (err?.status === 404 || err?.status === 405) {
+              await gc.deleteDataTableRow(api, orgId, _currentTableId, oldKey);
+              await gc.createDataTableRow(api, orgId, _currentTableId, payload);
+            } else {
+              throw err;
+            }
           }
         }
-      }
 
-      await loadRowsList(newKey);
-      setStatus(`✓ Row saved successfully (key: "${escapeHtml(newKey)}").`, "success");
-      logAction({
-        me,
-        orgId,
-        action: "datatable_edit",
-        description: keyChanged
-          ? `Edited data table row key from '${oldKey}' to '${newKey}' in table '${_currentTable?.name || _currentTableId}'`
-          : `Edited data table row '${newKey}' in table '${_currentTable?.name || _currentTableId}'`,
-      });
-    } catch (err) {
-      setStatus(`Failed to save row: ${err.message}`, "error");
-      logAction({
-        me,
-        orgId,
-        action: "datatable_edit",
-        description: `Failed to edit data table row '${oldKey}': ${err.message}`,
-        result: "failure",
-        errorMessage: err.message,
-      });
-    } finally {
-      $loadBtn.disabled = !$tableSelect.value;
-      $rowsRefreshBtn.disabled = !_currentTableId;
-      validateRowSave();
+        model.originalKey = newKey;
+        model.originalData = cloneData(model.data);
+        model.isDirty = false;
+        model.status = "Saved";
+        ok++;
+      } catch (err) {
+        model.status = `Error: ${err.message}`;
+        fail++;
+      }
     }
+
+    if (fail === 0) {
+      setStatus(`✓ Saved ${ok} row(s) successfully.`, "success");
+    } else {
+      setStatus(`Saved ${ok} row(s), ${fail} failed.`, "error");
+    }
+
+    renderRowsGrid();
+    validateRowsSave();
+
+    logAction({
+      me,
+      orgId,
+      action: "datatable_edit",
+      description: `Saved data table rows for '${_currentTable?.name || _currentTableId}'. Success: ${ok}, Failed: ${fail}`,
+      result: fail ? "failure" : "success",
+      errorMessage: fail ? `${fail} row(s) failed to save` : undefined,
+    });
   });
 
   loadTablesList();
