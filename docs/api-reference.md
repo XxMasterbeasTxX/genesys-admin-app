@@ -221,6 +221,8 @@ Used by: Data Tables — Create/Copy/Edit, Deployment — Data Tables, Divisions
 | POST | `/api/v2/flows/datatables` | **Create** a new data table |
 | GET | `/api/v2/flows/datatables/{id}/rows` | List rows of a data table |
 | POST | `/api/v2/flows/datatables/{id}/rows` | Insert a row into a data table |
+| PUT | `/api/v2/flows/datatables/{id}/rows/{rowKey}` | Replace a single row by row key (Data Tables — Edit, Rows mode save) |
+| DELETE | `/api/v2/flows/datatables/{id}/rows/{rowKey}` | Delete a single row by row key (Data Tables — Edit, Delete Selected / key-change replace flow) |
 | GET | `/api/v2/architect/ivrs` | List IVRs (Call Routing) |
 | GET | `/api/v2/architect/schedules` | List routing schedules |
 | POST | `/api/v2/architect/schedules` | **Create** a routing schedule (Deployment — Basic) |
