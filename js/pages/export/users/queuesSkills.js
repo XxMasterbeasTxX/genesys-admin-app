@@ -12,7 +12,6 @@ import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
-import { attachColumnFilters } from "../../../utils/columnFilter.js";
 import { logAction } from "../../../services/activityLogService.js";
 
 const HEADERS = ["Name", "Queue", "Skill", "Language Skill"];
@@ -139,10 +138,13 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
 
   let isRunning = false;
   let cancelled = false;
-  let cleanupColumnFilters = null;
 
   let lastWorkbook = null;
   let lastFilename = null;
+
+  let allRows = [];
+  let currentPage = 1;
+  let pageSize = 50;
 
   el.innerHTML = `
     <h1 class="h1">Export — Users — Queues/Skills</h1>
@@ -184,9 +186,14 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
         </div>
       </div>
 
-      <div class="te-actions" style="margin-top:12px">
-        <button class="btn te-btn-export" id="qsRunBtn" disabled>Load Results</button>
-        <button class="btn te-btn-cancel" id="qsCancelBtn" style="display:none">Cancel</button>
+      <div class="te-actions" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <button class="btn te-btn-export" id="qsRunBtn" disabled>Load Results</button>
+          <button class="btn te-btn-cancel" id="qsCancelBtn" style="display:none">Cancel</button>
+        </div>
+        <div id="qsDownload" style="display:none">
+          <button class="btn te-btn-export" id="qsDownloadBtn">Download Excel</button>
+        </div>
       </div>
       <p class="sp-form-hint" style="margin-top:6px">Select at least one filter before loading results.</p>
     </div>
@@ -200,10 +207,6 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     <div id="qsTableWrap" style="display:none"></div>
 
     <div class="wc-summary" id="qsSummary" style="display:none"></div>
-
-    <div id="qsDownload" style="display:none">
-      <button class="btn te-btn-export" id="qsDownloadBtn">Download Excel</button>
-    </div>
   `;
 
   const $loadFiltersBtn = el.querySelector("#qsLoadFiltersBtn");
@@ -411,27 +414,56 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     }
   });
 
-  function renderPreviewTable(rows) {
-    if (cleanupColumnFilters) {
-      cleanupColumnFilters();
-      cleanupColumnFilters = null;
+  function renderPage() {
+    const total = allRows.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    const start = (currentPage - 1) * pageSize;
+    const pageRows = allRows.slice(start, start + pageSize);
+
+    const $tbody = $table.querySelector("tbody");
+    if ($tbody) {
+      $tbody.innerHTML = pageRows.map((r) => `
+        <tr>
+          <td>${escapeHtml(r.name)}</td>
+          <td>${escapeHtml(r.queue)}</td>
+          <td>${escapeHtml(r.skill)}</td>
+          <td>${escapeHtml(r.languageSkill)}</td>
+        </tr>
+      `).join("");
     }
 
-    const body = rows.map((r) => `
-      <tr>
-        <td>${escapeHtml(r.name)}</td>
-        <td>${escapeHtml(r.queue)}</td>
-        <td>${escapeHtml(r.skill)}</td>
-        <td>${escapeHtml(r.languageSkill)}</td>
-      </tr>
-    `).join("");
+    const $info = $table.querySelector("#qsPageInfo");
+    if ($info) $info.textContent = `Page ${currentPage} of ${totalPages} (${total} rows)`;
+
+    const $prev = $table.querySelector("#qsPrevBtn");
+    const $next = $table.querySelector("#qsNextBtn");
+    if ($prev) $prev.disabled = currentPage <= 1;
+    if ($next) $next.disabled = currentPage >= totalPages;
+  }
+
+  function renderPreviewTable(rows) {
+    allRows = rows;
+    currentPage = 1;
 
     $table.innerHTML = `
       <details class="te-preview" open>
         <summary>
           <span>Preview</span>
-          <span class="te-user-count">${rows.length} rows</span>
+          <span class="te-user-count">${rows.length} rows total</span>
         </summary>
+        <div style="display:flex;align-items:center;gap:12px;margin:8px 0;flex-wrap:wrap;font-size:.9em">
+          <span>Rows per page:</span>
+          <select id="qsPageSize" class="em-input" style="width:auto;padding:2px 6px">
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
+          <span id="qsPageInfo"></span>
+          <button class="btn" id="qsPrevBtn" style="padding:2px 10px">&#8249; Prev</button>
+          <button class="btn" id="qsNextBtn" style="padding:2px 10px">Next &#8250;</button>
+        </div>
         <div class="te-table-scroll">
           <table class="data-table">
             <thead>
@@ -441,20 +473,29 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
                 <th>${HEADERS[2]}</th>
                 <th>${HEADERS[3]}</th>
               </tr>
-              <tr class="ll-filter-row">
-                <th></th><th></th><th></th><th></th>
-              </tr>
             </thead>
-            <tbody>${body}</tbody>
+            <tbody></tbody>
           </table>
         </div>
       </details>
     `;
 
-    cleanupColumnFilters = attachColumnFilters($table, {
-      countEl: $table.querySelector(".te-user-count"),
-      totalLabel: "rows",
+    $table.querySelector("#qsPageSize").addEventListener("change", (e) => {
+      pageSize = Number(e.target.value);
+      currentPage = 1;
+      renderPage();
     });
+
+    $table.querySelector("#qsPrevBtn").addEventListener("click", () => {
+      if (currentPage > 1) { currentPage--; renderPage(); }
+    });
+
+    $table.querySelector("#qsNextBtn").addEventListener("click", () => {
+      const totalPages = Math.ceil(allRows.length / pageSize);
+      if (currentPage < totalPages) { currentPage++; renderPage(); }
+    });
+
+    renderPage();
   }
 
   return el;
