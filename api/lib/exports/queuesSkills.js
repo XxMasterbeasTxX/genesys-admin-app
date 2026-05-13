@@ -108,25 +108,59 @@ async function fetchQueuesForUsers(customerId, users, context) {
   return queueMap;
 }
 
-function buildRows(users, queueMap) {
+function buildRows(users, queueMap, sel) {
   const rows = [];
   let usersWithRows = 0;
 
   for (const user of users) {
     const name = user.name || "N/A";
 
-    const qVals = sortedUnique((queueMap.get(user.id) || []).map((q) => q.queueName));
-    const sVals = sortedUnique((user.skills || []).map((s) => s.name || s.skillName || ""));
-    const lVals = sortedUnique((user.languages || []).map((l) => l.name || l.languageName || ""));
+    const queues = (queueMap.get(user.id) || []).map((q) => ({
+      id: q.queueId || "",
+      name: q.queueName || "",
+    })).filter((q) => q.id && q.name);
 
-    const queues = qVals.length ? qVals : [""];
-    const skills = sVals.length ? sVals : [""];
-    const languages = lVals.length ? lVals : [""];
+    const skills = (user.skills || []).map((s) => ({
+      id: s.id || "",
+      name: s.name || s.skillName || "",
+    })).filter((s) => s.id && s.name);
+
+    const languages = (user.languages || []).map((l) => ({
+      id: l.id || "",
+      name: l.name || l.languageName || "",
+    })).filter((l) => l.id && l.name);
+
+    let qVals = [];
+    if (sel.queues.size > 0) {
+      qVals = sortedUnique(queues.filter((q) => sel.queues.has(q.id)).map((q) => q.name));
+      if (qVals.length === 0) continue;
+    } else {
+      qVals = sortedUnique(queues.map((q) => q.name));
+      if (qVals.length === 0) qVals = [""];
+    }
+
+    let sVals = [];
+    if (sel.skills.size > 0) {
+      sVals = sortedUnique(skills.filter((s) => sel.skills.has(s.id)).map((s) => s.name));
+      if (sVals.length === 0) continue;
+    } else {
+      sVals = sortedUnique(skills.map((s) => s.name));
+      if (sVals.length === 0) sVals = [""];
+    }
+
+    let lVals = [];
+    if (sel.languages.size > 0) {
+      lVals = sortedUnique(languages.filter((l) => sel.languages.has(l.id)).map((l) => l.name));
+      if (lVals.length === 0) continue;
+    } else {
+      lVals = sortedUnique(languages.map((l) => l.name));
+      if (lVals.length === 0) lVals = [""];
+    }
 
     usersWithRows++;
-    for (const q of queues) {
-      for (const s of skills) {
-        for (const l of languages) {
+    for (const q of qVals) {
+      for (const s of sVals) {
+        for (const l of lVals) {
           rows.push({ name, queue: q, skill: s, languageSkill: l });
         }
       }
@@ -136,9 +170,34 @@ function buildRows(users, queueMap) {
   return { rows, usersWithRows };
 }
 
+function userMatchesGroup1Filters(user, sel) {
+  if (sel.users.size > 0 && !sel.users.has(user.id)) return false;
+
+  if (sel.groups.size > 0) {
+    const groupIds = new Set((user.groups || []).map((g) => g.id).filter(Boolean));
+    const hasGroup = [...sel.groups].some((id) => groupIds.has(id));
+    if (!hasGroup) return false;
+  }
+
+  if (sel.teams.size > 0) {
+    const teamId = user.team?.id || "";
+    if (!teamId || !sel.teams.has(teamId)) return false;
+  }
+
+  return true;
+}
+
 async function execute(context, schedule) {
   const config = schedule?.exportConfig || {};
   const orgId = config.orgId;
+  const sel = {
+    users: new Set(config.users || []),
+    groups: new Set(config.groups || []),
+    teams: new Set(config.teams || []),
+    queues: new Set(config.queues || []),
+    skills: new Set(config.skills || []),
+    languages: new Set(config.languages || []),
+  };
 
   if (!orgId) {
     return { success: false, error: "No orgId specified in export config" };
@@ -152,15 +211,18 @@ async function execute(context, schedule) {
   context.log(`Queues/Skills export for ${customer.name} (${orgId})`);
 
   try {
-    context.log("Fetching users (state=any) with skills/languages…");
-    const users = await genesysGetAllPages(orgId, "/api/v2/users?state=any&expand=skills,languages", 500);
-    context.log(`Fetched ${users.length} users`);
+    context.log("Fetching users (state=any) with groups/team/skills/languages…");
+    const allUsers = await genesysGetAllPages(orgId, "/api/v2/users?state=any&expand=groups,team,skills,languages", 500);
+    context.log(`Fetched ${allUsers.length} users`);
+
+    const users = allUsers.filter((u) => userMatchesGroup1Filters(u, sel));
+    context.log(`Group 1 filtering kept ${users.length} users`);
 
     context.log("Fetching queue assignments for users…");
     const queueMap = await fetchQueuesForUsers(orgId, users, context);
 
     context.log("Building rows and workbook…");
-    const { rows, usersWithRows } = buildRows(users, queueMap);
+    const { rows, usersWithRows } = buildRows(users, queueMap, sel);
 
     const wsData = [HEADERS];
     for (const r of rows) {

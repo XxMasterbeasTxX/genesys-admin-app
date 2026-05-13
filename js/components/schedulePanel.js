@@ -217,6 +217,17 @@ export function buildScheduleForm(opts) {
   let dynamicLoading = false;
   let dynamicLoaded = false;
 
+  function normalizeOption(option) {
+    if (option && typeof option === "object") {
+      return {
+        value: String(option.value ?? ""),
+        label: String(option.label ?? option.value ?? ""),
+      };
+    }
+    const str = String(option ?? "");
+    return { value: str, label: str };
+  }
+
   async function loadDynamicFields(orgId, existingValues = {}) {
     if (!dynamicOrgFields || !orgId || !$dofSlot) return;
     $dofSlot.style.display = "";
@@ -228,25 +239,28 @@ export function buildScheduleForm(opts) {
       dynamicLoading = false;
       dynamicLoaded = true;
       $dofSlot.innerHTML = fieldDefs.map(f => {
+        const required = f.required !== false;
         if (f.singleSelect) {
           // Single-select: render a <select> dropdown
           const prevVal = Array.isArray(existingValues[f.key])
             ? (existingValues[f.key][0] || "")
             : (existingValues[f.key] || "");
-          const optHtml = f.options.map(o =>
-            `<option value="${escapeHtml(o)}"${prevVal === o ? " selected" : ""}>${escapeHtml(o)}</option>`
-          ).join("");
+          const optHtml = (f.options || []).map((o) => {
+            const opt = normalizeOption(o);
+            return `<option value="${escapeHtml(opt.value)}"${prevVal === opt.value ? " selected" : ""}>${escapeHtml(opt.label)}</option>`;
+          }).join("");
           return `
             <div class="sp-dynamic-field">
               <label class="sp-form-label">${escapeHtml(f.label)}</label>
-              <select class="sp-form-select" data-dof-key="${escapeHtml(f.key)}">${optHtml}</select>
+              <select class="sp-form-select" data-dof-key="${escapeHtml(f.key)}" data-dof-required="${required ? "1" : "0"}">${optHtml}</select>
             </div>`;
         }
         // Multi-select: render checkboxes (default)
         const prevVals = existingValues[f.key] || [];
-        const boxes = f.options.map(o =>
-          `<label class="sp-checkbox-item"><input type="checkbox" data-dof-key="${escapeHtml(f.key)}" value="${escapeHtml(o)}"${prevVals.includes(o) ? " checked" : ""}> ${escapeHtml(o)}</label>`
-        ).join("");
+        const boxes = (f.options || []).map((o) => {
+          const opt = normalizeOption(o);
+          return `<label class="sp-checkbox-item"><input type="checkbox" data-dof-key="${escapeHtml(f.key)}" data-dof-required="${required ? "1" : "0"}" value="${escapeHtml(opt.value)}"${prevVals.includes(opt.value) ? " checked" : ""}> ${escapeHtml(opt.label)}</label>`;
+        }).join("");
         return `
           <div class="sp-dynamic-field">
             <label class="sp-form-label">${escapeHtml(f.label)}</label>
@@ -348,14 +362,17 @@ export function buildScheduleForm(opts) {
     if (dynamicOrgFields) {
       if (dynamicLoading) return "Options are still loading, please wait";
       if (dynamicLoaded) {
-        const hasCheckboxes = !!$dofSlot?.querySelector('input[type="checkbox"][data-dof-key]');
-        const hasSelects    = !!$dofSlot?.querySelector('select[data-dof-key]');
-        if (hasCheckboxes) {
-          const anyChecked = [...($dofSlot.querySelectorAll('input[type="checkbox"][data-dof-key]'))].some(cb => cb.checked);
-          if (!anyChecked) return "Please select at least one option";
+        const requiredCheckboxes = [...($dofSlot.querySelectorAll('input[type="checkbox"][data-dof-key][data-dof-required="1"]'))];
+        const requiredKeys = [...new Set(requiredCheckboxes.map((cb) => cb.dataset.dofKey))];
+        for (const key of requiredKeys) {
+          const keyBoxes = requiredCheckboxes.filter((cb) => cb.dataset.dofKey === key);
+          const keyHasSelection = keyBoxes.some((cb) => cb.checked);
+          if (!keyHasSelection) return "Please select at least one option";
         }
-        if (hasSelects) {
-          const allFilled = [...($dofSlot.querySelectorAll('select[data-dof-key]'))].every(sel => sel.value !== "");
+
+        const requiredSelects = [...($dofSlot.querySelectorAll('select[data-dof-key][data-dof-required="1"]'))];
+        if (requiredSelects.length > 0) {
+          const allFilled = requiredSelects.every(sel => sel.value !== "");
           if (!allFilled) return "Please select an option";
         }
       }

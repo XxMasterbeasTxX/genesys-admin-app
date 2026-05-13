@@ -254,6 +254,43 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
       exportLabel: AUTOMATION_EXPORT_LABEL,
       me,
       requiresOrg: true,
+      dynamicOrgFields: async (orgId) => {
+        const [users, groups, teams, queues, skills, languages] = await Promise.all([
+          gc.fetchAllUsers(api, orgId, { state: "any" }),
+          gc.fetchAllGroups(api, orgId),
+          gc.fetchAllTeams(api, orgId),
+          gc.fetchAllQueues(api, orgId),
+          gc.fetchAllSkills(api, orgId),
+          gc.fetchAllLanguages(api, orgId),
+        ]);
+
+        const toOptions = (items, idKey = "id", labelKeys = ["name"]) => {
+          return (items || [])
+            .map((item) => {
+              const value = String(item?.[idKey] || "");
+              const label = labelKeys.map((k) => item?.[k]).find(Boolean) || value;
+              if (!value) return null;
+              return { value, label: String(label) };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+        };
+
+        return [
+          { key: "users", label: "Users", required: false, options: toOptions(users, "id", ["name", "email"]) },
+          { key: "groups", label: "Groups", required: false, options: toOptions(groups, "id", ["name"]) },
+          { key: "teams", label: "Work Teams", required: false, options: toOptions(teams, "id", ["name"]) },
+          { key: "queues", label: "Queues", required: false, options: toOptions(queues, "id", ["name"]) },
+          { key: "skills", label: "Skills", required: false, options: toOptions(skills, "id", ["name"]) },
+          { key: "languages", label: "Language Skills", required: false, options: toOptions(languages, "id", ["name"]) },
+        ];
+      },
+      configSummary: (cfg) => {
+        const count = (k) => Array.isArray(cfg?.[k]) ? cfg[k].length : 0;
+        const total = count("users") + count("groups") + count("teams") + count("queues") + count("skills") + count("languages");
+        if (!total) return "All users (no filters)";
+        return `Filters selected: ${total}`;
+      },
     });
     el.appendChild(schedulePanel);
   }
