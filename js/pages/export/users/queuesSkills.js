@@ -1,8 +1,8 @@
 /**
  * Export › Users — Queues/Skills
  *
- * Phase 1:
- * - Manual export flow (no scheduling yet)
+ * Phase 1+2:
+ * - Manual export flow + email + scheduling automation
  * - Separate multi-select filters for User, Group, Work Team, Queue, Skill, Language Skill
  * - At least one filter is required before loading results
  * - Preview + Excel with columns: Name, Queue, Skill, Language Skill
@@ -11,10 +11,15 @@
 import { escapeHtml, timestampedFilename } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
+import { sendEmail } from "../../../services/emailService.js";
+import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
 import { logAction } from "../../../services/activityLogService.js";
 
 const HEADERS = ["Name", "Queue", "Skill", "Language Skill"];
+const AUTOMATION_ENABLED = true;
+const AUTOMATION_EXPORT_TYPE = "queuesSkills";
+const AUTOMATION_EXPORT_LABEL = "Users Queues/Skills";
 
 function hasAnyFilter(sel) {
   return (
@@ -220,7 +225,38 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     <div id="qsTableWrap" style="display:none"></div>
 
     <div class="wc-summary" id="qsSummary" style="display:none"></div>
+
+    <div class="em-section">
+      <label class="em-toggle">
+        <input type="checkbox" id="qsEmailChk">
+        <span>Send email with export</span>
+      </label>
+
+      <div class="em-fields" id="qsEmailFields" style="display:none">
+        <div class="em-field">
+          <label class="em-label" for="qsEmailTo">Recipients</label>
+          <input type="text" class="em-input" id="qsEmailTo"
+                 placeholder="user@example.com, user2@example.com">
+          <span class="em-hint">Separate multiple addresses with , or ;</span>
+        </div>
+        <div class="em-field">
+          <label class="em-label" for="qsEmailBody">Message (optional)</label>
+          <textarea class="em-textarea" id="qsEmailBody" rows="3"
+                    placeholder="Leave empty for default message"></textarea>
+        </div>
+      </div>
+    </div>
   `;
+
+  if (AUTOMATION_ENABLED) {
+    const schedulePanel = createSchedulePanel({
+      exportType: AUTOMATION_EXPORT_TYPE,
+      exportLabel: AUTOMATION_EXPORT_LABEL,
+      me,
+      requiresOrg: true,
+    });
+    el.appendChild(schedulePanel);
+  }
 
   const $loadFiltersBtn = el.querySelector("#qsLoadFiltersBtn");
   const $filtersWrap = el.querySelector("#qsFiltersWrap");
@@ -233,6 +269,10 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
   const $summary = el.querySelector("#qsSummary");
   const $dlWrap = el.querySelector("#qsDownload");
   const $dlBtn = el.querySelector("#qsDownloadBtn");
+  const $emailChk = el.querySelector("#qsEmailChk");
+  const $emailFld = el.querySelector("#qsEmailFields");
+  const $emailTo = el.querySelector("#qsEmailTo");
+  const $emailBody = el.querySelector("#qsEmailBody");
 
   const userFilter = createMultiSelect({ placeholder: "Select user(s)…", searchable: true, onChange: updateRunButton });
   const groupFilter = createMultiSelect({ placeholder: "Select group(s)…", searchable: true, onChange: updateRunButton });
@@ -386,6 +426,33 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
         action: "export_run",
         description: `Exported 'Users Queues/Skills' for '${org?.name || ""}'`,
       });
+
+      if ($emailChk.checked && $emailTo.value.trim()) {
+        setStatus("Sending email…");
+        try {
+          const XLSX = window.XLSX;
+          const xlsxB64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+
+          const result = await sendEmail(api, {
+            recipients: $emailTo.value,
+            subject: `Users Queues/Skills Export — ${org.name} — ${new Date().toISOString().replace("T", " ").slice(0, 19)}`,
+            body: $emailBody.value,
+            attachment: {
+              filename: fname,
+              base64: xlsxB64,
+              mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            },
+          });
+
+          if (result.success) {
+            setStatus(`Done. Email sent to: ${$emailTo.value.trim()}`, "success");
+          } else {
+            setStatus(`Export completed but email failed: ${result.error}`, "error");
+          }
+        } catch (emailErr) {
+          setStatus(`Export completed but email failed: ${emailErr.message}`, "error");
+        }
+      }
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
@@ -417,6 +484,10 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
       delete window._xlsxDownload[key];
       setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
     }
+  });
+
+  $emailChk.addEventListener("change", () => {
+    $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
 
   function renderPage() {

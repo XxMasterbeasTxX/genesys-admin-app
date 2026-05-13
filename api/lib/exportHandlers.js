@@ -25,6 +25,7 @@ const handlers = {
   licensesConsumption:    () => require("./exports/licensesConsumption"),
   rolesSingleOrg: () => require("./exports/rolesSingleOrg"),
   lastLogin: () => require("./exports/lastLogin"),
+  queuesSkills: () => require("./exports/queuesSkills"),
   trustee: () => require("./exports/trustee"),
   documentation:          () => require("./exports/documentation"),
   interactionTotals:      () => require("./exports/interactionTotals"),
