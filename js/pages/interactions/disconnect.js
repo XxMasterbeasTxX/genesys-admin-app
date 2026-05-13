@@ -31,6 +31,8 @@ const MEDIA_TYPES = [
 /** Number of 31-day intervals to scan backwards (≈ 6 months). */
 const SCAN_INTERVALS = 6;
 const INTERVAL_DAYS  = 31;
+const RECENT_LOOKBACK_HOURS = 48;
+const RECENT_BUCKET_HOURS   = 6;
 
 const STATUS = {
   ready:          "Ready. Select a mode and provide input.",
@@ -426,15 +428,93 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
   async function scanQueue(queueId, filters) {
     const orgId  = orgContext.get();
     const now    = new Date();
+    const recentCutoff = new Date(now.getTime() - RECENT_LOOKBACK_HOURS * 3_600_000);
     const seen   = new Set();
     const matched = [];
+
+    // Phase 1: scan the most recent 48 hours with synchronous analytics +
+    // conversation details. This avoids async analytics ingestion lag for
+    // today's interactions.
+    const recentIntervals = [];
+    for (let endMs = now.getTime(); endMs > recentCutoff.getTime(); endMs -= RECENT_BUCKET_HOURS * 3_600_000) {
+      const end = new Date(endMs);
+      const start = new Date(Math.max(recentCutoff.getTime(), endMs - RECENT_BUCKET_HOURS * 3_600_000));
+      recentIntervals.push({ start, end });
+    }
+
+    const totalIntervals = recentIntervals.length + SCAN_INTERVALS;
+    let intervalNo = 0;
+
+    for (const r of recentIntervals) {
+      if (cancelled) break;
+
+      intervalNo++;
+      setStatus(`[Recent sync] ${STATUS.scanning(intervalNo, totalIntervals)}`);
+      showProgress(((intervalNo - 1) / totalIntervals) * 100);
+
+      const analyticsBody = {
+        interval: `${r.start.toISOString()}/${r.end.toISOString()}`,
+        order: "desc",
+        orderBy: "conversationStart",
+        segmentFilters: [{
+          type: "and",
+          predicates: [{ dimension: "queueId", value: queueId }],
+        }],
+        conversationFilters: [{
+          type: "and",
+          predicates: [{ dimension: "conversationEnd", operator: "notExists" }],
+        }],
+      };
+
+      let convs = [];
+      try {
+        convs = await gc.queryConversationDetails(api, orgId, analyticsBody, {
+          maxPages: 200,
+          onProgress: (n) => {
+            const within = Math.min(n / 500, 1);
+            showProgress((((intervalNo - 1) + within) / totalIntervals) * 100);
+          },
+        });
+      } catch (err) {
+        console.warn(`Recent interval ${intervalNo} scan failed — skipping:`, err.message);
+        continue;
+      }
+
+      for (const c of convs) {
+        if (cancelled) break;
+        if (seen.has(c.conversationId)) continue;
+        seen.add(c.conversationId);
+        if (c.conversationEnd) continue;
+
+        try {
+          const conv = await gc.getConversation(api, orgId, c.conversationId);
+          const mediaType = detectMediaType(conv.participants);
+
+          if (mediaType !== "unknown" && !filters.mediaTypes.includes(mediaType)) continue;
+
+          const st = conv.startTime ? new Date(conv.startTime) : null;
+          if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) continue;
+          if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) continue;
+
+          matched.push({
+            convId:    c.conversationId,
+            mediaType,
+            startTime: formatDateTime(conv.startTime),
+          });
+        } catch (err) {
+          console.warn(`Could not inspect recent conversation ${c.conversationId}:`, err.message);
+        }
+      }
+    }
 
     for (let i = 0; i < SCAN_INTERVALS; i++) {
       if (cancelled) break;
 
-      const end      = new Date(now.getTime() - i * INTERVAL_DAYS * 86_400_000);
+      const end      = new Date(recentCutoff.getTime() - i * INTERVAL_DAYS * 86_400_000);
       const start    = new Date(end.getTime()  - INTERVAL_DAYS * 86_400_000);
       const interval = `${start.toISOString()}/${end.toISOString()}`;
+
+      intervalNo++;
 
       const jobBody = {
         order: "desc",
@@ -455,12 +535,12 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
           interval,
           jobBody,
           onStatus: (msg) =>
-            setStatus(`Interval ${i + 1} of ${SCAN_INTERVALS}: ${msg}`),
+            setStatus(`[Historical async] Interval ${intervalNo} of ${totalIntervals}: ${msg}`),
           onProgress: (pct) =>
-            showProgress((i / SCAN_INTERVALS) * 100 + pct / SCAN_INTERVALS),
+            showProgress((((intervalNo - 1) + pct / 100) / totalIntervals) * 100),
         });
       } catch (err) {
-        console.warn(`Interval ${i + 1} scan failed — skipping:`, err.message);
+        console.warn(`Interval ${intervalNo} scan failed — skipping:`, err.message);
         continue;
       }
 
