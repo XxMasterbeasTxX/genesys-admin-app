@@ -157,28 +157,28 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     </div>
 
     <div id="qsFiltersWrap" style="display:none">
-      <div class="sp-grid" style="grid-template-columns:repeat(2,minmax(220px,1fr));gap:12px">
-        <div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start">
+        <div style="min-width:200px;flex:1">
           <label class="sp-form-label">User</label>
           <div id="qsUserFilter"></div>
         </div>
-        <div>
+        <div style="min-width:200px;flex:1">
           <label class="sp-form-label">Groups</label>
           <div id="qsGroupFilter"></div>
         </div>
-        <div>
+        <div style="min-width:200px;flex:1">
           <label class="sp-form-label">Work Teams</label>
           <div id="qsTeamFilter"></div>
         </div>
-        <div>
+        <div style="min-width:200px;flex:1">
           <label class="sp-form-label">Queues</label>
           <div id="qsQueueFilter"></div>
         </div>
-        <div>
+        <div style="min-width:200px;flex:1">
           <label class="sp-form-label">Skills</label>
           <div id="qsSkillFilter"></div>
         </div>
-        <div>
+        <div style="min-width:200px;flex:1">
           <label class="sp-form-label">Language Skills</label>
           <div id="qsLanguageFilter"></div>
         </div>
@@ -398,7 +398,17 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
   $dlBtn.addEventListener("click", () => {
     if (!lastWorkbook || !lastFilename) return;
     const XLSX = window.XLSX;
-    XLSX.writeFile(lastWorkbook, lastFilename);
+    const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
+    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    window._xlsxDownload = window._xlsxDownload || {};
+    window._xlsxDownload[key] = { filename: lastFilename, b64 };
+    const helperUrl = new URL("download.html", document.baseURI);
+    helperUrl.hash = key;
+    const popup = window.open(helperUrl.href, "_blank");
+    if (!popup) {
+      delete window._xlsxDownload[key];
+      setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
+    }
   });
 
   function renderPreviewTable(rows) {
