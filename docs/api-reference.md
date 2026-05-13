@@ -84,11 +84,11 @@ Used by: Interaction Search (Recent + Historical), Disconnect Interactions, Move
 | Method | Path | Purpose |
 | --- | --- | --- |
 | POST | `/api/v2/analytics/conversations/aggregates/query` | Conversation aggregates — pre-computed counts by dimension (Interaction Totals: `nConversations` grouped by `mediaType`, `originatingDirection`, `interactionType`; `nOffered` with `firstQueue` filter for non-voice ACD counts) |
-| POST | `/api/v2/analytics/conversations/details/jobs` | Submit an async conversation search job (Historical Search — >48h; ranges >7 days are split into 7-day chunks, one job per chunk) |
+| POST | `/api/v2/analytics/conversations/details/jobs` | Submit an async conversation search job (Historical Search — >48h; ranges >7 days are split into 7-day chunks, one job per chunk; Disconnect Interactions — historical phase, windows shifted to start after the 48 h cutoff) |
 | GET | `/api/v2/analytics/conversations/details/jobs/{jobId}` | Poll async job status |
 | GET | `/api/v2/analytics/conversations/details/jobs/{jobId}/results` | Fetch async job results (paginated) |
-| POST | `/api/v2/analytics/conversations/details/query` | Synchronous conversation query (Recent Search — <48h) |
-| GET | `/api/v2/conversations/{id}` | Get a single conversation by ID (Recent Search — lazy PD load on row expand; Transcript Search — fetch conversation details and communicationId for ID-mode search) |
+| POST | `/api/v2/analytics/conversations/details/query` | Synchronous conversation query (Recent Search — <48h; Disconnect Interactions — recent phase, 6-hour buckets within last 48 h) |
+| GET | `/api/v2/conversations/{id}` | Get a single conversation by ID (Recent Search — lazy PD load on row expand; Transcript Search — fetch conversation details and communicationId for ID-mode search; Disconnect Interactions — per-conversation fetch during recent sync phase for accurate media-type detection) |
 | POST | `/api/v2/conversations/{id}/disconnect` | Force-disconnect an active conversation |
 | POST | `/api/v2/conversations/{id}/participants/{participantId}/replace` | Blind transfer (move interaction to a different queue) |
 
