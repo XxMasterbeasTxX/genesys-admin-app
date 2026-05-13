@@ -216,6 +216,7 @@ export function buildScheduleForm(opts) {
   const $dofSlot = dynamicOrgFields ? form.querySelector("#spDynamicFieldsSlot") : null;
   let dynamicLoading = false;
   let dynamicLoaded = false;
+  let currentDynamicFieldDefs = [];
 
   function normalizeOption(option) {
     if (option && typeof option === "object") {
@@ -236,9 +237,10 @@ export function buildScheduleForm(opts) {
     dynamicLoaded = false;
     try {
       const fieldDefs = await dynamicOrgFields(orgId);
+      currentDynamicFieldDefs = Array.isArray(fieldDefs) ? fieldDefs : [];
       dynamicLoading = false;
       dynamicLoaded = true;
-      $dofSlot.innerHTML = fieldDefs.map(f => {
+      $dofSlot.innerHTML = currentDynamicFieldDefs.map(f => {
         const required = f.required !== false;
         if (f.singleSelect) {
           // Single-select: render a <select> dropdown
@@ -283,6 +285,8 @@ export function buildScheduleForm(opts) {
       });
     } catch (err) {
       dynamicLoading = false;
+      dynamicLoaded = false;
+      currentDynamicFieldDefs = [];
       $dofSlot.innerHTML = `<span class="sp-form-hint sp-form-hint--error">Failed to load: ${escapeHtml(err.message)}</span>`;
     }
   }
@@ -333,30 +337,29 @@ export function buildScheduleForm(opts) {
       }
       data.exportConfig = config;
     }
-      // Collect dynamic org field checkboxes (e.g. roles multi-select)
+      // Collect dynamic org fields (checkbox multi-select + single-select)
       if ($dofSlot) {
-        const checkedByKey = {};
-        const checkedLabelsByKey = {};
-        $dofSlot.querySelectorAll('input[type="checkbox"][data-dof-key]').forEach(cb => {
-          const k = cb.dataset.dofKey;
-          if (!checkedByKey[k]) checkedByKey[k] = [];
-          if (!checkedLabelsByKey[k]) checkedLabelsByKey[k] = [];
-          if (cb.checked) checkedByKey[k].push(cb.value);
-          if (cb.checked) checkedLabelsByKey[k].push(cb.dataset.dofLabel || cb.value);
-        });
-        if (Object.keys(checkedByKey).length > 0) {
-          if (!data.exportConfig) data.exportConfig = {};
-          Object.assign(data.exportConfig, checkedByKey);
-          for (const [k, labels] of Object.entries(checkedLabelsByKey)) {
-            data.exportConfig[`${k}Labels`] = labels;
+        if (!data.exportConfig) data.exportConfig = {};
+
+        for (const f of currentDynamicFieldDefs) {
+          if (!f?.key) continue;
+
+          if (f.singleSelect) {
+            const sel = $dofSlot.querySelector(`select[data-dof-key="${f.key}"]`);
+            const value = sel?.value || "";
+            const label = sel?.selectedOptions?.[0]?.textContent || value;
+            data.exportConfig[f.key] = value;
+            data.exportConfig[`${f.key}Label`] = label;
+          } else {
+            const checkboxes = [...$dofSlot.querySelectorAll(`input[type="checkbox"][data-dof-key="${f.key}"]`)];
+            const selectedValues = checkboxes.filter((cb) => cb.checked).map((cb) => cb.value);
+            const selectedLabels = checkboxes
+              .filter((cb) => cb.checked)
+              .map((cb) => cb.dataset.dofLabel || cb.value);
+            data.exportConfig[f.key] = selectedValues;
+            data.exportConfig[`${f.key}Labels`] = selectedLabels;
           }
         }
-        // Collect dynamic org field single-select dropdowns
-        $dofSlot.querySelectorAll('select[data-dof-key]').forEach(sel => {
-          if (!data.exportConfig) data.exportConfig = {};
-          data.exportConfig[sel.dataset.dofKey] = sel.value;
-          data.exportConfig[`${sel.dataset.dofKey}Label`] = sel.selectedOptions[0]?.textContent || sel.value;
-        });
       }
     return data;
   }
