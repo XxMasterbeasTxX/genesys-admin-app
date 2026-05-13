@@ -259,7 +259,7 @@ export function buildScheduleForm(opts) {
         const prevVals = existingValues[f.key] || [];
         const boxes = (f.options || []).map((o) => {
           const opt = normalizeOption(o);
-          return `<label class="sp-checkbox-item"><input type="checkbox" data-dof-key="${escapeHtml(f.key)}" data-dof-required="${required ? "1" : "0"}" value="${escapeHtml(opt.value)}"${prevVals.includes(opt.value) ? " checked" : ""}> ${escapeHtml(opt.label)}</label>`;
+          return `<label class="sp-checkbox-item"><input type="checkbox" data-dof-key="${escapeHtml(f.key)}" data-dof-required="${required ? "1" : "0"}" data-dof-label="${escapeHtml(opt.label)}" value="${escapeHtml(opt.value)}"${prevVals.includes(opt.value) ? " checked" : ""}> ${escapeHtml(opt.label)}</label>`;
         }).join("");
         return `
           <div class="sp-dynamic-field">
@@ -336,19 +336,26 @@ export function buildScheduleForm(opts) {
       // Collect dynamic org field checkboxes (e.g. roles multi-select)
       if ($dofSlot) {
         const checkedByKey = {};
+        const checkedLabelsByKey = {};
         $dofSlot.querySelectorAll('input[type="checkbox"][data-dof-key]').forEach(cb => {
           const k = cb.dataset.dofKey;
           if (!checkedByKey[k]) checkedByKey[k] = [];
+          if (!checkedLabelsByKey[k]) checkedLabelsByKey[k] = [];
           if (cb.checked) checkedByKey[k].push(cb.value);
+          if (cb.checked) checkedLabelsByKey[k].push(cb.dataset.dofLabel || cb.value);
         });
         if (Object.keys(checkedByKey).length > 0) {
           if (!data.exportConfig) data.exportConfig = {};
           Object.assign(data.exportConfig, checkedByKey);
+          for (const [k, labels] of Object.entries(checkedLabelsByKey)) {
+            data.exportConfig[`${k}Labels`] = labels;
+          }
         }
         // Collect dynamic org field single-select dropdowns
         $dofSlot.querySelectorAll('select[data-dof-key]').forEach(sel => {
           if (!data.exportConfig) data.exportConfig = {};
           data.exportConfig[sel.dataset.dofKey] = sel.value;
+          data.exportConfig[`${sel.dataset.dofKey}Label`] = sel.selectedOptions[0]?.textContent || sel.value;
         });
       }
     return data;

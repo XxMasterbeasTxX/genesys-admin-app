@@ -286,10 +286,25 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
         ];
       },
       configSummary: (cfg) => {
-        const count = (k) => Array.isArray(cfg?.[k]) ? cfg[k].length : 0;
-        const total = count("users") + count("groups") + count("teams") + count("queues") + count("skills") + count("languages");
-        if (!total) return "All users (no filters)";
-        return `Filters selected: ${total}`;
+        const summarize = (key, label) => {
+          const labels = Array.isArray(cfg?.[`${key}Labels`]) ? cfg[`${key}Labels`] : [];
+          if (!labels.length) return null;
+          const shown = labels.slice(0, 2).join(", ");
+          const suffix = labels.length > 2 ? ` +${labels.length - 2} more` : "";
+          return `${label}: ${shown}${suffix}`;
+        };
+
+        const lines = [
+          summarize("users", "Users"),
+          summarize("groups", "Groups"),
+          summarize("teams", "Work Teams"),
+          summarize("queues", "Queues"),
+          summarize("skills", "Skills"),
+          summarize("languages", "Language Skills"),
+        ].filter(Boolean);
+
+        if (!lines.length) return "All users (no filters)";
+        return lines.join("; ");
       },
     });
     el.appendChild(schedulePanel);
