@@ -27,36 +27,61 @@ function hasAnyFilter(sel) {
   );
 }
 
-function toNameArray(items, nameKeys = ["name"]) {
-  return (items || [])
-    .map((x) => {
-      for (const k of nameKeys) {
-        if (x?.[k]) return String(x[k]);
-      }
-      return "";
-    })
-    .filter(Boolean)
+function sortedUnique(values) {
+  return [...new Set(values.filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 }
 
-function buildRows(users, queueMap) {
+function buildRows(users, queueMap, sel) {
   const rows = [];
+  let usersWithRows = 0;
 
   for (const user of users) {
     const name = user.name || "N/A";
 
-    const queueNames = (queueMap.get(user.id) || [])
-      .map((q) => q.queueName || "")
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    const queues = (queueMap.get(user.id) || []).map((q) => ({
+      id: q.queueId || "",
+      name: q.queueName || "",
+    })).filter((q) => q.id && q.name);
 
-    const skillNames = toNameArray(user.skills, ["name", "skillName"]);
-    const languageNames = toNameArray(user.languages, ["name", "languageName"]);
+    const skills = (user.skills || []).map((s) => ({
+      id: s.id || "",
+      name: s.name || s.skillName || "",
+    })).filter((s) => s.id && s.name);
 
-    const qVals = queueNames.length ? queueNames : [""];
-    const sVals = skillNames.length ? skillNames : [""];
-    const lVals = languageNames.length ? languageNames : [""];
+    const languages = (user.languages || []).map((l) => ({
+      id: l.id || "",
+      name: l.name || l.languageName || "",
+    })).filter((l) => l.id && l.name);
 
+    let qVals = [];
+    if (sel.queues.size > 0) {
+      qVals = sortedUnique(queues.filter((q) => sel.queues.has(q.id)).map((q) => q.name));
+      if (qVals.length === 0) continue;
+    } else {
+      qVals = sortedUnique(queues.map((q) => q.name));
+      if (qVals.length === 0) qVals = [""];
+    }
+
+    let sVals = [];
+    if (sel.skills.size > 0) {
+      sVals = sortedUnique(skills.filter((s) => sel.skills.has(s.id)).map((s) => s.name));
+      if (sVals.length === 0) continue;
+    } else {
+      sVals = sortedUnique(skills.map((s) => s.name));
+      if (sVals.length === 0) sVals = [""];
+    }
+
+    let lVals = [];
+    if (sel.languages.size > 0) {
+      lVals = sortedUnique(languages.filter((l) => sel.languages.has(l.id)).map((l) => l.name));
+      if (lVals.length === 0) continue;
+    } else {
+      lVals = sortedUnique(languages.map((l) => l.name));
+      if (lVals.length === 0) lVals = [""];
+    }
+
+    usersWithRows++;
     for (const q of qVals) {
       for (const s of sVals) {
         for (const l of lVals) {
@@ -66,7 +91,7 @@ function buildRows(users, queueMap) {
     }
   }
 
-  return rows;
+  return { rows, usersWithRows };
 }
 
 function buildWorkbook(rows) {
@@ -77,7 +102,7 @@ function buildWorkbook(rows) {
   return buildStyledWorkbook(wsData, "Users Queues Skills Export");
 }
 
-function userMatchesNonQueueFilters(user, sel) {
+function userMatchesGroup1Filters(user, sel) {
   if (sel.users.size > 0 && !sel.users.has(user.id)) return false;
 
   if (sel.groups.size > 0) {
@@ -89,18 +114,6 @@ function userMatchesNonQueueFilters(user, sel) {
   if (sel.teams.size > 0) {
     const teamId = user.team?.id || "";
     if (!teamId || !sel.teams.has(teamId)) return false;
-  }
-
-  if (sel.skills.size > 0) {
-    const skillIds = new Set((user.skills || []).map((s) => s.id).filter(Boolean));
-    const hasSkill = [...sel.skills].some((id) => skillIds.has(id));
-    if (!hasSkill) return false;
-  }
-
-  if (sel.languages.size > 0) {
-    const langIds = new Set((user.languages || []).map((l) => l.id).filter(Boolean));
-    const hasLang = [...sel.languages].some((id) => langIds.has(id));
-    if (!hasLang) return false;
   }
 
   return true;
@@ -332,31 +345,23 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
       if (cancelled) return;
       setProgress(35);
 
-      // 2) Apply all non-queue filters
+      // 2) Apply Group 1 filters (user/group/team)
       setStatus("Applying filters…");
-      let matchedUsers = allUsers.filter((u) => userMatchesNonQueueFilters(u, sel));
+      const matchedUsers = allUsers.filter((u) => userMatchesGroup1Filters(u, sel));
       if (cancelled) return;
       setProgress(45);
 
-      // 3) Fetch queues for matched users (needed both for queue filter and output rows)
+      // 3) Fetch queues for matched users (needed for Group 2 queue filtering and output rows)
       setStatus(`Loading queue assignments for ${matchedUsers.length} user(s)…`);
       const queueMap = await fetchQueuesForUsers(api, org.id, matchedUsers, (done, total) => {
         setProgress(45 + Math.round((done / Math.max(total, 1)) * 40));
       });
       if (cancelled) return;
-
-      // 4) Apply queue filter (if any)
-      if (sel.queues.size > 0) {
-        matchedUsers = matchedUsers.filter((u) => {
-          const qIds = new Set((queueMap.get(u.id) || []).map((q) => q.queueId).filter(Boolean));
-          return [...sel.queues].some((id) => qIds.has(id));
-        });
-      }
       setProgress(88);
 
-      // 5) Build rows and workbook
+      // 4) Build rows and workbook using Group 2 row-level filters (queue/skill/language)
       setStatus("Building preview and Excel…");
-      const rows = buildRows(matchedUsers, queueMap);
+      const { rows, usersWithRows } = buildRows(matchedUsers, queueMap, sel);
       const wb = buildWorkbook(rows);
       setProgress(96);
 
@@ -367,7 +372,7 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
       renderPreviewTable(rows);
       $table.style.display = "";
 
-      $summary.textContent = `${matchedUsers.length} matched user(s), ${rows.length} row(s)`;
+      $summary.textContent = `${usersWithRows} matched user(s), ${rows.length} row(s)`;
       $summary.style.display = "";
       $dlWrap.style.display = "";
 
