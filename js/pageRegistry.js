@@ -44,6 +44,12 @@ const registry = {
   "/interactions/disconnect": (ctx) =>
     import("./pages/interactions/disconnect.js").then((m) => m.default(ctx)),
 
+  // ── Interactions › Recordings ─────────────────────────────────
+  "/interactions/recordings/create": (ctx) =>
+    import("./pages/interactions/recordings/createJob.js").then((m) => m.default(ctx)),
+  "/interactions/recordings/jobs": (ctx) =>
+    import("./pages/interactions/recordings/jobsList.js").then((m) => m.default(ctx)),
+
   // ── Export ─────────────────────────────────────────
   "/export/scheduled": (ctx) =>
     import("./pages/export/scheduledExports.js").then((m) => m.default(ctx)),

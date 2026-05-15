@@ -137,6 +137,15 @@ export const NAV_TREE = [
         ],
       },
       { label: "Move", path: "move", enabled: true, access: "interactions.move" },
+      {
+        label: "Recordings",
+        path: "recordings",
+        enabled: true,
+        children: [
+          { label: "Create Export Job", path: "create", enabled: true, access: "interactions.recordings.create" },
+          { label: "Export Jobs",       path: "jobs",   enabled: true, access: "interactions.recordings.jobs"   },
+        ],
+      },
     ],
   },
   {

@@ -49,6 +49,9 @@
  *   interactions.search.*                           All search pages (any sub-group)
  *   interactions.move                               Move interactions between queues
  *   interactions.disconnect                         Force-disconnect stuck conversations
+ *   interactions.recordings.create                  Create a recording bulk export job
+ *   interactions.recordings.jobs                    View and manage recording export jobs
+ *   interactions.recordings.*                       All recordings pages
  *
  *   EXPORT
  *   export.scheduled                   All Scheduled Exports overview + automation
