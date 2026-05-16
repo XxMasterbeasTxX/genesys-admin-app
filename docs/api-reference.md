@@ -331,11 +331,16 @@ Used by: GDPR — Subject Request, GDPR — Request Status
 
 ## 15. Recording
 
-Used by: Documentation Export
+Used by: Documentation Export, Recordings — Create Export Job, Recordings — Export Jobs
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/recording/mediaretentionpolicies` | List media retention policies |
+| POST | `/api/v2/recording/jobs` | Create a bulk recording job (EXPORT/DELETE/ARCHIVE) with a `conversationQuery` of date range + queue/user segment filters |
+| GET | `/api/v2/recording/jobs` | List all recording jobs (filterable by `jobType` and `state`) |
+| GET | `/api/v2/recording/jobs/{jobId}` | Get a single recording job and its current state |
+| PUT | `/api/v2/recording/jobs/{jobId}` | Update job state — used to **Execute** (`{state:"PROCESSING"}`) a `READY` job or **Cancel** (`{state:"CANCELLED"}`) a running one |
+| DELETE | `/api/v2/recording/jobs/{jobId}` | Delete a job |
 
 ---
 
