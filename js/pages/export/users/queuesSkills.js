@@ -17,6 +17,7 @@ import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
 import { logAction } from "../../../services/activityLogService.js";
 
 const HEADERS = ["Name", "Queue", "Skill", "Language Skill"];
+const ROW_FIELDS = ["name", "queue", "skill", "languageSkill"];
 const AUTOMATION_ENABLED = true;
 const AUTOMATION_EXPORT_TYPE = "queuesSkills";
 const AUTOMATION_EXPORT_LABEL = "Users Queues/Skills";
@@ -107,6 +108,20 @@ function buildWorkbook(rows) {
   return buildStyledWorkbook(wsData, "Users Queues Skills Export");
 }
 
+function rowMatchesSearch(row, searchText) {
+  const term = searchText.trim().toLowerCase();
+  if (!term) return true;
+
+  return ROW_FIELDS.some((field) => {
+    const value = String(row[field] || "").toLowerCase();
+    return value.includes(term);
+  });
+}
+
+function buildColumnValueMap(rows) {
+  return ROW_FIELDS.map((field) => sortedUnique(rows.map((row) => row[field])));
+}
+
 function userMatchesGroup1Filters(user, sel) {
   if (sel.users.size > 0 && !sel.users.has(user.id)) return false;
 
@@ -163,6 +178,11 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
   let allRows = [];
   let currentPage = 1;
   let pageSize = 50;
+  let searchText = "";
+  let activeColumnFilters = {};
+  let columnValueMap = [];
+  const filterButtons = new Map();
+  let openDropdown = null;
 
   el.innerHTML = `
     <h1 class="h1">Export — Users — Queues/Skills</h1>
@@ -361,6 +381,155 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     };
   }
 
+  function getFilteredRows() {
+    return allRows.filter((row) => {
+      for (const [idxStr, selected] of Object.entries(activeColumnFilters)) {
+        const colIdx = Number(idxStr);
+        if (!selected) continue;
+        if (selected.size === 0) return false;
+        const field = ROW_FIELDS[colIdx];
+        const value = String(row[field] || "");
+        if (!selected.has(value)) return false;
+      }
+
+      return rowMatchesSearch(row, searchText);
+    });
+  }
+
+  function closeOpenDropdown() {
+    if (!openDropdown) return;
+    openDropdown.classList.remove("open");
+    openDropdown = null;
+  }
+
+  function syncFilterButton(colIdx) {
+    const btn = filterButtons.get(colIdx);
+    btn?.classList.toggle("cf-btn--active", activeColumnFilters[colIdx] != null);
+  }
+
+  function syncAllFilterButtons() {
+    for (let i = 0; i < HEADERS.length; i++) {
+      syncFilterButton(i);
+    }
+  }
+
+  function setColumnFilter(colIdx, values) {
+    if (!values) {
+      delete activeColumnFilters[colIdx];
+    } else {
+      activeColumnFilters[colIdx] = values;
+    }
+    currentPage = 1;
+    renderPage();
+  }
+
+  function buildFilterPanel(colIdx) {
+    const values = columnValueMap[colIdx] || [];
+    const label = HEADERS[colIdx] || "";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cf-btn";
+    btn.title = label;
+    btn.innerHTML = `<span class="cf-btn-label">${escapeHtml(label || "▼")}</span><span class="cf-caret">▼</span>`;
+
+    const panel = document.createElement("div");
+    panel.className = "cf-dropdown";
+    panel.innerHTML = `
+      <input class="cf-search" type="text" placeholder="Search values…" />
+      <div class="cf-actions">
+        <button type="button" class="cf-action-btn cf-all">All</button>
+        <button type="button" class="cf-action-btn cf-none">None</button>
+      </div>
+      <div class="cf-list"></div>
+    `;
+
+    const searchInput = panel.querySelector(".cf-search");
+    const listEl = panel.querySelector(".cf-list");
+
+    function rebuildList(searchTerm = "") {
+      const currentActive = activeColumnFilters[colIdx];
+      const term = searchTerm.trim().toLowerCase();
+
+      listEl.innerHTML = "";
+
+      for (const value of values) {
+        if (term && !value.toLowerCase().includes(term)) continue;
+
+        const selected = currentActive == null || currentActive.has(value);
+        const item = document.createElement("label");
+        item.className = "cf-item";
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = value;
+        cb.checked = selected;
+
+        cb.addEventListener("change", () => {
+          let next = activeColumnFilters[colIdx];
+          if (next == null) {
+            next = new Set(values);
+          } else {
+            next = new Set(next);
+          }
+
+          if (cb.checked) next.add(value);
+          else next.delete(value);
+
+          if (next.size === values.length) {
+            setColumnFilter(colIdx, undefined);
+          } else {
+            setColumnFilter(colIdx, next);
+          }
+
+          rebuildList(searchInput.value);
+          syncFilterButton(colIdx);
+        });
+
+        const span = document.createElement("span");
+        span.className = "cf-item-label";
+        span.textContent = value || "(empty)";
+
+        item.append(cb, span);
+        listEl.appendChild(item);
+      }
+    }
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (openDropdown && openDropdown !== panel) {
+        closeOpenDropdown();
+      }
+
+      panel.classList.toggle("open");
+      openDropdown = panel.classList.contains("open") ? panel : null;
+
+      if (panel.classList.contains("open")) {
+        searchInput.value = "";
+        rebuildList();
+        searchInput.focus();
+      }
+    });
+
+    searchInput.addEventListener("input", () => rebuildList(searchInput.value));
+
+    panel.querySelector(".cf-all").addEventListener("click", () => {
+      setColumnFilter(colIdx, undefined);
+      rebuildList(searchInput.value);
+      syncFilterButton(colIdx);
+    });
+
+    panel.querySelector(".cf-none").addEventListener("click", () => {
+      setColumnFilter(colIdx, new Set());
+      rebuildList(searchInput.value);
+      syncFilterButton(colIdx);
+    });
+
+    rebuildList();
+
+    return { btn, panel };
+  }
+
   function updateRunButton() {
     $runBtn.disabled = !hasAnyFilter(getSelection());
   }
@@ -542,13 +711,22 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
 
+  document.addEventListener("click", (e) => {
+    if (!openDropdown) return;
+    if (openDropdown.contains(e.target)) return;
+    if (e.target.closest(".cf-btn")) return;
+    closeOpenDropdown();
+  });
+
   function renderPage() {
-    const total = allRows.length;
+    const visibleRows = getFilteredRows();
+    const total = visibleRows.length;
+    const grandTotal = allRows.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     if (currentPage > totalPages) currentPage = totalPages;
 
     const start = (currentPage - 1) * pageSize;
-    const pageRows = allRows.slice(start, start + pageSize);
+    const pageRows = visibleRows.slice(start, start + pageSize);
 
     const $tbody = $table.querySelector("tbody");
     if ($tbody) {
@@ -565,15 +743,29 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     const $info = $table.querySelector("#qsPageInfo");
     if ($info) $info.textContent = `Page ${currentPage} of ${totalPages} (${total} rows)`;
 
+    const $matchInfo = $table.querySelector("#qsMatchInfo");
+    if ($matchInfo) {
+      $matchInfo.textContent = total === grandTotal
+        ? `${grandTotal} rows`
+        : `${total} of ${grandTotal} rows`;
+    }
+
     const $prev = $table.querySelector("#qsPrevBtn");
     const $next = $table.querySelector("#qsNextBtn");
     if ($prev) $prev.disabled = currentPage <= 1;
     if ($next) $next.disabled = currentPage >= totalPages;
+
+    syncAllFilterButtons();
   }
 
   function renderPreviewTable(rows) {
     allRows = rows;
     currentPage = 1;
+    searchText = "";
+    activeColumnFilters = {};
+    columnValueMap = buildColumnValueMap(rows);
+    filterButtons.clear();
+    closeOpenDropdown();
 
     $table.innerHTML = `
       <details class="te-preview" open>
@@ -592,6 +784,11 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
           <button class="btn" id="qsPrevBtn" style="padding:2px 10px">&#8249; Prev</button>
           <button class="btn" id="qsNextBtn" style="padding:2px 10px">Next &#8250;</button>
         </div>
+        <div style="margin: 0 0 8px 0;">
+          <label class="sp-form-label" for="qsSearchInput">Search all fields</label>
+          <input id="qsSearchInput" class="em-input" type="text" placeholder="Type to filter the current results" autocomplete="off" style="width:100%; max-width: 420px;">
+          <div id="qsMatchInfo" class="sp-form-hint" style="margin-top:4px"></div>
+        </div>
         <div class="te-table-scroll">
           <table class="data-table">
             <thead>
@@ -601,12 +798,27 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
                 <th>${HEADERS[2]}</th>
                 <th>${HEADERS[3]}</th>
               </tr>
+              <tr class="qs-filter-row">
+                <th></th>
+                <th></th>
+                <th></th>
+                <th></th>
+              </tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
       </details>
     `;
+
+    const $searchInput = $table.querySelector("#qsSearchInput");
+    if ($searchInput) {
+      $searchInput.addEventListener("input", (e) => {
+        searchText = e.target.value || "";
+        currentPage = 1;
+        renderPage();
+      });
+    }
 
     $table.querySelector("#qsPageSize").addEventListener("change", (e) => {
       pageSize = Number(e.target.value);
@@ -622,6 +834,18 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
       const totalPages = Math.ceil(allRows.length / pageSize);
       if (currentPage < totalPages) { currentPage++; renderPage(); }
     });
+
+    const filterRow = $table.querySelector("tr.qs-filter-row");
+    if (filterRow) {
+      filterRow.innerHTML = "";
+      for (let i = 0; i < HEADERS.length; i++) {
+        const th = document.createElement("th");
+        const { btn, panel } = buildFilterPanel(i);
+        filterButtons.set(i, btn);
+        th.append(btn, panel);
+        filterRow.appendChild(th);
+      }
+    }
 
     renderPage();
   }
