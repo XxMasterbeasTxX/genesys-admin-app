@@ -792,18 +792,7 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
         <div class="te-table-scroll">
           <table class="data-table">
             <thead>
-              <tr>
-                <th>${HEADERS[0]}</th>
-                <th>${HEADERS[1]}</th>
-                <th>${HEADERS[2]}</th>
-                <th>${HEADERS[3]}</th>
-              </tr>
-              <tr class="qs-filter-row">
-                <th></th>
-                <th></th>
-                <th></th>
-                <th></th>
-              </tr>
+              <tr class="qs-filter-row"></tr>
             </thead>
             <tbody></tbody>
           </table>
