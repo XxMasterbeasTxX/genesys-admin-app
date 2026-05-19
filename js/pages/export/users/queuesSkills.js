@@ -840,6 +840,7 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
       filterRow.innerHTML = "";
       for (let i = 0; i < HEADERS.length; i++) {
         const th = document.createElement("th");
+        th.style.position = "relative";
         const { btn, panel } = buildFilterPanel(i);
         filterButtons.set(i, btn);
         th.append(btn, panel);
