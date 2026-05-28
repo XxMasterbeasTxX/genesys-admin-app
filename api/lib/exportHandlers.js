@@ -30,6 +30,7 @@ const handlers = {
   documentation:          () => require("./exports/documentation"),
   interactionTotals:      () => require("./exports/interactionTotals"),
   skillTemplates:         () => require("./exports/skillTemplates"),
+  billingSingleOrg:       () => require("./exports/billingSingleOrg"),
 };
 
 /**

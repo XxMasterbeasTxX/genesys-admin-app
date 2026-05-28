@@ -25,8 +25,13 @@ import { isTrusteeOrg } from "../../../utils/billingTrustees.js";
 import { processBillingOverview } from "../../../utils/billingProcessor.js";
 import { buildBillingSheet, safeSheetName } from "../../../utils/billingExcelStyles.js";
 import { logAction } from "../../../services/activityLogService.js";
+import { createSchedulePanel } from "../../../components/schedulePanel.js";
 
 const DEFAULT_PERIOD_INDEX = 1; // "Previous Period" = latest complete
+
+const AUTOMATION_ENABLED      = true;
+const AUTOMATION_EXPORT_TYPE  = "billingSingleOrg";
+const AUTOMATION_EXPORT_LABEL = "Billing — Single Org";
 
 export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
   const el = document.createElement("section");
@@ -64,6 +69,21 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
       <button class="btn te-btn-export" id="bsoDownloadBtn">Download Excel</button>
     </div>
   `;
+
+  // ── Automation panel ──────────────────────────────────
+  // Mirrors Python GUI_Billing_Export_Scheduled_Single.py: schedule a single-org
+  // billing export, always for the latest complete period (index 1).
+  if (AUTOMATION_ENABLED) {
+    el.appendChild(createSchedulePanel({
+      exportType:  AUTOMATION_EXPORT_TYPE,
+      exportLabel: AUTOMATION_EXPORT_LABEL,
+      me,
+      requiresOrg: true,
+      // Exclude trustee orgs — they cannot be exported as trustors.
+      orgFilter:   (c) => !isTrusteeOrg(c.id),
+      configSummary: (cfg) => "Latest complete period",
+    }));
+  }
 
   const $period    = el.querySelector("#bsoPeriod");
   const $reloadBtn = el.querySelector("#bsoReloadBtn");

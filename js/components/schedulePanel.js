@@ -80,9 +80,11 @@ export function buildScheduleForm(opts) {
   const requiresOrg = opts.requiresOrg || false;
   const extraConfigFields = opts.extraConfigFields || [];
   const dynamicOrgFields = opts.dynamicOrgFields || null;
+  const orgFilter = typeof opts.orgFilter === "function" ? opts.orgFilter : null;
 
   // Get org list and existing config
-  const customers = requiresOrg ? orgContext.getCustomers() : [];
+  let customers = requiresOrg ? orgContext.getCustomers() : [];
+  if (orgFilter && customers.length) customers = customers.filter(orgFilter);
   const existingConfig = s?.exportConfig || {};
 
   const form = document.createElement("div");
@@ -447,7 +449,7 @@ export function buildScheduleForm(opts) {
  * @param {Array}   [opts.extraConfigFields] Extra config fields for the form
  * @returns {HTMLElement}
  */
-export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, extraConfigFields, dynamicOrgFields, configSummary }) {
+export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, extraConfigFields, dynamicOrgFields, configSummary, orgFilter }) {
   const el = document.createElement("div");
   el.className = "sp-section";
 
@@ -535,6 +537,7 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
       requiresOrg,
       extraConfigFields,
       dynamicOrgFields,
+      orgFilter,
       onSave: async (formData) => {
         if (existing) {
           await updateSchedule(existing.id, {

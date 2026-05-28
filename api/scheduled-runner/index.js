@@ -232,11 +232,17 @@ async function sendResultEmail(context, schedule, result) {
     `Generated: ${timestamp}\n\n` +
     "Best regards,\nGenesys Admin App";
 
+  // Handlers may supply their own subject/body to match upstream conventions
+  // (e.g. Python's `[{customer}] {task_name} Export`). User-supplied
+  // emailMessage on the schedule always wins over handler defaults.
+  const subject = result.subject || `${schedule.exportLabel} — ${timestamp}`;
+  const body    = schedule.emailMessage?.trim() || result.body || defaultBody;
+
   const message = {
     From: { Email: fromEmail, Name: fromName },
     To: recipientList.map((email) => ({ Email: email })),
-    Subject: `${schedule.exportLabel} — ${timestamp}`,
-    TextPart: schedule.emailMessage?.trim() || defaultBody,
+    Subject: subject,
+    TextPart: body,
   };
 
   if (result.base64 && result.filename) {
