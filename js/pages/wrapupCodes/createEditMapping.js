@@ -110,11 +110,15 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       }
       .wcm-switch-text {
         position:absolute;
+        left:0;
+        top:50%;
+        transform:translateY(-50%);
         width:104px;
         text-align:center;
         font-weight:600;
-        font-size:18px;
+        font-size:14px;
         letter-spacing:.01em;
+        line-height:1;
         pointer-events:none;
       }
       .wcm-switch-wrap {
