@@ -38,6 +38,16 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
 
   let searchQuery = "";
 
+  const defaultEditor = {
+    open: false,
+    localFlags: new Set(),
+    initialFlags: new Set(),
+    dirty: false,
+    saving: false,
+    error: null,
+    success: null,
+  };
+
   const modalState = {
     open: false,
     mode: "create",
@@ -47,6 +57,24 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
 
   el.innerHTML = `
     <style>
+      .wcm-header { display:flex; gap:14px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; }
+      .wcm-header-main { flex:1; min-width:420px; }
+      .wcm-default-panel {
+        flex:0 0 min(560px, 100%);
+        width:min(560px, 100%);
+        border:1px solid var(--border);
+        border-radius:12px;
+        background:rgba(255,255,255,.02);
+        padding:10px;
+      }
+      .wcm-default-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; }
+      .wcm-default-title { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; }
+      .wcm-default-sub { color:var(--muted); font-size:12px; margin-bottom:8px; }
+      .wcm-default-msg { min-height:18px; font-size:12px; margin-bottom:6px; }
+      .wcm-default-msg.error { color:#f87171; }
+      .wcm-default-msg.success { color:#34d399; }
+      .wcm-default-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:8px; }
+
       .wcm-toolbar { display:flex; gap:10px; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; margin-bottom:12px; }
       .wcm-toolbar-left { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; flex:1; }
       .wcm-create-group { flex:0 0 auto; }
@@ -149,26 +177,47 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       .wcm-muted { color:var(--muted); font-size:12px; }
 
       @media (max-width: 720px) {
+        .wcm-header-main { min-width:100%; }
+        .wcm-default-panel { width:100%; }
         .wcm-form-grid { grid-template-columns:1fr; }
         .wcm-toolbar-left { width:100%; flex-direction:column; align-items:stretch; }
         .wcm-search-group { max-width:none; width:100%; }
       }
     </style>
 
-    <h2>Wrapup Codes - Create/Edit/Mapping</h2>
-    <p class="page-desc">
-      Create and edit wrapup codes, and maintain outbound mapping flags per wrapup code.
-      Mapping rows use the org-wide outbound default set when no explicit mapping exists.
-    </p>
+    <div class="wcm-header">
+      <div class="wcm-header-main">
+        <h2>Wrapup Codes - Create/Edit/Mapping</h2>
+        <p class="page-desc">
+          Create and edit wrapup codes, and maintain outbound mapping flags per wrapup code.
+          Mapping rows use the org-wide outbound default set when no explicit mapping exists.
+        </p>
 
-    <div class="wcm-toolbar">
-      <div class="wcm-toolbar-left">
-        <div class="dt-actions wcm-create-group" style="margin:0">
-          <button class="btn" id="wcmCreateBtn">+ Create Wrapup Code</button>
+        <div class="wcm-toolbar">
+          <div class="wcm-toolbar-left">
+            <div class="dt-actions wcm-create-group" style="margin:0">
+              <button class="btn" id="wcmCreateBtn">+ Create Wrapup Code</button>
+            </div>
+            <div class="dt-control-group wcm-search-group">
+              <label class="dt-label" for="wcmSearch">Search</label>
+              <input class="dt-input" id="wcmSearch" type="text" placeholder="Search by name, id, description, division..." autocomplete="off">
+            </div>
+          </div>
         </div>
-        <div class="dt-control-group wcm-search-group">
-          <label class="dt-label" for="wcmSearch">Search</label>
-          <input class="dt-input" id="wcmSearch" type="text" placeholder="Search by name, id, description, division..." autocomplete="off">
+
+      </div>
+
+      <div class="wcm-default-panel" id="wcmDefaultPanel">
+        <div class="wcm-default-head">
+          <span class="wcm-default-title">Default Mapping</span>
+          <button class="btn btn-secondary btn-sm" id="wcmDefaultEditBtn" type="button">Edit Default</button>
+        </div>
+        <div class="wcm-default-sub" id="wcmDefaultImpact"></div>
+        <div id="wcmDefaultBody"></div>
+        <div class="wcm-default-msg" id="wcmDefaultMsg"></div>
+        <div class="wcm-default-actions" id="wcmDefaultActions" hidden>
+          <button class="btn btn-secondary" id="wcmDefaultCancelBtn" type="button">Cancel</button>
+          <button class="btn" id="wcmDefaultSaveBtn" type="button">Save Default</button>
         </div>
       </div>
     </div>
@@ -234,6 +283,13 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
   const $modalMsg = el.querySelector("#wcmModalMsg");
   const $modalCancel = el.querySelector("#wcmCancelBtn");
   const $modalSave = el.querySelector("#wcmSaveBtn");
+  const $defaultBody = el.querySelector("#wcmDefaultBody");
+  const $defaultMsg = el.querySelector("#wcmDefaultMsg");
+  const $defaultImpact = el.querySelector("#wcmDefaultImpact");
+  const $defaultEditBtn = el.querySelector("#wcmDefaultEditBtn");
+  const $defaultActions = el.querySelector("#wcmDefaultActions");
+  const $defaultCancelBtn = el.querySelector("#wcmDefaultCancelBtn");
+  const $defaultSaveBtn = el.querySelector("#wcmDefaultSaveBtn");
 
   function setStatus(msg, type = "") {
     $status.textContent = msg;
@@ -243,6 +299,11 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
   function setModalMsg(msg, type = "") {
     $modalMsg.textContent = msg || "";
     $modalMsg.className = "wcm-editor-msg" + (type ? ` ${type}` : "");
+  }
+
+  function setDefaultMsg(msg, type = "") {
+    $defaultMsg.textContent = msg || "";
+    $defaultMsg.className = "wcm-default-msg" + (type ? ` ${type}` : "");
   }
 
   function setsEqual(a, b) {
@@ -431,6 +492,95 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     return `<div class="wcm-chip-wrap">${chips.join("")}</div>`;
   }
 
+  function defaultSummaryHtml(flagsSet) {
+    const flags = new Set(normalizeFlags([...flagsSet]));
+    const chips = [];
+    if (flags.has(FLAG.CONTACT_UNCALLABLE)) chips.push('<span class="wcm-chip">CU</span>');
+    if (flags.has(FLAG.NUMBER_UNCALLABLE)) chips.push('<span class="wcm-chip">NU</span>');
+    if (flags.has(FLAG.RIGHT_PARTY_CONTACT)) chips.push('<span class="wcm-chip">RPC</span>');
+    const category = currentBusinessCategory(flags);
+    if (category !== "none") chips.push(`<span class="wcm-chip">BC: ${escapeHtml(category.charAt(0).toUpperCase() + category.slice(1))}</span>`);
+    if (!chips.length) chips.push('<span class="wcm-chip">None</span>');
+    return `<div class="wcm-chip-wrap">${chips.join("")}</div>`;
+  }
+
+  function renderDefaultEditor() {
+    const usingDefaultCount = wrapups.filter((w) => !isExplicitMapping(w.id)).length;
+    $defaultImpact.textContent = `Applies to ${usingDefaultCount} wrapup code${usingDefaultCount === 1 ? "" : "s"} currently using default.`;
+
+    if (!canViewMapping || !mappingDoc) {
+      $defaultBody.innerHTML = `<span class="wcm-muted">Default mapping is unavailable.</span>`;
+      $defaultEditBtn.disabled = true;
+      $defaultActions.hidden = true;
+      setDefaultMsg("");
+      return;
+    }
+
+    const readOnly = !canEditMapping;
+    if (!defaultEditor.open) {
+      $defaultBody.innerHTML = defaultSummaryHtml(new Set(normalizeFlags(mappingDoc.defaultSet || [])));
+      $defaultActions.hidden = true;
+      $defaultEditBtn.disabled = readOnly;
+      $defaultEditBtn.textContent = "Edit Default";
+      if (!defaultEditor.success) setDefaultMsg("");
+      return;
+    }
+
+    const category = currentBusinessCategory(defaultEditor.localFlags);
+    const errorMsg = defaultEditor.error || (defaultEditor.errors?.[0] || "");
+
+    $defaultBody.innerHTML = `
+      <div class="wcm-editor-grid" style="margin-bottom:6px">
+        <label class="wcm-toggle">
+          <span>Contact Uncallable</span>
+          <span class="wcm-switch-wrap">
+            <button type="button" class="wcm-switch ${defaultEditor.localFlags.has(FLAG.CONTACT_UNCALLABLE) ? "on" : "off"}" data-action="default-toggle-switch" data-flag="${FLAG.CONTACT_UNCALLABLE}" aria-pressed="${defaultEditor.localFlags.has(FLAG.CONTACT_UNCALLABLE) ? "true" : "false"}" ${readOnly ? "disabled" : ""}>
+              <span class="wcm-switch-knob"></span>
+            </button>
+            <span class="wcm-switch-text">${defaultEditor.localFlags.has(FLAG.CONTACT_UNCALLABLE) ? "Yes" : "No"}</span>
+          </span>
+        </label>
+
+        <label class="wcm-toggle">
+          <span>Number Uncallable</span>
+          <span class="wcm-switch-wrap">
+            <button type="button" class="wcm-switch ${defaultEditor.localFlags.has(FLAG.NUMBER_UNCALLABLE) ? "on" : "off"}" data-action="default-toggle-switch" data-flag="${FLAG.NUMBER_UNCALLABLE}" aria-pressed="${defaultEditor.localFlags.has(FLAG.NUMBER_UNCALLABLE) ? "true" : "false"}" ${readOnly ? "disabled" : ""}>
+              <span class="wcm-switch-knob"></span>
+            </button>
+            <span class="wcm-switch-text">${defaultEditor.localFlags.has(FLAG.NUMBER_UNCALLABLE) ? "Yes" : "No"}</span>
+          </span>
+        </label>
+
+        <label class="wcm-toggle">
+          <span>Right Party Contact</span>
+          <span class="wcm-switch-wrap">
+            <button type="button" class="wcm-switch ${defaultEditor.localFlags.has(FLAG.RIGHT_PARTY_CONTACT) ? "on" : "off"}" data-action="default-toggle-switch" data-flag="${FLAG.RIGHT_PARTY_CONTACT}" aria-pressed="${defaultEditor.localFlags.has(FLAG.RIGHT_PARTY_CONTACT) ? "true" : "false"}" ${readOnly ? "disabled" : ""}>
+              <span class="wcm-switch-knob"></span>
+            </button>
+            <span class="wcm-switch-text">${defaultEditor.localFlags.has(FLAG.RIGHT_PARTY_CONTACT) ? "Yes" : "No"}</span>
+          </span>
+        </label>
+
+        <div>
+          <div class="dt-label" style="margin-bottom:4px">Business Category</div>
+          <div class="wcm-seg">
+            <button type="button" data-action="default-set-category" data-category="none" class="${category === "none" ? "active" : ""}" ${readOnly ? "disabled" : ""}>None</button>
+            <button type="button" data-action="default-set-category" data-category="failure" class="${category === "failure" ? "active" : ""}" ${readOnly ? "disabled" : ""}>Failure</button>
+            <button type="button" data-action="default-set-category" data-category="neutral" class="${category === "neutral" ? "active" : ""}" ${readOnly ? "disabled" : ""}>Neutral</button>
+            <button type="button" data-action="default-set-category" data-category="success" class="${category === "success" ? "active" : ""}" ${readOnly ? "disabled" : ""}>Success</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    $defaultActions.hidden = false;
+    $defaultEditBtn.disabled = true;
+    $defaultEditBtn.textContent = "Editing...";
+    $defaultSaveBtn.disabled = readOnly || defaultEditor.saving || !defaultEditor.dirty || (defaultEditor.errors?.length > 0);
+    $defaultCancelBtn.disabled = defaultEditor.saving;
+    setDefaultMsg(errorMsg || defaultEditor.success || "", errorMsg ? "error" : (defaultEditor.success ? "success" : ""));
+  }
+
   function getFilteredRows() {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return wrapups;
@@ -444,6 +594,106 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
         divName,
       ].some((v) => String(v).toLowerCase().includes(q));
     });
+  }
+
+  function recalcDefaultEditorState() {
+    defaultEditor.errors = validateFlags(defaultEditor.localFlags);
+    defaultEditor.dirty = !setsEqual(defaultEditor.localFlags, defaultEditor.initialFlags);
+  }
+
+  function openDefaultEditor() {
+    if (!mappingDoc || !canEditMapping) return;
+    defaultEditor.open = true;
+    defaultEditor.localFlags = new Set(normalizeFlags(mappingDoc.defaultSet || []));
+    defaultEditor.initialFlags = new Set(normalizeFlags(mappingDoc.defaultSet || []));
+    defaultEditor.saving = false;
+    defaultEditor.error = null;
+    defaultEditor.success = null;
+    recalcDefaultEditorState();
+    renderDefaultEditor();
+  }
+
+  function closeDefaultEditor() {
+    defaultEditor.open = false;
+    defaultEditor.localFlags = new Set();
+    defaultEditor.initialFlags = new Set();
+    defaultEditor.saving = false;
+    defaultEditor.error = null;
+    defaultEditor.success = null;
+    defaultEditor.dirty = false;
+    defaultEditor.errors = [];
+    renderDefaultEditor();
+  }
+
+  function setDefaultBusinessCategory(category) {
+    [...defaultEditor.localFlags].forEach((f) => {
+      if (canonicalizeFlag(f)?.startsWith("BUSINESS_")) {
+        defaultEditor.localFlags.delete(f);
+      }
+    });
+    if (category === "failure") defaultEditor.localFlags.add(FLAG.BUSINESS_FAILURE);
+    if (category === "neutral") defaultEditor.localFlags.add(FLAG.BUSINESS_NEUTRAL);
+    if (category === "success") defaultEditor.localFlags.add(FLAG.BUSINESS_SUCCESS);
+  }
+
+  async function saveDefaultMapping() {
+    if (!mappingDoc || !canEditMapping) return;
+
+    recalcDefaultEditorState();
+    if (!defaultEditor.dirty) return;
+    if (defaultEditor.errors.length) {
+      defaultEditor.error = defaultEditor.errors[0];
+      renderDefaultEditor();
+      return;
+    }
+
+    defaultEditor.saving = true;
+    defaultEditor.error = null;
+    defaultEditor.success = null;
+    renderDefaultEditor();
+
+    try {
+      let saved;
+      const attempt = async (base) => gc.putOutboundWrapupCodeMappings(api, org.id, {
+        ...base,
+        defaultSet: normalizeFlags([...defaultEditor.localFlags]),
+      });
+
+      try {
+        saved = await attempt(mappingDoc);
+      } catch (err) {
+        if (err.status !== 409) throw err;
+        const latest = await gc.getOutboundWrapupCodeMappings(api, org.id);
+        saved = await attempt(latest);
+      }
+
+      mappingDoc = saved;
+      defaultEditor.initialFlags = new Set(normalizeFlags(mappingDoc.defaultSet || []));
+      defaultEditor.localFlags = new Set(normalizeFlags(mappingDoc.defaultSet || []));
+      recalcDefaultEditorState();
+      defaultEditor.success = "Default mapping saved.";
+      setStatus("Default mapping saved.", "success");
+      // Recreate expanded row draft if current row uses defaults.
+      if (expandedRowId && !isExplicitMapping(expandedRowId)) {
+        rowDrafts.set(expandedRowId, createDraft(expandedRowId));
+      }
+      renderTable();
+      renderDefaultEditor();
+      logAction({
+        me,
+        orgId: org.id,
+        orgName: org.name,
+        action: "wrapup_mapping_default_update",
+        description: "[Wrapup Mapping] Updated default mapping",
+      });
+    } catch (err) {
+      defaultEditor.error = err.message || "Failed to save default mapping.";
+      renderDefaultEditor();
+      setStatus(`Failed to save default mapping: ${defaultEditor.error}`, "error");
+    } finally {
+      defaultEditor.saving = false;
+      renderDefaultEditor();
+    }
   }
 
   function editorHtml(wrapupId) {
@@ -624,6 +874,7 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       rowDrafts = new Map();
       populateDivisionSelect();
       renderTable();
+      renderDefaultEditor();
 
       if (!canViewMapping) {
         setStatus(`Loaded ${wrapups.length} wrapup codes. Mapping is hidden due to missing outbound mapping view permission.`, "error");
@@ -801,6 +1052,9 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
   });
 
   $createBtn.addEventListener("click", () => openModal("create"));
+  $defaultEditBtn.addEventListener("click", openDefaultEditor);
+  $defaultCancelBtn.addEventListener("click", closeDefaultEditor);
+  $defaultSaveBtn.addEventListener("click", saveDefaultMapping);
 
   $modalCancel.addEventListener("click", closeModal);
   $modalBackdrop.addEventListener("click", (e) => {
@@ -885,6 +1139,32 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
 
     if (action === "save-row") {
       await saveRowMapping(wrapupId);
+    }
+  });
+
+  $defaultBody.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if (!btn || !defaultEditor.open || !canEditMapping) return;
+    const action = btn.dataset.action;
+
+    if (action === "default-toggle-switch") {
+      const flag = btn.dataset.flag;
+      if (!flag) return;
+      if (defaultEditor.localFlags.has(flag)) defaultEditor.localFlags.delete(flag);
+      else defaultEditor.localFlags.add(flag);
+      defaultEditor.error = null;
+      defaultEditor.success = null;
+      recalcDefaultEditorState();
+      renderDefaultEditor();
+      return;
+    }
+
+    if (action === "default-set-category") {
+      setDefaultBusinessCategory(btn.dataset.category || "none");
+      defaultEditor.error = null;
+      defaultEditor.success = null;
+      recalcDefaultEditorState();
+      renderDefaultEditor();
     }
   });
 
