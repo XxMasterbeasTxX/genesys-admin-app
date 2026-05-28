@@ -125,7 +125,7 @@ export const STYLE_OVERAGE_TEXT = {
  *                                     When omitted, the start/end dates from the summary are used.
  * @returns {object} XLSX worksheet
  */
-export function buildBillingSheet({ workbook, sheetName, processed, periodLabel }) {
+export function buildBillingSheet({ workbook, sheetName, processed, orgName, periodLabel }) {
   const XLSX = window.XLSX;
   const ws = XLSX.utils.aoa_to_sheet([]);
   const state = { row: 0 };
@@ -133,7 +133,7 @@ export function buildBillingSheet({ workbook, sheetName, processed, periodLabel 
   // Row 1 — column headers
   writeRow(ws, state, BILLING_HEADERS, [STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER]);
 
-  appendBillingBlock(ws, state, processed, { periodLabel });
+  appendBillingBlock(ws, state, processed, { orgName: orgName || sheetName, periodLabel });
 
   // Column widths (matches Python "auto, max 50"; safe defaults here)
   ws["!cols"] = [
@@ -154,38 +154,41 @@ export function buildBillingSheet({ workbook, sheetName, processed, periodLabel 
  * Append one period's worth of content to an existing billing worksheet.
  * Use this to stack multiple periods vertically (calendar year / date range).
  */
-export function appendBillingBlock(ws, state, processed, { periodLabel } = {}) {
+export function appendBillingBlock(ws, state, processed, { orgName, periodLabel } = {}) {
   const { summary, regularRows, aiBreakdownRows, overageRows } = processed;
 
-  const banner = periodLabel
-    || `═══ PERIOD: ${summary.startDate} to ${summary.endDate} ═══`;
-
-  // Period banner (merged A:D)
-  writeMergedBanner(ws, state, banner, STYLE_PERIOD_BANNER);
+  // Optional period separator — only useful for multi-period sheets
+  // (calendar year, date range, period comparison).
+  if (periodLabel) {
+    writeMergedBanner(ws, state, periodLabel, STYLE_PERIOD_BANNER);
+  }
 
   // ── Summary block ──────────────────────────────────────────────────
-  writeMergedBanner(ws, state, "BILLING SUMMARY", STYLE_SUMMARY_HEADER);
-  writeKv(ws, state, "License Type",       summary.licenseType);
-  writeKv(ws, state, "Billing Period",     `${summary.startDate} to ${summary.endDate}`);
-  if (summary.subscriptionType) writeKv(ws, state, "Subscription Type", summary.subscriptionType);
-  if (summary.currency)         writeKv(ws, state, "Currency",          summary.currency);
-  writeKv(ws, state, "Billable Items",     String(summary.billableItems));
+  // Python: single blue header row "─── BILLING SUMMARY: {org} ───" then
+  // gray k/v rows. No separate "PERIOD" banner, no Subscription / Currency.
+  const headerLabel = orgName
+    ? `─── BILLING SUMMARY: ${orgName} ───`
+    : "─── BILLING SUMMARY ───";
+  writeMergedBanner(ws, state, headerLabel, STYLE_SUMMARY_HEADER);
+  writeKv(ws, state, "License Type",   summary.licenseType);
+  writeKv(ws, state, "Billing Period", `${summary.startDate} to ${summary.endDate}`);
+  writeKv(ws, state, "Billable Items", String(summary.billableItems));
 
   if (summary.hasAi) {
-    writeKv(ws, state, "AI Tokens — Free",       tokensLabel(summary.aiFairUse));
-    writeKv(ws, state, "AI Tokens — Total Used", tokensLabel(summary.aiRollup));
-    writeKv(ws, state, "AI Tokens — Billable",   tokensLabel(summary.aiBillable));
+    writeKv(ws, state, "AI Tokens - Free",       tokensLabel(summary.aiFairUse));
+    writeKv(ws, state, "AI Tokens - Total Used", tokensLabel(summary.aiRollup));
+    writeKv(ws, state, "AI Tokens - Billable",   tokensLabel(summary.aiBillable));
   }
   writeBlankRow(ws, state);
 
   // ── Regular licences ───────────────────────────────────────────────
-  writeMergedBanner(ws, state, "─── REGULAR LICENSES ───", STYLE_DIVIDER);
+  writeMergedBanner(ws, state, "─── REGULAR LICENSES (All Items with Usage) ───", STYLE_DIVIDER);
   for (const r of regularRows) writeDataRow(ws, state, r, false);
   writeBlankRow(ws, state);
 
   // ── AI breakdown (only if any AI rows) ─────────────────────────────
   if (aiBreakdownRows.length) {
-    const label = `─── AI TOKENS USAGE BREAKDOWN (${summary.licenseType}) ───`;
+    const label = `─── AI TOKENS USAGE BREAKDOWN (${summary.licenseType} Licenses) ───`;
     writeMergedBanner(ws, state, label, STYLE_DIVIDER);
     for (const r of aiBreakdownRows) writeDataRow(ws, state, r, false);
     writeBlankRow(ws, state);

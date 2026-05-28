@@ -233,6 +233,7 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
         workbook:  wb,
         sheetName: safeSheetName(org.name),
         processed,
+        orgName:   org.name,
       });
       setProgress(100);
 

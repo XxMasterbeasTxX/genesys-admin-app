@@ -34,7 +34,9 @@ const BYOC_MINS_PER_NAMED      = 5000;
 const BYOC_LICENCE_NAME       = "Genesys Cloud BYOC Cloud";
 const COLLABORATE_LICENCE     = "Genesys Cloud Collaborate User";
 const CALL_LICENCE            = "Call";
-const CX_LICENCE_PATTERN      = /^CX\s*\d/i;   // matches "CX 1", "CX 2", "CX 3" (named or concurrent)
+// Python uses substring check: 'CX 1' in name or 'CX 2' in name or 'CX 3' in name.
+// License names look like "Genesys Cloud CX 2 Concurrent" — must match substring, not prefix.
+const CX_LICENCE_PATTERN      = /\bCX\s*[123]\b/i;
 
 const GROUP_FAIR_USE     = "fair-use";
 const GROUP_ROLLUP       = "rollup";
@@ -122,7 +124,10 @@ export function processBillingOverview(overview) {
   }
   const hasAi      = hasAiFairUse || hasAiRollup;
   const aiFairUse  = isConcurrent ? AI_TOKENS_PER_CONCURRENT : AI_TOKENS_PER_NAMED;
-  const aiBillable = Math.max(0, aiRollup - aiFairUse);
+  // Python edge-case: if there's a fair-use row but no actual rollup usage,
+  // show the allocation as the "total used" (so Free == Total Used, Billable == 0).
+  if (hasAiFairUse && !hasAiRollup) aiRollup = aiFairUse;
+  const aiBillable = aiRollup > aiFairUse ? aiRollup - aiFairUse : 0;
 
   // ── Count CX licences for BYOC committed calculation ──────────────
   let cxLicenseCount = 0;
@@ -198,12 +203,14 @@ export function processBillingOverview(overview) {
   }
 
   // ── AI billable also gets surfaced in the overage section ────────
+  // Python writes the integer billable count in the On-Demand column only;
+  // Committed and Actual Usage are blank for this row.
   if (hasAi && aiBillable > 0) {
     overageRows.push({
-      name:        "AI Tokens — Billable",
-      committed:   fmtTokens(aiFairUse),
-      actualUsage: fmtTokens(aiRollup),
-      onDemand:    fmtTokens(aiBillable),
+      name:        "AI Tokens - Billable",
+      committed:   "",
+      actualUsage: "",
+      onDemand:    Math.round(aiBillable),
       overageCost: 0,
     });
   }
