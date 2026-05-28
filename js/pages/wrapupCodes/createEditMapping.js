@@ -49,6 +49,7 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     <style>
       .wcm-toolbar { display:flex; gap:10px; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; margin-bottom:12px; }
       .wcm-toolbar-left { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; flex:1; }
+      .wcm-create-group { flex:0 0 auto; }
       .wcm-search-group { min-width:260px; max-width:460px; flex:1; }
 
       .wcm-status { margin:8px 0 12px; font-size:13px; min-height:18px; color:var(--muted); }
@@ -60,10 +61,11 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       .wcm-table th, .wcm-table td { border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
       .wcm-table th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
       .wcm-table tbody tr:hover { background:rgba(255,255,255,.02); }
+      .wcm-data-row { cursor:pointer; }
+      .wcm-data-row:hover { background:rgba(59,130,246,.05); }
       .wcm-empty { text-align:center; color:var(--muted); padding:16px 8px; }
       .wcm-row-expand { width:34px; text-align:center; }
-      .wcm-row-expand button { border:1px solid var(--border); background:transparent; color:var(--text); border-radius:6px; width:24px; height:24px; cursor:pointer; }
-      .wcm-row-expand button:disabled { opacity:.45; cursor:not-allowed; }
+      .wcm-row-icon { display:inline-block; width:18px; text-align:center; color:var(--muted); font-size:12px; }
 
       .wcm-chip-wrap { display:flex; flex-wrap:wrap; gap:4px; }
       .wcm-chip { border:1px solid var(--border); border-radius:999px; padding:2px 8px; font-size:11px; color:var(--muted); }
@@ -73,7 +75,57 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       .wcm-editor { border:1px solid var(--border); border-radius:10px; padding:12px; background:rgba(0,0,0,.14); }
       .wcm-editor-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; margin-bottom:10px; }
       .wcm-toggle { display:flex; align-items:center; justify-content:space-between; gap:8px; border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
-      .wcm-toggle input { width:18px; height:18px; }
+      .wcm-switch {
+        border:none;
+        background:#9fb4cc;
+        color:#1f2937;
+        border-radius:999px;
+        width:104px;
+        height:40px;
+        display:inline-flex;
+        align-items:center;
+        justify-content:space-between;
+        padding:4px;
+        cursor:pointer;
+        transition:background .15s;
+      }
+      .wcm-switch.on {
+        background:#2f63c7;
+        color:#ffffff;
+      }
+      .wcm-switch-knob {
+        width:32px;
+        height:32px;
+        border-radius:50%;
+        background:#e5e7eb;
+        box-shadow:0 0 0 1px rgba(0,0,0,.1);
+        transition:transform .15s;
+        flex:0 0 auto;
+      }
+      .wcm-switch.off .wcm-switch-knob {
+        transform:translateX(0);
+      }
+      .wcm-switch.on .wcm-switch-knob {
+        transform:translateX(62px);
+      }
+      .wcm-switch-text {
+        position:absolute;
+        width:104px;
+        text-align:center;
+        font-weight:600;
+        font-size:18px;
+        letter-spacing:.01em;
+        pointer-events:none;
+      }
+      .wcm-switch-wrap {
+        position:relative;
+        width:104px;
+        height:40px;
+      }
+      .wcm-switch:disabled {
+        opacity:.55;
+        cursor:not-allowed;
+      }
       .wcm-seg { display:flex; border:1px solid var(--border); border-radius:9px; overflow:hidden; width:fit-content; }
       .wcm-seg button { border:none; border-right:1px solid var(--border); padding:7px 12px; background:transparent; color:var(--muted); cursor:pointer; }
       .wcm-seg button:last-child { border-right:none; }
@@ -94,6 +146,8 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
 
       @media (max-width: 720px) {
         .wcm-form-grid { grid-template-columns:1fr; }
+        .wcm-toolbar-left { width:100%; flex-direction:column; align-items:stretch; }
+        .wcm-search-group { max-width:none; width:100%; }
       }
     </style>
 
@@ -105,13 +159,13 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
 
     <div class="wcm-toolbar">
       <div class="wcm-toolbar-left">
+        <div class="dt-actions wcm-create-group" style="margin:0">
+          <button class="btn" id="wcmCreateBtn">+ Create Wrapup Code</button>
+        </div>
         <div class="dt-control-group wcm-search-group">
           <label class="dt-label" for="wcmSearch">Search</label>
           <input class="dt-input" id="wcmSearch" type="text" placeholder="Search by name, id, description, division..." autocomplete="off">
         </div>
-      </div>
-      <div class="dt-actions" style="margin:0">
-        <button class="btn" id="wcmCreateBtn">+ Create Wrapup Code</button>
       </div>
     </div>
 
@@ -406,17 +460,32 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
         <div class="wcm-editor-grid">
           <label class="wcm-toggle">
             <span>Contact Uncallable</span>
-            <input type="checkbox" data-action="toggle-flag" data-wrapup-id="${escapeHtml(wrapupId)}" data-flag="${FLAG.CONTACT_UNCALLABLE}" ${draft.localFlags.has(FLAG.CONTACT_UNCALLABLE) ? "checked" : ""} ${readOnly ? "disabled" : ""}>
+            <span class="wcm-switch-wrap">
+              <button type="button" class="wcm-switch ${draft.localFlags.has(FLAG.CONTACT_UNCALLABLE) ? "on" : "off"}" data-action="toggle-switch" data-wrapup-id="${escapeHtml(wrapupId)}" data-flag="${FLAG.CONTACT_UNCALLABLE}" aria-pressed="${draft.localFlags.has(FLAG.CONTACT_UNCALLABLE) ? "true" : "false"}" ${readOnly ? "disabled" : ""}>
+                <span class="wcm-switch-knob"></span>
+              </button>
+              <span class="wcm-switch-text">${draft.localFlags.has(FLAG.CONTACT_UNCALLABLE) ? "Yes" : "No"}</span>
+            </span>
           </label>
 
           <label class="wcm-toggle">
             <span>Number Uncallable</span>
-            <input type="checkbox" data-action="toggle-flag" data-wrapup-id="${escapeHtml(wrapupId)}" data-flag="${FLAG.NUMBER_UNCALLABLE}" ${draft.localFlags.has(FLAG.NUMBER_UNCALLABLE) ? "checked" : ""} ${readOnly ? "disabled" : ""}>
+            <span class="wcm-switch-wrap">
+              <button type="button" class="wcm-switch ${draft.localFlags.has(FLAG.NUMBER_UNCALLABLE) ? "on" : "off"}" data-action="toggle-switch" data-wrapup-id="${escapeHtml(wrapupId)}" data-flag="${FLAG.NUMBER_UNCALLABLE}" aria-pressed="${draft.localFlags.has(FLAG.NUMBER_UNCALLABLE) ? "true" : "false"}" ${readOnly ? "disabled" : ""}>
+                <span class="wcm-switch-knob"></span>
+              </button>
+              <span class="wcm-switch-text">${draft.localFlags.has(FLAG.NUMBER_UNCALLABLE) ? "Yes" : "No"}</span>
+            </span>
           </label>
 
           <label class="wcm-toggle">
             <span>Right Party Contact</span>
-            <input type="checkbox" data-action="toggle-flag" data-wrapup-id="${escapeHtml(wrapupId)}" data-flag="${FLAG.RIGHT_PARTY_CONTACT}" ${draft.localFlags.has(FLAG.RIGHT_PARTY_CONTACT) ? "checked" : ""} ${readOnly ? "disabled" : ""}>
+            <span class="wcm-switch-wrap">
+              <button type="button" class="wcm-switch ${draft.localFlags.has(FLAG.RIGHT_PARTY_CONTACT) ? "on" : "off"}" data-action="toggle-switch" data-wrapup-id="${escapeHtml(wrapupId)}" data-flag="${FLAG.RIGHT_PARTY_CONTACT}" aria-pressed="${draft.localFlags.has(FLAG.RIGHT_PARTY_CONTACT) ? "true" : "false"}" ${readOnly ? "disabled" : ""}>
+                <span class="wcm-switch-knob"></span>
+              </button>
+              <span class="wcm-switch-text">${draft.localFlags.has(FLAG.RIGHT_PARTY_CONTACT) ? "Yes" : "No"}</span>
+            </span>
           </label>
 
           <div>
@@ -452,17 +521,17 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
 
     $tbody.innerHTML = rows.map((w) => {
       const isExpanded = expandedRowId === w.id;
-      const expandBtn = canViewMapping
-        ? `<button type="button" data-action="toggle-expand" data-wrapup-id="${escapeHtml(w.id)}">${isExpanded ? "-" : "+"}</button>`
-        : `<button type="button" disabled title="No mapping access">-</button>`;
+      const rowIcon = canViewMapping
+        ? `<span class="wcm-row-icon">${isExpanded ? "▼" : "▶"}</span>`
+        : `<span class="wcm-row-icon">•</span>`;
 
       const editorRow = isExpanded
         ? `<tr class="wcm-editor-row"><td colspan="7">${editorHtml(w.id)}</td></tr>`
         : "";
 
       return `
-        <tr>
-          <td class="wcm-row-expand">${expandBtn}</td>
+        <tr class="wcm-data-row" data-action="toggle-row" data-wrapup-id="${escapeHtml(w.id)}">
+          <td class="wcm-row-expand">${rowIcon}</td>
           <td>${escapeHtml(w.name || "—")}</td>
           <td>${escapeHtml(w.id || "—")}</td>
           <td>${escapeHtml(w.description || "—")}</td>
@@ -737,15 +806,14 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
 
   $tbody.addEventListener("click", async (e) => {
     const btn = e.target.closest("button[data-action]");
-    if (!btn) return;
+    if (!btn) {
+      const row = e.target.closest("tr[data-action='toggle-row']");
+      if (!row || !canViewMapping) return;
+      const wrapupId = row.dataset.wrapupId;
+      if (!wrapupId) return;
 
-    const action = btn.dataset.action;
-    const wrapupId = btn.dataset.wrapupId;
-
-    if (action === "toggle-expand") {
       expandedRowId = expandedRowId === wrapupId ? null : wrapupId;
       if (expandedRowId) {
-        // Always initialize from latest mapping state when expanding.
         rowDrafts.set(expandedRowId, createDraft(expandedRowId));
         const draft = ensureDraft(expandedRowId);
         recalcDraftState(draft);
@@ -753,6 +821,9 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       renderTable();
       return;
     }
+
+    const action = btn.dataset.action;
+    const wrapupId = btn.dataset.wrapupId;
 
     if (action === "edit-wrapup") {
       const item = wrapups.find((w) => w.id === wrapupId);
@@ -767,6 +838,22 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     if (action === "set-category") {
       if (!canEditMapping) return;
       setBusinessCategory(draft, btn.dataset.category || "none");
+      draft.useDefaultPending = false;
+      draft.error = null;
+      draft.success = null;
+      recalcDraftState(draft);
+      renderTable();
+      return;
+    }
+
+    if (action === "toggle-switch") {
+      if (!canEditMapping) return;
+      const flag = btn.dataset.flag;
+      if (!flag) return;
+
+      if (draft.localFlags.has(flag)) draft.localFlags.delete(flag);
+      else draft.localFlags.add(flag);
+
       draft.useDefaultPending = false;
       draft.error = null;
       draft.success = null;
@@ -795,26 +882,6 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     if (action === "save-row") {
       await saveRowMapping(wrapupId);
     }
-  });
-
-  $tbody.addEventListener("change", (e) => {
-    const input = e.target.closest("input[data-action='toggle-flag']");
-    if (!input) return;
-    if (!canEditMapping) return;
-
-    const wrapupId = input.dataset.wrapupId;
-    const flag = input.dataset.flag;
-    if (!wrapupId || !flag) return;
-
-    const draft = ensureDraft(wrapupId);
-    if (input.checked) draft.localFlags.add(flag);
-    else draft.localFlags.delete(flag);
-
-    draft.useDefaultPending = false;
-    draft.error = null;
-    draft.success = null;
-    recalcDraftState(draft);
-    renderTable();
   });
 
   loadInitial();
