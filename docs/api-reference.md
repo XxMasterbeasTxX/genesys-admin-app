@@ -164,7 +164,7 @@ Used by: Trustee Export
 
 ## 7. Routing
 
-Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisions — Queues/Wrapup/Skills, Documentation Export, Deployment — Basic, Direct Routing — Add user(s)
+Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisions — Queues/Wrapup/Skills, Documentation Export, Deployment — Basic, Direct Routing — Add user(s), Wrapup Codes — Create/Edit/Mapping
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -341,7 +341,7 @@ Used by: Documentation Export
 
 ## 16. Outbound
 
-Used by: Divisions — Outbound pages, Documentation Export
+Used by: Divisions — Outbound pages, Documentation Export, Wrapup Codes — Create/Edit/Mapping
 
 | Method | Path | Purpose |
 | --- | --- | --- |
