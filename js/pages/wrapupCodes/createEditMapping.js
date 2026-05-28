@@ -212,8 +212,45 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     return errors;
   }
 
+  function canonicalizeFlag(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+
+    const token = raw
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+
+    if (token.includes("CONTACT") && token.includes("UNCALL")) return FLAG.CONTACT_UNCALLABLE;
+    if (token.includes("NUMBER") && token.includes("UNCALL")) return FLAG.NUMBER_UNCALLABLE;
+    if (token.includes("RIGHT") && token.includes("PARTY") && token.includes("CONTACT")) return FLAG.RIGHT_PARTY_CONTACT;
+    if (token.includes("BUSINESS") && token.includes("FAIL")) return FLAG.BUSINESS_FAILURE;
+    if (token.includes("BUSINESS") && token.includes("NEUTRAL")) return FLAG.BUSINESS_NEUTRAL;
+    if (token.includes("BUSINESS") && token.includes("SUCCESS")) return FLAG.BUSINESS_SUCCESS;
+
+    if (Object.values(FLAG).includes(token)) return token;
+    return null;
+  }
+
   function normalizeFlags(flags) {
-    return Array.from(new Set(flags || [])).sort();
+    let rawValues = [];
+
+    if (Array.isArray(flags)) {
+      rawValues = flags;
+    } else if (flags && typeof flags === "object") {
+      // Some payload variants can represent sets as objects: { FLAG: true }.
+      rawValues = Object.entries(flags)
+        .filter(([, v]) => Boolean(v))
+        .map(([k]) => k);
+    } else if (typeof flags === "string") {
+      rawValues = [flags];
+    }
+
+    const canonical = rawValues
+      .map(canonicalizeFlag)
+      .filter(Boolean);
+
+    return Array.from(new Set(canonical)).sort();
   }
 
   function normalizeId(id) {
@@ -531,7 +568,11 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
   }
 
   function setBusinessCategory(draft, category) {
-    BUSINESS_FLAGS.forEach((f) => draft.localFlags.delete(f));
+    [...draft.localFlags].forEach((f) => {
+      if (canonicalizeFlag(f)?.startsWith("BUSINESS_")) {
+        draft.localFlags.delete(f);
+      }
+    });
     if (category === "failure") draft.localFlags.add(FLAG.BUSINESS_FAILURE);
     if (category === "neutral") draft.localFlags.add(FLAG.BUSINESS_NEUTRAL);
     if (category === "success") draft.localFlags.add(FLAG.BUSINESS_SUCCESS);
@@ -704,6 +745,8 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     if (action === "toggle-expand") {
       expandedRowId = expandedRowId === wrapupId ? null : wrapupId;
       if (expandedRowId) {
+        // Always initialize from latest mapping state when expanding.
+        rowDrafts.set(expandedRowId, createDraft(expandedRowId));
         const draft = ensureDraft(expandedRowId);
         recalcDraftState(draft);
       }
