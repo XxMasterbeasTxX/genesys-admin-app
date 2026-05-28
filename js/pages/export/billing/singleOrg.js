@@ -6,21 +6,27 @@
  * 4-column layout (Name | Committed | Actual Usage | On-Demand), summary
  * block, AI-tokens breakdown, and red overage section.
  *
+ * Period selection matches Python `_get_billing_periods_for_org()`:
+ *   - When a customer is selected, periods 0..3 are fetched in parallel
+ *     and labelled as "YYYY-MM-DD to YYYY-MM-DD".
+ *   - Failed indices fall back to "Current Period" / "Previous Period" etc.
+ *   - Cached per-customer; switching back to a loaded org is instant.
+ *   - The raw overview is kept on each period so Run reuses it without
+ *     a second API call.
+ *
  * No preview. Same UX as other exports: Run → status → Download Excel.
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
-import { fetchBillingOverview } from "../../../services/billingService.js";
+import { timestampedFilename } from "../../../utils.js";
+import {
+  fetchBillingPeriods,
+  clearBillingPeriodsCache,
+} from "../../../services/billingService.js";
 import { isTrusteeOrg } from "../../../utils/billingTrustees.js";
 import { processBillingOverview } from "../../../utils/billingProcessor.js";
 import { buildBillingSheet, safeSheetName } from "../../../utils/billingExcelStyles.js";
 import { logAction } from "../../../services/activityLogService.js";
 
-const PERIOD_OPTIONS = [
-  { value: 1, label: "Latest complete period (recommended)" },
-  { value: 0, label: "Current (in-progress) period" },
-  { value: 2, label: "Previous period" },
-  { value: 3, label: "3 periods ago" },
-];
+const DEFAULT_PERIOD_INDEX = 1; // "Previous Period" = latest complete
 
 export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
   const el = document.createElement("section");
@@ -36,15 +42,16 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
       summary block, AI-tokens breakdown, and a highlighted overage section.
     </p>
 
-    <div class="te-actions" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
       <label class="em-label" for="bsoPeriod" style="margin:0">Billing period:</label>
-      <select id="bsoPeriod" class="em-input" style="min-width:280px">
-        ${PERIOD_OPTIONS.map(o => `<option value="${o.value}">${escapeHtml(o.label)}</option>`).join("")}
+      <select id="bsoPeriod" class="em-input" style="min-width:320px" disabled>
+        <option value="">Select a customer org…</option>
       </select>
+      <button class="btn te-btn-secondary" id="bsoReloadBtn" type="button" disabled title="Re-fetch billing periods for this customer">Reload</button>
     </div>
 
     <div class="te-actions">
-      <button class="btn te-btn-export" id="bsoRunBtn">Run</button>
+      <button class="btn te-btn-export" id="bsoRunBtn" disabled>Run</button>
     </div>
 
     <div class="te-status" id="bsoStatus"></div>
@@ -58,16 +65,18 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
     </div>
   `;
 
-  const $period   = el.querySelector("#bsoPeriod");
-  const $runBtn   = el.querySelector("#bsoRunBtn");
-  const $status   = el.querySelector("#bsoStatus");
-  const $progWrap = el.querySelector("#bsoProgressWrap");
-  const $progBar  = el.querySelector("#bsoProgressBar");
-  const $dlWrap   = el.querySelector("#bsoDownload");
-  const $dlBtn    = el.querySelector("#bsoDownloadBtn");
+  const $period    = el.querySelector("#bsoPeriod");
+  const $reloadBtn = el.querySelector("#bsoReloadBtn");
+  const $runBtn    = el.querySelector("#bsoRunBtn");
+  const $status    = el.querySelector("#bsoStatus");
+  const $progWrap  = el.querySelector("#bsoProgressWrap");
+  const $progBar   = el.querySelector("#bsoProgressBar");
+  const $dlWrap    = el.querySelector("#bsoDownload");
+  const $dlBtn     = el.querySelector("#bsoDownloadBtn");
 
-  let lastWorkbook = null;
-  let lastFilename = null;
+  let currentPeriods = []; // most recently loaded periods array
+  let lastWorkbook   = null;
+  let lastFilename   = null;
 
   function setStatus(msg, cls) {
     $status.textContent = msg;
@@ -81,15 +90,58 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
     $progWrap.style.display = "none";
     $progBar.style.width = "0%";
   }
+  function clearDownload() {
+    lastWorkbook = null;
+    lastFilename = null;
+    $dlWrap.style.display = "none";
+  }
 
-  // ── Run ───────────────────────────────────────────────
-  $runBtn.addEventListener("click", async () => {
-    const org = orgContext?.getDetails?.();
+  // ── Period dropdown population ────────────────────────
+  function renderPeriodOptions(periods) {
+    currentPeriods = periods;
+    $period.innerHTML = "";
+    for (const p of periods) {
+      const opt = document.createElement("option");
+      opt.value = String(p.index);
+      const prefix =
+        p.index === 0 ? "Current (in progress) — " :
+        p.index === 1 ? "Latest complete — "        : "";
+      const note = p.error ? " (could not load)" : "";
+      opt.textContent = `${prefix}${p.label}${note}`;
+      if (p.error) opt.disabled = true;
+      $period.appendChild(opt);
+    }
+
+    // Default to "Previous Period" (latest complete) if available,
+    // otherwise the first selectable index.
+    const fallback = currentPeriods.find((p) => p.index === DEFAULT_PERIOD_INDEX && !p.error)
+                  || currentPeriods.find((p) => !p.error);
+    if (fallback) {
+      $period.value = String(fallback.index);
+      $period.disabled = false;
+      $runBtn.disabled = false;
+    } else {
+      $period.disabled = true;
+      $runBtn.disabled = true;
+    }
+  }
+
+  // ── Load (or reload) periods for the current org ──────
+  async function loadPeriodsForOrg(org, { force = false } = {}) {
+    clearDownload();
     if (!org) {
-      setStatus("Please select a customer org first.", "error");
+      $period.innerHTML = `<option value="">Select a customer org…</option>`;
+      $period.disabled = true;
+      $runBtn.disabled = true;
+      $reloadBtn.disabled = true;
+      setStatus("");
       return;
     }
     if (isTrusteeOrg(org.id)) {
+      $period.innerHTML = `<option value="">N/A</option>`;
+      $period.disabled = true;
+      $runBtn.disabled = true;
+      $reloadBtn.disabled = true;
       setStatus(
         `${org.name} is a trustee organisation itself and cannot be exported as a trustor. Pick a customer org instead.`,
         "error"
@@ -97,24 +149,84 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
       return;
     }
 
-    const billingPeriodIndex = Number($period.value);
-
+    $period.innerHTML = `<option value="">Loading billing periods…</option>`;
+    $period.disabled = true;
     $runBtn.disabled = true;
-    $dlWrap.style.display = "none";
-    lastWorkbook = null;
-    lastFilename = null;
-    setStatus("Resolving org and fetching billing overview…");
-    setProgress(10);
+    $reloadBtn.disabled = true;
+    setStatus(`Loading billing periods for ${org.name}…`);
+    setProgress(20);
 
     try {
-      const overview = await fetchBillingOverview(api, org.id, billingPeriodIndex);
-      setProgress(60);
+      if (force) clearBillingPeriodsCache(org.id);
+      const periods = await fetchBillingPeriods(api, org.id, { force });
+      renderPeriodOptions(periods);
+      resetProgress();
 
-      setStatus("Processing billing data…");
-      const processed = processBillingOverview(overview);
-      setProgress(80);
+      const ok = periods.filter((p) => !p.error).length;
+      if (ok === 0) {
+        setStatus(`Could not load any billing periods for ${org.name}.`, "error");
+      } else if (ok < periods.length) {
+        setStatus(`Loaded ${ok}/4 billing periods for ${org.name}. Some periods are unavailable.`, "warn");
+      } else {
+        setStatus(`Loaded 4 billing periods for ${org.name}. Select one and click Run.`);
+      }
+      $reloadBtn.disabled = false;
+    } catch (err) {
+      resetProgress();
+      $period.innerHTML = `<option value="">Failed to load periods</option>`;
+      $reloadBtn.disabled = false;
+      setStatus(`Error loading billing periods: ${err.message || err}`, "error");
+    }
+  }
 
-      setStatus("Building Excel…");
+  // ── Wire to org context ──────────────────────────────
+  const initialOrg = orgContext?.getDetails?.() || null;
+  loadPeriodsForOrg(initialOrg);
+
+  const unsubscribe = orgContext?.onChange?.(() => {
+    const org = orgContext?.getDetails?.() || null;
+    loadPeriodsForOrg(org);
+  });
+
+  // Clean up the subscription when the page element is removed from the DOM.
+  if (unsubscribe) {
+    const observer = new MutationObserver(() => {
+      if (!document.body.contains(el)) {
+        unsubscribe();
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // ── Reload button ─────────────────────────────────────
+  $reloadBtn.addEventListener("click", () => {
+    const org = orgContext?.getDetails?.();
+    if (!org) return;
+    loadPeriodsForOrg(org, { force: true });
+  });
+
+  // ── Run (reuses cached overview — no extra API call) ──
+  $runBtn.addEventListener("click", () => {
+    const org = orgContext?.getDetails?.();
+    if (!org) { setStatus("Please select a customer org first.", "error"); return; }
+
+    const idx    = Number($period.value);
+    const period = currentPeriods.find((p) => p.index === idx);
+    if (!period || !period.overview) {
+      setStatus("Selected period has no data — pick a different period or click Reload.", "error");
+      return;
+    }
+
+    $runBtn.disabled = true;
+    clearDownload();
+    setStatus("Processing billing data…");
+    setProgress(30);
+
+    try {
+      const processed = processBillingOverview(period.overview);
+      setProgress(70);
+
       const XLSX = window.XLSX;
       const wb = XLSX.utils.book_new();
       buildBillingSheet({
@@ -144,14 +256,11 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
         orgId:       org.id,
         orgName:     org.name,
         action:      "export_run",
-        description: `Exported 'Billing — Single Org' for '${org.name}' (period index ${billingPeriodIndex}, ${processed.summary.startDate} to ${processed.summary.endDate})`,
+        description: `Exported 'Billing — Single Org' for '${org.name}' (period index ${idx}, ${processed.summary.startDate} to ${processed.summary.endDate})`,
       });
     } catch (err) {
       resetProgress();
-      const detail = err?.status === 404
-        ? "Billing data not found for this period. The org may have no trust relationship configured or no billing for this period."
-        : (err?.message || String(err));
-      setStatus(`Error: ${detail}`, "error");
+      setStatus(`Error: ${err.message || err}`, "error");
     } finally {
       $runBtn.disabled = false;
     }
