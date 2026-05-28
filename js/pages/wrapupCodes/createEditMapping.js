@@ -220,15 +220,50 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     return String(id || "").trim().toLowerCase();
   }
 
+  function extractUuid(text) {
+    const s = String(text || "");
+    const m = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    return m ? normalizeId(m[0]) : "";
+  }
+
+  function buildWrapupRefSet(wrapupId) {
+    const refs = new Set();
+    const addRef = (v) => {
+      const n = normalizeId(v);
+      if (n) refs.add(n);
+      const u = extractUuid(v);
+      if (u) refs.add(u);
+    };
+
+    const row = wrapups.find((w) => w.id === wrapupId);
+    addRef(wrapupId);
+    addRef(row?.name);
+    addRef(`/api/v2/routing/wrapupcodes/${wrapupId}`);
+
+    return refs;
+  }
+
+  function mappingKeyMatchesWrapup(mappingKey, wrapupId) {
+    const refs = buildWrapupRefSet(wrapupId);
+    const keyNorm = normalizeId(mappingKey);
+    const keyUuid = extractUuid(mappingKey);
+
+    if (refs.has(keyNorm)) return true;
+    if (keyUuid && refs.has(keyUuid)) return true;
+
+    // Handle full URIs or odd key formats that still embed the id/name.
+    for (const ref of refs) {
+      if (ref && keyNorm.includes(ref)) return true;
+    }
+    return false;
+  }
+
   function findMappingKeyForWrapup(wrapupId) {
     const mapping = mappingDoc?.mapping;
     if (!mapping) return null;
 
-    const target = normalizeId(wrapupId);
-    if (!target) return null;
-
     for (const key of Object.keys(mapping)) {
-      if (normalizeId(key) === target) return key;
+      if (mappingKeyMatchesWrapup(key, wrapupId)) return key;
     }
     return null;
   }
@@ -509,9 +544,8 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     };
 
     // Ensure we only keep one canonical mapping entry per wrapup id.
-    const target = normalizeId(wrapupId);
     Object.keys(payload.mapping).forEach((key) => {
-      if (normalizeId(key) === target) {
+      if (mappingKeyMatchesWrapup(key, wrapupId)) {
         delete payload.mapping[key];
       }
     });
