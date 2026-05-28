@@ -1108,6 +1108,16 @@ export async function fetchAllMessagingCampaigns(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/outbound/messagingcampaigns", opts);
 }
 
+/** Get outbound dialer wrap-up code mappings document. */
+export async function getOutboundWrapupCodeMappings(api, orgId) {
+  return api.proxyGenesys(orgId, "GET", "/api/v2/outbound/wrapupcodemappings");
+}
+
+/** Update outbound dialer wrap-up code mappings document. */
+export async function putOutboundWrapupCodeMappings(api, orgId, body) {
+  return api.proxyGenesys(orgId, "PUT", "/api/v2/outbound/wrapupcodemappings", { body });
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Workforce Management
 // ─────────────────────────────────────────────────────────────────────

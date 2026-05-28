@@ -84,6 +84,9 @@
  *   roles.copy.singleOrg               Copy a role within the same org (pre-filled permission builder)
  *   roles.copy.betweenOrgs             Copy a role from one org to another
  *
+ *   WRAPUP CODES
+ *   wrapupCodes.createEditMapping      Create/Edit wrapup codes and manage outbound wrapup mappings
+ *
  *   FLOWS
  *   flows.journey                      Journey Flow — visualise flow path data
  *

@@ -51,8 +51,8 @@ These are the Azure Functions endpoints exposed by the app itself.
 | POST | `/api/send-email` | Send email with attachment via Mailjet |
 | GET | `/api/scrape-disqualifying-permissions` | Scrape Genesys Cloud help page for Hourly Interacting disqualifying permissions; returns sorted JSON array; 24 h cache |
 | GET | `/api/schedules` | List all saved export schedules (Azure Table Storage) |
-| POST | `/api/schedules` | Create a new export schedule |
-| PUT | `/api/schedules/{id}` | Update an existing schedule |
+| POST | `/api/schedules` | Create a new export schedule. For `exportType: "queuesSkills"`, `exportConfig` supports optional arrays: `users`, `groups`, `teams`, `queues`, `skills`, `languages` (plus `*Labels` arrays for display summaries). |
+| PUT | `/api/schedules/{id}` | Update an existing schedule. For `exportType: "queuesSkills"`, the same optional filter arrays are persisted and used by scheduled runs. |
 | DELETE | `/api/schedules/{id}` | Delete a schedule |
 | POST | `/api/scheduled-runner` | Trigger the scheduled export runner (called every 5 min by Azure Timer Trigger) |
 | GET | `/api/activity-log` | Fetch internal activity log entries |
@@ -331,16 +331,11 @@ Used by: GDPR — Subject Request, GDPR — Request Status
 
 ## 15. Recording
 
-Used by: Documentation Export, Recordings — Create Export Job, Recordings — Export Jobs
+Used by: Documentation Export
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/recording/mediaretentionpolicies` | List media retention policies |
-| POST | `/api/v2/recording/jobs` | Create a bulk recording job (EXPORT/DELETE/ARCHIVE) with a `conversationQuery` of date range + queue/user segment filters |
-| GET | `/api/v2/recording/jobs` | List all recording jobs (filterable by `jobType` and `state`) |
-| GET | `/api/v2/recording/jobs/{jobId}` | Get a single recording job and its current state |
-| PUT | `/api/v2/recording/jobs/{jobId}` | Update job state — used to **Execute** (`{state:"PROCESSING"}`) a `READY` job or **Cancel** (`{state:"CANCELLED"}`) a running one |
-| DELETE | `/api/v2/recording/jobs/{jobId}` | Delete a job |
 
 ---
 
@@ -362,6 +357,8 @@ Used by: Divisions — Outbound pages, Documentation Export
 | GET | `/api/v2/outbound/campaignrules` | List campaign rules |
 | GET | `/api/v2/outbound/messagingcampaigns` | List messaging campaigns |
 | GET | `/api/v2/outbound/settings` | Get global outbound settings |
+| GET | `/api/v2/outbound/wrapupcodemappings` | Get Dialer wrap-up code mapping document (includes `defaultSet`, `mapping`, `version`) |
+| PUT | `/api/v2/outbound/wrapupcodemappings` | Update Dialer wrap-up code mapping document (full-body update, requires current `version`) |
 
 ---
 

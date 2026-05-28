@@ -249,6 +249,14 @@ export const NAV_TREE = [
     ],
   },
   {
+    label: "Wrapup Codes",
+    path: "wrapup-codes",
+    enabled: true,
+    children: [
+      { label: "Create/Edit/Mapping", path: "create-edit-mapping", enabled: true, access: "wrapupCodes.createEditMapping" },
+    ],
+  },
+  {
     label: "Flows",
     path: "flows",
     enabled: true,
