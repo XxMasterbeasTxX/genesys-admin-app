@@ -57,6 +57,7 @@
  *   export.scheduled                   All Scheduled Exports overview + automation
  *   export.documentation.create        Documentation / full config workbook export
  *   export.licenses.consumption        License Consumption export
+ *   export.billing.singleOrg           Billing — Single Org export
  *   export.roles.allOrgs               Roles export — all orgs (multi-sheet)
  *   export.roles.singleOrg             Roles export — single org
  *   export.users.allGroups             All Groups export
