@@ -2,6 +2,14 @@
 
 Internal web application for the Genesys Team to perform administrative actions across multiple customer Genesys Cloud orgs.
 
+## What changed recently
+
+- Added **Wrapup Codes — Create/Edit/Mapping** page at root nav path **Wrapup Codes > Create/Edit/Mapping**.
+- New page supports wrapup create/edit, live search, row-click mapping expansion, and Genesys-style slider controls for outbound mapping flags.
+- Added **Default Mapping** panel to view/edit outbound `defaultSet` values and show impact count for wrapup codes inheriting defaults.
+- Improved mapping save robustness with conflict-safe retry and compatibility handling for legacy mapping key/flag formats.
+- Updated docs and API usage notes to include outbound wrapup mapping endpoints and feature ownership context.
+
 ## What it does
 
 ### Features

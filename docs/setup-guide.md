@@ -2,6 +2,14 @@
 
 Complete guide for deploying the Genesys Admin Tool to a new Azure subscription. Covers Azure Static Web App, Azure Functions API, Azure Key Vault, Genesys Cloud OAuth, and CI/CD via GitHub Actions.
 
+## What changed recently
+
+- Added **Wrapup Codes — Create/Edit/Mapping** page at root nav path **Wrapup Codes > Create/Edit/Mapping**.
+- New page supports wrapup create/edit, live search, row-click mapping expansion, and Genesys-style slider controls for outbound mapping flags.
+- Added **Default Mapping** panel to view/edit outbound `defaultSet` values and show impact count for wrapup codes inheriting defaults.
+- Improved mapping save robustness with conflict-safe retry and compatibility handling for legacy mapping key/flag formats.
+- Updated API/docs references for outbound wrapup mapping endpoints and page ownership.
+
 ## Current features
 
 - **Interaction Search — Recent (<48h)** — Search conversations from the last 48 hours, today, or yesterday using the synchronous query API (results appear immediately). Server-side filters: Queue (searchable), Direction (Inbound/Outbound), Media Type, Division. Client-side Participant Data attribute filters with key/value matching, exclude mode, and multi-value (CSV) support. Inline row expand shows matched PD values as pills. Sortable results table; click-to-expand detail; right-click to copy Conversation ID. Export Interactions to styled Excel.
