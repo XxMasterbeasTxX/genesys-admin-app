@@ -216,6 +216,23 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     return Array.from(new Set(flags || [])).sort();
   }
 
+  function normalizeId(id) {
+    return String(id || "").trim().toLowerCase();
+  }
+
+  function findMappingKeyForWrapup(wrapupId) {
+    const mapping = mappingDoc?.mapping;
+    if (!mapping) return null;
+
+    const target = normalizeId(wrapupId);
+    if (!target) return null;
+
+    for (const key of Object.keys(mapping)) {
+      if (normalizeId(key) === target) return key;
+    }
+    return null;
+  }
+
   function getDivisionName(w) {
     const divisionObj = w.division;
     if (divisionObj?.name) return divisionObj.name;
@@ -225,13 +242,13 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
 
   function getEffectiveFlags(wrapupId) {
     if (!mappingDoc) return new Set();
-    const explicit = mappingDoc.mapping && Object.prototype.hasOwnProperty.call(mappingDoc.mapping, wrapupId);
-    if (explicit) return new Set(normalizeFlags(mappingDoc.mapping[wrapupId]));
+    const mappingKey = findMappingKeyForWrapup(wrapupId);
+    if (mappingKey) return new Set(normalizeFlags(mappingDoc.mapping[mappingKey]));
     return new Set(normalizeFlags(mappingDoc.defaultSet || []));
   }
 
   function isExplicitMapping(wrapupId) {
-    return Boolean(mappingDoc?.mapping && Object.prototype.hasOwnProperty.call(mappingDoc.mapping, wrapupId));
+    return Boolean(findMappingKeyForWrapup(wrapupId));
   }
 
   function createDraft(wrapupId) {
@@ -491,8 +508,16 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       mapping: { ...(baseDoc.mapping || {}) },
     };
 
+    // Ensure we only keep one canonical mapping entry per wrapup id.
+    const target = normalizeId(wrapupId);
+    Object.keys(payload.mapping).forEach((key) => {
+      if (normalizeId(key) === target) {
+        delete payload.mapping[key];
+      }
+    });
+
     if (draft.useDefaultPending) {
-      delete payload.mapping[wrapupId];
+      // No explicit key should remain; defaultSet will apply.
     } else {
       payload.mapping[wrapupId] = normalizeFlags([...draft.localFlags]);
     }
