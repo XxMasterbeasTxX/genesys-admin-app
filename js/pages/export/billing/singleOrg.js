@@ -26,6 +26,7 @@ import { processBillingOverview } from "../../../utils/billingProcessor.js";
 import { buildBillingSheet, safeSheetName } from "../../../utils/billingExcelStyles.js";
 import { logAction } from "../../../services/activityLogService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
+import { sendEmail } from "../../../services/emailService.js";
 
 const DEFAULT_PERIOD_INDEX = 1; // "Previous Period" = latest complete
 
@@ -68,6 +69,27 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
     <div id="bsoDownload" style="display:none;margin-top:10px">
       <button class="btn te-btn-export" id="bsoDownloadBtn">Download Excel</button>
     </div>
+
+    <div class="em-section">
+      <label class="em-toggle">
+        <input type="checkbox" id="bsoEmailChk">
+        <span>Send email with export</span>
+      </label>
+
+      <div class="em-fields" id="bsoEmailFields" style="display:none">
+        <div class="em-field">
+          <label class="em-label" for="bsoEmailTo">Recipients</label>
+          <input type="text" class="em-input" id="bsoEmailTo"
+                 placeholder="user@example.com, user2@example.com">
+          <span class="em-hint">Separate multiple addresses with , or ;</span>
+        </div>
+        <div class="em-field">
+          <label class="em-label" for="bsoEmailBody">Message (optional)</label>
+          <textarea class="em-textarea" id="bsoEmailBody" rows="3"
+                    placeholder="Leave empty for default message"></textarea>
+        </div>
+      </div>
+    </div>
   `;
 
   // ── Automation panel ──────────────────────────────────
@@ -93,6 +115,14 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
   const $progBar   = el.querySelector("#bsoProgressBar");
   const $dlWrap    = el.querySelector("#bsoDownload");
   const $dlBtn     = el.querySelector("#bsoDownloadBtn");
+  const $emailChk  = el.querySelector("#bsoEmailChk");
+  const $emailFld  = el.querySelector("#bsoEmailFields");
+  const $emailTo   = el.querySelector("#bsoEmailTo");
+  const $emailBody = el.querySelector("#bsoEmailBody");
+
+  $emailChk.addEventListener("change", () => {
+    $emailFld.style.display = $emailChk.checked ? "" : "none";
+  });
 
   let currentPeriods = []; // most recently loaded periods array
   let lastWorkbook   = null;
@@ -227,7 +257,7 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
   });
 
   // ── Run (reuses cached overview — no extra API call) ──
-  $runBtn.addEventListener("click", () => {
+  $runBtn.addEventListener("click", async () => {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
 
@@ -267,10 +297,9 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
 
       const billable = processed.summary.billableItems;
       const regular  = processed.regularRows.length;
-      setStatus(
-        `Done — ${org.name} | ${processed.summary.startDate} to ${processed.summary.endDate} | ${regular} licence rows, ${billable} billable item(s).`,
-        "success"
-      );
+      const doneMsg  =
+        `Done — ${org.name} | ${processed.summary.startDate} to ${processed.summary.endDate} | ${regular} licence rows, ${billable} billable item(s).`;
+      setStatus(doneMsg, "success");
 
       logAction({
         me,
@@ -279,6 +308,32 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
         action:      "export_run",
         description: `Exported 'Billing — Single Org' for '${org.name}' (period index ${idx}, ${processed.summary.startDate} to ${processed.summary.endDate})`,
       });
+
+      // ── Email (matches Python `[{customer}] {task} Export` subject) ──
+      if ($emailChk.checked && $emailTo.value.trim()) {
+        setStatus("Sending email…");
+        try {
+          const XLSX    = window.XLSX;
+          const xlsxB64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+          const result  = await sendEmail(api, {
+            recipients: $emailTo.value,
+            subject:    `[${org.name}] ${AUTOMATION_EXPORT_LABEL} Export`,
+            body:       $emailBody.value,
+            attachment: {
+              filename: lastFilename,
+              base64:   xlsxB64,
+              mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            },
+          });
+          if (result.success) {
+            setStatus(`${doneMsg} Email sent to: ${$emailTo.value.trim()}`, "success");
+          } else {
+            setStatus(`${doneMsg} Email failed: ${result.error}`, "error");
+          }
+        } catch (emailErr) {
+          setStatus(`${doneMsg} Email failed: ${emailErr.message}`, "error");
+        }
+      }
     } catch (err) {
       resetProgress();
       setStatus(`Error: ${err.message || err}`, "error");
