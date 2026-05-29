@@ -31,6 +31,7 @@ const handlers = {
   interactionTotals:      () => require("./exports/interactionTotals"),
   skillTemplates:         () => require("./exports/skillTemplates"),
   billingSingleOrg:       () => require("./exports/billingSingleOrg"),
+  billingAllOrgsLatest:   () => require("./exports/billingAllOrgsLatest"),
 };
 
 /**

@@ -151,6 +151,41 @@ export function buildBillingSheet({ workbook, sheetName, processed, orgName, per
 }
 
 /**
+ * Build an "All Orgs — Latest" sheet: every org stacked vertically on a
+ * single worksheet (mirrors Python GUI_Billing_Export_Scheduled_All.py).
+ *
+ * @param {object} args
+ * @param {object} args.workbook
+ * @param {string} [args.sheetName="All Orgs"]
+ * @param {Array<{orgName: string, processed: object}>} args.orgsData
+ * @returns {object} XLSX worksheet
+ */
+export function buildAllOrgsLatestSheet({ workbook, sheetName = "All Orgs", orgsData }) {
+  const XLSX = window.XLSX;
+  const ws = XLSX.utils.aoa_to_sheet([]);
+  const state = { row: 0 };
+
+  writeRow(ws, state, BILLING_HEADERS,
+    [STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER]);
+
+  for (const { orgName, processed } of orgsData) {
+    appendBillingBlock(ws, state, processed, { orgName });
+  }
+
+  ws["!cols"] = [
+    { wch: 46 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 22 },
+  ];
+  ws["!views"]      = [{ state: "frozen", ySplit: 1 }];
+  ws["!autofilter"] = { ref: `A1:D1` };
+
+  XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(sheetName));
+  return ws;
+}
+
+/**
  * Append one period's worth of content to an existing billing worksheet.
  * Use this to stack multiple periods vertically (calendar year / date range).
  */

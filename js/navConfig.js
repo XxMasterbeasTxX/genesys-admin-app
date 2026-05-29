@@ -176,7 +176,8 @@ export const NAV_TREE = [
         path: "billing",
         enabled: true,
         children: [
-          { label: "Single Org", path: "single-org", enabled: true, access: "export.billing.singleOrg" },
+          { label: "Single Org",            path: "single-org",        enabled: true, access: "export.billing.singleOrg" },
+          { label: "All Orgs (Latest)",     path: "all-orgs-latest",   enabled: true, access: "export.billing.allOrgsLatest" },
         ],
       },
       {
