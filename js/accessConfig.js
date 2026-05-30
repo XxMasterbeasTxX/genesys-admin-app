@@ -60,6 +60,7 @@
  *   export.billing.singleOrg           Billing — Single Org export
  *   export.billing.allOrgsLatest       Billing — All Orgs (Latest Period) export
  *   export.billing.calendarYear        Billing — Calendar Year export (12 months × all orgs)
+ *   export.billing.dateRange           Billing — Date Range export (custom month range × all orgs)
  *   export.roles.allOrgs               Roles export — all orgs (multi-sheet)
  *   export.roles.singleOrg             Roles export — single org
  *   export.users.allGroups             All Groups export

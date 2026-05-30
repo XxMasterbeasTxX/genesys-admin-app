@@ -374,22 +374,30 @@ function safeSheetName(name) {
 }
 
 function appendBillingBlock(ws, state, processed, opts) {
-  const orgName          = opts && opts.orgName;
-  const periodLabel      = opts && opts.periodLabel;
-  const periodLabelStyle = (opts && opts.periodLabelStyle) || STYLE_SUMMARY_HEADER;
-  const summaryBanner    = opts && opts.summaryBanner === false ? false : true;
+  const orgName             = opts && opts.orgName;
+  const periodLabel         = opts && opts.periodLabel;
+  const periodLabelStyle    = (opts && opts.periodLabelStyle) || STYLE_SUMMARY_HEADER;
+  const summaryBanner       = opts && opts.summaryBanner === false ? false : true;
+  const summaryBannerLabel  = opts ? opts.summaryBannerLabel : undefined;
+  const summaryBannerStyle  = (opts && opts.summaryBannerStyle) || STYLE_SUMMARY_HEADER;
+  const includeBillingPeriod = opts && opts.includeBillingPeriod === false ? false : true;
+  const regularSectionLabel = (opts && opts.regularSectionLabel) || "─── REGULAR LICENSES (All Items with Usage) ───";
   const { summary, regularRows, aiBreakdownRows, overageRows } = processed;
 
   if (periodLabel) writeMergedBanner(ws, state, periodLabel, periodLabelStyle);
 
   if (summaryBanner) {
-    const headerLabel = orgName
-      ? `─── BILLING SUMMARY: ${orgName} ───`
-      : "─── BILLING SUMMARY ───";
-    writeMergedBanner(ws, state, headerLabel, STYLE_SUMMARY_HEADER);
+    const headerLabel = summaryBannerLabel != null
+      ? summaryBannerLabel
+      : (orgName
+          ? `─── BILLING SUMMARY: ${orgName} ───`
+          : "─── BILLING SUMMARY ───");
+    writeMergedBanner(ws, state, headerLabel, summaryBannerStyle);
   }
   writeKv(ws, state, "License Type",   summary.licenseType);
-  writeKv(ws, state, "Billing Period", `${summary.startDate} to ${summary.endDate}`);
+  if (includeBillingPeriod) {
+    writeKv(ws, state, "Billing Period", `${summary.startDate} to ${summary.endDate}`);
+  }
   writeKv(ws, state, "Billable Items", String(summary.billableItems));
 
   if (summary.hasAi) {
@@ -399,7 +407,7 @@ function appendBillingBlock(ws, state, processed, opts) {
   }
   writeBlankRow(ws, state);
 
-  writeMergedBanner(ws, state, "─── REGULAR LICENSES (All Items with Usage) ───", STYLE_DIVIDER);
+  writeMergedBanner(ws, state, regularSectionLabel, STYLE_DIVIDER);
   for (const r of regularRows) writeDataRow(ws, state, r, false);
   writeBlankRow(ws, state);
 
@@ -527,11 +535,71 @@ function buildCalendarYearWorkbook({ year, orgsData }) {
   return XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
 }
 
+/**
+ * Build a complete "Date Range" billing workbook.
+ *
+ * Mirrors browser `buildDateRangeSheet` (one sheet per org) and Python
+ * GUI_Billing_Export_Date_Range.export_date_range_all_orgs().
+ *
+ * Per-org sheet layout:
+ *   Row 1: column headers
+ *   Row 2: blue banner "═══ {orgName} - Date Range: {fromLabel} to {toLabel} ═══"
+ *   Row 3: gray k/v "Completed Periods | N"
+ *   Row 4: (blank)
+ *   For each period (sorted chronologically):
+ *     blue period banner "═══ PERIOD: {start} to {end} ═══"
+ *     green divider "─── BILLING SUMMARY ───"
+ *     License Type / Billable Items / [AI summary if any]   (no Billing Period row)
+ *     REGULAR LICENSES / AI breakdown / OVERAGE sections
+ *
+ * @param {object} args
+ * @param {string} args.fromLabel  "Jan 2025"
+ * @param {string} args.toLabel    "Mar 2025"
+ * @param {Array<{orgName: string, periods: Array<{startDate: string, endDate: string, processed: object}>}>} args.orgsData
+ * @returns {Buffer} xlsx file buffer
+ */
+function buildDateRangeWorkbook({ fromLabel, toLabel, orgsData }) {
+  const wb = XLSX.utils.book_new();
+
+  for (const { orgName, periods } of orgsData) {
+    const ws = XLSX.utils.aoa_to_sheet([]);
+    const state = { row: 0 };
+
+    writeRow(ws, state, BILLING_HEADERS,
+      [STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER]);
+
+    writeMergedBanner(ws, state,
+      `═══ ${orgName} - Date Range: ${fromLabel} to ${toLabel} ═══`, STYLE_SUMMARY_HEADER);
+    writeKv(ws, state, "Completed Periods", String(periods.length));
+    writeBlankRow(ws, state);
+
+    for (const { startDate, endDate, processed } of periods) {
+      appendBillingBlock(ws, state, processed, {
+        periodLabel:          `═══ PERIOD: ${startDate} to ${endDate} ═══`,
+        periodLabelStyle:     STYLE_SUMMARY_HEADER, // blue
+        summaryBannerLabel:   "─── BILLING SUMMARY ───",
+        summaryBannerStyle:   STYLE_DIVIDER,        // green section divider
+        includeBillingPeriod: false,                // dates are in the period banner
+        regularSectionLabel:  "─── REGULAR LICENSES ───",
+      });
+    }
+
+    ws["!cols"]       = [{ wch: 46 }, { wch: 22 }, { wch: 22 }, { wch: 22 }];
+    ws["!views"]      = [{ state: "frozen", ySplit: 1 }];
+    ws["!autofilter"] = { ref: "A1:D1" };
+
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName(orgName));
+  }
+
+  return XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
+}
+
 module.exports = {
   processBillingOverview,
   buildSingleOrgWorkbook,
   buildAllOrgsLatestWorkbook,
   buildCalendarYearWorkbook,
+  buildDateRangeWorkbook,
   safeSheetName,
   fmtDate,
 };

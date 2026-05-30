@@ -123,7 +123,7 @@ function fmtDate(iso) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+export const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 /**
  * Fetch billing periods that fall within a specific calendar year (Jan-Dec)
@@ -214,6 +214,101 @@ export async function fetchBillingPeriodsForCalendarYear(api, customerId, calend
   periods.sort((a, b) => a.startDate.localeCompare(b.startDate));
   if (periods.length > 12) periods.splice(0, periods.length - 12);
 
+  return { periods, errors };
+}
+
+/**
+ * Fetch billing periods that overlap a given date range for a single trustor org.
+ *
+ * Mirrors the period-walk logic in
+ * `GUI_tab_billing.py::_preview_date_range` / `_export_date_range`:
+ *   - Walks billing period indices 1..N (index 0 = current incomplete, skipped).
+ *   - A period is included if it OVERLAPS [fromDate, toDate]:
+ *         period.start <= toDate AND period.end >= fromDate
+ *   - Stops walking once 2 consecutive periods are entirely before `fromDate`
+ *     (`periods_past_range >= 2`), which is Python's break condition.
+ *   - Stops on a 404 (no more historical periods).
+ *   - Result sorted chronologically.
+ *
+ * @param {object} api
+ * @param {string} customerId             trustor customer slug
+ * @param {Date|string} fromDate          inclusive lower bound (first of month)
+ * @param {Date|string} toDate            inclusive upper bound (last day of month)
+ * @returns {Promise<{
+ *   periods: Array<{
+ *     index: number,
+ *     startDate: string,
+ *     endDate: string,
+ *     overview: object,
+ *   }>,
+ *   errors: Array<{ index: number, error: string }>,
+ * }>}
+ */
+export async function fetchBillingPeriodsForDateRange(api, customerId, fromDate, toDate) {
+  const from = fromDate instanceof Date ? fromDate : new Date(fromDate);
+  const to   = toDate   instanceof Date ? toDate   : new Date(toDate);
+  if (!from || isNaN(from) || !to || isNaN(to)) {
+    throw new Error(`Invalid date range: ${fromDate} to ${toDate}`);
+  }
+  if (to < from) {
+    throw new Error(`Invalid range: to-date precedes from-date.`);
+  }
+
+  const trusteeCustomerId = getTrusteeForOrg(customerId);
+  if (!trusteeCustomerId) {
+    throw new Error(
+      `${customerId} is a trustee organisation itself and cannot be exported as a trustor.`
+    );
+  }
+
+  const trustorOrgId = await getTrustorOrgId(api, customerId);
+
+  const periods = [];
+  const errors  = [];
+  let consecutiveBeforeRange = 0;
+  const MAX_INDEX = 60; // hard safety cap
+
+  for (let idx = 1; idx <= MAX_INDEX; idx++) {
+    let ov;
+    try {
+      ov = await fetchBillingOverviewById(api, customerId, trustorOrgId, idx);
+    } catch (err) {
+      const status = err?.status || err?.response?.status;
+      const code   = err?.code;
+      if (status === 404 || code === 404) break;
+      errors.push({ index: idx, error: err?.message || String(err) });
+      continue;
+    }
+    if (!ov) continue;
+
+    const startIso = ov.billingPeriodStartDate;
+    const endIso   = ov.billingPeriodEndDate;
+    const start    = startIso ? new Date(startIso) : null;
+    const end      = endIso   ? new Date(endIso)   : null;
+    if (!start || isNaN(start) || !end || isNaN(end)) continue;
+
+    const overlaps = start <= to && end >= from;
+    if (overlaps) {
+      consecutiveBeforeRange = 0;
+      periods.push({
+        index:     idx,
+        startDate: fmtDate(startIso),
+        endDate:   fmtDate(endIso),
+        overview:  ov,
+      });
+    } else if (end < from) {
+      // Period ends before the range — once we see two of these in a row,
+      // we can stop walking (older periods are also out of range).
+      consecutiveBeforeRange += 1;
+      if (consecutiveBeforeRange >= 2) break;
+    } else {
+      // Period starts after the range (newer than `to`) — keep walking
+      // toward older indices.
+      consecutiveBeforeRange = 0;
+    }
+  }
+
+  periods.sort((a, b) => a.startDate.localeCompare(b.startDate));
   return { periods, errors };
 }
 
