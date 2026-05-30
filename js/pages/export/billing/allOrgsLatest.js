@@ -17,7 +17,7 @@ import { timestampedFilename } from "../../../utils.js";
 import { fetchBillingOverview } from "../../../services/billingService.js";
 import { filterBillableCustomers } from "../../../utils/billingTrustees.js";
 import { processBillingOverview } from "../../../utils/billingProcessor.js";
-import { buildAllOrgsLatestSheet } from "../../../utils/billingExcelStyles.js";
+import { buildBillingSheet } from "../../../utils/billingExcelStyles.js";
 import { orgContext } from "../../../services/orgContext.js";
 import { logAction } from "../../../services/activityLogService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
@@ -186,7 +186,10 @@ export default function renderBillingAllOrgsLatestExport({ me, api }) {
 
       const XLSX = window.XLSX;
       const wb   = XLSX.utils.book_new();
-      buildAllOrgsLatestSheet({ workbook: wb, sheetName: "All Orgs", orgsData });
+      // One sheet per org — matches Python GUI_Billing_Export.export_to_excel().
+      for (const { orgName, processed } of orgsData) {
+        buildBillingSheet({ workbook: wb, sheetName: orgName, processed, orgName });
+      }
       setProgress(100);
 
       const firstSummary = orgsData[0].processed.summary;

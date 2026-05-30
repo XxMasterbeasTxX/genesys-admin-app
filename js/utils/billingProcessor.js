@@ -1,27 +1,44 @@
 /**
  * Billing data processor.
  *
- * Pure functions that transform a Genesys
- * `BillingOverview` response into the rows + summary the Excel builder
- * needs. No DOM, no API calls.
+ * Pure functions that transform a Genesys `BillingOverview` response into
+ * the rows + summary the Excel builder needs. No DOM, no API calls.
  *
- * Ported from Python: GUI_Billing_Export.py (data layer).
+ * Ported line-for-line from Python: GUI_Billing_Export.py
+ *   - get_billing_data()  → buildRawRows()
+ *   - export_to_excel()   → processBillingOverview()  (data layer only)
  *
- * The Genesys response shape (relevant fields):
- *   {
- *     billingPeriodStartDate, billingPeriodEndDate, currency, subscriptionType,
- *     usages: [{
- *       name, grouping, prepayQuantity, usageQuantity, bundleQuantity,
- *       prepayPrice, overagePrice, partNumber, unitOfMeasureType,
- *       isThirdParty, isCancellable
- *     }, ...]
- *   }
+ * Key behaviours (must match Python exactly — affects customer billing):
  *
- * Grouping values drive section placement:
- *   - "fair-use"     → AI allowance (used only for AI summary)
- *   - "rollup"       → AI total used (used only for AI summary)
- *   - "rollup-usage" → individual AI service breakdown rows
- *   - anything else  → regular licence row
+ *   1. NON-AI FAIR-USE ALLOCATIONS (Voice Transcription, etc.)
+ *      Pass 1 collects every fair-use row whose name is NOT an "AI Token"
+ *      into a dict keyed by license name. Pass 2 skips those fair-use rows
+ *      from the output, BUT when a regular usage row's name matches an
+ *      allocation we use the allocation as its committed (prepay) quantity.
+ *
+ *   2. AI ITEMS ARE DETECTED BY NAME (not just by grouping)
+ *      An item is "AI" if ANY of:
+ *        - partNumber === "GC-170-NV-AITC"
+ *        - name contains "AI" AND "Token"
+ *        - name matches: AI Guide | AI Scoring | AI Summary | AI Translate
+ *        - name contains: Speech and Text Analytics | Agent Copilot
+ *                        | Virtual Agent | Predictive Routing
+ *                        | Predictive Engagement | Bot Flow
+ *      AI items NEVER appear in Regular Licences, regardless of grouping.
+ *
+ *   3. AI SUMMARY (fair-use / rollup / rollup-usage among AI items only)
+ *      - ai_fair_use = AI row with grouping="fair-use"   (else 250/350 fallback)
+ *      - ai_rollup   = AI row with grouping="rollup"     (else = fair-use)
+ *      - ai_breakdown= AI rows with grouping="rollup-usage"
+ *      - ai_billable = max(0, rollup - fair_use)
+ *
+ *   4. REGULAR-LICENCE OVERRIDES (per Python adjusted_*_values)
+ *      - "Call":                          committed = actual, no on-demand
+ *      - "Genesys Cloud Collaborate User":committed = actual, no on-demand
+ *      - "Genesys Cloud BYOC Cloud":      committed = CX count × multiplier
+ *                                         on-demand = max(0, actual − committed)
+ *      - everything else:                 committed = prepay (possibly from
+ *                                         non-AI fair-use); on-demand = max(0, actual − committed)
  */
 
 // ── Constants (match Python) ─────────────────────────────────────────
@@ -41,6 +58,44 @@ const CX_LICENCE_PATTERN      = /\bCX\s*[123]\b/i;
 const GROUP_FAIR_USE     = "fair-use";
 const GROUP_ROLLUP       = "rollup";
 const GROUP_ROLLUP_USAGE = "rollup-usage";
+
+// ── AI detection patterns (must mirror df_ai mask in Python) ─────────
+
+const AI_PART_NUMBER = "GC-170-NV-AITC";
+
+// Single combined regex of all the case-insensitive substring patterns
+// Python checks via str.contains. Order matters only for readability.
+const AI_NAME_PATTERN = new RegExp(
+  [
+    "AI Guide",
+    "AI Scoring",
+    "AI Summary",
+    "AI Translate",
+    "Speech and Text Analytics",
+    "Agent Copilot",
+    "Virtual Agent",        // also catches "Agentic Virtual Agent"
+    "Predictive Routing",
+    "Predictive Engagement",
+    "Bot Flow",
+  ].join("|"),
+  "i"
+);
+
+/** Broad AI mask — matches Python df_ai filter. */
+function isAiItem(name, partNumber) {
+  if (partNumber === AI_PART_NUMBER) return true;
+  const n = String(name || "");
+  // "AI" and "Token" both present (case-insensitive)
+  if (/AI/i.test(n) && /Token/i.test(n)) return true;
+  if (AI_NAME_PATTERN.test(n)) return true;
+  return false;
+}
+
+/** Narrower check — matches Python `is_ai_token` used for fair-use skip. */
+function isAiTokenStrict(name) {
+  const n = String(name || "");
+  return /AI/i.test(n) && /Token/i.test(n);
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -105,106 +160,138 @@ function fmtDate(d) {
 export function processBillingOverview(overview) {
   const usages = Array.isArray(overview?.usages) ? overview.usages : [];
 
-  // ── Detect license type from any name containing "Concurrent" ─────
-  const isConcurrent = usages.some((u) => /Concurrent/i.test(u?.name || ""));
-  const licenseType  = isConcurrent ? "Concurrent" : "Named";
-
-  // ── AI allowance + rollup ─────────────────────────────────────────
-  // Per Python logic: fair-use allowance is a fixed per-license token
-  // count (250 named / 350 concurrent), NOT the API's fair-use quantity.
-  // The "rollup" row gives the total tokens consumed across all AI services.
-  let aiRollup = 0;
-  let hasAiFairUse = false;
-  let hasAiRollup  = false;
-
+  // ── Pass 1: collect non-AI fair-use allocations ──────────────────
+  // Python: fair_use_allocations[license_name] = usage_quantity
+  // Only when grouping=="fair-use" AND name is NOT an AI-Token AND usageQty>0.
+  // These become the committed quantity for the matching regular usage row.
+  const fairUseAllocations = new Map();
   for (const u of usages) {
-    const g = groupingOf(u);
-    if (g === GROUP_FAIR_USE)   hasAiFairUse = true;
-    if (g === GROUP_ROLLUP)   { hasAiRollup  = true; aiRollup = num(u.usageQuantity); }
-  }
-  const hasAi      = hasAiFairUse || hasAiRollup;
-  const aiFairUse  = isConcurrent ? AI_TOKENS_PER_CONCURRENT : AI_TOKENS_PER_NAMED;
-  // Python edge-case: if there's a fair-use row but no actual rollup usage,
-  // show the allocation as the "total used" (so Free == Total Used, Billable == 0).
-  if (hasAiFairUse && !hasAiRollup) aiRollup = aiFairUse;
-  const aiBillable = aiRollup > aiFairUse ? aiRollup - aiFairUse : 0;
-
-  // ── Count CX licences for BYOC committed calculation ──────────────
-  let cxLicenseCount = 0;
-  for (const u of usages) {
-    if (CX_LICENCE_PATTERN.test(u?.name || "")) {
-      // prepayQuantity is the committed CX count (per period)
-      cxLicenseCount += num(u.prepayQuantity);
+    const g    = groupingOf(u);
+    const name = String(u?.name || "");
+    const qty  = num(u?.usageQuantity);
+    if (g === GROUP_FAIR_USE && !isAiTokenStrict(name) && qty > 0) {
+      fairUseAllocations.set(name, qty);
     }
   }
-  const byocCommitted = cxLicenseCount * (isConcurrent ? BYOC_MINS_PER_CONCURRENT : BYOC_MINS_PER_NAMED);
 
-  // ── Walk usages and build rows ───────────────────────────────────
-  const regularRows     = [];
-  const aiBreakdownRows = [];
-  const overageRows     = [];
-
+  // ── Pass 2: build the expanded row list (Python `rows`) ──────────
+  // Mirrors the second loop in Python's get_billing_data().
+  const rawRows = [];
   for (const u of usages) {
     const g          = groupingOf(u);
-    const name       = String(u?.name || "").trim();
-    const usageQty   = num(u.usageQuantity);
-    const prepayQty  = num(u.prepayQuantity);
-    const overagePrc = num(u.overagePrice);
+    const name       = String(u?.name || "");
+    const usageQty   = num(u?.usageQuantity);
+    const partNumber = String(u?.partNumber || "");
 
-    // Skip rows with no consumption (matches Python filter).
     if (usageQty <= 0) continue;
+    if (g === GROUP_FAIR_USE && !isAiTokenStrict(name)) continue; // skip allocation rows
 
-    // AI summary inputs — already captured above; do not emit as rows.
-    if (g === GROUP_FAIR_USE || g === GROUP_ROLLUP) continue;
+    let prepayQty = num(u?.prepayQuantity);
+    if (fairUseAllocations.has(name) && prepayQty === 0) {
+      prepayQty = fairUseAllocations.get(name);
+    }
 
-    // ── AI service breakdown rows ──────────────────────────────────
-    if (g === GROUP_ROLLUP_USAGE) {
+    rawRows.push({
+      name,
+      grouping:    g,
+      partNumber,
+      committed:   prepayQty,           // raw — adjusted again below for Call/BYOC/Collab
+      actualUsage: usageQty,
+      onDemand:    Math.max(0, usageQty - prepayQty),
+    });
+  }
+
+  // ── Split: AI vs Regular (by name/part-number mask) ──────────────
+  const aiRowsAll  = rawRows.filter((r) => isAiItem(r.name, r.partNumber));
+  const regularSrc = rawRows.filter((r) => !isAiItem(r.name, r.partNumber));
+
+  // ── Licence type (Concurrent vs Named) — detected from REGULAR rows
+  // only, matching Python's df_regular scan.
+  const isConcurrent = regularSrc.some((r) => /Concurrent/i.test(r.name));
+  const licenseType  = isConcurrent ? "Concurrent" : "Named";
+  const expectedFairUse = isConcurrent ? AI_TOKENS_PER_CONCURRENT : AI_TOKENS_PER_NAMED;
+
+  // ── AI summary (from AI rows only) ───────────────────────────────
+  let aiFairUse = 0;
+  let aiRollup  = 0;
+  const aiBreakdownRows = [];
+  for (const r of aiRowsAll) {
+    if (r.grouping === GROUP_FAIR_USE) {
+      aiFairUse = r.actualUsage;
+    } else if (r.grouping === GROUP_ROLLUP) {
+      aiRollup = r.actualUsage;
+    } else if (r.grouping === GROUP_ROLLUP_USAGE && r.actualUsage > 0) {
       aiBreakdownRows.push({
-        name,
-        committed:   "",         // AI services have no per-service prepay
-        actualUsage: usageQty,
-        onDemand:    "",         // breakdown is informational only
-      });
-      continue;
-    }
-
-    // ── Regular licence row with per-licence-name overrides ────────
-    let committed = prepayQty;
-    let onDemand;
-
-    if (name === CALL_LICENCE) {
-      // Call licences: no prepay — committed equals usage, no on-demand
-      committed = usageQty;
-      onDemand  = "";
-    } else if (name === COLLABORATE_LICENCE) {
-      // Collaborate: free, no overage column
-      committed = usageQty;
-      onDemand  = "";
-    } else if (name === BYOC_LICENCE_NAME) {
-      // BYOC minutes: committed = CX licences × multiplier; overage = usage − committed
-      committed = byocCommitted;
-      onDemand  = Math.max(0, usageQty - byocCommitted);
-    } else {
-      // Default: on-demand = max(0, usage − committed)
-      onDemand = Math.max(0, usageQty - committed);
-    }
-
-    const row = { name, committed, actualUsage: usageQty, onDemand };
-    regularRows.push(row);
-
-    // Anything with a real numeric on-demand > 0 OR a positive overage
-    // price applied to non-zero usage is treated as a billable/overage item.
-    if (typeof onDemand === "number" && onDemand > 0) {
-      overageRows.push({
-        ...row,
-        overageCost: overagePrc > 0 ? onDemand * overagePrc : 0,
+        name:        r.name,
+        committed:   "",
+        actualUsage: r.actualUsage,
+        onDemand:    "",
       });
     }
   }
+  // Python fallbacks
+  if (aiFairUse === 0 && aiRollup > 0) aiFairUse = expectedFairUse;
+  if (aiFairUse > 0  && aiRollup === 0) aiRollup  = aiFairUse;
+  const aiBillable = aiRollup > aiFairUse ? aiRollup - aiFairUse : 0;
+  // Python gates the AI summary lines on `if ai_rollup > 0`. The breakdown
+  // section is gated independently on `ai_breakdown_rows`.
+  const hasAi      = aiRollup > 0;
 
-  // ── AI billable also gets surfaced in the overage section ────────
-  // Python writes the integer billable count in the On-Demand column only;
-  // Committed and Actual Usage are blank for this row.
+  // ── Regular licences: count CX 1/2/3 for BYOC + concurrent flag ──
+  // Python uses the original Committed Quantity (= prepay_qty after pass 2),
+  // before per-license adjustments below.
+  let cxLicenseCount        = 0;
+  let licenseTypeForByoc    = "named";
+  for (const r of regularSrc) {
+    if (CX_LICENCE_PATTERN.test(r.name)) {
+      if (typeof r.committed === "number" && r.committed > 0) {
+        cxLicenseCount += r.committed;
+      }
+      if (/Concurrent/i.test(r.name)) licenseTypeForByoc = "concurrent";
+    }
+  }
+  const byocMultiplier = licenseTypeForByoc === "concurrent"
+    ? BYOC_MINS_PER_CONCURRENT
+    : BYOC_MINS_PER_NAMED;
+  // Python: int(cx_license_count * multiplier) if cx_license_count > 0 else ''
+  const byocCommitted = cxLicenseCount > 0
+    ? Math.trunc(cxLicenseCount * byocMultiplier)
+    : "";
+
+  // ── Apply per-licence-name overrides ─────────────────────────────
+  const regularRows = [];
+  const overageRows = [];
+  for (const r of regularSrc) {
+    let committed   = r.committed;
+    let actualUsage = r.actualUsage;
+    let onDemand    = r.onDemand;
+
+    if (r.name === CALL_LICENCE) {
+      committed = actualUsage;
+      onDemand  = "";
+    } else if (r.name === COLLABORATE_LICENCE) {
+      committed = actualUsage;
+      onDemand  = "";
+    } else if (r.name === BYOC_LICENCE_NAME) {
+      committed = byocCommitted;
+      if (typeof committed === "number" && actualUsage > committed) {
+        onDemand = actualUsage - committed;
+      } else {
+        onDemand = "";
+      }
+    }
+    // else: keep committed = prepay (possibly from fair-use allocation),
+    //       onDemand = max(0, actualUsage - committed) already computed.
+
+    const out = { name: r.name, committed, actualUsage, onDemand };
+    regularRows.push(out);
+
+    if (typeof onDemand === "number" && onDemand > 0) {
+      overageRows.push({ ...out, overageCost: 0 });
+    }
+  }
+
+  // ── AI billable also surfaced in the overage section ─────────────
   if (hasAi && aiBillable > 0) {
     overageRows.push({
       name:        "AI Tokens - Billable",
@@ -215,7 +302,7 @@ export function processBillingOverview(overview) {
     });
   }
 
-  // ── Stable name sort within each section ─────────────────────────
+  // ── Stable name sort within each section (matches Python sort) ──
   const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   regularRows.sort(byName);
   aiBreakdownRows.sort(byName);

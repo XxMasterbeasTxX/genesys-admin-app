@@ -29,6 +29,37 @@ const GROUP_FAIR_USE     = "fair-use";
 const GROUP_ROLLUP       = "rollup";
 const GROUP_ROLLUP_USAGE = "rollup-usage";
 
+// AI detection (must mirror df_ai mask in Python GUI_Billing_Export.py)
+const AI_PART_NUMBER = "GC-170-NV-AITC";
+const AI_NAME_PATTERN = new RegExp(
+  [
+    "AI Guide",
+    "AI Scoring",
+    "AI Summary",
+    "AI Translate",
+    "Speech and Text Analytics",
+    "Agent Copilot",
+    "Virtual Agent",        // also covers "Agentic Virtual Agent"
+    "Predictive Routing",
+    "Predictive Engagement",
+    "Bot Flow",
+  ].join("|"),
+  "i"
+);
+
+function isAiItem(name, partNumber) {
+  if (partNumber === AI_PART_NUMBER) return true;
+  const n = String(name || "");
+  if (/AI/i.test(n) && /Token/i.test(n)) return true;
+  if (AI_NAME_PATTERN.test(n)) return true;
+  return false;
+}
+
+function isAiTokenStrict(name) {
+  const n = String(name || "");
+  return /AI/i.test(n) && /Token/i.test(n);
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function num(v) {
@@ -60,77 +91,132 @@ function fmtDate(d) {
 }
 
 // ── Processor ────────────────────────────────────────────────────────
+// Mirrors Python GUI_Billing_Export.py exactly. See js/utils/billingProcessor.js
+// for the heavily-commented twin — any change here MUST be applied there too.
 
 function processBillingOverview(overview) {
   const usages = Array.isArray(overview && overview.usages) ? overview.usages : [];
 
-  const isConcurrent = usages.some((u) => /Concurrent/i.test((u && u.name) || ""));
-  const licenseType  = isConcurrent ? "Concurrent" : "Named";
-
-  let aiRollup     = 0;
-  let hasAiFairUse = false;
-  let hasAiRollup  = false;
-
+  // Pass 1: collect non-AI fair-use allocations (Voice Transcription, etc.)
+  const fairUseAllocations = new Map();
   for (const u of usages) {
-    const g = groupingOf(u);
-    if (g === GROUP_FAIR_USE)  hasAiFairUse = true;
-    if (g === GROUP_ROLLUP)  { hasAiRollup = true; aiRollup = num(u.usageQuantity); }
-  }
-  const hasAi     = hasAiFairUse || hasAiRollup;
-  const aiFairUse = isConcurrent ? AI_TOKENS_PER_CONCURRENT : AI_TOKENS_PER_NAMED;
-  if (hasAiFairUse && !hasAiRollup) aiRollup = aiFairUse;
-  const aiBillable = aiRollup > aiFairUse ? aiRollup - aiFairUse : 0;
-
-  let cxLicenseCount = 0;
-  for (const u of usages) {
-    if (CX_LICENCE_PATTERN.test((u && u.name) || "")) {
-      cxLicenseCount += num(u.prepayQuantity);
+    const g    = groupingOf(u);
+    const name = String((u && u.name) || "");
+    const qty  = num(u && u.usageQuantity);
+    if (g === GROUP_FAIR_USE && !isAiTokenStrict(name) && qty > 0) {
+      fairUseAllocations.set(name, qty);
     }
   }
-  const byocCommitted = cxLicenseCount * (isConcurrent ? BYOC_MINS_PER_CONCURRENT : BYOC_MINS_PER_NAMED);
 
-  const regularRows     = [];
-  const aiBreakdownRows = [];
-  const overageRows     = [];
-
+  // Pass 2: build expanded row list
+  const rawRows = [];
   for (const u of usages) {
-    const g         = groupingOf(u);
-    const name      = String((u && u.name) || "").trim();
-    const usageQty  = num(u.usageQuantity);
-    const prepayQty = num(u.prepayQuantity);
+    const g          = groupingOf(u);
+    const name       = String((u && u.name) || "");
+    const usageQty   = num(u && u.usageQuantity);
+    const partNumber = String((u && u.partNumber) || "");
 
     if (usageQty <= 0) continue;
-    if (g === GROUP_FAIR_USE || g === GROUP_ROLLUP) continue;
+    if (g === GROUP_FAIR_USE && !isAiTokenStrict(name)) continue;
 
-    if (g === GROUP_ROLLUP_USAGE) {
-      aiBreakdownRows.push({ name, committed: "", actualUsage: usageQty, onDemand: "" });
-      continue;
+    let prepayQty = num(u && u.prepayQuantity);
+    if (fairUseAllocations.has(name) && prepayQty === 0) {
+      prepayQty = fairUseAllocations.get(name);
     }
 
-    let committed = prepayQty;
-    let onDemand;
+    rawRows.push({
+      name,
+      grouping:    g,
+      partNumber,
+      committed:   prepayQty,
+      actualUsage: usageQty,
+      onDemand:    Math.max(0, usageQty - prepayQty),
+    });
+  }
 
-    if (name === CALL_LICENCE) {
-      committed = usageQty;
+  // Split: AI vs Regular
+  const aiRowsAll  = rawRows.filter((r) => isAiItem(r.name, r.partNumber));
+  const regularSrc = rawRows.filter((r) => !isAiItem(r.name, r.partNumber));
+
+  // License type — Python checks regular rows only
+  const isConcurrent = regularSrc.some((r) => /Concurrent/i.test(r.name));
+  const licenseType  = isConcurrent ? "Concurrent" : "Named";
+  const expectedFairUse = isConcurrent ? AI_TOKENS_PER_CONCURRENT : AI_TOKENS_PER_NAMED;
+
+  // AI summary (from AI subset only)
+  let aiFairUse = 0;
+  let aiRollup  = 0;
+  const aiBreakdownRows = [];
+  for (const r of aiRowsAll) {
+    if (r.grouping === GROUP_FAIR_USE) {
+      aiFairUse = r.actualUsage;
+    } else if (r.grouping === GROUP_ROLLUP) {
+      aiRollup = r.actualUsage;
+    } else if (r.grouping === GROUP_ROLLUP_USAGE && r.actualUsage > 0) {
+      aiBreakdownRows.push({
+        name:        r.name,
+        committed:   "",
+        actualUsage: r.actualUsage,
+        onDemand:    "",
+      });
+    }
+  }
+  if (aiFairUse === 0 && aiRollup > 0) aiFairUse = expectedFairUse;
+  if (aiFairUse > 0  && aiRollup === 0) aiRollup  = aiFairUse;
+  const aiBillable = aiRollup > aiFairUse ? aiRollup - aiFairUse : 0;
+  // Python gates AI summary on `if ai_rollup > 0`. Breakdown is independent.
+  const hasAi = aiRollup > 0;
+
+  // Count CX 1/2/3 for BYOC + concurrent flag for BYOC multiplier
+  let cxLicenseCount     = 0;
+  let licenseTypeForByoc = "named";
+  for (const r of regularSrc) {
+    if (CX_LICENCE_PATTERN.test(r.name)) {
+      if (typeof r.committed === "number" && r.committed > 0) {
+        cxLicenseCount += r.committed;
+      }
+      if (/Concurrent/i.test(r.name)) licenseTypeForByoc = "concurrent";
+    }
+  }
+  const byocMultiplier = licenseTypeForByoc === "concurrent"
+    ? BYOC_MINS_PER_CONCURRENT
+    : BYOC_MINS_PER_NAMED;
+  const byocCommitted = cxLicenseCount > 0
+    ? Math.trunc(cxLicenseCount * byocMultiplier)
+    : "";
+
+  // Apply per-license-name overrides
+  const regularRows = [];
+  const overageRows = [];
+  for (const r of regularSrc) {
+    let committed   = r.committed;
+    let actualUsage = r.actualUsage;
+    let onDemand    = r.onDemand;
+
+    if (r.name === CALL_LICENCE) {
+      committed = actualUsage;
       onDemand  = "";
-    } else if (name === COLLABORATE_LICENCE) {
-      committed = usageQty;
+    } else if (r.name === COLLABORATE_LICENCE) {
+      committed = actualUsage;
       onDemand  = "";
-    } else if (name === BYOC_LICENCE_NAME) {
+    } else if (r.name === BYOC_LICENCE_NAME) {
       committed = byocCommitted;
-      onDemand  = Math.max(0, usageQty - byocCommitted);
-    } else {
-      onDemand = Math.max(0, usageQty - committed);
+      if (typeof committed === "number" && actualUsage > committed) {
+        onDemand = actualUsage - committed;
+      } else {
+        onDemand = "";
+      }
     }
 
-    const row = { name, committed, actualUsage: usageQty, onDemand };
-    regularRows.push(row);
+    const out = { name: r.name, committed, actualUsage, onDemand };
+    regularRows.push(out);
 
     if (typeof onDemand === "number" && onDemand > 0) {
-      overageRows.push({ ...row });
+      overageRows.push(Object.assign({}, out));
     }
   }
 
+  // AI billable surfaced in overage section
   if (hasAi && aiBillable > 0) {
     overageRows.push({
       name:        "AI Tokens - Billable",
@@ -354,32 +440,32 @@ function buildSingleOrgWorkbook({ orgName, processed }) {
 /**
  * Build a complete "All Orgs — Latest" billing workbook.
  *
- * Mirrors the Python script GUI_Billing_Export_Scheduled_All.py:
- * a SINGLE worksheet containing every org's latest-complete period
- * stacked vertically, with a blank row between orgs.
+ * Mirrors the Python script GUI_Billing_Export_Scheduled_All.py +
+ * export_to_excel(): a single .xlsx with ONE SHEET PER ORG (sheet name
+ * = org name, truncated to Excel's 31-char limit).
  *
  * @param {object} args
- * @param {string} [args.sheetName="All Orgs"]
  * @param {Array<{orgName: string, processed: object}>} args.orgsData
  * @returns {Buffer} xlsx file buffer
  */
-function buildAllOrgsLatestWorkbook({ sheetName = "All Orgs", orgsData }) {
+function buildAllOrgsLatestWorkbook({ orgsData }) {
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([]);
-  const state = { row: 0 };
-
-  writeRow(ws, state, BILLING_HEADERS,
-    [STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER]);
 
   for (const { orgName, processed } of orgsData) {
+    const ws = XLSX.utils.aoa_to_sheet([]);
+    const state = { row: 0 };
+
+    writeRow(ws, state, BILLING_HEADERS,
+      [STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER]);
     appendBillingBlock(ws, state, processed, { orgName });
+
+    ws["!cols"]       = [{ wch: 46 }, { wch: 22 }, { wch: 22 }, { wch: 22 }];
+    ws["!views"]      = [{ state: "frozen", ySplit: 1 }];
+    ws["!autofilter"] = { ref: "A1:D1" };
+
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName(orgName));
   }
 
-  ws["!cols"]       = [{ wch: 46 }, { wch: 22 }, { wch: 22 }, { wch: 22 }];
-  ws["!views"]      = [{ state: "frozen", ySplit: 1 }];
-  ws["!autofilter"] = { ref: "A1:D1" };
-
-  XLSX.utils.book_append_sheet(wb, ws, safeSheetName(sheetName));
   return XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
 }
 
