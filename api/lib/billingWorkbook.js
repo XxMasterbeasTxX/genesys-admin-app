@@ -473,10 +473,65 @@ function buildAllOrgsLatestWorkbook({ orgsData }) {
   return XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
 }
 
+/**
+ * Build a complete "Calendar Year" billing workbook.
+ *
+ * Mirrors browser `buildCalendarYearSheet` (one sheet per org) and Python
+ * GUI_Billing_Export_Calendar_Year.export_calendar_year_all_orgs().
+ *
+ * Per-org sheet layout:
+ *   Row 1: column headers
+ *   Row 2: blue banner "─── CALENDAR YEAR {year}: {orgName} ───"
+ *   Row 3: gray k/v "Total Periods | N"
+ *   Row 4: (blank)
+ *   For each period (sorted, max 12):
+ *     green divider "─── {label upper} ───"
+ *     License Type / Billing Period / Billable Items / [AI summary if any]
+ *     REGULAR LICENSES / AI breakdown / OVERAGE sections
+ *
+ * @param {object} args
+ * @param {string|number} args.year
+ * @param {Array<{orgName: string, periods: Array<{label: string, processed: object}>}>} args.orgsData
+ * @returns {Buffer} xlsx file buffer
+ */
+function buildCalendarYearWorkbook({ year, orgsData }) {
+  const wb = XLSX.utils.book_new();
+
+  for (const { orgName, periods } of orgsData) {
+    const ws = XLSX.utils.aoa_to_sheet([]);
+    const state = { row: 0 };
+
+    writeRow(ws, state, BILLING_HEADERS,
+      [STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER]);
+
+    writeMergedBanner(ws, state,
+      `─── CALENDAR YEAR ${year}: ${orgName} ───`, STYLE_SUMMARY_HEADER);
+    writeKv(ws, state, "Total Periods", String(periods.length));
+    writeBlankRow(ws, state);
+
+    for (const { label, processed } of periods) {
+      appendBillingBlock(ws, state, processed, {
+        periodLabel:      `─── ${String(label).toUpperCase()} ───`,
+        periodLabelStyle: STYLE_DIVIDER,
+        summaryBanner:    false,
+      });
+    }
+
+    ws["!cols"]       = [{ wch: 46 }, { wch: 22 }, { wch: 22 }, { wch: 22 }];
+    ws["!views"]      = [{ state: "frozen", ySplit: 1 }];
+    ws["!autofilter"] = { ref: "A1:D1" };
+
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName(orgName));
+  }
+
+  return XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
+}
+
 module.exports = {
   processBillingOverview,
   buildSingleOrgWorkbook,
   buildAllOrgsLatestWorkbook,
+  buildCalendarYearWorkbook,
   safeSheetName,
   fmtDate,
 };

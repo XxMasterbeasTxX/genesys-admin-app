@@ -34,9 +34,14 @@ import { processBillingOverview } from "../../../utils/billingProcessor.js";
 import { buildCalendarYearSheet } from "../../../utils/billingExcelStyles.js";
 import { orgContext } from "../../../services/orgContext.js";
 import { logAction } from "../../../services/activityLogService.js";
+import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { sendEmail } from "../../../services/emailService.js";
 
 const YEAR_DROPDOWN_COUNT = 5;   // current year + 4 previous
+
+const AUTOMATION_ENABLED      = true;
+const AUTOMATION_EXPORT_TYPE  = "billingCalendarYear";
+const AUTOMATION_EXPORT_LABEL = "Billing — Calendar Year";
 
 function buildYearOptions() {
   const current = new Date().getUTCFullYear();
@@ -112,6 +117,19 @@ export default function renderBillingCalendarYearExport({ me, api }) {
       </div>
     </div>
   `;
+
+  // ── Automation panel ──────────────────────────────────
+  // Scheduled handler always exports the PREVIOUS calendar year
+  // (current year - 1). See api/lib/exports/billingCalendarYear.js.
+  if (AUTOMATION_ENABLED) {
+    el.appendChild(createSchedulePanel({
+      exportType:  AUTOMATION_EXPORT_TYPE,
+      exportLabel: AUTOMATION_EXPORT_LABEL,
+      me,
+      requiresOrg: false,
+      configSummary: () => `Previous calendar year (auto: current year − 1)`,
+    }));
+  }
 
   const $year      = el.querySelector("#bcyYear");
   const $runBtn    = el.querySelector("#bcyRunBtn");

@@ -32,6 +32,7 @@ const handlers = {
   skillTemplates:         () => require("./exports/skillTemplates"),
   billingSingleOrg:       () => require("./exports/billingSingleOrg"),
   billingAllOrgsLatest:   () => require("./exports/billingAllOrgsLatest"),
+  billingCalendarYear:    () => require("./exports/billingCalendarYear"),
 };
 
 /**
