@@ -123,6 +123,100 @@ function fmtDate(iso) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+/**
+ * Fetch billing periods that fall within a specific calendar year (Jan-Dec)
+ * for a single trustor org.
+ *
+ * Mirrors Python `get_billing_periods_for_calendar_year()` in
+ * GUI_Billing_Export_Calendar_Year.py:
+ *   - Walks billing period indices 1..13 (index 0 = current incomplete,
+ *     skipped).
+ *   - Includes a period if its startDate.year OR endDate.year matches.
+ *   - On a 404 from the API, stops walking (no more historical periods).
+ *   - Result sorted chronologically; capped at the 12 most recent.
+ *   - Period label is "Mmm YYYY - Mmm YYYY".
+ *
+ * Failures other than 404 on individual indices are tolerated (logged
+ * by the caller via the returned `errors` array).
+ *
+ * @param {object} api
+ * @param {string} customerId             trustor customer slug
+ * @param {number|string} calendarYear    e.g. 2025
+ * @returns {Promise<{
+ *   periods: Array<{
+ *     index: number,
+ *     label: string,
+ *     startDate: string,
+ *     endDate: string,
+ *     overview: object,
+ *   }>,
+ *   errors: Array<{ index: number, error: string }>,
+ * }>}
+ */
+export async function fetchBillingPeriodsForCalendarYear(api, customerId, calendarYear) {
+  const year = Number(calendarYear);
+  if (!Number.isFinite(year)) {
+    throw new Error(`Invalid calendar year: ${calendarYear}`);
+  }
+
+  const trusteeCustomerId = getTrusteeForOrg(customerId);
+  if (!trusteeCustomerId) {
+    throw new Error(
+      `${customerId} is a trustee organisation itself and cannot be exported as a trustor.`
+    );
+  }
+
+  const trustorOrgId = await getTrustorOrgId(api, customerId);
+
+  const periods = [];
+  const errors  = [];
+
+  // Sequential walk — stop on 404 (matches Python `break` on status 404).
+  for (let idx = 1; idx <= 13; idx++) {
+    let ov;
+    try {
+      ov = await fetchBillingOverviewById(api, customerId, trustorOrgId, idx);
+    } catch (err) {
+      const status = err?.status || err?.response?.status;
+      const code   = err?.code;
+      if (status === 404 || code === 404) break;
+      errors.push({ index: idx, error: err?.message || String(err) });
+      continue;
+    }
+    if (!ov) continue;
+
+    const startIso = ov.billingPeriodStartDate;
+    const endIso   = ov.billingPeriodEndDate;
+    const start    = startIso ? new Date(startIso) : null;
+    const end      = endIso   ? new Date(endIso)   : null;
+    if (!start || isNaN(start) || !end || isNaN(end)) continue;
+
+    // Python: include if either endpoint's year matches the calendar year.
+    if (start.getUTCFullYear() !== year && end.getUTCFullYear() !== year) {
+      continue;
+    }
+
+    const label = `${MONTH_ABBR[start.getUTCMonth()]} ${start.getUTCFullYear()} - ` +
+                  `${MONTH_ABBR[end.getUTCMonth()]} ${end.getUTCFullYear()}`;
+
+    periods.push({
+      index:     idx,
+      label,
+      startDate: fmtDate(startIso),
+      endDate:   fmtDate(endIso),
+      overview:  ov,
+    });
+  }
+
+  // Sort chronologically by startDate and cap at 12.
+  periods.sort((a, b) => a.startDate.localeCompare(b.startDate));
+  if (periods.length > 12) periods.splice(0, periods.length - 12);
+
+  return { periods, errors };
+}
+
 /**
  * Pre-fetch billing periods 0..3 for a customer.
  *

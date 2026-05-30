@@ -43,10 +43,11 @@ export default function renderBillingAllOrgsLatestExport({ me, api }) {
     <hr class="hr">
     <p class="page-desc">
       Exports the latest complete billing period for every billable customer org
-      into a single workbook. All orgs are stacked on one sheet using the same
-      4-column layout (Name, Committed, Actual Usage, On-Demand) with per-org
-      summary banners, AI-tokens breakdowns and highlighted overage sections —
-      matching the Python report.
+      org into a single workbook. The workbook has one sheet per organisation
+      (sheet name = org name), each using the same 4-column layout (Name,
+      Committed, Actual Usage, On-Demand) with a per-org summary banner, an
+      AI-tokens breakdown and a highlighted overage section — matching the
+      Python report.
     </p>
 
     <div class="te-actions">

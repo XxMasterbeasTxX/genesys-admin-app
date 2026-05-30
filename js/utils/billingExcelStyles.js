@@ -151,25 +151,116 @@ export function buildBillingSheet({ workbook, sheetName, processed, orgName, per
 }
 
 /**
+ * Build a Calendar Year billing sheet for ONE organisation.
+ *
+ * Mirrors the per-org tab structure in Python
+ * GUI_Billing_Export_Calendar_Year.export_calendar_year_all_orgs():
+ *
+ *   Row 1:   column headers
+ *   Row 2:   ─── CALENDAR YEAR {year}: {orgName} ───    (blue summary banner)
+ *   Row 3:   Total Periods | N                          (gray k/v row)
+ *   Row 4:   (blank)
+ *   Then, for each period (sorted by start date):
+ *     ─── {period label upper} ───                      (green divider)
+ *     License Type      | Concurrent / Named
+ *     Billing Period    | YYYY-MM-DD to YYYY-MM-DD
+ *     Billable Items    | N
+ *     [AI Tokens summary rows if hasAi]
+ *     (blank)
+ *     ─── REGULAR LICENSES (All Items with Usage) ───
+ *     [regular rows]
+ *     (blank)
+ *     ─── AI TOKENS USAGE BREAKDOWN (... Licenses) ───   (if any)
+ *     [ai breakdown rows]
+ *     (blank)
+ *     ─── ITEMS WITH OVERAGE AND OTHER BILLABLE ITEMS ─── (if any)
+ *     [overage rows, AI Tokens - Billable row]
+ *     (blank)
+ *
+ * @param {object} args
+ * @param {object} args.workbook                          XLSX workbook
+ * @param {string} args.orgName
+ * @param {string|number} args.year
+ * @param {Array<{label: string, processed: object}>} args.periods
+ *        Sorted chronologically. `processed` is the output of
+ *        `processBillingOverview()` for that period.
+ * @returns {object} XLSX worksheet
+ */
+export function buildCalendarYearSheet({ workbook, orgName, year, periods }) {
+  const XLSX = window.XLSX;
+  const ws    = XLSX.utils.aoa_to_sheet([]);
+  const state = { row: 0 };
+
+  // Row 1 — column headers
+  writeRow(ws, state, BILLING_HEADERS,
+    [STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER, STYLE_COLUMN_HEADER]);
+
+  // Top banner + total periods (Python lines 396-415)
+  writeMergedBanner(ws, state,
+    `─── CALENDAR YEAR ${year}: ${orgName} ───`, STYLE_SUMMARY_HEADER);
+  writeKv(ws, state, "Total Periods", String(periods.length));
+  writeBlankRow(ws, state);
+
+  // Per-period blocks
+  for (const { label, processed } of periods) {
+    appendBillingBlock(ws, state, processed, {
+      periodLabel:      `─── ${String(label).toUpperCase()} ───`,
+      periodLabelStyle: STYLE_DIVIDER,   // green, matches Python divider_fill
+      summaryBanner:    false,           // top-of-sheet has the only summary banner
+    });
+  }
+
+  ws["!cols"] = [
+    { wch: 46 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 22 },
+  ];
+  ws["!views"]      = [{ state: "frozen", ySplit: 1 }];
+  ws["!autofilter"] = { ref: "A1:D1" };
+
+  XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(orgName));
+  return ws;
+}
+
+/**
  * Append one period's worth of content to an existing billing worksheet.
  * Use this to stack multiple periods vertically (calendar year / date range).
+ *
+ * Options:
+ *   orgName           — When set, the summary banner reads
+ *                       "─── BILLING SUMMARY: {orgName} ───".
+ *   periodLabel       — Optional banner above the block (e.g.
+ *                       "─── JAN 2025 - FEB 2025 ───"). For multi-period sheets.
+ *   periodLabelStyle  — Style for `periodLabel` (default blue STYLE_PERIOD_BANNER;
+ *                       Calendar Year uses green STYLE_DIVIDER).
+ *   summaryBanner     — When false, the blue "BILLING SUMMARY" header row is
+ *                       omitted. Used by multi-period sheets where each period
+ *                       only gets the period divider + gray k/v rows.
  */
-export function appendBillingBlock(ws, state, processed, { orgName, periodLabel } = {}) {
+export function appendBillingBlock(ws, state, processed, {
+  orgName,
+  periodLabel,
+  periodLabelStyle = STYLE_PERIOD_BANNER,
+  summaryBanner    = true,
+} = {}) {
   const { summary, regularRows, aiBreakdownRows, overageRows } = processed;
 
   // Optional period separator — only useful for multi-period sheets
   // (calendar year, date range, period comparison).
   if (periodLabel) {
-    writeMergedBanner(ws, state, periodLabel, STYLE_PERIOD_BANNER);
+    writeMergedBanner(ws, state, periodLabel, periodLabelStyle);
   }
 
   // ── Summary block ──────────────────────────────────────────────────
   // Python: single blue header row "─── BILLING SUMMARY: {org} ───" then
   // gray k/v rows. No separate "PERIOD" banner, no Subscription / Currency.
-  const headerLabel = orgName
-    ? `─── BILLING SUMMARY: ${orgName} ───`
-    : "─── BILLING SUMMARY ───";
-  writeMergedBanner(ws, state, headerLabel, STYLE_SUMMARY_HEADER);
+  if (summaryBanner) {
+    const headerLabel = orgName
+      ? `─── BILLING SUMMARY: ${orgName} ───`
+      : "─── BILLING SUMMARY ───";
+    writeMergedBanner(ws, state, headerLabel, STYLE_SUMMARY_HEADER);
+  }
   writeKv(ws, state, "License Type",   summary.licenseType);
   writeKv(ws, state, "Billing Period", `${summary.startDate} to ${summary.endDate}`);
   writeKv(ws, state, "Billable Items", String(summary.billableItems));

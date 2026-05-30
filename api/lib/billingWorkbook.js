@@ -374,16 +374,20 @@ function safeSheetName(name) {
 }
 
 function appendBillingBlock(ws, state, processed, opts) {
-  const orgName     = opts && opts.orgName;
-  const periodLabel = opts && opts.periodLabel;
+  const orgName          = opts && opts.orgName;
+  const periodLabel      = opts && opts.periodLabel;
+  const periodLabelStyle = (opts && opts.periodLabelStyle) || STYLE_SUMMARY_HEADER;
+  const summaryBanner    = opts && opts.summaryBanner === false ? false : true;
   const { summary, regularRows, aiBreakdownRows, overageRows } = processed;
 
-  if (periodLabel) writeMergedBanner(ws, state, periodLabel, STYLE_SUMMARY_HEADER);
+  if (periodLabel) writeMergedBanner(ws, state, periodLabel, periodLabelStyle);
 
-  const headerLabel = orgName
-    ? `─── BILLING SUMMARY: ${orgName} ───`
-    : "─── BILLING SUMMARY ───";
-  writeMergedBanner(ws, state, headerLabel, STYLE_SUMMARY_HEADER);
+  if (summaryBanner) {
+    const headerLabel = orgName
+      ? `─── BILLING SUMMARY: ${orgName} ───`
+      : "─── BILLING SUMMARY ───";
+    writeMergedBanner(ws, state, headerLabel, STYLE_SUMMARY_HEADER);
+  }
   writeKv(ws, state, "License Type",   summary.licenseType);
   writeKv(ws, state, "Billing Period", `${summary.startDate} to ${summary.endDate}`);
   writeKv(ws, state, "Billable Items", String(summary.billableItems));
