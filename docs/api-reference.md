@@ -36,6 +36,7 @@ All Genesys Cloud calls are proxied through `POST /api/genesys-proxy` on the Azu
 26. [Utilities](#26-utilities)
 27. [Speech & Text Analytics](#27-speech--text-analytics)
 28. [Journey](#28-journey)
+29. [Billing](#29-billing)
 
 ---
 
@@ -490,10 +491,24 @@ Used by: Flows — Journey Flow
 
 ---
 
+## 29. Billing
+
+Used by: Billing — Single Org, All Orgs (Latest), Calendar Year, Date Range, Custom Orgs, Period Comparison.
+
+All billing exports use the **trustee billing overview** endpoint, which must be called as the **trustee** organisation (the one that holds the billing relationship for the target customer org). The trustee customer for each org is configured in `api/lib/customers.json::trusteeForOrg`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v2/organizations/me` | Resolve the **trustor org ID** when called with the trustor org's own credentials. The billing overview endpoint takes this org ID in the URL path. |
+| GET | `/api/v2/billing/trusteebillingoverview/{trustorOrgId}?billingPeriodIndex={N}` | Fetch the billing overview for one period. Called as the **trustee** customer (token injected from `customers.json::trusteeForOrg`). `billingPeriodIndex`: `0` = current in-progress period, `1` = latest complete, `2` = two ago, `3` = three ago, etc. Browser caches periods 0..3 via `js/services/billingService.js::fetchBillingPeriods`. Returns metadata (`billingPeriodStartDate`, `billingPeriodEndDate`), license usage, and AI token rollup which the processor (`js/utils/billingProcessor.js` / `api/lib/billingWorkbook.js`) translates into Regular Licenses, AI Tokens Breakdown, and Items with Overage sections. Returns 404 when the requested period does not exist — used as the stop condition when walking older indices for Calendar Year and Date Range exports. |
+
+---
+
 ## Notes
 
 - **Pagination**: Most list endpoints use offset pagination (`pageNumber`/`pageSize`). Exceptions: External Contacts and Assistants use **cursor pagination** (`nextUri`). Task Management (Workbins/Work Types) uses **POST-based queries**.
 - **Proxying**: All Genesys calls go through `POST /api/genesys-proxy`, which adds `Authorization: Bearer <token>` for the selected org and forwards the request to the correct Genesys region.
 - **Entity name resolution**: The Audit — Search page resolves entity names for 40+ entity types by calling the appropriate `GET /api/v2/{path}/{id}` endpoint on-demand when a row is expanded.
-- **Server-side endpoints**: Endpoints in sections 2, 4, 5, 7–27 that are also called from `api/lib/exports/` run server-side during scheduled export execution (including Documentation Export) — not from the browser.
-- **Registered export handlers**: The `api/lib/exportHandlers.js` registry maps export type strings to handler modules. Registered types: `allGroups`, `allRoles`, `documentation`, `filteredRoles`, `interactionTotals`, `licensesConsumption`, `rolesSingleOrg`, `lastLogin`, `trustee`, `skillTemplates`.
+- **Server-side endpoints**: Endpoints in sections 2, 4, 5, 7–27, 29 that are also called from `api/lib/exports/` run server-side during scheduled export execution (including Documentation Export and the billing exports) — not from the browser.
+- **Registered export handlers**: The `api/lib/exportHandlers.js` registry maps export type strings to handler modules. Registered types: `allGroups`, `allRoles`, `billingAllOrgsLatest`, `billingCalendarYear`, `billingSingleOrg`, `documentation`, `filteredRoles`, `interactionTotals`, `licensesConsumption`, `rolesSingleOrg`, `lastLogin`, `trustee`, `skillTemplates`.
+- **Billing trustee resolution**: Billing exports require the call to be authenticated as the **trustee** customer for the target org. The mapping is stored in `api/lib/customers.json::trusteeForOrg`. If the target customer is itself a trustee (no entry), the export is blocked client-side (`isTrusteeOrg(orgId)` in `js/utils/billingTrustees.js`).
