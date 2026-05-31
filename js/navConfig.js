@@ -181,6 +181,7 @@ export const NAV_TREE = [
           { label: "Calendar Year",         path: "calendar-year",     enabled: true, access: "export.billing.calendarYear" },
           { label: "Date Range",            path: "date-range",        enabled: true, access: "export.billing.dateRange" },
           { label: "Custom Orgs",           path: "custom-orgs",       enabled: true, access: "export.billing.customOrgs" },
+          { label: "Period Comparison",     path: "period-comparison", enabled: true, access: "export.billing.periodComparison" },
         ],
       },
       {
