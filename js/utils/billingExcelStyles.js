@@ -294,6 +294,9 @@ export function buildDateRangeSheet({ workbook, orgName, fromLabel, toLabel, per
   XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(orgName));
   return ws;
 }
+
+/**
+ * Append one period's worth of content to an existing billing worksheet.
  * Use this to stack multiple periods vertically (calendar year / date range).
  *
  * Options:
