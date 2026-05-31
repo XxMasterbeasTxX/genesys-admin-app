@@ -180,6 +180,7 @@ export const NAV_TREE = [
           { label: "All Orgs (Latest)",     path: "all-orgs-latest",   enabled: true, access: "export.billing.allOrgsLatest" },
           { label: "Calendar Year",         path: "calendar-year",     enabled: true, access: "export.billing.calendarYear" },
           { label: "Date Range",            path: "date-range",        enabled: true, access: "export.billing.dateRange" },
+          { label: "Custom Orgs",           path: "custom-orgs",       enabled: true, access: "export.billing.customOrgs" },
         ],
       },
       {
