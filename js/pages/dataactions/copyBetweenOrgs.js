@@ -372,6 +372,12 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     try {
       setStatus(STATUS.fetching);
       const full = await gc.getDataAction(api, $srcOrg.value, id);
+      // Genesys returns templates as file references (requestTemplateUri /
+      // successTemplateUri) rather than inline strings. Fetch the actual
+      // template content from those URIs and inline them so the copy
+      // posts real templates instead of Genesys defaulting to
+      // "${input.rawRequest}" / "${rawResult}".
+      await inlineActionTemplates(api, $srcOrg.value, full);
       // Store the full detail on the action object for later use
       a._full = full;
       $contractPrev.innerHTML = buildContractPreview(full.contract);
@@ -383,6 +389,43 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       $copyBtn.disabled = true;
     }
   });
+
+  /**
+   * For data actions whose templates are stored as .vm files, the
+   * action GET returns only a {requestTemplate,successTemplate}Uri.
+   * Resolve those URIs to their actual content and write it back as
+   * the inline template string, removing the URI so POST doesn't see
+   * a stale reference to the source org's template file.
+   */
+  async function inlineActionTemplates(api, orgId, full) {
+    const req  = full?.config?.request;
+    const resp = full?.config?.response;
+
+    async function fetchTemplate(uri) {
+      if (!uri) return null;
+      try {
+        const r = await api.proxyGenesys(orgId, "GET", uri);
+        // Templates are .vm text; the proxy wraps non-JSON as { raw }.
+        if (typeof r === "string") return r;
+        if (r && typeof r.raw === "string") return r.raw;
+        return null;
+      } catch (e) {
+        console.warn("[copyBetweenOrgs] failed to fetch template", uri, e);
+        return null;
+      }
+    }
+
+    if (req?.requestTemplateUri && !req.requestTemplate) {
+      const content = await fetchTemplate(req.requestTemplateUri);
+      if (content !== null) req.requestTemplate = content;
+      delete req.requestTemplateUri;
+    }
+    if (resp?.successTemplateUri && !resp.successTemplate) {
+      const content = await fetchTemplate(resp.successTemplateUri);
+      if (content !== null) resp.successTemplate = content;
+      delete resp.successTemplateUri;
+    }
+  }
 
   // ── Copy action ──────────────────────────────────────
   $copyBtn.addEventListener("click", async () => {
