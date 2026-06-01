@@ -296,9 +296,12 @@ Used by: Data Actions — Copy between Orgs, Data Actions — Edit, Documentatio
 | GET | `/api/v2/integrations/actions/drafts` | List all draft data actions |
 | POST | `/api/v2/integrations/actions` | Create a published data action (copy) |
 | POST | `/api/v2/integrations/actions/drafts` | Create a draft data action |
-| GET | `/api/v2/integrations/actions/{id}` | Get a published data action |
+| GET | `/api/v2/integrations/actions/{id}` | Get a published data action (use `?expand=contract&includeConfig=true` for full contract + config) |
 | GET | `/api/v2/integrations/actions/{id}/draft` | Get the draft of a data action |
 | PUT | `/api/v2/integrations/actions/{id}/draft` | Update a data action draft |
+| PATCH | `/api/v2/integrations/actions/{id}/draft` | Patch a data action draft (`UpdateDraftInput`: name, category, integrationId, secure, version, contract, config) — used by Copy between Orgs to write the full config after `POST /drafts` |
+| GET | `/api/v2/integrations/actions/{id}/templates/requesttemplate.vm` | Fetch raw request Velocity template (inlined by Copy between Orgs when source action stores templates as file references) |
+| GET | `/api/v2/integrations/actions/{id}/templates/successtemplate.vm` | Fetch raw success Velocity template (inlined by Copy between Orgs) |
 | POST | `/api/v2/integrations/actions/{id}/draft/validation` | Validate a draft action |
 | POST | `/api/v2/integrations/actions/{id}/draft/publish` | Publish a draft action |
 | POST | `/api/v2/integrations/actions/{id}/test` | Run a test against a published action |
