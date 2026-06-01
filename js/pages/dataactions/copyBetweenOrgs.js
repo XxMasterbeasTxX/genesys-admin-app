@@ -467,14 +467,16 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
         // (name, category, integrationId, version, contract, config)
         // so the full configuration is written.
         const created = await gc.createDataActionDraft(api, destOrgId, body);
-        console.log("[copyBetweenOrgs] draft created:", created);
+        console.log("[copyBetweenOrgs] SOURCE full.config:", JSON.stringify(full.config, null, 2));
+        console.log("[copyBetweenOrgs] POST body sent:", JSON.stringify(body, null, 2));
+        console.log("[copyBetweenOrgs] draft created (response):", JSON.stringify(created, null, 2));
         if (created?.id) {
           // Re-fetch to get the authoritative version + see what Genesys
           // actually stored on create.
           let currentVersion = created.version || 1;
           try {
             const draft = await gc.getDataActionDraft(api, destOrgId, created.id);
-            console.log("[copyBetweenOrgs] draft after create:", draft);
+            console.log("[copyBetweenOrgs] draft after create (GET):", JSON.stringify(draft, null, 2));
             if (draft?.version) currentVersion = draft.version;
           } catch (_) { /* fall back to created.version */ }
 
@@ -488,9 +490,9 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
               contract:      body.contract,
               config:        body.config,
             };
-            console.log("[copyBetweenOrgs] PATCH body:", patchBody);
+            console.log("[copyBetweenOrgs] PATCH body:", JSON.stringify(patchBody, null, 2));
             const patched = await gc.patchDataActionDraft(api, destOrgId, created.id, patchBody);
-            console.log("[copyBetweenOrgs] draft after PATCH:", patched);
+            console.log("[copyBetweenOrgs] draft after PATCH:", JSON.stringify(patched, null, 2));
           } catch (patchErr) {
             // Surface, but don't undo the draft creation
             setStatus(STATUS.error(`Draft created but config update failed: ${patchErr.message}`), "error");
