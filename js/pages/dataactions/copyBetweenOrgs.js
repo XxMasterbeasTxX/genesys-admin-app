@@ -25,6 +25,7 @@
 import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
+import { createSingleSelect } from "../../components/multiSelect.js";
 
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {
@@ -82,9 +83,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       <!-- Source action -->
       <div class="dt-control-group">
         <label class="dt-label">Source Action</label>
-        <select class="dt-select" id="daSourceSelect" disabled>
-          <option value="">Select source org first…</option>
-        </select>
+        <div id="daSourceSelectMount"></div>
       </div>
 
       <!-- Source info -->
@@ -145,8 +144,17 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
   const $srcOrg        = el.querySelector("#daSrcOrg");
   const $destOrg       = el.querySelector("#daDestOrg");
   const $loadBtn       = el.querySelector("#daLoadBtn");
-  const $sourceSelect  = el.querySelector("#daSourceSelect");
+  const $sourceSelectMount = el.querySelector("#daSourceSelectMount");
   const $sourceInfo    = el.querySelector("#daSourceInfo");
+
+  // Searchable single-select for source action
+  const sourceCtl = createSingleSelect({
+    placeholder: "Select an action…",
+    searchable:  true,
+    onChange:    (id) => handleSourceChange(id),
+  });
+  sourceCtl.setEnabled(false);
+  $sourceSelectMount.append(sourceCtl.el);
   const $infoCat       = el.querySelector("#daInfoCat");
   const $infoInteg     = el.querySelector("#daInfoInteg");
   const $infoType      = el.querySelector("#daInfoType");
@@ -257,8 +265,8 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
 
   function resetSelection() {
     actions = [];
-    $sourceSelect.innerHTML = `<option value="">Select source org first…</option>`;
-    $sourceSelect.disabled = true;
+    sourceCtl.setItems([]);
+    sourceCtl.setEnabled(false);
     $sourceInfo.hidden = true;
     $newName.disabled = true;
     $newName.value = "";
@@ -280,7 +288,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     try {
       setStatus(STATUS.loading);
       $loadBtn.disabled = true;
-      $sourceSelect.disabled = true;
+      sourceCtl.setEnabled(false);
 
       // Fetch source actions, source integrations, dest actions, dest integrations in parallel
       const [srcActions, srcIntegs, destActs, destIntegs] = await Promise.all([
@@ -305,17 +313,18 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       actions.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
       if (!actions.length) {
-        $sourceSelect.innerHTML = `<option value="">No actions found</option>`;
+        sourceCtl.setItems([]);
+        sourceCtl.setEnabled(false);
         setStatus(STATUS.noActions);
         $loadBtn.disabled = false;
         return;
       }
 
-      $sourceSelect.innerHTML = `<option value="">Select an action…</option>`
-        + actions.map(a =>
-          `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}${a.category ? `  [${escapeHtml(a.category)}]` : ""}</option>`
-        ).join("");
-      $sourceSelect.disabled = false;
+      sourceCtl.setItems(actions.map(a => ({
+        id:    a.id,
+        label: a.name + (a.category ? `  [${a.category}]` : ""),
+      })));
+      sourceCtl.setEnabled(true);
       $newName.disabled = false;
       $category.disabled = false;
       $publish.disabled = false;
@@ -328,8 +337,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
   });
 
   // ── Source action selection ──────────────────────────
-  $sourceSelect.addEventListener("change", async () => {
-    const id = $sourceSelect.value;
+  async function handleSourceChange(id) {
     const a = actions.find(x => x.id === id);
     if (!a) {
       $sourceInfo.hidden = true;
@@ -388,7 +396,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       setStatus(STATUS.error(err.message), "error");
       $copyBtn.disabled = true;
     }
-  });
+  }
 
   /**
    * For data actions whose templates are stored as .vm files, the
@@ -433,7 +441,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     const destOrgId = $destOrg.value;
     if (!srcOrgId || !destOrgId) return;
 
-    const sourceId = $sourceSelect.value;
+    const sourceId = sourceCtl.getValue();
     const source = actions.find(x => x.id === sourceId);
     if (!source || !source._full) return;
 
@@ -455,7 +463,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     $srcOrg.disabled = true;
     $destOrg.disabled = true;
     $loadBtn.disabled = true;
-    $sourceSelect.disabled = true;
+    sourceCtl.setEnabled(false);
     $newName.disabled = true;
     $category.disabled = true;
     $integration.disabled = true;
@@ -544,7 +552,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
         me,
         orgId:       $srcOrg.value,
         action:      "dataaction_copy",
-        description: `Copied data action '${$sourceSelect.options[$sourceSelect.selectedIndex]?.text || ""}' to '${newName}' in ${destName} (${usePublish ? "published" : "draft"})`,
+        description: `Copied data action '${source.name}' to '${newName}' in ${destName} (${usePublish ? "published" : "draft"})`,
       });
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
@@ -559,7 +567,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     $destOrg.disabled = false;
     updateLoadBtn();
     if (actions.length) {
-      $sourceSelect.disabled = false;
+      sourceCtl.setEnabled(true);
       $newName.disabled = false;
       $category.disabled = false;
       $publish.disabled = false;
@@ -567,7 +575,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     if ($integration.querySelector("option[value]")?.value) {
       $integration.disabled = false;
     }
-    $copyBtn.disabled = !$sourceSelect.value;
+    $copyBtn.disabled = !sourceCtl.getValue();
   }
 
   return el;
