@@ -459,20 +459,38 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       if (usePublish) {
         await gc.createDataAction(api, destOrgId, body);
       } else {
-        // Genesys quirk: POST /integrations/actions/drafts does not always
-        // persist config.request.requestTemplate on creation — it falls
-        // back to the default "${input.rawRequest}". Follow up with a
-        // PATCH on the draft to force the full config to be written.
+        // Genesys quirk: POST /integrations/actions/drafts does not
+        // persist config.request.requestTemplate (and sometimes other
+        // config/response fields) on creation — it falls back to the
+        // default "${input.rawRequest}". Follow up with a PATCH on the
+        // draft including ALL required UpdateDraftInput fields
+        // (name, category, integrationId, version, contract, config)
+        // so the full configuration is written.
         const created = await gc.createDataActionDraft(api, destOrgId, body);
+        console.log("[copyBetweenOrgs] draft created:", created);
         if (created?.id) {
+          // Re-fetch to get the authoritative version + see what Genesys
+          // actually stored on create.
+          let currentVersion = created.version || 1;
           try {
-            await gc.patchDataActionDraft(api, destOrgId, created.id, {
-              name: body.name,
-              category: body.category,
-              version: created.version || 1,
-              contract: body.contract,
-              config: body.config,
-            });
+            const draft = await gc.getDataActionDraft(api, destOrgId, created.id);
+            console.log("[copyBetweenOrgs] draft after create:", draft);
+            if (draft?.version) currentVersion = draft.version;
+          } catch (_) { /* fall back to created.version */ }
+
+          try {
+            const patchBody = {
+              name:          body.name,
+              category:      body.category,
+              integrationId: body.integrationId,
+              secure:        body.secure,
+              version:       currentVersion,
+              contract:      body.contract,
+              config:        body.config,
+            };
+            console.log("[copyBetweenOrgs] PATCH body:", patchBody);
+            const patched = await gc.patchDataActionDraft(api, destOrgId, created.id, patchBody);
+            console.log("[copyBetweenOrgs] draft after PATCH:", patched);
           } catch (patchErr) {
             // Surface, but don't undo the draft creation
             setStatus(STATUS.error(`Draft created but config update failed: ${patchErr.message}`), "error");
