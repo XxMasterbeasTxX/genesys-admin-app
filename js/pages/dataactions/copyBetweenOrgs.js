@@ -435,38 +435,22 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
         return;
       }
 
-      // 2. Build the create body from the full source action
+      // 2. Build the create body from the full source action.
+      //    Pass full.config through unchanged so every nested field
+      //    (requestTemplate, headers, translationMap, successTemplate,
+      //    successTemplateUri, etc.) is preserved exactly as returned
+      //    by the source GET.
       setStatus(STATUS.creating);
       setProgress(40);
 
       const full = source._full;
-      const sourceRequest = full.config?.request || {};
-      const sourceResponse = full.config?.response || {};
       const body = {
         name: newName,
         category: categoryVal || full.category || "",
         integrationId: targetIntegId,
         secure: full.secure || false,
         contract: full.contract,
-        config: {
-          request: {
-            requestType:        sourceRequest.requestType || "GET",
-            requestUrlTemplate: sourceRequest.requestUrlTemplate || "",
-            requestTemplate:    sourceRequest.requestTemplate || "",
-            headers:            sourceRequest.headers && Object.keys(sourceRequest.headers).length
-              ? sourceRequest.headers
-              : {},
-          },
-          response: {
-            translationMap:         sourceResponse.translationMap && Object.keys(sourceResponse.translationMap).length
-              ? sourceResponse.translationMap
-              : {},
-            translationMapDefaults: sourceResponse.translationMapDefaults && Object.keys(sourceResponse.translationMapDefaults).length
-              ? sourceResponse.translationMapDefaults
-              : {},
-            successTemplate:        sourceResponse.successTemplate || "",
-          },
-        },
+        config: full.config,
       };
 
       // 3. Create action in destination (draft or published)
@@ -475,7 +459,26 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       if (usePublish) {
         await gc.createDataAction(api, destOrgId, body);
       } else {
-        await gc.createDataActionDraft(api, destOrgId, body);
+        // Genesys quirk: POST /integrations/actions/drafts does not always
+        // persist config.request.requestTemplate on creation — it falls
+        // back to the default "${input.rawRequest}". Follow up with a
+        // PATCH on the draft to force the full config to be written.
+        const created = await gc.createDataActionDraft(api, destOrgId, body);
+        if (created?.id) {
+          try {
+            await gc.patchDataActionDraft(api, destOrgId, created.id, {
+              name: body.name,
+              category: body.category,
+              version: created.version || 1,
+              contract: body.contract,
+              config: body.config,
+            });
+          } catch (patchErr) {
+            // Surface, but don't undo the draft creation
+            setStatus(STATUS.error(`Draft created but config update failed: ${patchErr.message}`), "error");
+            return;
+          }
+        }
       }
       setProgress(100);
 
