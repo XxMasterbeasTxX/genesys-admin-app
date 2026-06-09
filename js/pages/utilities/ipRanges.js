@@ -52,6 +52,7 @@ const GC_REGIONS = [
 ];
 
 const GC_DEFAULT_REGION = "eu-central-1";
+const AWS_DEFAULT_REGION = "eu-central-1";
 
 const DIRECTION_LABELS = {
   inbound:  "Inbound",
@@ -391,9 +392,12 @@ export default async function renderIpRanges() {
 
       // Populate region dropdown from data
       const regions = [...new Set(combined.map((e) => e.region))].sort();
-      const currentRegion = $region.value;
-      $region.innerHTML = `<option value="">All regions</option>` +
-        regions.map((r) => `<option value="${escapeHtml(r)}"${r === currentRegion ? " selected" : ""}>${escapeHtml(r)}</option>`).join("");
+      // Preserve current selection if any; otherwise default to AWS_DEFAULT_REGION
+      // (eu-central-1) if present, else "All regions".
+      const desiredRegion = $region.value || AWS_DEFAULT_REGION;
+      const selectedRegion = regions.includes(desiredRegion) ? desiredRegion : "";
+      $region.innerHTML = `<option value=""${selectedRegion === "" ? " selected" : ""}>All regions</option>` +
+        regions.map((r) => `<option value="${escapeHtml(r)}"${r === selectedRegion ? " selected" : ""}>${escapeHtml(r)}</option>`).join("");
 
       const meta = json.meta || {};
       const createDate = json.createDate ? `&nbsp;·&nbsp; Published: ${escapeHtml(json.createDate)}` : "";
