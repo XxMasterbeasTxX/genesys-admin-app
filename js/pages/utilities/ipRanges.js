@@ -390,7 +390,7 @@ export default async function renderIpRanges() {
         String(a.cidr).localeCompare(String(b.cidr), undefined, { numeric: true })
       );
       return `
-        <details class="ipr-group" open>
+        <details class="ipr-group">
           <summary>${escapeHtml(svc)}<span class="ipr-group-count">(${items.length})</span></summary>
           <div class="ipr-group-body">
             <table class="ipr-table">
