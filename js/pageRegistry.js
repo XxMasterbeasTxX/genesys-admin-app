@@ -206,6 +206,10 @@ const registry = {
     import("./pages/users/rolesSkills/templateSchedules.js").then((m) => m.default(ctx)),
   "/users/roles-skills/copy-from-user": (ctx) =>
     import("./pages/users/rolesSkills/copyFromUser.js").then((m) => m.default(ctx)),
+
+  // ── Utilities ──────────────────────────────────────
+  "/utilities/ip-ranges": (ctx) =>
+    import("./pages/utilities/ipRanges.js").then((m) => m.default(ctx)),
 };
 
 /**

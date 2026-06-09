@@ -321,6 +321,14 @@ export const NAV_TREE = [
       },
     ],
   },
+  {
+    label: "Utilities",
+    path: "utilities",
+    enabled: true,
+    children: [
+      { label: "IP Ranges", path: "ip-ranges", enabled: true, access: "utilities.ipRanges" },
+    ],
+  },
 ];
 
 /** Collect all leaf routes from enabled nodes only. */

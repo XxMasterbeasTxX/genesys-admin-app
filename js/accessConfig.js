@@ -135,6 +135,9 @@
  *   divisions.workforce.managementUnit Workforce Mgmt — Management Units
  *   divisions.task.workbin             Task Mgmt — Workbins
  *   divisions.task.worktype            Task Mgmt — Work Types
+ *
+ *   UTILITIES
+ *   utilities.ipRanges                 Genesys public IP ranges viewer (per region)
  */
 export const GROUP_ACCESS = {
   "Genesys App - Master Admin": ["*"],
