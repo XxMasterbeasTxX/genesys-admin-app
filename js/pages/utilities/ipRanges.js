@@ -1,19 +1,21 @@
 /**
- * Utilities — Genesys Cloud Public IP Ranges
+ * Utilities — Public IP Ranges (Genesys + AWS)
  *
- * Lists the public IP ranges (CIDR blocks) for a selected Genesys
- * regional API host. Useful for whitelisting outbound/inbound traffic
- * on customer firewalls.
+ * Lists the public IP address ranges (CIDR blocks) for either:
+ *   • Genesys Cloud — per regional API host (whitelisting Genesys traffic)
+ *   • Amazon AWS    — global feed at ip-ranges.amazonaws.com (whitelisting AWS traffic)
  *
- * Backend: GET /api/ipranges?region=<aws-region-code>
- * Source : Genesys /api/v2/ipranges (requires bearer token, forwarded from PKCE session)
+ * Backends:
+ *   GET /api/ipranges?region=<aws-region-code>   (Genesys, client-credentials auth)
+ *   GET /api/aws-ipranges                        (Amazon, anonymous, server-side cached)
  */
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
 import { getValidAccessToken } from "../../services/authService.js";
 import { orgContext } from "../../services/orgContext.js";
 
+// ── Genesys regions ───────────────────────────────────────────────────
 // AWS region code → Genesys API host (must match api/ipranges/index.js).
-const REGION_HOST_BY_CODE = {
+const GC_REGION_HOST_BY_CODE = {
   "us-east-1":      "mypurecloud.com",
   "us-east-2":      "use2.us-gov-pure.cloud",
   "us-west-2":      "usw2.pure.cloud",
@@ -31,9 +33,7 @@ const REGION_HOST_BY_CODE = {
   "ap-northeast-3": "apne3.pure.cloud",
 };
 
-// AWS region code → friendly label (sorted alphabetically by label).
-// Default region is eu-central-1 (EMEA — Frankfurt), per requirement.
-const REGIONS = [
+const GC_REGIONS = [
   { code: "us-east-1",      label: "Americas — US East (N. Virginia)" },
   { code: "us-east-2",      label: "Americas — US East 2 (Ohio)" },
   { code: "us-west-2",      label: "Americas — US West (Oregon)" },
@@ -51,7 +51,7 @@ const REGIONS = [
   { code: "ap-northeast-3", label: "APAC — Osaka" },
 ];
 
-const DEFAULT_REGION = "eu-central-1";
+const GC_DEFAULT_REGION = "eu-central-1";
 
 const DIRECTION_LABELS = {
   inbound:  "Inbound",
@@ -65,6 +65,11 @@ function directionBadge(dir) {
     dir === "outbound" ? "ipr-badge ipr-badge--out" :
                          "ipr-badge ipr-badge--both";
   return `<span class="${cls}">${escapeHtml(DIRECTION_LABELS[dir] || dir || "—")}</span>`;
+}
+
+function ipTypeBadge(t) {
+  const cls = t === "ipv6" ? "ipr-badge ipr-badge--out" : "ipr-badge ipr-badge--in";
+  return `<span class="${cls}">${escapeHtml(t === "ipv6" ? "IPv6" : "IPv4")}</span>`;
 }
 
 function formatTime(iso) {
@@ -83,12 +88,17 @@ const PAGE_STYLES = `
 .ipr-summary { font-size: 13px; color: var(--muted); margin: 8px 0 12px; }
 .ipr-actions-row { display: flex; gap: 8px; margin: 8px 0 12px; flex-wrap: wrap; }
 
+.ipr-mode-toggle { display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:18px; width:fit-content; }
+.ipr-mode-btn { padding:7px 22px; background:none; border:none; color:var(--muted); cursor:pointer; font:inherit; font-size:13px; font-weight:600; transition:background .12s,color .12s; }
+.ipr-mode-btn.active { background:rgba(59,130,246,.22); color:#60a5fa; }
+.ipr-mode-btn:not(.active):hover { background:rgba(255,255,255,.05); color:var(--text); }
+
 .ipr-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
 .ipr-badge--in   { background: rgba(34, 197, 94, 0.18); color: #4ade80; }
 .ipr-badge--out  { background: rgba(59, 130, 246, 0.18); color: #60a5fa; }
 .ipr-badge--both { background: rgba(168, 85, 247, 0.18); color: #c084fc; }
 
-.ipr-services { display: flex; flex-wrap: wrap; gap: 6px; max-width: 520px; }
+.ipr-services { display: flex; flex-wrap: wrap; gap: 6px; max-width: 520px; max-height: 120px; overflow-y: auto; }
 .ipr-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 12px;
   border: 1px solid var(--border); background: transparent; font-size: 12px; cursor: pointer; color: var(--muted); }
 .ipr-chip--active { background: rgba(96, 165, 250, 0.18); color: #fff; border-color: rgba(96, 165, 250, 0.5); }
@@ -121,31 +131,35 @@ export default async function renderIpRanges() {
   styleTag.textContent = PAGE_STYLES;
   el.appendChild(styleTag);
 
-  // Only offer regions where at least one customer is configured
-  // (the backend uses that customer's client credentials to call Genesys).
+  // Genesys regions: only those with a configured customer
   const customerHosts = new Set(
     (orgContext.getCustomers() || []).map((c) => c.region).filter(Boolean)
   );
-  const availableRegions = REGIONS.filter((r) =>
-    customerHosts.has(REGION_HOST_BY_CODE[r.code])
+  const gcAvailableRegions = GC_REGIONS.filter((r) =>
+    customerHosts.has(GC_REGION_HOST_BY_CODE[r.code])
   );
-  const initialRegion =
-    availableRegions.find((r) => r.code === DEFAULT_REGION)?.code ||
-    availableRegions[0]?.code ||
+  const gcInitialRegion =
+    gcAvailableRegions.find((r) => r.code === GC_DEFAULT_REGION)?.code ||
+    gcAvailableRegions[0]?.code ||
     null;
 
   el.insertAdjacentHTML("beforeend", `
+    <div class="ipr-mode-toggle">
+      <button class="ipr-mode-btn active" id="iprModeGenesys" data-mode="genesys">Genesys Public IP Ranges</button>
+      <button class="ipr-mode-btn"        id="iprModeAws"     data-mode="aws">Amazon IP Ranges</button>
+    </div>
+
     <div class="ipr-header">
       <div>
-        <h2 class="h2">Genesys Public IP Ranges</h2>
-        <p class="page-desc">
+        <h2 class="h2" id="iprTitle">Genesys Public IP Ranges</h2>
+        <p class="page-desc" id="iprDesc">
           Public IP ranges (CIDR blocks) published by Genesys Cloud for a given region.
           Useful for firewall whitelisting. Source: <code>GET /api/v2/ipranges</code>.
         </p>
         <div class="ipr-meta" id="iprMeta">No data loaded yet.</div>
       </div>
       <div class="ipr-header-actions">
-        <button class="btn" id="iprRefreshBtn"${initialRegion ? "" : " disabled"}>Refresh</button>
+        <button class="btn" id="iprRefreshBtn">Refresh</button>
       </div>
     </div>
 
@@ -154,14 +168,8 @@ export default async function renderIpRanges() {
     <!-- Filters -->
     <div class="ipr-filters">
       <div class="di-control-group">
-        <label class="di-label" for="iprRegion">Region</label>
-        <select class="input" id="iprRegion"${initialRegion ? "" : " disabled"}>
-          ${availableRegions.length === 0
-            ? `<option value="">No regions available</option>`
-            : availableRegions.map((r) =>
-                `<option value="${escapeHtml(r.code)}"${r.code === initialRegion ? " selected" : ""}>${escapeHtml(r.label)} (${escapeHtml(r.code)})</option>`
-              ).join("")}
-        </select>
+        <label class="di-label" for="iprRegion"><span id="iprRegionLabel">Region</span></label>
+        <select class="input" id="iprRegion"></select>
       </div>
       <div class="di-control-group">
         <label class="di-label" for="iprGroupBy">Group by</label>
@@ -171,13 +179,8 @@ export default async function renderIpRanges() {
         </select>
       </div>
       <div class="di-control-group">
-        <label class="di-label" for="iprDirection">Direction</label>
-        <select class="input" id="iprDirection">
-          <option value="">All</option>
-          <option value="inbound">Inbound</option>
-          <option value="outbound">Outbound</option>
-          <option value="both">Both</option>
-        </select>
+        <label class="di-label" for="iprDirection"><span id="iprDirectionLabel">Direction</span></label>
+        <select class="input" id="iprDirection"></select>
       </div>
       <div class="di-control-group">
         <label class="di-label" for="iprSearch">CIDR search</label>
@@ -189,49 +192,120 @@ export default async function renderIpRanges() {
       </div>
     </div>
 
-    <!-- Status -->
     <p class="ipr-status" id="iprStatus">Loading…</p>
 
-    <!-- Actions row -->
     <div class="ipr-actions-row" id="iprActionsRow" style="display:none">
       <button class="btn" id="iprCopyBtn">Copy CIDRs</button>
       <button class="btn" id="iprExportBtn">Export to Excel</button>
       <span class="ipr-copied" id="iprCopied" style="display:none">Copied!</span>
     </div>
 
-    <!-- Summary -->
     <div class="ipr-summary" id="iprSummary" style="display:none"></div>
 
-    <!-- Results -->
     <div id="iprResults"></div>
   `);
 
   // ── DOM refs ─────────────────────────────────────────
-  const $region    = el.querySelector("#iprRegion");
-  const $groupBy   = el.querySelector("#iprGroupBy");
-  const $direction = el.querySelector("#iprDirection");
-  const $search    = el.querySelector("#iprSearch");
-  const $services  = el.querySelector("#iprServices");
-  const $status    = el.querySelector("#iprStatus");
-  const $results   = el.querySelector("#iprResults");
-  const $summary   = el.querySelector("#iprSummary");
-  const $actions   = el.querySelector("#iprActionsRow");
-  const $refresh   = el.querySelector("#iprRefreshBtn");
-  const $copy      = el.querySelector("#iprCopyBtn");
-  const $copied    = el.querySelector("#iprCopied");
-  const $export    = el.querySelector("#iprExportBtn");
-  const $meta      = el.querySelector("#iprMeta");
+  const $title       = el.querySelector("#iprTitle");
+  const $desc        = el.querySelector("#iprDesc");
+  const $modeBtns    = el.querySelectorAll(".ipr-mode-btn");
+  const $region      = el.querySelector("#iprRegion");
+  const $regionLabel = el.querySelector("#iprRegionLabel");
+  const $groupBy     = el.querySelector("#iprGroupBy");
+  const $direction   = el.querySelector("#iprDirection");
+  const $dirLabel    = el.querySelector("#iprDirectionLabel");
+  const $search      = el.querySelector("#iprSearch");
+  const $services    = el.querySelector("#iprServices");
+  const $status      = el.querySelector("#iprStatus");
+  const $results     = el.querySelector("#iprResults");
+  const $summary     = el.querySelector("#iprSummary");
+  const $actions     = el.querySelector("#iprActionsRow");
+  const $refresh     = el.querySelector("#iprRefreshBtn");
+  const $copy        = el.querySelector("#iprCopyBtn");
+  const $copied      = el.querySelector("#iprCopied");
+  const $export      = el.querySelector("#iprExportBtn");
+  const $meta        = el.querySelector("#iprMeta");
 
   // ── State ────────────────────────────────────────────
-  let allEntries = [];           // raw entities from the API
-  let selectedServices = new Set(); // empty = "all services"
+  let mode = "genesys";              // "genesys" | "aws"
+  let allEntries = [];               // normalized entries
+  let awsCache = null;               // cached AWS payload (per-page-load)
+  let selectedServices = new Set();
   let sortKey = "cidr";
   let sortDir = "asc";
 
-  // ── Data fetch ───────────────────────────────────────
-  async function loadRegion(region) {
+  // ── Mode wiring ──────────────────────────────────────
+  function setMode(next) {
+    if (mode === next) return;
+    mode = next;
+    $modeBtns.forEach((b) =>
+      b.classList.toggle("active", b.dataset.mode === mode)
+    );
+    sortKey = "cidr";
+    sortDir = "asc";
+    selectedServices = new Set();
+    $search.value = "";
+    rebuildModeUi();
+  }
+
+  function rebuildModeUi() {
+    if (mode === "genesys") {
+      $title.textContent = "Genesys Public IP Ranges";
+      $desc.innerHTML = `Public IP ranges (CIDR blocks) published by Genesys Cloud for a given region.
+        Useful for firewall whitelisting. Source: <code>GET /api/v2/ipranges</code>.`;
+      $regionLabel.textContent = "Region";
+      $dirLabel.textContent = "Direction";
+      $direction.innerHTML = `
+        <option value="">All</option>
+        <option value="inbound">Inbound</option>
+        <option value="outbound">Outbound</option>
+        <option value="both">Both</option>
+      `;
+      // Region dropdown: regions that have a configured customer
+      $region.disabled = !gcInitialRegion;
+      $refresh.disabled = !gcInitialRegion;
+      $region.innerHTML = gcAvailableRegions.length === 0
+        ? `<option value="">No regions available</option>`
+        : gcAvailableRegions.map((r) =>
+            `<option value="${escapeHtml(r.code)}"${r.code === gcInitialRegion ? " selected" : ""}>${escapeHtml(r.label)} (${escapeHtml(r.code)})</option>`
+          ).join("");
+      if (gcInitialRegion) {
+        loadGenesys(gcInitialRegion);
+      } else {
+        allEntries = [];
+        $meta.textContent = "No data loaded.";
+        $status.textContent = "No customers configured — add a customer org to enable IP range lookups.";
+        $status.className = "ipr-status ipr-status--error";
+        $status.style.display = "block";
+        $services.innerHTML = "";
+        $results.innerHTML = "";
+        $summary.style.display = "none";
+        $actions.style.display = "none";
+      }
+    } else {
+      $title.textContent = "Amazon IP Ranges";
+      $desc.innerHTML = `Public IP ranges (CIDR blocks) published by Amazon Web Services across all regions and services.
+        Useful for firewall whitelisting. Source: <a href="https://ip-ranges.amazonaws.com/ip-ranges.json" target="_blank" rel="noopener">ip-ranges.amazonaws.com/ip-ranges.json</a>.`;
+      $regionLabel.textContent = "Region";
+      $dirLabel.textContent = "IP type";
+      $direction.innerHTML = `
+        <option value="">All</option>
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+      `;
+      // Region dropdown will be populated after first load
+      $region.disabled = false;
+      $refresh.disabled = false;
+      $region.innerHTML = `<option value="">All regions</option>`;
+      loadAws({ force: false });
+    }
+  }
+
+  // ── Data fetch: Genesys ──────────────────────────────
+  async function loadGenesys(region) {
     $status.textContent = `Loading IP ranges for ${region}…`;
     $status.className = "ipr-status";
+    $status.style.display = "block";
     $results.innerHTML = "";
     $summary.style.display = "none";
     $actions.style.display = "none";
@@ -245,15 +319,18 @@ export default async function renderIpRanges() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(json.error || `HTTP ${resp.status}`);
 
-      if (!resp.ok) {
-        const msg = json.error || `HTTP ${resp.status}`;
-        throw new Error(msg);
-      }
-
-      allEntries = Array.isArray(json.entities) ? json.entities : [];
+      const entities = Array.isArray(json.entities) ? json.entities : [];
+      allEntries = entities.map((e) => ({
+        cidr: e.cidr,
+        service: e.service || "Unknown",
+        region: e.region || region,
+        direction: e.direction || "both",
+      }));
       const meta = json.meta || {};
-      $meta.innerHTML = `Region: <strong>${escapeHtml(meta.region || region)}</strong>
+      $meta.innerHTML = `Source: <strong>Genesys Cloud</strong>
+        &nbsp;·&nbsp; Region: <strong>${escapeHtml(meta.region || region)}</strong>
         &nbsp;·&nbsp; Host: <code>api.${escapeHtml(meta.host || "?")}</code>
         &nbsp;·&nbsp; Fetched: ${escapeHtml(formatTime(meta.fetchedAt))}
         &nbsp;·&nbsp; Total entries: ${allEntries.length}`;
@@ -266,6 +343,74 @@ export default async function renderIpRanges() {
     } catch (err) {
       allEntries = [];
       $status.textContent = `Failed to load IP ranges: ${err.message}`;
+      $status.className = "ipr-status ipr-status--error";
+      $status.style.display = "block";
+      $meta.textContent = "No data loaded.";
+    }
+  }
+
+  // ── Data fetch: AWS ──────────────────────────────────
+  async function loadAws({ force }) {
+    $status.textContent = "Loading AWS IP ranges…";
+    $status.className = "ipr-status";
+    $status.style.display = "block";
+    $results.innerHTML = "";
+    $summary.style.display = "none";
+    $actions.style.display = "none";
+    $services.innerHTML = "";
+    selectedServices = new Set();
+
+    try {
+      let json;
+      if (!force && awsCache) {
+        json = awsCache;
+      } else {
+        const resp = await fetch(`/api/aws-ipranges${force ? "?force=true" : ""}`);
+        json = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(json.error || `HTTP ${resp.status}`);
+        awsCache = json;
+      }
+
+      const v4 = Array.isArray(json.prefixes) ? json.prefixes : [];
+      const v6 = Array.isArray(json.ipv6_prefixes) ? json.ipv6_prefixes : [];
+      const combined = [
+        ...v4.map((p) => ({
+          cidr: p.ip_prefix,
+          service: p.service || "AMAZON",
+          region: p.region || "GLOBAL",
+          direction: "ipv4",
+        })),
+        ...v6.map((p) => ({
+          cidr: p.ipv6_prefix,
+          service: p.service || "AMAZON",
+          region: p.region || "GLOBAL",
+          direction: "ipv6",
+        })),
+      ];
+      allEntries = combined;
+
+      // Populate region dropdown from data
+      const regions = [...new Set(combined.map((e) => e.region))].sort();
+      const currentRegion = $region.value;
+      $region.innerHTML = `<option value="">All regions</option>` +
+        regions.map((r) => `<option value="${escapeHtml(r)}"${r === currentRegion ? " selected" : ""}>${escapeHtml(r)}</option>`).join("");
+
+      const meta = json.meta || {};
+      const createDate = json.createDate ? `&nbsp;·&nbsp; Published: ${escapeHtml(json.createDate)}` : "";
+      $meta.innerHTML = `Source: <strong>Amazon Web Services</strong>
+        &nbsp;·&nbsp; Sync token: <code>${escapeHtml(json.syncToken || "?")}</code>
+        ${createDate}
+        &nbsp;·&nbsp; Fetched: ${escapeHtml(formatTime(meta.fetchedAt))}${meta.cached ? " (cached)" : ""}
+        &nbsp;·&nbsp; Total entries: ${allEntries.length}`;
+
+      $status.style.display = "none";
+      $actions.style.display = "flex";
+      $summary.style.display = "block";
+      renderServiceChips();
+      render();
+    } catch (err) {
+      allEntries = [];
+      $status.textContent = `Failed to load AWS IP ranges: ${err.message}`;
       $status.className = "ipr-status ipr-status--error";
       $status.style.display = "block";
       $meta.textContent = "No data loaded.";
@@ -304,9 +449,11 @@ export default async function renderIpRanges() {
   function getFiltered() {
     const dir = $direction.value;
     const q = $search.value.trim().toLowerCase();
+    const regionFilter = mode === "aws" ? $region.value : "";
     return allEntries.filter((e) => {
       if (selectedServices.size > 0 && !selectedServices.has(e.service)) return false;
       if (dir && e.direction !== dir) return false;
+      if (regionFilter && e.region !== regionFilter) return false;
       if (q && !(e.cidr || "").toLowerCase().includes(q)) return false;
       return true;
     });
@@ -325,6 +472,14 @@ export default async function renderIpRanges() {
   function sortArrow(key) {
     if (key !== sortKey) return "";
     return sortDir === "asc" ? " ▲" : " ▼";
+  }
+
+  function tagBadge(value) {
+    return mode === "aws" ? ipTypeBadge(value) : directionBadge(value);
+  }
+
+  function tagColumnLabel() {
+    return mode === "aws" ? "Type" : "Direction";
   }
 
   // ── Rendering ────────────────────────────────────────
@@ -346,13 +501,15 @@ export default async function renderIpRanges() {
 
   function renderFlat(rows) {
     const sorted = sortRows(rows);
+    const showRegion = mode === "aws";
     $results.innerHTML = `
       <table class="ipr-table">
         <thead>
           <tr>
             <th data-sort="cidr">CIDR${sortArrow("cidr")}</th>
             <th data-sort="service">Service${sortArrow("service")}</th>
-            <th data-sort="direction">Direction${sortArrow("direction")}</th>
+            ${showRegion ? `<th data-sort="region">Region${sortArrow("region")}</th>` : ""}
+            <th data-sort="direction">${tagColumnLabel()}${sortArrow("direction")}</th>
           </tr>
         </thead>
         <tbody>
@@ -360,7 +517,8 @@ export default async function renderIpRanges() {
             <tr>
               <td class="ipr-cidr">${escapeHtml(e.cidr)}</td>
               <td>${escapeHtml(e.service)}</td>
-              <td>${directionBadge(e.direction)}</td>
+              ${showRegion ? `<td>${escapeHtml(e.region || "—")}</td>` : ""}
+              <td>${tagBadge(e.direction)}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -378,6 +536,7 @@ export default async function renderIpRanges() {
   }
 
   function renderGrouped(rows) {
+    const showRegion = mode === "aws";
     const byService = new Map();
     for (const e of rows) {
       if (!byService.has(e.service)) byService.set(e.service, []);
@@ -395,13 +554,18 @@ export default async function renderIpRanges() {
           <div class="ipr-group-body">
             <table class="ipr-table">
               <thead>
-                <tr><th>CIDR</th><th>Direction</th></tr>
+                <tr>
+                  <th>CIDR</th>
+                  ${showRegion ? `<th>Region</th>` : ""}
+                  <th>${tagColumnLabel()}</th>
+                </tr>
               </thead>
               <tbody>
                 ${items.map((e) => `
                   <tr>
                     <td class="ipr-cidr">${escapeHtml(e.cidr)}</td>
-                    <td>${directionBadge(e.direction)}</td>
+                    ${showRegion ? `<td>${escapeHtml(e.region || "—")}</td>` : ""}
+                    <td>${tagBadge(e.direction)}</td>
                   </tr>
                 `).join("")}
               </tbody>
@@ -447,15 +611,18 @@ export default async function renderIpRanges() {
     const filtered = getFiltered();
     if (filtered.length === 0) return;
 
-    const region = $region.value;
     const rows = sortRows(filtered);
+    const tagLabel = tagColumnLabel();
     const columns = [
-      { key: "cidr",      label: "CIDR",      wch: 22 },
-      { key: "service",   label: "Service",   wch: 22 },
-      { key: "region",    label: "Region",    wch: 16 },
-      { key: "direction", label: "Direction", wch: 12 },
+      { key: "cidr",      label: "CIDR",    wch: 30 },
+      { key: "service",   label: "Service", wch: 22 },
+      { key: "region",    label: "Region",  wch: 18 },
+      { key: "direction", label: tagLabel,  wch: 12 },
     ];
-    const filename = timestampedFilename(`Genesys_IP_Ranges_${region}`, "xlsx");
+    const stem = mode === "aws"
+      ? "AWS_IP_Ranges"
+      : `Genesys_IP_Ranges_${$region.value || "all"}`;
+    const filename = timestampedFilename(stem, "xlsx");
 
     try {
       exportXlsx([{ name: "IP Ranges", rows, columns }], filename);
@@ -467,22 +634,25 @@ export default async function renderIpRanges() {
   }
 
   // ── Event wiring ─────────────────────────────────────
-  $region.addEventListener("change", () => loadRegion($region.value));
+  $modeBtns.forEach((btn) =>
+    btn.addEventListener("click", () => setMode(btn.dataset.mode))
+  );
+  $region.addEventListener("change", () => {
+    if (mode === "genesys") loadGenesys($region.value);
+    else render(); // AWS: region is a client-side filter
+  });
   $groupBy.addEventListener("change", render);
   $direction.addEventListener("change", render);
   $search.addEventListener("input", render);
-  $refresh.addEventListener("click", () => loadRegion($region.value));
+  $refresh.addEventListener("click", () => {
+    if (mode === "genesys") loadGenesys($region.value);
+    else loadAws({ force: true });
+  });
   $copy.addEventListener("click", copyCidrs);
   $export.addEventListener("click", exportToExcel);
 
-  // Initial load
-  if (initialRegion) {
-    loadRegion(initialRegion);
-  } else {
-    $status.textContent =
-      "No customers configured — add a customer org to enable IP range lookups.";
-    $status.className = "ipr-status ipr-status--error";
-  }
+  // Initial render (Genesys mode by default)
+  rebuildModeUi();
 
   return el;
 }
