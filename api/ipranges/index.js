@@ -1,13 +1,14 @@
 /**
  * GET /api/ipranges?region=<aws-region-code>
  *
- * Proxies Genesys Cloud's public IP-ranges endpoint:
+ * Proxies Genesys Cloud's IP-ranges endpoint:
  *   GET https://api.<regional-host>/api/v2/ipranges
  *
- * The Genesys ipranges endpoint is anonymous (no token required) and
- * returns the public IP ranges for the regional API host you call.
- * Calling api.mypurecloud.de returns eu-central-1 ranges, calling
- * api.mypurecloud.com returns us-east-1 ranges, etc.
+ * Requires the caller to forward a valid Genesys bearer token via the
+ * Authorization header. The returned IP ranges are determined by the
+ * regional API host called (api.mypurecloud.de → eu-central-1 ranges,
+ * api.mypurecloud.com → us-east-1 ranges, etc.) — independent of which
+ * org the token belongs to.
  *
  * Response: forwards Genesys' JSON body verbatim, with an extra
  *   meta: { region, host, fetchedAt }
@@ -61,10 +62,24 @@ module.exports = async function (context, req) {
       return;
     }
 
+    const authHeader =
+      req.headers.authorization || req.headers.Authorization || "";
+    if (!/^Bearer\s+\S+/i.test(authHeader)) {
+      context.res = {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+        body: { error: "Missing or invalid Authorization bearer token" },
+      };
+      return;
+    }
+
     const url = `https://api.${host}/api/v2/ipranges`;
     const genesysResp = await fetch(url, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        Authorization: authHeader,
+      },
     });
 
     const text = await genesysResp.text();

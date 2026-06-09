@@ -6,9 +6,10 @@
  * on customer firewalls.
  *
  * Backend: GET /api/ipranges?region=<aws-region-code>
- * Source : Genesys public, unauthenticated endpoint /api/v2/ipranges
+ * Source : Genesys /api/v2/ipranges (requires bearer token, forwarded from PKCE session)
  */
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
+import { getValidAccessToken } from "../../services/authService.js";
 
 // AWS region code → friendly label (sorted alphabetically by label).
 // Default region is eu-central-1 (EMEA — Frankfurt), per requirement.
@@ -106,7 +107,7 @@ export default async function renderIpRanges() {
         <h2 class="h2">Genesys Public IP Ranges</h2>
         <p class="page-desc">
           Public IP ranges (CIDR blocks) published by Genesys Cloud for a given region.
-          Useful for firewall whitelisting. Source: <code>GET /api/v2/ipranges</code> (anonymous endpoint).
+          Useful for firewall whitelisting. Source: <code>GET /api/v2/ipranges</code>.
         </p>
         <div class="ipr-meta" id="iprMeta">No data loaded yet.</div>
       </div>
@@ -203,7 +204,11 @@ export default async function renderIpRanges() {
     selectedServices = new Set();
 
     try {
-      const resp = await fetch(`/api/ipranges?region=${encodeURIComponent(region)}`);
+      const token = getValidAccessToken();
+      if (!token) throw new Error("No valid access token — please refresh the page.");
+      const resp = await fetch(`/api/ipranges?region=${encodeURIComponent(region)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const json = await resp.json().catch(() => ({}));
 
       if (!resp.ok) {
