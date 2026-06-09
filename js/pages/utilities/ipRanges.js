@@ -10,6 +10,26 @@
  */
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
 import { getValidAccessToken } from "../../services/authService.js";
+import { orgContext } from "../../services/orgContext.js";
+
+// AWS region code → Genesys API host (must match api/ipranges/index.js).
+const REGION_HOST_BY_CODE = {
+  "us-east-1":      "mypurecloud.com",
+  "us-east-2":      "use2.us-gov-pure.cloud",
+  "us-west-2":      "usw2.pure.cloud",
+  "ca-central-1":   "cac1.pure.cloud",
+  "sa-east-1":      "sae1.pure.cloud",
+  "eu-west-1":      "mypurecloud.ie",
+  "eu-west-2":      "euw2.pure.cloud",
+  "eu-central-1":   "mypurecloud.de",
+  "eu-central-2":   "euc2.pure.cloud",
+  "me-central-1":   "mec1.pure.cloud",
+  "ap-south-1":     "aps1.pure.cloud",
+  "ap-southeast-2": "mypurecloud.com.au",
+  "ap-northeast-1": "mypurecloud.jp",
+  "ap-northeast-2": "apne2.pure.cloud",
+  "ap-northeast-3": "apne3.pure.cloud",
+};
 
 // AWS region code → friendly label (sorted alphabetically by label).
 // Default region is eu-central-1 (EMEA — Frankfurt), per requirement.
@@ -101,6 +121,19 @@ export default async function renderIpRanges() {
   styleTag.textContent = PAGE_STYLES;
   el.appendChild(styleTag);
 
+  // Only offer regions where at least one customer is configured
+  // (the backend uses that customer's client credentials to call Genesys).
+  const customerHosts = new Set(
+    (orgContext.getCustomers() || []).map((c) => c.region).filter(Boolean)
+  );
+  const availableRegions = REGIONS.filter((r) =>
+    customerHosts.has(REGION_HOST_BY_CODE[r.code])
+  );
+  const initialRegion =
+    availableRegions.find((r) => r.code === DEFAULT_REGION)?.code ||
+    availableRegions[0]?.code ||
+    null;
+
   el.insertAdjacentHTML("beforeend", `
     <div class="ipr-header">
       <div>
@@ -112,7 +145,7 @@ export default async function renderIpRanges() {
         <div class="ipr-meta" id="iprMeta">No data loaded yet.</div>
       </div>
       <div class="ipr-header-actions">
-        <button class="btn" id="iprRefreshBtn">Refresh</button>
+        <button class="btn" id="iprRefreshBtn"${initialRegion ? "" : " disabled"}>Refresh</button>
       </div>
     </div>
 
@@ -122,10 +155,12 @@ export default async function renderIpRanges() {
     <div class="ipr-filters">
       <div class="di-control-group">
         <label class="di-label" for="iprRegion">Region</label>
-        <select class="input" id="iprRegion">
-          ${REGIONS.map((r) =>
-            `<option value="${escapeHtml(r.code)}"${r.code === DEFAULT_REGION ? " selected" : ""}>${escapeHtml(r.label)} (${escapeHtml(r.code)})</option>`
-          ).join("")}
+        <select class="input" id="iprRegion"${initialRegion ? "" : " disabled"}>
+          ${availableRegions.length === 0
+            ? `<option value="">No regions available</option>`
+            : availableRegions.map((r) =>
+                `<option value="${escapeHtml(r.code)}"${r.code === initialRegion ? " selected" : ""}>${escapeHtml(r.label)} (${escapeHtml(r.code)})</option>`
+              ).join("")}
         </select>
       </div>
       <div class="di-control-group">
@@ -441,7 +476,13 @@ export default async function renderIpRanges() {
   $export.addEventListener("click", exportToExcel);
 
   // Initial load
-  loadRegion(DEFAULT_REGION);
+  if (initialRegion) {
+    loadRegion(initialRegion);
+  } else {
+    $status.textContent =
+      "No customers configured — add a customer org to enable IP range lookups.";
+    $status.className = "ipr-status ipr-status--error";
+  }
 
   return el;
 }
