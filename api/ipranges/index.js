@@ -91,11 +91,17 @@ module.exports = async function (context, req) {
     }
 
     if (!genesysResp.ok) {
+      const genesysMsg =
+        (parsed && (parsed.message || parsed.error || parsed.code)) ||
+        (typeof parsed?.raw === "string" ? parsed.raw.slice(0, 200) : "");
+      context.log.warn(
+        `ipranges: Genesys ${genesysResp.status} for region=${region} host=${host} — ${genesysMsg}`
+      );
       context.res = {
         status: genesysResp.status,
         headers: { "Content-Type": "application/json" },
         body: {
-          error: `Genesys ipranges call failed (${genesysResp.status})`,
+          error: `Genesys ipranges call failed (${genesysResp.status})${genesysMsg ? ": " + genesysMsg : ""}`,
           region,
           host,
           detail: parsed,
