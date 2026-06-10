@@ -12,6 +12,7 @@
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
 import { getValidAccessToken } from "../../services/authService.js";
 import { orgContext } from "../../services/orgContext.js";
+import { createMultiSelect } from "../../components/multiSelect.js";
 
 // ── Genesys regions ───────────────────────────────────────────────────
 // AWS region code → Genesys API host (must match api/ipranges/index.js).
@@ -99,12 +100,6 @@ const PAGE_STYLES = `
 .ipr-badge--out  { background: rgba(59, 130, 246, 0.18); color: #60a5fa; }
 .ipr-badge--both { background: rgba(168, 85, 247, 0.18); color: #c084fc; }
 
-.ipr-services { display: flex; flex-wrap: wrap; gap: 6px; max-width: 520px; max-height: 120px; overflow-y: auto; }
-.ipr-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 12px;
-  border: 1px solid var(--border); background: transparent; font-size: 12px; cursor: pointer; color: var(--muted); }
-.ipr-chip--active { background: rgba(96, 165, 250, 0.18); color: #fff; border-color: rgba(96, 165, 250, 0.5); }
-.ipr-chip-count { font-size: 10px; opacity: 0.7; }
-
 .ipr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ipr-table th, .ipr-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
 .ipr-table th { font-weight: 600; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap; }
@@ -189,7 +184,7 @@ export default async function renderIpRanges() {
       </div>
       <div class="di-control-group" style="flex: 1; min-width: 280px;">
         <label class="di-label">Services</label>
-        <div class="ipr-services" id="iprServices"></div>
+        <div id="iprServices"></div>
       </div>
     </div>
 
@@ -217,6 +212,12 @@ export default async function renderIpRanges() {
   const $dirLabel    = el.querySelector("#iprDirectionLabel");
   const $search      = el.querySelector("#iprSearch");
   const $services    = el.querySelector("#iprServices");
+  const servicesMs   = createMultiSelect({
+    placeholder: "All services",
+    searchable: true,
+    onChange: (sel) => { selectedServices = sel; render(); },
+  });
+  $services.append(servicesMs.el);
   const $status      = el.querySelector("#iprStatus");
   const $results     = el.querySelector("#iprResults");
   const $summary     = el.querySelector("#iprSummary");
@@ -278,7 +279,7 @@ export default async function renderIpRanges() {
         $status.textContent = "No customers configured — add a customer org to enable IP range lookups.";
         $status.className = "ipr-status ipr-status--error";
         $status.style.display = "block";
-        $services.innerHTML = "";
+        servicesMs.setItems([]);
         $results.innerHTML = "";
         $summary.style.display = "none";
         $actions.style.display = "none";
@@ -310,7 +311,7 @@ export default async function renderIpRanges() {
     $results.innerHTML = "";
     $summary.style.display = "none";
     $actions.style.display = "none";
-    $services.innerHTML = "";
+    servicesMs.setItems([]);
     selectedServices = new Set();
 
     try {
@@ -362,7 +363,7 @@ export default async function renderIpRanges() {
     $results.innerHTML = "";
     $summary.style.display = "none";
     $actions.style.display = "none";
-    $services.innerHTML = "";
+    servicesMs.setItems([]);
     selectedServices = new Set();
 
     try {
@@ -425,32 +426,17 @@ export default async function renderIpRanges() {
     }
   }
 
-  // ── Service chips (multi-toggle filter) ──────────────
+  // ── Service multi-select (filter) ────────────────────
   function renderServiceChips() {
     const counts = new Map();
     for (const e of allEntries) {
       counts.set(e.service, (counts.get(e.service) || 0) + 1);
     }
-    const services = [...counts.keys()].sort();
-
-    $services.innerHTML = services
-      .map((s) => {
-        const active = selectedServices.has(s);
-        return `<button type="button" class="ipr-chip${active ? " ipr-chip--active" : ""}" data-svc="${escapeHtml(s)}">
-          ${escapeHtml(s)} <span class="ipr-chip-count">(${counts.get(s)})</span>
-        </button>`;
-      })
-      .join("");
-
-    $services.querySelectorAll(".ipr-chip").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const svc = btn.dataset.svc;
-        if (selectedServices.has(svc)) selectedServices.delete(svc);
-        else selectedServices.add(svc);
-        btn.classList.toggle("ipr-chip--active");
-        render();
-      });
-    });
+    const items = [...counts.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([id, n]) => ({ id, label: `${id} (${n})` }));
+    servicesMs.setItems(items);
+    selectedServices = new Set();
   }
 
   // ── Filtering ────────────────────────────────────────
