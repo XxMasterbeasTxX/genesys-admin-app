@@ -127,17 +127,22 @@ export default async function renderIpRanges() {
   styleTag.textContent = PAGE_STYLES;
   el.appendChild(styleTag);
 
-  // Genesys regions: only those with a configured customer
+  // Genesys regions: show all regions; mark which ones have a configured
+  // customer org (only those can actually be queried via client-credentials).
   const customerHosts = new Set(
     (orgContext.getCustomers() || []).map((c) => c.region).filter(Boolean)
   );
-  const gcAvailableRegions = GC_REGIONS.filter((r) =>
-    customerHosts.has(GC_REGION_HOST_BY_CODE[r.code])
+  const gcConfiguredRegions = new Set(
+    GC_REGIONS
+      .filter((r) => customerHosts.has(GC_REGION_HOST_BY_CODE[r.code]))
+      .map((r) => r.code)
   );
+  const gcAvailableRegions = GC_REGIONS;
+  // Default to a region that actually has credentials so the first load works.
   const gcInitialRegion =
-    gcAvailableRegions.find((r) => r.code === GC_DEFAULT_REGION)?.code ||
-    gcAvailableRegions[0]?.code ||
-    null;
+    (gcConfiguredRegions.has(GC_DEFAULT_REGION) ? GC_DEFAULT_REGION : null) ||
+    [...gcConfiguredRegions][0] ||
+    GC_REGIONS[0].code;
 
   el.insertAdjacentHTML("beforeend", `
     <div class="ipr-mode-toggle">
@@ -263,14 +268,14 @@ export default async function renderIpRanges() {
         <option value="outbound">Outbound</option>
         <option value="both">Both</option>
       `;
-      // Region dropdown: regions that have a configured customer
-      $region.disabled = !gcInitialRegion;
-      $refresh.disabled = !gcInitialRegion;
-      $region.innerHTML = gcAvailableRegions.length === 0
-        ? `<option value="">No regions available</option>`
-        : gcAvailableRegions.map((r) =>
-            `<option value="${escapeHtml(r.code)}"${r.code === gcInitialRegion ? " selected" : ""}>${escapeHtml(r.label)} (${escapeHtml(r.code)})</option>`
-          ).join("");
+      // Region dropdown: all Genesys regions (regions without configured
+      // credentials are still selectable but will return a clear error).
+      $region.disabled = false;
+      $refresh.disabled = false;
+      $region.innerHTML = gcAvailableRegions.map((r) => {
+        const noCreds = gcConfiguredRegions.has(r.code) ? "" : " — no creds";
+        return `<option value="${escapeHtml(r.code)}"${r.code === gcInitialRegion ? " selected" : ""}>${escapeHtml(r.label)} (${escapeHtml(r.code)})${noCreds}</option>`;
+      }).join("");
       if (gcInitialRegion) {
         loadGenesys(gcInitialRegion);
       } else {
