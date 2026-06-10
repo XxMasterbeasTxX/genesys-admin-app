@@ -328,13 +328,17 @@ export default async function renderIpRanges() {
         service: e.service || "Unknown",
         region: e.region || region,
         direction: e.direction || "both",
+        source: e.source || "api",
       }));
       const meta = json.meta || {};
+      const mediaNote = meta.cloudMediaInjected
+        ? `&nbsp;·&nbsp; <span title="From ${escapeHtml(meta.cloudMediaSource || "Genesys Help Center")}">includes ${meta.cloudMediaInjected} Cloud Media Services CIDR${meta.cloudMediaInjected === 1 ? "" : "s"} (static)</span>`
+        : "";
       $meta.innerHTML = `Source: <strong>Genesys Cloud</strong>
         &nbsp;·&nbsp; Region: <strong>${escapeHtml(meta.region || region)}</strong>
         &nbsp;·&nbsp; Host: <code>api.${escapeHtml(meta.host || "?")}</code>
         &nbsp;·&nbsp; Fetched: ${escapeHtml(formatTime(meta.fetchedAt))}
-        &nbsp;·&nbsp; Total entries: ${allEntries.length}`;
+        &nbsp;·&nbsp; Total entries: ${allEntries.length}${mediaNote}`;
 
       $status.style.display = "none";
       $actions.style.display = "flex";

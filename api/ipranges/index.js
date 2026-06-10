@@ -18,6 +18,41 @@
 const customers = require("../lib/customers.json");
 const { getGenesysToken } = require("../lib/genesysAuth");
 
+// Cloud Media Services CIDR ranges (commercial regions, Core + Satellite).
+// These are NOT returned by Genesys' /api/v2/ipranges endpoint — they're
+// published as a static list in the Help Center and apply globally across
+// all commercial regions. Used by: WebRTC stations, Polycom (Genesys Cloud
+// Voice / BYOC Cloud), BYOC Cloud, ACD screen recording, video chat,
+// BYOC Premises Edge Appliances.
+//
+// Source: https://help.genesys.cloud/articles/cidr-ip-address-range-for-cloud-media-services/
+// Last verified: 2026-06-09. If Genesys updates the list, update here.
+const CLOUD_MEDIA_SERVICES_CIDRS = [
+  "52.129.96.0/20",
+  "169.150.104.0/21",
+  "167.234.48.0/20",
+  "136.245.64.0/18",
+];
+
+// Genesys hosts where the Cloud Media Services CIDRs apply (commercial).
+// FedRAMP regions have a different set and are excluded.
+const CLOUD_MEDIA_COMMERCIAL_HOSTS = new Set([
+  "mypurecloud.com",
+  "usw2.pure.cloud",
+  "cac1.pure.cloud",
+  "sae1.pure.cloud",
+  "mypurecloud.ie",
+  "euw2.pure.cloud",
+  "mypurecloud.de",
+  "euc2.pure.cloud",
+  "mec1.pure.cloud",
+  "aps1.pure.cloud",
+  "mypurecloud.com.au",
+  "mypurecloud.jp",
+  "apne2.pure.cloud",
+  "apne3.pure.cloud",
+]);
+
 // AWS region code → Genesys Cloud regional API host.
 // Sourced from https://developer.genesys.cloud/platform/api/ (AWS regions table).
 // If a region returns 404, verify the host string against the current docs.
@@ -150,15 +185,35 @@ module.exports = async function (context, req) {
       return;
     }
 
+    // --- Inject Cloud Media Services CIDRs (commercial regions only) ---
+    let mergedBody = parsed;
+    let mediaInjected = 0;
+    if (CLOUD_MEDIA_COMMERCIAL_HOSTS.has(host)) {
+      const existingEntities = Array.isArray(parsed.entities) ? parsed.entities : [];
+      const mediaEntities = CLOUD_MEDIA_SERVICES_CIDRS.map((cidr) => ({
+        cidr,
+        service: "CLOUD_MEDIA_SERVICES",
+        region: host,
+        direction: "both",
+        source: "static",
+      }));
+      mediaInjected = mediaEntities.length;
+      mergedBody = { ...parsed, entities: [...existingEntities, ...mediaEntities] };
+    }
+
     context.res = {
       status: 200,
       headers: { "Content-Type": "application/json" },
       body: {
-        ...parsed,
+        ...mergedBody,
         meta: {
           region,
           host,
           fetchedAt: new Date().toISOString(),
+          cloudMediaInjected: mediaInjected,
+          cloudMediaSource: mediaInjected
+            ? "https://help.genesys.cloud/articles/cidr-ip-address-range-for-cloud-media-services/"
+            : null,
         },
       },
     };
