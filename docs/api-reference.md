@@ -48,6 +48,8 @@ These are the Azure Functions endpoints exposed by the app itself.
 | --- | --- | --- |
 | GET | `/api/customers` | Fetch the list of configured customer orgs |
 | POST | `/api/genesys-proxy` | Proxy any Genesys Cloud API call with injected org token |
+| GET | `/api/ipranges?region={awsRegionCode}` | Genesys public IP ranges for a region. Resolves a configured customer org for the region's host, authenticates via client-credentials, and forwards `GET /api/v2/ipranges`. Injects four Cloud Media Services CIDRs as `CLOUD_MEDIA_SERVICES` entries for commercial regions. Returns 400 if no customer org is configured for the region. Adds `meta: { region, host, fetchedAt, cloudMediaInjected, cloudMediaSource }`. |
+| GET | `/api/aws-ipranges` | Proxies the Amazon feed `https://ip-ranges.amazonaws.com/ip-ranges.json`. Anonymous; 15-min in-process cache (`?force=true` to bypass). Adds `meta: { fetchedAt, cached, ttlMs }`. |
 | POST | `/api/doc-export` | On-demand Documentation export — body: `{ orgId, includeDataTables? }` — returns base64 workbook (XLSX or ZIP) |
 | POST | `/api/send-email` | Send email with attachment via Mailjet |
 | GET | `/api/scrape-disqualifying-permissions` | Scrape Genesys Cloud help page for Hourly Interacting disqualifying permissions; returns sorted JSON array; 24 h cache |
@@ -465,11 +467,12 @@ Used by: Deployment — Basic (resolves location names to IDs for site creation)
 
 ## 26. Utilities
 
-Used by: Deployment — Basic (Schedule Groups timezone validation)
+Used by: Deployment — Basic (Schedule Groups timezone validation), Utilities — IP Ranges
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/timezones` | List all valid Genesys Cloud timezone IDs (used to validate Schedule Group timezone before API call) |
+| GET | `/api/v2/ipranges` | Public IP ranges (CIDR blocks) for the regional host. Called server-side by `GET /api/ipranges` with a client-credentials token for a configured customer org in that region (never called directly from the browser). |
 
 ---
 

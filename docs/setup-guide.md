@@ -4,6 +4,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 
 ## What changed recently
 
+- Added **Utilities — IP Ranges** page at nav path **Utilities > IP Ranges** — dual-mode public IP/CIDR viewer (Genesys per-region via `GET /api/ipranges`, Amazon global feed via `GET /api/aws-ipranges`). Two new anonymous-friendly Functions; no new app settings required (Genesys mode reuses the existing per-org client-credentials).
 - Added **Wrapup Codes — Create/Edit/Mapping** page at root nav path **Wrapup Codes > Create/Edit/Mapping**.
 - New page supports wrapup create/edit, live search, row-click mapping expansion, and Genesys-style slider controls for outbound mapping flags.
 - Added **Default Mapping** panel to view/edit outbound `defaultSet` values and show impact count for wrapup codes inheriting defaults.
@@ -12,6 +13,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 
 ## Current features
 
+- **Utilities — IP Ranges** — View public IP address ranges (CIDR blocks) for firewall whitelisting in two modes via a top toggle. **Genesys Public IP Ranges** lists per-region ranges proxied from `GET /api/v2/ipranges` using client-credentials auth (a configured customer org in the requested region); all 15 Genesys regions appear in the dropdown, with regions lacking configured credentials marked **"— no creds"**. Four Cloud Media Services CIDRs (published only in the Genesys Help Center) are injected server-side as `CLOUD_MEDIA_SERVICES` entries for commercial regions. **Amazon IP Ranges** loads the global AWS feed (`https://ip-ranges.amazonaws.com/ip-ranges.json`) via `GET /api/aws-ipranges` (anonymous, 15-min server-side cache), with a region picker (default `eu-central-1`). Shared filters: group-by, direction/IP-type, CIDR search, and a searchable multi-select Services dropdown; plus Copy CIDRs and Export to Excel. Access key: `utilities.ipRanges`.
 - **Interaction Search — Recent (<48h)** — Search conversations from the last 48 hours, today, or yesterday using the synchronous query API (results appear immediately). Server-side filters: Queue (searchable), Direction (Inbound/Outbound), Media Type, Division. Client-side Participant Data attribute filters with key/value matching, exclude mode, and multi-value (CSV) support. Inline row expand shows matched PD values as pills. Sortable results table; click-to-expand detail; right-click to copy Conversation ID. Export Interactions to styled Excel.
 - **Interaction Search — Historical (>48h)** — Search historical conversations by date range (up to 48 hours ago) using the async analytics jobs API. Date ranges longer than 7 days are automatically split into 7-day chunks, each running its own async job to avoid proxy timeouts; progress and status messages update per chunk. Quick-select buttons: Last Week, Last Month, Previous 7 Days, Previous 30 Days. Server-side filters: Queue (searchable), Direction (Inbound/Outbound), Media Type, Division. Client-side Participant Data attribute filters with key/value matching, exclude mode, and multi-value (CSV) support. Inline row expand and right-side detail pane. Collapsible results section (auto-collapses when Multi-value is active to surface the Value Distribution chart). Value Distribution bar chart for multi-value PD keys. Three export buttons: **Export Interactions** (all result rows), **Export Selected Participant Data** (only the filtered PD keys — one row per Conv ID/key/value; CSV values split into individual rows when Multi-value is checked), **Export All Participant Data** (all participant attributes across all conversations). All exports use styled Excel (blue header, alternating rows, auto-filter, frozen row).
 - **Transcript Search** — Search conversations and verify whether a Speech & Text Analytics (STA) transcript exists for each one. Two search modes: **Date & Filters** (pick a single day + optional time window, queue, media type, direction — submits an async analytics job) and **Conversation ID(s)** (paste one or more IDs separated by commas, spaces, or newlines — fetches each conversation directly). Transcript existence is checked in parallel batches of 10 via `GET .../transcripturl` (200 = exists, 404 = does not). Live stacked bar chart shows Found / No Transcript / Not Checked counts updating in real time. Transcript filter toggle (All / Found / No Transcript / Not Checked). Click any row to expand and read the full STA transcript content inline. Export to Excel: Conversation ID, Start/End Time, Duration, Queue, Agent, Media Type, Direction, Transcript Exists, Checked At. Access key: `interactions.search.transcripts.search`.
@@ -984,49 +986,92 @@ After pushing the config update:
 
 ## Architecture Overview
 
+The app runs as **two separate Function Apps** plus a Static Web App frontend:
+
+1. **Static Web App (Standard plan)** — hosts the SPA and the HTTP-triggered API in [api/](../api/) (12 functions, Node.js 18).
+2. **Durable Function App (Flex Consumption)** — separate Function App in [timer-functions/](../timer-functions/) that owns the timer trigger and the Durable Functions orchestrator/activity used for precise template-schedule execution.
+
 ```text
 Browser (SPA)                    Azure Static Web App (Standard)
-┌─────────────┐                 ┌──────────────────────────────┐
-│  Frontend   │───── /api/* ───▶│  Azure Functions (Node 18)   │
-│  (JS SPA)   │                 │    ├─ GET /api/customers     │
-│             │                 │    ├─ POST /api/genesys-proxy│
-│  Org select │                 │    ├─ POST /api/send-email   │──▶ Mailjet API
-│  dropdown   │                 │    ├─ * /api/schedules       │    (EU servers)
-└─────────────┘                 │    ├─ POST /api/scheduled-   │
-                                │    │    runner               │
- Azure Timer Trigger            │    ├─ * /api/template-       │
-┌─────────────┐                 │    │    schedules             │
-│  Every 5min │── POST /api/ ──▶│    └─ POST /api/template-    │
-│ genesys-    │   scheduled-    │         runner                │
-│ admin-timer │   runner        └────┬─────────────────────────┘
-└─────────────┘                      │
-                                     │
- Durable Functions                   │
-┌─────────────────┐                  │
-│ genesys-admin-  │── POST /api/ ───▶│
-│ timer           │   template-runner│
-│ (Flex Consump.) │                  │
-│                 │◀── notify ───────│ (on schedule CRUD)
-│ Starter →       │                  │
-│ Orchestrator →  │                  │
-│ Activity        │                  │
-└─────────────────┘          Encrypted app settings
-                             (GENESYS_<ORG>_CLIENT_ID/SECRET)
-                             (MAILJET_API_KEY / SECRET_KEY)
-                             (AZURE_STORAGE_CONNECTION_STRING)
-                             (SCHEDULE_RUNNER_KEY)
-                             (TIMER_FUNCTION_URL)
-                                     │
-                              ┌──────▼───────┐   ┌──────────────┐
-                              │  Azure Key   │   │ Azure Table  │
-                              │  Vault       │   │ Storage      │
-                              │  (source of  │   │ (schedules,  │
-                              │   truth)     │   │  templates,  │
-                              │              │   │  template-   │
-                              │              │   │   schedules  │
-                              │              │   │  activitylog)│
-                              └──────────────┘   └──────────────┘
+┌─────────────┐                 ┌────────────────────────────────────────────┐
+│  Frontend   │───── /api/* ───▶│  Azure Functions — HTTP API (Node 18)      │
+│  (JS SPA)   │                 │    ├─ GET  /api/customers                  │
+│             │                 │    ├─ POST /api/genesys-proxy              │
+│  Org select │                 │    ├─ POST /api/send-email ───────────────────▶ Mailjet API
+│  dropdown   │                 │    ├─ *    /api/schedules                  │   (EU servers)
+└─────────────┘                 │    ├─ POST /api/scheduled-runner           │
+                                │    ├─ *    /api/template-schedules         │
+                                │    ├─ POST /api/template-runner            │
+                                │    ├─ *    /api/templates                  │
+                                │    ├─ *    /api/template-assignments       │
+                                │    ├─ *    /api/activity-log               │
+                                │    ├─ POST /api/doc-export                 │
+                                │    └─ GET  /api/scrape-disqualifying-      │
+                                │             permissions                    │
+                                └────────┬───────────────────────────────────┘
+                                         │
+                                         │ HTTP (function key)
+                                         ▼
+ Azure Durable Function App (Flex Consumption — separate resource)
+┌──────────────────────────────────────────────────────────────────┐
+│  timer-functions/                                                │
+│   ├─ schedule-trigger          (TimerTrigger — every 5 min)      │
+│   │     └─ POSTs ──▶ /api/scheduled-runner   (export schedules)  │
+│   │                                                              │
+│   ├─ template-schedule-starter (HTTP — called from SWA API on    │
+│   │     schedule create/update; starts an orchestrator instance) │
+│   ├─ template-schedule-orchestrator                              │
+│   │     (Durable — sleeps via createTimer(exactDateTime),        │
+│   │      then invokes the activity at the scheduled moment)      │
+│   └─ template-schedule-activity                                  │
+│         (Calls Genesys APIs to apply the template to targets)    │
+└──────────────────────────────────────────────────────────────────┘
+
+          Encrypted app settings (both Function Apps)
+          ─────────────────────────────────────────────
+          GENESYS_<ORG>_CLIENT_ID / GENESYS_<ORG>_CLIENT_SECRET   (per customer)
+          MAILJET_API_KEY / MAILJET_SECRET_KEY
+          AZURE_STORAGE_CONNECTION_STRING
+          SCHEDULE_RUNNER_KEY    + TIMER_FUNCTION_URL              (export schedules)
+          TEMPLATE_RUNNER_KEY    + TEMPLATE_FUNCTION_URL           (template schedules)
+                                         │
+                          ┌──────────────┴───────────────┐
+                          ▼                              ▼
+                   ┌──────────────┐             ┌────────────────────┐
+                   │ Azure Key    │             │ Azure Table        │
+                   │ Vault        │             │ Storage            │
+                   │ (source of   │             │  ├─ schedules      │
+                   │  truth for   │             │  ├─ skilltemplates │
+                   │  secrets)    │             │  ├─ templateassign │
+                   │              │             │  │   ments         │
+                   │              │             │  ├─ templateschedu │
+                   │              │             │  │   les           │
+                   │              │             │  └─ activitylog    │
+                   └──────────────┘             └────────────────────┘
 ```
+
+### Function inventory
+
+| Function | Trigger | Folder | Purpose |
+| --- | --- | --- | --- |
+| `customers` | HTTP GET | [api/customers/](../api/customers/) | Returns the customer list (`customers.json`) for the org dropdown |
+| `genesys-proxy` | HTTP POST | [api/genesys-proxy/](../api/genesys-proxy/) | Authenticated proxy for all Genesys Cloud API calls (client-credentials per org) |
+| `send-email` | HTTP POST | [api/send-email/](../api/send-email/) | Sends export results via Mailjet (EU) |
+| `schedules` | HTTP CRUD | [api/schedules/](../api/schedules/) | CRUD for scheduled exports (Table Storage) |
+| `scheduled-runner` | HTTP POST | [api/scheduled-runner/](../api/scheduled-runner/) | Invoked every 5 min by the timer trigger; runs due export schedules |
+| `template-schedules` | HTTP CRUD | [api/template-schedules/](../api/template-schedules/) | CRUD for template schedules; notifies the Durable starter on changes |
+| `template-runner` | HTTP POST | [api/template-runner/](../api/template-runner/) | Applies a template to users/groups/work teams on demand or from the orchestrator |
+| `templates` | HTTP CRUD | [api/templates/](../api/templates/) | CRUD for skill templates (Table Storage) |
+| `template-assignments` | HTTP CRUD | [api/template-assignments/](../api/template-assignments/) | CRUD for template→user/group/work-team assignments |
+| `activity-log` | HTTP GET/POST | [api/activity-log/](../api/activity-log/) | Reads and writes audit-log entries (Table Storage) |
+| `doc-export` | HTTP POST | [api/doc-export/](../api/doc-export/) | Generates the Documentation Export workbook (config + data tables) |
+| `scrape-disqualifying-permissions` | HTTP GET | [api/scrape-disqualifying-permissions/](../api/scrape-disqualifying-permissions/) | Live scrape of CX Cloud disqualifying permissions list |
+| `schedule-trigger` | TimerTrigger (every 5 min) | [timer-functions/schedule-trigger/](../timer-functions/schedule-trigger/) | Wakes up and POSTs to `/api/scheduled-runner` |
+| `template-schedule-starter` | HTTP POST | [timer-functions/template-schedule-starter/](../timer-functions/template-schedule-starter/) | Starts a Durable orchestrator instance for a template schedule |
+| `template-schedule-orchestrator` | Durable Orchestrator | [timer-functions/template-schedule-orchestrator/](../timer-functions/template-schedule-orchestrator/) | Sleeps until the scheduled moment, then calls the activity |
+| `template-schedule-activity` | Durable Activity | [timer-functions/template-schedule-activity/](../timer-functions/template-schedule-activity/) | Calls Genesys APIs to apply the template at execution time |
+
+> **Note:** [timer-functions-check/](../timer-functions-check/) is a parallel copy of the Durable Function App used as a staging/verification deployment. Confirm with the Azure administrator whether one or both will be deployed in your environment, and the empty stub folders [api/recordings-export/](../api/recordings-export/) and [api/recordings-export-runner/](../api/recordings-export-runner/) are placeholders (no code) and can be ignored or removed before deployment.
 
 ---
 

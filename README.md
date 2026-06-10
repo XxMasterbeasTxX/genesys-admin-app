@@ -4,6 +4,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 ## What changed recently
 
+- **Utilities — IP Ranges (new page)** under **Utilities > IP Ranges**: dual-mode public IP/CIDR viewer for firewall whitelisting. **Genesys** mode lists per-region ranges via the new `GET /api/ipranges` proxy (client-credentials auth through a configured customer org); all 15 Genesys regions are selectable (regions without configured credentials are marked "— no creds"). Four Cloud Media Services CIDRs (not published through the API) are injected server-side for commercial regions. **Amazon** mode loads the global AWS feed via `GET /api/aws-ipranges` (anonymous, 15-min server-side cache) with a region picker (default `eu-central-1`). Shared filters: group-by, direction/IP-type, CIDR search, and a searchable multi-select Services dropdown, plus Copy CIDRs and Export to Excel.
 - **Billing exports — 6 new pages** under **Export > Billing**: Single Org, All Orgs (Latest), Calendar Year, Date Range, Custom Orgs, and Period Comparison. All use the same trustee billing overview endpoint (`GET /api/v2/billing/trusteebillingoverview/{trustorOrgId}?billingPeriodIndex=N`) and produce styled multi-section Excel workbooks matching the Python `GUI_Billing_Export*.py` output (per-org sheet, period banner, regular licenses, AI tokens breakdown, items with overage).
 - Trustee billing override map (`api/lib/customers.json` → `trusteeForOrg`) controls which trustee credential is used per customer.
 - Scheduled variants for **Single Org**, **All Orgs (Latest)**, and **Calendar Year** (server-side handlers in `api/lib/exports/billing*.js` — Calendar Year always exports the previous calendar year).
@@ -83,6 +84,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Configure Users** — Assign roles, skills, language skills, and queue memberships to one or more users at once. Two-panel layout: left panel for user selection, right panel for configuration. User selection modes: Search (by name/email), By Group, By Role, Reports To (search manager → pick → load direct reports), Location, and By Division — matching Genesys's native filter options. Right panel has an Apply button at the top, followed by five collapsible sections: Templates (multi-select to apply one or more saved templates), Roles (with per-role division picker), Skills (with proficiency 1–5), Language Skills (with proficiency 1–5), and Queues. In Add mode, each selected role must have at least one division selected before Apply is enabled. Template items and manual items are merged additively (no duplicates) on apply. Progress bar and per-user log (✓/✗) shown during execution. Genesys APIs used: `POST /api/v2/authorization/roles/{roleId}` (grant roles), `PATCH /api/v2/users/{userId}/routingskills/bulk` (skills), `PATCH /api/v2/users/{userId}/routinglanguages/bulk` (languages), `POST /api/v2/routing/queues/{queueId}/members` (queues). Access key: `users.rolesSkills.configureUsers`.
 - **Activity Log** — Internal log of all write/mutative actions performed through the tool. Every create, copy, move, disconnect, publish, and GDPR submit records who did it, for which org, when, and a plain-language description. Visible to all logged-in users at `/activity-log` via the header link. Client-side filters: action type, org (admin only), user (admin only), and free-text search. Entries are stored in Azure Table Storage and fetched via `/api/activity-log`. Retention is indefinite; the log cannot be cleared from the UI.
 - **Audit — Search** — Query Genesys Cloud audit events across any date range. Ranges ≤ 14 days automatically query **all realtime-supported services** concurrently using the synchronous `POST /api/v2/audits/query/realtime` endpoint (no polling, cursor-paginated to retrieve all results) — results appear in seconds. For ≤ 14-day ranges with a specific service not supported by the realtime endpoint, falls back to the standard async query API automatically. Ranges > 14 days require a service selection and always use the async chunked pipeline (`POST /api/v2/audits/query` → poll → cursor-paginated results, 30-day chunks). Preset quick-filters: Today, Last 7 days, Last month, Last 3 months. Auto-runs today's query on page load with no service pre-selected (all services). Client-side filters: Entity Type → Action (cascading) + Changed By. Results table: Date & Time, Service, Entity Type, Entity Name (resolved via 40+ mapped API paths with `(deleted)` label on 404), Action, Changed By (user or OAuth client name). Click any row to expand a detail panel showing metadata, changed properties (old → new values), additional context, and a raw API response dump. Sticky table header, sortable latest-first, configurable rows per page (50/100/150/200). A blue/amber hint below the service dropdown indicates the current query mode. **Export to Excel** button (far right of filter bar) exports all filtered results — one row per property change — with columns: Date & Time, Service, Entity Type, Entity Name, Action, Changed By, Level, Remote IP, Property, Old Value, New Value, Additional Context.
+- **Utilities — IP Ranges** — View public IP address ranges (CIDR blocks) for firewall whitelisting in two modes via a top toggle. **Genesys Public IP Ranges** mode lists per-region ranges proxied from `GET /api/v2/ipranges` using client-credentials auth (a configured customer org in the requested region); all 15 Genesys regions appear in the region dropdown, and regions without configured credentials are marked **"— no creds"** and return a clear error when selected. Four Cloud Media Services CIDRs — which Genesys publishes only in the Help Center, not via the API — are injected server-side as `CLOUD_MEDIA_SERVICES` entries for commercial regions (FedRAMP excluded). **Amazon IP Ranges** mode loads the global AWS feed (`https://ip-ranges.amazonaws.com/ip-ranges.json`) via `GET /api/aws-ipranges` (anonymous, 15-min in-process cache, `?force=true` to bypass), with a region picker populated from the feed (default `eu-central-1`). Both modes share: group-by (Service groups / flat table), direction (Genesys) or IP-type (AWS) filter, CIDR text search, and a searchable multi-select **Services** dropdown. Collapsible service groups, sortable columns, **Copy CIDRs**, and **Export to Excel**. Access key: `utilities.ipRanges`.
 - **Alphabetical nav sorting** — All menu items are always sorted alphabetically at every level
 - **Top-level menu groups** — Data Actions, Data Tables, Deployment, Divisions, Export, Interactions, Phones, Roles, and Users each have their own top-level nav section
 - **Editable filter tags** — Click a filter tag to edit it; right-click a result row to copy its Conversation ID
@@ -101,49 +103,96 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 ## Architecture
 
+The app runs as **two separate Function Apps** plus a Static Web App frontend:
+
+1. **Static Web App (Standard plan)** — hosts the SPA and the HTTP-triggered API in [api/](api/) (14 functions, Node.js 18).
+2. **Durable Function App (Flex Consumption)** — separate Function App in [timer-functions/](timer-functions/) that owns the timer trigger and the Durable Functions orchestrator/activity used for precise template-schedule execution.
+
 ```text
 Browser (SPA)                    Azure Static Web App (Standard)
-┌─────────────┐                 ┌──────────────────────────────┐
-│  Frontend   │───── /api/* ───▶│  Azure Functions (Node 18)   │
-│  (JS SPA)   │                 │    ├─ GET /api/customers     │
-│             │                 │    ├─ POST /api/genesys-proxy│
-│  Org select │                 │    ├─ POST /api/send-email   │──▶ Mailjet API
-│  dropdown   │                 │    ├─ * /api/schedules       │    (EU servers)
-└─────────────┘                 │    ├─ POST /api/scheduled-   │
-                                │    │    runner               │
- Azure Timer Trigger            │    ├─ * /api/template-       │
-┌─────────────┐                 │    │    schedules             │
-│  Every 5min │── POST /api/ ──▶│    └─ POST /api/template-    │
-│ genesys-    │   scheduled-    │         runner                │
-│ admin-timer │   runner        └────┬─────────────────────────┘
-└─────────────┘                      │
-                                     │
- Durable Functions                   │
-┌─────────────────┐                  │
-│ genesys-admin-  │── POST /api/ ───▶│
-│ timer           │   template-runner│
-│ (Flex Consump.) │                  │
-│                 │◀── notify ───────│ (on schedule CRUD)
-│ Starter →       │                  │
-│ Orchestrator →  │                  │
-│ Activity        │                  │
-└─────────────────┘          Encrypted app settings
-                             (GENESYS_<ORG>_CLIENT_ID/SECRET)
-                             (MAILJET_API_KEY / SECRET_KEY)
-                             (AZURE_STORAGE_CONNECTION_STRING)
-                             (SCHEDULE_RUNNER_KEY)
-                             (TIMER_FUNCTION_URL)
-                                     │
-                              ┌──────▼───────┐   ┌──────────────┐
-                              │  Azure Key   │   │ Azure Table  │
-                              │  Vault       │   │ Storage      │
-                              │  (source of  │   │ (schedules,  │
-                              │   truth)     │   │  templates,  │
-                              │              │   │  template-   │
-                              │              │   │   schedules  │
-                              │              │   │  activitylog)│
-                              └──────────────┘   └──────────────┘
+┌─────────────┐                 ┌────────────────────────────────────────────┐
+│  Frontend   │───── /api/* ───▶│  Azure Functions — HTTP API (Node 18)      │
+│  (JS SPA)   │                 │    ├─ GET  /api/customers                  │
+│             │                 │    ├─ POST /api/genesys-proxy              │
+│  Org select │                 │    ├─ POST /api/send-email ───────────────────▶ Mailjet API
+│  dropdown   │                 │    ├─ *    /api/schedules                  │   (EU servers)
+└─────────────┘                 │    ├─ POST /api/scheduled-runner           │
+                                │    ├─ *    /api/template-schedules         │
+                                │    ├─ POST /api/template-runner            │
+                                │    ├─ *    /api/templates                  │
+                                │    ├─ *    /api/template-assignments       │
+                                │    ├─ *    /api/activity-log               │
+                                │    ├─ POST /api/doc-export                 │
+                                │    ├─ GET  /api/ipranges (Genesys)         │
+                                │    ├─ GET  /api/aws-ipranges (Amazon) ────────▶ ip-ranges.amazonaws.com
+                                │    └─ GET  /api/scrape-disqualifying-      │
+                                │             permissions                    │
+                                └────────┬───────────────────────────────────┘
+                                         │
+                                         │ HTTP (function key)
+                                         ▼
+ Azure Durable Function App (Flex Consumption — separate resource)
+┌──────────────────────────────────────────────────────────────────┐
+│  timer-functions/                                                │
+│   ├─ schedule-trigger          (TimerTrigger — every 5 min)      │
+│   │     └─ POSTs ──▶ /api/scheduled-runner   (export schedules)  │
+│   │                                                              │
+│   ├─ template-schedule-starter (HTTP — called from SWA API on    │
+│   │     schedule create/update; starts an orchestrator instance) │
+│   ├─ template-schedule-orchestrator                              │
+│   │     (Durable — sleeps via createTimer(exactDateTime),        │
+│   │      then invokes the activity at the scheduled moment)      │
+│   └─ template-schedule-activity                                  │
+│         (Calls Genesys APIs to apply the template to targets)    │
+└──────────────────────────────────────────────────────────────────┘
+
+          Encrypted app settings (both Function Apps)
+          ─────────────────────────────────────────────
+          GENESYS_<ORG>_CLIENT_ID / GENESYS_<ORG>_CLIENT_SECRET   (per customer)
+          MAILJET_API_KEY / MAILJET_SECRET_KEY
+          AZURE_STORAGE_CONNECTION_STRING
+          SCHEDULE_RUNNER_KEY    + TIMER_FUNCTION_URL              (export schedules)
+          TEMPLATE_RUNNER_KEY    + TEMPLATE_FUNCTION_URL           (template schedules)
+                                         │
+                          ┌──────────────┴───────────────┐
+                          ▼                              ▼
+                   ┌──────────────┐             ┌────────────────────┐
+                   │ Azure Key    │             │ Azure Table        │
+                   │ Vault        │             │ Storage            │
+                   │ (source of   │             │  ├─ schedules      │
+                   │  truth for   │             │  ├─ skilltemplates │
+                   │  secrets)    │             │  ├─ templateassign │
+                   │              │             │  │   ments         │
+                   │              │             │  ├─ templateschedu │
+                   │              │             │  │   les           │
+                   │              │             │  └─ activitylog    │
+                   └──────────────┘             └────────────────────┘
 ```
+
+### Function inventory
+
+| Function | Trigger | Folder | Purpose |
+| --- | --- | --- | --- |
+| `customers` | HTTP GET | [api/customers/](api/customers/) | Returns the customer list (`customers.json`) for the org dropdown |
+| `genesys-proxy` | HTTP POST | [api/genesys-proxy/](api/genesys-proxy/) | Authenticated proxy for all Genesys Cloud API calls (client-credentials per org) |
+| `ipranges` | HTTP GET | [api/ipranges/](api/ipranges/) | Genesys public IP ranges per region (client-credentials); injects Cloud Media Services CIDRs for commercial regions |
+| `aws-ipranges` | HTTP GET | [api/aws-ipranges/](api/aws-ipranges/) | Proxies the Amazon `ip-ranges.json` feed (anonymous, 15-min server-side cache) |
+| `send-email` | HTTP POST | [api/send-email/](api/send-email/) | Sends export results via Mailjet (EU) |
+| `schedules` | HTTP CRUD | [api/schedules/](api/schedules/) | CRUD for scheduled exports (Table Storage) |
+| `scheduled-runner` | HTTP POST | [api/scheduled-runner/](api/scheduled-runner/) | Invoked every 5 min by the timer trigger; runs due export schedules |
+| `template-schedules` | HTTP CRUD | [api/template-schedules/](api/template-schedules/) | CRUD for template schedules; notifies the Durable starter on changes |
+| `template-runner` | HTTP POST | [api/template-runner/](api/template-runner/) | Applies a template to users/groups/work teams on demand or from the orchestrator |
+| `templates` | HTTP CRUD | [api/templates/](api/templates/) | CRUD for skill templates (Table Storage) |
+| `template-assignments` | HTTP CRUD | [api/template-assignments/](api/template-assignments/) | CRUD for template→user/group/work-team assignments |
+| `activity-log` | HTTP GET/POST | [api/activity-log/](api/activity-log/) | Reads and writes audit-log entries (Table Storage) |
+| `doc-export` | HTTP POST | [api/doc-export/](api/doc-export/) | Generates the Documentation Export workbook (config + data tables) |
+| `scrape-disqualifying-permissions` | HTTP GET | [api/scrape-disqualifying-permissions/](api/scrape-disqualifying-permissions/) | Live scrape of CX Cloud disqualifying permissions list |
+| `schedule-trigger` | TimerTrigger (every 5 min) | [timer-functions/schedule-trigger/](timer-functions/schedule-trigger/) | Wakes up and POSTs to `/api/scheduled-runner` |
+| `template-schedule-starter` | HTTP POST | [timer-functions/template-schedule-starter/](timer-functions/template-schedule-starter/) | Starts a Durable orchestrator instance for a template schedule |
+| `template-schedule-orchestrator` | Durable Orchestrator | [timer-functions/template-schedule-orchestrator/](timer-functions/template-schedule-orchestrator/) | Sleeps until the scheduled moment, then calls the activity |
+| `template-schedule-activity` | Durable Activity | [timer-functions/template-schedule-activity/](timer-functions/template-schedule-activity/) | Calls Genesys APIs to apply the template at execution time |
+
+> **Note:** [timer-functions-check/](timer-functions-check/) is a parallel copy of the Durable Function App used as a staging/verification deployment. The empty stub folders [api/recordings-export/](api/recordings-export/) and [api/recordings-export-runner/](api/recordings-export-runner/) are placeholders (no code) and can be ignored or removed before deployment.
 
 - **Frontend:** Vanilla JavaScript SPA with hash-based routing, deployed as an Azure Static Web App
 - **Backend:** Azure Functions (Node.js 18) auto-deployed from the `api/` folder
@@ -285,10 +334,12 @@ genesys-admin-app/
 │   │   │       ├── lastLogin.js      Last Login export + per-org automation
 │   │   │       ├── skillTemplates.js Skill/Role/Queue Templates export + per-org automation
 │   │   │       └── trustee.js       Trustee access matrix export + automation
-│   │   └── phones/
-│   │       └── webrtc/
-│   │           ├── changeSite.js     Change site for WebRTC phones
-│   │           └── createWebRtc.js  Bulk-create WebRTC phones
+│   │   ├── phones/
+│   │   │   └── webrtc/
+│   │   │       ├── changeSite.js     Change site for WebRTC phones
+│   │   │       └── createWebRtc.js  Bulk-create WebRTC phones
+│   │   └── utilities/
+│   │       └── ipRanges.js          IP Ranges — Genesys + Amazon public CIDR viewer (dual-mode toggle)
 │   └── services/
 │       ├── apiClient.js          HTTP client + Genesys proxy wrapper
 │       ├── authService.js        OAuth 2.0 PKCE authentication
@@ -303,8 +354,10 @@ genesys-admin-app/
 │       └── templateAssignmentService.js  Template assignment CRUD (users, groups, work teams)
 ├── api/                          Azure Functions backend
 │   ├── customers/                GET /api/customers
+│   ├── aws-ipranges/             GET /api/aws-ipranges (Amazon IP ranges feed — anonymous, 15-min cache)
 │   ├── doc-export/               POST /api/doc-export (on-demand documentation export)
 │   ├── genesys-proxy/            POST /api/genesys-proxy
+│   ├── ipranges/                 GET /api/ipranges (Genesys IP ranges — client-credentials per region)
 │   ├── scrape-disqualifying-permissions/  GET /api/scrape-disqualifying-permissions (Hourly Interacting)
 │   ├── send-email/               POST /api/send-email (Mailjet)
 │   ├── schedules/                CRUD /api/schedules (schedules management)
