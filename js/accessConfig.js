@@ -29,115 +29,116 @@
  *   3. No other code changes needed
  *
  * FULL ACCESS KEY LIST  (these are the `access` values on each nav leaf)
+ * Listed alphabetically by section name.
  * ──────────────────────────────────────────────────────────────────────
+ *   AUDIT
+ *   audit.search                       Search
+ *
  *   DATA ACTIONS
- *   data-actions.copy.betweenOrgs      Copy a data action between orgs
- *   data-actions.edit                  View, edit, and test data actions
+ *   data-actions.copy.betweenOrgs      Copy - Between Orgs
+ *   data-actions.edit                  Edit
  *
  *   DATA TABLES
- *   data-tables.create                 Create a new data table
- *   data-tables.edit                   Edit an existing data table
- *   data-tables.copy.betweenOrgs       Copy a data table between orgs
- *   data-tables.copy.singleOrg         Copy a data table within the same org
- *
- *   INTERACTIONS
- *   interactions.search.participantData.recent     Recent Interaction Search (<48h)
- *   interactions.search.participantData.historical  Historical Interaction Search (>48h)
- *   interactions.search.participantData.*           Both Participant Data search pages
- *   interactions.search.transcripts.search          Transcript Search (under Search > Transcripts)
- *   interactions.search.transcripts.*               All transcript pages
- *   interactions.search.*                           All search pages (any sub-group)
- *   interactions.move                               Move interactions between queues
- *   interactions.disconnect                         Force-disconnect stuck conversations
- *   interactions.recordings.create                  Create a recording bulk export job
- *   interactions.recordings.jobs                    View and manage recording export jobs
- *   interactions.recordings.*                       All recordings pages
- *
- *   EXPORT
- *   export.scheduled                   All Scheduled Exports overview + automation
- *   export.documentation.create        Documentation / full config workbook export
- *   export.licenses.consumption        License Consumption export
- *   export.billing.singleOrg           Billing — Single Org export
- *   export.billing.allOrgsLatest       Billing — All Orgs (Latest Period) export
- *   export.billing.calendarYear        Billing — Calendar Year export (12 months × all orgs)
- *   export.billing.dateRange           Billing — Date Range export (custom month range × all orgs)
- *   export.billing.customOrgs          Billing — Custom Orgs export (user-picked orgs × one period)
- *   export.billing.periodComparison    Billing — Period Comparison export (2-4 periods, one org, side-by-side)
- *   export.roles.allOrgs               Roles export — all orgs (multi-sheet)
- *   export.roles.singleOrg             Roles export — single org
- *   export.users.allGroups             All Groups export
- *   export.users.allRoles              All Roles export
- *   export.users.filteredRoles         Filtered on Role(s) export
- *   export.users.lastLogin             Last Login export
- *   export.users.queuesSkills          Queues/Skills export
- *   export.users.skillTemplates        Skill/Role/Queue Templates export
- *   export.users.trustee               Trustee export
- *   export.interactions.totals         Interaction Totals — bar charts by media/direction/routing
- *
- *   PHONES
- *   phones.webrtc.changeSite           WebRTC Phones — Change Site
- *   phones.webrtc.create               WebRTC Phones — Create
- *
- *   GDPR
- *   gdpr.subjectRequest                Submit GDPR data subject requests
- *   gdpr.requestStatus                 View GDPR request status
- *
- *   ROLES
- *   roles.compare                      Compare permission policies across roles
- *   roles.search                       Search permissions and see which users hold them (Permissions vs. Users)
- *   roles.create                       Create a new role with permission policies
- *   roles.edit                         Edit an existing role's permission policies
- *   roles.copy.singleOrg               Copy a role within the same org (pre-filled permission builder)
- *   roles.copy.betweenOrgs             Copy a role from one org to another
- *
- *   WRAPUP CODES
- *   wrapupCodes.createEditMapping      Create/Edit wrapup codes and manage outbound wrapup mappings
- *
- *   FLOWS
- *   flows.journey                      Journey Flow — visualise flow path data
- *
- *   AUDIT
- *   audit.search                       Audit event search
+ *   data-tables.create                 Create
+ *   data-tables.edit                   Edit
+ *   data-tables.copy.betweenOrgs       Copy - Between Orgs
+ *   data-tables.copy.singleOrg         Copy - Single Org
  *
  *   DEPLOYMENT
- *   deployment.basic                   Deployment — Basic (bulk-create core objects)
- *   deployment.datatables              Deployment — Data Tables (bulk-create data tables)
- *
- *   USERS
- *   users.directRouting.add            Direct Routing — Add user(s)
- *   users.rolesSkills.configureUsers     Roles & Skills — Configure Users
- *   users.rolesSkills.createTemplate    Roles & Skills — Create Template
- *   users.rolesSkills.addUsersToTemplates  Roles & Skills — Add Users To Templates
- *   users.rolesSkills.templateSchedules    Roles & Skills — Template Schedules
- *   users.rolesSkills.copyFromUser          Roles & Skills — Copy from User
+ *   deployment.basic                   Basic
+ *   deployment.datatables              Data Tables
  *
  *   DIVISIONS  (reassign objects between divisions)
- *   divisions.people.users             People — Users
- *   divisions.people.team              People — Work Teams
- *   divisions.routing.queues           Routing — Queues
- *   divisions.routing.callroute        Routing — Call Routes
- *   divisions.routing.emergencyGroups  Routing — Emergency Groups
- *   divisions.routing.extensionPool    Routing — Extension Pools
- *   divisions.routing.routingSchedules      Routing — Schedules
- *   divisions.routing.routingScheduleGroups Routing — Schedule Groups
- *   divisions.routing.skillGroup       Routing — Skill Groups
- *   divisions.architect.flow           Architect — Flows
- *   divisions.architect.flowMilestone  Architect — Flow Milestones
- *   divisions.architect.flowOutcome    Architect — Flow Outcomes
- *   divisions.architect.script         Architect — Scripts
- *   divisions.architect.dataTables     Architect — Data Tables
- *   divisions.outbound.campaign        Outbound — Campaigns
- *   divisions.outbound.contactList     Outbound — Contact Lists
- *   divisions.outbound.dncList         Outbound — DNC Lists
- *   divisions.outbound.emailCampaign   Outbound — Email Campaigns
- *   divisions.outbound.messagingCampaign Outbound — Messaging Campaigns
- *   divisions.workforce.businessUnit   Workforce Mgmt — Business Units
- *   divisions.workforce.managementUnit Workforce Mgmt — Management Units
- *   divisions.task.workbin             Task Mgmt — Workbins
- *   divisions.task.worktype            Task Mgmt — Work Types
+ *   divisions.people.users                  People — Users
+ *   divisions.people.team                   People — Work Teams
+ *   divisions.routing.queues                Routing — Queues
+ *   divisions.routing.callroute             Routing — Call Routes
+ *   divisions.routing.emergencyGroups       Routing — Emergency Groups
+ *   divisions.routing.extensionPool         Routing — Extension Pools
+ *   divisions.routing.routingSchedules      Routing — Routing Schedules
+ *   divisions.routing.routingScheduleGroups Routing — Routing Schedule Groups
+ *   divisions.routing.skillGroup            Routing — Skill Groups
+ *   divisions.architect.flow                Architect — Flows
+ *   divisions.architect.flowMilestone       Architect — Milestones
+ *   divisions.architect.flowOutcome         Architect — Flow Outcomes
+ *   divisions.architect.script              Architect — Scripts
+ *   divisions.architect.dataTables          Architect — Data Tables
+ *   divisions.outbound.campaign             Outbound — Campaigns
+ *   divisions.outbound.contactList          Outbound — Contact Lists
+ *   divisions.outbound.dncList              Outbound — DNC Lists
+ *   divisions.outbound.emailCampaign        Outbound — Email Campaigns
+ *   divisions.outbound.messagingCampaign    Outbound — Messaging Campaigns
+ *   divisions.workforce.businessUnit        Workforce Mgmt — Business Units
+ *   divisions.workforce.managementUnit      Workforce Mgmt — Management Units
+ *   divisions.task.workbin                  Task Mgmt — Workbins
+ *   divisions.task.worktype                 Task Mgmt — Work Types
+ *
+ *   EXPORT
+ *   export.scheduled                   Scheduled Exports
+ *   export.roles.allOrgs               Roles — All Orgs
+ *   export.roles.singleOrg             Roles — Single Org
+ *   export.licenses.consumption        Licenses — Consumption
+ *   export.billing.singleOrg           Billing — Single Org
+ *   export.billing.allOrgsLatest       Billing — All Orgs (Latest)
+ *   export.billing.calendarYear        Billing — Calendar Year
+ *   export.billing.dateRange           Billing — Date Range
+ *   export.billing.customOrgs          Billing — Custom Orgs
+ *   export.billing.periodComparison    Billing — Period Comparison
+ *   export.documentation.create        Documentation — Create
+ *   export.interactions.totals         Interactions — Totals
+ *   export.users.allGroups             Users — All Groups
+ *   export.users.allRoles              Users — All Roles
+ *   export.users.filteredRoles         Users — Filtered on Role(s)
+ *   export.users.lastLogin             Users — Last Login
+ *   export.users.queuesSkills          Users — Queues/Skills
+ *   export.users.skillTemplates        Users — Skill/Role/Queue Templates
+ *   export.users.trustee               Users — Trustee
+ *
+ *   FLOWS
+ *   flows.journey                      Journey Flow
+ *
+ *   GDPR
+ *   gdpr.subjectRequest                Subject Request
+ *   gdpr.requestStatus                 Request Status
+ *
+ *   INTERACTIONS
+ *   interactions.disconnect                          Disconnect (force-disconnect stuck conversations)
+ *   interactions.search.participantData.recent       Search > Participant Data > Recent (<48h)
+ *   interactions.search.participantData.historical   Search > Participant Data > Historical (>48h)
+ *   interactions.search.participantData.*            Both Participant Data search pages
+ *   interactions.search.transcripts.search           Search > Transcripts > Search
+ *   interactions.search.transcripts.*                All transcript pages
+ *   interactions.search.*                            All search pages (any sub-group)
+ *   interactions.move                                Move (move interactions between queues)
+ *   interactions.recordings.create                   Recordings > Create Export Job
+ *   interactions.recordings.jobs                     Recordings > Export Jobs
+ *   interactions.recordings.*                        All recordings pages
+ *
+ *   PHONES
+ *   phones.webrtc.changeSite           WebRTC — Change Site
+ *   phones.webrtc.create               WebRTC — Create WebRTC
+ *
+ *   ROLES
+ *   roles.copy.singleOrg               Copy — Copy from current org
+ *   roles.copy.betweenOrgs             Copy — Copy between orgs
+ *   roles.compare                      Compare
+ *   roles.search                       Permissions vs. Users
+ *   roles.create                       Create
+ *   roles.edit                         Edit
+ *
+ *   USERS
+ *   users.directRouting.add                Direct Routing — Add user(s)
+ *   users.rolesSkills.configureUsers       Roles, Queues & Skills — Configure Users
+ *   users.rolesSkills.createTemplate       Roles, Queues & Skills — Create/Edit Template
+ *   users.rolesSkills.addUsersToTemplates  Roles, Queues & Skills — Manage Templates
+ *   users.rolesSkills.templateSchedules    Roles, Queues & Skills — Template Schedules
+ *   users.rolesSkills.copyFromUser         Roles, Queues & Skills — Copy from User
  *
  *   UTILITIES
- *   utilities.ipRanges                 Genesys public IP ranges viewer (per region)
+ *   utilities.ipRanges                 IP Ranges
+ *
+ *   WRAPUP CODES
+ *   wrapupCodes.createEditMapping      Create/Edit/Mapping
  */
 export const GROUP_ACCESS = {
   "Genesys App - Master Admin": ["*"],
