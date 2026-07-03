@@ -11,7 +11,7 @@ export const CONFIG = {
   oauthClientId: "3b89b95c-d658-463e-9280-30a5bd7f4c2c",
 
   // Must match the Azure Static Web App URL exactly
-  oauthRedirectUri: "https://red-wave-0cb77561e.6.azurestaticapps.net",
+  oauthRedirectUri: "https://wonderful-rock-07e429f10.7.azurestaticapps.net",
 
   // OIDC scopes — API permissions are controlled by the OAuth client roles.
   oauthScopes: ["openid", "profile", "email"],
