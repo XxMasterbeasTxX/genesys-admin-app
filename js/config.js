@@ -10,8 +10,10 @@ export const CONFIG = {
   // Shared with customer app — admin SWA URL added as redirect URI
   oauthClientId: "3b89b95c-d658-463e-9280-30a5bd7f4c2c",
 
-  // Must match the Azure Static Web App URL exactly
-  oauthRedirectUri: "https://wonderful-rock-07e429f10.7.azurestaticapps.net",
+  // Redirect back to whatever origin the app is served from, so the same code
+  // works on both the dev and prod SWA URLs. BOTH SWA URLs must be registered
+  // as Authorized redirect URIs on the OAuth client above.
+  oauthRedirectUri: window.location.origin,
 
   // OIDC scopes — API permissions are controlled by the OAuth client roles.
   oauthScopes: ["openid", "profile", "email"],
