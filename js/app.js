@@ -18,6 +18,8 @@ import { orgContext } from "./services/orgContext.js";
 import { fetchCustomers } from "./services/customerService.js";
 import { GROUP_ACCESS } from "./accessConfig.js";
 import { resolveAccess } from "./services/accessService.js";
+import { APP_VERSION } from "./releaseNotes.js";
+import { renderReleaseNotesPage } from "./pages/releaseNotes.js";
 
 function setHeader({ authText }) {
   document.getElementById("brandTitle").textContent = CONFIG.appName;
@@ -94,6 +96,17 @@ function renderFatalError(message) {
   const navEl = document.getElementById("appNav");
   const nav = createNav(navEl, NAV_TREE, access);
 
+  // --- Version footer (bottom of the sidebar) ---
+  const versionEl = document.createElement("button");
+  versionEl.type = "button";
+  versionEl.className = "nav-version";
+  versionEl.textContent = `v${APP_VERSION}`;
+  versionEl.title = "View release notes";
+  versionEl.addEventListener("click", () => {
+    window.location.hash = "#/release-notes";
+  });
+  navEl.append(versionEl);
+
   // --- Sign-out button ---
   document.getElementById("signOutBtn").addEventListener("click", () => refreshSession());
 
@@ -104,6 +117,9 @@ function renderFatalError(message) {
     resolve: async (route) => {
       // Root route — show welcome page with no preselection
       if (route === "/") return renderWelcomePage();
+
+      // Release notes (reached from the sidebar version footer) — no access key
+      if (route === "/release-notes") return renderReleaseNotesPage();
 
       const loader = getPageLoader(route);
       if (loader) {
