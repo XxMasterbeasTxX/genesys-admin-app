@@ -103,10 +103,25 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 ## Architecture
 
-The app runs as **two separate Function Apps** plus a Static Web App frontend:
+The app runs as **two separate Function Apps** plus a Static Web App frontend, and is deployed as **two independent environments — dev and prod** (see [Environments](#environments)):
 
 1. **Static Web App (Standard plan)** — hosts the SPA and the HTTP-triggered API in [api/](api/) (14 functions, Node.js 18).
-2. **Durable Function App (Flex Consumption)** — separate Function App in [timer-functions/](timer-functions/) that owns the timer trigger and the Durable Functions orchestrator/activity used for precise template-schedule execution.
+2. **Timer / Durable Function App (Consumption — Windows)** — separate Function App in [timer-functions/](timer-functions/) that owns the timer trigger and the Durable Functions orchestrator/activity used for precise template-schedule execution.
+
+### Environments
+
+Two isolated environments run the same codebase from two branches:
+
+| | Dev | Prod |
+| --- | --- | --- |
+| Branch | `main` | `production` |
+| Static Web App | `genesys-admin-app-dev` | `genesys-admin-app-prod` |
+| Storage account | separate (dev) | separate (prod) |
+| Key Vault | `genesys-admin-kv-dev` | `genesys-admin-kv-prod` |
+| Timer Function App | `genesys-admin-timer-dev` | `genesys-admin-timer-prod` |
+| Resource group | `Genesys_Apps_DEV` | `Genesys_Apps_PROD` |
+
+Each branch has its own SWA CI/CD workflow (`.github/workflows/azure-static-web-apps-*.yml`) with its own deploy token. `js/config.js` derives `oauthRedirectUri` from `window.location.origin`, so the same code works on both URLs — **both SWA URLs must be registered as Authorized redirect URIs** on the shared Genesys OAuth client. Develop on `main` (→ dev), then merge `main` → `production` (→ prod).
 
 ```text
 Browser (SPA)                    Azure Static Web App (Standard)
@@ -131,7 +146,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
                                          │
                                          │ HTTP (function key)
                                          ▼
- Azure Durable Function App (Flex Consumption — separate resource)
+ Azure Timer / Durable Function App (Consumption, Windows — separate resource)
 ┌──────────────────────────────────────────────────────────────────┐
 │  timer-functions/                                                │
 │   ├─ schedule-trigger          (TimerTrigger — every 5 min)      │
@@ -211,7 +226,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
 | Auth (customers) | OAuth 2.0 Client Credentials (via backend) |
 | Email | Mailjet v3.1 Send API (EU, GDPR-compliant) |
 | Schedule & template storage | Azure Table Storage |
-| Scheduled runner | Azure Timer Trigger (every 5 min, Flex Consumption Function App) |
+| Scheduled runner | Azure Timer Trigger (every 5 min, Consumption/Windows Function App) |
 | Template scheduling | Azure Durable Functions (precise timer-based orchestration) |
 | CI/CD | GitHub Actions |
 

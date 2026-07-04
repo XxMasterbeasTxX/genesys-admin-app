@@ -330,10 +330,14 @@ export const CONFIG = {
   authHost:         "login.mypurecloud.de",
 
   oauthClientId:    "paste-your-client-id-here",         // ← from step 5
-  oauthRedirectUri: "https://your-swa-url.azurestaticapps.net",  // ← from step 3
+  oauthRedirectUri: window.location.origin,              // works on any SWA URL (dev + prod)
   oauthScopes:      ["openid", "profile", "email"],
 };
 ```
+
+> **Redirect URI:** `oauthRedirectUri` is derived from `window.location.origin`, so the **same code runs unchanged on every SWA URL** (dev and prod). You do **not** hardcode a URL here. Instead, register **each** SWA URL as an **Authorized redirect URI** on the OAuth client from step 5 (no trailing slash).
+
+> **Dev / Prod:** this repo is deployed as two environments — the `main` branch deploys to the **dev** SWA and the `production` branch deploys to the **prod** SWA, each with its own Static Web App, Storage account, Key Vault, and Timer Function App (in the `Genesys_Apps_DEV` / `Genesys_Apps_PROD` resource groups). Because the redirect URI is dynamic, `config.js` is identical on both branches. Develop on `main`, then merge `main` → `production` to release. See the **Environments** table in the README.
 
 Commit and push:
 
@@ -627,7 +631,9 @@ Add this value to **both** locations:
 
 ### 14d. Configure the Azure Timer Function App
 
-Create a Flex Consumption Azure Function App (e.g. `genesys-admin-timer`, Node.js, Linux) and add the following **Application settings**:
+Create a **Consumption (Windows)** Azure Function App (e.g. `genesys-admin-timer`, Node.js 20) and add the following **Application settings**:
+
+> **Why Consumption (Windows), not Flex Consumption?** Flex Consumption (and Container Apps) require the `Microsoft.App` resource provider, which needs subscription-level rights to register and may be blocked in a company subscription (`AuthorizationFailed` on `Microsoft.App/register/action`). Consumption (Windows) uses `Microsoft.Web` (already registered) and runs the timer trigger + Durable Functions just fine.
 
 | Setting | Value |
 | --- | --- |
@@ -641,10 +647,23 @@ Deploy the `timer-functions/` folder to this Function App using Azure Functions 
 
 ```bash
 cd timer-functions
+npm install --omit=dev
 func azure functionapp publish <your-function-app-name>
 ```
 
-> **Note:** Flex Consumption SKU does not support `SCM_DO_BUILD_DURING_DEPLOYMENT`. Use `func azure functionapp publish` which handles `npm install` and packaging automatically.
+> **If `func publish` fails** with `Value cannot be null. (Parameter 'input')` (seen with some Core Tools builds), or the Function App has SCM basic-auth publishing disabled by org policy, deploy via zip instead:
+>
+> ```powershell
+> # 1. Enable SCM basic auth if org policy disabled it (re-disable afterwards if desired)
+> az resource update -g <rg> --namespace Microsoft.Web --resource-type basicPublishingCredentialsPolicies --name scm --parent sites/<app> --set properties.allow=true
+> # 2. Package (exclude local.settings.json) — node_modules must be included on Windows Consumption
+> Compress-Archive -Path host.json,package.json,*/ -DestinationPath deploy.zip -Force
+> # 3. Deploy
+> az functionapp deployment source config-zip -g <rg> -n <app> --src deploy.zip
+> # 4. Sync triggers + restart so functions register
+> az rest --method post --url "https://management.azure.com/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Web/sites/<app>/syncfunctiontriggers?api-version=2016-08-01"
+> az functionapp restart -n <app> -g <rg>
+> ```
 
 ### 14e. Configure TIMER_FUNCTION_URL on the SWA
 
