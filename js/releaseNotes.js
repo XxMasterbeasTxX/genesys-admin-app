@@ -11,6 +11,18 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "1.2",
+    date: "2026-07-06",
+    title: "Permission-aware access for write actions",
+    changes: [
+      "Write features are now gated by your own Genesys permissions in addition to app group membership: you can only perform an action (create, edit, delete, apply) if your Genesys role includes the matching permission.",
+      "Read-only features (Export, Audit, Flows, Roles Compare/Search, Interaction Search) are unaffected and remain governed by group access alone.",
+      "Features you can't use appear disabled in the sidebar with a tooltip naming the required permission; opening one directly shows which permission is missing.",
+      "Create/Edit Template now requires the same permissions as Manage Templates.",
+      "Full-access administrators and superusers are unaffected.",
+    ],
+  },
+  {
     version: "1.1",
     date: "2026-07-06",
     title: "Permission Catalog page",

@@ -4,7 +4,8 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 
 ## What changed recently
 
-- Added **Utilities — IP Ranges** page at nav path **Utilities > IP Ranges** — dual-mode public IP/CIDR viewer (Genesys per-region via `GET /api/ipranges`, Amazon global feed via `GET /api/aws-ipranges`). Two new anonymous-friendly Functions; no new app settings required (Genesys mode reuses the existing per-org client-credentials).
+- **Permission-aware access for write actions** — feature access is now two gates: app **group membership** (`GROUP_ACCESS` in `js/accessConfig.js`) decides visibility, and **write** features are additionally gated by the signed-in user's **own Genesys permissions** in the company org (read via `GET /api/v2/users/me?expand=authorization`, mapped in `js/featurePermissionMap.js`). Read-only features are group-only. Denied write features show disabled in the sidebar with a tooltip. Action-level, fail-closed; superusers bypass. Toggle with `ENFORCE_PERMISSION_REFINEMENT` in `js/services/accessService.js`. No new OAuth scope is required (a user reading their own authorization is covered by `user:readonly`).
+- Added **Utilities — Permission Catalog** page at nav path **Utilities > Permission Catalog** — internal, admin-only dump of the full Genesys permission catalog (`GET /api/v2/authorization/permissions`) with filter, copy, and Excel export. Access key `utilities.permissionCatalog`.
 - Added **Wrapup Codes — Create/Edit/Mapping** page at root nav path **Wrapup Codes > Create/Edit/Mapping**.
 - New page supports wrapup create/edit, live search, row-click mapping expansion, and Genesys-style slider controls for outbound mapping flags.
 - Added **Default Mapping** panel to view/edit outbound `defaultSet` values and show impact count for wrapup codes inheriting defaults.
@@ -336,7 +337,6 @@ export const CONFIG = {
 ```
 
 > **Redirect URI:** `oauthRedirectUri` is derived from `window.location.origin`, so the **same code runs unchanged on every SWA URL** (dev and prod). You do **not** hardcode a URL here. Instead, register **each** SWA URL as an **Authorized redirect URI** on the OAuth client from step 5 (no trailing slash).
-
 > **Dev / Prod:** this repo is deployed as two environments — the `main` branch deploys to the **dev** SWA and the `production` branch deploys to the **prod** SWA, each with its own Static Web App, Storage account, Key Vault, and Timer Function App (in the `Genesys_Apps_DEV` / `Genesys_Apps_PROD` resource groups). Because the redirect URI is dynamic, `config.js` is identical on both branches. Develop on `main`, then merge `main` → `production` to release. See the **Environments** table in the README.
 
 Commit and push:
