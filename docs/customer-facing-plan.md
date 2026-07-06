@@ -173,79 +173,107 @@ does **not** touch the customer token-forwarding path.
 
 ---
 
-## 8. Feature → write-permission map (in progress)
+## 8. Feature → write-permission map (FINALIZED)
 
-Only **write actions** need entries (read-only is group-gated). Draft below; strings must be
-confirmed against the **live catalog** (see §9).
+Confirmed against the live demo permission catalog (2026-07-06). Only **write actions** are gated
+(read-only features are group-gated). Read-only features carry **no** entry here.
 
-Status legend: ✅ string confirmed real · 🟡 high-confidence, confirm on catalog · ⚠ needs
-confirmation.
-
-> **Caveat:** the repo's [`hourlyDisqualifyingPermissions.js`](../js/lib/hourlyDisqualifyingPermissions.js)
-> (323 strings) is **only** the Hourly-Interacting *disqualifying* set — **not** a general catalog.
-> Presence there confirms a string exists/spelling; absence proves nothing, and it never confirms a
-> permission is the *correct gate* for a feature. Authoritative source = the live catalog.
+> Note: WebRTC phones and several Deployment object types (DID pools, sites, number plans, outbound
+> routes) have **no granular** `add`/`edit` permission in the catalog — Genesys gates all edge/phone
+> configuration behind the single `telephony:plugin:all` permission, which is the correct gate for
+> those.
 
 ### Roles (`roles.*`)
-| Action | Permission | Status |
-|---|---|---|
-| Create / Copy-Single | `authorization:role:add` | ✅ |
-| Edit | `authorization:role:edit` | ✅ |
-| Delete | `authorization:role:delete` | ✅ |
+| Action | Permission |
+|---|---|
+| Create / Copy-Single | `authorization:role:add` |
+| Edit | `authorization:role:edit` |
+| Delete | `authorization:role:delete` |
 
-### Users — Configure / Copy (`users.rolesSkills.*`, `users.directRouting.*`)
-| Action | Permission | Status |
-|---|---|---|
-| Grant roles | `authorization:grant:add` | ✅ |
-| Assign skills | `routing:skill:assign` | ⚠ |
-| Queue membership | `routing:queue:join` | ⚠ |
-| Direct Routing | `directory:user:edit` (+ telephony) | 🟡 / ⚠ |
+### Users — Configure / Copy / Direct Routing (`users.*`)
+| Action | Permission |
+|---|---|
+| Grant roles | `authorization:grant:add` |
+| Assign skills | `routing:skill:assign` |
+| Assign languages | `routing:language:assign` |
+| Queue membership | `routing:queueMember:manage` |
+| Direct Routing — addresses | `directory:user:edit` |
+| Direct Routing — backup routing | `routing:directRoutingBackup:edit` |
 
-### Divisions (`divisions.*`) — gate on each object's edit permission
-| Leaf | Permission | Status |
-|---|---|---|
-| Outbound → Email Campaigns | `outbound:emailCampaign:edit` | ✅ |
-| Outbound → Messaging Campaigns | `outbound:messagingCampaign:edit` | ✅ |
-| Workforce → Business Units | `wfm:businessUnit:edit` | ✅ |
-| Workforce → Management Units | `wfm:managementUnit:edit` | ✅ |
-| Task → Workbins | `workitems:workbin:edit` | ✅ |
-| Task → Work Types | `workitems:worktype:edit` | ✅ |
-| Routing → Queues | `routing:queue:edit` | 🟡 |
-| Routing → Extension Pools | `telephony:extensionPool:edit` | 🟡 |
-| Architect → Flows | `architect:flow:edit` | 🟡 |
-| Architect → Data Tables | `architect:datatable:edit` | 🟡 |
-| People → Users | `directory:user:edit` | 🟡 |
-| People → Work Teams | `directory:team:edit` | ⚠ |
-| Routing → Call Routes / Emergency Groups / Routing Schedules / Skill Groups | (various) | ⚠ |
-| Architect → Milestones / Flow Outcomes / Scripts | (various) | ⚠ |
-| Outbound → Campaigns / Contact Lists / DNC Lists | `outbound:campaign:edit` etc. | ⚠ |
+### Divisions (`divisions.*`) — gate on each object's `edit` permission
+| Leaf | Permission |
+|---|---|
+| People → Users | `directory:user:edit` |
+| People → Work Teams | `groups:team:edit` |
+| Routing → Queues | `routing:queue:edit` |
+| Routing → Call Routes | `routing:callRoute:edit` |
+| Routing → Emergency Groups | `routing:emergencyGroup:edit` |
+| Routing → Extension Pools | `telephony:extensionPool:edit` |
+| Routing → Routing Schedules | `routing:schedule:edit` |
+| Routing → Routing Schedule Groups | `routing:scheduleGroup:edit` |
+| Routing → Skill Groups | `routing:skillgroup:edit` |
+| Architect → Flows | `architect:flow:edit` |
+| Architect → Milestones | `architect:flowMilestone:edit` |
+| Architect → Flow Outcomes | `architect:flowOutcome:edit` |
+| Architect → Scripts | `scripter:script:edit` |
+| Architect → Data Tables | `architect:datatable:edit` |
+| Outbound → Campaigns | `outbound:campaign:edit` |
+| Outbound → Contact Lists | `outbound:contactList:edit` |
+| Outbound → DNC Lists | `outbound:dncList:edit` |
+| Outbound → Email Campaigns | `outbound:emailCampaign:edit` |
+| Outbound → Messaging Campaigns | `outbound:messagingCampaign:edit` |
+| Workforce → Business Units | `wfm:businessUnit:edit` |
+| Workforce → Management Units | `wfm:managementUnit:edit` |
+| Task → Workbins | `workitems:workbin:edit` |
+| Task → Work Types | `workitems:worktype:edit` |
 
 ### Interactions (`interactions.*`)
-| Action | Permission | Status |
-|---|---|---|
-| Recordings → Create Export Job | `recording:job:add` | ✅ |
-| Recordings → Export Jobs (view) | `recording:job:view` | ✅ |
-| Disconnect | `conversation:communication:disconnect` | ⚠ |
-| Move | (no native "move" — likely conversation admin edit) | ⚠ |
+| Action | Permission |
+|---|---|
+| Disconnect | `conversation:communication:disconnect` |
+| Move (blind transfer to queue) | `conversation:communication:blindTransferQueue` |
+| Recordings → Create Export Job | `recording:job:add` |
 
 ### Data Tables (`data-tables.*`)
-| Action | Permission | Status |
-|---|---|---|
-| Create | `architect:datatable:add` | 🟡 |
-| Edit (schema + rows) | `architect:datatable:edit` | 🟡 |
-| Delete | `architect:datatable:delete` | 🟡 |
+| Action | Permission |
+|---|---|
+| Create | `architect:datatable:add` |
+| Edit schema | `architect:datatable:edit` |
+| Edit / add / delete rows | `architect:datatableRow:add` · `:edit` · `:delete` |
+| Delete table | `architect:datatable:delete` |
 
 ### Data Actions (`data-actions.edit`)
-| Action | Permission | Status |
-|---|---|---|
-| Edit / Publish | `integrations:action:edit` | 🟡 |
+| Action | Permission |
+|---|---|
+| Edit | `integrations:action:edit` |
+| Test / run | `integrations:action:execute` |
 
-### Wrapup Codes / Phones / Deployment
-| Feature | Permission | Status |
-|---|---|---|
-| Wrapup create/edit | `routing:wrapupCode:add` / `:edit` | ⚠ |
-| WebRTC phone create/change | `telephony:phone:add` / `:edit` | ⚠ |
-| Deployment (bulk) | many per-object `:add` (DID, sites, skills, schedules…) | ⚠ (own pass) |
+### Wrapup Codes (`wrapupCodes.createEditMapping`)
+| Action | Permission |
+|---|---|
+| Create / edit code | `routing:wrapupCode:add` · `routing:wrapupCode:edit` |
+| Outbound mapping | `outbound:wrapUpCodeMapping:edit` |
+
+### Phones (`phones.webrtc.*`)
+| Action | Permission |
+|---|---|
+| Create WebRTC phone | `telephony:plugin:all` (+ `telephony:phone:assign` to assign to a user) |
+| Change site | `telephony:plugin:all` |
+
+### Deployment (`deployment.*`) — bulk, gate per object type on the sheet's primary write perm
+| Object type | Permission |
+|---|---|
+| Divisions | `authorization:division:add` |
+| Skills | `routing:skill:create` |
+| Language skills | `routing:language:manage` |
+| Schedules | `routing:schedule:add` |
+| Schedule Groups | `routing:scheduleGroup:add` |
+| DID pools / Sites / Number plans / Outbound routes | `telephony:plugin:all` |
+
+### GDPR (`gdpr.*`) — internal write (customer inclusion still TBD, O2)
+| Action | Permission |
+|---|---|
+| Submit subject request | `gdpr:request:add` |
 
 ---
 
@@ -301,7 +329,20 @@ never from a request field:
      route `/utilities/permission-catalog` in `pageRegistry.js`; access key `utilities.permissionCatalog`
      (covered by admin `*`; not granted to Support/Export).
 2. **Internal permission-refinement + hide/disable UX** (§6, §7): `accessState()`, fail-closed,
-   superuser bypass, read-only exemption. Prerequisite audit first.
+   superuser bypass, read-only exemption. Prerequisite audit first. **[PARTIALLY BUILT]**
+   - `js/featurePermissionMap.js` — finalized write-permission map + helpers (`isWriteGated`,
+     `getRequiredPermissions`, `getActionPermissions`).
+   - `resolveAccess()` now fetches the user's own demo-org permissions
+     (`users/me?expand=authorization`), wildcard-aware, and exposes
+     `accessState(key) → allowed | denied-no-permission | hidden` + `getMissingPermissions(key)`.
+   - Enforcement flag `ENFORCE_PERMISSION_REFINEMENT` in `accessService.js` (default **on**;
+     safe because current staff are full-permission).
+   - Nav renders group-granted-but-denied write leaves **disabled** with a tooltip naming the
+     missing permission; route navigation to a denied write page shows the Access Denied page
+     with the missing permission(s). Modules stay visible if they contain any group-granted leaf.
+   - Coverage audit (2c) skipped: all current users are full-permission admins; validation is via
+     a purpose-made restricted test user.
+   - **Remaining:** in-page button-level gating (Delete/Publish/Apply) per page — later increment.
 3. **Foundation for customers:** server-side registry + `GET /api/org-config` + `?org=` resolution
    + post-login org-match + server-side mode detection.
 4. **Harden the proxy:** derive org from session, token-forwarding path, entitlement endpoint

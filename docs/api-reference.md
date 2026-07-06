@@ -135,13 +135,14 @@ Used by: Divisions (all object types), Data Tables — Create, Data Tables — E
 
 ## 5. Users & Groups
 
-Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Trustee Export, Divisions — Users, Documentation Export, WebRTC Phones, Roles — Compare Users, Roles — Permissions vs. Users, Direct Routing — Add user(s), Skill Templates — Add Users To Templates
+Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Trustee Export, Divisions — Users, Documentation Export, WebRTC Phones, Roles — Compare Users, Roles — Permissions vs. Users, Direct Routing — Add user(s), Skill Templates — Add Users To Templates, access control (group + permission refinement)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/users` | List users (paginated; supports `expand=skills,languages,station,division`) |
 | POST | `/api/v2/users/search` | Search users by name/email — body: `{ query: [{ type: "CONTAINS"/"QUERY_STRING", fields: ["name","email"], value }] }` — response key is `results` (not `entities`); used by Compare Users picker, Configure Users |
 | GET | `/api/v2/users/me` | Get current authenticated user and group memberships |
+| GET | `/api/v2/users/me?expand=authorization` | Get the signed-in user's own effective permissions (`authorization.permissions` + `authorization.permissionPolicies`) — used by the access-control layer to gate write features by the user's Genesys permissions (see docs/customer-facing-plan.md §6) |
 | GET | `/api/v2/users/{userId}` | Get a single user by ID |
 | GET | `/api/v2/users/{userId}/directreports` | Get direct reports of a user (Configure Users — Reports To mode) |
 | GET | `/api/v2/users/{userId}?expand=groups` | Get user with `groups` array inline — used to resolve group memberships for Compare Users and All Roles Export attribution (phase 2b) |

@@ -124,8 +124,12 @@ function renderFatalError(message) {
       const loader = getPageLoader(route);
       if (loader) {
         const accessKey = routeAccessMap[route];
-        if (accessKey && !access.hasAccess(accessKey)) {
+        const state = accessKey ? access.accessState(accessKey) : "allowed";
+        if (state === "hidden") {
           return renderAccessDeniedPage();
+        }
+        if (state === "denied-no-permission") {
+          return renderAccessDeniedPage({ missing: access.getMissingPermissions(accessKey) });
         }
         return loader({ route, me: res.me, api, orgContext });
       }
