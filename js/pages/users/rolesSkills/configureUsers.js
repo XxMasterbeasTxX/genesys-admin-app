@@ -124,18 +124,16 @@ export default function renderConfigureUsers({ route, me, api, orgContext, acces
 
   // ── Per-section permission gating (internal refinement) ───────────────
   // A user may reach this page (they have at least one of the section perms),
-  // but each section is usable only if they hold its Genesys permission.
-  // Disable the section body + note the missing permission for the others.
-  // Wrapped defensively so a gating error can never break page initialisation.
+  // but each category is usable only if they hold its Genesys permission.
+  // The four manual sections are locked when denied; the Templates section
+  // stays usable — at apply time only the permitted categories from a template
+  // are applied (so a skills-only template works for a skills-only user).
+  const canApplyRoles     = access && access.can ? access.can("users.rolesSkills.configureUsers", "roles") : true;
+  const canApplySkills    = access && access.can ? access.can("users.rolesSkills.configureUsers", "skills") : true;
+  const canApplyLanguages = access && access.can ? access.can("users.rolesSkills.configureUsers", "languages") : true;
+  const canApplyQueues    = access && access.can ? access.can("users.rolesSkills.configureUsers", "queues") : true;
   try {
-    const canSection = (action) => (access && access.can ? access.can("users.rolesSkills.configureUsers", action) : true);
-    const SECTION_PERMS = {
-      Roles:     { action: "roles",     perm: "authorization:grant:add" },
-      Skills:    { action: "skills",    perm: "routing:skill:assign" },
-      Languages: { action: "languages", perm: "routing:language:assign" },
-      Queues:    { action: "queues",    perm: "routing:queueMember:manage" },
-    };
-    const lockSection = (name, message, tooltip) => {
+    const lockSection = (name, perm) => {
       const body = el.querySelector(`#cuSection${name}`);
       const toggle = el.querySelector(`#cuToggle${name}`);
       if (body) {
@@ -143,20 +141,15 @@ export default function renderConfigureUsers({ route, me, api, orgContext, acces
         body.style.opacity = "0.45";
         const note = document.createElement("p");
         note.style.cssText = "color:var(--muted);font-size:12px;margin:6px 0";
-        note.textContent = message;
+        note.textContent = `You lack the Genesys permission to modify this (${perm}).`;
         body.prepend(note);
       }
-      if (toggle) toggle.title = tooltip;
+      if (toggle) toggle.title = `Requires Genesys permission: ${perm}`;
     };
-    for (const [name, { action, perm }] of Object.entries(SECTION_PERMS)) {
-      if (canSection(action)) continue;
-      lockSection(name, `You lack the Genesys permission to modify this (${perm}).`, `Requires Genesys permission: ${perm}`);
-    }
-    // Applying a template can touch any category, so require all four permissions.
-    const canTemplates = Object.values(SECTION_PERMS).every(({ action }) => canSection(action));
-    if (!canTemplates) {
-      lockSection("Templates", "Applying templates requires role, skill, language, and queue permissions.", "Requires role, skill, language, and queue permissions");
-    }
+    if (!canApplyRoles)     lockSection("Roles", "authorization:grant:add");
+    if (!canApplySkills)    lockSection("Skills", "routing:skill:assign");
+    if (!canApplyLanguages) lockSection("Languages", "routing:language:assign");
+    if (!canApplyQueues)    lockSection("Queues", "routing:queueMember:manage");
   } catch (err) {
     console.error("[configureUsers] permission gating failed (ignored):", err);
   }
@@ -1326,6 +1319,13 @@ export default function renderConfigureUsers({ route, me, api, orgContext, acces
       }
     }
 
+    // Drop any category the user lacks permission for (covers template-derived
+    // items — manual sections are already locked in the UI).
+    if (!canApplyRoles) finalRoles.length = 0;
+    if (!canApplySkills) finalSkills.length = 0;
+    if (!canApplyLanguages) finalLanguages.length = 0;
+    if (!canApplyQueues) finalQueueIds.clear();
+
     const totalUsers = users.length;
 
     // Build detailed confirmation body
@@ -1497,6 +1497,12 @@ export default function renderConfigureUsers({ route, me, api, orgContext, acces
     const uniqueRoleIds = [...new Set(allRemoveRoles.map((r) => r.roleId))];
     const uniqueSkillIds = [...new Set(allRemoveSkills.map((s) => s.skillId))];
     const uniqueLangIds = [...new Set(allRemoveLangs.map((l) => l.languageId))];
+
+    // Drop any category the user lacks permission for (covers template-derived items).
+    if (!canApplyRoles) uniqueRoleIds.length = 0;
+    if (!canApplySkills) uniqueSkillIds.length = 0;
+    if (!canApplyLanguages) uniqueLangIds.length = 0;
+    if (!canApplyQueues) allRemoveQueueIds.clear();
 
     // Build confirmation message
     if (selectedTemplates.length) {
