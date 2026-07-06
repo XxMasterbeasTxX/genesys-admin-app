@@ -11,7 +11,7 @@
  */
 export const RELEASE_NOTES = [
   {
-    version: "1.2",
+    version: "1.1",
     date: "2026-07-06",
     title: "Permission Catalog page",
     changes: [
