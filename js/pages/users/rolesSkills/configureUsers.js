@@ -21,7 +21,7 @@ import {
   deleteAssignmentByUserTemplate,
 } from "../../../services/templateAssignmentService.js";
 
-export default function renderConfigureUsers({ route, me, api, orgContext }) {
+export default function renderConfigureUsers({ route, me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -121,6 +121,40 @@ export default function renderConfigureUsers({ route, me, api, orgContext }) {
   const $progressLog = el.querySelector("#cuProgressLog");
   const $btnApply = el.querySelector("#cuBtnApply");
   const $userList = el.querySelector("#cuUserList");
+
+  // ── Per-section permission gating (internal refinement) ───────────────
+  // A user may reach this page (they have at least one of the section perms),
+  // but each section is usable only if they hold its Genesys permission.
+  // Disable the section body + note the missing permission for the others.
+  const canSection = (action) => (access && access.can ? access.can("users.rolesSkills.configureUsers", action) : true);
+  const SECTION_PERMS = {
+    Roles:     { action: "roles",     perm: "authorization:grant:add" },
+    Skills:    { action: "skills",    perm: "routing:skill:assign" },
+    Languages: { action: "languages", perm: "routing:language:assign" },
+    Queues:    { action: "queues",    perm: "routing:queueMember:manage" },
+  };
+  function lockSection(name, message, tooltip) {
+    const body = el.querySelector(`#cuSection${name}`);
+    const toggle = el.querySelector(`#cuToggle${name}`);
+    if (body) {
+      body.style.pointerEvents = "none";
+      body.style.opacity = "0.45";
+      const note = document.createElement("p");
+      note.style.cssText = "color:var(--muted);font-size:12px;margin:6px 0";
+      note.textContent = message;
+      body.prepend(note);
+    }
+    if (toggle) toggle.title = tooltip;
+  }
+  for (const [name, { action, perm }] of Object.entries(SECTION_PERMS)) {
+    if (canSection(action)) continue;
+    lockSection(name, `You lack the Genesys permission to modify this (${perm}).`, `Requires Genesys permission: ${perm}`);
+  }
+  // Applying a template can touch any category, so require all four permissions.
+  const canTemplates = Object.values(SECTION_PERMS).every(({ action }) => canSection(action));
+  if (!canTemplates) {
+    lockSection("Templates", "Applying templates requires role, skill, language, and queue permissions.", "Requires role, skill, language, and queue permissions");
+  }
 
   // ── State ─────────────────────────────────────────────
   let allSkills = [];
