@@ -84,6 +84,8 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   // Create/Edit Template is gated the same as Manage Templates: a template you
   // cannot apply is useless, so require the same apply permissions.
   "users.rolesSkills.createTemplate":      { apply: ["authorization:grant:add", "routing:skill:assign", "routing:language:assign", "routing:queueMember:manage"] },
+  // Template Schedules apply templates on a schedule → same apply permissions.
+  "users.rolesSkills.templateSchedules":   { apply: ["authorization:grant:add", "routing:skill:assign", "routing:language:assign", "routing:queueMember:manage"] },
   "users.directRouting.add":               { edit: ["directory:user:edit", "routing:directRoutingBackup:edit"] },
 
   // ── GDPR (customer inclusion TBD — O2) ───────────────
