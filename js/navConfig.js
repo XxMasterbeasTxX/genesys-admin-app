@@ -327,6 +327,7 @@ export const NAV_TREE = [
     enabled: true,
     children: [
       { label: "IP Ranges", path: "ip-ranges", enabled: true, access: "utilities.ipRanges" },
+      { label: "Permission Catalog", path: "permission-catalog", enabled: true, access: "utilities.permissionCatalog" },
     ],
   },
 ];

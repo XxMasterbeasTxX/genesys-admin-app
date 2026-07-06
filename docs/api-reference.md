@@ -114,7 +114,7 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 
 ## 4. Authorization & Divisions
 
-Used by: Divisions (all object types), Data Tables — Create, Data Tables — Edit, export pages, All Roles Export, Deployment — Basic, Roles — Compare (all three modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit, Skill Templates — Add Users To Templates
+Used by: Divisions (all object types), Data Tables — Create, Data Tables — Edit, export pages, All Roles Export, Deployment — Basic, Roles — Compare (all three modes), Roles — Permissions vs. Users, Roles — Create, Roles — Edit, Skill Templates — Add Users To Templates, Utilities — Permission Catalog
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -125,7 +125,7 @@ Used by: Divisions (all object types), Data Tables — Create, Data Tables — E
 | GET | `/api/v2/authorization/roles/{roleId}` | Get a single role with full `permissionPolicies` (Roles — Compare, Roles — Compare Hourly Interacting, Roles — Edit pre-fill, Roles — Copy source pre-fill) |
 | POST | `/api/v2/authorization/roles` | **Create** a new authorization role — body: `{ name, description, permissionPolicies }` (Roles — Create, Roles — Copy Same Org, Roles — Copy Between Orgs target) |
 | PUT | `/api/v2/authorization/roles/{roleId}` | **Full-replace** an existing authorization role — same body shape (Roles — Edit) |
-| GET | `/api/v2/authorization/permissions` | List the full permission catalog — domain/entity/action entries with `allowConditions` flag; used by Roles — Compare (Compare Roles + Hourly Interacting), Permissions vs. Users, Create, and Edit to expand wildcard policies (paginated, `pageSize=100`, looped via `pageCount`) |
+| GET | `/api/v2/authorization/permissions` | List the full permission catalog — domain/entity/action entries with `allowConditions` flag; used by Roles — Compare (Compare Roles + Hourly Interacting), Permissions vs. Users, Create, and Edit to expand wildcard policies, and by Utilities — Permission Catalog to list every `domain:entity:action` (paginated, `pageSize=100`, looped via `pageCount`) |
 | GET | `/api/v2/authorization/roles/{roleId}/users` | List users assigned a specific role (Roles — Permissions vs. Users Step 2, Roles Export) |
 | POST | `/api/v2/authorization/roles/{roleId}` | **Grant** a role to subjects with division scope. Payload must include real division IDs when scoping by division; do not send synthetic zero-GUID scope IDs (Deployment — Basic Users, Configure Users) |
 | GET | `/api/v2/authorization/subjects/{subjectId}` | Get effective role grants for a user or group — returns `{ grants: [{ role: { id, name }, division }] }` at top level (Compare Users, Permissions vs. Users attribution, All Roles Export step 3 attribution) |
