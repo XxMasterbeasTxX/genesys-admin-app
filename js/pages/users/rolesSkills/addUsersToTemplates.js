@@ -19,7 +19,7 @@ import {
   deleteAssignmentByWorkteamTemplate,
 } from "../../../services/templateAssignmentService.js";
 
-export default function renderAddUsersToTemplates({ route, me, api, orgContext }) {
+export default function renderAddUsersToTemplates({ route, me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -33,6 +33,13 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
   }
 
   const orgId = org.id;
+
+  // Per-category permission gating (internal refinement): only apply/remove the
+  // template categories the user holds the Genesys permission for.
+  const canApplyRoles     = access && access.can ? access.can("users.rolesSkills.addUsersToTemplates", "roles") : true;
+  const canApplySkills    = access && access.can ? access.can("users.rolesSkills.addUsersToTemplates", "skills") : true;
+  const canApplyLanguages = access && access.can ? access.can("users.rolesSkills.addUsersToTemplates", "languages") : true;
+  const canApplyQueues    = access && access.can ? access.can("users.rolesSkills.addUsersToTemplates", "queues") : true;
 
   el.innerHTML = `
     <h1 class="h1">Add Users To Templates</h1>
@@ -914,10 +921,10 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
     const $text = $detail.querySelector("#autProgressText");
     const $log  = $detail.querySelector("#autProgressLog");
 
-    const rolesStep = (t.roles || []).length > 0 ? 1 : 0;
-    const skillsStep = (t.skills || []).length > 0 ? 1 : 0;
-    const langsStep = (t.languages || []).length > 0 ? 1 : 0;
-    const queueSteps = (t.queues || []).length;
+    const rolesStep = (canApplyRoles && (t.roles || []).length > 0) ? 1 : 0;
+    const skillsStep = (canApplySkills && (t.skills || []).length > 0) ? 1 : 0;
+    const langsStep = (canApplyLanguages && (t.languages || []).length > 0) ? 1 : 0;
+    const queueSteps = canApplyQueues ? (t.queues || []).length : 0;
     const stepsPerUser = rolesStep + skillsStep + langsStep + queueSteps;
     const totalSteps = users.length * stepsPerUser;
     let currentStep = 0;
@@ -944,7 +951,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
 
     for (const user of users) {
       try {
-        if ((t.roles || []).length) {
+        if (canApplyRoles && (t.roles || []).length) {
           advance(`Assigning roles to ${user.name}`);
           const rolePayloads = [];
           for (const r of t.roles) {
@@ -956,19 +963,19 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
           }
           await gc.grantUserRoles(api, orgId, user.id, rolePayloads);
         }
-        if ((t.skills || []).length) {
+        if (canApplySkills && (t.skills || []).length) {
           advance(`Adding skills to ${user.name}`);
           await gc.addUserRoutingSkillsBulk(api, orgId, user.id,
             t.skills.map((s) => ({ id: s.skillId, proficiency: s.proficiency || 0 })),
           );
         }
-        if ((t.languages || []).length) {
+        if (canApplyLanguages && (t.languages || []).length) {
           advance(`Adding languages to ${user.name}`);
           await gc.addUserRoutingLanguagesBulk(api, orgId, user.id,
             t.languages.map((l) => ({ id: l.languageId, proficiency: l.proficiency || 0 })),
           );
         }
-        for (const q of t.queues || []) {
+        for (const q of (canApplyQueues ? (t.queues || []) : [])) {
           advance(`Adding ${user.name} to queue ${q.queueName}`);
           await gc.addQueueMembers(api, orgId, q.queueId, [{ id: user.id }]);
         }
@@ -989,10 +996,10 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
   }
 
   async function removeTemplateFromUsers(t, members) {
-    const uniqueRoleIds = [...new Set((t.roles || []).map((r) => r.roleId))];
-    const uniqueSkillIds = [...new Set((t.skills || []).map((s) => s.skillId))];
-    const uniqueLangIds = [...new Set((t.languages || []).map((l) => l.languageId))];
-    const uniqueQueueIds = [...new Set((t.queues || []).map((q) => q.queueId))];
+    const uniqueRoleIds = canApplyRoles ? [...new Set((t.roles || []).map((r) => r.roleId))] : [];
+    const uniqueSkillIds = canApplySkills ? [...new Set((t.skills || []).map((s) => s.skillId))] : [];
+    const uniqueLangIds = canApplyLanguages ? [...new Set((t.languages || []).map((l) => l.languageId))] : [];
+    const uniqueQueueIds = canApplyQueues ? [...new Set((t.queues || []).map((q) => q.queueId))] : [];
 
     for (const member of members) {
       const userName = member.name || member.id;
@@ -1097,10 +1104,10 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext }
     if (!confirmed) return;
 
     // Calculate steps
-    const uniqueRoleIds = [...new Set((t.roles || []).map((r) => r.roleId))];
-    const uniqueSkillIds = [...new Set((t.skills || []).map((s) => s.skillId))];
-    const uniqueLangIds = [...new Set((t.languages || []).map((l) => l.languageId))];
-    const uniqueQueueIds = [...new Set((t.queues || []).map((q) => q.queueId))];
+    const uniqueRoleIds = canApplyRoles ? [...new Set((t.roles || []).map((r) => r.roleId))] : [];
+    const uniqueSkillIds = canApplySkills ? [...new Set((t.skills || []).map((s) => s.skillId))] : [];
+    const uniqueLangIds = canApplyLanguages ? [...new Set((t.languages || []).map((l) => l.languageId))] : [];
+    const uniqueQueueIds = canApplyQueues ? [...new Set((t.queues || []).map((q) => q.queueId))] : [];
     const stepsPerUser = uniqueRoleIds.length + uniqueSkillIds.length + uniqueLangIds.length + uniqueQueueIds.length + 1; // +1 for assignment record
     const totalSteps = toRemove.length * stepsPerUser;
     let currentStep = 0;
