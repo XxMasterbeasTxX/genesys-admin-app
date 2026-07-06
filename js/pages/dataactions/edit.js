@@ -41,7 +41,7 @@ const STATUS = {
 };
 
 // ── Page renderer ───────────────────────────────────────────────────
-export default function renderEditDataAction({ route, me, api, orgContext }) {
+export default function renderEditDataAction({ route, me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -268,6 +268,14 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
   const $progress      = el.querySelector("#edProgress");
   const $progressBar   = el.querySelector("#edProgressBar");
   const $status        = el.querySelector("#edStatus");
+
+  // ── Permission-based action gating (internal refinement) ──────────────
+  const canEdit    = access && access.can ? access.can("data-actions.edit", "edit") : true;
+  const canExecute = access && access.can ? access.can("data-actions.edit", "execute") : true;
+  if (!canEdit) {
+    $saveBtn.title = $validateBtn.title = $publishBtn.title = "Requires Genesys permission: integrations:action:edit";
+  }
+  if (!canExecute) $testBtn.title = "Requires Genesys permission: integrations:action:execute";
 
   let allActions = [];        // merged published + draft-only
   let integrations = [];      // org integrations
@@ -586,10 +594,10 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
       }
 
       // Enable buttons
-      $saveBtn.disabled = false;
-      $validateBtn.disabled = !(hasDraft || item.status === "Draft");
-      $publishBtn.disabled = !(hasDraft || item.status === "Draft");
-      $testBtn.disabled = false;
+      $saveBtn.disabled = !canEdit;
+      $validateBtn.disabled = !canEdit || !(hasDraft || item.status === "Draft");
+      $publishBtn.disabled = !canEdit || !(hasDraft || item.status === "Draft");
+      $testBtn.disabled = !canExecute;
 
       $detail.hidden = false;
       hideProgress();
@@ -651,8 +659,8 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
       setProgress(100);
       $infoStatus.textContent = "Published + Draft";
       $infoVersion.textContent = updated.version != null ? updated.version : "—";
-      $validateBtn.disabled = false;
-      $publishBtn.disabled = false;
+      $validateBtn.disabled = !canEdit;
+      $publishBtn.disabled = !canEdit;
 
       // Update test target to include draft option
       if (!$testTarget.querySelector('option[value="draft"]')) {
@@ -780,10 +788,10 @@ export default function renderEditDataAction({ route, me, api, orgContext }) {
   function enableActions() {
     $loadBtn.disabled = !$org.value;
     if ($actionSelect.value && selectedFull) {
-      $saveBtn.disabled = false;
-      $validateBtn.disabled = !hasDraft;
-      $publishBtn.disabled = !hasDraft;
-      $testBtn.disabled = false;
+      $saveBtn.disabled = !canEdit;
+      $validateBtn.disabled = !canEdit || !hasDraft;
+      $publishBtn.disabled = !canEdit || !hasDraft;
+      $testBtn.disabled = !canExecute;
     }
   }
 
