@@ -59,8 +59,14 @@ async function fetchUserGroupNames(accessToken) {
 
 /**
  * Fetch the authenticated user's effective Genesys permissions (company org).
- * Returns an array of permission strings (possibly containing wildcards), or
- * null if the call fails.
+ *
+ * Reads BOTH `authorization.permissions` (flat strings, may include wildcards)
+ * and `authorization.permissionPolicies` (domain/entityName/actionSet) from the
+ * `me` endpoint and merges them — some orgs populate only one of the two. Each
+ * policy is flattened to `domain:entity:action` strings (wildcards preserved).
+ *
+ * Returns an array of permission strings, or null if the call fails / the
+ * authorization block is entirely absent (→ callers fail closed for writes).
  */
 async function fetchUserPermissions(accessToken) {
   const headers = { Authorization: `Bearer ${accessToken}` };
@@ -71,8 +77,38 @@ async function fetchUserPermissions(accessToken) {
       console.error("[accessService] users/me?expand=authorization error:", resp.status, json);
       return null;
     }
-    const perms = json?.authorization?.permissions;
-    return Array.isArray(perms) ? perms : null;
+
+    const auth = json && json.authorization ? json.authorization : null;
+    if (!auth) {
+      console.warn("[accessService] users/me returned no authorization block:", json);
+      return null;
+    }
+
+    const perms = new Set();
+
+    // 1) Flat permission strings (may already include wildcard forms).
+    if (Array.isArray(auth.permissions)) {
+      for (const p of auth.permissions) if (p) perms.add(p);
+    }
+
+    // 2) Derive from permission policies (domain:entity:action, wildcard-aware).
+    if (Array.isArray(auth.permissionPolicies)) {
+      for (const pol of auth.permissionPolicies) {
+        if (!pol || !pol.domain) continue;
+        const entity = pol.entityName || "*";
+        const actions = Array.isArray(pol.actionSet) && pol.actionSet.length ? pol.actionSet : ["*"];
+        for (const action of actions) perms.add(`${pol.domain}:${entity}:${action}`);
+      }
+    }
+
+    if (!Array.isArray(auth.permissions) && !Array.isArray(auth.permissionPolicies)) {
+      console.warn("[accessService] authorization has neither permissions nor permissionPolicies:", auth);
+      return null;
+    }
+
+    const list = [...perms];
+    console.info(`[accessService] fetched ${list.length} effective permission entries`, list);
+    return list;
   } catch (err) {
     console.error("[accessService] permission fetch failed:", err);
     return null;
