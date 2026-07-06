@@ -6,7 +6,7 @@
  */
 import { CONFIG } from "../config.js";
 import { SUPERUSER_IDS } from "../accessConfig.js";
-import { isWriteGated, getRequiredPermissions } from "../featurePermissionMap.js";
+import { isWriteGated, getRequiredPermissions, getActionPermissions } from "../featurePermissionMap.js";
 
 // Feature flag: when true, internal users' WRITE actions are additionally gated
 // by their OWN Genesys permissions in the company org (see docs/customer-facing-plan.md
@@ -203,10 +203,26 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
     return required.filter((p) => !hasPermission(p));
   }
 
+  /**
+   * In-page capability check for a specific logical action of a feature
+   * (e.g. can("data-tables.edit", "rowsDelete")). Returns true when the action
+   * has no permission mapping, or the user holds every permission it requires.
+   * Superusers always true; fail-closed when permissions couldn't be read.
+   */
+  function can(accessKey, action) {
+    if (isSuper) return true;
+    if (!ENFORCE_PERMISSION_REFINEMENT) return true;
+    const perms = getActionPermissions(accessKey, action);
+    if (!perms.length) return true;
+    if (!permsAvailable) return false;
+    return perms.every(hasPermission);
+  }
+
   return {
     hasAccess,
     hasAnyAccess() { return isSuper || groupsFailed || keys.size > 0; },
     accessState,
     getMissingPermissions,
+    can,
   };
 }

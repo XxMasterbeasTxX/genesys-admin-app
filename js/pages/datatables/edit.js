@@ -20,7 +20,7 @@ const TYPE_OPTIONS_HTML = COLUMN_TYPES
   .map(t => `<option value="${t.type}">${t.label}</option>`)
   .join("");
 
-export default function renderEditDataTable({ me, api, orgContext }) {
+export default function renderEditDataTable({ me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -319,6 +319,20 @@ export default function renderEditDataTable({ me, api, orgContext }) {
   const $rowsNextBtn = el.querySelector("#dteRowsNextBtn");
   const $rowsPagerInfo = el.querySelector("#dteRowsPagerInfo");
 
+  // ── Permission-based action gating (internal refinement) ──────────────
+  // A user may see this page (group access) but lack specific write permissions.
+  // Disable the buttons whose Genesys permission they don't hold, with a tooltip.
+  const canDo = (action) => (access && access.can ? access.can("data-tables.edit", action) : true);
+  const canSchemaEdit = canDo("schemaEdit");
+  const canRowsAdd    = canDo("rowsAdd");
+  const canRowsEdit   = canDo("rowsEdit");
+  const canRowsDelete = canDo("rowsDelete");
+  const canRowsSave   = canRowsAdd || canRowsEdit || canRowsDelete;
+  if (!canSchemaEdit) $schemaSaveBtn.title = "Requires Genesys permission: architect:datatable:edit";
+  if (!canRowsAdd)    $rowsAddBtn.title    = "Requires Genesys permission: architect:datatableRow:add";
+  if (!canRowsDelete) $rowsDeleteBtn.title = "Requires Genesys permission: architect:datatableRow:delete";
+  if (!canRowsSave)   $rowsSaveBtn.title   = "Requires a Genesys datatable row permission (add/edit/delete)";
+
   let divisionsLoaded = false;
   let schemaRowCounter = 0;
   let _mode = "schema";
@@ -505,7 +519,7 @@ export default function renderEditDataTable({ me, api, orgContext }) {
       && divisionsLoaded
       && !!_currentTableId
       && !_isLoadingTable;
-    $schemaSaveBtn.disabled = !ok;
+    $schemaSaveBtn.disabled = !ok || !canSchemaEdit;
   }
 
   function getDirtyRowsCount() {
@@ -514,10 +528,10 @@ export default function renderEditDataTable({ me, api, orgContext }) {
 
   function validateRowsSave() {
     const disabled = !_currentTableId || _isLoadingTable || getDirtyRowsCount() === 0;
-    $rowsSaveBtn.disabled = disabled;
+    $rowsSaveBtn.disabled = disabled || !canRowsSave;
     $rowsUndoBtn.disabled = disabled;
-    $rowsAddBtn.disabled = !_currentTableId || _isLoadingTable || !_rowsColumns.length;
-    $rowsDeleteBtn.disabled = !_currentTableId || _isLoadingTable || _selectedRowIds.size === 0;
+    $rowsAddBtn.disabled = !_currentTableId || _isLoadingTable || !_rowsColumns.length || !canRowsAdd;
+    $rowsDeleteBtn.disabled = !_currentTableId || _isLoadingTable || _selectedRowIds.size === 0 || !canRowsDelete;
     $rowsDeleteBtn.textContent = _selectedRowIds.size > 0
       ? `Delete Selected (${_selectedRowIds.size})`
       : "Delete Selected";

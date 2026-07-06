@@ -131,7 +131,7 @@ function renderFatalError(message) {
         if (state === "denied-no-permission") {
           return renderAccessDeniedPage({ missing: access.getMissingPermissions(accessKey) });
         }
-        return loader({ route, me: res.me, api, orgContext });
+        return loader({ route, me: res.me, api, orgContext, access });
       }
 
       // Folder prefix? Redirect to its first leaf.
