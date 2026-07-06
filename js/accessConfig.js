@@ -136,6 +136,7 @@
  *
  *   UTILITIES
  *   utilities.ipRanges                 IP Ranges
+ *   utilities.permissionCatalog        Permission Catalog (internal-only)
  *
  *   WRAPUP CODES
  *   wrapupCodes.createEditMapping      Create/Edit/Mapping
