@@ -67,7 +67,7 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   "interactions.recordings.create": { create: ["recording:job:add"] },
 
   // ── Wrapup Codes ─────────────────────────────────────
-  "wrapupCodes.createEditMapping": { edit: ["routing:wrapupCode:add", "routing:wrapupCode:edit"], mapping: ["outbound:wrapUpCodeMapping:edit"] },
+  "wrapupCodes.createEditMapping": { create: ["routing:wrapupCode:add"], edit: ["routing:wrapupCode:edit"], mapping: ["outbound:wrapUpCodeMapping:edit"] },
 
   // ── Phones (no granular phone perm → telephony:plugin:all) ──
   "phones.webrtc.create":     { create: ["telephony:plugin:all"] },
@@ -86,7 +86,7 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   "users.rolesSkills.createTemplate":      { roles: ["authorization:grant:add"], skills: ["routing:skill:assign"], languages: ["routing:language:assign"], queues: ["routing:queueMember:manage"] },
   // Template Schedules apply templates on a schedule → same apply permissions.
   "users.rolesSkills.templateSchedules":   { apply: ["authorization:grant:add", "routing:skill:assign", "routing:language:assign", "routing:queueMember:manage"] },
-  "users.directRouting.add":               { edit: ["directory:user:edit", "routing:directRoutingBackup:edit"] },
+  "users.directRouting.add":               { addresses: ["directory:user:edit"], backup: ["routing:directRoutingBackup:edit"] },
 
   // ── GDPR (customer inclusion TBD — O2) ───────────────
   "gdpr.subjectRequest": { create: ["gdpr:request:add"] },

@@ -59,7 +59,7 @@ function takeSnapshot(user, backup) {
 
 // ── Page renderer ───────────────────────────────────────────────────
 
-export default function renderAddUsers({ route, me, api, orgContext }) {
+export default function renderAddUsers({ route, me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -158,6 +158,11 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
   const $status       = el.querySelector("#drStatus");
   const $progressWrap = el.querySelector("#drProgressWrap");
   const $progressBar  = el.querySelector("#drProgressBar");
+
+  // Per-action permission gating (internal refinement): only apply the changes
+  // the user holds the Genesys permission for (addresses vs. backup routing).
+  const canEditAddresses = access && access.can ? access.can("users.directRouting.add", "addresses") : true;
+  const canEditBackup    = access && access.can ? access.can("users.directRouting.add", "backup") : true;
   const $summary      = el.querySelector("#drSummary");
 
   // ── Helpers ─────────────────────────────────────────
@@ -705,16 +710,18 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
       const orig = data.orig;
 
       const addressChanged =
-        orig.drPhoneType !== curr.drPhoneType ||
-        JSON.stringify(orig.drEmails) !== JSON.stringify(curr.drEmails) ||
-        orig.primaryPhoneType !== curr.primaryPhoneType;
+        canEditAddresses && (
+          orig.drPhoneType !== curr.drPhoneType ||
+          JSON.stringify(orig.drEmails) !== JSON.stringify(curr.drEmails) ||
+          orig.primaryPhoneType !== curr.primaryPhoneType);
 
       const backupChanged =
-        orig.backupType !== curr.backupType ||
-        orig.backupUserId !== curr.backupUserId ||
-        orig.backupQueueId !== curr.backupQueueId ||
-        orig.waitForAgent !== curr.waitForAgent ||
-        orig.agentWaitSeconds !== curr.agentWaitSeconds;
+        canEditBackup && (
+          orig.backupType !== curr.backupType ||
+          orig.backupUserId !== curr.backupUserId ||
+          orig.backupQueueId !== curr.backupQueueId ||
+          orig.waitForAgent !== curr.waitForAgent ||
+          orig.agentWaitSeconds !== curr.agentWaitSeconds);
 
       if (addressChanged || backupChanged) {
         changes.push({ uid, data, curr, addressChanged, backupChanged });
