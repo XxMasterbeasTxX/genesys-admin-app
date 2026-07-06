@@ -11,6 +11,17 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "1.2",
+    date: "2026-07-06",
+    title: "Permission Catalog page",
+    changes: [
+      "Added Utilities > Permission Catalog — an internal, admin-only page that lists the full Genesys Cloud permission catalog (domain:entity:action) for the selected org.",
+      "Live filter over the permission string and label, sortable columns, and summary counts of domains, entities, and permissions.",
+      "Copy permissions (all filtered strings, one per line) with an iframe-safe clipboard fallback, plus Export to Excel.",
+      "Read-only; built to author and verify the feature → permission map for the upcoming customer-facing expansion.",
+    ],
+  },
+  {
     version: "1.0",
     date: "2026-07-04",
     title: "Azure migration & Dev/Prod environments",
