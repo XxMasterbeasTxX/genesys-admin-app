@@ -81,8 +81,30 @@ function buildList(nodes, parentPath, access) {
 
       li.append(btn, childUl);
     } else {
-      // Leaf — skip if user doesn't have access
-      if (node.access && !access.hasAccess(node.access)) continue;
+      // Leaf — resolve access state (hidden / denied-no-permission / allowed).
+      const state = node.access
+        ? (access.accessState ? access.accessState(node.access)
+            : (access.hasAccess(node.access) ? "allowed" : "hidden"))
+        : "allowed";
+
+      if (state === "hidden") continue; // no group access → hide entirely
+
+      if (state === "denied-no-permission") {
+        // Group grants the feature, but the user lacks the Genesys permission for
+        // its write action — show it disabled with a tooltip naming what's missing.
+        const span = document.createElement("span");
+        span.className = "nav-leaf nav-leaf--denied";
+        span.textContent = node.label;
+        span.setAttribute("aria-disabled", "true");
+        span.style.cssText = "opacity:.45;cursor:not-allowed;";
+        const missing = access.getMissingPermissions ? access.getMissingPermissions(node.access) : [];
+        span.title = missing.length
+          ? `Requires Genesys permission: ${missing.join(", ")}`
+          : "You lack the required Genesys permission for this action.";
+        li.appendChild(span);
+        ul.appendChild(li);
+        continue;
+      }
 
       const a = document.createElement("a");
       a.className = "nav-leaf";
