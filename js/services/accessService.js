@@ -107,8 +107,7 @@ async function fetchUserPermissions(accessToken) {
     }
 
     const list = [...perms];
-    console.info(`[accessService] fetched ${list.length} effective permission entries`, list);
-    try { if (typeof window !== "undefined") window.__gcPerms = list; } catch { /* ignore */ }
+    console.info(`[accessService] fetched ${list.length} effective permission entries`);
     return list;
   } catch (err) {
     console.error("[accessService] permission fetch failed:", err);

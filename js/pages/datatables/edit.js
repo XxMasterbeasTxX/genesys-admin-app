@@ -328,7 +328,6 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   const canRowsEdit   = canDo("rowsEdit");
   const canRowsDelete = canDo("rowsDelete");
   const canRowsSave   = canRowsAdd || canRowsEdit || canRowsDelete;
-  console.info("[dte] permission gating:", { hasAccess: !!access, hasCan: !!(access && access.can), canSchemaEdit, canRowsAdd, canRowsEdit, canRowsDelete, canRowsSave });
   if (!canSchemaEdit) $schemaSaveBtn.title = "Requires Genesys permission: architect:datatable:edit";
   if (!canRowsAdd)    $rowsAddBtn.title    = "Requires Genesys permission: architect:datatableRow:add";
   if (!canRowsDelete) $rowsDeleteBtn.title = "Requires Genesys permission: architect:datatableRow:delete";
