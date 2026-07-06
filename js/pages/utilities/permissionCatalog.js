@@ -250,14 +250,33 @@ export default async function renderPermissionCatalog(ctx = {}) {
 
   $refresh.addEventListener("click", load);
 
-  $copy.addEventListener("click", async () => {
+  $copy.addEventListener("click", () => {
     const text = filteredRows().map((r) => r.permission).join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-      $copied.style.display = "inline";
-      setTimeout(() => { $copied.style.display = "none"; }, 1500);
-    } catch {
-      setStatus("Copy failed — clipboard not available.", "error");
+
+    const finish = (ok) => {
+      if (ok) {
+        $copied.style.display = "inline";
+        setTimeout(() => { $copied.style.display = "none"; }, 1500);
+      } else {
+        setStatus("Copy failed — clipboard not available.", "error");
+      }
+    };
+
+    const fallback = () => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); finish(true); }
+      catch { finish(false); }
+      document.body.removeChild(ta);
+    };
+
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => finish(true)).catch(fallback);
+    } else {
+      fallback();
     }
   });
 
