@@ -474,6 +474,28 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     }
 
     card.append(toggle, section);
+
+    // ── Per-section permission gating (internal refinement) ──
+    // Lock the section(s) the user lacks the Genesys permission for.
+    if (!canEditAddresses) {
+      addrSection.style.pointerEvents = "none";
+      addrSection.style.opacity = "0.5";
+      addrToggle.title = "Requires Genesys permission: directory:user:edit";
+      const note = document.createElement("div");
+      note.style.cssText = "color:var(--muted);font-size:12px;margin:4px 0";
+      note.textContent = "You lack the Genesys permission to change addresses / direct routing (directory:user:edit).";
+      addrSection.prepend(note);
+    }
+    if (!canEditBackup) {
+      section.style.pointerEvents = "none";
+      section.style.opacity = "0.5";
+      toggle.title = "Requires Genesys permission: routing:directRoutingBackup:edit";
+      const note = document.createElement("div");
+      note.style.cssText = "color:var(--muted);font-size:12px;margin:4px 0";
+      note.textContent = "You lack the Genesys permission to change backup routing (routing:directRoutingBackup:edit).";
+      section.prepend(note);
+    }
+
     return card;
   }
 
