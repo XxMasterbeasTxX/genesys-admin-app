@@ -507,10 +507,21 @@ CUSTOMER_REGISTRY_JSON    (JSON array with customer orgId + entitlements)
     "name": "Acme Corp",
     "orgId": "11111111-2222-3333-4444-555555555555",
     "region": "mypurecloud.de",
+    "clientId": "customer-org-pkce-client-id",
     "entitlements": ["interactions.*", "audit.*", "export.users.*"],
     "enabled": true
   }
 ]
+```
+
+`clientId` is the customer org's PKCE OAuth client (public, not a secret) and is
+only required once the customer login path is enabled.
+
+Optional Step 4 flag:
+
+```text
+ENFORCE_ENTITLEMENT_ALLOWLIST  (default off; when "true", customer requests must
+                                map to a purchased module — fail-closed)
 ```
 
 If `INTERNAL_COMPANY_ORG_ID` and `CUSTOMER_REGISTRY_JSON` are both omitted, the app runs in

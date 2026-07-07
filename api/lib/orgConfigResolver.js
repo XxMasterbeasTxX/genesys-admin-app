@@ -1,7 +1,32 @@
 const customers = require("./customers.json");
+const crypto = require("crypto");
 
 const DEFAULT_REGION = process.env.GENESYS_HOME_REGION || "mypurecloud.de";
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim().toLowerCase();
+
+// Cache caller classification per token to avoid an organizations/me call on
+// every proxy request. Keyed by a hash of the token (never the token itself).
+const CLASSIFY_TTL_MS = 5 * 60 * 1000;
+const classificationCache = new Map();
+
+function tokenKey(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function getCachedClassification(token) {
+  const key = tokenKey(token);
+  const entry = classificationCache.get(key);
+  if (entry && Date.now() < entry.expiresAt) return entry.value;
+  if (entry) classificationCache.delete(key);
+  return null;
+}
+
+function setCachedClassification(token, value) {
+  classificationCache.set(tokenKey(token), {
+    value,
+    expiresAt: Date.now() + CLASSIFY_TTL_MS,
+  });
+}
 
 function normalizeOrgId(value) {
   return String(value || "").trim().toLowerCase();
@@ -24,6 +49,7 @@ function parseRegistry(context) {
         const orgId = normalizeOrgId(entry.orgId || entry.organizationId);
         const region = String(entry.region || "").trim();
         const name = String(entry.name || id || "").trim();
+        const clientId = String(entry.clientId || "").trim();
         const entitlements = Array.isArray(entry.entitlements)
           ? entry.entitlements.filter((e) => typeof e === "string" && e.trim())
           : [];
@@ -33,6 +59,7 @@ function parseRegistry(context) {
           name,
           orgId,
           region,
+          clientId,
           entitlements,
           enabled: entry.enabled !== false,
         };
@@ -44,6 +71,10 @@ function parseRegistry(context) {
   }
 }
 
+function isConfigured(registry) {
+  return !!INTERNAL_COMPANY_ORG_ID || (registry && registry.length > 0);
+}
+
 async function fetchOrganizationMe(accessToken, region) {
   const resp = await fetch(`https://api.${region}/api/v2/organizations/me`, {
     method: "GET",
@@ -53,7 +84,9 @@ async function fetchOrganizationMe(accessToken, region) {
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const detail = json.message || json.error || JSON.stringify(json) || "unknown";
-    throw new Error(`organizations/me failed (${resp.status}): ${detail}`);
+    const err = new Error(`organizations/me failed (${resp.status}): ${detail}`);
+    err.status = resp.status;
+    throw err;
   }
 
   return {
@@ -89,28 +122,71 @@ function getOrgHint(req) {
   return clean;
 }
 
+/**
+ * Classify a caller purely from their token, server-side.
+ *
+ * Returns one of:
+ *   { mode: "no-token" }                                       — no token supplied
+ *   { mode: "fallback",     org }                              — no env configured yet (legacy behavior)
+ *   { mode: "internal",     org }                              — token belongs to the internal/company org
+ *   { mode: "customer",     org, customer, entitlements }      — token belongs to a registered customer org
+ *   { mode: "unrecognized", org }                              — token org is neither internal nor a known customer
+ *
+ * Throws if the token cannot be validated against organizations/me.
+ * Results are cached per token for CLASSIFY_TTL_MS.
+ */
+async function classifyCaller(context, token) {
+  if (!token) return { mode: "no-token" };
+
+  const cached = getCachedClassification(token);
+  if (cached) return cached;
+
+  const registry = parseRegistry(context);
+  const configured = isConfigured(registry);
+
+  const userOrg = await fetchOrganizationMe(token, DEFAULT_REGION);
+  const normalized = normalizeOrgId(userOrg.id);
+
+  let result;
+  if (!configured) {
+    result = { mode: "fallback", org: userOrg };
+  } else if (INTERNAL_COMPANY_ORG_ID && normalized === INTERNAL_COMPANY_ORG_ID) {
+    result = { mode: "internal", org: userOrg };
+  } else {
+    const matched = registry.find((entry) => entry.orgId === normalized);
+    if (matched) {
+      result = {
+        mode: "customer",
+        org: userOrg,
+        customer: { id: matched.id, name: matched.name, region: matched.region },
+        entitlements: matched.entitlements,
+      };
+    } else {
+      result = { mode: "unrecognized", org: userOrg };
+    }
+  }
+
+  setCachedClassification(token, result);
+  return result;
+}
+
 async function resolveOrgConfig(context, req) {
   const accessToken = getBearerToken(req);
   if (!accessToken) {
-    return { status: 401, body: { error: "Missing bearer token" } };
+    return { status: 401, body: { error: "missing_token" } };
   }
 
   const orgHint = getOrgHint(req);
-  const registry = parseRegistry(context);
-
-  const userOrg = await fetchOrganizationMe(accessToken, DEFAULT_REGION);
-  const normalizedUserOrg = normalizeOrgId(userOrg.id);
-
   const safeCustomers = customers.map(({ id, name, region }) => ({ id, name, region }));
 
-  // Compatibility mode while Step 3 is being rolled out.
-  // If no org config is provided yet, keep the current internal behaviour.
-  if (!INTERNAL_COMPANY_ORG_ID && registry.length === 0) {
+  const classification = await classifyCaller(context, accessToken);
+
+  if (classification.mode === "fallback") {
     return {
       status: 200,
       body: {
         mode: "internal",
-        org: userOrg,
+        org: classification.org,
         customers: safeCustomers,
         orgHint,
         warning: "org-config-fallback",
@@ -118,50 +194,39 @@ async function resolveOrgConfig(context, req) {
     };
   }
 
-  if (INTERNAL_COMPANY_ORG_ID && normalizedUserOrg === INTERNAL_COMPANY_ORG_ID) {
+  if (classification.mode === "internal") {
     return {
       status: 200,
       body: {
         mode: "internal",
-        org: userOrg,
+        org: classification.org,
         customers: safeCustomers,
         orgHint,
       },
     };
   }
 
-  const matchedCustomer = registry.find((entry) => entry.orgId === normalizedUserOrg);
-  if (!matchedCustomer) {
+  if (classification.mode === "customer") {
+    if (orgHint && orgHint !== classification.customer.id) {
+      return { status: 403, body: { error: "org_hint_mismatch" } };
+    }
     return {
-      status: 403,
+      status: 200,
       body: {
-        error: "organization_not_recognized",
+        mode: "customer",
+        org: classification.org,
+        customer: classification.customer,
+        entitlements: classification.entitlements,
       },
     };
   }
 
-  if (orgHint && orgHint !== matchedCustomer.id) {
-    return {
-      status: 403,
-      body: {
-        error: "org_hint_mismatch",
-      },
-    };
-  }
-
-  return {
-    status: 200,
-    body: {
-      mode: "customer",
-      org: userOrg,
-      customer: {
-        id: matchedCustomer.id,
-        name: matchedCustomer.name,
-        region: matchedCustomer.region,
-      },
-      entitlements: matchedCustomer.entitlements,
-    },
-  };
+  return { status: 403, body: { error: "organization_not_recognized" } };
 }
 
-module.exports = { resolveOrgConfig };
+module.exports = {
+  resolveOrgConfig,
+  classifyCaller,
+  getBearerToken,
+  parseRegistry,
+};

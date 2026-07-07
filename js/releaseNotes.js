@@ -11,6 +11,18 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "1.4",
+    date: "2026-07-07",
+    title: "Step 4: server-side proxy tenant enforcement",
+    changes: [
+      "The Genesys proxy now decides mode from the caller's own token (verified server-side via organizations/me, cached), never from the request body.",
+      "The elevated client-credentials path now requires a verified internal-org token, closing the previous unauthenticated access path to /api/genesys-proxy.",
+      "Customer sessions are token-forwarded and locked to their own org/region; any attempt to target another org via the request body is rejected (403 org_locked).",
+      "Added a customer-mode denylist for internal/trustee/billing endpoints, plus an optional positive entitlement allowlist (ENFORCE_ENTITLEMENT_ALLOWLIST, default off).",
+      "Internal/demo behavior is unchanged; deployments without org env configured keep the legacy behavior via a compatibility fallback.",
+    ],
+  },
+  {
     version: "1.3",
     date: "2026-07-07",
     title: "Step 3 foundation: server-owned org context",
