@@ -15,7 +15,7 @@ import {
 } from "./services/authService.js";
 import { createApiClient } from "./services/apiClient.js";
 import { orgContext } from "./services/orgContext.js";
-import { fetchCustomers } from "./services/customerService.js";
+import { fetchOrgConfig } from "./services/orgConfigService.js";
 import { GROUP_ACCESS } from "./accessConfig.js";
 import { resolveAccess } from "./services/accessService.js";
 import { APP_VERSION } from "./releaseNotes.js";
@@ -59,21 +59,35 @@ function renderFatalError(message) {
   // --- API client ---
   const api = createApiClient(getValidAccessToken);
 
-  // --- Load customer list & wire org selector ---
+  // --- Resolve server-owned org mode/context and wire org selector ---
   const orgSelectEl = document.getElementById("orgSelect");
   try {
-    const customers = await fetchCustomers();
-    orgContext.setCustomers(customers);
+    const orgCfg = await fetchOrgConfig(res.accessToken, res.orgHint);
 
-    orgSelectEl.innerHTML = `<option value="">Select customer…</option>`
-      + customers.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.region)})</option>`).join("");
-    orgSelectEl.disabled = false;
+    if (orgCfg.mode === "customer" && orgCfg.customer) {
+      const customer = orgCfg.customer;
+      orgContext.setCustomers([customer]);
 
-    // Always start fresh — no auto-selected org
-    orgContext.clear();
+      orgSelectEl.innerHTML =
+        `<option value="${escapeHtml(customer.id)}">${escapeHtml(customer.name)} (${escapeHtml(customer.region)})</option>`;
+      orgSelectEl.value = customer.id;
+      orgSelectEl.disabled = true;
+      orgContext.set(customer.id);
+    } else {
+      const customers = Array.isArray(orgCfg.customers) ? orgCfg.customers : [];
+      orgContext.setCustomers(customers);
+
+      orgSelectEl.innerHTML = `<option value="">Select customer…</option>`
+        + customers.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.region)})</option>`).join("");
+      orgSelectEl.disabled = false;
+
+      // Always start fresh in internal mode — no auto-selected org.
+      orgContext.clear();
+    }
   } catch (err) {
-    console.error("Failed to load customers:", err);
-    orgSelectEl.innerHTML = `<option value="">⚠ Failed to load customers</option>`;
+    console.error("Failed to resolve org config:", err);
+    orgSelectEl.innerHTML = `<option value="">⚠ Failed to resolve org context</option>`;
+    orgSelectEl.disabled = true;
   }
 
   orgSelectEl.addEventListener("change", () => {

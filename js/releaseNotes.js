@@ -11,6 +11,17 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "1.3",
+    date: "2026-07-07",
+    title: "Step 3 foundation: server-owned org context",
+    changes: [
+      "Added `GET /api/org-config` to resolve auth mode server-side from the signed-in user's org (`/api/v2/organizations/me`) and return safe org context.",
+      "Added org-hint support (`?org=`) through the PKCE login flow so customer deep links can be validated after authentication.",
+      "App startup now uses `/api/org-config` before rendering org selection: customer mode locks to one org; internal mode keeps the existing selector behavior.",
+      "Introduced compatibility fallback for existing internal deployments where `INTERNAL_COMPANY_ORG_ID` and `CUSTOMER_REGISTRY_JSON` are not configured yet.",
+    ],
+  },
+  {
     version: "1.2",
     date: "2026-07-06",
     title: "Permission-aware access for write actions",
