@@ -32,7 +32,7 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
 
   // ── Data Tables ──────────────────────────────────────
   "data-tables.create":           { create: ["architect:datatable:add"] },
-  "data-tables.edit":             { edit: ["architect:datatable:edit"], rows: ["architect:datatableRow:add", "architect:datatableRow:edit", "architect:datatableRow:delete"], delete: ["architect:datatable:delete"] },
+  "data-tables.edit":             { schemaEdit: ["architect:datatable:edit"], rowsAdd: ["architect:datatableRow:add"], rowsEdit: ["architect:datatableRow:edit"], rowsDelete: ["architect:datatableRow:delete"], delete: ["architect:datatable:delete"] },
   "data-tables.copy.singleOrg":   { create: ["architect:datatable:add"] },
   "data-tables.copy.betweenOrgs": { create: ["architect:datatable:add"] },
 
@@ -67,7 +67,7 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   "interactions.recordings.create": { create: ["recording:job:add"] },
 
   // ── Wrapup Codes ─────────────────────────────────────
-  "wrapupCodes.createEditMapping": { edit: ["routing:wrapupCode:add", "routing:wrapupCode:edit"], mapping: ["outbound:wrapUpCodeMapping:edit"] },
+  "wrapupCodes.createEditMapping": { create: ["routing:wrapupCode:add"], edit: ["routing:wrapupCode:edit"], mapping: ["outbound:wrapUpCodeMapping:edit"] },
 
   // ── Phones (no granular phone perm → telephony:plugin:all) ──
   "phones.webrtc.create":     { create: ["telephony:plugin:all"] },
@@ -78,13 +78,15 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   "deployment.datatables": { create: ["architect:datatable:add"] },
 
   // ── Users ────────────────────────────────────────────
-  "users.rolesSkills.configureUsers":      { apply: ["authorization:grant:add", "routing:skill:assign", "routing:language:assign", "routing:queueMember:manage"] },
+  "users.rolesSkills.configureUsers":      { roles: ["authorization:grant:add"], skills: ["routing:skill:assign"], languages: ["routing:language:assign"], queues: ["routing:queueMember:manage"] },
   "users.rolesSkills.copyFromUser":        { apply: ["authorization:grant:add", "routing:skill:assign", "routing:language:assign", "routing:queueMember:manage"] },
-  "users.rolesSkills.addUsersToTemplates": { apply: ["authorization:grant:add", "routing:skill:assign", "routing:language:assign", "routing:queueMember:manage"] },
+  "users.rolesSkills.addUsersToTemplates": { roles: ["authorization:grant:add"], skills: ["routing:skill:assign"], languages: ["routing:language:assign"], queues: ["routing:queueMember:manage"] },
   // Create/Edit Template is gated the same as Manage Templates: a template you
   // cannot apply is useless, so require the same apply permissions.
-  "users.rolesSkills.createTemplate":      { apply: ["authorization:grant:add", "routing:skill:assign", "routing:language:assign", "routing:queueMember:manage"] },
-  "users.directRouting.add":               { edit: ["directory:user:edit", "routing:directRoutingBackup:edit"] },
+  "users.rolesSkills.createTemplate":      { roles: ["authorization:grant:add"], skills: ["routing:skill:assign"], languages: ["routing:language:assign"], queues: ["routing:queueMember:manage"] },
+  // Template Schedules apply templates on a schedule → same apply permissions.
+  "users.rolesSkills.templateSchedules":   { apply: ["authorization:grant:add", "routing:skill:assign", "routing:language:assign", "routing:queueMember:manage"] },
+  "users.directRouting.add":               { addresses: ["directory:user:edit"], backup: ["routing:directRoutingBackup:edit"] },
 
   // ── GDPR (customer inclusion TBD — O2) ───────────────
   "gdpr.subjectRequest": { create: ["gdpr:request:add"] },

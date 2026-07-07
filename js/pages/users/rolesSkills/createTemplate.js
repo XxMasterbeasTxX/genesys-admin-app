@@ -33,7 +33,7 @@ import {
   deleteTemplateSchedule,
 } from "../../../services/templateScheduleService.js";
 
-export default function renderCreateTemplate({ route, me, api, orgContext }) {
+export default function renderCreateTemplate({ route, me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -294,6 +294,32 @@ export default function renderCreateTemplate({ route, me, api, orgContext }) {
     initToggle("stToggleSkills", "stSectionSkills");
     initToggle("stToggleLanguages", "stSectionLanguages");
     initToggle("stToggleQueues", "stSectionQueues");
+
+    // ── Per-category permission gating (internal refinement) ──────────
+    // Only let the user include categories they hold the Genesys permission
+    // for (e.g. a skills-only user can only build skills templates).
+    try {
+      const canSec = (a) => (access && access.can ? access.can("users.rolesSkills.createTemplate", a) : true);
+      const lock = (name, perm) => {
+        const body = $editor.querySelector(`#stSection${name}`);
+        const toggle = $editor.querySelector(`#stToggle${name}`);
+        if (body) {
+          body.style.pointerEvents = "none";
+          body.style.opacity = "0.45";
+          const note = document.createElement("p");
+          note.style.cssText = "color:var(--muted);font-size:12px;margin:6px 0";
+          note.textContent = `You lack the Genesys permission to include this in a template (${perm}).`;
+          body.prepend(note);
+        }
+        if (toggle) toggle.title = `Requires Genesys permission: ${perm}`;
+      };
+      if (!canSec("roles"))     lock("Roles", "authorization:grant:add");
+      if (!canSec("skills"))    lock("Skills", "routing:skill:assign");
+      if (!canSec("languages")) lock("Languages", "routing:language:assign");
+      if (!canSec("queues"))    lock("Queues", "routing:queueMember:manage");
+    } catch (err) {
+      console.error("[createTemplate] permission gating failed (ignored):", err);
+    }
 
     // ── Role multi-select ─────────────────────────────
     const roleSelect = createMultiSelect({

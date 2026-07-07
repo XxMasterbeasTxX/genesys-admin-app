@@ -264,6 +264,8 @@ body {
   cursor: pointer;
 }
 .btn:hover { background: rgba(255,255,255,0.10); }
+.btn:disabled, .btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled:hover, .btn[disabled]:hover { background: rgba(255,255,255,0.06); }
 .btn--secondary { background: transparent; opacity: 0.7; }
 .btn--secondary:hover { opacity: 1; }
 .btn--danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }

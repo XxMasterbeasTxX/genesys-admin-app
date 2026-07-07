@@ -18,6 +18,7 @@ export const RELEASE_NOTES = [
       "Write features are now gated by your own Genesys permissions in addition to app group membership: you can only perform an action (create, edit, delete, apply) if your Genesys role includes the matching permission.",
       "Read-only features (Export, Audit, Flows, Roles Compare/Search, Interaction Search) are unaffected and remain governed by group access alone.",
       "Features you can't use appear disabled in the sidebar with a tooltip naming the required permission; opening one directly shows which permission is missing.",
+      "Within a page, individual actions and sections you lack the permission for are disabled too — e.g. Delete rows, Publish/Test a data action, backup routing, and per-category template application (roles/skills/languages/queues).",
       "Create/Edit Template now requires the same permissions as Manage Templates.",
       "Full-access administrators and superusers are unaffected.",
     ],

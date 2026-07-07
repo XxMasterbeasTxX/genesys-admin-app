@@ -13,7 +13,7 @@ const FLAG = {
 
 const BUSINESS_FLAGS = [FLAG.BUSINESS_FAILURE, FLAG.BUSINESS_NEUTRAL, FLAG.BUSINESS_SUCCESS];
 
-export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext }) {
+export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -290,6 +290,15 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
   const $defaultActions = el.querySelector("#wcmDefaultActions");
   const $defaultCancelBtn = el.querySelector("#wcmDefaultCancelBtn");
   const $defaultSaveBtn = el.querySelector("#wcmDefaultSaveBtn");
+
+  // ── Permission-based action gating (internal refinement) ──────────────
+  const userCanCreateCode = access && access.can ? access.can("wrapupCodes.createEditMapping", "create") : true;
+  const userCanEditCode   = access && access.can ? access.can("wrapupCodes.createEditMapping", "edit") : true;
+  const userCanMapping    = access && access.can ? access.can("wrapupCodes.createEditMapping", "mapping") : true;
+  if (!userCanCreateCode) {
+    $createBtn.disabled = true;
+    $createBtn.title = "Requires Genesys permission: routing:wrapupCode:add";
+  }
 
   function setStatus(msg, type = "") {
     $status.textContent = msg;
@@ -711,6 +720,7 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
 
     return `
       <div class="wcm-editor">
+        ${readOnly ? `<div class="wcm-editor-msg" style="color:var(--muted)" title="Requires Genesys permission: outbound:wrapUpCodeMapping:edit">Read-only — requires Genesys permission <code>outbound:wrapUpCodeMapping:edit</code>.</div>` : ""}
         <div class="wcm-editor-grid">
           <label class="wcm-toggle">
             <span>Contact Uncallable</span>
@@ -791,7 +801,7 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
           <td>${escapeHtml(w.description || "—")}</td>
           <td>${escapeHtml(getDivisionName(w))}</td>
           <td>${mappingSummaryHtml(w.id)}</td>
-          <td><button class="btn btn-secondary btn-sm" data-action="edit-wrapup" data-wrapup-id="${escapeHtml(w.id)}">Edit</button></td>
+          <td><button class="btn btn-secondary btn-sm" data-action="edit-wrapup" data-wrapup-id="${escapeHtml(w.id)}" ${userCanEditCode ? "" : `disabled title="Requires Genesys permission: routing:wrapupCode:edit"`}>Edit</button></td>
         </tr>
         ${editorRow}
       `;
@@ -846,7 +856,7 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     try {
       mappingDoc = await gc.getOutboundWrapupCodeMappings(api, org.id);
       canViewMapping = true;
-      canEditMapping = true;
+      canEditMapping = userCanMapping;
     } catch (err) {
       if (err.status === 403) {
         canViewMapping = false;

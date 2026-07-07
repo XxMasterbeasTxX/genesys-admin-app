@@ -59,7 +59,7 @@ function takeSnapshot(user, backup) {
 
 // ── Page renderer ───────────────────────────────────────────────────
 
-export default function renderAddUsers({ route, me, api, orgContext }) {
+export default function renderAddUsers({ route, me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -158,6 +158,11 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
   const $status       = el.querySelector("#drStatus");
   const $progressWrap = el.querySelector("#drProgressWrap");
   const $progressBar  = el.querySelector("#drProgressBar");
+
+  // Per-action permission gating (internal refinement): only apply the changes
+  // the user holds the Genesys permission for (addresses vs. backup routing).
+  const canEditAddresses = access && access.can ? access.can("users.directRouting.add", "addresses") : true;
+  const canEditBackup    = access && access.can ? access.can("users.directRouting.add", "backup") : true;
   const $summary      = el.querySelector("#drSummary");
 
   // ── Helpers ─────────────────────────────────────────
@@ -469,6 +474,28 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
     }
 
     card.append(toggle, section);
+
+    // ── Per-section permission gating (internal refinement) ──
+    // Lock the section(s) the user lacks the Genesys permission for.
+    if (!canEditAddresses) {
+      addrSection.style.pointerEvents = "none";
+      addrSection.style.opacity = "0.5";
+      addrToggle.title = "Requires Genesys permission: directory:user:edit";
+      const note = document.createElement("div");
+      note.style.cssText = "color:var(--muted);font-size:12px;margin:4px 0";
+      note.textContent = "You lack the Genesys permission to change addresses / direct routing (directory:user:edit).";
+      addrSection.prepend(note);
+    }
+    if (!canEditBackup) {
+      section.style.pointerEvents = "none";
+      section.style.opacity = "0.5";
+      toggle.title = "Requires Genesys permission: routing:directRoutingBackup:edit";
+      const note = document.createElement("div");
+      note.style.cssText = "color:var(--muted);font-size:12px;margin:4px 0";
+      note.textContent = "You lack the Genesys permission to change backup routing (routing:directRoutingBackup:edit).";
+      section.prepend(note);
+    }
+
     return card;
   }
 
@@ -705,16 +732,18 @@ export default function renderAddUsers({ route, me, api, orgContext }) {
       const orig = data.orig;
 
       const addressChanged =
-        orig.drPhoneType !== curr.drPhoneType ||
-        JSON.stringify(orig.drEmails) !== JSON.stringify(curr.drEmails) ||
-        orig.primaryPhoneType !== curr.primaryPhoneType;
+        canEditAddresses && (
+          orig.drPhoneType !== curr.drPhoneType ||
+          JSON.stringify(orig.drEmails) !== JSON.stringify(curr.drEmails) ||
+          orig.primaryPhoneType !== curr.primaryPhoneType);
 
       const backupChanged =
-        orig.backupType !== curr.backupType ||
-        orig.backupUserId !== curr.backupUserId ||
-        orig.backupQueueId !== curr.backupQueueId ||
-        orig.waitForAgent !== curr.waitForAgent ||
-        orig.agentWaitSeconds !== curr.agentWaitSeconds;
+        canEditBackup && (
+          orig.backupType !== curr.backupType ||
+          orig.backupUserId !== curr.backupUserId ||
+          orig.backupQueueId !== curr.backupQueueId ||
+          orig.waitForAgent !== curr.waitForAgent ||
+          orig.agentWaitSeconds !== curr.agentWaitSeconds);
 
       if (addressChanged || backupChanged) {
         changes.push({ uid, data, curr, addressChanged, backupChanged });
