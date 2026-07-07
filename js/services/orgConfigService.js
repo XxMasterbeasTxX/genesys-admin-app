@@ -5,7 +5,14 @@
 export async function fetchOrgConfig(accessToken, orgHint) {
   const query = orgHint ? `?org=${encodeURIComponent(orgHint)}` : "";
   const resp = await fetch(`/api/org-config${query}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    // Azure Static Web Apps strips/overwrites the Authorization header before it
+    // reaches managed functions, so the user's Genesys token is forwarded in a
+    // custom header (X-Genesys-Token). Authorization is kept as a fallback for
+    // local dev / direct Functions hosts.
+    headers: {
+      "X-Genesys-Token": accessToken,
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
 
   const json = await resp.json().catch(() => ({}));

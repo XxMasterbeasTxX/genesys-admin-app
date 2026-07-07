@@ -64,7 +64,18 @@ async function fetchOrganizationMe(accessToken, region) {
 }
 
 function getBearerToken(req) {
-  const auth = req.headers && (req.headers.authorization || req.headers.Authorization);
+  const headers = req.headers || {};
+
+  // Azure Static Web Apps strips/overwrites the Authorization header before it
+  // reaches managed functions, so the frontend forwards the user's Genesys token
+  // in a custom X-Genesys-Token header. Prefer it; fall back to Authorization for
+  // local dev / direct Functions hosts.
+  const custom = headers["x-genesys-token"] || headers["X-Genesys-Token"];
+  if (custom && typeof custom === "string" && custom.trim()) {
+    return custom.trim();
+  }
+
+  const auth = headers.authorization || headers.Authorization;
   if (!auth || typeof auth !== "string") return null;
   const match = auth.match(/^Bearer\s+(.+)$/i);
   return match ? match[1] : null;
