@@ -423,11 +423,12 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     }
   }
 
-  function addSchemaRow(prefillName = "", prefillType = "", prefillDefault = undefined) {
+  function addSchemaRow(prefillName = "", prefillType = "", prefillDefault = undefined, prefillKey = "") {
     const id = makeSchemaRowId();
     const row = document.createElement("div");
     row.className = "dtc-schema-row";
     row.id = id;
+    if (prefillKey) row.dataset.originalKey = prefillKey;
 
     const initialType = prefillType || COLUMN_TYPES[0].type;
     row.innerHTML = `
@@ -477,6 +478,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       const type = row.querySelector(".dtc-col-type").value;
       if (!name) return;
 
+      const propKey = row.dataset.originalKey || name;
       const prop = { title: name, type, displayOrder };
       displayOrder++;
 
@@ -489,7 +491,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         prop.default = (type === "integer" || type === "number") ? Number(raw) : raw;
       }
 
-      properties[name] = prop;
+      properties[propKey] = prop;
     });
 
     return {
@@ -927,9 +929,9 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       const props = table.schema?.properties || {};
       const schemaColumns = Object.entries(props)
         .filter(([k]) => k !== "key")
-        .map(([k, v]) => ({ name: v.title || k, type: v.type, default: v.default, order: v.displayOrder ?? 9999 }))
+        .map(([k, v]) => ({ key: k, name: v.title || k, type: v.type, default: v.default, order: v.displayOrder ?? 9999 }))
         .sort((a, b) => a.order - b.order);
-      schemaColumns.forEach(col => addSchemaRow(col.name, col.type, col.default));
+      schemaColumns.forEach(col => addSchemaRow(col.name, col.type, col.default, col.key));
 
       $form.hidden = false;
       $actions.hidden = false;
