@@ -11,6 +11,16 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "1.5",
+    date: "2026-07-08",
+    title: "Fix: Data Tables schema edit no longer drops columns",
+    changes: [
+      "Fixed a bug in Data Tables > Edit (Schema mode) where saving could fail with \"Field '…' is missing from the proposed schema\" and, in some cases, drop an existing column.",
+      "The editor now preserves each column's original schema property key across the load/save round-trip, instead of re-keying properties by their display title.",
+      "Column titles can still be edited freely; new columns continue to key by their name. Adding a column no longer surfaces the pre-existing key/title mismatch.",
+    ],
+  },
+  {
     version: "1.4",
     date: "2026-07-07",
     title: "Step 4: server-side proxy tenant enforcement",
