@@ -488,6 +488,45 @@ GENESYS_<ID>_CLIENT_SECRET   (e.g. GENESYS_ACME_CLIENT_SECRET)
 
 Where `<ID>` is the customer id from `customers.json` with hyphens replaced by underscores, uppercased.
 
+### Step 3 org-mode settings (required for customer-mode rollout)
+
+Set these additional app settings on the Static Web App API:
+
+```text
+GENESYS_HOME_REGION       (e.g. mypurecloud.de)
+INTERNAL_COMPANY_ORG_ID   (GUID of your internal/demo org)
+CUSTOMER_REGISTRY_JSON    (JSON array with customer orgId + entitlements)
+```
+
+`CUSTOMER_REGISTRY_JSON` example:
+
+```json
+[
+  {
+    "id": "acme",
+    "name": "Acme Corp",
+    "orgId": "11111111-2222-3333-4444-555555555555",
+    "region": "mypurecloud.de",
+    "clientId": "customer-org-pkce-client-id",
+    "entitlements": ["interactions.*", "audit.*", "export.users.*"],
+    "enabled": true
+  }
+]
+```
+
+`clientId` is the customer org's PKCE OAuth client (public, not a secret) and is
+only required once the customer login path is enabled.
+
+Optional Step 4 flag:
+
+```text
+ENFORCE_ENTITLEMENT_ALLOWLIST  (default off; when "true", customer requests must
+                                map to a purchased module — fail-closed)
+```
+
+If `INTERNAL_COMPANY_ORG_ID` and `CUSTOMER_REGISTRY_JSON` are both omitted, the app runs in
+internal compatibility mode (existing behavior) until these settings are configured.
+
 ### Set app settings via Azure CLI
 
 ```bash

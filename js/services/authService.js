@@ -5,6 +5,7 @@ const K_ACCESS_TOKEN  = "gc_access_token";
 const K_EXPIRES_AT    = "gc_expires_at";     // epoch ms
 const K_PKCE_VERIFIER = "pkce_verifier";
 const K_OAUTH_STATE   = "oauth_state";
+const K_ORG_HINT      = "gc_org_hint";
 
 // Use a small skew to avoid using a token that's about to expire mid-request
 const EXPIRY_SKEW_MS = 60 * 1000;
@@ -43,6 +44,17 @@ function consumeTabHandoff() {
 
 // --- UTILS ---
 function qp() { return new URLSearchParams(window.location.search); }
+
+function cacheOrgHintFromUrl() {
+  const hint = (qp().get("org") || "").trim();
+  if (hint) sessionStorage.setItem(K_ORG_HINT, hint);
+}
+
+export function getOrgHint() {
+  const fromUrl = (qp().get("org") || "").trim();
+  if (fromUrl) return fromUrl;
+  return (sessionStorage.getItem(K_ORG_HINT) || "").trim() || null;
+}
 
 // IMPORTANT: preserve hash routing (#/dashboards) after login
 function clearQueryPreserveHash() {
@@ -99,6 +111,8 @@ async function buildPkce() {
 
 // --- OAUTH + API ---
 async function startLoginRedirect() {
+  cacheOrgHintFromUrl();
+
   const clientId = CONFIG.oauthClientId;
   const redirectUri = CONFIG.oauthRedirectUri;
 
@@ -172,6 +186,7 @@ async function usersMe(accessToken) {
 export async function ensureAuthenticatedWithMe() {
   // Check for cross-tab session handoff
   consumeTabHandoff();
+  cacheOrgHintFromUrl();
 
   const p = qp();
 
@@ -197,7 +212,12 @@ export async function ensureAuthenticatedWithMe() {
       sessionStorage.removeItem(K_OAUTH_STATE);
 
       const me = await usersMe(token.access_token);
-      return { status: "authenticated", accessToken: token.access_token, me };
+      return {
+        status: "authenticated",
+        accessToken: token.access_token,
+        me,
+        orgHint: getOrgHint(),
+      };
     } catch (e) {
       clearAuthSession();
       await startLoginRedirect();
@@ -210,7 +230,12 @@ export async function ensureAuthenticatedWithMe() {
   if (existing) {
     try {
       const me = await usersMe(existing);
-      return { status: "authenticated", accessToken: existing, me };
+      return {
+        status: "authenticated",
+        accessToken: existing,
+        me,
+        orgHint: getOrgHint(),
+      };
     } catch {
       clearAuthSession();
       await startLoginRedirect();

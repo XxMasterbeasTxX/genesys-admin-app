@@ -58,6 +58,11 @@ export function createApiClient(getToken) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        // Azure Static Web Apps strips/overwrites Authorization before it reaches
+        // managed functions, so the user's token is forwarded in X-Genesys-Token.
+        // The proxy uses it to verify the caller's org server-side (Authorization
+        // is kept as a fallback for local dev / direct Functions hosts).
+        "X-Genesys-Token": token,
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ customerId, method, path, body, query }),

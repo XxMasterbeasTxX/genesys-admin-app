@@ -11,6 +11,39 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "1.5",
+    date: "2026-07-08",
+    title: "Fix: Data Tables schema edit no longer drops columns",
+    changes: [
+      "Fixed a bug in Data Tables > Edit (Schema mode) where saving could fail with \"Field '…' is missing from the proposed schema\" and, in some cases, drop an existing column.",
+      "The editor now preserves each column's original schema property key across the load/save round-trip, instead of re-keying properties by their display title.",
+      "Column titles can still be edited freely; new columns continue to key by their name. Adding a column no longer surfaces the pre-existing key/title mismatch.",
+    ],
+  },
+  {
+    version: "1.4",
+    date: "2026-07-07",
+    title: "Step 4: server-side proxy tenant enforcement",
+    changes: [
+      "The Genesys proxy now decides mode from the caller's own token (verified server-side via organizations/me, cached), never from the request body.",
+      "The elevated client-credentials path now requires a verified internal-org token, closing the previous unauthenticated access path to /api/genesys-proxy.",
+      "Customer sessions are token-forwarded and locked to their own org/region; any attempt to target another org via the request body is rejected (403 org_locked).",
+      "Added a customer-mode denylist for internal/trustee/billing endpoints, plus an optional positive entitlement allowlist (ENFORCE_ENTITLEMENT_ALLOWLIST, default off).",
+      "Internal/demo behavior is unchanged; deployments without org env configured keep the legacy behavior via a compatibility fallback.",
+    ],
+  },
+  {
+    version: "1.3",
+    date: "2026-07-07",
+    title: "Step 3 foundation: server-owned org context",
+    changes: [
+      "Added `GET /api/org-config` to resolve auth mode server-side from the signed-in user's org (`/api/v2/organizations/me`) and return safe org context.",
+      "Added org-hint support (`?org=`) through the PKCE login flow so customer deep links can be validated after authentication.",
+      "App startup now uses `/api/org-config` before rendering org selection: customer mode locks to one org; internal mode keeps the existing selector behavior.",
+      "Introduced compatibility fallback for existing internal deployments where `INTERNAL_COMPANY_ORG_ID` and `CUSTOMER_REGISTRY_JSON` are not configured yet.",
+    ],
+  },
+  {
     version: "1.2",
     date: "2026-07-06",
     title: "Permission-aware access for write actions",
