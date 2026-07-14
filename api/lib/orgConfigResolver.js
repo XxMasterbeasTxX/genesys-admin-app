@@ -172,11 +172,40 @@ async function classifyCaller(context, token) {
 
 async function resolveOrgConfig(context, req) {
   const accessToken = getBearerToken(req);
+  const orgHint = getOrgHint(req);
+
+  // --- Pre-login (unauthenticated) branch ---
+  // A customer deep link (`?org=<slug>`) needs the org's PUBLIC login config
+  // BEFORE the user can authenticate (region + PKCE clientId to build the
+  // authorize URL). Only public fields are returned; secrets, entitlements, and
+  // other orgs are never exposed. Internal deep links never carry `?org`, so
+  // this branch is dormant for internal users.
   if (!accessToken) {
+    if (orgHint) {
+      const registry = parseRegistry(context);
+      const entry = registry.find((e) => e.id === orgHint);
+      if (!entry) {
+        return { status: 404, body: { error: "org_not_found" } };
+      }
+      if (!entry.clientId) {
+        return { status: 409, body: { error: "org_login_not_configured" } };
+      }
+      return {
+        status: 200,
+        body: {
+          prelogin: true,
+          login: {
+            id: entry.id,
+            name: entry.name,
+            region: entry.region,
+            clientId: entry.clientId,
+          },
+        },
+      };
+    }
     return { status: 401, body: { error: "missing_token" } };
   }
 
-  const orgHint = getOrgHint(req);
   const safeCustomers = customers.map(({ id, name, region }) => ({ id, name, region }));
 
   const classification = await classifyCaller(context, accessToken);

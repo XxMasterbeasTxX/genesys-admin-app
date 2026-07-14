@@ -344,11 +344,27 @@ never from a request field:
      a purpose-made restricted test user.
    - **Remaining:** in-page button-level gating (Delete/Publish/Apply) per page — later increment.
 3. **Foundation for customers:** server-side registry + `GET /api/org-config` + `?org=` resolution
-   + post-login org-match + server-side mode detection.
+   + post-login org-match + server-side mode detection. **[DONE — shipped to prod]**
+   - `api/org-config/` endpoint + `api/lib/orgConfigResolver.js` (`classifyCaller`, cached per token).
+   - `js/services/orgConfigService.js`; app startup resolves mode before rendering org selection;
+     `authService` preserves `?org` through the PKCE redirect.
+   - Env: `INTERNAL_COMPANY_ORG_ID`, `GENESYS_HOME_REGION`, `CUSTOMER_REGISTRY_JSON` (+ compatibility fallback).
 4. **Harden the proxy:** derive org from session, token-forwarding path, entitlement endpoint
-   allowlist, fail-closed Customer mode.
-5. **Entitlement-driven access:** feed customer key set into `hasAccess()`; hide org selector in
-   Customer mode.
+   allowlist, fail-closed Customer mode. **[DONE — shipped to prod]**
+   - `api/genesys-proxy/index.js` mode-aware; verified internal token required for client-credentials
+     (closes the previous anonymous-proxy hole); customer mode token-forwards + org-lock + guard.
+   - `api/lib/entitlementAllowlist.js` — customer deny list (billing/trustee) + optional positive
+     allowlist behind `ENFORCE_ENTITLEMENT_ALLOWLIST` (default off).
+5. **Entitlement-driven access + customer login path:** dynamic pre-login OAuth per `?org`,
+   customer-region `organizations/me`, feed customer key set into `hasAccess()`; org selector locked
+   in Customer mode. **[IN PROGRESS]**
+   - 5a **[DONE]**: pre-login `GET /api/org-config?org=<slug>` (unauthenticated) returns the org's
+     public login config `{ id, name, region, clientId }`; `js/services/orgConfigService.js::fetchOrgLoginConfig`.
+   - 5b: dynamic login in `authService` (customer `clientId` + `login.<region>` for redirect/token/`me`).
+   - 5c: customer-mode access keys from `entitlements`; org-config verifies org against the hinted
+     registry region.
+   - 5d: end-to-end test as a customer user (Test IE) incl. tamper/isolation cases.
+   - Prereq for 5b–5d: a PKCE client in the customer org; its `clientId` added to `CUSTOMER_REGISTRY_JSON`.
 6. **Data-store isolation** (§10).
 7. **Feature gating:** mark cross-org/trustee/internal-only features unavailable in Customer mode.
 8. **Per-customer onboarding & scope mapping.**
