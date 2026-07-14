@@ -99,19 +99,17 @@ async function fetchOrganizationMe(accessToken, region) {
 function getBearerToken(req) {
   const headers = req.headers || {};
 
-  // Azure Static Web Apps strips/overwrites the Authorization header before it
-  // reaches managed functions, so the frontend forwards the user's Genesys token
-  // in a custom X-Genesys-Token header. Prefer it; fall back to Authorization for
-  // local dev / direct Functions hosts.
+  // The user's Genesys token is ALWAYS forwarded by the frontend in the custom
+  // X-Genesys-Token header (Azure Static Web Apps strips/overwrites Authorization
+  // before it reaches managed functions). We intentionally do NOT fall back to
+  // Authorization: SWA injects its own platform `Authorization` header, which is
+  // not a Genesys token — trusting it would send a bogus token to Genesys and
+  // also defeat the unauthenticated pre-login path (no X-Genesys-Token present).
   const custom = headers["x-genesys-token"] || headers["X-Genesys-Token"];
   if (custom && typeof custom === "string" && custom.trim()) {
     return custom.trim();
   }
-
-  const auth = headers.authorization || headers.Authorization;
-  if (!auth || typeof auth !== "string") return null;
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1] : null;
+  return null;
 }
 
 function getOrgHint(req) {
