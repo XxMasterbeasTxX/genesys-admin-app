@@ -366,7 +366,11 @@ never from a request field:
    - 5c **[DONE]**: `classifyCaller(token, hintId)` is region-aware — customer tokens are validated against
      the hinted registry region and the org id re-verified (org-config `?org`, proxy `customerId`).
      Customer-mode access keys come from `entitlements` via `accessService.js::resolveCustomerAccess`.
-   - 5d: end-to-end test as a customer user (Test IE) incl. tamper/isolation cases.
+   - 5d: end-to-end test as a customer user (Test IE) incl. tamper/isolation cases. **[DONE — validated on dev 2026-07-15]**
+     - Verified: IE-region login via customer PKCE client; org locked to Test IE; menu limited to
+       entitlements (no Billing / Permission Catalog); pages load IE-only data (proxy 200).
+     - Isolation: proxy call targeting another org → blocked (no other-org data, 401); billing
+       endpoint → `403 endpoint_not_available_for_customer`.
    - Prereq for 5d: a PKCE client in the customer org; its `clientId` added to `CUSTOMER_REGISTRY_JSON`.
      **[DONE for Test IE on dev]**
 6. **Data-store isolation** (§10).
