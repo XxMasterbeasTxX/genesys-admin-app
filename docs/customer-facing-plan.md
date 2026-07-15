@@ -360,11 +360,15 @@ never from a request field:
    in Customer mode. **[IN PROGRESS]**
    - 5a **[DONE]**: pre-login `GET /api/org-config?org=<slug>` (unauthenticated) returns the org's
      public login config `{ id, name, region, clientId }`; `js/services/orgConfigService.js::fetchOrgLoginConfig`.
-   - 5b: dynamic login in `authService` (customer `clientId` + `login.<region>` for redirect/token/`me`).
-   - 5c: customer-mode access keys from `entitlements`; org-config verifies org against the hinted
-     registry region.
+   - 5b **[DONE]**: dynamic login in `authService` — when `?org` resolves, the redirect, token exchange,
+     and `users/me` all use the customer `clientId` + `login.<region>` / `api.<region>` (stored per session).
+     Internal login is unchanged when there is no hint.
+   - 5c **[DONE]**: `classifyCaller(token, hintId)` is region-aware — customer tokens are validated against
+     the hinted registry region and the org id re-verified (org-config `?org`, proxy `customerId`).
+     Customer-mode access keys come from `entitlements` via `accessService.js::resolveCustomerAccess`.
    - 5d: end-to-end test as a customer user (Test IE) incl. tamper/isolation cases.
-   - Prereq for 5b–5d: a PKCE client in the customer org; its `clientId` added to `CUSTOMER_REGISTRY_JSON`.
+   - Prereq for 5d: a PKCE client in the customer org; its `clientId` added to `CUSTOMER_REGISTRY_JSON`.
+     **[DONE for Test IE on dev]**
 6. **Data-store isolation** (§10).
 7. **Feature gating:** mark cross-org/trustee/internal-only features unavailable in Customer mode.
 8. **Per-customer onboarding & scope mapping.**

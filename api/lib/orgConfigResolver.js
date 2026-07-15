@@ -123,26 +123,72 @@ function getOrgHint(req) {
 /**
  * Classify a caller purely from their token, server-side.
  *
- * Returns one of:
- *   { mode: "no-token" }                                       — no token supplied
- *   { mode: "fallback",     org }                              — no env configured yet (legacy behavior)
- *   { mode: "internal",     org }                              — token belongs to the internal/company org
- *   { mode: "customer",     org, customer, entitlements }      — token belongs to a registered customer org
- *   { mode: "unrecognized", org }                              — token org is neither internal nor a known customer
+ * `hintId` (optional) is the customer slug the client claims (org-config `?org=`
+ * or the proxy body `customerId`). It is used ONLY to pick the correct Genesys
+ * region to validate the token against — the returned org id is still verified
+ * against the registry, so a wrong/forged hint cannot escalate.
  *
- * Throws if the token cannot be validated against organizations/me.
- * Results are cached per token for CLASSIFY_TTL_MS.
+ * Never throws. Returns one of:
+ *   { mode: "no-token" }
+ *   { mode: "fallback",       org }               — no env configured yet (legacy)
+ *   { mode: "internal",       org }               — token belongs to the internal org
+ *   { mode: "customer",       org, customer, entitlements }
+ *   { mode: "unrecognized",   org }               — valid token, org not internal/known
+ *   { mode: "org_mismatch",   org }               — hint given but token org != registry org
+ *   { mode: "verify_failed" }                     — organizations/me rejected the token
+ * Results are cached (customer results keyed by token+hint).
  */
-async function classifyCaller(context, token) {
+async function classifyCaller(context, token, hintId) {
   if (!token) return { mode: "no-token" };
-
-  const cached = getCachedClassification(token);
-  if (cached) return cached;
 
   const registry = parseRegistry(context);
   const configured = isConfigured(registry);
 
-  const userOrg = await fetchOrganizationMe(token, DEFAULT_REGION);
+  // --- Customer verification via hint (region-aware) ---
+  const cleanHint = (hintId && typeof hintId === "string") ? hintId.trim() : "";
+  if (cleanHint) {
+    const entry = registry.find((e) => e.id === cleanHint);
+    if (entry) {
+      const cacheKey = `${token}::${entry.id}`;
+      const cached = getCachedClassification(cacheKey);
+      if (cached) return cached;
+
+      let userOrg;
+      try {
+        userOrg = await fetchOrganizationMe(token, entry.region);
+      } catch (err) {
+        context.log.error("[org-config] customer verify failed:", err.message || err);
+        return { mode: "verify_failed" };
+      }
+
+      let result;
+      if (normalizeOrgId(userOrg.id) === entry.orgId) {
+        result = {
+          mode: "customer",
+          org: userOrg,
+          customer: { id: entry.id, name: entry.name, region: entry.region },
+          entitlements: entry.entitlements,
+        };
+      } else {
+        result = { mode: "org_mismatch", org: userOrg };
+      }
+      setCachedClassification(cacheKey, result);
+      return result;
+    }
+    // Hint isn't a known customer → fall through to internal classification.
+  }
+
+  // --- Internal / fallback classification (home region) ---
+  const cached = getCachedClassification(token);
+  if (cached) return cached;
+
+  let userOrg;
+  try {
+    userOrg = await fetchOrganizationMe(token, DEFAULT_REGION);
+  } catch (err) {
+    context.log.error("[org-config] internal verify failed:", err.message || err);
+    return { mode: "verify_failed" };
+  }
   const normalized = normalizeOrgId(userOrg.id);
 
   let result;
@@ -206,7 +252,15 @@ async function resolveOrgConfig(context, req) {
 
   const safeCustomers = customers.map(({ id, name, region }) => ({ id, name, region }));
 
-  const classification = await classifyCaller(context, accessToken);
+  const classification = await classifyCaller(context, accessToken, orgHint);
+
+  if (classification.mode === "verify_failed") {
+    return { status: 401, body: { error: "identity_verification_failed" } };
+  }
+
+  if (classification.mode === "org_mismatch") {
+    return { status: 403, body: { error: "org_hint_mismatch" } };
+  }
 
   if (classification.mode === "fallback") {
     return {

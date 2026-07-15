@@ -226,3 +226,37 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
     can,
   };
 }
+
+/**
+ * Resolve access for a CUSTOMER session from their purchased entitlements.
+ *
+ * Customers are gated purely by their module entitlements (e.g. "interactions.*",
+ * "export.users.*", "utilities.ipRanges") — the same wildcard key machinery used
+ * for internal group access. There is NO permission refinement: a customer's
+ * write actions are governed by their own Genesys role (token-forwarding) and,
+ * server-side, by the proxy's org-lock + entitlement guard. Exposes the same
+ * interface as resolveAccess() so nav, routing, and pages are unchanged.
+ *
+ * @param {string[]} entitlements  Module access-key prefixes for the customer.
+ */
+export function resolveCustomerAccess(entitlements) {
+  const keys = new Set((entitlements || []).filter((k) => typeof k === "string" && k.trim()));
+
+  function hasAccess(pageKey) {
+    if (!pageKey) return true;
+    if (keys.has("*")) return true;
+    const parts = pageKey.split(".");
+    for (let i = parts.length - 1; i > 0; i--) {
+      if (keys.has(parts.slice(0, i).join(".") + ".*")) return true;
+    }
+    return keys.has(pageKey);
+  }
+
+  return {
+    hasAccess,
+    hasAnyAccess() { return keys.size > 0; },
+    accessState(pageKey) { return hasAccess(pageKey) ? "allowed" : "hidden"; },
+    getMissingPermissions() { return []; },
+    can() { return true; },
+  };
+}

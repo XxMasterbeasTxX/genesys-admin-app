@@ -17,7 +17,7 @@ import { createApiClient } from "./services/apiClient.js";
 import { orgContext } from "./services/orgContext.js";
 import { fetchOrgConfig } from "./services/orgConfigService.js";
 import { GROUP_ACCESS } from "./accessConfig.js";
-import { resolveAccess } from "./services/accessService.js";
+import { resolveAccess, resolveCustomerAccess } from "./services/accessService.js";
 import { APP_VERSION } from "./releaseNotes.js";
 import { renderReleaseNotesPage } from "./pages/releaseNotes.js";
 
@@ -52,19 +52,22 @@ function renderFatalError(message) {
   const userName = res.me?.name || "user";
   setHeader({ authText: `Auth: ok \u00B7 ${userName}` });
 
-  // --- Resolve access from group memberships ---
-  const access = await resolveAccess(res.accessToken, GROUP_ACCESS, res.me?.id);
   const routeAccessMap = getRouteAccessMap();
 
   // --- API client ---
   const api = createApiClient(getValidAccessToken);
 
-  // --- Resolve server-owned org mode/context and wire org selector ---
+  // --- Resolve server-owned org mode/context, then access, then wire selector ---
+  // Access source depends on mode: internal users are gated by group membership
+  // (+ permission refinement); customers are gated by their purchased entitlements.
   const orgSelectEl = document.getElementById("orgSelect");
+  let access;
   try {
     const orgCfg = await fetchOrgConfig(res.accessToken, res.orgHint);
 
     if (orgCfg.mode === "customer" && orgCfg.customer) {
+      access = resolveCustomerAccess(orgCfg.entitlements);
+
       const customer = orgCfg.customer;
       orgContext.setCustomers([customer]);
 
@@ -74,6 +77,8 @@ function renderFatalError(message) {
       orgSelectEl.disabled = true;
       orgContext.set(customer.id);
     } else {
+      access = await resolveAccess(res.accessToken, GROUP_ACCESS, res.me?.id);
+
       const customers = Array.isArray(orgCfg.customers) ? orgCfg.customers : [];
       orgContext.setCustomers(customers);
 
@@ -88,6 +93,10 @@ function renderFatalError(message) {
     console.error("Failed to resolve org config:", err);
     orgSelectEl.innerHTML = `<option value="">⚠ Failed to resolve org context</option>`;
     orgSelectEl.disabled = true;
+    // Fail-closed for a customer deep link; keep internal resilience otherwise.
+    access = res.orgHint
+      ? resolveCustomerAccess([])
+      : await resolveAccess(res.accessToken, GROUP_ACCESS, res.me?.id);
   }
 
   orgSelectEl.addEventListener("change", () => {
