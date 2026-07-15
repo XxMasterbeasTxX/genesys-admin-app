@@ -10,6 +10,7 @@
  * API: GET /api/activity-log?userEmail={email}&all=true&limit=500
  */
 import { escapeHtml, formatDateTime } from "../../utils.js";
+import { withUserToken } from "../../services/apiAuth.js";
 
 const ADMIN_EMAIL = "thva@tdc.dk";
 
@@ -163,7 +164,7 @@ export default async function renderActivityLog({ me }) {
       const params = new URLSearchParams({ userEmail: me.email });
       if (isAdmin) params.set("all", "true");
 
-      const resp  = await fetch(`/api/activity-log?${params}`);
+      const resp  = await fetch(`/api/activity-log?${params}`, { headers: withUserToken() });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data  = await resp.json();
 

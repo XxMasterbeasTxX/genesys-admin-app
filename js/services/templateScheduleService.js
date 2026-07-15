@@ -3,6 +3,7 @@
  *
  * All methods talk to the /api/template-schedules Azure Function endpoint.
  */
+import { withUserToken } from "./apiAuth.js";
 
 const BASE = "/api/template-schedules";
 
@@ -13,7 +14,7 @@ const BASE = "/api/template-schedules";
  */
 export async function fetchTemplateSchedules(orgId) {
   const url = orgId ? `${BASE}?orgId=${encodeURIComponent(orgId)}` : BASE;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: withUserToken() });
   if (!res.ok) throw new Error(`Failed to fetch template schedules (${res.status})`);
   return res.json();
 }
@@ -26,7 +27,7 @@ export async function fetchTemplateSchedules(orgId) {
 export async function createTemplateSchedule(data) {
   const res = await fetch(BASE, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: withUserToken({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });
   const json = await res.json().catch(() => ({}));
@@ -43,7 +44,7 @@ export async function createTemplateSchedule(data) {
 export async function updateTemplateSchedule(id, data) {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: withUserToken({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });
   const json = await res.json().catch(() => ({}));
@@ -60,7 +61,7 @@ export async function updateTemplateSchedule(id, data) {
 export async function deleteTemplateSchedule(id, userEmail) {
   const res = await fetch(
     `${BASE}/${encodeURIComponent(id)}?userEmail=${encodeURIComponent(userEmail)}`,
-    { method: "DELETE" }
+    { method: "DELETE", headers: withUserToken() }
   );
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Delete failed (${res.status})`);

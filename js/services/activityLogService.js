@@ -35,6 +35,7 @@
  *   gdpr_request         — Submit a GDPR data subject request
  *   export_run           — Run an on-demand export
  */
+import { withUserToken } from "./apiAuth.js";
 
 export function logAction({
   me,
@@ -50,7 +51,7 @@ export function logAction({
 
   fetch("/api/activity-log", {
     method:  "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: withUserToken({ "Content-Type": "application/json" }),
     body: JSON.stringify({
       userId:       me.id    || "",
       userEmail:    me.email,

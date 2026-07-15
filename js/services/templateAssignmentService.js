@@ -3,6 +3,7 @@
  *
  * All methods talk to the /api/template-assignments Azure Function endpoint.
  */
+import { withUserToken } from "./apiAuth.js";
 
 const BASE = "/api/template-assignments";
 
@@ -12,7 +13,7 @@ const BASE = "/api/template-assignments";
  * @returns {Promise<Array>}
  */
 export async function fetchAssignments(orgId) {
-  const res = await fetch(`${BASE}?orgId=${encodeURIComponent(orgId)}`);
+  const res = await fetch(`${BASE}?orgId=${encodeURIComponent(orgId)}`, { headers: withUserToken() });
   if (!res.ok) throw new Error(`Failed to fetch assignments (${res.status})`);
   return res.json();
 }
@@ -25,7 +26,7 @@ export async function fetchAssignments(orgId) {
  */
 export async function fetchUserAssignments(orgId, userId) {
   const qs = new URLSearchParams({ orgId, userId }).toString();
-  const res = await fetch(`${BASE}?${qs}`);
+  const res = await fetch(`${BASE}?${qs}`, { headers: withUserToken() });
   if (!res.ok) throw new Error(`Failed to fetch user assignments (${res.status})`);
   return res.json();
 }
@@ -38,7 +39,7 @@ export async function fetchUserAssignments(orgId, userId) {
 export async function createAssignment(data) {
   const res = await fetch(BASE, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: withUserToken({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });
   const json = await res.json().catch(() => ({}));
@@ -56,6 +57,7 @@ export async function deleteAssignment(id, orgId) {
   const qs = new URLSearchParams({ orgId }).toString();
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}?${qs}`, {
     method: "DELETE",
+    headers: withUserToken(),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Delete assignment failed (${res.status})`);
@@ -73,6 +75,7 @@ export async function deleteAssignmentByUserTemplate(orgId, userId, templateId) 
   const qs = new URLSearchParams({ orgId, userId, templateId }).toString();
   const res = await fetch(`${BASE}?${qs}`, {
     method: "DELETE",
+    headers: withUserToken(),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Delete assignment failed (${res.status})`);
@@ -90,6 +93,7 @@ export async function deleteAssignmentByGroupTemplate(orgId, groupId, templateId
   const qs = new URLSearchParams({ orgId, groupId, templateId }).toString();
   const res = await fetch(`${BASE}?${qs}`, {
     method: "DELETE",
+    headers: withUserToken(),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Delete assignment failed (${res.status})`);
@@ -107,6 +111,7 @@ export async function deleteAssignmentByWorkteamTemplate(orgId, workteamId, temp
   const qs = new URLSearchParams({ orgId, workteamId, templateId }).toString();
   const res = await fetch(`${BASE}?${qs}`, {
     method: "DELETE",
+    headers: withUserToken(),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Delete assignment failed (${res.status})`);

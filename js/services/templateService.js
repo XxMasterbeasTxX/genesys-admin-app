@@ -3,6 +3,7 @@
  *
  * All methods talk to the /api/templates Azure Function endpoint.
  */
+import { withUserToken } from "./apiAuth.js";
 
 const BASE = "/api/templates";
 
@@ -12,7 +13,7 @@ const BASE = "/api/templates";
  * @returns {Promise<Array>}
  */
 export async function fetchTemplates(orgId) {
-  const res = await fetch(`${BASE}?orgId=${encodeURIComponent(orgId)}`);
+  const res = await fetch(`${BASE}?orgId=${encodeURIComponent(orgId)}`, { headers: withUserToken() });
   if (!res.ok) throw new Error(`Failed to fetch templates (${res.status})`);
   return res.json();
 }
@@ -25,7 +26,7 @@ export async function fetchTemplates(orgId) {
 export async function createTemplate(data) {
   const res = await fetch(BASE, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: withUserToken({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });
   const json = await res.json().catch(() => ({}));
@@ -42,7 +43,7 @@ export async function createTemplate(data) {
 export async function updateTemplate(id, data) {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: withUserToken({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });
   const json = await res.json().catch(() => ({}));
@@ -61,6 +62,7 @@ export async function deleteTemplate(id, orgId, userEmail) {
   const qs = new URLSearchParams({ orgId, userEmail }).toString();
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}?${qs}`, {
     method: "DELETE",
+    headers: withUserToken(),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Delete failed (${res.status})`);
