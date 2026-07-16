@@ -11,6 +11,7 @@
  *   limit       {number}  Max entries to return (default 500, max 1000).
  */
 const store = require("../lib/activityLogStore");
+const { getCallerContext } = require("../lib/callerContext");
 
 module.exports = async function (context, req) {
   const method = req.method.toUpperCase();
@@ -21,7 +22,13 @@ module.exports = async function (context, req) {
     body,
   });
 
-  try {
+  try {    // Owner-scoped store: customers see only their own org's activity; internal
+    // sessions never see customer-created entries. (Step 6)
+    const caller = await getCallerContext(context, req);
+    if (!caller.authorized) {
+      context.res = json(caller.status || 401, { error: caller.error || "unauthorized" });
+      return;
+    }
     // ── POST — write a log entry ─────────────────────────
     if (method === "POST") {
       const b = req.body || {};
@@ -34,6 +41,7 @@ module.exports = async function (context, req) {
       }
 
       const entry = await store.create({
+        ownerOrgId:   caller.ownerOrgId,
         userId:       b.userId       || "",
         userEmail:    b.userEmail,
         userName:     b.userName     || "",
@@ -64,6 +72,15 @@ module.exports = async function (context, req) {
       const isAdmin   = callerEmail.toLowerCase() === store.ADMIN_EMAIL;
       const filterBy  = (wantsAll && isAdmin) ? null : callerEmail;
 
+      // Customer sessions see ONLY their own org's activity (no admin "all",
+      // no cross-org). Internal sessions keep the email/all behavior but are
+      // scoped to internal-owned entries so customer activity stays private.
+      if (caller.mode === "customer") {
+        const entries = await store.list({ ownerOrgId: caller.customerId, limit });
+        context.res = json(200, { entries, isAdmin: false });
+        return;
+      }
+
       // Admin: silently purge stale entries while fetching
       if (isAdmin) {
         store.purgeOld().catch((err) =>
@@ -71,7 +88,7 @@ module.exports = async function (context, req) {
         );
       }
 
-      const entries = await store.list({ userEmail: filterBy, limit });
+      const entries = await store.list({ userEmail: filterBy, ownerOrgId: "internal", limit });
 
       context.res = json(200, { entries, isAdmin });
       return;

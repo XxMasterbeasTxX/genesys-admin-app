@@ -373,7 +373,19 @@ never from a request field:
        endpoint → `403 endpoint_not_available_for_customer`.
    - Prereq for 5d: a PKCE client in the customer org; its `clientId` added to `CUSTOMER_REGISTRY_JSON`.
      **[DONE for Test IE on dev]**
-6. **Data-store isolation** (§10).
+6. **Data-store isolation** (§10). **[BUILT — pending test]**
+   - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
+     from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or
+     `"internal"`; legacy/missing records are treated as internal).
+   - Frontend forwards `X-Genesys-Token` on all store calls via `js/services/apiAuth.js::withUserToken`
+     (schedule/template/template-assignment/template-schedule services + activity-log page & writer).
+   - **Config stores (Templates, Template-Assignments):** internal keeps cross-org; a customer is locked
+     to its own org (mismatched `orgId` → `403 org_locked`).
+   - **Owner-scoped stores (Activity Log, Schedules, Template-Schedules):** records carry `ownerOrgId`;
+     reads are filtered so an org only ever sees records its own session created. Internal sees
+     internal-owned (incl. legacy); customers see only their own. Activity Log: customers see their org's
+     log (no admin `all`, no cross-org); the timer runners read stores directly (unfiltered) so execution
+     is unaffected.
 7. **Feature gating:** mark cross-org/trustee/internal-only features unavailable in Customer mode.
 8. **Per-customer onboarding & scope mapping.**
 9. **Security review & tenant-isolation testing** (attempt cross-org access with a customer token;

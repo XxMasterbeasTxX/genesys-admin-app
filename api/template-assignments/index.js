@@ -8,6 +8,7 @@
  * DELETE /api/template-assignments?orgId=…&userId=…&templateId=… → delete by user+template
  */
 const store = require("../lib/templateAssignmentStore");
+const { getCallerContext } = require("../lib/callerContext");
 
 module.exports = async function (context, req) {
   const method = req.method.toUpperCase();
@@ -20,9 +21,26 @@ module.exports = async function (context, req) {
   });
 
   try {
+    // Data-store isolation: a customer session may only ever touch its own org's
+    // template assignments. Internal sessions keep cross-org access. (Step 6)
+    const caller = await getCallerContext(context, req);
+    if (!caller.authorized) {
+      context.res = json(caller.status || 401, { error: caller.error || "unauthorized" });
+      return;
+    }
+    const lockOrg = (supplied) => {
+      if (caller.mode === "customer") {
+        if (supplied && supplied !== caller.customerId) return { error: "org_locked" };
+        return { orgId: caller.customerId };
+      }
+      return { orgId: supplied };
+    };
+
     // ── GET ─────────────────────────────────────────────
     if (method === "GET") {
-      const orgId = req.query.orgId;
+      const lock = lockOrg(req.query.orgId);
+      if (lock.error) { context.res = json(403, { error: lock.error }); return; }
+      const orgId = lock.orgId;
       if (!orgId) {
         context.res = json(400, { error: "orgId query parameter is required" });
         return;
@@ -64,8 +82,11 @@ module.exports = async function (context, req) {
         return;
       }
 
+      const lock = lockOrg(b.orgId);
+      if (lock.error) { context.res = json(403, { error: lock.error }); return; }
+
       const assignment = await store.create({
-        orgId: b.orgId,
+        orgId: lock.orgId,
         type,
         userId: b.userId || "",
         userName: b.userName || "",
@@ -84,7 +105,9 @@ module.exports = async function (context, req) {
 
     // ── DELETE ───────────────────────────────────────────
     if (method === "DELETE") {
-      const orgId = req.query.orgId;
+      const lock = lockOrg(req.query.orgId);
+      if (lock.error) { context.res = json(403, { error: lock.error }); return; }
+      const orgId = lock.orgId;
       if (!orgId) {
         context.res = json(400, { error: "orgId query parameter is required" });
         return;
