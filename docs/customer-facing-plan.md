@@ -423,11 +423,38 @@ never from a request field:
 | D10 | Hide modules with no access; **disable** leaf/buttons with tooltip; add `accessState()` | ✅ agreed |
 | D11 | Build the **Permission Catalog** report page next (Utilities, admin-only) | ✅ agreed |
 
-## 14. Open decisions
+## 14. Resolved decisions (were open)
 
-- **O1 — Write-capable customer modules:** which write modules (Deployment, Divisions, Roles-edit,
-  Users-config) to offer customers, and at which tier? Start read-only and add per tier? (Deferred.)
-- **O2 — GDPR module for customers:** include (opt-in tier) or hold back given sensitivity?
-  (Deferred.)
-- **O3 — Which specific modules are presented to customers** overall (the sellable catalog).
-  (To discuss.)
+- **O1 — Write-capable customer modules:** ✅ **Offer all customer-safe single-org modules (read + write).**
+  Token-forwarding bounds every write to the customer's own Genesys role in their own org, so this is a
+  product/pricing choice, not a security one. "Tiers" are just entitlement bundles (see §15).
+- **O2 — GDPR module for customers:** ✅ **Include as an opt-in / higher-tier add-on** (only when explicitly
+  entitled with `gdpr.*`). Not excluded in code; simply omitted from the base packages.
+- **O3 — Sellable catalog:** ✅ **Default package catalog v1** defined in §15 (refine later as pricing evolves).
+
+---
+
+## 15. Sellable package catalog (default v1)
+
+A "package" is a named bundle that expands to a list of access-key prefixes. A customer's
+`entitlements` = the **union** of the packages they bought. Internal-only features
+(Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports) are **never** included and
+are additionally blocked server-side + hidden in customer mode (§5, Step 7).
+
+| Package | Grants (entitlement prefixes) |
+|---|---|
+| **Insights** | `audit.*`, `interactions.search.*`, `export.users.*`, `export.interactions.*`, `export.scheduled` |
+| **Interaction Ops** | `interactions.*` |
+| **User & Access Management** | `users.*`, `roles.*`, `divisions.*` |
+| **Configuration** | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
+| **GDPR (add-on)** | `gdpr.*` |
+
+Ready-to-paste `entitlements` per package:
+- Insights: `["audit.*","interactions.search.*","export.users.*","export.interactions.*","export.scheduled"]`
+- Interaction Ops: `["interactions.*"]`
+- User & Access Management: `["users.*","roles.*","divisions.*"]`
+- Configuration: `["data-tables.*","data-actions.edit","wrapupCodes.*","flows.*","phones.*"]`
+- GDPR (add-on): `["gdpr.*"]`
+
+Example — a customer buying **Insights + GDPR**:
+`["audit.*","interactions.search.*","export.users.*","export.interactions.*","export.scheduled","gdpr.*"]`
