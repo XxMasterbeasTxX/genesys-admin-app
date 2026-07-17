@@ -1,5 +1,6 @@
 const customers = require("./customers.json");
 const crypto = require("crypto");
+const { expandPackages } = require("./packages");
 
 const DEFAULT_REGION = process.env.GENESYS_HOME_REGION || "mypurecloud.de";
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim().toLowerCase();
@@ -50,9 +51,11 @@ function parseRegistry(context) {
         const region = String(entry.region || "").trim();
         const name = String(entry.name || id || "").trim();
         const clientId = String(entry.clientId || "").trim();
-        const entitlements = Array.isArray(entry.entitlements)
+        // Entitlements = expanded purchased packages ∪ any explicit prefixes.
+        const explicit = Array.isArray(entry.entitlements)
           ? entry.entitlements.filter((e) => typeof e === "string" && e.trim())
           : [];
+        const entitlements = [...new Set([...expandPackages(entry.packages), ...explicit])];
 
         return {
           id,

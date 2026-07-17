@@ -438,25 +438,19 @@ never from a request field:
 
 ## 15. Sellable package catalog (default v1)
 
-A "package" is a named bundle that expands to a list of access-key prefixes. A customer's
-`entitlements` = the **union** of the packages they bought. Internal-only features
-(Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports) are **never** included and
-are additionally blocked server-side + hidden in customer mode (§5, Step 7).
+A "package" is a named bundle that expands to a list of access-key prefixes. A registry entry lists the
+purchased **package names** in a `packages` field; the backend (`api/lib/packages.js`) expands them into
+the flat `entitlements` the app already uses (an optional explicit `entitlements` array is unioned in).
+Internal-only features (Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports) are
+**never** in a package and are additionally blocked server-side + hidden in customer mode (§5, Step 7).
 
-| Package | Grants (entitlement prefixes) |
+| Package (registry value) | Grants (entitlement prefixes) |
 |---|---|
-| **Insights** | `audit.*`, `interactions.search.*`, `export.users.*`, `export.interactions.*`, `export.scheduled` |
-| **Interaction Ops** | `interactions.*` |
-| **User & Access Management** | `users.*`, `roles.*`, `divisions.*` |
-| **Configuration** | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
-| **GDPR (add-on)** | `gdpr.*` |
+| `insights` | `audit.*`, `interactions.search.*`, `export.users.*`, `export.interactions.*`, `export.scheduled` |
+| `interaction-ops` | `interactions.*` |
+| `user-access` | `users.*`, `roles.*`, `divisions.*` |
+| `configuration` | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
+| `gdpr` (add-on) | `gdpr.*` |
 
-Ready-to-paste `entitlements` per package:
-- Insights: `["audit.*","interactions.search.*","export.users.*","export.interactions.*","export.scheduled"]`
-- Interaction Ops: `["interactions.*"]`
-- User & Access Management: `["users.*","roles.*","divisions.*"]`
-- Configuration: `["data-tables.*","data-actions.edit","wrapupCodes.*","flows.*","phones.*"]`
-- GDPR (add-on): `["gdpr.*"]`
-
-Example — a customer buying **Insights + GDPR**:
-`["audit.*","interactions.search.*","export.users.*","export.interactions.*","export.scheduled","gdpr.*"]`
+A customer's registry entry just lists what they bought, e.g. `"packages": ["insights", "gdpr"]`.
+See [customer-onboarding.md](customer-onboarding.md) for the full onboarding steps.

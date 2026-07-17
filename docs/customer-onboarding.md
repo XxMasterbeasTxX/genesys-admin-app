@@ -49,21 +49,24 @@ In the **customer's** Genesys Cloud org (Admin → Integrations → OAuth → Ad
 
 ---
 
-## Step 3 — Choose packages → build the entitlements array
+## Step 3 — Choose packages
 
-Pick the customer's purchased packages from the catalog ([customer-facing-plan.md §15](customer-facing-plan.md)).
-The `entitlements` array is the **union** of the chosen packages' prefixes.
+Pick the customer's purchased packages from the catalog. You list the **package names** in the registry
+entry (Step 4) — the backend expands them into access-key prefixes automatically
+(`api/lib/packages.js`). No need to write the prefixes by hand.
 
-| Package | Prefixes |
+| Package name (registry value) | Grants (access-key prefixes) |
 |---|---|
-| Insights | `audit.*`, `interactions.search.*`, `export.users.*`, `export.interactions.*`, `export.scheduled` |
-| Interaction Ops | `interactions.*` |
-| User & Access Management | `users.*`, `roles.*`, `divisions.*` |
-| Configuration | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
-| GDPR (add-on) | `gdpr.*` |
+| `insights` | `audit.*`, `interactions.search.*`, `export.users.*`, `export.interactions.*`, `export.scheduled` |
+| `interaction-ops` | `interactions.*` |
+| `user-access` | `users.*`, `roles.*`, `divisions.*` |
+| `configuration` | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
+| `gdpr` | `gdpr.*` (add-on) |
 
 > Internal-only features (Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports) are
-> **never** granted and are blocked server-side + hidden in customer mode — do not add them.
+> **never** in a package and are blocked server-side + hidden in customer mode.
+> (Advanced: an entry may also include an explicit `entitlements` array of prefixes; it is unioned with
+> the expanded packages. Prefer packages.)
 
 ---
 
@@ -79,7 +82,7 @@ single-line JSON **array**; append your entry to the existing array.
   "orgId": "11111111-2222-3333-4444-555555555555",
   "region": "mypurecloud.de",
   "clientId": "<pkce-client-id-from-step-1>",
-  "entitlements": ["interactions.*", "audit.*", "export.users.*"],
+  "packages": ["insights", "gdpr"],
   "enabled": true
 }
 ```
@@ -91,7 +94,8 @@ single-line JSON **array**; append your entry to the existing array.
 | `orgId` | Customer org GUID (server verifies the login token against this) |
 | `region` | Customer Genesys region |
 | `clientId` | PKCE client id from Step 1 |
-| `entitlements` | Union of purchased package prefixes (Step 3) |
+| `packages` | Purchased package names (Step 3); expanded to entitlements server-side |
+| `entitlements` | *(optional)* explicit access-key prefixes, unioned with the packages |
 | `enabled` | `true` to activate; set `false` to offboard without deleting |
 
 Save. The Functions app restarts and picks up the change.
@@ -149,7 +153,7 @@ Repeat Step 1 redirect URI (prod origin), then Steps 3–6 against the **prod** 
 ## Offboarding / changing a customer
 
 - **Disable:** set `"enabled": false` on the registry entry (login stops resolving; data is retained).
-- **Change packages:** edit the entry's `entitlements` and save; the customer re-logs in to pick up changes.
+- **Change packages:** edit the entry's `packages` and save; the customer re-logs in to pick up changes.
 - **Remove:** delete the entry from `CUSTOMER_REGISTRY_JSON`.
 
 ---
@@ -163,7 +167,7 @@ Repeat Step 1 redirect URI (prod origin), then Steps 3–6 against the **prod** 
   "orgId": "fa184a47-28ac-4532-bf31-d8da9de9c8cf",
   "region": "mypurecloud.ie",
   "clientId": "e439fc4f-3b8c-49be-a403-09280ec95510",
-  "entitlements": ["audit.*","data-actions.*","data-tables.*","divisions.*","flows.*","gdpr.*","interactions.*","phones.*","roles.*","users.*","wrapupCodes.*","export.scheduled","export.roles.*","export.licenses.*","export.documentation.*","export.interactions.*","export.users.*"],
+  "packages": ["insights", "interaction-ops", "user-access", "configuration", "gdpr"],
   "enabled": true
 }
 ```
