@@ -279,6 +279,7 @@ const CUSTOMER_EXCLUDED_KEYS = [
   "export.roles.allOrgs",
   "export.billing",
   "utilities",
+  "deployment",
 ];
 
 /** True if a page key is an internal-only feature excluded from customer mode. */

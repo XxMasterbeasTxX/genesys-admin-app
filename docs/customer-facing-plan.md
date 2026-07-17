@@ -392,7 +392,8 @@ never from a request field:
      when an entitlement prefix would grant them (`CUSTOMER_EXCLUDED_KEYS`): cross-org copies
      (`data-actions.copy.betweenOrgs`, `data-tables.copy.betweenOrgs`, `roles.copy.betweenOrgs`),
      trustee/all-orgs/billing exports (`export.users.trustee`, `export.roles.allOrgs`, `export.billing.*`),
-     and the internal Utilities module (`utilities.*`). GDPR is left available (open decision O2).
+     the internal Utilities module (`utilities.*`), and the **Deployment** module (`deployment.*`).
+     GDPR is left available (open decision O2).
    - Belt-and-suspenders on top of the server-side proxy denylist + org-lock; excluded keys are hidden in
      nav and denied on route.
 8. **Per-customer onboarding & scope mapping.**
