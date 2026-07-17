@@ -11,6 +11,16 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "1.7",
+    date: "2026-07-17",
+    title: "Data Tables copy: edit columns before saving",
+    changes: [
+      "Data Tables > Copy (Single Org) and Copy between Orgs now let you add or remove schema columns before the copy is saved. Selecting a source table shows an editable column list (Name / Type / Default) with drag-to-reorder, matching the Create/Edit editor.",
+      "When 'Copy data' is enabled, copied rows are filtered to the columns kept in the edited schema: removed columns are dropped and added columns take their default value.",
+      "The primary key column is always preserved from the source and cannot be removed.",
+    ],
+  },
+  {
     version: "1.6",
     date: "2026-07-17",
     title: "Customer-facing foundation, data-store isolation & security notices",
