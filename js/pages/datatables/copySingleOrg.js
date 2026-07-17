@@ -21,6 +21,7 @@
 import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
+import { createSchemaColumnEditor } from "../../components/schemaColumnEditor.js";
 
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {
@@ -64,6 +65,9 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
         <div class="dt-info-row"><span class="dt-info-key">Columns:</span> <span id="dtInfoCols">—</span></div>
         <div class="dt-info-row"><span class="dt-info-key">Rows:</span>    <span id="dtInfoRows">—</span></div>
       </div>
+
+      <!-- Schema editor (add / remove columns before saving) -->
+      <div id="dtSchemaEditor" hidden></div>
 
       <!-- Step 2: New name -->
       <div class="dt-control-group">
@@ -116,6 +120,11 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
   const $progress     = el.querySelector("#dtProgress");
   const $progressBar  = el.querySelector("#dtProgressBar");
   const $status       = el.querySelector("#dtStatus");
+  const $schemaEditor = el.querySelector("#dtSchemaEditor");
+
+  // Schema column editor (add / remove columns before saving)
+  const schemaEditor = createSchemaColumnEditor();
+  $schemaEditor.appendChild(schemaEditor.element);
 
   let tables = [];     // { id, name, division, columnCount, rowCount, schema }
   let divisions = [];  // { id, name }
@@ -215,9 +224,13 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
       $infoDiv.textContent  = t.division;
       $infoCols.textContent = t.columnCount;
       $infoRows.textContent = t.rowCount;
+      schemaEditor.loadFromSchema(t.schema);
+      $schemaEditor.hidden = false;
       $copyBtn.disabled = false;
     } else {
       $sourceInfo.hidden = true;
+      $schemaEditor.hidden = true;
+      schemaEditor.reset();
       $copyBtn.disabled = true;
     }
   });
@@ -255,16 +268,14 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
         return;
       }
 
-      // 2. Prepare schema
+      // 2. Prepare schema from the (possibly edited) column editor
       setStatus(STATUS.creating);
       setProgress(10);
 
-      const schemaClone = JSON.parse(JSON.stringify(source.schema));
-      schemaClone.additionalProperties = false;
-      // Remove server-generated $id if present
-      delete schemaClone.$id;
+      const schema = schemaEditor.collectSchema();
+      const includedKeys = new Set(schemaEditor.getIncludedKeys());
 
-      const body = { name: newName, schema: schemaClone };
+      const body = { name: newName, schema };
 
       // Attach selected division
       const divId = $division.value;
@@ -292,8 +303,11 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
           const chunk = rows.slice(i, i + BATCH);
           setStatus(`Copying rows ${i + 1}–${Math.min(i + BATCH, total)} of ${total}…`);
           const results = await Promise.allSettled(chunk.map(r => {
-            const row = { ...r };
-            delete row.selfUri;
+            // Keep only columns that exist in the new schema (dropped columns removed)
+            const row = {};
+            for (const [k, v] of Object.entries(r)) {
+              if (k !== "selfUri" && includedKeys.has(k)) row[k] = v;
+            }
             return gc.createDataTableRow(api, orgId, newTable.id, row);
           }));
           const failed = results.filter(r => r.status === "rejected");

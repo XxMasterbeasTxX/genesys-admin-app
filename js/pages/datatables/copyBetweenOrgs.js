@@ -24,6 +24,7 @@
 import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
+import { createSchemaColumnEditor } from "../../components/schemaColumnEditor.js";
 
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {
@@ -89,9 +90,10 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
       <div class="dt-info" id="dtSourceInfo" hidden>
         <div class="dt-info-row"><span class="dt-info-key">Division:</span> <span id="dtInfoDiv">—</span></div>
         <div class="dt-info-row"><span class="dt-info-key">Columns:</span> <span id="dtInfoCols">—</span></div>
-        <div class="dt-info-row"><span class="dt-info-key">Schema preview:</span></div>
-        <div class="dt-schema" id="dtSchemaPreview"></div>
       </div>
+
+      <!-- Schema editor (add / remove columns before saving) -->
+      <div id="dtSchemaEditor" hidden></div>
 
       <!-- New name -->
       <div class="dt-control-group">
@@ -139,7 +141,7 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
   const $sourceInfo   = el.querySelector("#dtSourceInfo");
   const $infoDiv      = el.querySelector("#dtInfoDiv");
   const $infoCols     = el.querySelector("#dtInfoCols");
-  const $schemaPreview= el.querySelector("#dtSchemaPreview");
+  const $schemaEditor = el.querySelector("#dtSchemaEditor");
   const $newName      = el.querySelector("#dtNewName");
   const $division     = el.querySelector("#dtDivision");
   const $copyData     = el.querySelector("#dtCopyData");
@@ -147,6 +149,10 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
   const $progress     = el.querySelector("#dtProgress");
   const $progressBar  = el.querySelector("#dtProgressBar");
   const $status       = el.querySelector("#dtStatus");
+
+  // Schema column editor (add / remove columns before saving)
+  const schemaEditor = createSchemaColumnEditor();
+  $schemaEditor.appendChild(schemaEditor.element);
 
   let tables = [];      // source tables
   let destTables = [];  // destination table names (for uniqueness check)
@@ -173,26 +179,6 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
     return Object.keys(schema.properties).length;
   }
 
-  /** Build a readable preview of the schema columns. */
-  function buildSchemaPreview(schema) {
-    if (!schema?.properties) return "<em>No schema</em>";
-    const entries = Object.entries(schema.properties)
-      .map(([key, def]) => ({
-        key,
-        type: def.type || "string",
-        title: def.title || key,
-        order: def.displayOrder ?? 999,
-      }))
-      .sort((a, b) => a.order - b.order);
-
-    return `<table class="dt-schema-table">
-      <thead><tr><th>#</th><th>Column</th><th>Type</th></tr></thead>
-      <tbody>${entries.map((e, i) =>
-        `<tr><td>${i + 1}</td><td>${escapeHtml(e.title)}</td><td>${escapeHtml(e.type)}</td></tr>`
-      ).join("")}</tbody>
-    </table>`;
-  }
-
   // ── Org selection logic ──────────────────────────────
   function updateLoadBtn() {
     $loadBtn.disabled = !$srcOrg.value || !$destOrg.value || $srcOrg.value === $destOrg.value;
@@ -211,6 +197,8 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
     $sourceSelect.innerHTML = `<option value="">Select source org first…</option>`;
     $sourceSelect.disabled = true;
     $sourceInfo.hidden = true;
+    $schemaEditor.hidden = true;
+    schemaEditor.reset();
     $newName.disabled = true;
     $newName.value = "";
     $division.innerHTML = `<option value="">Load tables first…</option>`;
@@ -291,11 +279,14 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
       $sourceInfo.hidden = false;
       $infoDiv.textContent  = t.division;
       $infoCols.textContent = t.columnCount;
-      $schemaPreview.innerHTML = buildSchemaPreview(t.schema);
+      schemaEditor.loadFromSchema(t.schema);
+      $schemaEditor.hidden = false;
       $newName.value = t.name; // Pre-fill with source name
       $copyBtn.disabled = false;
     } else {
       $sourceInfo.hidden = true;
+      $schemaEditor.hidden = true;
+      schemaEditor.reset();
       $copyBtn.disabled = true;
     }
   });
@@ -341,15 +332,14 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
         return;
       }
 
-      // 2. Prepare schema (strip server-specific fields)
+      // 2. Prepare schema from the (possibly edited) column editor
       setStatus(STATUS.creating);
       setProgress(40);
 
-      const schemaClone = JSON.parse(JSON.stringify(source.schema));
-      schemaClone.additionalProperties = false;
-      delete schemaClone.$id;
+      const schema = schemaEditor.collectSchema();
+      const includedKeys = new Set(schemaEditor.getIncludedKeys());
 
-      const body = { name: newName, schema: schemaClone };
+      const body = { name: newName, schema };
 
       // Attach selected division
       const divId = $division.value;
@@ -378,8 +368,11 @@ export default function renderCopyBetweenOrgs({ route, me, api, orgContext }) {
             const chunk = rows.slice(i, i + BATCH);
             setStatus(`Copying rows ${i + 1}–${Math.min(i + BATCH, total)} of ${total}…`);
             const results = await Promise.allSettled(chunk.map(r => {
-              const row = { ...r };
-              delete row.selfUri;
+              // Keep only columns that exist in the new schema (dropped columns removed)
+              const row = {};
+              for (const [k, v] of Object.entries(r)) {
+                if (k !== "selfUri" && includedKeys.has(k)) row[k] = v;
+              }
               return gc.createDataTableRow(api, destOrgId, newTable.id, row);
             }));
             const failed = results.filter(r => r.status === "rejected");
