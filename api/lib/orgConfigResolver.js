@@ -143,75 +143,74 @@ async function classifyCaller(context, token, hintId) {
 
   const registry = parseRegistry(context);
   const configured = isConfigured(registry);
-
-  // --- Customer verification via hint (region-aware) ---
   const cleanHint = (hintId && typeof hintId === "string") ? hintId.trim() : "";
-  if (cleanHint) {
-    const entry = registry.find((e) => e.id === cleanHint);
-    if (entry) {
-      const cacheKey = `${token}::${entry.id}`;
-      const cached = getCachedClassification(cacheKey);
-      if (cached) return cached;
+  const hintEntry = cleanHint ? registry.find((e) => e.id === cleanHint) : null;
 
-      let userOrg;
-      try {
-        userOrg = await fetchOrganizationMe(token, entry.region);
-      } catch (err) {
-        context.log.error("[org-config] customer verify failed:", err.message || err);
-        return { mode: "verify_failed" };
-      }
-
-      let result;
-      if (normalizeOrgId(userOrg.id) === entry.orgId) {
-        result = {
-          mode: "customer",
-          org: userOrg,
-          customer: { id: entry.id, name: entry.name, region: entry.region },
-          entitlements: entry.entitlements,
-        };
-      } else {
-        result = { mode: "org_mismatch", org: userOrg };
-      }
-      setCachedClassification(cacheKey, result);
-      return result;
-    }
-    // Hint isn't a known customer → fall through to internal classification.
+  // Reuse a cached result: a cross-region customer is keyed by token+hint; the
+  // token's home-region classification (internal / same-region customer) by token.
+  if (hintEntry) {
+    const c = getCachedClassification(`${token}::${hintEntry.id}`);
+    if (c) return c;
   }
+  const cachedHome = getCachedClassification(token);
+  if (cachedHome) return cachedHome;
 
-  // --- Internal / fallback classification (home region) ---
-  const cached = getCachedClassification(token);
-  if (cached) return cached;
-
-  let userOrg;
+  // 1) Classify against the caller's HOME region first. This makes an INTERNAL
+  //    token resolve as internal even when it supplies a customer hint (internal
+  //    staff manage customer orgs cross-org via client-credentials), and also
+  //    covers customers whose org is in the home region.
+  let homeOrg = null;
   try {
-    userOrg = await fetchOrganizationMe(token, DEFAULT_REGION);
-  } catch (err) {
-    context.log.error("[org-config] internal verify failed:", err.message || err);
-    return { mode: "verify_failed" };
+    homeOrg = await fetchOrganizationMe(token, DEFAULT_REGION);
+  } catch (_) {
+    homeOrg = null; // token invalid on the home region → maybe a cross-region customer
   }
-  const normalized = normalizeOrgId(userOrg.id);
 
-  let result;
-  if (!configured) {
-    result = { mode: "fallback", org: userOrg };
-  } else if (INTERNAL_COMPANY_ORG_ID && normalized === INTERNAL_COMPANY_ORG_ID) {
-    result = { mode: "internal", org: userOrg };
-  } else {
-    const matched = registry.find((entry) => entry.orgId === normalized);
-    if (matched) {
-      result = {
-        mode: "customer",
-        org: userOrg,
-        customer: { id: matched.id, name: matched.name, region: matched.region },
-        entitlements: matched.entitlements,
-      };
+  if (homeOrg) {
+    const normalized = normalizeOrgId(homeOrg.id);
+    let result;
+    if (!configured) {
+      result = { mode: "fallback", org: homeOrg };
+    } else if (INTERNAL_COMPANY_ORG_ID && normalized === INTERNAL_COMPANY_ORG_ID) {
+      result = { mode: "internal", org: homeOrg };
     } else {
-      result = { mode: "unrecognized", org: userOrg };
+      const matched = registry.find((entry) => entry.orgId === normalized);
+      result = matched
+        ? {
+            mode: "customer",
+            org: homeOrg,
+            customer: { id: matched.id, name: matched.name, region: matched.region },
+            entitlements: matched.entitlements,
+          }
+        : { mode: "unrecognized", org: homeOrg };
     }
+    setCachedClassification(token, result);
+    return result;
   }
 
-  setCachedClassification(token, result);
-  return result;
+  // 2) Home region rejected the token → a customer authenticating in their OWN
+  //    (different) region. Verify against the hinted org's region and re-check id.
+  if (hintEntry) {
+    let custOrg;
+    try {
+      custOrg = await fetchOrganizationMe(token, hintEntry.region);
+    } catch (err) {
+      context.log.error("[org-config] customer verify failed:", err.message || err);
+      return { mode: "verify_failed" };
+    }
+    const result = normalizeOrgId(custOrg.id) === hintEntry.orgId
+      ? {
+          mode: "customer",
+          org: custOrg,
+          customer: { id: hintEntry.id, name: hintEntry.name, region: hintEntry.region },
+          entitlements: hintEntry.entitlements,
+        }
+      : { mode: "org_mismatch", org: custOrg };
+    setCachedClassification(`${token}::${hintEntry.id}`, result);
+    return result;
+  }
+
+  return { mode: "verify_failed" };
 }
 
 async function resolveOrgConfig(context, req) {
