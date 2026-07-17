@@ -396,7 +396,9 @@ never from a request field:
      GDPR is left available (open decision O2).
    - Belt-and-suspenders on top of the server-side proxy denylist + org-lock; excluded keys are hidden in
      nav and denied on route.
-8. **Per-customer onboarding & scope mapping.**
+8. **Per-customer onboarding & scope mapping.** **[DONE]**
+   - Repeatable runbook: [customer-onboarding.md](customer-onboarding.md) (PKCE client, org details,
+     package→entitlements, registry entry, launch URL, verification, offboarding; Test IE worked example).
 9. **Security review & tenant-isolation testing** (attempt cross-org access with a customer token;
    verify every store and proxy path rejects it). **[DONE — validated on dev 2026-07-17]**
    - Login/identity, proxy isolation (unauth/forged/cross-org/billing), store isolation (read + write
