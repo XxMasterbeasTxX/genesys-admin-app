@@ -387,6 +387,14 @@ never from a request field:
      log (no admin `all`, no cross-org); the timer runners read stores directly (unfiltered) so execution
      is unaffected.
 7. **Feature gating:** mark cross-org/trustee/internal-only features unavailable in Customer mode.
+   **[DONE — pending test]**
+   - `accessService.js::resolveCustomerAccess` now excludes internal-only keys in customer mode even
+     when an entitlement prefix would grant them (`CUSTOMER_EXCLUDED_KEYS`): cross-org copies
+     (`data-actions.copy.betweenOrgs`, `data-tables.copy.betweenOrgs`, `roles.copy.betweenOrgs`),
+     trustee/all-orgs/billing exports (`export.users.trustee`, `export.roles.allOrgs`, `export.billing.*`),
+     and the internal Utilities module (`utilities.*`). GDPR is left available (open decision O2).
+   - Belt-and-suspenders on top of the server-side proxy denylist + org-lock; excluded keys are hidden in
+     nav and denied on route.
 8. **Per-customer onboarding & scope mapping.**
 9. **Security review & tenant-isolation testing** (attempt cross-org access with a customer token;
    verify every store and proxy path rejects it).
