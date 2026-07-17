@@ -70,6 +70,7 @@ function entityToEntry(e) {
     userName:     e.userName     || "",
     orgId:        e.orgId        || "",
     orgName:      e.orgName      || "",
+    ownerOrgId:   e.ownerOrgId   || "internal",
     action:       e.action       || "",
     description:  e.description  || "",
     result:       e.result       || "success",
@@ -88,6 +89,7 @@ function entryToEntity(data) {
     userName:     data.userName     || "",
     orgId:        data.orgId        || "",
     orgName:      data.orgName      || "",
+    ownerOrgId:   data.ownerOrgId   || "internal",
     action:       data.action       || "",
     description:  data.description  || "",
     result:       data.result       || "success",
@@ -116,7 +118,7 @@ async function create(data) {
  * @param {string|null} userEmail  Filter to a specific user; null = return all (admin)
  * @param {number}      limit      Maximum entries to return (default 500)
  */
-async function list({ userEmail = null, limit = 500 } = {}) {
+async function list({ userEmail = null, ownerOrgId = null, limit = 500 } = {}) {
   await ensureTable();
   const cutoff  = retentionCutoff();
   const entries = [];
@@ -126,6 +128,7 @@ async function list({ userEmail = null, limit = 500 } = {}) {
 
   for await (const entity of iter) {
     if ((entity.logTimestamp || "") < cutoff) continue;
+    if (ownerOrgId && (entity.ownerOrgId || "internal") !== ownerOrgId) continue;
     if (userEmail && entity.userEmail?.toLowerCase() !== userEmail.toLowerCase()) continue;
     entries.push(entityToEntry(entity));
     if (entries.length >= limit) break;

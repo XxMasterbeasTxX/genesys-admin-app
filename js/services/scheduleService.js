@@ -3,6 +3,7 @@
  *
  * All methods talk to the /api/schedules Azure Function endpoint.
  */
+import { withUserToken } from "./apiAuth.js";
 
 const BASE = "/api/schedules";
 
@@ -11,7 +12,7 @@ const BASE = "/api/schedules";
  * @returns {Promise<Array>}
  */
 export async function fetchSchedules() {
-  const res = await fetch(BASE);
+  const res = await fetch(BASE, { headers: withUserToken() });
   if (!res.ok) throw new Error(`Failed to fetch schedules (${res.status})`);
   return res.json();
 }
@@ -24,7 +25,7 @@ export async function fetchSchedules() {
 export async function createSchedule(data) {
   const res = await fetch(BASE, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: withUserToken({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });
   const json = await res.json().catch(() => ({}));
@@ -41,7 +42,7 @@ export async function createSchedule(data) {
 export async function updateSchedule(id, data) {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: withUserToken({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });
   const json = await res.json().catch(() => ({}));
@@ -58,7 +59,7 @@ export async function updateSchedule(id, data) {
 export async function deleteSchedule(id, userEmail) {
   const res = await fetch(
     `${BASE}/${encodeURIComponent(id)}?userEmail=${encodeURIComponent(userEmail)}`,
-    { method: "DELETE" }
+    { method: "DELETE", headers: withUserToken() }
   );
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Delete failed (${res.status})`);

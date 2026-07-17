@@ -49,6 +49,7 @@ async function ensureTable() {
 function entityToSchedule(entity) {
   return {
     id: entity.rowKey,
+    ownerOrgId: entity.ownerOrgId || "internal",
     exportType: entity.exportType,
     exportLabel: entity.exportLabel || entity.exportType,
     scheduleType: entity.scheduleType,
@@ -75,6 +76,7 @@ function scheduleToEntity(schedule) {
   return {
     partitionKey: "schedule",
     rowKey: schedule.id,
+    ownerOrgId: schedule.ownerOrgId || "internal",
     exportType: schedule.exportType,
     exportLabel: schedule.exportLabel,
     scheduleType: schedule.scheduleType,
@@ -130,6 +132,7 @@ async function create(data) {
 
   const schedule = {
     id,
+    ownerOrgId: data.ownerOrgId || "internal",
     exportType: data.exportType,
     exportLabel: data.exportLabel || data.exportType,
     scheduleType: data.scheduleType,

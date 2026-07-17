@@ -344,16 +344,68 @@ never from a request field:
      a purpose-made restricted test user.
    - **Remaining:** in-page button-level gating (Delete/Publish/Apply) per page — later increment.
 3. **Foundation for customers:** server-side registry + `GET /api/org-config` + `?org=` resolution
-   + post-login org-match + server-side mode detection.
+   + post-login org-match + server-side mode detection. **[DONE — shipped to prod]**
+   - `api/org-config/` endpoint + `api/lib/orgConfigResolver.js` (`classifyCaller`, cached per token).
+   - `js/services/orgConfigService.js`; app startup resolves mode before rendering org selection;
+     `authService` preserves `?org` through the PKCE redirect.
+   - Env: `INTERNAL_COMPANY_ORG_ID`, `GENESYS_HOME_REGION`, `CUSTOMER_REGISTRY_JSON` (+ compatibility fallback).
 4. **Harden the proxy:** derive org from session, token-forwarding path, entitlement endpoint
-   allowlist, fail-closed Customer mode.
-5. **Entitlement-driven access:** feed customer key set into `hasAccess()`; hide org selector in
-   Customer mode.
-6. **Data-store isolation** (§10).
+   allowlist, fail-closed Customer mode. **[DONE — shipped to prod]**
+   - `api/genesys-proxy/index.js` mode-aware; verified internal token required for client-credentials
+     (closes the previous anonymous-proxy hole); customer mode token-forwards + org-lock + guard.
+   - `api/lib/entitlementAllowlist.js` — customer deny list (billing/trustee) + optional positive
+     allowlist behind `ENFORCE_ENTITLEMENT_ALLOWLIST` (default off).
+5. **Entitlement-driven access + customer login path:** dynamic pre-login OAuth per `?org`,
+   customer-region `organizations/me`, feed customer key set into `hasAccess()`; org selector locked
+   in Customer mode. **[IN PROGRESS]**
+   - 5a **[DONE]**: pre-login `GET /api/org-config?org=<slug>` (unauthenticated) returns the org's
+     public login config `{ id, name, region, clientId }`; `js/services/orgConfigService.js::fetchOrgLoginConfig`.
+   - 5b **[DONE]**: dynamic login in `authService` — when `?org` resolves, the redirect, token exchange,
+     and `users/me` all use the customer `clientId` + `login.<region>` / `api.<region>` (stored per session).
+     Internal login is unchanged when there is no hint.
+   - 5c **[DONE]**: `classifyCaller(token, hintId)` is region-aware — customer tokens are validated against
+     the hinted registry region and the org id re-verified (org-config `?org`, proxy `customerId`).
+     Customer-mode access keys come from `entitlements` via `accessService.js::resolveCustomerAccess`.
+   - 5d: end-to-end test as a customer user (Test IE) incl. tamper/isolation cases. **[DONE — validated on dev 2026-07-15]**
+     - Verified: IE-region login via customer PKCE client; org locked to Test IE; menu limited to
+       entitlements (no Billing / Permission Catalog); pages load IE-only data (proxy 200).
+     - Isolation: proxy call targeting another org → blocked (no other-org data, 401); billing
+       endpoint → `403 endpoint_not_available_for_customer`.
+   - Prereq for 5d: a PKCE client in the customer org; its `clientId` added to `CUSTOMER_REGISTRY_JSON`.
+     **[DONE for Test IE on dev]**
+6. **Data-store isolation** (§10). **[DONE — validated on dev 2026-07-17]**
+   - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
+     from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or
+     `"internal"`; legacy/missing records are treated as internal).
+   - Frontend forwards `X-Genesys-Token` on all store calls via `js/services/apiAuth.js::withUserToken`
+     (schedule/template/template-assignment/template-schedule services + activity-log page & writer).
+   - **Config stores (Templates, Template-Assignments):** internal keeps cross-org; a customer is locked
+     to its own org (mismatched `orgId` → `403 org_locked`).
+   - **Owner-scoped stores (Activity Log, Schedules, Template-Schedules):** records carry `ownerOrgId`;
+     reads are filtered so an org only ever sees records its own session created. Internal sees
+     internal-owned (incl. legacy); customers see only their own. Activity Log: customers see their org's
+     log (no admin `all`, no cross-org); the timer runners read stores directly (unfiltered) so execution
+     is unaffected.
 7. **Feature gating:** mark cross-org/trustee/internal-only features unavailable in Customer mode.
-8. **Per-customer onboarding & scope mapping.**
+   **[DONE — pending test]**
+   - `accessService.js::resolveCustomerAccess` now excludes internal-only keys in customer mode even
+     when an entitlement prefix would grant them (`CUSTOMER_EXCLUDED_KEYS`): cross-org copies
+     (`data-actions.copy.betweenOrgs`, `data-tables.copy.betweenOrgs`, `roles.copy.betweenOrgs`),
+     trustee/all-orgs/billing exports (`export.users.trustee`, `export.roles.allOrgs`, `export.billing.*`),
+     the internal Utilities module (`utilities.*`), and the **Deployment** module (`deployment.*`).
+     GDPR is left available (open decision O2).
+   - Belt-and-suspenders on top of the server-side proxy denylist + org-lock; excluded keys are hidden in
+     nav and denied on route.
+8. **Per-customer onboarding & scope mapping.** **[DONE]**
+   - Repeatable runbook: [customer-onboarding.md](customer-onboarding.md) (PKCE client, org details,
+     package→entitlements, registry entry, launch URL, verification, offboarding; Test IE worked example).
 9. **Security review & tenant-isolation testing** (attempt cross-org access with a customer token;
-   verify every store and proxy path rejects it).
+   verify every store and proxy path rejects it). **[DONE — validated on dev 2026-07-17]**
+   - Login/identity, proxy isolation (unauth/forged/cross-org/billing), store isolation (read + write
+     tamper → `403 org_locked`), owner-scoped writes (forged `ownerOrgId` ignored; customer-created
+     schedule visible to the customer, invisible to internal), and customer-mode feature gating all pass.
+   - Known limitation: dev has one customer (Test IE); isolation is enforced by org identity, so a second
+     registered customer isn't required to validate the mechanism.
 
 ---
 
@@ -373,11 +425,32 @@ never from a request field:
 | D10 | Hide modules with no access; **disable** leaf/buttons with tooltip; add `accessState()` | ✅ agreed |
 | D11 | Build the **Permission Catalog** report page next (Utilities, admin-only) | ✅ agreed |
 
-## 14. Open decisions
+## 14. Resolved decisions (were open)
 
-- **O1 — Write-capable customer modules:** which write modules (Deployment, Divisions, Roles-edit,
-  Users-config) to offer customers, and at which tier? Start read-only and add per tier? (Deferred.)
-- **O2 — GDPR module for customers:** include (opt-in tier) or hold back given sensitivity?
-  (Deferred.)
-- **O3 — Which specific modules are presented to customers** overall (the sellable catalog).
-  (To discuss.)
+- **O1 — Write-capable customer modules:** ✅ **Offer all customer-safe single-org modules (read + write).**
+  Token-forwarding bounds every write to the customer's own Genesys role in their own org, so this is a
+  product/pricing choice, not a security one. "Tiers" are just entitlement bundles (see §15).
+- **O2 — GDPR module for customers:** ✅ **Include as an opt-in / higher-tier add-on** (only when explicitly
+  entitled with `gdpr.*`). Not excluded in code; simply omitted from the base packages.
+- **O3 — Sellable catalog:** ✅ **Default package catalog v1** defined in §15 (refine later as pricing evolves).
+
+---
+
+## 15. Sellable package catalog (default v1)
+
+A "package" is a named bundle that expands to a list of access-key prefixes. A registry entry lists the
+purchased **package names** in a `packages` field; the backend (`api/lib/packages.js`) expands them into
+the flat `entitlements` the app already uses (an optional explicit `entitlements` array is unioned in).
+Internal-only features (Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports) are
+**never** in a package and are additionally blocked server-side + hidden in customer mode (§5, Step 7).
+
+| Package (registry value) | Grants (entitlement prefixes) |
+|---|---|
+| `insights` | `audit.*`, `interactions.search.*`, `export.users.*`, `export.interactions.*`, `export.scheduled` |
+| `interaction-ops` | `interactions.*` |
+| `user-access` | `users.*`, `roles.*`, `divisions.*` |
+| `configuration` | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
+| `gdpr` (add-on) | `gdpr.*` |
+
+A customer's registry entry just lists what they bought, e.g. `"packages": ["insights", "gdpr"]`.
+See [customer-onboarding.md](customer-onboarding.md) for the full onboarding steps.

@@ -4456,6 +4456,17 @@ body {
   text-decoration: underline;
 }
 
+.nav-copyright {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0 4px 6px;
+  color: var(--muted);
+  font-size: 11px;
+  opacity: 0.7;
+  user-select: none;
+}
+
 .release-notes__header {
   display: flex;
   align-items: center;

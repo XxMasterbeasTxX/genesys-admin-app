@@ -53,6 +53,7 @@ function entityToSchedule(entity) {
   }
   return {
     id: entity.rowKey,
+    ownerOrgId: entity.ownerOrgId || "internal",
     templateId: entity.templateId,
     templateName: entity.templateName || "",
     orgId: entity.orgId,
@@ -78,6 +79,7 @@ function scheduleToEntity(schedule) {
   return {
     partitionKey: PARTITION,
     rowKey: schedule.id,
+    ownerOrgId: schedule.ownerOrgId || "internal",
     templateId: schedule.templateId,
     templateName: schedule.templateName,
     orgId: schedule.orgId,
@@ -139,6 +141,7 @@ async function create(data) {
 
   const schedule = {
     id,
+    ownerOrgId: data.ownerOrgId || "internal",
     templateId: data.templateId,
     templateName: data.templateName || "",
     orgId: data.orgId,

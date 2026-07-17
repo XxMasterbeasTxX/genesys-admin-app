@@ -1,5 +1,6 @@
 const customers = require("./customers.json");
 const crypto = require("crypto");
+const { expandPackages } = require("./packages");
 
 const DEFAULT_REGION = process.env.GENESYS_HOME_REGION || "mypurecloud.de";
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim().toLowerCase();
@@ -50,9 +51,11 @@ function parseRegistry(context) {
         const region = String(entry.region || "").trim();
         const name = String(entry.name || id || "").trim();
         const clientId = String(entry.clientId || "").trim();
-        const entitlements = Array.isArray(entry.entitlements)
+        // Entitlements = expanded purchased packages ∪ any explicit prefixes.
+        const explicit = Array.isArray(entry.entitlements)
           ? entry.entitlements.filter((e) => typeof e === "string" && e.trim())
           : [];
+        const entitlements = [...new Set([...expandPackages(entry.packages), ...explicit])];
 
         return {
           id,
@@ -99,19 +102,17 @@ async function fetchOrganizationMe(accessToken, region) {
 function getBearerToken(req) {
   const headers = req.headers || {};
 
-  // Azure Static Web Apps strips/overwrites the Authorization header before it
-  // reaches managed functions, so the frontend forwards the user's Genesys token
-  // in a custom X-Genesys-Token header. Prefer it; fall back to Authorization for
-  // local dev / direct Functions hosts.
+  // The user's Genesys token is ALWAYS forwarded by the frontend in the custom
+  // X-Genesys-Token header (Azure Static Web Apps strips/overwrites Authorization
+  // before it reaches managed functions). We intentionally do NOT fall back to
+  // Authorization: SWA injects its own platform `Authorization` header, which is
+  // not a Genesys token — trusting it would send a bogus token to Genesys and
+  // also defeat the unauthenticated pre-login path (no X-Genesys-Token present).
   const custom = headers["x-genesys-token"] || headers["X-Genesys-Token"];
   if (custom && typeof custom === "string" && custom.trim()) {
     return custom.trim();
   }
-
-  const auth = headers.authorization || headers.Authorization;
-  if (!auth || typeof auth !== "string") return null;
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1] : null;
+  return null;
 }
 
 function getOrgHint(req) {
@@ -125,61 +126,143 @@ function getOrgHint(req) {
 /**
  * Classify a caller purely from their token, server-side.
  *
- * Returns one of:
- *   { mode: "no-token" }                                       — no token supplied
- *   { mode: "fallback",     org }                              — no env configured yet (legacy behavior)
- *   { mode: "internal",     org }                              — token belongs to the internal/company org
- *   { mode: "customer",     org, customer, entitlements }      — token belongs to a registered customer org
- *   { mode: "unrecognized", org }                              — token org is neither internal nor a known customer
+ * `hintId` (optional) is the customer slug the client claims (org-config `?org=`
+ * or the proxy body `customerId`). It is used ONLY to pick the correct Genesys
+ * region to validate the token against — the returned org id is still verified
+ * against the registry, so a wrong/forged hint cannot escalate.
  *
- * Throws if the token cannot be validated against organizations/me.
- * Results are cached per token for CLASSIFY_TTL_MS.
+ * Never throws. Returns one of:
+ *   { mode: "no-token" }
+ *   { mode: "fallback",       org }               — no env configured yet (legacy)
+ *   { mode: "internal",       org }               — token belongs to the internal org
+ *   { mode: "customer",       org, customer, entitlements }
+ *   { mode: "unrecognized",   org }               — valid token, org not internal/known
+ *   { mode: "org_mismatch",   org }               — hint given but token org != registry org
+ *   { mode: "verify_failed" }                     — organizations/me rejected the token
+ * Results are cached (customer results keyed by token+hint).
  */
-async function classifyCaller(context, token) {
+async function classifyCaller(context, token, hintId) {
   if (!token) return { mode: "no-token" };
-
-  const cached = getCachedClassification(token);
-  if (cached) return cached;
 
   const registry = parseRegistry(context);
   const configured = isConfigured(registry);
+  const cleanHint = (hintId && typeof hintId === "string") ? hintId.trim() : "";
+  const hintEntry = cleanHint ? registry.find((e) => e.id === cleanHint) : null;
 
-  const userOrg = await fetchOrganizationMe(token, DEFAULT_REGION);
-  const normalized = normalizeOrgId(userOrg.id);
+  // Reuse a cached result: a cross-region customer is keyed by token+hint; the
+  // token's home-region classification (internal / same-region customer) by token.
+  if (hintEntry) {
+    const c = getCachedClassification(`${token}::${hintEntry.id}`);
+    if (c) return c;
+  }
+  const cachedHome = getCachedClassification(token);
+  if (cachedHome) return cachedHome;
 
-  let result;
-  if (!configured) {
-    result = { mode: "fallback", org: userOrg };
-  } else if (INTERNAL_COMPANY_ORG_ID && normalized === INTERNAL_COMPANY_ORG_ID) {
-    result = { mode: "internal", org: userOrg };
-  } else {
-    const matched = registry.find((entry) => entry.orgId === normalized);
-    if (matched) {
-      result = {
-        mode: "customer",
-        org: userOrg,
-        customer: { id: matched.id, name: matched.name, region: matched.region },
-        entitlements: matched.entitlements,
-      };
-    } else {
-      result = { mode: "unrecognized", org: userOrg };
-    }
+  // 1) Classify against the caller's HOME region first. This makes an INTERNAL
+  //    token resolve as internal even when it supplies a customer hint (internal
+  //    staff manage customer orgs cross-org via client-credentials), and also
+  //    covers customers whose org is in the home region.
+  let homeOrg = null;
+  try {
+    homeOrg = await fetchOrganizationMe(token, DEFAULT_REGION);
+  } catch (_) {
+    homeOrg = null; // token invalid on the home region → maybe a cross-region customer
   }
 
-  setCachedClassification(token, result);
-  return result;
+  if (homeOrg) {
+    const normalized = normalizeOrgId(homeOrg.id);
+    let result;
+    if (!configured) {
+      result = { mode: "fallback", org: homeOrg };
+    } else if (INTERNAL_COMPANY_ORG_ID && normalized === INTERNAL_COMPANY_ORG_ID) {
+      result = { mode: "internal", org: homeOrg };
+    } else {
+      const matched = registry.find((entry) => entry.orgId === normalized);
+      result = matched
+        ? {
+            mode: "customer",
+            org: homeOrg,
+            customer: { id: matched.id, name: matched.name, region: matched.region },
+            entitlements: matched.entitlements,
+          }
+        : { mode: "unrecognized", org: homeOrg };
+    }
+    setCachedClassification(token, result);
+    return result;
+  }
+
+  // 2) Home region rejected the token → a customer authenticating in their OWN
+  //    (different) region. Verify against the hinted org's region and re-check id.
+  if (hintEntry) {
+    let custOrg;
+    try {
+      custOrg = await fetchOrganizationMe(token, hintEntry.region);
+    } catch (err) {
+      context.log.error("[org-config] customer verify failed:", err.message || err);
+      return { mode: "verify_failed" };
+    }
+    const result = normalizeOrgId(custOrg.id) === hintEntry.orgId
+      ? {
+          mode: "customer",
+          org: custOrg,
+          customer: { id: hintEntry.id, name: hintEntry.name, region: hintEntry.region },
+          entitlements: hintEntry.entitlements,
+        }
+      : { mode: "org_mismatch", org: custOrg };
+    setCachedClassification(`${token}::${hintEntry.id}`, result);
+    return result;
+  }
+
+  return { mode: "verify_failed" };
 }
 
 async function resolveOrgConfig(context, req) {
   const accessToken = getBearerToken(req);
+  const orgHint = getOrgHint(req);
+
+  // --- Pre-login (unauthenticated) branch ---
+  // A customer deep link (`?org=<slug>`) needs the org's PUBLIC login config
+  // BEFORE the user can authenticate (region + PKCE clientId to build the
+  // authorize URL). Only public fields are returned; secrets, entitlements, and
+  // other orgs are never exposed. Internal deep links never carry `?org`, so
+  // this branch is dormant for internal users.
   if (!accessToken) {
+    if (orgHint) {
+      const registry = parseRegistry(context);
+      const entry = registry.find((e) => e.id === orgHint);
+      if (!entry) {
+        return { status: 404, body: { error: "org_not_found" } };
+      }
+      if (!entry.clientId) {
+        return { status: 409, body: { error: "org_login_not_configured" } };
+      }
+      return {
+        status: 200,
+        body: {
+          prelogin: true,
+          login: {
+            id: entry.id,
+            name: entry.name,
+            region: entry.region,
+            clientId: entry.clientId,
+          },
+        },
+      };
+    }
     return { status: 401, body: { error: "missing_token" } };
   }
 
-  const orgHint = getOrgHint(req);
   const safeCustomers = customers.map(({ id, name, region }) => ({ id, name, region }));
 
-  const classification = await classifyCaller(context, accessToken);
+  const classification = await classifyCaller(context, accessToken, orgHint);
+
+  if (classification.mode === "verify_failed") {
+    return { status: 401, body: { error: "identity_verification_failed" } };
+  }
+
+  if (classification.mode === "org_mismatch") {
+    return { status: 403, body: { error: "org_hint_mismatch" } };
+  }
 
   if (classification.mode === "fallback") {
     return {

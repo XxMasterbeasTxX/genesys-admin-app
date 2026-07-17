@@ -1,4 +1,5 @@
 import { CONFIG } from "../config.js";
+import { fetchOrgLoginConfig } from "./orgConfigService.js";
 
 // --- STORAGE KEYS (same as your working template) ---
 const K_ACCESS_TOKEN  = "gc_access_token";
@@ -6,6 +7,11 @@ const K_EXPIRES_AT    = "gc_expires_at";     // epoch ms
 const K_PKCE_VERIFIER = "pkce_verifier";
 const K_OAUTH_STATE   = "oauth_state";
 const K_ORG_HINT      = "gc_org_hint";
+// Login target chosen at redirect time (customer org or internal default). These
+// keep the authorize redirect, the token exchange, and users/me consistent so a
+// customer authenticates against — and is validated in — their OWN Genesys region.
+const K_LOGIN_REGION    = "gc_login_region";
+const K_LOGIN_CLIENT_ID = "gc_login_client_id";
 
 // Use a small skew to avoid using a token that's about to expire mid-request
 const EXPIRY_SKEW_MS = 60 * 1000;
@@ -55,6 +61,25 @@ export function getOrgHint() {
   if (fromUrl) return fromUrl;
   return (sessionStorage.getItem(K_ORG_HINT) || "").trim() || null;
 }
+
+// --- LOGIN TARGET (internal default vs customer org) ---
+function storeLoginTarget(region, clientId) {
+  sessionStorage.setItem(K_LOGIN_REGION, region);
+  sessionStorage.setItem(K_LOGIN_CLIENT_ID, clientId);
+}
+
+/** Region the current session authenticated against (customer or internal default). */
+function getLoginRegion() {
+  return (sessionStorage.getItem(K_LOGIN_REGION) || "").trim() || CONFIG.region;
+}
+
+/** OAuth client id used for the current session (customer or internal default). */
+function getLoginClientId() {
+  return (sessionStorage.getItem(K_LOGIN_CLIENT_ID) || "").trim() || CONFIG.oauthClientId;
+}
+
+function authHostFor(region) { return `login.${region}`; }
+function apiBaseFor(region) { return `https://api.${region}`; }
 
 // IMPORTANT: preserve hash routing (#/dashboards) after login
 function clearQueryPreserveHash() {
@@ -113,10 +138,25 @@ async function buildPkce() {
 async function startLoginRedirect() {
   cacheOrgHintFromUrl();
 
-  const clientId = CONFIG.oauthClientId;
-  const redirectUri = CONFIG.oauthRedirectUri;
+  // Choose the login target: a customer org (from the pre-login registry lookup
+  // by `?org=`) or the internal default. Internal login is unchanged when there
+  // is no hint or the hint doesn't resolve.
+  let region = CONFIG.region;
+  let clientId = CONFIG.oauthClientId;
+  const hint = getOrgHint();
+  if (hint) {
+    try {
+      const login = await fetchOrgLoginConfig(hint);
+      if (login && login.clientId && login.region) {
+        region = login.region;
+        clientId = login.clientId;
+      }
+    } catch (_) { /* fall back to internal default */ }
+  }
+  storeLoginTarget(region, clientId);
 
-  if (!clientId) throw new Error("Missing CONFIG.oauthClientId");
+  const redirectUri = CONFIG.oauthRedirectUri;
+  if (!clientId) throw new Error("Missing OAuth client id");
   if (!redirectUri) throw new Error("Missing CONFIG.oauthRedirectUri");
 
   const { verifier, challenge } = await buildPkce();
@@ -126,7 +166,7 @@ async function startLoginRedirect() {
   sessionStorage.setItem(K_OAUTH_STATE, state);
 
   const authUrl =
-    `https://${CONFIG.authHost}/oauth/authorize` +
+    `https://${authHostFor(region)}/oauth/authorize` +
     `?response_type=code` +
     `&client_id=${encodeURIComponent(clientId)}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
@@ -139,8 +179,9 @@ async function startLoginRedirect() {
 }
 
 async function exchangeCodeForToken(code) {
-  const clientId = CONFIG.oauthClientId;
+  const clientId = getLoginClientId();
   const redirectUri = CONFIG.oauthRedirectUri;
+  const authHost = authHostFor(getLoginRegion());
 
   const verifier = sessionStorage.getItem(K_PKCE_VERIFIER);
   if (!verifier) throw new Error("Missing pkce_verifier (session lost).");
@@ -153,7 +194,7 @@ async function exchangeCodeForToken(code) {
     code_verifier: verifier
   });
 
-  const resp = await fetch(`https://${CONFIG.authHost}/oauth/token`, {
+  const resp = await fetch(`https://${authHost}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body
@@ -165,7 +206,7 @@ async function exchangeCodeForToken(code) {
 }
 
 async function usersMe(accessToken) {
-  const resp = await fetch(`${CONFIG.apiBase}/api/v2/users/me`, {
+  const resp = await fetch(`${apiBaseFor(getLoginRegion())}/api/v2/users/me`, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   const json = await resp.json().catch(() => ({}));

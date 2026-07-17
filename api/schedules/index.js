@@ -12,6 +12,7 @@
  * so the schedule records who created it.
  */
 const store = require("../lib/scheduleStore");
+const { getCallerContext, ownerVisibleTo } = require("../lib/callerContext");
 
 module.exports = async function (context, req) {
   const method = req.method.toUpperCase();
@@ -24,17 +25,25 @@ module.exports = async function (context, req) {
   });
 
   try {
+    // Owner-scoped store: each org only sees schedules its own session created. (Step 6)
+    const caller = await getCallerContext(context, req);
+    if (!caller.authorized) {
+      context.res = json(caller.status || 401, { error: caller.error || "unauthorized" });
+      return;
+    }
+
     // ── GET ─────────────────────────────────────────────
     if (method === "GET") {
       if (id) {
         const schedule = await store.getById(id);
-        if (!schedule) {
+        if (!schedule || !ownerVisibleTo(schedule.ownerOrgId, caller.ownerOrgId)) {
           context.res = json(404, { error: "Schedule not found" });
           return;
         }
         context.res = json(200, schedule);
       } else {
-        const schedules = await store.listAll();
+        const schedules = (await store.listAll())
+          .filter((s) => ownerVisibleTo(s.ownerOrgId, caller.ownerOrgId));
         context.res = json(200, schedules);
       }
       return;
@@ -53,6 +62,7 @@ module.exports = async function (context, req) {
       }
 
       const schedule = await store.create({
+        ownerOrgId: caller.ownerOrgId,
         exportType: b.exportType,
         exportLabel: b.exportLabel || b.exportType,
         scheduleType: b.scheduleType,
@@ -79,7 +89,7 @@ module.exports = async function (context, req) {
       }
 
       const existing = await store.getById(id);
-      if (!existing) {
+      if (!existing || !ownerVisibleTo(existing.ownerOrgId, caller.ownerOrgId)) {
         context.res = json(404, { error: "Schedule not found" });
         return;
       }
@@ -117,7 +127,7 @@ module.exports = async function (context, req) {
       }
 
       const existing = await store.getById(id);
-      if (!existing) {
+      if (!existing || !ownerVisibleTo(existing.ownerOrgId, caller.ownerOrgId)) {
         context.res = json(404, { error: "Schedule not found" });
         return;
       }

@@ -226,3 +226,65 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
     can,
   };
 }
+
+/**
+ * Resolve access for a CUSTOMER session from their purchased entitlements.
+ *
+ * Customers are gated purely by their module entitlements (e.g. "interactions.*",
+ * "export.users.*", "utilities.ipRanges") — the same wildcard key machinery used
+ * for internal group access. There is NO permission refinement: a customer's
+ * write actions are governed by their own Genesys role (token-forwarding) and,
+ * server-side, by the proxy's org-lock + entitlement guard. Exposes the same
+ * interface as resolveAccess() so nav, routing, and pages are unchanged.
+ *
+ * @param {string[]} entitlements  Module access-key prefixes for the customer.
+ */
+export function resolveCustomerAccess(entitlements) {
+  const keys = new Set((entitlements || []).filter((k) => typeof k === "string" && k.trim()));
+
+  function hasAccess(pageKey) {
+    if (!pageKey) return true;
+    // Internal-only features are never available in customer mode, even if an
+    // entitlement prefix would otherwise grant them (belt-and-suspenders on top
+    // of the server-side proxy denylist + org-lock). See docs/customer-facing-plan.md §5.
+    if (isCustomerExcluded(pageKey)) return false;
+    if (keys.has("*")) return true;
+    const parts = pageKey.split(".");
+    for (let i = parts.length - 1; i > 0; i--) {
+      if (keys.has(parts.slice(0, i).join(".") + ".*")) return true;
+    }
+    return keys.has(pageKey);
+  }
+
+  return {
+    hasAccess,
+    hasAnyAccess() { return keys.size > 0; },
+    accessState(pageKey) { return hasAccess(pageKey) ? "allowed" : "hidden"; },
+    getMissingPermissions() { return []; },
+    can() { return true; },
+  };
+}
+
+/**
+ * Access keys (or prefixes) that are INTERNAL-ONLY and must never be available in
+ * customer mode — cross-org copies, trustee/all-orgs/billing exports, and the
+ * internal Utilities module (IP Ranges uses client-credentials; Permission
+ * Catalog is internal). GDPR is intentionally NOT excluded (open decision O2).
+ */
+const CUSTOMER_EXCLUDED_KEYS = [
+  "data-actions.copy.betweenOrgs",
+  "data-tables.copy.betweenOrgs",
+  "roles.copy.betweenOrgs",
+  "export.users.trustee",
+  "export.roles.allOrgs",
+  "export.billing",
+  "utilities",
+  "deployment",
+];
+
+/** True if a page key is an internal-only feature excluded from customer mode. */
+function isCustomerExcluded(pageKey) {
+  return CUSTOMER_EXCLUDED_KEYS.some(
+    (ex) => pageKey === ex || pageKey.startsWith(ex + "."),
+  );
+}

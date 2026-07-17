@@ -105,6 +105,9 @@ module.exports = async function (context, req) {
     }
 
     // --- Classify the caller from their own token (server-side, cached) ---
+    // `customerId` from the body is used ONLY as a region hint to validate the
+    // token against the right Genesys region; the org id is still verified
+    // server-side, so a forged customerId cannot escalate.
     const userToken = getBearerToken(req);
     const registry = parseRegistry(context);
     const configured = !!INTERNAL_COMPANY_ORG_ID || registry.length > 0;
@@ -112,7 +115,7 @@ module.exports = async function (context, req) {
     let classification = { mode: "no-token" };
     if (userToken) {
       try {
-        classification = await classifyCaller(context, userToken);
+        classification = await classifyCaller(context, userToken, customerId);
       } catch (err) {
         context.log.error("[proxy] caller classification failed:", err.message || err);
         // Cannot verify identity. If the system is configured, fail closed so a
@@ -167,6 +170,24 @@ module.exports = async function (context, req) {
     }
 
     // --- Configured but caller cannot use client-credentials ---
+    if (configured && classification.mode === "verify_failed") {
+      context.res = {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+        body: { error: "identity_verification_failed" },
+      };
+      return;
+    }
+
+    if (configured && classification.mode === "org_mismatch") {
+      context.res = {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+        body: { error: "org_locked" },
+      };
+      return;
+    }
+
     if (configured && classification.mode === "unrecognized") {
       context.res = {
         status: 403,
