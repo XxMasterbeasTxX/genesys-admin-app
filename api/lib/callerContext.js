@@ -26,6 +26,23 @@ function isConfigured(registry) {
 }
 
 /**
+ * Derive the region hint for classification: the frontend sends the selected/
+ * locked org slug in X-Org-Hint; fall back to the request's own orgId. This lets
+ * a cross-region customer token be verified against the right Genesys region even
+ * on endpoints that don't otherwise carry an org id.
+ */
+function getRequestHint(req) {
+  const h = req.headers || {};
+  const fromHeader = h["x-org-hint"] || h["X-Org-Hint"];
+  if (fromHeader && typeof fromHeader === "string" && fromHeader.trim()) return fromHeader.trim();
+  const q = req.query && req.query.orgId;
+  if (q) return String(q).trim();
+  const b = req.body && req.body.orgId;
+  if (b) return String(b).trim();
+  return null;
+}
+
+/**
  * @returns {Promise<{
  *   authorized: boolean,       // false → respond 401/403 (see `status`/`error`)
  *   status?: number,
@@ -38,6 +55,7 @@ function isConfigured(registry) {
  */
 async function getCallerContext(context, req, { hintId = null } = {}) {
   const token = getBearerToken(req);
+  const hint = hintId || getRequestHint(req);
   const registry = parseRegistry(context);
   const configured = isConfigured(registry);
 
@@ -50,7 +68,7 @@ async function getCallerContext(context, req, { hintId = null } = {}) {
     return { authorized: false, status: 401, error: "missing_token", mode: "no-token", configured, customerId: null, ownerOrgId: INTERNAL_OWNER };
   }
 
-  const classification = await classifyCaller(context, token, hintId);
+  const classification = await classifyCaller(context, token, hint);
 
   switch (classification.mode) {
     case "internal":

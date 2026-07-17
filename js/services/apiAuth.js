@@ -8,9 +8,17 @@
  * in docs/customer-facing-plan.md.
  */
 import { getValidAccessToken } from "./authService.js";
+import { orgContext } from "./orgContext.js";
 
-/** Merge X-Genesys-Token into a headers object (no-op if there is no token). */
+/** Merge X-Genesys-Token (+ X-Org-Hint) into a headers object. */
 export function withUserToken(headers = {}) {
+  const out = { ...headers };
   const token = getValidAccessToken();
-  return token ? { ...headers, "X-Genesys-Token": token } : headers;
+  if (token) out["X-Genesys-Token"] = token;
+  // The selected/locked org slug lets the backend pick the correct Genesys
+  // region to verify a (cross-region) customer token against. Internal callers
+  // are still classified by their home region, so this is a safe no-op for them.
+  const org = orgContext.get();
+  if (org) out["X-Org-Hint"] = org;
+  return out;
 }
