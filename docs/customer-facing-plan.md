@@ -373,7 +373,7 @@ never from a request field:
        endpoint → `403 endpoint_not_available_for_customer`.
    - Prereq for 5d: a PKCE client in the customer org; its `clientId` added to `CUSTOMER_REGISTRY_JSON`.
      **[DONE for Test IE on dev]**
-6. **Data-store isolation** (§10). **[BUILT — pending test]**
+6. **Data-store isolation** (§10). **[DONE — validated on dev 2026-07-17]**
    - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
      from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or
      `"internal"`; legacy/missing records are treated as internal).
