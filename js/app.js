@@ -155,6 +155,13 @@ function renderFatalError(message) {
   });
   navEl.append(versionEl);
 
+  // --- Copyright footer (bottom of the sidebar) ---
+  const copyrightEl = document.createElement("div");
+  copyrightEl.className = "nav-copyright";
+  copyrightEl.textContent = "© 2026 TDC Erhverv";
+  copyrightEl.title = "Proprietary and confidential";
+  navEl.append(copyrightEl);
+
   // --- Sign-out button ---
   document.getElementById("signOutBtn").addEventListener("click", () => refreshSession());
 
