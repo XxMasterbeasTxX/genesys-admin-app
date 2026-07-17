@@ -11,6 +11,18 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "1.6",
+    date: "2026-07-17",
+    title: "Customer-facing foundation, data-store isolation & security notices",
+    changes: [
+      "Customer-facing capability (foundation): the app can now serve external customers against their OWN Genesys org with strict tenant isolation and purchased-module (package) access. Customers log into their own region and are locked to their org; the selectable module set comes from their entitlements. Internal/staff usage is unchanged.",
+      "Data-store isolation: app-owned stores are now org-aware. Templates and template assignments are cross-org for staff but locked to a customer's own org for customers. Activity Log, Scheduled Exports, and Template Schedules are owner-scoped — each org only sees records its own session created (customers never see internal data, and staff never see customer-created records).",
+      "Note for staff: saving templates/schedules and viewing the Activity Log now rely on your active login session — if you get an unexpected error there, refresh the page to renew your session.",
+      "Internal-only features (Utilities, Deployment, cross-org copies, Trustee/All-Orgs/Billing exports) are explicitly unavailable in customer mode.",
+      "Security: added a self-XSS console warning on load (don't paste code someone sends you into the browser console) and a proprietary/copyright notice (© 2026 TDC Erhverv) in the sidebar footer.",
+    ],
+  },
+  {
     version: "1.5",
     date: "2026-07-08",
     title: "Fix: Data Tables schema edit no longer drops columns",
