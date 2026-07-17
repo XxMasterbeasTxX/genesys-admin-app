@@ -27,6 +27,30 @@ function setHeader({ authText }) {
   document.getElementById("authPill").textContent = authText;
 }
 
+/**
+ * Console self-XSS warning + proprietary notice. Printed once on boot. The
+ * self-XSS message deters social-engineering attacks where a user is tricked
+ * into pasting code into DevTools (this app forwards a live Genesys session).
+ */
+function printSecurityNotice() {
+  try {
+    console.log(
+      "%cStop!",
+      "color:#c00;font-size:32px;font-weight:bold;",
+    );
+    console.log(
+      "%cThis is a browser feature intended for developers. If someone told you to " +
+        "copy and paste something here to enable a feature or “fix” something, it is a " +
+        "scam and will give them access to your account and data. Do not paste anything here.",
+      "font-size:14px;",
+    );
+    console.log(
+      "%c© 2026 TDC Erhverv. Proprietary and confidential — unauthorized copying or reuse is prohibited.",
+      "color:#666;font-size:12px;",
+    );
+  } catch (_) { /* console not available — ignore */ }
+}
+
 function renderFatalError(message) {
   const outletEl = document.getElementById("appMain");
   outletEl.innerHTML = `
@@ -38,6 +62,7 @@ function renderFatalError(message) {
 }
 
 (async function main() {
+  printSecurityNotice();
   setHeader({ authText: "Auth: starting…" });
 
   // --- Authenticate ---
