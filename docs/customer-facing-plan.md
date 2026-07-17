@@ -398,7 +398,12 @@ never from a request field:
      nav and denied on route.
 8. **Per-customer onboarding & scope mapping.**
 9. **Security review & tenant-isolation testing** (attempt cross-org access with a customer token;
-   verify every store and proxy path rejects it).
+   verify every store and proxy path rejects it). **[DONE — validated on dev 2026-07-17]**
+   - Login/identity, proxy isolation (unauth/forged/cross-org/billing), store isolation (read + write
+     tamper → `403 org_locked`), owner-scoped writes (forged `ownerOrgId` ignored; customer-created
+     schedule visible to the customer, invisible to internal), and customer-mode feature gating all pass.
+   - Known limitation: dev has one customer (Test IE); isolation is enforced by org identity, so a second
+     registered customer isn't required to validate the mechanism.
 
 ---
 
