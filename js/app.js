@@ -87,8 +87,11 @@ function renderFatalError(message) {
   // (+ permission refinement); customers are gated by their purchased entitlements.
   const orgSelectEl = document.getElementById("orgSelect");
   let access;
+  const ORGCFG_RETRY_KEY = "gc_orgcfg_retry";
   try {
     const orgCfg = await fetchOrgConfig(res.accessToken, res.orgHint);
+    // Org context resolved — clear any prior self-heal guard.
+    sessionStorage.removeItem(ORGCFG_RETRY_KEY);
 
     if (orgCfg.mode === "customer" && orgCfg.customer) {
       access = resolveCustomerAccess(orgCfg.entitlements);
@@ -116,6 +119,20 @@ function renderFatalError(message) {
     }
   } catch (err) {
     console.error("Failed to resolve org config:", err);
+
+    // Self-heal a stale/invalid INTERNAL token (e.g. a leftover session whose org
+    // is no longer recognized → 401/403). Clear the session and re-login ONCE
+    // (guarded to avoid a redirect loop). Customer deep links (`?org=`) stay
+    // fail-closed — never auto-loop them.
+    const status = err && err.status;
+    const authish = status === 401 || status === 403;
+    if (!res.orgHint && authish && !sessionStorage.getItem(ORGCFG_RETRY_KEY)) {
+      sessionStorage.setItem(ORGCFG_RETRY_KEY, "1");
+      setHeader({ authText: "Auth: refreshing session\u2026" });
+      await refreshSession(); // clears session + redirects to login
+      return;
+    }
+
     orgSelectEl.innerHTML = `<option value="">⚠ Failed to resolve org context</option>`;
     orgSelectEl.disabled = true;
     // Fail-closed for a customer deep link; keep internal resilience otherwise.
