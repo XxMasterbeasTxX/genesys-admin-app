@@ -89,6 +89,42 @@ export function createApiClient(getToken) {
     /** Raw request helper — use for one-off calls. */
     request,
 
+    /**
+     * Call the app's OWN backend (Azure Functions) at the SAME origin.
+     * Unlike `request`, this does NOT prepend CONFIG.apiBase (the Genesys host);
+     * it forwards the user's token in X-Genesys-Token so managed functions can
+     * verify the caller server-side (SWA strips Authorization).
+     */
+    async appRequest(path, { method = "GET", body, query } = {}) {
+      const token = typeof getToken === "function" ? getToken() : getToken;
+      let url = path; // same-origin, relative
+      if (query) {
+        const qs = new URLSearchParams(query).toString();
+        if (qs) url += `?${qs}`;
+      }
+      const headers = {};
+      if (token) {
+        headers["X-Genesys-Token"] = token;
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      const opts = { method, headers };
+      if (body !== undefined) {
+        headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(body);
+      }
+      const resp = await fetch(url, opts);
+      if (resp.status === 204) return null;
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const detail = json.message || json.error || "";
+        const err = new Error(detail || `App ${method} ${path} → ${resp.status}`);
+        err.status = resp.status;
+        err.body = json;
+        throw err;
+      }
+      return json;
+    },
+
     /** Proxy a Genesys API call through the backend for a customer org. */
     proxyGenesys,
 

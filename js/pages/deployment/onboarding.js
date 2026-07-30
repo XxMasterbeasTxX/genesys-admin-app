@@ -227,7 +227,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     setStatus("Starting deployment…");
     $deployBtn.disabled = true;
     try {
-      const { jobId } = await api.request("/api/onboarding-deploy", { method: "POST", body: plan });
+      const { jobId } = await api.appRequest("/api/onboarding-deploy", { method: "POST", body: plan });
       setStatus(`Deployment job created (${jobId}).`);
       renderPlanPreview(plan);
       pollJob(jobId, 0);
@@ -241,7 +241,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   async function pollJob(jobId, attempt) {
     let job;
     try {
-      job = await api.request("/api/onboarding-deploy", { query: { jobId } });
+      job = await api.appRequest("/api/onboarding-deploy", { query: { jobId } });
     } catch (err) {
       setStatus(`Lost track of job ${jobId}: ${err.message}`, "error");
       updateDeployBtn();
