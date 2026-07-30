@@ -247,6 +247,19 @@ async function processJob(job, store, log) {
       transformedPath.set(name, out);
     }
 
+    // ── Diagnostic: compare Architect capabilities of source vs target to pinpoint
+    //    the feature gap that blocks SDK flow import (importFromFileAsync). ──────
+    try {
+      const [srcCap, tgtCap] = await Promise.all([
+        rest.gcFetch(source, "GET", "/api/v2/architect/capabilities", { query: { expand: "featureSupport" } }),
+        rest.gcFetch(target, "GET", "/api/v2/architect/capabilities", { query: { expand: "featureSupport" } }),
+      ]);
+      log(`[onboarding-runner] SRC architect/capabilities: ${JSON.stringify(srcCap).slice(0, 7000)}`);
+      log(`[onboarding-runner] TGT architect/capabilities: ${JSON.stringify(tgtCap).slice(0, 7000)}`);
+    } catch (e) {
+      log(`[onboarding-runner] capability probe failed: ${e.message}`);
+    }
+
     // ── Publish flows: common modules → in-queue → callflows ──────────
     const cmNames = new Set([...exported].filter(([, r]) => r.type === DEP_FLOW_TYPES.commonModule).map(([n]) => n));
     const iqNames = new Set([...exported].filter(([, r]) => r.type === DEP_FLOW_TYPES.inQueue).map(([n]) => n));
