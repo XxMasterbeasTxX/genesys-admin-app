@@ -62,7 +62,12 @@ async function sdkPublish(targetOrg, file) {
     "--location", targetOrg.location, "--file", file,
   ]);
   if (res.code !== 0) {
-    throw new Error((res.stderr || res.stdout || "publish failed").trim().split("\n").pop());
+    // Surface the most informative tail of the child output (stderr holds the
+    // error line; stdout may hold preceding verbose SDK context).
+    const errLines = (res.stderr || "").split("\n").map((s) => s.trim()).filter(Boolean);
+    const primary = errLines.filter((l) => /fail|error|invalid|permission|not available/i.test(l));
+    const detail = (primary.length ? primary : errLines).slice(-3).join(" | ");
+    throw new Error((detail || "publish failed").slice(0, 600));
   }
   return true;
 }

@@ -20,6 +20,11 @@ const archEnums = arch.enums.archEnums;
 const archFactoryFlows = arch.factories.archFactoryFlows;
 const archLanguages = arch.languages.archLanguages;
 
+// Verbose SDK logging → richer diagnostics captured by the runner (helps pin down
+// errors like "functionality not available", which is often a missing Architect
+// permission on the client-credentials OAuth client).
+try { arch.services.archLogging.logNotesVerbose = true; } catch (_) { /* ignore */ }
+
 function parseArgs(argv) {
   const a = {};
   for (let i = 0; i < argv.length; i++) {
