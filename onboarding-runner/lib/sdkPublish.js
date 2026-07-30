@@ -39,10 +39,15 @@ const yamlText = fs.readFileSync(yamlFile, "utf8");
 const meta = parseFlowMeta(yamlText);
 if (!meta.flowType || !meta.name) { console.error("Could not read flow type/name from YAML."); process.exit(2); }
 
-const createMethod =
-  "createFlow" + meta.flowType.charAt(0).toUpperCase() + meta.flowType.slice(1) + "Async";
-if (typeof archFactoryFlows[createMethod] !== "function") {
-  console.error(`No factory method '${createMethod}' for flow type '${meta.flowType}'.`);
+// Find the factory create method case-insensitively — the SDK's method casing
+// (e.g. createFlowInQueueCallAsync) doesn't always match the YAML root key
+// casing (e.g. inqueueCall), so a naive capitalization would miss it.
+const wantMethod = ("createflow" + meta.flowType + "async").toLowerCase();
+const createMethod = Object.getOwnPropertyNames(Object.getPrototypeOf(archFactoryFlows))
+  .concat(Object.getOwnPropertyNames(archFactoryFlows))
+  .find((n) => n.toLowerCase() === wantMethod);
+if (!createMethod || typeof archFactoryFlows[createMethod] !== "function") {
+  console.error(`No factory method for flow type '${meta.flowType}'.`);
   process.exit(2);
 }
 

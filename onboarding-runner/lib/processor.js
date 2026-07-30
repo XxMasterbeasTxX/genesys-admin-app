@@ -185,6 +185,11 @@ async function processJob(job, store, log) {
     const tgtActionNames = new Set(tgtActions.map((a) => a.name));
     const srcIntegById = new Map(srcIntegs.map((i) => [i.id, i]));
     const tgtIntegByName = new Map(tgtIntegs.map((i) => [i.name, i]));
+    const tgtIntegByType = new Map();
+    for (const i of tgtIntegs) {
+      const t = i.integrationType && i.integrationType.id;
+      if (t && !tgtIntegByType.has(t)) tgtIntegByType.set(t, i);
+    }
 
     for (const { action: srcName } of [...actionRefs.values()]) {
       const newName = stripPrefix(srcName);
@@ -196,10 +201,20 @@ async function processJob(job, store, log) {
         const srcSummary = srcActionByName.get(srcName);
         if (!srcSummary) throw new Error("not found in source");
         const full = await rest.getDataAction(source, srcSummary.id);
-        // Match target integration by the source integration's name.
+        // Match target integration by connector TYPE first (robust to renames),
+        // then by display name.
         const srcInteg = srcIntegById.get(full.integrationId);
-        const tgtInteg = srcInteg ? tgtIntegByName.get(srcInteg.name) : null;
-        if (!tgtInteg) throw new Error(`no matching integration '${srcInteg ? srcInteg.name : "?"}' in target`);
+        const srcType = srcInteg && srcInteg.integrationType && srcInteg.integrationType.id;
+        const tgtInteg =
+          (srcType && tgtIntegByType.get(srcType)) ||
+          (srcInteg && tgtIntegByName.get(srcInteg.name)) ||
+          null;
+        if (!tgtInteg) {
+          throw new Error(
+            `target org has no '${srcInteg ? srcInteg.name : "?"}' integration ` +
+            `(type ${srcType || "?"}) — install/activate it in the target first`
+          );
+        }
         await rest.createDataAction(target, {
           name: newName,
           category: full.category,
