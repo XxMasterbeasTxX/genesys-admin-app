@@ -25,7 +25,14 @@ async function gcFetch(org, method, path, { query, body } = {}) {
   let json;
   try { json = JSON.parse(text); } catch { json = { raw: text }; }
   if (!resp.ok) {
-    const err = new Error(json.message || json.error || `${method} ${path} → ${resp.status}`);
+    let extra = "";
+    if (json.code) extra = json.code;
+    if (Array.isArray(json.details) && json.details.length) {
+      const d = json.details[0];
+      extra = [extra, d.errorCode, d.fieldName].filter(Boolean).join(" ");
+    }
+    const base = json.message || json.error || `${method} ${path} → ${resp.status}`;
+    const err = new Error(extra ? `${base} (${extra})` : base);
     err.status = resp.status;
     err.body = json;
     throw err;
@@ -73,7 +80,7 @@ const listDataActions = (org) =>
   fetchAllPages(org, "/api/v2/integrations/actions", { query: { includeAuthActions: "false" } });
 
 const getDataAction = (org, id) =>
-  gcFetch(org, "GET", `/api/v2/integrations/actions/${id}`, { query: { expand: "contract" } });
+  gcFetch(org, "GET", `/api/v2/integrations/actions/${id}`, { query: { expand: "contract", includeConfig: "true" } });
 
 const createDataAction = (org, body) =>
   gcFetch(org, "POST", "/api/v2/integrations/actions", { body });

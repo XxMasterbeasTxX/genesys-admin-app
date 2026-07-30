@@ -67,7 +67,10 @@ async function sdkPublish(targetOrg, file) {
     const errLines = (res.stderr || "").split("\n").map((s) => s.trim()).filter(Boolean);
     const primary = errLines.filter((l) => /fail|error|invalid|permission|not available/i.test(l));
     const detail = (primary.length ? primary : errLines).slice(-3).join(" | ");
-    throw new Error((detail || "publish failed").slice(0, 600));
+    const err = new Error((detail || "publish failed").slice(0, 600));
+    // Attach the full (verbose) child output so the caller can log it to App Insights.
+    err.fullOutput = ((res.stdout || "") + "\n---STDERR---\n" + (res.stderr || "")).slice(-12000);
+    throw err;
   }
   return true;
 }
@@ -272,6 +275,9 @@ async function processJob(job, store, log) {
           await sdkPublish(target, file);
           phase.items.push({ old: name, new: newName, status: "ok" });
         } catch (err) {
+          if (err.fullOutput) {
+            log(`[onboarding-runner] SDK output for publish '${name}':\n${err.fullOutput}`);
+          }
           phase.items.push({ old: name, new: newName, status: "error", detail: err.message });
         }
         await persist();
