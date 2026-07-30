@@ -125,4 +125,40 @@ function resolveDeps(yaml) {
   };
 }
 
-module.exports = { DEFAULT_PREFIX, stripPrefix, transformFlowYaml, parseFlowMeta, resolveDeps };
+// ── i3 (architect-format) transform ─────────────────────────────────────────
+
+/**
+ * Transform an .i3InboundFlow (architect-format) flow file.
+ *
+ * The file is base64( url-encoded( JSON ) ). Object names appear url-encoded
+ * (spaces → %20), so we strip the url-encoded prefix ("Template%20-%20") directly
+ * on the url-encoded layer — no full JSON decode/re-encode, preserving the exact
+ * bytes the SDK expects. Used because YAML flow import is gated in customer orgs
+ * but the architect format is not.
+ *
+ * @returns {{ output: string (base64), count: number }}
+ */
+function transformI3(base64Content, opts = {}) {
+  const prefix = opts.prefix || DEFAULT_PREFIX;
+  const urlPrefix = encodeURIComponent(prefix); // "Template - " → "Template%20-%20"
+  const urlEnc = Buffer.from(String(base64Content).trim(), "base64").toString("utf8");
+  const count = urlEnc.split(urlPrefix).length - 1;
+  const stripped = urlEnc.split(urlPrefix).join("");
+  return { output: Buffer.from(stripped, "utf8").toString("base64"), count };
+}
+
+/** Read the default language tag (e.g. "da-dk") from an exported flow YAML. */
+function getDefaultLanguage(yaml) {
+  const m = String(yaml).match(/^\s*defaultLanguage:\s*(\S+)/m);
+  return m ? m[1] : null;
+}
+
+module.exports = {
+  DEFAULT_PREFIX,
+  stripPrefix,
+  transformFlowYaml,
+  parseFlowMeta,
+  resolveDeps,
+  transformI3,
+  getDefaultLanguage,
+};

@@ -30,6 +30,12 @@ fs.mkdirSync(args.outDir, { recursive: true });
 const location = archEnums.LOCATIONS[args.location];
 if (!location) { console.error(`Unknown location '${args.location}'`); process.exit(2); }
 
+// Format: "yaml" (default, for discovery) or "architect" (.i3, for transfer —
+// imports into customer orgs that don't have the gated YAML import feature).
+const format = args.format === "architect"
+  ? archEnums.FLOW_FORMAT_TYPES.architect
+  : archEnums.FLOW_FORMAT_TYPES.yaml;
+
 let exitCode = 1;
 
 function doWork() {
@@ -37,7 +43,7 @@ function doWork() {
     .loadFlowByFlowNameAsync(args.flowName, args.flowType)
     .then((flow) => {
       if (!flow) throw new Error(`Flow not found: '${args.flowName}' (${args.flowType})`);
-      return flow.exportToDirAsync(args.outDir, undefined, archEnums.FLOW_FORMAT_TYPES.yaml);
+      return flow.exportToDirAsync(args.outDir, undefined, format);
     })
     .then((fullPath) => { console.log("EXPORTED " + fullPath); exitCode = 0; })
     .catch((err) => { console.error("Export failed: " + (err && err.message ? err.message : err)); exitCode = 1; });

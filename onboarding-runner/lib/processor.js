@@ -20,7 +20,7 @@ const { spawn } = require("child_process");
 const { resolveOrg } = require("./regions");
 const rest = require("./genesysRest");
 const {
-  transformFlowYaml, resolveDeps, parseFlowMeta, stripPrefix,
+  transformFlowYaml, resolveDeps, parseFlowMeta, stripPrefix, transformI3, getDefaultLanguage,
 } = require("./onboardingEngine");
 
 const EXPORT_DIR = path.join(__dirname, "sdkExport.js");
@@ -43,12 +43,14 @@ function runChild(script, args) {
   });
 }
 
-async function sdkExport(sourceOrg, name, type, outDir) {
-  const res = await runChild(EXPORT_DIR, [
+async function sdkExport(sourceOrg, name, type, outDir, format) {
+  const argv = [
     "--clientId", sourceOrg.clientId, "--clientSecret", sourceOrg.clientSecret,
     "--location", sourceOrg.location, "--flowName", name, "--flowType", type,
     "--outDir", outDir,
-  ]);
+  ];
+  if (format) argv.push("--format", format);
+  const res = await runChild(EXPORT_DIR, argv);
   const m = res.stdout.match(/EXPORTED (.+)/);
   if (res.code !== 0 || !m) {
     throw new Error((res.stderr || res.stdout || "export failed").trim().split("\n").pop());
@@ -56,11 +58,14 @@ async function sdkExport(sourceOrg, name, type, outDir) {
   return m[1].trim();
 }
 
-async function sdkPublish(targetOrg, file) {
-  const res = await runChild(PUBLISH_DIR, [
+async function sdkPublish(targetOrg, file, flowType, flowName, languageTag) {
+  const argv = [
     "--clientId", targetOrg.clientId, "--clientSecret", targetOrg.clientSecret,
     "--location", targetOrg.location, "--file", file,
-  ]);
+    "--flowType", flowType, "--flowName", flowName,
+  ];
+  if (languageTag) argv.push("--languageTag", languageTag);
+  const res = await runChild(PUBLISH_DIR, argv);
   if (res.code !== 0) {
     // Surface the most informative tail of the child output (stderr holds the
     // error line; stdout may hold preceding verbose SDK context).
@@ -238,29 +243,11 @@ async function processJob(job, store, log) {
       await persist();
     }
 
-    // ── Transform every exported flow YAML (strip prefix + set division) ──
-    const transformedPath = new Map(); // name → transformed file
-    for (const [name, rec] of exported) {
-      const { output } = transformFlowYaml(rec.yaml, { division });
-      const out = path.join(workDir, `publish-${stripPrefix(name)}.yaml`);
-      fs.writeFileSync(out, output, "utf8");
-      transformedPath.set(name, out);
-    }
-
-    // ── Diagnostic: compare Architect capabilities of source vs target to pinpoint
-    //    the feature gap that blocks SDK flow import (importFromFileAsync). ──────
-    try {
-      const [srcCap, tgtCap] = await Promise.all([
-        rest.gcFetch(source, "GET", "/api/v2/architect/capabilities", { query: { expand: "featureSupport" } }),
-        rest.gcFetch(target, "GET", "/api/v2/architect/capabilities", { query: { expand: "featureSupport" } }),
-      ]);
-      log(`[onboarding-runner] SRC architect/capabilities: ${JSON.stringify(srcCap).slice(0, 7000)}`);
-      log(`[onboarding-runner] TGT architect/capabilities: ${JSON.stringify(tgtCap).slice(0, 7000)}`);
-    } catch (e) {
-      log(`[onboarding-runner] capability probe failed: ${e.message}`);
-    }
-
-    // ── Publish flows: common modules → in-queue → callflows ──────────
+    // ── Publish flows via the architect (.i3) format ─────────────────────────
+    //    The YAML import is gated in customer orgs; the .i3 (architect) format is
+    //    not. .i3 is base64(url-encoded(JSON)) and contains the object NAMES, so
+    //    we export each flow as .i3, strip the "Template - " prefix on it, then
+    //    create + import + publish. Order: common modules → in-queue → callflows.
     const cmNames = new Set([...exported].filter(([, r]) => r.type === DEP_FLOW_TYPES.commonModule).map(([n]) => n));
     const iqNames = new Set([...exported].filter(([, r]) => r.type === DEP_FLOW_TYPES.inQueue).map(([n]) => n));
     const rootNames = new Set(job.flows.map((f) => f.name));
@@ -272,10 +259,10 @@ async function processJob(job, store, log) {
     async function publishGroup(label, names, flowTypeForExistCheck) {
       const phase = addPhase(label);
       for (const name of names) {
+        const rec = exported.get(name);
         const newName = stripPrefix(name);
-        const file = transformedPath.get(name);
         try {
-          if (!file) throw new Error("was not exported (see Export phase)");
+          if (!rec) throw new Error("was not exported (see Export phase)");
           if (flowTypeForExistCheck) {
             const existing = await rest.fetchAllPages(target, "/api/v2/flows", {
               query: { type: flowTypeForExistCheck, nameOrDescription: newName },
@@ -285,7 +272,12 @@ async function processJob(job, store, log) {
               continue;
             }
           }
-          await sdkPublish(target, file);
+          // Export as architect (.i3) from source → strip prefix → publish to target.
+          const i3Path = await sdkExport(source, name, rec.type, workDir, "architect");
+          const { output } = transformI3(fs.readFileSync(i3Path, "utf8"), { prefix: "Template - " });
+          const pubFile = path.join(workDir, `publish-${newName}.i3InboundFlow`);
+          fs.writeFileSync(pubFile, output, "utf8");
+          await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml));
           phase.items.push({ old: name, new: newName, status: "ok" });
         } catch (err) {
           if (err.fullOutput) {

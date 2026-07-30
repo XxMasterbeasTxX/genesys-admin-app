@@ -1,19 +1,18 @@
 "use strict";
 /**
- * SDK child worker — IMPORT a (transformed) flow YAML into an org and PUBLISH it.
+ * SDK child worker — IMPORT a (transformed) flow file into an org and PUBLISH it.
  * Spawned by processor.js as its own process (a Scripting session = one org).
  *
- * Args: --clientId --clientSecret --location --file
- * On success prints "PUBLISHED <name>" and exits 0.
+ * Args: --clientId --clientSecret --location --file --flowType --flowName [--languageTag]
+ * Works with either format: YAML or architect (.i3InboundFlow). The file must
+ * already be transformed (prefix stripped). On success prints "PUBLISHED <name>".
  *
- * Import model: create an empty flow of the matching type, import the content
- * into it, validate, publish. The YAML must already be transformed (prefix
- * stripped, division set).
+ * Import model: create an empty flow of the given type, import the content into
+ * it, validate, publish.
  */
 const fs = require("fs");
 const path = require("path");
 const arch = require("purecloud-flow-scripting-api-sdk-javascript");
-const { parseFlowMeta } = require("./onboardingEngine");
 
 const archSession = arch.environment.archSession;
 const archEnums = arch.enums.archEnums;
@@ -34,31 +33,25 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-for (const k of ["clientId", "clientSecret", "location", "file"]) {
+for (const k of ["clientId", "clientSecret", "location", "file", "flowType", "flowName"]) {
   if (!args[k]) { console.error(`Missing --${k}`); process.exit(2); }
 }
-const yamlFile = path.resolve(args.file);
-if (!fs.existsSync(yamlFile)) { console.error("File not found: " + yamlFile); process.exit(2); }
-
-const yamlText = fs.readFileSync(yamlFile, "utf8");
-const meta = parseFlowMeta(yamlText);
-if (!meta.flowType || !meta.name) { console.error("Could not read flow type/name from YAML."); process.exit(2); }
+const flowFile = path.resolve(args.file);
+if (!fs.existsSync(flowFile)) { console.error("File not found: " + flowFile); process.exit(2); }
 
 // Find the factory create method case-insensitively — the SDK's method casing
-// (e.g. createFlowInQueueCallAsync) doesn't always match the YAML root key
-// casing (e.g. inqueueCall), so a naive capitalization would miss it.
-const wantMethod = ("createflow" + meta.flowType + "async").toLowerCase();
+// (e.g. createFlowInQueueCallAsync) doesn't always match the flow-type casing.
+const wantMethod = ("createflow" + args.flowType + "async").toLowerCase();
 const createMethod = Object.getOwnPropertyNames(Object.getPrototypeOf(archFactoryFlows))
   .concat(Object.getOwnPropertyNames(archFactoryFlows))
   .find((n) => n.toLowerCase() === wantMethod);
 if (!createMethod || typeof archFactoryFlows[createMethod] !== "function") {
-  console.error(`No factory method for flow type '${meta.flowType}'.`);
+  console.error(`No factory method for flow type '${args.flowType}'.`);
   process.exit(2);
 }
 
-const langTagMatch = yamlText.match(/^\s*defaultLanguage:\s*(\S+)\s*$/m);
 const language =
-  (langTagMatch && archLanguages.getByLanguageTag(langTagMatch[1])) ||
+  (args.languageTag && archLanguages.getByLanguageTag(args.languageTag)) ||
   archLanguages.englishUnitedStates;
 
 const location = archEnums.LOCATIONS[args.location];
@@ -67,9 +60,9 @@ if (!location) { console.error(`Unknown location '${args.location}'`); process.e
 let exitCode = 1;
 
 function doWork() {
-  return archFactoryFlows[createMethod](meta.name, "", language, (flow) =>
+  return archFactoryFlows[createMethod](args.flowName, "", language, (flow) =>
     flow
-      .importFromFileAsync(yamlFile)
+      .importFromFileAsync(flowFile)
       .then(() => flow.validateAsync())
       .then((results) => {
         if (results.hasErrors) {
