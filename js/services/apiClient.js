@@ -18,7 +18,11 @@ export function createApiClient(getToken) {
       if (qs) url += `?${qs}`;
     }
 
-    const headers = { Authorization: `Bearer ${token}` };
+    // Azure Static Web Apps strips/overwrites Authorization before it reaches
+    // managed functions, so also forward the user's token in X-Genesys-Token for
+    // endpoints that verify the caller's org server-side (Authorization is kept
+    // as a fallback for local dev / direct Functions hosts).
+    const headers = { Authorization: `Bearer ${token}`, "X-Genesys-Token": token };
     const opts = { method, headers };
 
     if (body !== undefined) {

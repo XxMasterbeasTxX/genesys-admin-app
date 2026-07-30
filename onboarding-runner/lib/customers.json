@@ -1,0 +1,17 @@
+[
+  { "id": "3cretail",    "name": "3C Retail",    "region": "mypurecloud.de" },
+  { "id": "a-til",       "name": "A&Til",        "region": "mypurecloud.de" },
+  { "id": "demo",        "name": "Demo",         "region": "mypurecloud.de" },
+  { "id": "dktv",        "name": "DKTV",         "region": "mypurecloud.ie" },
+  { "id": "facitbank",   "name": "FacitBank",    "region": "mypurecloud.de" },
+  { "id": "g4s",         "name": "G4S",          "region": "mypurecloud.de" },
+  { "id": "milestone",   "name": "Milestone",    "region": "mypurecloud.de" },
+  { "id": "nemlig",      "name": "Nemlig",       "region": "mypurecloud.de" },
+  { "id": "nuuday",      "name": "Nuuday",       "region": "mypurecloud.de" },
+  { "id": "nuuday-test", "name": "Nuuday Test",  "region": "mypurecloud.ie" },
+  { "id": "nykredit",    "name": "Nykredit",     "region": "mypurecloud.de" },
+  { "id": "simcorp",     "name": "SimCorp",      "region": "mypurecloud.de" },
+  { "id": "tdcnet",      "name": "TDC Net",      "region": "mypurecloud.de" },
+  { "id": "test-ie",     "name": "Test IE",      "region": "mypurecloud.ie" },
+  { "id": "velliv",      "name": "Velliv",       "region": "mypurecloud.de" }
+]

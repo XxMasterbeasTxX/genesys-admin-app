@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Real credentials — never commit
+options.demo.json
+options.customer.json
+options.*.json
+!options.*.example.json
+
+# Scratch export/transform output
+work/

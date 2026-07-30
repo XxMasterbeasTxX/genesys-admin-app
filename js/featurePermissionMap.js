@@ -76,6 +76,7 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   // ── Deployment (bulk, composite — any-of for nav; per-sheet at runtime) ──
   "deployment.basic":      { create: ["authorization:division:add", "routing:skill:create", "routing:language:manage", "routing:schedule:add", "routing:scheduleGroup:add", "telephony:plugin:all"] },
   "deployment.datatables": { create: ["architect:datatable:add"] },
+  "deployment.onboarding": { create: ["architect:flow:add", "architect:datatable:add", "integrations:action:add"] },
 
   // ── Users ────────────────────────────────────────────
   "users.rolesSkills.configureUsers":      { roles: ["authorization:grant:add"], skills: ["routing:skill:assign"], languages: ["routing:language:assign"], queues: ["routing:queueMember:manage"] },

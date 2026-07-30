@@ -1,0 +1,393 @@
+/**
+ * Deployment › Onboarding
+ *
+ * One-shot onboarding of a curated template set from a SOURCE (demo) org into a
+ * TARGET customer org. The operator selects only callflows; the backend resolves
+ * their dependencies (common modules, in-queue flows, data tables, data actions),
+ * strips the "Template - " prefix, and publishes everything into the target org
+ * under the chosen division.
+ *
+ * This module is the UI. The heavy lifting (flow export/transform/publish via the
+ * Flow Scripting SDK + data table/action REST) runs in the backend job started by
+ * POST /api/onboarding-deploy and polled via GET /api/onboarding-deploy?jobId=…
+ * (see docs/onboarding-deployment-design.md).
+ */
+import { escapeHtml } from "../../utils.js";
+import * as gc from "../../services/genesysApi.js";
+
+// Architect flow types the operator can pick as roots (dependencies are resolved
+// automatically server-side). "workflow" is included as a common root type.
+const ROOT_FLOW_TYPES = new Set([
+  "inboundcall",
+  "inboundchat",
+  "inboundemail",
+  "inboundshortmessage",
+  "workflow",
+]);
+
+export default function renderOnboarding({ route, me, api, orgContext }) {
+  const el = document.createElement("section");
+  el.className = "card";
+
+  const customers = orgContext.getCustomers();
+  const orgOptions = `<option value="">Select org…</option>`
+    + customers.map(c =>
+      `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.region)})</option>`
+    ).join("");
+
+  el.innerHTML = `
+    <h2>Deployment — Onboarding</h2>
+    <p class="page-desc">
+      Deploy a template set from a demo org into a customer org. Pick the source
+      (demo) org, the target customer and division, then choose the callflows to
+      deploy. Their dependencies — common modules, in-queue flows, data tables and
+      data actions — are found automatically, renamed (dropping the
+      <code>Template -&nbsp;</code> prefix) and deployed in the right order.
+    </p>
+
+    <div class="dt-controls">
+      <div class="dt-control-group">
+        <label class="dt-label">Source Org (demo)</label>
+        <select class="dt-select" id="obSrcOrg">${orgOptions}</select>
+      </div>
+
+      <div class="dt-control-group">
+        <label class="dt-label">Target Customer Org</label>
+        <select class="dt-select" id="obDestOrg">${orgOptions}</select>
+      </div>
+
+      <div class="dt-control-group">
+        <label class="dt-label">Target Division</label>
+        <select class="dt-select" id="obDivision" disabled>
+          <option value="">Select target org first…</option>
+        </select>
+      </div>
+
+      <div class="dt-actions" style="margin-bottom:12px">
+        <button class="btn" id="obLoadBtn" disabled>Load Callflows from Source</button>
+      </div>
+    </div>
+
+    <div class="dt-control-group" id="obFlowsWrap" hidden>
+      <label class="dt-label">Callflows to deploy</label>
+      <div class="ob-select-bar" style="display:flex;align-items:center;gap:12px;margin:6px 0">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="obSelectAll"> <span>Select all</span>
+        </label>
+        <input class="dt-input" id="obFilter" type="text" placeholder="Filter by name…" style="max-width:260px" />
+        <span id="obSelCount" style="color:var(--muted);font-size:.85rem;margin-left:auto"></span>
+      </div>
+      <ul id="obFlowList" style="list-style:none;padding:0;margin:0;max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px"></ul>
+    </div>
+
+    <div class="dt-actions" style="margin-top:14px">
+      <button class="btn" id="obDeployBtn" disabled>Deploy…</button>
+    </div>
+
+    <div class="dt-status" id="obStatus">Select a source and target org to begin.</div>
+
+    <ul id="obResults" style="list-style:none;padding:0;margin-top:12px;max-height:420px;overflow-y:auto"></ul>
+  `;
+
+  // ── DOM refs ──────────────────────────────────────────
+  const $srcOrg   = el.querySelector("#obSrcOrg");
+  const $destOrg  = el.querySelector("#obDestOrg");
+  const $division = el.querySelector("#obDivision");
+  const $loadBtn  = el.querySelector("#obLoadBtn");
+  const $flowsWrap = el.querySelector("#obFlowsWrap");
+  const $selectAll = el.querySelector("#obSelectAll");
+  const $filter   = el.querySelector("#obFilter");
+  const $selCount = el.querySelector("#obSelCount");
+  const $flowList = el.querySelector("#obFlowList");
+  const $deployBtn = el.querySelector("#obDeployBtn");
+  const $status   = el.querySelector("#obStatus");
+  const $results  = el.querySelector("#obResults");
+
+  // ── State ─────────────────────────────────────────────
+  let flows = [];                 // root callflows loaded from source
+  const selected = new Set();     // selected flow ids
+
+  // ── Helpers ───────────────────────────────────────────
+  function setStatus(msg, type = "") {
+    $status.textContent = msg;
+    $status.className = "dt-status" + (type ? ` dt-status--${type}` : "");
+  }
+
+  function orgName(id) {
+    const c = customers.find(c => c.id === id);
+    return c ? c.name : id;
+  }
+
+  function updateLoadBtn() {
+    $loadBtn.disabled =
+      !$srcOrg.value || !$destOrg.value || $srcOrg.value === $destOrg.value;
+  }
+
+  function updateDeployBtn() {
+    $deployBtn.disabled =
+      !$destOrg.value || !$division.value || selected.size === 0;
+  }
+
+  function updateSelCount() {
+    $selCount.textContent = selected.size
+      ? `${selected.size} callflow${selected.size !== 1 ? "s" : ""} selected`
+      : "";
+  }
+
+  function visibleFlows() {
+    const q = $filter.value.trim().toLowerCase();
+    return flows.filter(f => !q || (f.name || "").toLowerCase().includes(q));
+  }
+
+  function renderFlowList() {
+    const list = visibleFlows();
+    $flowList.innerHTML = "";
+    if (!list.length) {
+      const li = document.createElement("li");
+      li.style.cssText = "padding:10px;color:var(--muted)";
+      li.textContent = "No callflows match.";
+      $flowList.appendChild(li);
+      return;
+    }
+    for (const f of list) {
+      const li = document.createElement("li");
+      li.style.cssText = "padding:6px 10px;border-bottom:1px solid var(--border)";
+      li.innerHTML = `
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" data-id="${escapeHtml(f.id)}" ${selected.has(f.id) ? "checked" : ""}>
+          <span>${escapeHtml(f.name || "(unnamed)")}</span>
+          <span style="color:var(--muted);font-size:.8rem;margin-left:auto">${escapeHtml(f.type || "")}</span>
+        </label>`;
+      $flowList.appendChild(li);
+    }
+  }
+
+  // ── Load target divisions ─────────────────────────────
+  async function loadDivisions(orgId) {
+    $division.disabled = true;
+    $division.innerHTML = `<option value="">Loading divisions…</option>`;
+    try {
+      const divisions = await gc.fetchAllDivisions(api, orgId);
+      const opts = (divisions || [])
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        .map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`)
+        .join("");
+      $division.innerHTML = `<option value="">Select division…</option>` + opts;
+      $division.disabled = false;
+    } catch (err) {
+      $division.innerHTML = `<option value="">Failed to load divisions</option>`;
+      setStatus(`Could not load divisions: ${err.message}`, "error");
+    }
+  }
+
+  // ── Load source callflows ─────────────────────────────
+  async function loadFlows() {
+    const srcOrgId = $srcOrg.value;
+    if (!srcOrgId) return;
+    $loadBtn.disabled = true;
+    setStatus("Loading callflows from source org…");
+    $results.innerHTML = "";
+    try {
+      const all = await gc.fetchAllFlows(api, srcOrgId);
+      flows = (all || [])
+        .filter(f => ROOT_FLOW_TYPES.has((f.type || "").toLowerCase()))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      selected.clear();
+      renderFlowList();
+      $flowsWrap.hidden = flows.length === 0;
+      updateSelCount();
+      updateDeployBtn();
+      setStatus(
+        flows.length
+          ? `Loaded ${flows.length} callflow${flows.length !== 1 ? "s" : ""} from ${orgName(srcOrgId)}.`
+          : `No callflows found in ${orgName(srcOrgId)}.`,
+        flows.length ? "success" : ""
+      );
+    } catch (err) {
+      setStatus(`Failed to load callflows: ${err.message}`, "error");
+    } finally {
+      updateLoadBtn();
+    }
+  }
+
+  // ── Deploy ────────────────────────────────────────────
+  function buildPlan() {
+    return {
+      sourceOrgId: $srcOrg.value,
+      targetOrgId: $destOrg.value,
+      divisionId: $division.value,
+      divisionName: $division.selectedOptions[0]?.textContent || "",
+      flows: flows
+        .filter(f => selected.has(f.id))
+        .map(f => ({ id: f.id, name: f.name, type: (f.type || "").toLowerCase() })),
+    };
+  }
+
+  async function startDeploy(plan) {
+    setStatus("Starting deployment…");
+    $deployBtn.disabled = true;
+    try {
+      const { jobId } = await api.request("/api/onboarding-deploy", { method: "POST", body: plan });
+      setStatus(`Deployment job created (${jobId}).`);
+      renderPlanPreview(plan);
+      pollJob(jobId, 0);
+    } catch (err) {
+      const detail = Array.isArray(err.body?.details) ? err.body.details.join("; ") : err.message;
+      setStatus(`Could not start deployment: ${detail}`, "error");
+      updateDeployBtn();
+    }
+  }
+
+  async function pollJob(jobId, attempt) {
+    let job;
+    try {
+      job = await api.request("/api/onboarding-deploy", { query: { jobId } });
+    } catch (err) {
+      setStatus(`Lost track of job ${jobId}: ${err.message}`, "error");
+      updateDeployBtn();
+      return;
+    }
+    renderJob(job);
+
+    const terminal = ["succeeded", "partial", "failed"].includes(job.status);
+    if (terminal) {
+      setStatus(
+        job.status === "succeeded" ? "Deployment complete." :
+        job.status === "partial" ? "Deployment finished with some issues — see results." :
+        `Deployment failed${job.error ? `: ${job.error}` : ""}.`,
+        job.status === "succeeded" ? "success" : job.status === "failed" ? "error" : ""
+      );
+      updateDeployBtn();
+      return;
+    }
+
+    // Still queued/running. The runner picks up queued jobs on a ~1-minute timer,
+    // so keep polling for a couple of minutes before concluding it isn't active.
+    if (job.status === "queued" && attempt >= 45) {
+      setStatus(
+        `Job ${jobId} is still queued after a while. The deploy runner may not be ` +
+        "active in this environment yet — it will pick this job up once running.",
+        ""
+      );
+      updateDeployBtn();
+      return;
+    }
+    setTimeout(() => pollJob(jobId, attempt + 1), 3000);
+  }
+
+  function renderJob(job) {
+    if (!Array.isArray(job.phases) || !job.phases.length) return;
+    $results.innerHTML = "";
+    for (const phase of job.phases) {
+      const head = document.createElement("li");
+      head.style.cssText = "padding:6px 0 2px;font-weight:600;color:var(--accent,#60a5fa)";
+      head.textContent = phase.phase;
+      $results.appendChild(head);
+      for (const item of phase.items || []) {
+        const li = document.createElement("li");
+        li.style.cssText = "padding:4px 0;border-bottom:1px solid var(--border)";
+        const ok = item.status === "ok" || item.status === "skipped";
+        const icon = item.status === "skipped" ? "↷" : ok ? "✓" : "✗";
+        const color = item.status === "skipped" ? "#fbbf24" : ok ? "#4ade80" : "#f87171";
+        const label = item.new || item.old || "";
+        li.innerHTML = `<span style="color:${color}">${icon}</span> ${escapeHtml(label)}` +
+          (item.detail ? ` <span style="color:var(--muted);font-size:.82em">${escapeHtml(item.detail)}</span>` : "");
+        $results.appendChild(li);
+      }
+    }
+    for (const w of job.warnings || []) {
+      const li = document.createElement("li");
+      li.style.cssText = "padding:6px 0;color:#fbbf24;font-size:.85rem";
+      li.textContent = "⚠ " + w;
+      $results.appendChild(li);
+    }
+  }
+
+  function renderPlanPreview(plan) {
+    $results.innerHTML = "";
+    const head = document.createElement("li");
+    head.style.cssText = "padding:6px 0;font-weight:600;color:var(--accent,#60a5fa)";
+    head.textContent = `Planned deploy → ${orgName(plan.targetOrgId)} · division ${plan.divisionName}`;
+    $results.appendChild(head);
+    for (const f of plan.flows) {
+      const li = document.createElement("li");
+      li.style.cssText = "padding:4px 0;border-bottom:1px solid var(--border)";
+      li.innerHTML = `<span>${escapeHtml(f.name)}</span> <span style="color:var(--muted);font-size:.8rem">${escapeHtml(f.type)}</span>`;
+      $results.appendChild(li);
+    }
+    const note = document.createElement("li");
+    note.style.cssText = "padding:8px 0;color:var(--muted);font-size:.85rem";
+    note.textContent = "Dependencies (common modules, in-queue flows, data tables, data actions) are discovered and deployed automatically by the backend engine.";
+    $results.appendChild(note);
+  }
+
+  function showConfirm(plan) {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.innerHTML = `
+      <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:360px;max-width:640px;width:90%">
+        <h3 style="margin:0 0 16px;font-size:1.1rem">Confirm Onboarding Deploy</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:.9rem">
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Source (demo)</td><td><strong>${escapeHtml(orgName(plan.sourceOrgId))}</strong></td></tr>
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Target</td><td><strong>${escapeHtml(orgName(plan.targetOrgId))}</strong></td></tr>
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Division</td><td><strong>${escapeHtml(plan.divisionName)}</strong></td></tr>
+          <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Callflows</td><td><strong>${plan.flows.length}</strong></td></tr>
+        </table>
+        <ul style="margin:12px 0 0;padding-left:18px;max-height:200px;overflow-y:auto;font-size:.9rem">
+          ${plan.flows.map(f => `<li>${escapeHtml(f.name)} <span style="color:var(--muted)">(${escapeHtml(f.type)})</span></li>`).join("")}
+        </ul>
+        <p style="margin:12px 0 0;color:var(--muted);font-size:.85rem">
+          Dependencies are found and deployed automatically. Objects that already
+          exist in the target (matched by their stripped name) are skipped.
+        </p>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+          <button id="obCancel" class="btn btn--secondary">Cancel</button>
+          <button id="obConfirm" class="btn">Deploy</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector("#obCancel").addEventListener("click", () => document.body.removeChild(overlay));
+    overlay.querySelector("#obConfirm").addEventListener("click", () => {
+      document.body.removeChild(overlay);
+      startDeploy(plan);
+    });
+  }
+
+  // ── Events ────────────────────────────────────────────
+  $srcOrg.addEventListener("change", () => { updateLoadBtn(); });
+  $destOrg.addEventListener("change", () => {
+    updateLoadBtn();
+    if ($destOrg.value) loadDivisions($destOrg.value);
+    else { $division.innerHTML = `<option value="">Select target org first…</option>`; $division.disabled = true; }
+    updateDeployBtn();
+  });
+  $division.addEventListener("change", updateDeployBtn);
+  $loadBtn.addEventListener("click", loadFlows);
+  $filter.addEventListener("input", renderFlowList);
+
+  $selectAll.addEventListener("change", () => {
+    const list = visibleFlows();
+    if ($selectAll.checked) list.forEach(f => selected.add(f.id));
+    else list.forEach(f => selected.delete(f.id));
+    renderFlowList();
+    updateSelCount();
+    updateDeployBtn();
+  });
+
+  $flowList.addEventListener("change", (e) => {
+    const cb = e.target.closest("input[type=checkbox][data-id]");
+    if (!cb) return;
+    if (cb.checked) selected.add(cb.dataset.id);
+    else selected.delete(cb.dataset.id);
+    updateSelCount();
+    updateDeployBtn();
+  });
+
+  $deployBtn.addEventListener("click", () => {
+    const plan = buildPlan();
+    if (!plan.flows.length) return;
+    showConfirm(plan);
+  });
+
+  return el;
+}

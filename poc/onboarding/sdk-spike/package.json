@@ -1,0 +1,10 @@
+{
+  "name": "onboarding-sdk-spike",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Spike: can the Flow Scripting SDK export existing flows + publish cross-org (no Archy)?",
+  "type": "commonjs",
+  "dependencies": {
+    "purecloud-flow-scripting-api-sdk-javascript": "^0.68.0"
+  }
+}
