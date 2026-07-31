@@ -88,6 +88,15 @@ const createDataAction = (org, body) =>
 const listIntegrations = (org) =>
   fetchAllPages(org, "/api/v2/integrations");
 
+/** Find a flow's id by exact name + type in an org (or null). */
+async function findFlowIdByName(org, type, name) {
+  const flows = await fetchAllPages(org, "/api/v2/flows", {
+    query: { type, nameOrDescription: name },
+  });
+  const exact = flows.find((f) => f.name === name);
+  return exact ? exact.id : null;
+}
+
 module.exports = {
   gcFetch,
   fetchAllPages,
@@ -101,4 +110,5 @@ module.exports = {
   getDataAction,
   createDataAction,
   listIntegrations,
+  findFlowIdByName,
 };

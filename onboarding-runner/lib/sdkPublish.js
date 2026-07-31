@@ -66,11 +66,21 @@ function doWork() {
       .then(() => flow.validateAsync())
       .then((results) => {
         if (results.hasErrors) {
-          const issues = (results.validationIssues || [])
-            .map((i) => i.description || String(i))
-            .slice(0, 10)
-            .join("; ");
-          throw new Error("Validation errors: " + issues);
+          // The issues collection property name varies; try the likely ones.
+          let arr = results.validationIssues || results.issues || results.errors || results.validationErrors;
+          if (typeof arr === "function") { try { arr = arr.call(results); } catch (_) { arr = null; } }
+          const list = Array.isArray(arr) ? arr : [];
+          const issues = list
+            .map((i) => {
+              if (!i) return "";
+              if (typeof i.description === "string") return i.description;
+              if (i.text && typeof i.text.toString === "function") return i.text.toString();
+              return String(i);
+            })
+            .filter(Boolean)
+            .slice(0, 12)
+            .join(" | ");
+          throw new Error("Validation errors: " + (issues || "(detail in runner logs)"));
         }
         return flow.publishAsync().then(() => { console.log("PUBLISHED " + flow.name); exitCode = 0; });
       })

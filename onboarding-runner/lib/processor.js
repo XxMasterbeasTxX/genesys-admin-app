@@ -149,22 +149,26 @@ async function processJob(job, store, log) {
     }
 
     // ── Phase: data tables (REST) ─────────────────────────────────────
+    const guidMap = new Map(); // demo dependency GUID → customer GUID (for .i3 remap)
     const tablePhase = addPhase("Data tables");
     const [srcTables, tgtTables, tgtDivisions] = await Promise.all([
       rest.listDataTables(source), rest.listDataTables(target), rest.listDivisions(target),
     ]);
     const divisionId = (tgtDivisions.find((d) => d.name === division) || {}).id || job.divisionId;
     const srcTableByName = new Map(srcTables.map((t) => [t.name, t]));
+    const tgtTableByName = new Map(tgtTables.map((t) => [t.name, t]));
     const tgtTableNames = new Set(tgtTables.map((t) => t.name));
 
     for (const srcName of [...tableNames].sort()) {
       const newName = stripPrefix(srcName);
       try {
+        const srcMeta = srcTableByName.get(srcName);
         if (tgtTableNames.has(newName)) {
+          const existing = tgtTableByName.get(newName);
+          if (srcMeta && existing) guidMap.set(srcMeta.id, existing.id);
           tablePhase.items.push({ old: srcName, new: newName, status: "skipped", detail: "already exists" });
           continue;
         }
-        const srcMeta = srcTableByName.get(srcName);
         if (!srcMeta) throw new Error("not found in source");
         const full = await rest.getDataTable(source, srcMeta.id);
         const created = await rest.createDataTable(target, {
@@ -173,6 +177,7 @@ async function processJob(job, store, log) {
           division: { id: divisionId },
           schema: full.schema,
         });
+        guidMap.set(srcMeta.id, created.id);
         // Copy rows
         let rowCount = 0;
         const rows = await rest.fetchDataTableRows(source, srcMeta.id);
@@ -195,6 +200,7 @@ async function processJob(job, store, log) {
       rest.listIntegrations(source), rest.listIntegrations(target),
     ]);
     const srcActionByName = new Map(srcActions.map((a) => [a.name, a]));
+    const tgtActionByName = new Map(tgtActions.map((a) => [a.name, a]));
     const tgtActionNames = new Set(tgtActions.map((a) => a.name));
     const srcIntegById = new Map(srcIntegs.map((i) => [i.id, i]));
     const tgtIntegByName = new Map(tgtIntegs.map((i) => [i.name, i]));
@@ -207,11 +213,13 @@ async function processJob(job, store, log) {
     for (const { action: srcName } of [...actionRefs.values()]) {
       const newName = stripPrefix(srcName);
       try {
+        const srcSummary = srcActionByName.get(srcName);
         if (tgtActionNames.has(newName)) {
+          const existing = tgtActionByName.get(newName);
+          if (srcSummary && existing) guidMap.set(srcSummary.id, existing.id);
           actionPhase.items.push({ old: srcName, new: newName, status: "skipped", detail: "already exists" });
           continue;
         }
-        const srcSummary = srcActionByName.get(srcName);
         if (!srcSummary) throw new Error("not found in source");
         const full = await rest.getDataAction(source, srcSummary.id);
         // Match target integration by connector TYPE first (robust to renames),
@@ -228,7 +236,7 @@ async function processJob(job, store, log) {
             `(type ${srcType || "?"}) — install/activate it in the target first`
           );
         }
-        await rest.createDataAction(target, {
+        const createdAction = await rest.createDataAction(target, {
           name: newName,
           category: full.category,
           integrationId: tgtInteg.id,
@@ -236,6 +244,7 @@ async function processJob(job, store, log) {
           config: full.config,
           secure: full.secure,
         });
+        if (createdAction && createdAction.id) guidMap.set(srcSummary.id, createdAction.id);
         actionPhase.items.push({ old: srcName, new: newName, status: "ok", detail: tgtInteg.name });
       } catch (err) {
         actionPhase.items.push({ old: srcName, new: newName, status: "error", detail: err.message });
@@ -272,12 +281,17 @@ async function processJob(job, store, log) {
               continue;
             }
           }
-          // Export as architect (.i3) from source → strip prefix → publish to target.
+          // Export as architect (.i3) from source → strip prefix + remap dependency
+          // GUIDs (demo → customer) → publish to target.
+          const demoFlowId = await rest.findFlowIdByName(source, rec.type, name);
           const i3Path = await sdkExport(source, name, rec.type, workDir, "architect");
-          const { output } = transformI3(fs.readFileSync(i3Path, "utf8"), { prefix: "Template - " });
+          const { output } = transformI3(fs.readFileSync(i3Path, "utf8"), { prefix: "Template - ", guidMap });
           const pubFile = path.join(workDir, `publish-${newName}.i3InboundFlow`);
           fs.writeFileSync(pubFile, output, "utf8");
           await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml));
+          // Record this flow's demo → customer id so later flows remap references to it.
+          const custFlowId = await rest.findFlowIdByName(target, rec.type, newName);
+          if (demoFlowId && custFlowId) guidMap.set(demoFlowId, custFlowId);
           phase.items.push({ old: name, new: newName, status: "ok" });
         } catch (err) {
           if (err.fullOutput) {

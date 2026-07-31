@@ -140,11 +140,31 @@ function resolveDeps(yaml) {
  */
 function transformI3(base64Content, opts = {}) {
   const prefix = opts.prefix || DEFAULT_PREFIX;
+  const guidMap = opts.guidMap || null; // Map|object: demoGUID → customerGUID
   const urlPrefix = encodeURIComponent(prefix); // "Template - " → "Template%20-%20"
-  const urlEnc = Buffer.from(String(base64Content).trim(), "base64").toString("utf8");
+  let urlEnc = Buffer.from(String(base64Content).trim(), "base64").toString("utf8");
+
+  // 1) Strip the "Template - " prefix from names (url-encoded layer).
   const count = urlEnc.split(urlPrefix).length - 1;
-  const stripped = urlEnc.split(urlPrefix).join("");
-  return { output: Buffer.from(stripped, "utf8").toString("base64"), count };
+  urlEnc = urlEnc.split(urlPrefix).join("");
+
+  // 2) Remap demo dependency GUIDs → customer GUIDs. GUIDs are URL-safe (hex +
+  //    hyphens), so they appear verbatim in the url-encoded content. Only the
+  //    specific dependency GUIDs in the map are replaced; the flow's internal
+  //    task/action GUIDs (different GUIDs) are left untouched.
+  let remapped = 0;
+  if (guidMap) {
+    const entries = guidMap instanceof Map ? [...guidMap] : Object.entries(guidMap);
+    for (const [demo, cust] of entries) {
+      if (demo && cust && demo !== cust && urlEnc.includes(demo)) {
+        const parts = urlEnc.split(demo);
+        remapped += parts.length - 1;
+        urlEnc = parts.join(cust);
+      }
+    }
+  }
+
+  return { output: Buffer.from(urlEnc, "utf8").toString("base64"), count, remapped };
 }
 
 /** Read the default language tag (e.g. "da-dk") from an exported flow YAML. */
