@@ -29,6 +29,15 @@ const PUBLISH_DIR = path.join(__dirname, "sdkPublish.js");
 // Dependency flow name → its Genesys/SDK flow type.
 const DEP_FLOW_TYPES = { commonModule: "commonmodule", inQueue: "inqueuecall" };
 
+// Flow types a "Transfer to Flow" action can target, in resolution priority.
+// (In-queue and common-module flows are referenced differently, never via a
+// transfer, so they are excluded — this disambiguates a name that exists as
+// multiple flow types, e.g. an inbound flow + an in-queue flow of the same name.)
+const TRANSFER_TARGET_TYPES = [
+  "inboundcall", "securecall", "workflow", "voice", "voicemail",
+  "bot", "digitalbot", "inboundchat", "inboundemail", "inboundshortmessage", "outboundcall",
+];
+
 // ── child-process helpers ───────────────────────────────
 
 function runChild(script, args) {
@@ -134,8 +143,15 @@ async function processJob(job, store, log) {
         let type = f.type;
         if (!type) {
           const srcFlows = await rest.fetchAllPages(source, "/api/v2/flows", { query: { nameOrDescription: f.name } });
-          const exact = srcFlows.find((fl) => fl.name === f.name);
-          type = exact ? exact.type : null;
+          // Genesys returns `type` upper-cased (e.g. "INBOUNDCALL"); the SDK wants
+          // lower-case. A name can collide across flow types, so pick a
+          // transfer-eligible type by priority (never in-queue / common-module).
+          const matches = srcFlows
+            .filter((fl) => fl.name === f.name)
+            .map((fl) => String(fl.type || "").toLowerCase());
+          type = TRANSFER_TARGET_TYPES.find((t) => matches.includes(t))
+            || matches.find((t) => t !== "inqueuecall" && t !== "commonmodule")
+            || null;
           if (!type) {
             exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "error", detail: "referenced flow not found in source" });
             await persist();
