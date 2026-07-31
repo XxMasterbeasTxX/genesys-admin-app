@@ -66,21 +66,22 @@ function doWork() {
       .then(() => flow.validateAsync())
       .then((results) => {
         if (results.hasErrors) {
-          // The issues collection property name varies; try the likely ones.
           let arr = results.validationIssues || results.issues || results.errors || results.validationErrors;
           if (typeof arr === "function") { try { arr = arr.call(results); } catch (_) { arr = null; } }
           const list = Array.isArray(arr) ? arr : [];
-          const issues = list
-            .map((i) => {
-              if (!i) return "";
-              if (typeof i.description === "string") return i.description;
-              if (i.text && typeof i.text.toString === "function") return i.text.toString();
-              return String(i);
-            })
-            .filter(Boolean)
-            .slice(0, 12)
-            .join(" | ");
-          throw new Error("Validation errors: " + (issues || "(detail in runner logs)"));
+          const structured = [];
+          const msgs = [];
+          for (const i of list) {
+            if (!i) continue;
+            const objName = (i.archObject && (i.archObject.name || i.archObject.displayTypeName)) || "";
+            const errs = Array.isArray(i.errors) ? i.errors : [];
+            structured.push({ obj: objName, errors: errs, logStr: typeof i.logStr === "string" ? i.logStr : undefined });
+            if (errs.length) errs.forEach((e) => msgs.push((objName ? objName + ": " : "") + e));
+            else if (typeof i.logStr === "string") msgs.push(i.logStr);
+          }
+          // Dump structured issues so they reach the runner logs / App Insights.
+          try { console.error("VALIDATION_ISSUES " + JSON.stringify(structured).slice(0, 6000)); } catch (_) { /* ignore */ }
+          throw new Error("Validation errors: " + (msgs.slice(0, 15).join(" | ") || "(detail in runner logs)"));
         }
         return flow.publishAsync().then(() => { console.log("PUBLISHED " + flow.name); exitCode = 0; });
       })

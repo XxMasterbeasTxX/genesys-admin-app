@@ -80,23 +80,22 @@ async function sdkPublish(targetOrg, file, flowType, flowName, languageTag) {
   return true;
 }
 
-// ── topological order (deps first) among exported flows ──
+// ── topological order (deps first); cycle-safe ──
 
-function topoOrder(names, exported) {
+function topoSort(nodes, edges) {
   const order = [];
   const seen = new Set();
   const temp = new Set();
   const visit = (n) => {
     if (seen.has(n) || temp.has(n)) return;
-    const rec = exported.get(n);
-    if (!rec) return;
+    if (!nodes.has(n)) return;
     temp.add(n);
-    for (const d of rec.deps.commonModules) if (exported.has(d)) visit(d);
+    for (const d of edges.get(n) || []) visit(d);
     temp.delete(n);
     seen.add(n);
-    if (names.has(n)) order.push(n);
+    order.push(n);
   };
-  for (const n of names) visit(n);
+  for (const n of nodes) visit(n);
   return order;
 }
 
@@ -131,17 +130,30 @@ async function processJob(job, store, log) {
       const f = queue.shift();
       if (exported.has(f.name)) continue;
       try {
-        const yamlPath = await sdkExport(source, f.name, f.type, workDir);
+        // Resolve the flow type if unknown (transfer-target flows) via REST.
+        let type = f.type;
+        if (!type) {
+          const srcFlows = await rest.fetchAllPages(source, "/api/v2/flows", { query: { nameOrDescription: f.name } });
+          const exact = srcFlows.find((fl) => fl.name === f.name);
+          type = exact ? exact.type : null;
+          if (!type) {
+            exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "error", detail: "referenced flow not found in source" });
+            await persist();
+            continue;
+          }
+        }
+        const yamlPath = await sdkExport(source, f.name, type, workDir);
         const yaml = fs.readFileSync(yamlPath, "utf8");
         const deps = resolveDeps(yaml);
-        exported.set(f.name, { type: f.type, yamlPath, deps, yaml });
+        exported.set(f.name, { type, yamlPath, deps, yaml });
         deps.dataTables.forEach((t) => tableNames.add(t));
         deps.dataActions.forEach((a) => actionRefs.set(`${a.integration}::${a.action}`, a));
         deps.commonModules.forEach((n) => queue.push({ name: n, type: DEP_FLOW_TYPES.commonModule }));
         deps.inQueueFlows.forEach((n) => queue.push({ name: n, type: DEP_FLOW_TYPES.inQueue }));
-        deps.transferFlows.forEach((n) =>
-          warnings.push(`Flow '${f.name}' references transfer-target flow '${n}' — deploy it manually (type unknown).`));
-        exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "ok", detail: f.type });
+        // Transfer-target flows (inbound callflows, workflows, secure call flows): type
+        // resolved on dequeue via REST, then treated as a full flow dependency.
+        deps.transferFlows.forEach((n) => queue.push({ name: n, type: null }));
+        exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "ok", detail: type });
       } catch (err) {
         exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "error", detail: err.message });
       }
@@ -252,55 +264,52 @@ async function processJob(job, store, log) {
       await persist();
     }
 
-    // ── Publish flows via the architect (.i3) format ─────────────────────────
-    //    The YAML import is gated in customer orgs; the .i3 (architect) format is
-    //    not. .i3 is base64(url-encoded(JSON)) and contains the object NAMES, so
-    //    we export each flow as .i3, strip the "Template - " prefix on it, then
-    //    create + import + publish. Order: common modules → in-queue → callflows.
-    const cmNames = new Set([...exported].filter(([, r]) => r.type === DEP_FLOW_TYPES.commonModule).map(([n]) => n));
-    const iqNames = new Set([...exported].filter(([, r]) => r.type === DEP_FLOW_TYPES.inQueue).map(([n]) => n));
-    const rootNames = new Set(job.flows.map((f) => f.name));
+    // ── Publish ALL flows (common modules, in-queue, transfer targets, callflows)
+    //    in dependency order via the architect (.i3) format. .i3 is
+    //    base64(url-encoded(JSON)); we strip the "Template - " prefix and remap
+    //    demo dependency GUIDs → customer GUIDs, then create + import + publish. ──
+    const allFlowNames = new Set(exported.keys());
+    const flowEdges = new Map();
+    for (const [n, r] of exported) {
+      const flowDeps = [...r.deps.commonModules, ...r.deps.inQueueFlows, ...r.deps.transferFlows]
+        .filter((d) => allFlowNames.has(d));
+      flowEdges.set(n, new Set(flowDeps));
+    }
+    const publishOrder = topoSort(allFlowNames, flowEdges); // dependencies first
 
-    await publishGroup("Common modules", topoOrder(cmNames, exported), "commonmodule");
-    await publishGroup("In-queue flows", [...iqNames], "inqueuecall");
-    await publishGroup("Callflows", [...rootNames], null);
-
-    async function publishGroup(label, names, flowTypeForExistCheck) {
-      const phase = addPhase(label);
-      for (const name of names) {
-        const rec = exported.get(name);
-        const newName = stripPrefix(name);
-        try {
-          if (!rec) throw new Error("was not exported (see Export phase)");
-          if (flowTypeForExistCheck) {
-            const existing = await rest.fetchAllPages(target, "/api/v2/flows", {
-              query: { type: flowTypeForExistCheck, nameOrDescription: newName },
-            });
-            if (existing.some((fl) => fl.name === newName)) {
-              phase.items.push({ old: name, new: newName, status: "skipped", detail: "already exists" });
-              continue;
-            }
-          }
-          // Export as architect (.i3) from source → strip prefix + remap dependency
-          // GUIDs (demo → customer) → publish to target.
-          const demoFlowId = await rest.findFlowIdByName(source, rec.type, name);
-          const i3Path = await sdkExport(source, name, rec.type, workDir, "architect");
-          const { output } = transformI3(fs.readFileSync(i3Path, "utf8"), { prefix: "Template - ", guidMap });
-          const pubFile = path.join(workDir, `publish-${newName}.i3InboundFlow`);
-          fs.writeFileSync(pubFile, output, "utf8");
-          await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml));
-          // Record this flow's demo → customer id so later flows remap references to it.
-          const custFlowId = await rest.findFlowIdByName(target, rec.type, newName);
-          if (demoFlowId && custFlowId) guidMap.set(demoFlowId, custFlowId);
-          phase.items.push({ old: name, new: newName, status: "ok" });
-        } catch (err) {
-          if (err.fullOutput) {
-            log(`[onboarding-runner] SDK output for publish '${name}':\n${err.fullOutput}`);
-          }
-          phase.items.push({ old: name, new: newName, status: "error", detail: err.message });
+    const flowPhase = addPhase("Flows");
+    for (const name of publishOrder) {
+      const rec = exported.get(name);
+      const newName = stripPrefix(name);
+      try {
+        // Skip if the flow already exists in the target (record its id for remap).
+        const existing = await rest.fetchAllPages(target, "/api/v2/flows", {
+          query: { type: rec.type, nameOrDescription: newName },
+        });
+        const existingFlow = existing.find((fl) => fl.name === newName);
+        if (existingFlow) {
+          const demoId = await rest.findFlowIdByName(source, rec.type, name);
+          if (demoId) guidMap.set(demoId, existingFlow.id);
+          flowPhase.items.push({ old: name, new: newName, status: "skipped", detail: `${rec.type} · already exists` });
+          await persist();
+          continue;
         }
-        await persist();
+        // Export as architect (.i3) from source → strip prefix + remap dependency
+        // GUIDs (demo → customer) → create + import + publish to target.
+        const demoFlowId = await rest.findFlowIdByName(source, rec.type, name);
+        const i3Path = await sdkExport(source, name, rec.type, workDir, "architect");
+        const { output } = transformI3(fs.readFileSync(i3Path, "utf8"), { prefix: "Template - ", guidMap });
+        const pubFile = path.join(workDir, `publish-${newName}.i3InboundFlow`);
+        fs.writeFileSync(pubFile, output, "utf8");
+        await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml));
+        const custFlowId = await rest.findFlowIdByName(target, rec.type, newName);
+        if (demoFlowId && custFlowId) guidMap.set(demoFlowId, custFlowId);
+        flowPhase.items.push({ old: name, new: newName, status: "ok", detail: rec.type });
+      } catch (err) {
+        if (err.fullOutput) log(`[onboarding-runner] SDK output for publish '${name}':\n${err.fullOutput}`);
+        flowPhase.items.push({ old: name, new: newName, status: "error", detail: err.message });
       }
+      await persist();
     }
 
     // ── Finalize ──────────────────────────────────────────────────────
