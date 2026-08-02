@@ -60,7 +60,12 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     <div class="dt-controls">
       <div class="dt-control-group">
         <label class="dt-label">Source Org (demo)</label>
-        <select class="dt-select" id="obSrcOrg">${orgOptions}</select>
+        <div style="display:flex;align-items:center;gap:10px">
+          <select class="dt-select" id="obSrcOrg" disabled>${orgOptions}</select>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap" title="Unlock to pick a source org other than the Demo template org">
+            <input type="checkbox" id="obOtherOrgs"> <span>Other orgs</span>
+          </label>
+        </div>
       </div>
 
       <div class="dt-control-group">
@@ -109,6 +114,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
 
   // ── DOM refs ──────────────────────────────────────────
   const $srcOrg   = el.querySelector("#obSrcOrg");
+  const $otherOrgs = el.querySelector("#obOtherOrgs");
   const $destOrg  = el.querySelector("#obDestOrg");
   const $division = el.querySelector("#obDivision");
   const $loadBtn  = el.querySelector("#obLoadBtn");
@@ -421,6 +427,20 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     const plan = buildPlan();
     if (!plan.flows.length) return;
     showConfirm(plan);
+  });
+
+  // ── Init: default the source org to the "Demo" template org and lock the
+  //    field. The "Other orgs" checkbox unlocks it for selecting a different source.
+  const demoOrg = customers.find(c => (c.name || "").trim().toLowerCase() === "demo")
+    || customers.find(c => (c.name || "").toLowerCase().includes("demo"));
+  if (demoOrg) $srcOrg.value = demoOrg.id;
+  $srcOrg.disabled = true;
+  updateLoadBtn();
+
+  $otherOrgs.addEventListener("change", () => {
+    $srcOrg.disabled = !$otherOrgs.checked;
+    if (!$otherOrgs.checked && demoOrg) $srcOrg.value = demoOrg.id;
+    updateLoadBtn();
   });
 
   return el;
