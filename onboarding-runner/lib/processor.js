@@ -81,7 +81,9 @@ async function sdkPublish(targetOrg, file, flowType, flowName, languageTag, surv
     err.fullOutput = ((res.stdout || "") + "\n---STDERR---\n" + (res.stderr || "")).slice(-12000);
     throw err;
   }
-  return true;
+  // Return the full child output so the caller can log it even on "success"
+  // (e.g. to diagnose a flow that reports PUBLISHED but doesn't actually persist).
+  return { fullOutput: ((res.stdout || "") + "\n---STDERR---\n" + (res.stderr || "")).slice(-12000) };
 }
 
 /**
@@ -474,9 +476,16 @@ async function processJob(job, store, log) {
         // Voice-survey flows must be created against a survey form — pass the
         // deployed form's (stripped) name so the SDK create call succeeds.
         const surveyFormName = rec.surveyForm ? stripPrefix(rec.surveyForm.name) : undefined;
-        await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml), surveyFormName);
+        const pubResult = await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml), surveyFormName);
         const custFlowId = await rest.findFlowIdByName(target, rec.type, newName);
-        if (demoFlowId && custFlowId) guidMap.set(demoFlowId, custFlowId);
+        if (!custFlowId) {
+          // The child reported success but the flow isn't queryable in the target
+          // — treat as a hard failure (don't leave a false green ✓) and capture the
+          // full SDK output so we can see what publishAsync actually did.
+          if (pubResult && pubResult.fullOutput) log(`[onboarding-runner] SDK output for publish '${name}' (reported PUBLISHED but flow not found):\n${pubResult.fullOutput}`);
+          throw new Error(`published but not found in target (type ${rec.type})`);
+        }
+        if (demoFlowId) guidMap.set(demoFlowId, custFlowId);
         flowPhase.items.push({ old: name, new: newName, status: "ok", detail: rec.type });
       } catch (err) {
         if (err.fullOutput) log(`[onboarding-runner] SDK output for publish '${name}':\n${err.fullOutput}`);
