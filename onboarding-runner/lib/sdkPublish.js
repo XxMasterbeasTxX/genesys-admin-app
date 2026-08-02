@@ -69,7 +69,13 @@ let exitCode = 1;
 function buildCreateArgs(callback) {
   const base = [args.flowName, "", language, callback];
   if (createMethod.toLowerCase() === "createflowvoicesurveyasync" && args.surveyFormName) {
-    return base.concat([undefined, undefined, args.surveyFormName]);
+    // Positions: flowDivision, creationData, surveyFormName, surveyFormId,
+    // createNluFromSurveyForm, configureFlowFromSurveyForm.
+    // createNluFromSurveyForm MUST be true — otherwise the SDK requires a full
+    // nluDomainVersion in creationData or flow creation silently fails (no flow id).
+    // configureFlowFromSurveyForm stays false: the demo .i3 we import supplies the
+    // real flow configuration.
+    return base.concat([undefined, undefined, args.surveyFormName, undefined, true, false]);
   }
   return base;
 }
