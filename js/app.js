@@ -87,6 +87,7 @@ function renderFatalError(message) {
   // (+ permission refinement); customers are gated by their purchased entitlements.
   const orgSelectEl = document.getElementById("orgSelect");
   let access;
+  let isInternalMode = true; // staff vs customer — gates internal-only release notes
   const ORGCFG_RETRY_KEY = "gc_orgcfg_retry";
   try {
     const orgCfg = await fetchOrgConfig(res.accessToken, res.orgHint);
@@ -95,6 +96,7 @@ function renderFatalError(message) {
 
     if (orgCfg.mode === "customer" && orgCfg.customer) {
       access = resolveCustomerAccess(orgCfg.entitlements);
+      isInternalMode = false;
 
       const customer = orgCfg.customer;
       orgContext.setCustomers([customer]);
@@ -136,6 +138,7 @@ function renderFatalError(message) {
     orgSelectEl.innerHTML = `<option value="">⚠ Failed to resolve org context</option>`;
     orgSelectEl.disabled = true;
     // Fail-closed for a customer deep link; keep internal resilience otherwise.
+    isInternalMode = !res.orgHint;
     access = res.orgHint
       ? resolveCustomerAccess([])
       : await resolveAccess(res.accessToken, GROUP_ACCESS, res.me?.id);
@@ -191,7 +194,7 @@ function renderFatalError(message) {
       if (route === "/") return renderWelcomePage();
 
       // Release notes (reached from the sidebar version footer) — no access key
-      if (route === "/release-notes") return renderReleaseNotesPage();
+      if (route === "/release-notes") return renderReleaseNotesPage(isInternalMode);
 
       const loader = getPageLoader(route);
       if (loader) {

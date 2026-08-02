@@ -11,6 +11,20 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "1.8",
+    date: "2026-08-02",
+    title: "Deployment › Onboarding (internal)",
+    internalOnly: true,
+    changes: [
+      "New Deployment › Onboarding: one-click deploy a curated template set from a source (demo) org into a customer org under a chosen division. Source defaults to the Demo org (unlock other sources with the “Other orgs” checkbox).",
+      "Pick callflows; all dependencies — common modules, in-queue flows, transfer/post-flow targets, data tables, data actions, screen-pop scripts and survey forms — are auto-discovered and deployed in the right order, with every internal reference (GUID) rewritten for the target org.",
+      "Screen-pop scripts are published so flows can reference them; voice-survey flows are recreated from their (deployed & published) survey forms.",
+      "Optional name prefix: created objects can be named “prefix - Original name”. Create a target division inline. Filter callflows by name and by type.",
+      "Live phase-by-phase progress stepper plus the detailed per-item results (created / skipped / error).",
+      "Outbound call flows are intentionally not supported (they require a contact list, which has no template equivalent) and are excluded from the picker.",
+    ],
+  },
+  {
     version: "1.7",
     date: "2026-07-17",
     title: "Data Tables copy: edit columns before saving",

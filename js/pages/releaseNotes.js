@@ -8,7 +8,7 @@
 import { escapeHtml } from "../utils.js";
 import { RELEASE_NOTES } from "../releaseNotes.js";
 
-export function renderReleaseNotesPage() {
+export function renderReleaseNotesPage(isInternal = false) {
   const root = document.createElement("section");
   root.className = "release-notes";
 
@@ -39,10 +39,15 @@ export function renderReleaseNotesPage() {
     return root;
   }
 
+  // Internal-only entries are hidden from customers. The sidebar version footer
+  // still shows the true build version for everyone (so the number never differs
+  // between staff and customers) — only the note's content is withheld.
+  const visibleNotes = RELEASE_NOTES.filter((e) => isInternal || !e.internalOnly);
+
   const list = document.createElement("div");
   list.className = "release-notes__list";
 
-  RELEASE_NOTES.forEach((entry, i) => {
+  visibleNotes.forEach((entry, i) => {
     const card = document.createElement("article");
     card.className = "release-notes__entry";
     if (i === 0) card.classList.add("release-notes__entry--latest");
@@ -59,6 +64,7 @@ export function renderReleaseNotesPage() {
       <div class="release-notes__entry-head">
         ${versionLabel ? `<span class="release-notes__version">v${escapeHtml(versionLabel)}</span>` : ""}
         ${i === 0 ? `<span class="release-notes__badge">Latest</span>` : ""}
+        ${isInternal && entry.internalOnly ? `<span class="release-notes__badge" style="background:#7c3aed">Internal only</span>` : ""}
         ${entry.date ? `<span class="release-notes__date">${escapeHtml(entry.date)}</span>` : ""}
       </div>
       ${entry.title ? `<h2 class="release-notes__title">${escapeHtml(entry.title)}</h2>` : ""}
