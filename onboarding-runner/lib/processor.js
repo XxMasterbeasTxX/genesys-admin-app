@@ -197,6 +197,9 @@ async function processJob(job, store, log) {
       await persist();
     }
 
+    log(`[onboarding] discovered flows: ${[...exported.keys()].join(", ") || "(none)"}`);
+    log(`[onboarding] discovered script refs: ${scriptRefs.size ? [...scriptRefs.entries()].map(([id, n]) => `${n}=${id}`).join(", ") : "(none)"}`);
+
     // ── Phase: data tables (REST) ─────────────────────────────────────
     const guidMap = new Map(); // demo dependency GUID → customer GUID (for .i3 remap)
     const tablePhase = addPhase("Data tables");
@@ -376,7 +379,8 @@ async function processJob(job, store, log) {
         // Export as architect (.i3) from source → strip prefix + remap dependency
         // GUIDs (demo → customer) → create + import + publish to target.
         const demoFlowId = await rest.findFlowIdByName(source, rec.type, name);
-        const { output } = transformI3(rec.i3raw, { prefix: "Template - ", guidMap });
+        const { output, remapped } = transformI3(rec.i3raw, { prefix: "Template - ", guidMap });
+        log(`[onboarding] publish '${newName}' (${rec.type}): remapped ${remapped} dependency GUID occurrence(s); guidMap has ${guidMap.size} entries`);
         const pubFile = path.join(workDir, `publish-${rec.type}-${newName}.i3InboundFlow`);
         fs.writeFileSync(pubFile, output, "utf8");
         await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml));
