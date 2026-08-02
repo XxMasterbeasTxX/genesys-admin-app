@@ -88,6 +88,10 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       </div>
     </div>
 
+    <div class="dt-actions" style="margin:0 0 12px">
+      <button class="btn" id="obDeployBtn" disabled>Deploy…</button>
+    </div>
+
     <details class="dt-control-group" id="obFlowsWrap" hidden open>
       <summary class="dt-label" style="cursor:pointer;user-select:none">Callflows to deploy</summary>
       <div class="ob-select-bar" style="display:flex;align-items:center;gap:12px;margin:6px 0">
@@ -105,10 +109,6 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       </p>
       <ul id="obFlowList" style="list-style:none;padding:0;margin:0;max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px"></ul>
     </details>
-
-    <div class="dt-actions" style="margin-top:14px">
-      <button class="btn" id="obDeployBtn" disabled>Deploy…</button>
-    </div>
 
     <div class="dt-status" id="obStatus">Select a source and target org to begin.</div>
 
