@@ -4,6 +4,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 ## What changed recently
 
+- **Deployment — Onboarding (new, internal)** — replicate a set of Architect callflows from the **Demo** org into a customer org in one click, stripping the `Template - ` prefix (and optionally applying a name prefix). The page enqueues a job via the new internal `POST /api/onboarding-deploy` endpoint; a dedicated background **onboarding runner** Function App ([onboarding-runner/](onboarding-runner/)) processes queued jobs from a new `onboardingjobs` Table Storage table — exporting each flow and its dependencies, creating the data tables (with rows), data actions, screen-pop scripts, and survey forms in the target org, and publishing the flows with the **Genesys Flow Scripting SDK**. Outbound-call flows are intentionally unsupported. Access key: `deployment.onboarding`.
 - **Data Tables — Copy now lets you edit columns before saving** — both **Data Tables > Copy (Single Org)** and **Copy between Orgs** now render an editable schema column list when a source table is selected, backed by the new shared [js/components/schemaColumnEditor.js](js/components/schemaColumnEditor.js) (Name / Type / Default with drag-to-reorder, reusing the Create/Edit UI). Columns can be added or removed before the copy is created; the primary key column is preserved from the source. When **Copy data** is enabled, each copied row is filtered to the columns kept in the edited schema — removed columns are dropped (so the new table's `additionalProperties: false` won't reject them) and added columns fall back to their default. Between-Orgs replaces its former read-only schema preview with the editor. See [js/pages/datatables/copySingleOrg.js](js/pages/datatables/copySingleOrg.js) and [js/pages/datatables/copyBetweenOrgs.js](js/pages/datatables/copyBetweenOrgs.js).
 - **Fix: Data Tables schema edit no longer drops columns** — in **Data Tables > Edit** (Schema mode), the editor now preserves each column's original schema property key across the load/save round-trip in [js/pages/datatables/edit.js](js/pages/datatables/edit.js) (stored on the row as `data-original-key` and reused in `collectSchema`), instead of re-keying properties by their display `title`. This fixes saves that failed with `Field '…' is missing from the proposed schema` — which Genesys rejects because a `PUT` may not remove existing fields — and the resulting risk of dropping a column whose stored key differed from its title. Titles remain editable; new columns still key by their name.
 - **Step 4: server-side proxy tenant enforcement** — [api/genesys-proxy/index.js](api/genesys-proxy/index.js) now classifies the caller from their own token server-side (via `GET /api/v2/organizations/me`, cached per token) instead of trusting the request body. The elevated **client-credentials** path now requires a verified **internal-org** token, closing the previous unauthenticated access path to the proxy. **Customer** sessions are **token-forwarded** and **locked** to their own org/region — a request that targets another org via the body is rejected with `403 org_locked`. A customer-mode **denylist** blocks internal/trustee/billing endpoints, and an optional positive **entitlement allowlist** can be enabled with `ENFORCE_ENTITLEMENT_ALLOWLIST` (default off). Internal/demo behavior is unchanged, and deployments without the org env vars configured keep the legacy behavior via a compatibility fallback. See [docs/customer-facing-plan.md](docs/customer-facing-plan.md).
@@ -38,6 +39,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Interaction Totals** — Visualise interaction counts by Media Type, Voice Direction, and ACD / Non-ACD routing as horizontal bar charts. Date range picker with quick-select presets: Last Week (ISO Mon–Sun), Last Month, Last 3 Months, Last Year. Optional Media Type and Direction filters narrow the API query. Uses the Conversation Aggregates API (`POST /api/v2/analytics/conversations/aggregates/query`) with `nConversations` metric for fast pre-computed counts at any scale. Total Interactions is computed as the sum of all media-type counts. Voice direction uses `originatingDirection` groupBy. ACD / Non-ACD routing uses a hybrid approach: `interactionType` dimension for voice (contactCenter = ACD, enterprise = Non-ACD) combined with `nOffered` metric (firstQueue filter) for non-voice media types (callback, chat, email, message). **Export to Excel** produces a styled summary workbook with title rows (Interaction Totals, Org name, Period, Filters) above a Category/Value/Count/Percentage data table. **Email** section with toggle, recipients, and message to send the Excel as an attachment via Mailjet. **Schedule** panel for automated daily/weekly/monthly export with period preset dropdown (Last Week / Last Month / Last 3 Months / Last Year). Server-side handler in `api/lib/exports/interactionTotals.js`. Access key: `export.interactions.totals`.
 - **Deployment — Basic** — Bulk-create core Genesys Cloud objects from a single Excel workbook. Select a `.xlsx`/`.xls` file; each sheet is matched by tab name to a specific object type and processed automatically. Supported tabs: **DID Pools** (A=Number Start E.164, B=Number End, C=Description, D=Comment, E=Provider: PURE_CLOUD_VOICE / BYOC_CLOUD / BYOC_PREMISES — skipped if an overlapping pool already exists); **Divisions** (A=Name, B=Description — skipped if name already exists); **Sites** (A=Name, B=Media Model Cloud/Premises, C=Media Regions comma-sep for Cloud, D=Location Name, E=TURN Relay Site/Geo, F=Caller ID, G=Caller Name, H=Description — skipped if name already exists); **Skills** (A=Name — skipped if name already exists); **Skills - Language** (A=Name — skipped if name already exists); **Site - Number Plans** (A=Site Name, B=Plan Name, C=Classification, D=Match Type: numberList/digitLength/intraCountryCode/interCountryCode/regex, E=Priority, F=State, G=Numbers one per row for multi-number types, H=Digit Length e.g. 4-10, I=Match Pattern, J=Normalized Format — GET→merge→PUT per site, preserving existing plans); **Site - Outbound Routes** (A=Site Name, B=Route Name, C=Classification Types one per row, D=Distribution: SEQUENTIAL/RANDOM, E=Trunk Names one per row resolved by name, F=State true/false — existing routes not in sheet are untouched; routes matched by name are updated, new ones created); **Schedules** (A=Name req, B=Division, C=Description, D=Start req ISO-8601 no-tz e.g. 2026-01-01T08:00:00.000, E=End req same format, F=RRule optional iCal string e.g. FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR — times interpreted in org timezone; existing schedules matched by name are updated); **Schedule Groups** (multi-row per group — rows sharing the same Group Name are folded into one upsert: A=Group Name req, B=Division first-row-only, C=Description first-row-only, D=Time Zone first-row-only validated against Genesys allowed values e.g. Europe/Copenhagen, E=Type req: open/closed/holiday, F=Schedule Name req resolved by name — existing groups matched by name are updated); **Users** (multi-row per user — rows sharing the same E-mail are folded into one upsert: A=User display name req for new, B=E-mail req, C=Phone Name, D=Phone Site, E=Division, F=Skill one per row, G=Role one per row, H=Extension, I=DID Direct Number, J=Phone Type exact base-settings name, K=Queue one per row — upserts user by email; restores deleted/inactive users before other steps; grants roles and skills additively; creates phone if not found; sets extension and DID as user addresses; adds users to queues in bulk after all users processed; per-step failures are warnings not fatal); **Wrapup Codes** (A=Name req, B=Division, C=Description, D=Queue Name — if set, assigns the code to that queue after upsert; existing codes matched by name are updated); **Queues** (A=Queue Name req, B=Division req, C=Description, D=Scoring Method: TimestampAndPriority/PriorityOnly, E=Last Agent Routing: Disabled/QueueMembersOnly/AnyAgent, F=ACW Prompt: OPTIONAL/MANDATORY/MANDATORY_TIMEOUT/MANDATORY_FORCED_TIMEOUT/AGENT_REQUESTED, G=Skill Eval Method: NONE/BEST/ALL, H=Enable Transcription, I=Enable Manual Assignment, J=Suppress Recording, K=Calling Party Name, L=Calling Party Number, M=Call In-Queue Flow, N=Email In-Queue Flow, O=Message In-Queue Flow, P=Call Script, Q=Callback Script, R=Chat Script, S=Email Script, T=Message Script, U–Z=Call media: Alerting/AutoAnswer/AutoAnswerAlertTone(s)/ManualAnswerAlertTone(s)/SL%/SLDurationMs, AA–AF=Callback media, AG–AL=Chat media, AM–AR=Email media, AS–AX=Message media — blank cells are omitted; only Queue Name and Division are required; invalid non-blank values skip the row). Row 1 per sheet is always a header and is skipped. Results shown per row (✓ created/updated/skipped / ✗ error) with a per-tab summary. All creations logged to the Activity Log with a `[Deployment]` prefix.
 - **Deployment — Data Tables** — Bulk-create data tables from an Excel workbook in a single click. Select a `.xlsx`/`.xls` file and every sheet is processed automatically: each sheet produces one data table using the same fixed row format (row 1 = Name, row 2 = Key, row 3 = Division, row 4 = Description, rows 5+ = A=Column Name, B=Type, C=Default value optional — invalid or empty defaults silently skipped). Results are shown inline (✓ created / ✗ error per sheet) with a final summary. A **Download Template** button downloads the pre-formatted Excel template directly. All creations are logged to the Activity Log.
+- **Deployment — Onboarding** *(internal only)* — Replicate a set of Architect callflows from the **Demo** org into a customer org in one click. Pick the target org + division (or create a new division inline), filter and select callflows (outbound is unsupported), optionally set a name prefix applied to every created object, and Deploy. The page enqueues a job via `POST /api/onboarding-deploy`; a dedicated background **onboarding runner** exports each flow and its dependencies, strips the `Template - ` prefix, then creates the data tables (with rows), data actions, screen-pop scripts, and survey forms in the target org and publishes the flows with the Genesys Flow Scripting SDK (`purecloud-flow-scripting-api-sdk-javascript`, run in a child process per org). A phase stepper and per-object status update while `GET /api/onboarding-deploy?jobId=…` is polled. Access key: `deployment.onboarding`.
 - **Data Tables — Copy (Single Org)** — Copy a data table (structure + optionally rows) within the same org, with division selection. Selecting a source table opens an editable schema column list (Name / Type / Default, drag-to-reorder) so columns can be added or removed before saving; the primary key column is preserved. When copying rows, values are filtered to the kept columns (removed columns dropped, added columns take their default).
 - **Data Tables — Copy between Orgs** — Copy a data table (structure + optionally rows) from one customer org to another, with target division selection. The read-only schema preview is now an editable column list (Name / Type / Default, drag-to-reorder) allowing columns to be added or removed before saving; the primary key column is preserved and copied rows are filtered to the kept columns.
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle. Searchable source-action picker for orgs with many actions. Velocity templates stored as `.vm` file references in the source org are fetched and inlined so the copy is an exact replica (request template, success template, translation map, headers).
@@ -115,10 +117,11 @@ Internal web application for the Genesys Team to perform administrative actions 
 
 ## Architecture
 
-The app runs as **two separate Function Apps** plus a Static Web App frontend, and is deployed as **two independent environments — dev and prod** (see [Environments](#environments)):
+The app runs as **three separate Function Apps** plus a Static Web App frontend, and is deployed as **two independent environments — dev and prod** (see [Environments](#environments)):
 
-1. **Static Web App (Standard plan)** — hosts the SPA and the HTTP-triggered API in [api/](api/) (14 functions, Node.js 18).
+1. **Static Web App (Standard plan)** — hosts the SPA and the HTTP-triggered API in [api/](api/) (15 functions, Node.js 18).
 2. **Timer / Durable Function App (Consumption — Windows)** — separate Function App in [timer-functions/](timer-functions/) that owns the timer trigger and the Durable Functions orchestrator/activity used for precise template-schedule execution.
+3. **Onboarding runner (Consumption — Windows, Node 22)** — separate Function App in [onboarding-runner/](onboarding-runner/) that processes queued onboarding-deployment jobs from the `onboardingjobs` table and publishes callflows with the Flow Scripting SDK (internal feature; optional).
 
 ### Environments
 
@@ -150,6 +153,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
                                 │    ├─ *    /api/template-assignments       │
                                 │    ├─ *    /api/activity-log               │
                                 │    ├─ POST /api/doc-export                 │
+                                │    ├─ *    /api/onboarding-deploy         │
                                 │    ├─ GET  /api/ipranges (Genesys)         │
                                 │    ├─ GET  /api/aws-ipranges (Amazon) ────────▶ ip-ranges.amazonaws.com
                                 │    └─ GET  /api/scrape-disqualifying-      │
@@ -173,7 +177,15 @@ Browser (SPA)                    Azure Static Web App (Standard)
 │         (Calls Genesys APIs to apply the template to targets)    │
 └──────────────────────────────────────────────────────────────────┘
 
-          Encrypted app settings (both Function Apps)
+ Azure Onboarding Runner Function App (Consumption, Windows — separate resource)
+┌───────────────────────────────────────────────────────────────────┐
+│  onboarding-runner/                                              │
+│   └─ process-queue   (TimerTrigger — every 1 min)                │
+│        Claims a queued onboardingjobs job and deploys callflows  │
+│        into the target org via the Flow Scripting SDK           │
+└───────────────────────────────────────────────────────────────────┘
+
+          Encrypted app settings (all Function Apps)
           ─────────────────────────────────────────────
           GENESYS_<ORG>_CLIENT_ID / GENESYS_<ORG>_CLIENT_SECRET   (per customer)
           MAILJET_API_KEY / MAILJET_SECRET_KEY
@@ -192,6 +204,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
                    │              │             │  │   ments         │
                    │              │             │  ├─ templateschedu │
                    │              │             │  │   les           │
+                   │              │             │  ├─ onboardingjobs │
                    │              │             │  └─ activitylog    │
                    └──────────────┘             └────────────────────┘
 ```
@@ -213,11 +226,13 @@ Browser (SPA)                    Azure Static Web App (Standard)
 | `template-assignments` | HTTP CRUD | [api/template-assignments/](api/template-assignments/) | CRUD for template→user/group/work-team assignments |
 | `activity-log` | HTTP GET/POST | [api/activity-log/](api/activity-log/) | Reads and writes audit-log entries (Table Storage) |
 | `doc-export` | HTTP POST | [api/doc-export/](api/doc-export/) | Generates the Documentation Export workbook (config + data tables) |
+| `onboarding-deploy` | HTTP GET/POST | [api/onboarding-deploy/](api/onboarding-deploy/) | Internal-only: enqueue an onboarding-deployment job and poll its status (`onboardingjobs` table) |
 | `scrape-disqualifying-permissions` | HTTP GET | [api/scrape-disqualifying-permissions/](api/scrape-disqualifying-permissions/) | Live scrape of CX Cloud disqualifying permissions list |
 | `schedule-trigger` | TimerTrigger (every 5 min) | [timer-functions/schedule-trigger/](timer-functions/schedule-trigger/) | Wakes up and POSTs to `/api/scheduled-runner` |
 | `template-schedule-starter` | HTTP POST | [timer-functions/template-schedule-starter/](timer-functions/template-schedule-starter/) | Starts a Durable orchestrator instance for a template schedule |
 | `template-schedule-orchestrator` | Durable Orchestrator | [timer-functions/template-schedule-orchestrator/](timer-functions/template-schedule-orchestrator/) | Sleeps until the scheduled moment, then calls the activity |
 | `template-schedule-activity` | Durable Activity | [timer-functions/template-schedule-activity/](timer-functions/template-schedule-activity/) | Calls Genesys APIs to apply the template at execution time |
+| `process-queue` | TimerTrigger (every 1 min) | [onboarding-runner/process-queue/](onboarding-runner/process-queue/) | Onboarding runner: claims a queued `onboardingjobs` job and deploys callflows into the target org via the Flow Scripting SDK |
 
 > **Note:** [timer-functions-check/](timer-functions-check/) is a parallel copy of the Durable Function App used as a staging/verification deployment. The empty stub folders [api/recordings-export/](api/recordings-export/) and [api/recordings-export-runner/](api/recordings-export-runner/) are placeholders (no code) and can be ignored or removed before deployment.
 
@@ -383,6 +398,7 @@ genesys-admin-app/
 │   ├── customers/                GET /api/customers
 │   ├── aws-ipranges/             GET /api/aws-ipranges (Amazon IP ranges feed — anonymous, 15-min cache)
 │   ├── doc-export/               POST /api/doc-export (on-demand documentation export)
+│   ├── onboarding-deploy/        GET/POST /api/onboarding-deploy (internal: enqueue + poll onboarding jobs)
 │   ├── genesys-proxy/            POST /api/genesys-proxy
 │   ├── ipranges/                 GET /api/ipranges (Genesys IP ranges — client-credentials per region)
 │   ├── scrape-disqualifying-permissions/  GET /api/scrape-disqualifying-permissions (Hourly Interacting)
@@ -396,6 +412,8 @@ genesys-admin-app/
 │   └── lib/
 │       ├── customers.json        Customer metadata (15 orgs)
 │       ├── genesysAuth.js        Client Credentials token cache per org
+│       ├── onboardingStore.js    Azure Table Storage CRUD for onboarding jobs (onboardingjobs table)
+│       ├── onboardingEngine.js   .i3/YAML transform + dependency resolver (strip prefix, set division, name prefix)
 │       ├── scheduleStore.js      Azure Table Storage CRUD for schedules
 │       ├── templateScheduleStore.js  Azure Table Storage CRUD for template schedules
 │       ├── templateStore.js      Azure Table Storage CRUD for skill templates
@@ -513,6 +531,8 @@ See [docs/setup-guide.md](docs/setup-guide.md) for the complete step-by-step dep
    ```
 
 4. Commit and push
+
+> **Onboarding runner:** if the internal Onboarding feature is deployed, also add the same `GENESYS_<ID>_CLIENT_ID` / `GENESYS_<ID>_CLIENT_SECRET` settings to the onboarding runner Function App — it deploys into customer orgs with client credentials. See [docs/setup-guide.md](docs/setup-guide.md) §14h.
 
 ## Adding a New Feature Page
 
