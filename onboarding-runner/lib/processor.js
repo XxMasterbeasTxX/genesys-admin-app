@@ -145,6 +145,11 @@ async function processJob(job, store, log) {
   const target = resolveOrg(job.targetOrgId);
   const division = job.divisionName || "Home";
 
+  // Target object names = "<prefix> - <original>" when a prefix is supplied.
+  // `original` is the source name with any "Template - " prefix stripped.
+  const namePrefix = (job.namePrefix || "").trim();
+  const finalName = (n) => (namePrefix ? `${namePrefix} - ${stripPrefix(n)}` : stripPrefix(n));
+
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), `onboarding-${job.jobId}-`));
   const phases = [];
   const warnings = [];
@@ -190,7 +195,7 @@ async function processJob(job, store, log) {
         if (!type) {
           for (const info of srcFlowById.values()) { if (info.name === f.name) { type = info.type; break; } }
           if (!type) {
-            exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "error", detail: "referenced flow not found in source" });
+            exportPhase.items.push({ old: f.name, new: finalName(f.name), status: "error", detail: "referenced flow not found in source" });
             await persist();
             continue;
           }
@@ -238,9 +243,9 @@ async function processJob(job, store, log) {
         }
 
         exported.set(key, { name: f.name, type, yaml, i3raw, flowDepKeys, surveyForm });
-        exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "ok", detail: type });
+        exportPhase.items.push({ old: f.name, new: finalName(f.name), status: "ok", detail: type });
       } catch (err) {
-        exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "error", detail: err.message });
+        exportPhase.items.push({ old: f.name, new: finalName(f.name), status: "error", detail: err.message });
       }
       await persist();
     }
@@ -261,7 +266,7 @@ async function processJob(job, store, log) {
     const tgtTableNames = new Set(tgtTables.map((t) => t.name));
 
     for (const srcName of [...tableNames].sort()) {
-      const newName = stripPrefix(srcName);
+      const newName = finalName(srcName);
       try {
         const srcMeta = srcTableByName.get(srcName);
         if (tgtTableNames.has(newName)) {
@@ -312,7 +317,7 @@ async function processJob(job, store, log) {
     }
 
     for (const { action: srcName } of [...actionRefs.values()]) {
-      const newName = stripPrefix(srcName);
+      const newName = finalName(srcName);
       try {
         const srcSummary = srcActionByName.get(srcName);
         if (tgtActionNames.has(newName)) {
@@ -360,7 +365,7 @@ async function processJob(job, store, log) {
       const scriptPhase = addPhase("Scripts");
       const tgtScriptByName = new Map((await rest.listScripts(target)).map((s) => [s.name, s]));
       for (const [srcId, srcName] of scriptRefs) {
-        const newName = stripPrefix(srcName);
+        const newName = finalName(srcName);
         try {
           const existing = tgtScriptByName.get(newName);
           if (existing) {
@@ -415,7 +420,7 @@ async function processJob(job, store, log) {
       for (const sf of surveyFormRefs.values()) uniqueForms.set(sf.id, sf);
       const tgtFormByName = new Map((await rest.listSurveyForms(target)).map((f) => [f.name, f]));
       for (const sf of uniqueForms.values()) {
-        const newName = stripPrefix(sf.name);
+        const newName = finalName(sf.name);
         try {
           let tgt = tgtFormByName.get(newName);
           if (!tgt) {
@@ -455,7 +460,7 @@ async function processJob(job, store, log) {
     for (const key of publishOrder) {
       const rec = exported.get(key);
       const name = rec.name;
-      const newName = stripPrefix(name);
+      const newName = finalName(name);
       try {
         // Skip if the flow already exists in the target (record its id for remap).
         const existing = await rest.fetchAllPages(target, "/api/v2/flows", {
@@ -472,13 +477,13 @@ async function processJob(job, store, log) {
         // Export as architect (.i3) from source → strip prefix + remap dependency
         // GUIDs (demo → customer) → create + import + publish to target.
         const demoFlowId = await rest.findFlowIdByName(source, rec.type, name);
-        const { output, remapped } = transformI3(rec.i3raw, { prefix: "Template - ", guidMap });
+        const { output, remapped } = transformI3(rec.i3raw, { prefix: "Template - ", guidMap, renameFrom: stripPrefix(name), renameTo: newName });
         log(`[onboarding] publish '${newName}' (${rec.type}): remapped ${remapped} dependency GUID occurrence(s); guidMap has ${guidMap.size} entries`);
         const pubFile = path.join(workDir, `publish-${rec.type}-${newName}.i3InboundFlow`);
         fs.writeFileSync(pubFile, output, "utf8");
         // Voice-survey flows must be created against a survey form — pass the
         // deployed form's (stripped) name so the SDK create call succeeds.
-        const surveyFormName = rec.surveyForm ? stripPrefix(rec.surveyForm.name) : undefined;
+        const surveyFormName = rec.surveyForm ? finalName(rec.surveyForm.name) : undefined;
         const pubResult = await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml), surveyFormName);
         // Definitively verify the flow actually persisted. Prefer the flow id the SDK
         // emitted (type-agnostic GET by id); fall back to a REST lookup by name.

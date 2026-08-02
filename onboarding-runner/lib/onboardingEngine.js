@@ -164,6 +164,15 @@ function transformI3(base64Content, opts = {}) {
     }
   }
 
+  // 3) Optionally rename the flow itself (e.g. to apply a user prefix). We anchor on
+  //    the url-encoded QUOTED name so only exact full-name matches are replaced —
+  //    not substrings inside nested task/menu names.
+  if (opts.renameFrom && opts.renameTo && opts.renameFrom !== opts.renameTo) {
+    const from = encodeURIComponent(`"${opts.renameFrom}"`);
+    const to = encodeURIComponent(`"${opts.renameTo}"`);
+    if (urlEnc.includes(from)) urlEnc = urlEnc.split(from).join(to);
+  }
+
   return { output: Buffer.from(urlEnc, "utf8").toString("base64"), count, remapped };
 }
 

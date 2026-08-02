@@ -88,8 +88,9 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       </div>
     </div>
 
-    <div class="dt-actions" style="margin:0 0 12px">
+    <div class="dt-actions" style="margin:0 0 12px;display:flex;align-items:center;gap:10px">
       <button class="btn" id="obDeployBtn" disabled>Deploy…</button>
+      <input class="dt-input" id="obPrefix" type="text" placeholder="Name prefix (optional)" style="max-width:220px" title="Created objects will be named “prefix - Original name”" />
     </div>
 
     <details class="dt-control-group" id="obFlowsWrap" hidden open>
@@ -129,6 +130,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   const $typeFilter = el.querySelector("#obTypeFilter");
   const $flowList = el.querySelector("#obFlowList");
   const $deployBtn = el.querySelector("#obDeployBtn");
+  const $prefix   = el.querySelector("#obPrefix");
   const $status   = el.querySelector("#obStatus");
   const $results  = el.querySelector("#obResults");
 
@@ -260,6 +262,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       targetOrgId: $destOrg.value,
       divisionId: $division.value,
       divisionName: $division.selectedOptions[0]?.textContent || "",
+      namePrefix: $prefix.value.trim(),
       flows: flows
         .filter(f => selected.has(f.id))
         .map(f => ({ id: f.id, name: f.name, type: (f.type || "").toLowerCase() })),
@@ -374,6 +377,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
           <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Source (demo)</td><td><strong>${escapeHtml(orgName(plan.sourceOrgId))}</strong></td></tr>
           <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Target</td><td><strong>${escapeHtml(orgName(plan.targetOrgId))}</strong></td></tr>
           <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Division</td><td><strong>${escapeHtml(plan.divisionName)}</strong></td></tr>
+          ${plan.namePrefix ? `<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Name prefix</td><td><strong>${escapeHtml(plan.namePrefix)} - …</strong></td></tr>` : ""}
           <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Callflows</td><td><strong>${plan.flows.length}</strong></td></tr>
         </table>
         <ul style="margin:12px 0 0;padding-left:18px;max-height:200px;overflow-y:auto;font-size:.9rem">

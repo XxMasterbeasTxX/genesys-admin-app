@@ -46,6 +46,7 @@ function validatePlan(body) {
   const targetOrgId = String(body.targetOrgId || "").trim();
   const divisionId = String(body.divisionId || "").trim();
   const divisionName = String(body.divisionName || "").trim();
+  const namePrefix = String(body.namePrefix || "").trim();
   const flows = Array.isArray(body.flows) ? body.flows : [];
 
   if (!sourceOrgId) errors.push("sourceOrgId is required");
@@ -76,7 +77,7 @@ function validatePlan(body) {
 
   return {
     errors,
-    plan: { sourceOrgId, targetOrgId, divisionId, divisionName, flows: cleanFlows },
+    plan: { sourceOrgId, targetOrgId, divisionId, divisionName, namePrefix, flows: cleanFlows },
   };
 }
 
