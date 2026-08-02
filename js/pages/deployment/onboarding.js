@@ -75,9 +75,12 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
 
       <div class="dt-control-group">
         <label class="dt-label">Target Division</label>
-        <select class="dt-select" id="obDivision" disabled>
-          <option value="">Select target org first…</option>
-        </select>
+        <div style="display:flex;align-items:center;gap:10px">
+          <select class="dt-select" id="obDivision" disabled>
+            <option value="">Select target org first…</option>
+          </select>
+          <button class="btn btn--secondary" id="obNewDivBtn" disabled title="Create a new division in the target org">Create New</button>
+        </div>
       </div>
 
       <div class="dt-actions" style="margin-bottom:12px">
@@ -117,6 +120,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   const $otherOrgs = el.querySelector("#obOtherOrgs");
   const $destOrg  = el.querySelector("#obDestOrg");
   const $division = el.querySelector("#obDivision");
+  const $newDivBtn = el.querySelector("#obNewDivBtn");
   const $loadBtn  = el.querySelector("#obLoadBtn");
   const $flowsWrap = el.querySelector("#obFlowsWrap");
   const $selectAll = el.querySelector("#obSelectAll");
@@ -392,15 +396,62 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     });
   }
 
+  // ── Create a new division in the target org ───────────
+  function showCreateDivision() {
+    const targetId = $destOrg.value;
+    if (!targetId) return;
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.innerHTML = `
+      <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:340px;max-width:460px;width:90%">
+        <h3 style="margin:0 0 14px;font-size:1.1rem">Create Division in ${escapeHtml(orgName(targetId))}</h3>
+        <label class="dt-label" for="obNewDivName">Division name</label>
+        <input class="dt-input" id="obNewDivName" type="text" placeholder="New division name" style="width:100%;margin-top:4px" />
+        <div id="obNewDivErr" style="color:#f87171;font-size:.85rem;margin-top:8px;min-height:1em"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+          <button id="obNewDivCancel" class="btn btn--secondary">Cancel</button>
+          <button id="obNewDivCreate" class="btn">Create</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const $name = overlay.querySelector("#obNewDivName");
+    const $err = overlay.querySelector("#obNewDivErr");
+    const $cancel = overlay.querySelector("#obNewDivCancel");
+    const $create = overlay.querySelector("#obNewDivCreate");
+    const close = () => { if (overlay.parentNode) document.body.removeChild(overlay); };
+    $name.focus();
+    $cancel.addEventListener("click", close);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+    $name.addEventListener("keydown", (e) => { if (e.key === "Enter") $create.click(); });
+    $create.addEventListener("click", async () => {
+      const name = $name.value.trim();
+      if (!name) { $err.textContent = "Please enter a division name."; return; }
+      $create.disabled = true; $cancel.disabled = true; $err.textContent = "Creating…";
+      try {
+        const created = await gc.createDivision(api, targetId, { name });
+        close();
+        await loadDivisions(targetId);
+        if (created && created.id) { $division.value = created.id; }
+        updateDeployBtn();
+        setStatus(`Created division “${name}” in ${orgName(targetId)}.`, "success");
+      } catch (err) {
+        $create.disabled = false; $cancel.disabled = false;
+        $err.textContent = `Could not create division: ${err.message || err}`;
+      }
+    });
+  }
+
   // ── Events ────────────────────────────────────────────
   $srcOrg.addEventListener("change", () => { updateLoadBtn(); });
   $destOrg.addEventListener("change", () => {
     updateLoadBtn();
+    $newDivBtn.disabled = !$destOrg.value;
     if ($destOrg.value) loadDivisions($destOrg.value);
     else { $division.innerHTML = `<option value="">Select target org first…</option>`; $division.disabled = true; }
     updateDeployBtn();
   });
   $division.addEventListener("change", updateDeployBtn);
+  $newDivBtn.addEventListener("click", showCreateDivision);
   $loadBtn.addEventListener("click", loadFlows);
   $filter.addEventListener("input", renderFlowList);
   $typeFilter.addEventListener("change", renderFlowList);
