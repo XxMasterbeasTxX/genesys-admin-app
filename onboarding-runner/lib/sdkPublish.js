@@ -60,30 +60,33 @@ if (!location) { console.error(`Unknown location '${args.location}'`); process.e
 let exitCode = 1;
 
 // Build the positional args for the create-flow factory method. Most flow types
-// take (flowName, description, language, callback). Voice-survey flows additionally
-// REQUIRE a survey form to be created — its signature is
+// take (flowName, description, language, callback). Voice-survey flows are special:
+// they are generated FROM a survey form, so we create them directly from the deployed
+// form rather than importing a .i3. Signature is
 // (flowName, description, language, callback, flowDivision, creationData,
 //  surveyFormName, surveyFormId, createNluFromSurveyForm, configureFlowFromSurveyForm).
-// We pass the survey form NAME (position 7) so creation succeeds; the imported
-// .i3 (with the form GUID remapped) then supplies the real configuration.
+const isVoiceSurveyFromForm =
+  Boolean(createMethod.toLowerCase() === "createflowvoicesurveyasync" && args.surveyFormName);
+
 function buildCreateArgs(callback) {
   const base = [args.flowName, "", language, callback];
-  if (createMethod.toLowerCase() === "createflowvoicesurveyasync" && args.surveyFormName) {
-    // Positions: flowDivision, creationData, surveyFormName, surveyFormId,
-    // createNluFromSurveyForm, configureFlowFromSurveyForm.
-    // createNluFromSurveyForm MUST be true — otherwise the SDK requires a full
-    // nluDomainVersion in creationData or flow creation silently fails (no flow id).
-    // configureFlowFromSurveyForm stays false: the demo .i3 we import supplies the
-    // real flow configuration.
-    return base.concat([undefined, undefined, args.surveyFormName, undefined, true, false]);
+  if (isVoiceSurveyFromForm) {
+    // createNluFromSurveyForm=true → auto-generate the NLU domain from the form
+    // (otherwise creation silently fails). configureFlowFromSurveyForm=true → build
+    // the full flow configuration from the form (a voice-survey flow is a projection
+    // of its form), so no .i3 import is needed.
+    return base.concat([undefined, undefined, args.surveyFormName, undefined, true, true]);
   }
   return base;
 }
 
 function doWork() {
-  return archFactoryFlows[createMethod](...buildCreateArgs((flow) =>
-    flow
-      .importFromFileAsync(flowFile)
+  return archFactoryFlows[createMethod](...buildCreateArgs((flow) => {
+    // Voice-survey flows are already fully built from the survey form — skip the
+    // .i3 import and go straight to validate + publish. All other flow types import
+    // the transformed .i3 first.
+    const prepared = isVoiceSurveyFromForm ? Promise.resolve() : flow.importFromFileAsync(flowFile);
+    return prepared
       .then(() => flow.validateAsync())
       .then((results) => {
         if (results.hasErrors) {
@@ -112,8 +115,8 @@ function doWork() {
           try { console.log("FLOW_ID " + flow.id + " isPublished=" + flow.isPublished + " isCreated=" + flow.isCreated); } catch (_) { /* ignore */ }
           exitCode = 0;
         });
-      })
-  )).catch((err) => { console.error("Publish failed: " + (err && err.message ? err.message : err)); exitCode = 1; });
+      });
+  })).catch((err) => { console.error("Publish failed: " + (err && err.message ? err.message : err)); exitCode = 1; });
 }
 
 function onEnd() { process.exitCode = exitCode; }
