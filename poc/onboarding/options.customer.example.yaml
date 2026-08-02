@@ -1,8 +1,0 @@
-# Archy options file — CUSTOMER org (target).
-# Copy this to options.customer.yaml and fill in real values. Do NOT commit the real file.
-#
-# Use the region + client-credentials of the CUSTOMER org you are onboarding into.
-
-clientId: REPLACE_WITH_CUSTOMER_CLIENT_ID
-clientSecret: REPLACE_WITH_CUSTOMER_CLIENT_SECRET
-location: prod_eu_west_1
