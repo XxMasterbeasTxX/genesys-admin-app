@@ -88,8 +88,8 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       </div>
     </div>
 
-    <div class="dt-control-group" id="obFlowsWrap" hidden>
-      <label class="dt-label">Callflows to deploy</label>
+    <details class="dt-control-group" id="obFlowsWrap" hidden open>
+      <summary class="dt-label" style="cursor:pointer;user-select:none">Callflows to deploy</summary>
       <div class="ob-select-bar" style="display:flex;align-items:center;gap:12px;margin:6px 0">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
           <input type="checkbox" id="obSelectAll"> <span>Select all</span>
@@ -104,7 +104,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
         Outbound call flows aren’t supported by onboarding and are excluded from this list.
       </p>
       <ul id="obFlowList" style="list-style:none;padding:0;margin:0;max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px"></ul>
-    </div>
+    </details>
 
     <div class="dt-actions" style="margin-top:14px">
       <button class="btn" id="obDeployBtn" disabled>Deploy…</button>
@@ -477,6 +477,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   $deployBtn.addEventListener("click", () => {
     const plan = buildPlan();
     if (!plan.flows.length) return;
+    $flowsWrap.open = false; // collapse the callflows list when deploying
     showConfirm(plan);
   });
 
