@@ -61,13 +61,14 @@ async function sdkExport(sourceOrg, name, type, outDir, format) {
   return m[1].trim();
 }
 
-async function sdkPublish(targetOrg, file, flowType, flowName, languageTag) {
+async function sdkPublish(targetOrg, file, flowType, flowName, languageTag, surveyFormName) {
   const argv = [
     "--clientId", targetOrg.clientId, "--clientSecret", targetOrg.clientSecret,
     "--location", targetOrg.location, "--file", file,
     "--flowType", flowType, "--flowName", flowName,
   ];
   if (languageTag) argv.push("--languageTag", languageTag);
+  if (surveyFormName) argv.push("--surveyFormName", surveyFormName);
   const res = await runChild(PUBLISH_DIR, argv);
   if (res.code !== 0) {
     // Surface the most informative tail of the child output (stderr holds the
@@ -81,6 +82,31 @@ async function sdkPublish(targetOrg, file, flowType, flowName, languageTag) {
     throw err;
   }
   return true;
+}
+
+/**
+ * Prepare a source survey form for creation in the target org: strip the
+ * server-assigned form id/contextId and metadata (a new form gets fresh ones),
+ * strip the "Template - " prefix from the name, and remove version-specific `id`
+ * fields from nested question groups / questions / answer options while keeping
+ * their stable `contextId` so the imported flow's references still resolve.
+ */
+function sanitizeSurveyForm(form, newName) {
+  const clone = JSON.parse(JSON.stringify(form));
+  for (const k of ["id", "contextId", "modifiedDate", "dateModified", "publishedVersions", "redacted", "selfUri", "division"]) {
+    delete clone[k];
+  }
+  clone.name = newName;
+  clone.published = false;
+  const stripIds = (node) => {
+    if (Array.isArray(node)) return node.forEach(stripIds);
+    if (node && typeof node === "object") {
+      delete node.id;
+      for (const v of Object.values(node)) stripIds(v);
+    }
+  };
+  if (Array.isArray(clone.questionGroups)) stripIds(clone.questionGroups);
+  return clone;
 }
 
 // ── topological order (deps first); cycle-safe ──
@@ -123,8 +149,8 @@ async function processJob(job, store, log) {
 
   try {
     // ── Source indexes (id → name/type) for GUID-based reference discovery ──
-    const [srcFlowsAll, srcScriptsAll] = await Promise.all([
-      rest.listFlows(source), rest.listScripts(source),
+    const [srcFlowsAll, srcScriptsAll, srcSurveyFormsAll] = await Promise.all([
+      rest.listFlows(source), rest.listScripts(source), rest.listSurveyForms(source),
     ]);
     const srcFlowById = new Map(
       srcFlowsAll.map((fl) => [String(fl.id).toLowerCase(), { name: fl.name, type: String(fl.type || "").toLowerCase() }])
@@ -132,6 +158,15 @@ async function processJob(job, store, log) {
     const srcScriptById = new Map(
       srcScriptsAll.map((s) => [String(s.id).toLowerCase(), s.name])
     );
+    // Survey forms may be referenced (by voice-survey flows) via either their
+    // version id or their stable contextId — index by both so the .i3 GUID scan
+    // matches whichever the flow stores.
+    const srcSurveyFormByGuid = new Map();
+    for (const sf of srcSurveyFormsAll) {
+      const rec = { id: sf.id, contextId: sf.contextId, name: sf.name };
+      if (sf.id) srcSurveyFormByGuid.set(String(sf.id).toLowerCase(), rec);
+      if (sf.contextId) srcSurveyFormByGuid.set(String(sf.contextId).toLowerCase(), rec);
+    }
 
     // ── Phase: export + discover (recursive closure) ──────────────────
     const exportPhase = addPhase("Export & discover");
@@ -139,6 +174,7 @@ async function processJob(job, store, log) {
     const tableNames = new Set();    // source table names (prefixed)
     const actionRefs = new Map();    // key → { integration, action }
     const scriptRefs = new Map();    // source script id → source script name
+    const surveyFormRefs = new Map();// source form id/contextId key → { id, contextId, name }
 
     const queue = job.flows.map((f) => ({ name: f.name, type: f.type }));
     while (queue.length) {
@@ -188,8 +224,15 @@ async function processJob(job, store, log) {
         for (const [id, sname] of srcScriptById) {
           if (guidSet.has(id)) scriptRefs.set(id, sname);
         }
+        // Voice-survey flows reference a survey form (by version id or contextId).
+        // Record the form so it can be deployed + remapped, and remember it on the
+        // flow record so we can pass the form NAME to the SDK create call.
+        let surveyForm = null;
+        for (const [guid, sf] of srcSurveyFormByGuid) {
+          if (guidSet.has(guid)) { surveyFormRefs.set(guid, sf); surveyForm = sf; }
+        }
 
-        exported.set(key, { name: f.name, type, yaml, i3raw, flowDepKeys });
+        exported.set(key, { name: f.name, type, yaml, i3raw, flowDepKeys, surveyForm });
         exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "ok", detail: type });
       } catch (err) {
         exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "error", detail: err.message });
@@ -199,6 +242,7 @@ async function processJob(job, store, log) {
 
     log(`[onboarding] discovered flows: ${[...exported.keys()].join(", ") || "(none)"}`);
     log(`[onboarding] discovered script refs: ${scriptRefs.size ? [...scriptRefs.entries()].map(([id, n]) => `${n}=${id}`).join(", ") : "(none)"}`);
+    log(`[onboarding] discovered survey forms: ${surveyFormRefs.size ? [...new Set([...surveyFormRefs.values()].map((s) => s.name))].join(", ") : "(none)"}`);
 
     // ── Phase: data tables (REST) ─────────────────────────────────────
     const guidMap = new Map(); // demo dependency GUID → customer GUID (for .i3 remap)
@@ -315,8 +359,12 @@ async function processJob(job, store, log) {
         try {
           const existing = tgtScriptByName.get(newName);
           if (existing) {
+            // The script exists but earlier runs imported it as an unpublished
+            // draft — the flow validator only sees PUBLISHED scripts, so publish
+            // it now (idempotent) before recording the GUID remap.
+            try { await rest.publishScript(target, existing.id); } catch (e) { log(`[onboarding] publish existing script '${newName}' failed: ${e.message}`); }
             guidMap.set(srcId, existing.id);
-            scriptPhase.items.push({ old: srcName, new: newName, status: "skipped", detail: "already exists" });
+            scriptPhase.items.push({ old: srcName, new: newName, status: "skipped", detail: "already exists · published" });
             await persist();
             continue;
           }
@@ -337,12 +385,52 @@ async function processJob(job, store, log) {
             else if (st && (st.failed === true || s === "failure" || s === "failed" || s === "error")) throw new Error("import failed: " + lastMsg);
           }
           if (!done) throw new Error("import did not complete in time" + (lastMsg ? ": " + lastMsg : ""));
-          // Resolve the new script id by name and record the GUID remap.
+          // Resolve the new script id by name, publish it, and record the remap.
           const created = (await rest.listScripts(target)).find((s) => s.name === newName);
-          if (created) guidMap.set(srcId, created.id);
-          scriptPhase.items.push({ old: srcName, new: newName, status: created ? "ok" : "error", detail: created ? undefined : "imported but not found by name" });
+          if (created) {
+            try { await rest.publishScript(target, created.id); } catch (e) { log(`[onboarding] publish new script '${newName}' failed: ${e.message}`); }
+            guidMap.set(srcId, created.id);
+          }
+          scriptPhase.items.push({ old: srcName, new: newName, status: created ? "ok" : "error", detail: created ? "imported · published" : "imported but not found by name" });
         } catch (err) {
           scriptPhase.items.push({ old: srcName, new: newName, status: "error", detail: err.message });
+        }
+        await persist();
+      }
+    }
+
+    // ── Phase: survey forms (voice-survey flow dependency) ───────────
+    //    A voice-survey flow can only be CREATED against an existing survey form,
+    //    and its imported .i3 references the form by GUID. So deploy + publish the
+    //    form first, remap its id/contextId (demo → customer) in guidMap, and
+    //    remember the target form NAME to pass to the SDK create call.
+    if (surveyFormRefs.size) {
+      const surveyPhase = addPhase("Survey forms");
+      const uniqueForms = new Map(); // source form id → { id, contextId, name }
+      for (const sf of surveyFormRefs.values()) uniqueForms.set(sf.id, sf);
+      const tgtFormByName = new Map((await rest.listSurveyForms(target)).map((f) => [f.name, f]));
+      for (const sf of uniqueForms.values()) {
+        const newName = stripPrefix(sf.name);
+        try {
+          let tgt = tgtFormByName.get(newName);
+          if (!tgt) {
+            // Fetch the full source form, strip server-assigned ids, create + publish.
+            const full = await rest.getSurveyForm(source, sf.id);
+            const body = sanitizeSurveyForm(full, newName);
+            const created = await rest.createSurveyForm(target, body);
+            const published = await rest.publishSurveyForm(target, created.id);
+            tgt = published && published.id ? published : created;
+          } else {
+            // Ensure the existing form is published so flows can reference it.
+            try { await rest.publishSurveyForm(target, tgt.id); } catch (_) { /* already published */ }
+          }
+          // Remap both the source version id and contextId → target values so the
+          // imported .i3 (whichever it stores) points at the deployed form.
+          if (sf.id && tgt.id) guidMap.set(String(sf.id).toLowerCase(), tgt.id);
+          if (sf.contextId && tgt.contextId) guidMap.set(String(sf.contextId).toLowerCase(), tgt.contextId);
+          surveyPhase.items.push({ old: sf.name, new: newName, status: "ok", detail: tgtFormByName.get(newName) ? "already exists · published" : "created · published" });
+        } catch (err) {
+          surveyPhase.items.push({ old: sf.name, new: newName, status: "error", detail: err.message });
         }
         await persist();
       }
@@ -383,7 +471,10 @@ async function processJob(job, store, log) {
         log(`[onboarding] publish '${newName}' (${rec.type}): remapped ${remapped} dependency GUID occurrence(s); guidMap has ${guidMap.size} entries`);
         const pubFile = path.join(workDir, `publish-${rec.type}-${newName}.i3InboundFlow`);
         fs.writeFileSync(pubFile, output, "utf8");
-        await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml));
+        // Voice-survey flows must be created against a survey form — pass the
+        // deployed form's (stripped) name so the SDK create call succeeds.
+        const surveyFormName = rec.surveyForm ? stripPrefix(rec.surveyForm.name) : undefined;
+        await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml), surveyFormName);
         const custFlowId = await rest.findFlowIdByName(target, rec.type, newName);
         if (demoFlowId && custFlowId) guidMap.set(demoFlowId, custFlowId);
         flowPhase.items.push({ old: name, new: newName, status: "ok", detail: rec.type });

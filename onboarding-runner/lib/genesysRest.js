@@ -133,6 +133,35 @@ async function importScript(org, scriptName, fileText) {
   return json.correlationId || json.uploadId || json.id;
 }
 
+/**
+ * Publish a script so it becomes referenceable by flows (screen pops, etc.).
+ * Imported scripts start as unpublished drafts; the flow validator only sees
+ * published scripts. POST /api/v2/scripts/published?scriptDataVersion=0 {scriptId}.
+ */
+const publishScript = (org, scriptId) =>
+  gcFetch(org, "POST", "/api/v2/scripts/published", {
+    query: { scriptDataVersion: "0" },
+    body: { scriptId },
+  });
+
+// ── Survey forms (voice-survey flow dependency) ─────────
+/** All survey forms (latest editable versions) in an org. */
+const listSurveyForms = (org) => fetchAllPages(org, "/api/v2/quality/forms/surveys");
+
+/** Full survey form (with question groups) by id. */
+const getSurveyForm = (org, formId) =>
+  gcFetch(org, "GET", `/api/v2/quality/forms/surveys/${formId}`);
+
+/** Create a survey form. Returns the created form (with a new id/contextId). */
+const createSurveyForm = (org, body) =>
+  gcFetch(org, "POST", "/api/v2/quality/forms/surveys", { body });
+
+/** Publish a survey form version so flows can reference it. */
+const publishSurveyForm = (org, formId) =>
+  gcFetch(org, "POST", "/api/v2/quality/publishedforms/surveys", {
+    body: { id: formId, published: true },
+  });
+
 /** Find a flow's id by exact name + type in an org (or null). */
 async function findFlowIdByName(org, type, name) {
   const flows = await fetchAllPages(org, "/api/v2/flows", {
@@ -161,5 +190,10 @@ module.exports = {
   getScriptUploadStatus,
   downloadText,
   importScript,
+  publishScript,
+  listSurveyForms,
+  getSurveyForm,
+  createSurveyForm,
+  publishSurveyForm,
   findFlowIdByName,
 };

@@ -59,8 +59,23 @@ if (!location) { console.error(`Unknown location '${args.location}'`); process.e
 
 let exitCode = 1;
 
+// Build the positional args for the create-flow factory method. Most flow types
+// take (flowName, description, language, callback). Voice-survey flows additionally
+// REQUIRE a survey form to be created — its signature is
+// (flowName, description, language, callback, flowDivision, creationData,
+//  surveyFormName, surveyFormId, createNluFromSurveyForm, configureFlowFromSurveyForm).
+// We pass the survey form NAME (position 7) so creation succeeds; the imported
+// .i3 (with the form GUID remapped) then supplies the real configuration.
+function buildCreateArgs(callback) {
+  const base = [args.flowName, "", language, callback];
+  if (createMethod.toLowerCase() === "createflowvoicesurveyasync" && args.surveyFormName) {
+    return base.concat([undefined, undefined, args.surveyFormName]);
+  }
+  return base;
+}
+
 function doWork() {
-  return archFactoryFlows[createMethod](args.flowName, "", language, (flow) =>
+  return archFactoryFlows[createMethod](...buildCreateArgs((flow) =>
     flow
       .importFromFileAsync(flowFile)
       .then(() => flow.validateAsync())
@@ -85,7 +100,7 @@ function doWork() {
         }
         return flow.publishAsync().then(() => { console.log("PUBLISHED " + flow.name); exitCode = 0; });
       })
-  ).catch((err) => { console.error("Publish failed: " + (err && err.message ? err.message : err)); exitCode = 1; });
+  )).catch((err) => { console.error("Publish failed: " + (err && err.message ? err.message : err)); exitCode = 1; });
 }
 
 function onEnd() { process.exitCode = exitCode; }
