@@ -88,6 +88,51 @@ const createDataAction = (org, body) =>
 const listIntegrations = (org) =>
   fetchAllPages(org, "/api/v2/integrations");
 
+// ── Flows ───────────────────────────────────────────────
+/** All flows (every type) in an org — used to discover flow references by GUID. */
+const listFlows = (org) => fetchAllPages(org, "/api/v2/flows");
+
+// ── Scripts ─────────────────────────────────────────────
+const listScripts = (org) => fetchAllPages(org, "/api/v2/scripts");
+
+/** Request a script export; returns a (pre-signed) URL to download the file. */
+const getScriptExportUrl = async (org, scriptId) => {
+  const res = await gcFetch(org, "POST", `/api/v2/scripts/${scriptId}/export`, { body: {} });
+  return res && res.url ? res.url : null;
+};
+
+/** Poll status of a script upload (import). */
+const getScriptUploadStatus = (org, uploadId) =>
+  gcFetch(org, "GET", `/api/v2/scripts/uploads/${uploadId}/status`);
+
+/** Download the text body of a URL (e.g. an exported script file). */
+async function downloadText(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`download failed → ${resp.status}`);
+  return resp.text();
+}
+
+/**
+ * Import a script into an org via the Scripter upload endpoint (multipart).
+ * Returns the upload correlation id to poll with getScriptUploadStatus.
+ */
+async function importScript(org, scriptName, fileText) {
+  const token = await getGenesysToken(org.id, org.region, org.clientId, org.clientSecret);
+  const form = new FormData();
+  form.append("file", new Blob([fileText], { type: "application/json" }), "script.json");
+  form.append("scriptName", scriptName);
+  // NB: uses the apps.<region> host, not api.<region>.
+  const resp = await fetch(`https://apps.${org.region}/uploads/v2/scripter`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const text = await resp.text();
+  let json; try { json = JSON.parse(text); } catch { json = { raw: text }; }
+  if (!resp.ok) throw new Error(json.message || json.error || `script upload → ${resp.status}`);
+  return json.correlationId || json.uploadId || json.id;
+}
+
 /** Find a flow's id by exact name + type in an org (or null). */
 async function findFlowIdByName(org, type, name) {
   const flows = await fetchAllPages(org, "/api/v2/flows", {
@@ -110,5 +155,11 @@ module.exports = {
   getDataAction,
   createDataAction,
   listIntegrations,
+  listFlows,
+  listScripts,
+  getScriptExportUrl,
+  getScriptUploadStatus,
+  downloadText,
+  importScript,
   findFlowIdByName,
 };

@@ -26,17 +26,11 @@ const {
 const EXPORT_DIR = path.join(__dirname, "sdkExport.js");
 const PUBLISH_DIR = path.join(__dirname, "sdkPublish.js");
 
-// Dependency flow name → its Genesys/SDK flow type.
-const DEP_FLOW_TYPES = { commonModule: "commonmodule", inQueue: "inqueuecall" };
+// Matches a GUID anywhere in the (url-encoded) .i3 content — used to discover
+// every referenced flow / script by id, regardless of the referencing action.
+const GUID_RE = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
 
-// Flow types a "Transfer to Flow" action can target, in resolution priority.
-// (In-queue and common-module flows are referenced differently, never via a
-// transfer, so they are excluded — this disambiguates a name that exists as
-// multiple flow types, e.g. an inbound flow + an in-queue flow of the same name.)
-const TRANSFER_TARGET_TYPES = [
-  "inboundcall", "securecall", "workflow", "voice", "voicemail",
-  "bot", "digitalbot", "inboundchat", "inboundemail", "inboundshortmessage", "outboundcall",
-];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── child-process helpers ───────────────────────────────
 
@@ -128,29 +122,32 @@ async function processJob(job, store, log) {
   const persist = () => store.updateJob(job.jobId, { phases, warnings });
 
   try {
+    // ── Source indexes (id → name/type) for GUID-based reference discovery ──
+    const [srcFlowsAll, srcScriptsAll] = await Promise.all([
+      rest.listFlows(source), rest.listScripts(source),
+    ]);
+    const srcFlowById = new Map(
+      srcFlowsAll.map((fl) => [String(fl.id).toLowerCase(), { name: fl.name, type: String(fl.type || "").toLowerCase() }])
+    );
+    const srcScriptById = new Map(
+      srcScriptsAll.map((s) => [String(s.id).toLowerCase(), s.name])
+    );
+
     // ── Phase: export + discover (recursive closure) ──────────────────
     const exportPhase = addPhase("Export & discover");
-    const exported = new Map();      // "type::name" → { name, type, yamlPath, deps, yaml }
+    const exported = new Map();      // "type::name" → { name, type, yaml, i3raw, flowDepKeys }
     const tableNames = new Set();    // source table names (prefixed)
     const actionRefs = new Map();    // key → { integration, action }
+    const scriptRefs = new Map();    // source script id → source script name
 
     const queue = job.flows.map((f) => ({ name: f.name, type: f.type }));
     while (queue.length) {
       const f = queue.shift();
       try {
-        // Resolve the flow type if unknown (transfer-target flows) via REST.
-        let type = f.type;
+        // Resolve the flow type from the source index if the caller didn't give one.
+        let type = f.type ? String(f.type).toLowerCase() : null;
         if (!type) {
-          const srcFlows = await rest.fetchAllPages(source, "/api/v2/flows", { query: { nameOrDescription: f.name } });
-          // Genesys returns `type` upper-cased (e.g. "INBOUNDCALL"); the SDK wants
-          // lower-case. A name can collide across flow types, so pick a
-          // transfer-eligible type by priority (never in-queue / common-module).
-          const matches = srcFlows
-            .filter((fl) => fl.name === f.name)
-            .map((fl) => String(fl.type || "").toLowerCase());
-          type = TRANSFER_TARGET_TYPES.find((t) => matches.includes(t))
-            || matches.find((t) => t !== "inqueuecall" && t !== "commonmodule")
-            || null;
+          for (const info of srcFlowById.values()) { if (info.name === f.name) { type = info.type; break; } }
           if (!type) {
             exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "error", detail: "referenced flow not found in source" });
             await persist();
@@ -161,17 +158,38 @@ async function processJob(job, store, log) {
         // (e.g. an inbound flow and an in-queue flow both named "X").
         const key = `${type}::${f.name}`;
         if (exported.has(key)) continue;
+
+        // YAML export → data table / data action refs + default language.
         const yamlPath = await sdkExport(source, f.name, type, workDir);
         const yaml = fs.readFileSync(yamlPath, "utf8");
         const deps = resolveDeps(yaml);
-        exported.set(key, { name: f.name, type, yamlPath, deps, yaml });
         deps.dataTables.forEach((t) => tableNames.add(t));
         deps.dataActions.forEach((a) => actionRefs.set(`${a.integration}::${a.action}`, a));
-        deps.commonModules.forEach((n) => queue.push({ name: n, type: DEP_FLOW_TYPES.commonModule }));
-        deps.inQueueFlows.forEach((n) => queue.push({ name: n, type: DEP_FLOW_TYPES.inQueue }));
-        // Transfer-target flows (inbound callflows, workflows, secure call flows): type
-        // resolved on dequeue via REST, then treated as a full flow dependency.
-        deps.transferFlows.forEach((n) => queue.push({ name: n, type: null }));
+
+        // Architect (.i3) export → scan for EVERY referenced flow & script GUID.
+        // .i3 is base64(url-encoded(JSON)); GUIDs appear verbatim, so any source
+        // flow/script whose id appears is a dependency — regardless of the action
+        // that references it (transfer targets, post-flow refs, screen-pop scripts,
+        // common modules, in-queue flows, …). This is the general reference map.
+        const i3raw = fs.readFileSync(await sdkExport(source, f.name, type, workDir, "architect"), "utf8");
+        const i3text = Buffer.from(i3raw.trim(), "base64").toString("utf8");
+        const guidSet = new Set((i3text.match(GUID_RE) || []).map((g) => g.toLowerCase()));
+        const self = [...srcFlowById].find(([, info]) => info.name === f.name && info.type === type);
+        const selfGuid = self ? self[0] : null;
+
+        const flowDepKeys = new Set();
+        for (const [id, info] of srcFlowById) {
+          if (id === selfGuid) continue;
+          if (guidSet.has(id)) {
+            flowDepKeys.add(`${info.type}::${info.name}`);
+            queue.push({ name: info.name, type: info.type });
+          }
+        }
+        for (const [id, sname] of srcScriptById) {
+          if (guidSet.has(id)) scriptRefs.set(id, sname);
+        }
+
+        exported.set(key, { name: f.name, type, yaml, i3raw, flowDepKeys });
         exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "ok", detail: type });
       } catch (err) {
         exportPhase.items.push({ old: f.name, new: stripPrefix(f.name), status: "error", detail: err.message });
@@ -283,24 +301,57 @@ async function processJob(job, store, log) {
       await persist();
     }
 
+    // ── Phase: scripts (screen-pop references) ───────────────────────
+    //    Any script referenced by a flow (e.g. a screen pop) is exported from the
+    //    source and imported into the target, then its GUID is remapped in the .i3.
+    if (scriptRefs.size) {
+      const scriptPhase = addPhase("Scripts");
+      const tgtScriptByName = new Map((await rest.listScripts(target)).map((s) => [s.name, s]));
+      for (const [srcId, srcName] of scriptRefs) {
+        const newName = stripPrefix(srcName);
+        try {
+          const existing = tgtScriptByName.get(newName);
+          if (existing) {
+            guidMap.set(srcId, existing.id);
+            scriptPhase.items.push({ old: srcName, new: newName, status: "skipped", detail: "already exists" });
+            await persist();
+            continue;
+          }
+          // Export the source script to a file, then import it into the target.
+          const url = await rest.getScriptExportUrl(source, srcId);
+          if (!url) throw new Error("source export URL not returned");
+          const fileText = await rest.downloadText(url);
+          const uploadId = await rest.importScript(target, newName, fileText);
+          // Poll the upload until it finishes.
+          let done = false, lastMsg = "";
+          for (let n = 0; n < 40 && !done; n++) {
+            await sleep(1500);
+            let st = null;
+            try { st = await rest.getScriptUploadStatus(target, uploadId); } catch (_) { /* transient */ }
+            const s = st && String(st.status || "").toLowerCase();
+            lastMsg = (st && (st.message || st.status)) || lastMsg;
+            if (st && (st.succeeded === true || s === "success" || s === "succeeded" || s === "done")) done = true;
+            else if (st && (st.failed === true || s === "failure" || s === "failed" || s === "error")) throw new Error("import failed: " + lastMsg);
+          }
+          if (!done) throw new Error("import did not complete in time" + (lastMsg ? ": " + lastMsg : ""));
+          // Resolve the new script id by name and record the GUID remap.
+          const created = (await rest.listScripts(target)).find((s) => s.name === newName);
+          if (created) guidMap.set(srcId, created.id);
+          scriptPhase.items.push({ old: srcName, new: newName, status: created ? "ok" : "error", detail: created ? undefined : "imported but not found by name" });
+        } catch (err) {
+          scriptPhase.items.push({ old: srcName, new: newName, status: "error", detail: err.message });
+        }
+        await persist();
+      }
+    }
+
     // ── Publish ALL flows (common modules, in-queue, transfer targets, callflows)
     //    in dependency order via the architect (.i3) format. .i3 is
     //    base64(url-encoded(JSON)); we strip the "Template - " prefix and remap
     //    demo dependency GUIDs → customer GUIDs, then create + import + publish. ──
-    // Resolve a dependency (referenced by name) to an exported key, matching by the
-    // expected flow-type category (names can collide across types).
-    const keyForDep = (name, expectedTypes) => {
-      for (const [k, r] of exported) if (r.name === name && expectedTypes.includes(r.type)) return k;
-      return null;
-    };
     const flowEdges = new Map();
     for (const [key, r] of exported) {
-      const deps = [
-        ...r.deps.commonModules.map((n) => keyForDep(n, ["commonmodule"])),
-        ...r.deps.inQueueFlows.map((n) => keyForDep(n, ["inqueuecall"])),
-        ...r.deps.transferFlows.map((n) => keyForDep(n, TRANSFER_TARGET_TYPES)),
-      ].filter(Boolean);
-      flowEdges.set(key, new Set(deps));
+      flowEdges.set(key, new Set([...r.flowDepKeys].filter((k) => exported.has(k))));
     }
     const publishOrder = topoSort(new Set(exported.keys()), flowEdges); // dependencies first
 
@@ -325,8 +376,7 @@ async function processJob(job, store, log) {
         // Export as architect (.i3) from source → strip prefix + remap dependency
         // GUIDs (demo → customer) → create + import + publish to target.
         const demoFlowId = await rest.findFlowIdByName(source, rec.type, name);
-        const i3Path = await sdkExport(source, name, rec.type, workDir, "architect");
-        const { output } = transformI3(fs.readFileSync(i3Path, "utf8"), { prefix: "Template - ", guidMap });
+        const { output } = transformI3(rec.i3raw, { prefix: "Template - ", guidMap });
         const pubFile = path.join(workDir, `publish-${rec.type}-${newName}.i3InboundFlow`);
         fs.writeFileSync(pubFile, output, "utf8");
         await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml));
