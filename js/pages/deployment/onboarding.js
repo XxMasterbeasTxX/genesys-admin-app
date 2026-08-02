@@ -17,6 +17,9 @@ import * as gc from "../../services/genesysApi.js";
 
 // Architect flow types the operator can pick as roots (dependencies are resolved
 // automatically server-side). "workflow" is included as a common root type.
+// NB: "outboundcall" is intentionally excluded — onboarding does not support
+// outbound call flows (they require a contact list, which has no meaningful
+// template equivalent). This is surfaced to the user in the UI.
 const ROOT_FLOW_TYPES = new Set([
   "inboundcall",
   "inboundchat",
@@ -24,6 +27,15 @@ const ROOT_FLOW_TYPES = new Set([
   "inboundshortmessage",
   "workflow",
 ]);
+
+// Human-readable labels for the callflow type filter.
+const FLOW_TYPE_LABELS = {
+  inboundcall: "Inbound Call",
+  inboundchat: "Inbound Chat",
+  inboundemail: "Inbound Email",
+  inboundshortmessage: "Inbound Message",
+  workflow: "Workflow",
+};
 
 export default function renderOnboarding({ route, me, api, orgContext }) {
   const el = document.createElement("section");
@@ -75,8 +87,14 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
           <input type="checkbox" id="obSelectAll"> <span>Select all</span>
         </label>
         <input class="dt-input" id="obFilter" type="text" placeholder="Filter by name…" style="max-width:260px" />
+        <select class="dt-select" id="obTypeFilter" style="max-width:200px" title="Filter by callflow type">
+          <option value="">All types</option>
+        </select>
         <span id="obSelCount" style="color:var(--muted);font-size:.85rem;margin-left:auto"></span>
       </div>
+      <p style="margin:2px 0 8px;color:var(--muted);font-size:.82rem">
+        Outbound call flows aren’t supported by onboarding and are excluded from this list.
+      </p>
       <ul id="obFlowList" style="list-style:none;padding:0;margin:0;max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px"></ul>
     </div>
 
@@ -98,6 +116,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   const $selectAll = el.querySelector("#obSelectAll");
   const $filter   = el.querySelector("#obFilter");
   const $selCount = el.querySelector("#obSelCount");
+  const $typeFilter = el.querySelector("#obTypeFilter");
   const $flowList = el.querySelector("#obFlowList");
   const $deployBtn = el.querySelector("#obDeployBtn");
   const $status   = el.querySelector("#obStatus");
@@ -136,7 +155,20 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
 
   function visibleFlows() {
     const q = $filter.value.trim().toLowerCase();
-    return flows.filter(f => !q || (f.name || "").toLowerCase().includes(q));
+    const t = $typeFilter.value;
+    return flows.filter(f =>
+      (!q || (f.name || "").toLowerCase().includes(q)) &&
+      (!t || (f.type || "").toLowerCase() === t)
+    );
+  }
+
+  // Populate the type filter with the distinct callflow types actually loaded.
+  function populateTypeFilter() {
+    const types = [...new Set(flows.map(f => (f.type || "").toLowerCase()).filter(Boolean))].sort();
+    const cur = $typeFilter.value;
+    $typeFilter.innerHTML = `<option value="">All types</option>`
+      + types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(FLOW_TYPE_LABELS[t] || t)}</option>`).join("");
+    $typeFilter.value = types.includes(cur) ? cur : "";
   }
 
   function renderFlowList() {
@@ -193,6 +225,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
         .filter(f => ROOT_FLOW_TYPES.has((f.type || "").toLowerCase()))
         .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
       selected.clear();
+      populateTypeFilter();
       renderFlowList();
       $flowsWrap.hidden = flows.length === 0;
       updateSelCount();
@@ -364,6 +397,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   $division.addEventListener("change", updateDeployBtn);
   $loadBtn.addEventListener("click", loadFlows);
   $filter.addEventListener("input", renderFlowList);
+  $typeFilter.addEventListener("change", renderFlowList);
 
   $selectAll.addEventListener("change", () => {
     const list = visibleFlows();
