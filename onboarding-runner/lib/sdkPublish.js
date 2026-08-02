@@ -98,7 +98,14 @@ function doWork() {
           try { console.error("VALIDATION_ISSUES " + JSON.stringify(structured).slice(0, 6000)); } catch (_) { /* ignore */ }
           throw new Error("Validation errors: " + (msgs.slice(0, 15).join(" | ") || "(detail in runner logs)"));
         }
-        return flow.publishAsync().then(() => { console.log("PUBLISHED " + flow.name); exitCode = 0; });
+        return flow.publishAsync().then(() => {
+          console.log("PUBLISHED " + flow.name);
+          // Emit the flow's cloud id directly from the SDK so the runner can remap
+          // references without a REST lookup (whose type filter may not cover every
+          // flow type, e.g. voice-survey). Also report published state for diagnostics.
+          try { console.log("FLOW_ID " + flow.id + " isPublished=" + flow.isPublished + " isCreated=" + flow.isCreated); } catch (_) { /* ignore */ }
+          exitCode = 0;
+        });
       })
   )).catch((err) => { console.error("Publish failed: " + (err && err.message ? err.message : err)); exitCode = 1; });
 }

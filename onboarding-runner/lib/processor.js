@@ -83,7 +83,10 @@ async function sdkPublish(targetOrg, file, flowType, flowName, languageTag, surv
   }
   // Return the full child output so the caller can log it even on "success"
   // (e.g. to diagnose a flow that reports PUBLISHED but doesn't actually persist).
-  return { fullOutput: ((res.stdout || "") + "\n---STDERR---\n" + (res.stderr || "")).slice(-12000) };
+  const fullOutput = ((res.stdout || "") + "\n---STDERR---\n" + (res.stderr || "")).slice(-12000);
+  // The child prints "FLOW_ID <guid> isPublished=<bool>" from the SDK after publish.
+  const m = /FLOW_ID\s+([0-9a-fA-F-]{36})\s+isPublished=(\w+)/.exec(res.stdout || "");
+  return { fullOutput, flowId: m ? m[1] : null, isPublished: m ? m[2] === "true" : null };
 }
 
 /**
@@ -477,14 +480,20 @@ async function processJob(job, store, log) {
         // deployed form's (stripped) name so the SDK create call succeeds.
         const surveyFormName = rec.surveyForm ? stripPrefix(rec.surveyForm.name) : undefined;
         const pubResult = await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml), surveyFormName);
-        const custFlowId = await rest.findFlowIdByName(target, rec.type, newName);
-        if (!custFlowId) {
-          // The child reported success but the flow isn't queryable in the target
-          // — treat as a hard failure (don't leave a false green ✓) and capture the
-          // full SDK output so we can see what publishAsync actually did.
-          if (pubResult && pubResult.fullOutput) log(`[onboarding-runner] SDK output for publish '${name}' (reported PUBLISHED but flow not found):\n${pubResult.fullOutput}`);
-          throw new Error(`published but not found in target (type ${rec.type})`);
+        // Definitively verify the flow actually persisted. Prefer the flow id the SDK
+        // emitted (type-agnostic GET by id); fall back to a REST lookup by name.
+        let custFlowId = null;
+        if (pubResult.flowId) {
+          try { const f = await rest.gcFetch(target, "GET", `/api/v2/flows/${pubResult.flowId}`); if (f && f.id) custFlowId = f.id; } catch (_) { /* 404 → not persisted */ }
         }
+        if (!custFlowId) custFlowId = await rest.findFlowIdByName(target, rec.type, newName);
+        if (!custFlowId) {
+          // The child reported PUBLISHED but the flow is not retrievable — a false
+          // success. Capture the full SDK output so we can see what publishAsync did.
+          if (pubResult && pubResult.fullOutput) log(`[onboarding-runner] SDK output for publish '${name}' (reported PUBLISHED sdkFlowId=${pubResult.flowId} isPublished=${pubResult.isPublished} but flow NOT retrievable):\n${pubResult.fullOutput}`);
+          throw new Error(`published but flow not retrievable in target (type ${rec.type}, sdkId ${pubResult.flowId || "none"})`);
+        }
+        log(`[onboarding] published '${newName}' (${rec.type}) → target flow id ${custFlowId} (sdkId=${pubResult.flowId} isPublished=${pubResult.isPublished})`);
         if (demoFlowId) guidMap.set(demoFlowId, custFlowId);
         flowPhase.items.push({ old: name, new: newName, status: "ok", detail: rec.type });
       } catch (err) {
