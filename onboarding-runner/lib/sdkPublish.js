@@ -73,11 +73,11 @@ function doWork() {
           const msgs = [];
           for (const i of list) {
             if (!i) continue;
-            const objName = (i.archObject && (i.archObject.name || i.archObject.displayTypeName)) || "";
             const errs = Array.isArray(i.errors) ? i.errors : [];
+            if (!errs.length) continue; // skip warning-only issues — only real errors block publish
+            const objName = (i.archObject && (i.archObject.name || i.archObject.displayTypeName)) || "";
             structured.push({ obj: objName, errors: errs, logStr: typeof i.logStr === "string" ? i.logStr : undefined });
-            if (errs.length) errs.forEach((e) => msgs.push((objName ? objName + ": " : "") + e));
-            else if (typeof i.logStr === "string") msgs.push(i.logStr);
+            errs.forEach((e) => msgs.push((objName ? objName + ": " : "") + e));
           }
           // Dump structured issues so they reach the runner logs / App Insights.
           try { console.error("VALIDATION_ISSUES " + JSON.stringify(structured).slice(0, 6000)); } catch (_) { /* ignore */ }
