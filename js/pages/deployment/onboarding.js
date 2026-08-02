@@ -37,6 +37,35 @@ const FLOW_TYPE_LABELS = {
   workflow: "Workflow",
 };
 
+// Canonical deploy phases (in the order the runner emits them) for the progress
+// stepper. Some phases (Scripts, Survey forms) only appear when relevant.
+const CANON_PHASES = [
+  { name: "Export & discover", short: "Export" },
+  { name: "Data tables", short: "Data tables" },
+  { name: "Data actions", short: "Data actions" },
+  { name: "Scripts", short: "Scripts" },
+  { name: "Survey forms", short: "Survey forms" },
+  { name: "Flows", short: "Flows" },
+];
+
+// Derive a phase's display state from the polled job.
+function stepStateFor(job, name) {
+  const phases = job.phases || [];
+  const running = job.status === "running" || job.status === "queued";
+  const idx = phases.findIndex(p => p.phase === name);
+  if (idx === -1) {
+    const canonIdx = CANON_PHASES.findIndex(p => p.name === name);
+    const laterPresent = phases.some(p => CANON_PHASES.findIndex(c => c.name === p.phase) > canonIdx);
+    if (laterPresent) return "skipped";        // passed over (not applicable)
+    return running ? "pending" : "skipped";
+  }
+  const p = phases[idx];
+  const hasError = (p.items || []).some(i => i.status === "error");
+  const isLast = idx === phases.length - 1;
+  if (job.status === "running" && isLast) return "running";
+  return hasError ? "error" : "done";
+}
+
 export default function renderOnboarding({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
@@ -48,6 +77,10 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     ).join("");
 
   el.innerHTML = `
+    <style>
+      @keyframes ob-spin { to { transform: rotate(360deg); } }
+      .ob-spin { animation: ob-spin .8s linear infinite; }
+    </style>
     <h2>Deployment — Onboarding</h2>
     <p class="page-desc">
       Deploy a template set from a demo org into a customer org. Pick the source
@@ -111,6 +144,8 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       <ul id="obFlowList" style="list-style:none;padding:0;margin:0;max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px"></ul>
     </details>
 
+    <div class="ob-steps" id="obSteps" hidden style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0 4px"></div>
+
     <div class="dt-status" id="obStatus">Select a source and target org to begin.</div>
 
     <ul id="obResults" style="list-style:none;padding:0;margin-top:12px;max-height:420px;overflow-y:auto"></ul>
@@ -133,6 +168,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   const $prefix   = el.querySelector("#obPrefix");
   const $status   = el.querySelector("#obStatus");
   const $results  = el.querySelector("#obResults");
+  const $steps    = el.querySelector("#obSteps");
 
   // ── State ─────────────────────────────────────────────
   let flows = [];                 // root callflows loaded from source
@@ -237,6 +273,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
         .filter(f => ROOT_FLOW_TYPES.has((f.type || "").toLowerCase()))
         .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
       selected.clear();
+      $steps.hidden = true;
       populateTypeFilter();
       renderFlowList();
       $flowsWrap.hidden = flows.length === 0;
@@ -276,6 +313,8 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       const { jobId } = await api.appRequest("/api/onboarding-deploy", { method: "POST", body: plan });
       setStatus(`Deployment job created (${jobId}).`);
       renderPlanPreview(plan);
+      $steps.hidden = false;
+      renderSteps({ status: "queued", phases: [] });
       pollJob(jobId, 0);
     } catch (err) {
       const detail = Array.isArray(err.body?.details) ? err.body.details.join("; ") : err.message;
@@ -294,6 +333,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       return;
     }
     renderJob(job);
+    renderSteps(job);
 
     const terminal = ["succeeded", "partial", "failed"].includes(job.status);
     if (terminal) {
@@ -305,6 +345,15 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       );
       updateDeployBtn();
       return;
+    }
+
+    // Non-terminal: reflect the current phase in the status text.
+    if (job.status === "running") {
+      const cur = (job.phases || []).slice(-1)[0];
+      const n = cur ? (cur.items || []).length : 0;
+      setStatus(cur ? `Deploying… ${cur.phase}${n ? ` — ${n} processed` : ""}` : "Deploying…");
+    } else if (job.status === "queued") {
+      setStatus("Queued — waiting for the deploy runner to start the job…");
     }
 
     // Still queued/running. The runner picks up queued jobs on a ~1-minute timer,
@@ -319,6 +368,21 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       return;
     }
     setTimeout(() => pollJob(jobId, attempt + 1), 3000);
+  }
+
+  // ── Phase progress stepper ────────────────────────────
+  function renderSteps(job) {
+    const glyph = { done: "✓", pending: "○", error: "✗", skipped: "–" };
+    const color = { done: "#4ade80", running: "var(--accent,#60a5fa)", pending: "var(--muted)", error: "#f87171", skipped: "var(--muted)" };
+    $steps.innerHTML = CANON_PHASES.map(ph => {
+      const st = stepStateFor(job, ph.name);
+      const dim = (st === "skipped" || st === "pending") ? "opacity:.5;" : "";
+      const bd = st === "running" ? "border-color:var(--accent,#60a5fa);" : "";
+      const icon = st === "running"
+        ? `<span class="ob-spin" style="width:11px;height:11px;border:2px solid var(--accent,#60a5fa);border-top-color:transparent;border-radius:50%;display:inline-block"></span>`
+        : `<span style="color:${color[st]};font-weight:700">${glyph[st]}</span>`;
+      return `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border:1px solid var(--border);border-radius:999px;font-size:.8rem;${bd}${dim}">${icon}<span>${escapeHtml(ph.short)}</span></span>`;
+    }).join("");
   }
 
   function renderJob(job) {
