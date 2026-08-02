@@ -130,14 +130,13 @@ async function processJob(job, store, log) {
   try {
     // ── Phase: export + discover (recursive closure) ──────────────────
     const exportPhase = addPhase("Export & discover");
-    const exported = new Map();      // name → { type, yamlPath, deps, yaml }
+    const exported = new Map();      // "type::name" → { name, type, yamlPath, deps, yaml }
     const tableNames = new Set();    // source table names (prefixed)
     const actionRefs = new Map();    // key → { integration, action }
 
     const queue = job.flows.map((f) => ({ name: f.name, type: f.type }));
     while (queue.length) {
       const f = queue.shift();
-      if (exported.has(f.name)) continue;
       try {
         // Resolve the flow type if unknown (transfer-target flows) via REST.
         let type = f.type;
@@ -158,10 +157,14 @@ async function processJob(job, store, log) {
             continue;
           }
         }
+        // Key by type + name: the SAME name can exist as different flow types
+        // (e.g. an inbound flow and an in-queue flow both named "X").
+        const key = `${type}::${f.name}`;
+        if (exported.has(key)) continue;
         const yamlPath = await sdkExport(source, f.name, type, workDir);
         const yaml = fs.readFileSync(yamlPath, "utf8");
         const deps = resolveDeps(yaml);
-        exported.set(f.name, { type, yamlPath, deps, yaml });
+        exported.set(key, { name: f.name, type, yamlPath, deps, yaml });
         deps.dataTables.forEach((t) => tableNames.add(t));
         deps.dataActions.forEach((a) => actionRefs.set(`${a.integration}::${a.action}`, a));
         deps.commonModules.forEach((n) => queue.push({ name: n, type: DEP_FLOW_TYPES.commonModule }));
@@ -284,18 +287,27 @@ async function processJob(job, store, log) {
     //    in dependency order via the architect (.i3) format. .i3 is
     //    base64(url-encoded(JSON)); we strip the "Template - " prefix and remap
     //    demo dependency GUIDs → customer GUIDs, then create + import + publish. ──
-    const allFlowNames = new Set(exported.keys());
+    // Resolve a dependency (referenced by name) to an exported key, matching by the
+    // expected flow-type category (names can collide across types).
+    const keyForDep = (name, expectedTypes) => {
+      for (const [k, r] of exported) if (r.name === name && expectedTypes.includes(r.type)) return k;
+      return null;
+    };
     const flowEdges = new Map();
-    for (const [n, r] of exported) {
-      const flowDeps = [...r.deps.commonModules, ...r.deps.inQueueFlows, ...r.deps.transferFlows]
-        .filter((d) => allFlowNames.has(d));
-      flowEdges.set(n, new Set(flowDeps));
+    for (const [key, r] of exported) {
+      const deps = [
+        ...r.deps.commonModules.map((n) => keyForDep(n, ["commonmodule"])),
+        ...r.deps.inQueueFlows.map((n) => keyForDep(n, ["inqueuecall"])),
+        ...r.deps.transferFlows.map((n) => keyForDep(n, TRANSFER_TARGET_TYPES)),
+      ].filter(Boolean);
+      flowEdges.set(key, new Set(deps));
     }
-    const publishOrder = topoSort(allFlowNames, flowEdges); // dependencies first
+    const publishOrder = topoSort(new Set(exported.keys()), flowEdges); // dependencies first
 
     const flowPhase = addPhase("Flows");
-    for (const name of publishOrder) {
-      const rec = exported.get(name);
+    for (const key of publishOrder) {
+      const rec = exported.get(key);
+      const name = rec.name;
       const newName = stripPrefix(name);
       try {
         // Skip if the flow already exists in the target (record its id for remap).
@@ -315,7 +327,7 @@ async function processJob(job, store, log) {
         const demoFlowId = await rest.findFlowIdByName(source, rec.type, name);
         const i3Path = await sdkExport(source, name, rec.type, workDir, "architect");
         const { output } = transformI3(fs.readFileSync(i3Path, "utf8"), { prefix: "Template - ", guidMap });
-        const pubFile = path.join(workDir, `publish-${newName}.i3InboundFlow`);
+        const pubFile = path.join(workDir, `publish-${rec.type}-${newName}.i3InboundFlow`);
         fs.writeFileSync(pubFile, output, "utf8");
         await sdkPublish(target, pubFile, rec.type, newName, getDefaultLanguage(rec.yaml));
         const custFlowId = await rest.findFlowIdByName(target, rec.type, newName);
