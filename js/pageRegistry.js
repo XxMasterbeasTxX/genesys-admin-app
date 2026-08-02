@@ -185,8 +185,8 @@ const registry = {
   "/deployment/basic": (ctx) =>
     import("./pages/deployment/basic.js").then((m) => m.default(ctx)),
   "/deployment/datatables": (ctx) =>
-    import("./pages/deployment/datatables.js").then((m) => m.default(ctx)),
-
+    import("./pages/deployment/datatables.js").then((m) => m.default(ctx)),  "/deployment/onboarding": (ctx) =>
+    import("./pages/deployment/onboarding.js").then((m) => m.default(ctx)),
   // ── Phones ─────────────────────────────────────────
   "/phones/webrtc/change-site": (ctx) =>
     import("./pages/phones/webrtc/changeSite.js").then((m) => m.default(ctx)),

@@ -1,0 +1,10 @@
+{
+  "name": "genesys-admin-onboarding-runner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone Functions app that processes onboarding deploy jobs (exports/transforms/publishes Architect flows via the Flow Scripting SDK + REST for data tables/actions).",
+  "dependencies": {
+    "@azure/data-tables": "^13.3.0",
+    "purecloud-flow-scripting-api-sdk-javascript": "^0.68.0"
+  }
+}
