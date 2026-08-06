@@ -16,7 +16,13 @@ const { createJob, getJob } = require("../lib/onboardingStore");
 const { classifyCaller, getBearerToken } = require("../lib/orgConfigResolver");
 
 const ROOT_FLOW_TYPES = new Set([
-  "inboundcall", "inboundchat", "inboundemail", "inboundshortmessage", "workflow",
+  // Inbound
+  "inboundcall", "inboundchat", "inboundemail", "inboundshortmessage",
+  // Supporting
+  "bot", "digitalbot", "commonmodule", "inqueuecall", "inqueueemail",
+  "inqueueshortmessage", "securecall", "voicemail", "workflow", "workitem",
+  // Post interaction
+  "voicesurvey", "surveyinvite",
 ]);
 
 function json(context, status, body) {

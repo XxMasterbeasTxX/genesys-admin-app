@@ -16,16 +16,31 @@ import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 
 // Architect flow types the operator can pick as roots (dependencies are resolved
-// automatically server-side). "workflow" is included as a common root type.
+// automatically server-side). Covers inbound flows, supporting flows, and
+// post-interaction flows — everything the Flow Scripting SDK can create.
 // NB: "outboundcall" is intentionally excluded — onboarding does not support
 // outbound call flows (they require a contact list, which has no meaningful
 // template equivalent). This is surfaced to the user in the UI.
 const ROOT_FLOW_TYPES = new Set([
+  // Inbound
   "inboundcall",
   "inboundchat",
   "inboundemail",
   "inboundshortmessage",
+  // Supporting
+  "bot",
+  "digitalbot",
+  "commonmodule",
+  "inqueuecall",
+  "inqueueemail",
+  "inqueueshortmessage",
+  "securecall",
+  "voicemail",
   "workflow",
+  "workitem",
+  // Post interaction
+  "voicesurvey",
+  "surveyinvite",
 ]);
 
 // Human-readable labels for the callflow type filter.
@@ -34,7 +49,18 @@ const FLOW_TYPE_LABELS = {
   inboundchat: "Inbound Chat",
   inboundemail: "Inbound Email",
   inboundshortmessage: "Inbound Message",
+  bot: "Bot Flow",
+  digitalbot: "Digital Bot Flow",
+  commonmodule: "Common Module",
+  inqueuecall: "In-Queue Call",
+  inqueueemail: "In-Queue Email",
+  inqueueshortmessage: "In-Queue Message",
+  securecall: "Secure Call",
+  voicemail: "Voicemail",
   workflow: "Workflow",
+  workitem: "Workitem Flow",
+  voicesurvey: "Voice Survey",
+  surveyinvite: "Web Survey Invite",
 };
 
 // Canonical deploy phases (in the order the runner emits them) for the progress
