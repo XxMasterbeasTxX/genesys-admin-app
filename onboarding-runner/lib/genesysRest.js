@@ -171,6 +171,22 @@ async function findFlowIdByName(org, type, name) {
   return exact ? exact.id : null;
 }
 
+// ── Divisions (assign objects) ────────────────────────
+/**
+ * Assign objects (by id) to a division. `objectType` goes in the URL path
+ * (e.g. "FLOW", "SCRIPT"); body is a raw JSON array of ids, batched by 100.
+ * Genesys: POST /api/v2/authorization/divisions/{divisionId}/objects/{objectType}.
+ */
+async function moveObjectsToDivision(org, divisionId, objectType, ids) {
+  const list = (ids || []).filter(Boolean);
+  const BATCH = 100;
+  for (let i = 0; i < list.length; i += BATCH) {
+    await gcFetch(org, "POST", `/api/v2/authorization/divisions/${divisionId}/objects/${objectType}`, {
+      body: list.slice(i, i + BATCH),
+    });
+  }
+}
+
 module.exports = {
   gcFetch,
   fetchAllPages,
@@ -196,4 +212,5 @@ module.exports = {
   createSurveyForm,
   publishSurveyForm,
   findFlowIdByName,
+  moveObjectsToDivision,
 };

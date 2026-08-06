@@ -256,6 +256,10 @@ async function processJob(job, store, log) {
 
     // ── Phase: data tables (REST) ─────────────────────────────────────
     const guidMap = new Map(); // demo dependency GUID → customer GUID (for .i3 remap)
+    // Ids of objects the runner CREATES this run — moved into the chosen division
+    // at the end of their phase (the SDK/script-import APIs default to Home).
+    const createdFlowIds = [];
+    const createdScriptIds = [];
     const tablePhase = addPhase("Data tables");
     const [srcTables, tgtTables, tgtDivisions] = await Promise.all([
       rest.listDataTables(source), rest.listDataTables(target), rest.listDivisions(target),
@@ -400,10 +404,22 @@ async function processJob(job, store, log) {
           if (created) {
             try { await rest.publishScript(target, created.id); } catch (e) { log(`[onboarding] publish new script '${newName}' failed: ${e.message}`); }
             guidMap.set(srcId, created.id);
+            createdScriptIds.push(created.id);
           }
           scriptPhase.items.push({ old: srcName, new: newName, status: created ? "ok" : "error", detail: created ? "imported · published" : "imported but not found by name" });
         } catch (err) {
           scriptPhase.items.push({ old: srcName, new: newName, status: "error", detail: err.message });
+        }
+        await persist();
+      }
+      // Place newly-created scripts in the chosen division (default Home otherwise).
+      if (divisionId && createdScriptIds.length) {
+        try {
+          await rest.moveObjectsToDivision(target, divisionId, "SCRIPT", createdScriptIds);
+          scriptPhase.items.push({ old: "(division)", new: division, status: "ok", detail: `${createdScriptIds.length} script(s) → ${division}` });
+        } catch (err) {
+          scriptPhase.items.push({ old: "(division)", new: division, status: "error", detail: `division move failed: ${err.message}` });
+          warnings.push(`Could not move scripts into division '${division}': ${err.message}`);
         }
         await persist();
       }
@@ -500,10 +516,24 @@ async function processJob(job, store, log) {
         }
         log(`[onboarding] published '${newName}' (${rec.type}) → target flow id ${custFlowId} (sdkId=${pubResult.flowId} isPublished=${pubResult.isPublished})`);
         if (demoFlowId) guidMap.set(demoFlowId, custFlowId);
+        createdFlowIds.push(custFlowId);
         flowPhase.items.push({ old: name, new: newName, status: "ok", detail: rec.type });
       } catch (err) {
         if (err.fullOutput) log(`[onboarding-runner] SDK output for publish '${name}':\n${err.fullOutput}`);
         flowPhase.items.push({ old: name, new: newName, status: "error", detail: err.message });
+      }
+      await persist();
+    }
+
+    // Place newly-created flows (roots + common modules + in-queue + survey …) in
+    // the chosen division — the Flow Scripting SDK creates them in Home by default.
+    if (divisionId && createdFlowIds.length) {
+      try {
+        await rest.moveObjectsToDivision(target, divisionId, "FLOW", createdFlowIds);
+        flowPhase.items.push({ old: "(division)", new: division, status: "ok", detail: `${createdFlowIds.length} flow(s) → ${division}` });
+      } catch (err) {
+        flowPhase.items.push({ old: "(division)", new: division, status: "error", detail: `division move failed: ${err.message}` });
+        warnings.push(`Could not move flows into division '${division}': ${err.message}`);
       }
       await persist();
     }
