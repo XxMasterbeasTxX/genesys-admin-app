@@ -1,5 +1,0 @@
-{
-  "clientId": "REPLACE_WITH_CUSTOMER_CLIENT_ID",
-  "clientSecret": "REPLACE_WITH_CUSTOMER_CLIENT_SECRET",
-  "location": "prod_eu_west_1"
-}

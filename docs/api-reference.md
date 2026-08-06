@@ -37,6 +37,7 @@ All Genesys Cloud calls are proxied through `POST /api/genesys-proxy` on the Azu
 27. [Speech & Text Analytics](#27-speech--text-analytics)
 28. [Journey](#28-journey)
 29. [Billing](#29-billing)
+30. [Onboarding Deployment](#30-onboarding-deployment)
 
 ---
 
@@ -78,6 +79,8 @@ These are the Azure Functions endpoints exposed by the app itself.
 | PUT | `/api/template-schedules/{id}` | Update a template schedule (owner or admin only) — body includes `userEmail` for ownership check; `targets` array can be updated |
 | DELETE | `/api/template-schedules/{id}?userEmail={email}` | Delete a template schedule (owner or admin only) |
 | POST | `/api/template-runner` | Execute a template schedule — body: `{ scheduleId }` — called by Azure Durable Functions activity; protected by `x-runner-key` header |
+| POST | `/api/onboarding-deploy` | **Internal-only.** Create an onboarding-deployment job — body: `{ sourceOrgId, targetOrgId, divisionId, divisionName?, namePrefix?, flows: [{ id, name, type }] }`. Validates the plan (orgs in `customers.json`, source ≠ target, every flow a supported root type — `inboundcall`/`inboundchat`/`inboundemail`/`inboundshortmessage`/`workflow`) and writes a queued job to the `onboardingjobs` Table Storage table. Returns `202 { jobId, status }`. Does **not** run the deploy — the onboarding runner picks it up. Caller must be a verified internal user (same guard as the proxy's client-credentials path); customer sessions get `403 internal_only`. |
+| GET | `/api/onboarding-deploy?jobId={jobId}` | **Internal-only.** Poll a job's status — returns the stored job (`status`, per-object `phases`, `warnings`, `error`). `404 job_not_found` if unknown. |
 
 ---
 
@@ -509,6 +512,40 @@ All billing exports use the **trustee billing overview** endpoint, which must be
 | --- | --- | --- |
 | GET | `/api/v2/organizations/me` | Resolve the **trustor org ID** when called with the trustor org's own credentials. The billing overview endpoint takes this org ID in the URL path. |
 | GET | `/api/v2/billing/trusteebillingoverview/{trustorOrgId}?billingPeriodIndex={N}` | Fetch the billing overview for one period. Called as the **trustee** customer (token injected from `customers.json::trusteeForOrg`). `billingPeriodIndex`: `0` = current in-progress period, `1` = latest complete, `2` = two ago, `3` = three ago, etc. Browser caches periods 0..3 via `js/services/billingService.js::fetchBillingPeriods`. Returns metadata (`billingPeriodStartDate`, `billingPeriodEndDate`), license usage, and AI token rollup which the processor (`js/utils/billingProcessor.js` / `api/lib/billingWorkbook.js`) translates into Regular Licenses, AI Tokens Breakdown, and Items with Overage sections. Returns 404 when the requested period does not exist — used as the stop condition when walking older indices for Calendar Year and Date Range exports. |
+
+---
+
+## 30. Onboarding Deployment
+
+Used by: Deployment — Onboarding (internal only).
+
+The **Deployment — Onboarding** feature replicates a set of Architect callflows (and everything they depend on) from the Demo org into a customer org, stripping the `Template - ` prefix and optionally applying an operator-supplied name prefix. The browser only calls the two internal endpoints in [§1](#1-internal-app-api) (`POST`/`GET /api/onboarding-deploy`); the minutes-long work runs in a dedicated background **onboarding runner** Function App that processes queued jobs from the `onboardingjobs` table.
+
+The runner authenticates to each org with client credentials (`GENESYS_<ORG>_CLIENT_ID/_SECRET`) and performs the Genesys Cloud operations below. Flows themselves are created and published with the **Genesys Flow Scripting SDK** (`purecloud-flow-scripting-api-sdk-javascript`, run in a child process per org — one Scripting session is one org, so export from Demo and publish to the customer run as separate processes) — **not** via REST — so only the supporting REST calls are listed here.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v2/flows?nameOrDescription={name}` | Resolve a referenced flow's type by exact name (transfer-target discovery); also used to skip flows that already exist in the target |
+| GET | `/api/v2/flows/{id}` | Verify a published flow actually persisted in the target org (type-agnostic existence check after each SDK publish) |
+| GET | `/api/v2/flows/datatables?expand=schema` | List source data tables + schema for dependency resolution |
+| POST | `/api/v2/flows/datatables` | Create a renamed data table in the target org |
+| GET | `/api/v2/flows/datatables/{id}/rows` | Read source rows to copy |
+| POST | `/api/v2/flows/datatables/{id}/rows` | Insert copied rows into the target table |
+| GET | `/api/v2/integrations` | List target integrations to match a data action's integration by type/name |
+| GET | `/api/v2/integrations/actions` | List source data actions referenced by a flow |
+| POST | `/api/v2/integrations/actions` | Create a renamed data action in the target org |
+| GET | `/api/v2/scripts` | List source/target scripts (screen-pop references) |
+| POST | `/api/v2/scripts/{id}/export` | Get a temporary export URL for a source script |
+| POST | `uploads/v2/scripter` | Multipart upload to import a script into the target org (apps host, not under `/api/v2`) |
+| GET | `/api/v2/scripts/uploads/{uploadId}/status` | Poll the script-import status |
+| POST | `/api/v2/scripts/published?scriptDataVersion=0` | Publish an imported script (body `{ scriptId }`) so flows can reference it |
+| GET | `/api/v2/quality/forms/surveys` | List source/target survey forms (for voice-survey flows) |
+| GET | `/api/v2/quality/forms/surveys/{id}` | Get a source survey form definition to copy |
+| POST | `/api/v2/quality/forms/surveys` | Create a renamed survey form in the target org |
+| POST | `/api/v2/quality/publishedforms/surveys` | Publish a survey form (body `{ id, published: true }`) — a voice-survey flow is generated from its published form |
+| GET | `/api/v2/authorization/divisions` | Resolve the target division; the operator can also **create** one via `POST` (see [§4](#4-authorization--divisions)) from the page |
+
+**Not supported:** outbound-call flows — their contact-list dependency is a flow *setting* referenced by GUID (not a name-based reference) and cannot be remapped, so outbound flows are deliberately excluded from the callflow picker.
 
 ---
 

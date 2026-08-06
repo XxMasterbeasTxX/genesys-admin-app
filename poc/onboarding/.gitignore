@@ -1,9 +1,0 @@
-# Real credentials — never commit
-options.demo.yaml
-options.customer.yaml
-options.*.yaml
-!options.*.example.yaml
-
-# Scratch export/transform output
-work/
-*.transformed.yaml

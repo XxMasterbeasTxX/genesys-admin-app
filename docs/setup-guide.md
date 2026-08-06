@@ -4,6 +4,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 
 ## What changed recently
 
+- **Deployment — Onboarding (internal)** — new internal feature that replicates Architect callflows (and their data tables, data actions, scripts, and survey forms) from the Demo org into a customer org, stripping the `Template - ` prefix and optionally applying a name prefix. It adds one internal endpoint (`/api/onboarding-deploy`, enqueue + poll) and a **separate background Function App** — the *onboarding runner* ([onboarding-runner/](../onboarding-runner/)) — that processes queued jobs from a new `onboardingjobs` Table Storage table and publishes flows with the Genesys Flow Scripting SDK. See [§14h](#14h-configure-the-onboarding-deployment-runner-internal-feature).
 - **Permission-aware access for write actions** — feature access is now two gates: app **group membership** (`GROUP_ACCESS` in `js/accessConfig.js`) decides visibility, and **write** features are additionally gated by the signed-in user's **own Genesys permissions** in the company org (read via `GET /api/v2/users/me?expand=authorization`, mapped in `js/featurePermissionMap.js`). Read-only features are group-only. Denied write features show disabled in the sidebar with a tooltip, and **in-page** action buttons/sections the user can't use are disabled too (Delete rows, Publish/Test, Direct Routing backup, per-category template application). Action-level, fail-closed; superusers bypass. Toggle with `ENFORCE_PERMISSION_REFINEMENT` in `js/services/accessService.js`. No new OAuth scope is required (a user reading their own authorization is covered by `user:readonly`).
 - Added **Utilities — Permission Catalog** page at nav path **Utilities > Permission Catalog** — internal, admin-only dump of the full Genesys permission catalog (`GET /api/v2/authorization/permissions`) with filter, copy, and Excel export. Access key `utilities.permissionCatalog`.
 - Added **Wrapup Codes — Create/Edit/Mapping** page at root nav path **Wrapup Codes > Create/Edit/Mapping**.
@@ -14,6 +15,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 
 ## Current features
 
+- **Deployment — Onboarding** (internal only) — Replicate a set of Architect callflows from the **Demo** org into a customer org in one click. Pick the target org + division (or create a new division inline), select callflows (filtered by type; outbound is unsupported), optionally set a name prefix, and Deploy. The page enqueues a job via `POST /api/onboarding-deploy`; the background **onboarding runner** exports each flow and its dependencies, strips the `Template - ` prefix, creates the data tables (with rows), data actions, screen-pop scripts, and survey forms in the target org, and publishes the flows with the Genesys Flow Scripting SDK. A phase stepper + per-object status update while `GET /api/onboarding-deploy?jobId=…` is polled. Access key: `deployment.onboarding`.
 - **Utilities — IP Ranges** — View public IP address ranges (CIDR blocks) for firewall whitelisting in two modes via a top toggle. **Genesys Public IP Ranges** lists per-region ranges proxied from `GET /api/v2/ipranges` using client-credentials auth (a configured customer org in the requested region); all 15 Genesys regions appear in the dropdown, with regions lacking configured credentials marked **"— no creds"**. Four Cloud Media Services CIDRs (published only in the Genesys Help Center) are injected server-side as `CLOUD_MEDIA_SERVICES` entries for commercial regions. **Amazon IP Ranges** loads the global AWS feed (`https://ip-ranges.amazonaws.com/ip-ranges.json`) via `GET /api/aws-ipranges` (anonymous, 15-min server-side cache), with a region picker (default `eu-central-1`). Shared filters: group-by, direction/IP-type, CIDR search, and a searchable multi-select Services dropdown; plus Copy CIDRs and Export to Excel. Access key: `utilities.ipRanges`.
 - **Interaction Search — Recent (<48h)** — Search conversations from the last 48 hours, today, or yesterday using the synchronous query API (results appear immediately). Server-side filters: Queue (searchable), Direction (Inbound/Outbound), Media Type, Division. Client-side Participant Data attribute filters with key/value matching, exclude mode, and multi-value (CSV) support. Inline row expand shows matched PD values as pills. Sortable results table; click-to-expand detail; right-click to copy Conversation ID. Export Interactions to styled Excel.
 - **Interaction Search — Historical (>48h)** — Search historical conversations by date range (up to 48 hours ago) using the async analytics jobs API. Date ranges longer than 7 days are automatically split into 7-day chunks, each running its own async job to avoid proxy timeouts; progress and status messages update per chunk. Quick-select buttons: Last Week, Last Month, Previous 7 Days, Previous 30 Days. Server-side filters: Queue (searchable), Direction (Inbound/Outbound), Media Type, Division. Client-side Participant Data attribute filters with key/value matching, exclude mode, and multi-value (CSV) support. Inline row expand and right-side detail pane. Collapsible results section (auto-collapses when Multi-value is active to surface the Value Distribution chart). Value Distribution bar chart for multi-value PD keys. Three export buttons: **Export Interactions** (all result rows), **Export Selected Participant Data** (only the filtered PD keys — one row per Conv ID/key/value; CSV values split into individual rows when Multi-value is checked), **Export All Participant Data** (all participant attributes across all conversations). All exports use styled Excel (blue header, alternating rows, auto-filter, frozen row).
@@ -747,6 +749,45 @@ Template scheduling uses Azure Durable Functions for precise time-based executio
 
 Alternatively, go to GitHub → **Actions** → **Scheduled Export Runner** workflow → **Run workflow** (manual `workflow_dispatch` trigger is still available for testing).
 
+### 14h. Configure the Onboarding Deployment runner (internal feature)
+
+**Deployment — Onboarding** (internal only) replicates Architect callflows from the Demo org into a customer org. Like scheduled exports, it uses a **separate background Function App** — the *onboarding runner* — plus a Table Storage table (`onboardingjobs`) in the same storage account: the SWA API only enqueues jobs; the runner does the minutes-long, SDK-heavy work. **Skip this section if you are not deploying the Onboarding feature.**
+
+1. **Create the runner Function App** — a **Consumption (Windows)** Azure Function App, **Node.js 22**, Functions **v4** (the Flow Scripting SDK requires Node 20+):
+
+   ```bash
+   az functionapp create -g <rg> -n <app>-onboarding-runner \
+     --storage-account <storageaccount> \
+     --consumption-plan-location <region> \
+     --runtime node --runtime-version 22 --functions-version 4
+   ```
+
+   > On a Consumption (Y1 Dynamic) plan use `--consumption-plan-location`, **not** `--plan` (a Dynamic plan rejects the AlwaysOn that `--plan` implies). Pick a region from `az functionapp list-consumption-locations`. If App Insights auto-create fails during `create`, create it afterwards (`az monitor app-insights component create`) and link it via `APPLICATIONINSIGHTS_CONNECTION_STRING`.
+
+2. **App settings** — the runner writes into customer orgs, so it needs the storage connection string **and** the per-org client credentials (the same values as the SWA):
+
+   | Setting | Value |
+   | --- | --- |
+   | `AZURE_STORAGE_CONNECTION_STRING` | Same storage account as the SWA (holds the `onboardingjobs` table) |
+   | `GENESYS_<ORG>_CLIENT_ID` / `GENESYS_<ORG>_CLIENT_SECRET` | Client-credentials for **every** org that can be a source (Demo) or target |
+   | `APPLICATIONINSIGHTS_CONNECTION_STRING` | (Recommended) App Insights for runner logs/traces |
+
+   There is no `x-runner-key` — the runner is driven by its own timer, not over HTTP. The quickest way to populate creds is to copy every `AZURE_STORAGE_CONNECTION_STRING` + `GENESYS_*` setting from the SWA to the runner.
+
+3. **Deploy the runner** — from [onboarding-runner/](../onboarding-runner/), zip-deploy (mirrors the timer app; `func publish` hits the same Windows-Consumption bug):
+
+   ```powershell
+   cd onboarding-runner
+   npm install --omit=dev
+   $zip = Join-Path $env:TEMP 'onboarding-runner.zip'
+   Compress-Archive -Path host.json,package.json,lib,process-queue,node_modules -DestinationPath $zip -Force
+   az functionapp deployment source config-zip -g <rg> -n <app>-onboarding-runner --src $zip --build-remote false
+   ```
+
+   Verify the `process-queue` timerTrigger registered: `az functionapp function list -g <rg> -n <app>-onboarding-runner -o table`.
+
+4. **How it works** — the operator picks callflows on **Deployment › Onboarding** and clicks Deploy → `POST /api/onboarding-deploy` writes a queued job to `onboardingjobs`. The runner's `process-queue` timer (every minute) claims the next queued job (etag-guarded), exports each flow + dependencies from the source org, strips the `Template - ` prefix (and applies any name prefix), creates the data tables, data actions, scripts, and survey forms in the target org, then publishes the flows with the Flow Scripting SDK. The page polls `GET /api/onboarding-deploy?jobId=…` and shows per-object phase status. Only inbound / chat / email / message / workflow callflows are supported (outbound is excluded).
+
 ---
 
 ## 15. First Deployment
@@ -1044,10 +1085,11 @@ After pushing the config update:
 
 ## Architecture Overview
 
-The app runs as **two separate Function Apps** plus a Static Web App frontend:
+The app runs as **three separate Function Apps** plus a Static Web App frontend:
 
-1. **Static Web App (Standard plan)** — hosts the SPA and the HTTP-triggered API in [api/](../api/) (12 functions, Node.js 18).
+1. **Static Web App (Standard plan)** — hosts the SPA and the HTTP-triggered API in [api/](../api/) (13 functions, Node.js 18).
 2. **Durable Function App (Flex Consumption)** — separate Function App in [timer-functions/](../timer-functions/) that owns the timer trigger and the Durable Functions orchestrator/activity used for precise template-schedule execution.
+3. **Onboarding runner (Consumption — Windows, Node 22)** — separate Function App in [onboarding-runner/](../onboarding-runner/) that processes queued onboarding-deployment jobs from the `onboardingjobs` table and publishes callflows with the Flow Scripting SDK (internal feature; optional — see [§14h](#14h-configure-the-onboarding-deployment-runner-internal-feature)).
 
 ```text
 Browser (SPA)                    Azure Static Web App (Standard)
@@ -1085,7 +1127,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
 │         (Calls Genesys APIs to apply the template to targets)    │
 └──────────────────────────────────────────────────────────────────┘
 
-          Encrypted app settings (both Function Apps)
+          Encrypted app settings (all Function Apps)
           ─────────────────────────────────────────────
           GENESYS_<ORG>_CLIENT_ID / GENESYS_<ORG>_CLIENT_SECRET   (per customer)
           MAILJET_API_KEY / MAILJET_SECRET_KEY
@@ -1104,6 +1146,7 @@ Browser (SPA)                    Azure Static Web App (Standard)
                    │              │             │  │   ments         │
                    │              │             │  ├─ templateschedu │
                    │              │             │  │   les           │
+                   │              │             │  ├─ onboardingjobs │
                    │              │             │  └─ activitylog    │
                    └──────────────┘             └────────────────────┘
 ```
@@ -1123,11 +1166,13 @@ Browser (SPA)                    Azure Static Web App (Standard)
 | `template-assignments` | HTTP CRUD | [api/template-assignments/](../api/template-assignments/) | CRUD for template→user/group/work-team assignments |
 | `activity-log` | HTTP GET/POST | [api/activity-log/](../api/activity-log/) | Reads and writes audit-log entries (Table Storage) |
 | `doc-export` | HTTP POST | [api/doc-export/](../api/doc-export/) | Generates the Documentation Export workbook (config + data tables) |
+| `onboarding-deploy` | HTTP GET/POST | [api/onboarding-deploy/](../api/onboarding-deploy/) | Internal-only: enqueue an onboarding-deployment job and poll its status (`onboardingjobs` table) |
 | `scrape-disqualifying-permissions` | HTTP GET | [api/scrape-disqualifying-permissions/](../api/scrape-disqualifying-permissions/) | Live scrape of CX Cloud disqualifying permissions list |
 | `schedule-trigger` | TimerTrigger (every 5 min) | [timer-functions/schedule-trigger/](../timer-functions/schedule-trigger/) | Wakes up and POSTs to `/api/scheduled-runner` |
 | `template-schedule-starter` | HTTP POST | [timer-functions/template-schedule-starter/](../timer-functions/template-schedule-starter/) | Starts a Durable orchestrator instance for a template schedule |
 | `template-schedule-orchestrator` | Durable Orchestrator | [timer-functions/template-schedule-orchestrator/](../timer-functions/template-schedule-orchestrator/) | Sleeps until the scheduled moment, then calls the activity |
 | `template-schedule-activity` | Durable Activity | [timer-functions/template-schedule-activity/](../timer-functions/template-schedule-activity/) | Calls Genesys APIs to apply the template at execution time |
+| `process-queue` | TimerTrigger (every 1 min) | [onboarding-runner/process-queue/](../onboarding-runner/process-queue/) | Onboarding runner: claims a queued `onboardingjobs` job and deploys callflows into the target org via the Flow Scripting SDK |
 
 > **Note:** [timer-functions-check/](../timer-functions-check/) is a parallel copy of the Durable Function App used as a staging/verification deployment. Confirm with the Azure administrator whether one or both will be deployed in your environment, and the empty stub folders [api/recordings-export/](../api/recordings-export/) and [api/recordings-export-runner/](../api/recordings-export-runner/) are placeholders (no code) and can be ignored or removed before deployment.
 

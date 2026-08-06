@@ -47,6 +47,7 @@
  *   DEPLOYMENT
  *   deployment.basic                   Basic
  *   deployment.datatables              Data Tables
+ *   deployment.onboarding              Onboarding  (SUPERUSER only — never granted via GROUP_ACCESS)
  *
  *   DIVISIONS  (reassign objects between divisions)
  *   divisions.people.users                  People — Users
@@ -141,9 +142,26 @@
  *   WRAPUP CODES
  *   wrapupCodes.createEditMapping      Create/Edit/Mapping
  */
+
+/**
+ * Full access for admin groups EXCEPT the superuser-only Onboarding page.
+ * Every section is granted by wildcard; Deployment is granted per-page so
+ * `deployment.onboarding` stays reserved for SUPERUSER_IDS. Add new top-level
+ * sections here to keep admins current.
+ */
+const ADMIN_ALL_EXCEPT_ONBOARDING = [
+  "audit.*", "data-actions.*", "data-tables.*", "divisions.*", "export.*",
+  "flows.*", "gdpr.*", "interactions.*", "phones.*", "roles.*", "users.*",
+  "utilities.*", "wrapupCodes.*",
+  "deployment.basic", "deployment.datatables",
+];
 export const GROUP_ACCESS = {
-  "Genesys App - Master Admin": ["*"],
-  "Genesys App - Admin": ["*"],
+  // Full access EXCEPT the superuser-only Onboarding page. "*" can't express an
+  // exclusion, so the admin groups enumerate every section and grant only the
+  // non-onboarding Deployment pages. `deployment.onboarding` is reserved for
+  // SUPERUSER_IDS, who bypass this map entirely (see accessService.js).
+  "Genesys App - Master Admin": ADMIN_ALL_EXCEPT_ONBOARDING,
+  "Genesys App - Admin": ADMIN_ALL_EXCEPT_ONBOARDING,
   "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*", "roles.compare", "roles.search", "flows.journey"],
   "Genesys App - Export": ["export.*"],
 };
