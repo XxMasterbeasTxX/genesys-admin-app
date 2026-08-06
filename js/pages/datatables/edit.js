@@ -8,6 +8,7 @@
 import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
+import { createSingleSelect } from "../../components/multiSelect.js";
 
 const COLUMN_TYPES = [
   { label: "Boolean", type: "boolean" },
@@ -56,12 +57,18 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       .dte-row-grid-wrap {
         width: 100%;
         overflow-x: auto;
+        /* Flip vertically so the horizontal scrollbar sits above the rows;
+           the inner table is flipped back so content reads normally. */
+        transform: rotateX(180deg);
+      }
+      .dte-row-grid-wrap > .dte-row-grid {
+        transform: rotateX(180deg);
       }
       .dte-row-grid {
         width: 100%;
         min-width: 980px;
         border-collapse: collapse;
-        table-layout: fixed;
+        table-layout: auto;
       }
       .dte-row-grid thead th {
         text-align: left;
@@ -72,6 +79,14 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         padding: 6px 10px;
         border-bottom: 1px solid var(--border);
         background: var(--bg, var(--panel));
+        white-space: nowrap;
+      }
+      /* Data columns get a comfortable minimum so headers stay readable and
+         inputs are usable; the wrapper scrolls horizontally when there are
+         many columns instead of cramming them all into view. */
+      .dte-row-grid th.dte-col,
+      .dte-row-grid td.dte-col {
+        min-width: 150px;
       }
       .dte-row-grid tbody td {
         padding: 8px 10px;
@@ -181,9 +196,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     <div class="dt-controls" style="margin-bottom:12px">
       <div class="dt-control-group" style="flex:1;max-width:420px">
         <label class="dt-label" for="dteTableSelect">Data Table</label>
-        <select class="dt-select" id="dteTableSelect">
-          <option value="">Select a data table…</option>
-        </select>
+        <div id="dteTableSelectHost"></div>
       </div>
     </div>
 
@@ -258,6 +271,9 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
               <button class="btn" id="dteRowsAddBtn" type="button" disabled>Add Row</button>
             </div>
             <div class="dt-control-group" style="align-self:flex-end">
+              <button class="btn" id="dteRowsCopyBtn" type="button" disabled>Copy Row</button>
+            </div>
+            <div class="dt-control-group" style="align-self:flex-end">
               <button class="btn btn-secondary" id="dteRowsDeleteBtn" type="button" disabled>Delete Selected</button>
             </div>
           </div>
@@ -289,7 +305,15 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     </div>
   `;
 
-  const $tableSelect = el.querySelector("#dteTableSelect");
+  const $tableSelectHost = el.querySelector("#dteTableSelectHost");
+  const tableSelect = createSingleSelect({
+    placeholder: "Select a data table…",
+    searchable: true,
+    onChange: (id) => loadSelectedTable(id),
+  });
+  tableSelect.el.style.width = "100%";
+  tableSelect.el.querySelector(".ms-dropdown__trigger").style.width = "100%";
+  $tableSelectHost.append(tableSelect.el);
   const $modeSchemaBtn = el.querySelector("#dteModeSchema");
   const $modeRowsBtn = el.querySelector("#dteModeRows");
   const $actions = el.querySelector("#dteActions");
@@ -312,6 +336,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   const $rowsPageSize = el.querySelector("#dteRowsPageSize");
   const $rowsRefreshBtn = el.querySelector("#dteRowsRefreshBtn");
   const $rowsAddBtn = el.querySelector("#dteRowsAddBtn");
+  const $rowsCopyBtn = el.querySelector("#dteRowsCopyBtn");
   const $rowsDeleteBtn = el.querySelector("#dteRowsDeleteBtn");
   const $rowsSummary = el.querySelector("#dteRowsSummary");
   const $rowsGrid = el.querySelector("#dteRowsGrid");
@@ -330,6 +355,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   const canRowsSave   = canRowsAdd || canRowsEdit || canRowsDelete;
   if (!canSchemaEdit) $schemaSaveBtn.title = "Requires Genesys permission: architect:datatable:edit";
   if (!canRowsAdd)    $rowsAddBtn.title    = "Requires Genesys permission: architect:datatableRow:add";
+  if (!canRowsAdd)    $rowsCopyBtn.title   = "Requires Genesys permission: architect:datatableRow:add";
   if (!canRowsDelete) $rowsDeleteBtn.title = "Requires Genesys permission: architect:datatableRow:delete";
   if (!canRowsSave)   $rowsSaveBtn.title   = "Requires a Genesys datatable row permission (add/edit/delete)";
 
@@ -533,6 +559,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     $rowsSaveBtn.disabled = disabled || !canRowsSave;
     $rowsUndoBtn.disabled = disabled;
     $rowsAddBtn.disabled = !_currentTableId || _isLoadingTable || !_rowsColumns.length || !canRowsAdd;
+    $rowsCopyBtn.disabled = !_currentTableId || _isLoadingTable || !_rowsColumns.length || _selectedRowIds.size !== 1 || !canRowsAdd;
     $rowsDeleteBtn.disabled = !_currentTableId || _isLoadingTable || _selectedRowIds.size === 0 || !canRowsDelete;
     $rowsDeleteBtn.textContent = _selectedRowIds.size > 0
       ? `Delete Selected (${_selectedRowIds.size})`
@@ -626,7 +653,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     }
 
     const header = _rowsColumns
-      .map(col => `<th>${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}</th>`)
+      .map(col => `<th class="dte-col">${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}</th>`)
       .join("");
 
     const allSelectedOnPage = pageRows.length > 0 && pageRows.every(m => _selectedRowIds.has(m.id));
@@ -638,7 +665,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         const label = `${col.title}${col.name === "key" ? " *" : ""}`;
         if (col.type === "boolean") {
           return `
-            <td data-label="${escapeHtml(label)}">
+            <td class="dte-col" data-label="${escapeHtml(label)}">
               <label class="dtc-bool-wrap" for="${inputId}">
                 <input id="${inputId}" type="checkbox" data-row-id="${model.id}" data-col-name="${escapeHtml(col.name)}" data-col-type="boolean" ${value === true ? "checked" : ""} />
                 <span class="dtc-bool-label">${value === true ? "true" : "false"}</span>
@@ -650,7 +677,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         const inputType = (col.type === "integer" || col.type === "number") ? "number" : "text";
         const step = col.type === "integer" ? "step=\"1\"" : (col.type === "number" ? "step=\"any\"" : "");
         return `
-          <td data-label="${escapeHtml(label)}">
+          <td class="dte-col" data-label="${escapeHtml(label)}">
             <input id="${inputId}" class="dt-input" type="${inputType}" ${step} data-row-id="${model.id}" data-col-name="${escapeHtml(col.name)}" data-col-type="${escapeHtml(col.type)}" value="${escapeHtml(String(value ?? ""))}" autocomplete="off" />
           </td>
         `;
@@ -832,17 +859,19 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       return;
     }
 
-    $tableSelect.innerHTML = `<option value="">Loading…</option>`;
+    tableSelect.setEnabled(false);
+    setStatus("Loading data tables…");
     try {
       const tables = await gc.fetchAllDataTables(api, orgId);
       const sorted = (tables || []).sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-      $tableSelect.innerHTML = `<option value="">Select a data table…</option>`
-        + sorted.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("");
+      tableSelect.setItems(sorted.map(t => ({ id: t.id, label: t.name })));
+      tableSelect.setEnabled(true);
       setStatus(sorted.length ? "" : "No data tables found in this org.");
     } catch (err) {
       setStatus(`Failed to load data tables: ${err.message}`, "error");
-      $tableSelect.innerHTML = `<option value="">Select a data table…</option>`;
+      tableSelect.setItems([]);
+      tableSelect.setEnabled(true);
     }
   }
 
@@ -1009,10 +1038,6 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     });
   }
 
-  $tableSelect.addEventListener("change", () => {
-    loadSelectedTable($tableSelect.value);
-  });
-
   $modeSchemaBtn.addEventListener("click", () => setMode("schema"));
   $modeRowsBtn.addEventListener("click", () => setMode("rows"));
 
@@ -1052,6 +1077,103 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     renderRowsGrid();
     validateRowsSave();
     setStatus("New row added. Fill values and click Save Changes.");
+  });
+
+  // ── Copy Row ──────────────────────────────────────────────────────────
+  // Prompt for a new key value, then create a pending copy of the selected
+  // row (saved later via Save Changes, like Add Row).
+  function promptForNewKey(keyTitle, onConfirm) {
+    const existingKeys = new Set(
+      _rowsModels.map(m => String(m.data.key ?? "").trim()).filter(Boolean)
+    );
+
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.innerHTML = `
+      <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:320px;max-width:440px;width:90%">
+        <h3 style="margin:0 0 8px;font-size:1.1rem">Copy Row</h3>
+        <p style="margin:0 0 14px;color:var(--muted);font-size:.9rem">
+          Enter a new value for the key column${keyTitle ? ` (<strong>${escapeHtml(keyTitle)}</strong>)` : ""}.
+          The copied row will be added as a pending row — click Save Changes to persist it.
+        </p>
+        <input class="dt-input" id="dteCopyKeyInput" type="text" placeholder="New key value…" autocomplete="off" style="width:100%;box-sizing:border-box" />
+        <div class="dt-status dt-status--error" id="dteCopyKeyError" style="margin-top:8px;min-height:18px"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+          <button id="dteCopyKeyCancel" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="dteCopyKeyConfirm" class="btn" type="button">Create</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const $input   = overlay.querySelector("#dteCopyKeyInput");
+    const $error   = overlay.querySelector("#dteCopyKeyError");
+    const $cancel  = overlay.querySelector("#dteCopyKeyCancel");
+    const $confirm = overlay.querySelector("#dteCopyKeyConfirm");
+
+    const close = () => document.body.removeChild(overlay);
+
+    const submit = () => {
+      const newKey = $input.value.trim();
+      if (!newKey) {
+        $error.textContent = "Key value is required.";
+        return;
+      }
+      if (existingKeys.has(newKey)) {
+        $error.textContent = `A row with key "${newKey}" already exists.`;
+        return;
+      }
+      close();
+      onConfirm(newKey);
+    };
+
+    $cancel.addEventListener("click", close);
+    $confirm.addEventListener("click", submit);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+    $input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); submit(); }
+      else if (e.key === "Escape") { e.preventDefault(); close(); }
+      else { $error.textContent = ""; }
+    });
+
+    $input.focus();
+  }
+
+  $rowsCopyBtn.addEventListener("click", () => {
+    if (!_currentTableId || !_rowsColumns.length) return;
+    if (_selectedRowIds.size !== 1) return;
+
+    const sourceId = [..._selectedRowIds][0];
+    const source = getModelById(sourceId);
+    if (!source) return;
+
+    const keyCol = _rowsColumns.find(c => c.name === "key");
+    const keyTitle = keyCol ? keyCol.title : "key";
+
+    promptForNewKey(keyTitle, (newKey) => {
+      const data = cloneData(source.data);
+      data.key = newKey;
+
+      const newModel = {
+        id: _nextRowId++,
+        originalKey: "",
+        originalData: cloneData(data),
+        data,
+        isNew: true,
+        isDirty: true,
+        status: "New row",
+      };
+
+      _rowsModels.unshift(newModel);
+      _selectedRowIds.clear();
+      _rowsSearchText = "";
+      $rowsSearch.value = "";
+      _rowsPage = 1;
+      renderRowsGrid();
+      validateRowsSave();
+      setStatus("Row copied. Review values and click Save Changes to persist it.");
+    });
   });
 
   $rowsSearch.addEventListener("input", () => {
