@@ -236,9 +236,11 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     );
   }
 
-  // Populate the type filter with the distinct callflow types actually loaded.
+  // Populate the type filter with the distinct callflow types actually loaded,
+  // sorted alphabetically by their displayed label.
   function populateTypeFilter() {
-    const types = [...new Set(flows.map(f => (f.type || "").toLowerCase()).filter(Boolean))].sort();
+    const types = [...new Set(flows.map(f => (f.type || "").toLowerCase()).filter(Boolean))]
+      .sort((a, b) => (FLOW_TYPE_LABELS[a] || a).localeCompare(FLOW_TYPE_LABELS[b] || b));
     const cur = $typeFilter.value;
     $typeFilter.innerHTML = `<option value="">All types</option>`
       + types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(FLOW_TYPE_LABELS[t] || t)}</option>`).join("");
