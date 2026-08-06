@@ -57,6 +57,12 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       .dte-row-grid-wrap {
         width: 100%;
         overflow-x: auto;
+        /* Flip vertically so the horizontal scrollbar sits above the rows;
+           the inner table is flipped back so content reads normally. */
+        transform: rotateX(180deg);
+      }
+      .dte-row-grid-wrap > .dte-row-grid {
+        transform: rotateX(180deg);
       }
       .dte-row-grid {
         width: 100%;

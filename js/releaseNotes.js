@@ -11,6 +11,17 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "1.9",
+    date: "2026-08-06",
+    title: "Data Tables › Edit improvements",
+    changes: [
+      "Rows mode: wide tables are no longer cramped — column headers stay readable and the grid scrolls horizontally with a comfortable minimum column width.",
+      "Rows mode: the horizontal scrollbar now sits above the rows for easier access.",
+      "Rows mode: new Copy Row button (between Add Row and Delete Selected). Enabled only when exactly one row is selected; it asks for the new key value and adds a pending copy that you save with Save Changes.",
+      "The data table selector is now a searchable dropdown — type to filter tables by name.",
+    ],
+  },
+  {
     version: "1.8",
     date: "2026-08-02",
     title: "Deployment › Onboarding (internal)",
