@@ -857,6 +857,15 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const inputs = Array.isArray(a.inputs) ? a.inputs : [];
     const outputs = Array.isArray(a.outputs) ? a.outputs : [];
     const expr = a.expression && a.expression.text ? a.expression.text : "";
+    // Values assigned by THIS node (Update Data / Set actions store them in
+    // `variables[]` as { variable: <target ref>, expression: <value> }).
+    const assigns = (Array.isArray(a.variables) ? a.variables : [])
+      .map((v) => ({
+        target: (v.variable && v.variable.text) || "",
+        varId: (v.variable && v.variable.config && v.variable.config.ref && v.variable.config.ref.val) || "",
+        value: v.expression && typeof v.expression.text === "string" ? v.expression.text : "",
+      }))
+      .filter((x) => x.target);
     const flowRefs = [...new Set((JSON.stringify(a).match(GUID_RE) || [])
       .map((g) => g.toLowerCase())
       .filter((g) => state.flowList && state.flowList.has(g) && g !== state.activeId))];
@@ -864,7 +873,8 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       <h4>${escapeHtml(a.name || "(action)")}</h4>
       <div class="fo-sub"><span class="fo-chip" style="color:${kindColor(kind)}">${escapeHtml(kindLabel(kind))}</span> · Task: ${escapeHtml(loc.taskName)}</div>
       ${tag && tag.sublabel ? `<div class="fo-sub">Target: <code>${escapeHtml(tag.sublabel)}</code></div>` : ""}
-      ${expr ? `<div style="margin:6px 0"><strong>Expression</strong><br><code>${escapeHtml(truncate(expr, 200))}</code></div>` : ""}
+      ${assigns.length ? `<div style="margin:6px 0"><strong>Sets values (${assigns.length})</strong></div>${assigns.map((x) => `<div class="fo-usage"${x.varId ? ` data-var="${escapeHtml(x.varId)}"` : ""}><span class="fo-name">${escapeHtml(x.target)}</span> <span class="fo-meta">=</span> <code>${escapeHtml(x.value === "" ? '""' : truncate(x.value, 120))}</code></div>`).join("")}` : ""}
+      ${expr ? `<div style="margin:6px 0"><strong>Condition / expression</strong><br><code>${escapeHtml(truncate(expr, 200))}</code></div>` : ""}
       ${inputs.length ? `<div style="margin:6px 0"><strong>Inputs</strong><br>${inputs.map((i) => `<code>${escapeHtml(i.name || "")}</code>`).join(" ")}</div>` : ""}
       ${outputs.length ? `<div style="margin:6px 0"><strong>Outputs</strong><br>${outputs.map((i) => `<code>${escapeHtml(i.name || "")}</code>`).join(" ")}</div>` : ""}
       ${flowRefs.length ? `<div style="margin:6px 0"><strong>Referenced flows</strong></div>${flowRefs.map((fid) => { const f = state.flowList.get(fid); return `<div class="fo-usage" data-openflow="${escapeHtml(fid)}"><span class="fo-name">▸ ${escapeHtml(f.name)}</span> <span class="fo-meta">${escapeHtml(FLOW_TYPE_LABELS[f.type] || f.type || "")}</span></div>`; }).join("")}` : ""}
