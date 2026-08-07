@@ -48,6 +48,15 @@ const DEP_COLOR = "#2c8a9a";
 const SELECT_COLOR = "#f0b429";
 const START_STROKE = "#2ea043";
 
+// Canvas colour themes (neutrals only; the accent hues jump/dep/select/start read
+// on any background). Switchable at runtime and used by exports so diagrams print
+// cleanly on white.
+const THEMES = {
+  dark:  { bg: "#0d1117", nodeFill: "#161b22", nodeStroke: "#30363d", text: "#c9d1d9", subText: "#8b949e", containerStroke: "#3d444d", containerHeader: "#21262d", edge: "#6e7681", edgeLabel: "#8b949e" },
+  light: { bg: "#f6f8fa", nodeFill: "#ffffff", nodeStroke: "#d0d7de", text: "#1f2328", subText: "#57606a", containerStroke: "#aeb6bf", containerHeader: "#eaeef2", edge: "#6e7681", edgeLabel: "#57606a" },
+  white: { bg: "#ffffff", nodeFill: "#ffffff", nodeStroke: "#c2c9d1", text: "#1f2328", subText: "#57606a", containerStroke: "#c2c9d1", containerHeader: "#eef1f4", edge: "#5a636d", edgeLabel: "#57606a" },
+};
+
 function kindColor(kind) {
   if (kind === "task") return "#6e7681";
   return (ACTION_KINDS[kind] && ACTION_KINDS[kind].color) || "#4a6fa5";
@@ -134,21 +143,15 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  const customers = orgContext.getCustomers();
-  const orgOptions =
-    `<option value="">Select org…</option>` +
-    customers
-      .map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.region)})</option>`)
-      .join("");
-
   el.innerHTML = `
     <style>
       @keyframes fo-spin { to { transform: rotate(360deg); } }
       .fo-spin { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.25);
                  border-top-color:#fff; border-radius:50%; animation:fo-spin .8s linear infinite; }
-      .fo-layout { display:flex; gap:12px; align-items:stretch; }
-      .fo-canvas-wrap { position:relative; flex:1; min-width:0; }
-      .fo-canvas { height:720px; min-height:320px; border:1px solid ${NODE_STROKE}; border-radius:8px;
+      .fo-layout { display:flex; gap:12px; align-items:stretch; height:78vh; min-height:460px; }
+      .fo-layout:fullscreen { height:100vh; min-height:0; background:#0d1117; padding:10px; box-sizing:border-box; }
+      .fo-canvas-wrap { position:relative; flex:1; min-width:0; display:flex; flex-direction:column; }
+      .fo-canvas { flex:1; min-height:0; border:1px solid ${NODE_STROKE}; border-radius:8px;
                    overflow:hidden; background:${CANVAS_BG}; position:relative; }
       .fo-canvas svg { width:100%; height:100%; display:block; }
       .fo-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -168,16 +171,16 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
                      display:flex; flex-direction:column; min-height:0; }
       .fo-side-head { padding:8px 10px; font-weight:600; font-size:13px; border-bottom:1px solid ${NODE_STROKE};
                       display:flex; align-items:center; justify-content:space-between; gap:8px; }
-      .fo-search { flex:1 1 auto; }
-      .fo-results { overflow:auto; max-height:230px; }
-      .fo-detail { overflow:auto; flex:1; max-height:340px; }
+      .fo-search { flex:1 1 0; min-height:0; }
+      .fo-results { overflow:auto; flex:1; min-height:0; }
+      .fo-detail { flex:1 1 0; min-height:0; }
       .fo-row { padding:6px 10px; border-bottom:1px solid rgba(255,255,255,.05); cursor:pointer; font-size:12.5px; }
       .fo-row:hover { background:rgba(255,255,255,.05); }
       .fo-row .fo-name { color:${NODE_TEXT}; }
       .fo-row .fo-meta { color:${NODE_SUBTEXT}; font-size:11px; }
       .fo-chip { display:inline-block; padding:1px 6px; border-radius:10px; font-size:10.5px; line-height:1.6;
                  border:1px solid ${NODE_STROKE}; color:${NODE_SUBTEXT}; }
-      .fo-detail-body { padding:10px; font-size:12.5px; color:${NODE_TEXT}; }
+      .fo-detail-body { padding:10px; font-size:12.5px; color:${NODE_TEXT}; flex:1; overflow:auto; }
       .fo-detail-body h4 { margin:0 0 4px; font-size:13px; }
       .fo-detail-body .fo-sub { color:${NODE_SUBTEXT}; font-size:11.5px; margin-bottom:8px; }
       .fo-detail-body code { background:rgba(255,255,255,.06); padding:1px 4px; border-radius:4px; font-size:11.5px; }
@@ -188,26 +191,32 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       .fo-legend i { width:11px; height:11px; border-radius:3px; display:inline-block; }
       .fo-hint { color:${NODE_SUBTEXT}; font-size:11px; padding:0 10px 8px; }
       .fo-level .btn.is-active { background:rgba(240,180,41,.18); border-color:rgba(240,180,41,.4); color:#f0b429; }
+      .fo-search .dt-input { max-width:none; width:100%; box-sizing:border-box; }
+      .fo-flow-combo { position:relative; }
+      .fo-flow-menu { position:absolute; z-index:40; top:100%; left:0; right:0; margin-top:2px; max-height:300px;
+                      overflow:auto; background:#161b22; border:1px solid ${NODE_STROKE}; border-radius:8px; display:none; }
+      .fo-flow-menu.open { display:block; }
+      .fo-flow-item { padding:6px 10px; font-size:13px; cursor:pointer; color:${NODE_TEXT}; white-space:nowrap; }
+      .fo-flow-item:hover, .fo-flow-item.is-active { background:rgba(240,180,41,.15); }
+      .fo-flow-item .fo-meta { color:${NODE_SUBTEXT}; font-size:11px; }
     </style>
 
     <h2>Deployment — Flow Overview</h2>
     <p class="page-desc">
-      Visualise an Architect flow and everything it depends on. Pick an org and a
-      flow, choose a detail level, then explore the diagram. Use the search to find
-      a variable or dependency and jump straight to the node that uses it. Save the
-      overview as an image, a self-contained HTML page, or JSON.
+      Visualise an Architect flow and everything it depends on. The org comes from the
+      selector at the top of the page — pick a flow, choose a detail level, then
+      explore the diagram. Dependency flows (common modules, in-queue, workflows,
+      bots…) open in their own tabs. Use the search to find a variable or dependency
+      and jump straight to the node that uses it, and save the overview as an image,
+      a self-contained HTML page, or JSON.
     </p>
 
     <div class="dt-controls">
       <div class="dt-control-group">
-        <label class="dt-label">Org</label>
-        <select class="dt-select" id="foOrg">${orgOptions}</select>
-      </div>
-      <div class="dt-control-group">
         <label class="dt-label">Flow</label>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input class="dt-input" id="foFlowFilter" type="text" placeholder="Filter flows…" style="max-width:200px" disabled />
-          <select class="dt-select" id="foFlow" disabled><option value="">Select org first…</option></select>
+        <div class="fo-flow-combo" style="width:300px">
+          <input class="dt-input" id="foFlowInput" type="text" placeholder="Search a flow…" autocomplete="off" disabled style="width:300px" />
+          <div class="fo-flow-menu" id="foFlowMenu"></div>
         </div>
       </div>
       <div class="dt-control-group">
@@ -219,7 +228,6 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
         </div>
       </div>
       <div class="dt-actions" style="margin-bottom:12px;display:flex;align-items:flex-end;gap:8px">
-        <button class="btn" id="foLoad" disabled>Load Flow</button>
         <span id="foStatus" style="font-size:12px;color:${NODE_SUBTEXT}"></span>
       </div>
     </div>
@@ -228,6 +236,12 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       <button class="btn btn--secondary btn-sm" id="foZoomOut" disabled title="Zoom out">−</button>
       <button class="btn btn--secondary btn-sm" id="foZoomIn" disabled title="Zoom in">+</button>
       <button class="btn btn--secondary btn-sm" id="foFit" disabled>Fit</button>
+      <button class="btn btn--secondary btn-sm" id="foFullscreen" disabled title="Fullscreen">⛶ Fullscreen</button>
+      <label style="font-size:11px;color:${NODE_SUBTEXT};display:inline-flex;align-items:center;gap:4px">Background
+        <select class="dt-select" id="foTheme" style="padding:3px 6px;font-size:12px">
+          <option value="dark">Dark</option><option value="light">Light</option><option value="white">White</option>
+        </select>
+      </label>
       <span style="font-size:11px;color:${NODE_SUBTEXT}">Scroll to zoom · drag to pan · click a line to trace it</span>
       <span style="flex:1"></span>
       <button class="btn btn--secondary btn-sm" id="foSaveSvg" disabled>Save SVG</button>
@@ -240,7 +254,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       <div class="fo-canvas-wrap">
         <div class="fo-tabs" id="foTabs"></div>
         <div class="fo-canvas" id="foCanvas">
-          <div class="fo-empty" id="foEmpty">Pick an org and a flow, then <strong>Load Flow</strong>.</div>
+          <div class="fo-empty" id="foEmpty">Select a flow above to begin.</div>
         </div>
         <div class="fo-legend" id="foLegend"></div>
       </div>
@@ -261,21 +275,22 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
 
   // ── DOM refs ────────────────────────────────────────────────────────────────
   const $ = (id) => el.querySelector(id);
-  const orgSel = $("#foOrg");
-  const flowSel = $("#foFlow");
-  const flowFilter = $("#foFlowFilter");
-  const loadBtn = $("#foLoad");
+  const flowInput = $("#foFlowInput");
+  const flowMenu = $("#foFlowMenu");
   const statusEl = $("#foStatus");
   const canvas = $("#foCanvas");
+  const layoutEl = $(".fo-layout");
   const tabsEl = $("#foTabs");
   const emptyEl = $("#foEmpty");
   const legendEl = $("#foLegend");
+  const themeSel = $("#foTheme");
+  const fullscreenBtn = $("#foFullscreen");
   const searchInput = $("#foSearchInput");
   const searchCount = $("#foSearchCount");
   const resultsEl = $("#foResults");
   const detailEl = $("#foDetail");
   const levelBtns = [...el.querySelectorAll(".fo-level .btn")];
-  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foSaveSvg", "#foSavePng", "#foSaveHtml", "#foSaveJson"].map($);
+  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foFullscreen", "#foSaveSvg", "#foSavePng", "#foSaveHtml", "#foSaveJson"].map($);
 
   // ── State ───────────────────────────────────────────────────────────────────
   const state = {
@@ -284,6 +299,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     flowId: "",
     flowName: "",
     level: "high",
+    themeName: "dark",
     flowList: null,
     tabs: [],
     cache: new Map(),
@@ -305,48 +321,50 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
 
   levelBtns.forEach((b) => b.classList.toggle("is-active", b.dataset.level === state.level));
 
-  // ── Org / flow pickers ──────────────────────────────────────────────────────
-  orgSel.addEventListener("change", async () => {
-    state.orgId = orgSel.value;
-    state.flows = [];
-    flowSel.innerHTML = `<option value="">Loading flows…</option>`;
-    flowSel.disabled = true;
-    flowFilter.disabled = true;
-    loadBtn.disabled = true;
-    if (!state.orgId) {
-      flowSel.innerHTML = `<option value="">Select org first…</option>`;
+  // ── Flow combobox (searchable) ──────────────────────────────────────────────
+  let comboActive = -1;
+  const openMenu = () => flowMenu.classList.add("open");
+  const closeMenu = () => { flowMenu.classList.remove("open"); comboActive = -1; };
+
+  function renderMenu() {
+    const q = (flowInput.value || "").trim().toLowerCase();
+    const list = state.flows
+      .filter((f) => !q || f.name.toLowerCase().includes(q) || f.type.includes(q))
+      .slice(0, 60);
+    if (!list.length) {
+      flowMenu.innerHTML = `<div class="fo-flow-item" style="cursor:default;color:${NODE_SUBTEXT}">No matching flows</div>`;
+      openMenu();
       return;
     }
-    try {
-      const flows = await gc.fetchAllFlows(api, state.orgId, { query: { pageSize: "100" } });
-      state.flows = (flows || [])
-        .map((f) => ({ id: f.id, name: f.name, type: (f.type || "").toLowerCase() }))
-        .filter((f) => f.id && f.name)
-        .sort((a, b) => a.name.localeCompare(b.name));
-      populateFlowSelect();
-      flowSel.disabled = false;
-      flowFilter.disabled = false;
-      flowFilter.value = "";
-    } catch (err) {
-      flowSel.innerHTML = `<option value="">Failed to load flows</option>`;
-      statusEl.textContent = `Error: ${err.message || err}`;
-    }
-  });
-
-  function populateFlowSelect() {
-    const q = (flowFilter.value || "").toLowerCase();
-    const list = state.flows.filter((f) => !q || f.name.toLowerCase().includes(q) || f.type.includes(q));
-    flowSel.innerHTML =
-      `<option value="">Select flow… (${list.length})</option>` +
-      list.map((f) => `<option value="${escapeHtml(f.id)}">${escapeHtml(f.name)} — ${escapeHtml(f.type)}</option>`).join("");
+    flowMenu.innerHTML = list
+      .map((f, i) => `<div class="fo-flow-item${i === comboActive ? " is-active" : ""}" data-id="${escapeHtml(f.id)}">${escapeHtml(f.name)} <span class="fo-meta">${escapeHtml(FLOW_TYPE_LABELS[f.type] || f.type || "")}</span></div>`)
+      .join("");
+    flowMenu.querySelectorAll(".fo-flow-item[data-id]").forEach((it) =>
+      it.addEventListener("mousedown", (e) => { e.preventDefault(); pickFlow(it.dataset.id); })
+    );
+    openMenu();
   }
-  flowFilter.addEventListener("input", populateFlowSelect);
-  flowSel.addEventListener("change", () => {
-    state.flowId = flowSel.value;
-    const f = state.flows.find((x) => x.id === state.flowId);
-    state.flowName = f ? f.name : "";
-    loadBtn.disabled = !state.flowId;
+
+  function pickFlow(id) {
+    const f = state.flows.find((x) => x.id === id);
+    if (!f) return;
+    state.flowId = id;
+    state.flowName = f.name;
+    flowInput.value = f.name;
+    closeMenu();
+    loadRootFlow(id);
+  }
+
+  flowInput.addEventListener("focus", () => { if (state.flows.length) renderMenu(); });
+  flowInput.addEventListener("input", () => { comboActive = -1; renderMenu(); });
+  flowInput.addEventListener("keydown", (e) => {
+    const items = [...flowMenu.querySelectorAll(".fo-flow-item[data-id]")];
+    if (e.key === "ArrowDown") { e.preventDefault(); comboActive = Math.min(items.length - 1, comboActive + 1); renderMenu(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); comboActive = Math.max(0, comboActive - 1); renderMenu(); }
+    else if (e.key === "Enter") { e.preventDefault(); const it = items[comboActive] || items[0]; if (it) pickFlow(it.dataset.id); }
+    else if (e.key === "Escape") { closeMenu(); }
   });
+  flowInput.addEventListener("blur", () => setTimeout(closeMenu, 150));
 
   // ── Level toggle ────────────────────────────────────────────────────────────
   levelBtns.forEach((b) =>
@@ -358,31 +376,66 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     })
   );
 
-  // ── Load flow + dependency-flow tabs ────────────────────────────────────────
-  loadBtn.addEventListener("click", async () => {
-    if (!state.orgId || !state.flowId) return;
+  // ── Theme (canvas background) ───────────────────────────────────────────────
+  themeSel.addEventListener("change", () => {
+    state.themeName = themeSel.value;
+    if (state.laid) renderGraph();
+  });
+
+  // ── Fullscreen ──────────────────────────────────────────────────────────────
+  fullscreenBtn.addEventListener("click", () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (layoutEl.requestFullscreen) layoutEl.requestFullscreen();
+  });
+  document.addEventListener("fullscreenchange", () => {
+    fullscreenBtn.textContent = document.fullscreenElement ? "⤢ Exit" : "⛶ Fullscreen";
+    if (state.svg) { updateViewBox(); fitToView(); }
+  });
+  const canvasRO = new ResizeObserver(() => { if (state.svg) updateViewBox(); });
+  canvasRO.observe(canvas);
+
+  function updateViewBox() {
+    if (!state.svg) return;
+    const W = canvas.clientWidth || 900;
+    const H = canvas.clientHeight || 700;
+    state.svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  }
+
+  // ── Init: org from the header selector, then load the flow list ─────────────
+  async function init() {
+    state.orgId = orgContext.get();
+    if (!state.orgId) {
+      emptyEl.hidden = false;
+      emptyEl.innerHTML = `Select an organisation in the selector at the top of the page.`;
+      return;
+    }
     setBusy(true, "Loading flow list…");
     try {
-      // Org flow list (id → {name, type}) for dependency resolution.
       const flows = await gc.fetchAllFlows(api, state.orgId, { query: { pageSize: "100" } });
-      state.flowList = new Map(
-        (flows || [])
-          .filter((f) => f.id)
-          .map((f) => [f.id, { id: f.id, name: f.name, type: (f.type || "").toLowerCase() }])
-      );
-      // Reset tabs/cache for the new root flow.
-      state.cache = new Map();
-      const rootMeta = state.flowList.get(state.flowId) || {};
-      state.tabs = [{ id: state.flowId, name: rootMeta.name || state.flowName || "Flow", type: rootMeta.type || "", isMain: true, available: true }];
-      state.activeId = null;
-      renderTabs();
-      await activateTab(state.flowId);
+      const norm = (flows || [])
+        .filter((f) => f.id && f.name)
+        .map((f) => ({ id: f.id, name: f.name, type: (f.type || "").toLowerCase() }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      state.flows = norm;
+      state.flowList = new Map(norm.map((f) => [f.id, f]));
+      flowInput.disabled = false;
+      flowInput.placeholder = `Search ${norm.length} flows…`;
+      setBusy(false, "Pick a flow to visualise.");
     } catch (err) {
-      setBusy(false, `Error: ${err.message || err}`);
-      emptyEl.hidden = false;
-      emptyEl.innerHTML = `Failed to load flow.<br><small>${escapeHtml(String(err.message || err))}</small>`;
+      setBusy(false, `Error loading flows: ${err.message || err}`);
     }
-  });
+  }
+
+  /** Set a new root flow: reset tabs/cache, then load it + its dependencies. */
+  async function loadRootFlow(flowId) {
+    if (!state.flowList) return;
+    state.cache = new Map();
+    const rootMeta = state.flowList.get(flowId) || {};
+    state.tabs = [{ id: flowId, name: rootMeta.name || state.flowName || "Flow", type: rootMeta.type || "", isMain: true, available: true }];
+    state.activeId = null;
+    renderTabs();
+    await activateTab(flowId);
+  }
 
   /** Fetch + index a flow's config (cached). Also merges its dependency tabs. */
   async function ensureFlowLoaded(id) {
@@ -494,7 +547,6 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   }
 
   function setBusy(busy, msg) {
-    loadBtn.disabled = busy || !state.flowId;
     statusEl.innerHTML = busy ? `<span class="fo-spin"></span> ${escapeHtml(msg || "")}` : escapeHtml(msg || "");
   }
 
@@ -517,9 +569,14 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   }
 
   // ── Graph rendering ─────────────────────────────────────────────────────────
+  /** Active canvas colour palette. */
+  function tc() { return THEMES[state.themeName] || THEMES.dark; }
+
   function renderGraph() {
     emptyEl.hidden = true;
     canvas.querySelector("svg")?.remove();
+    const th = tc();
+    canvas.style.background = th.bg;
 
     const W = canvas.clientWidth || 900;
     const H = canvas.clientHeight || 700;
@@ -527,7 +584,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     svg.style.cursor = "grab";
 
     const defs = svgEl("defs");
-    defs.appendChild(arrowMarker("fo-arrow", EDGE_COLOR));
+    defs.appendChild(arrowMarker("fo-arrow", th.edge));
     defs.appendChild(arrowMarker("fo-arrow-jump", JUMP_COLOR));
     defs.appendChild(arrowMarker("fo-arrow-dep", DEP_COLOR));
     defs.appendChild(arrowMarker("fo-arrow-hl", SELECT_COLOR));
@@ -563,7 +620,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   }
 
   function edgeColor(kind) {
-    return kind === "jump" ? JUMP_COLOR : kind === "dep" ? DEP_COLOR : EDGE_COLOR;
+    return kind === "jump" ? JUMP_COLOR : kind === "dep" ? DEP_COLOR : tc().edge;
   }
   function edgeMarker(kind) {
     return kind === "jump" ? "fo-arrow-jump" : kind === "dep" ? "fo-arrow-dep" : "fo-arrow";
@@ -604,7 +661,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       const t = svgEl("text", {
         x: mid.x + 4,
         y: mid.y - 3,
-        fill: EDGE_LABEL,
+        fill: tc().edgeLabel,
         "font-size": "10",
         "font-family": "system-ui, sans-serif",
       });
@@ -617,33 +674,34 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const gg = svgEl("g", { transform: `translate(${n.x},${n.y})`, id: `fo-node-${cssId(n.id)}` });
     const selected = n.id === selectedId;
     const color = kindColor(n.kind);
+    const th = tc();
 
     if (n.isContainer) {
       gg.appendChild(svgEl("rect", {
         width: n.w, height: n.h, rx: 8,
         fill: "none",
-        stroke: selected ? SELECT_COLOR : (n.isStart ? START_STROKE : CONTAINER_STROKE),
+        stroke: selected ? SELECT_COLOR : (n.isStart ? START_STROKE : th.containerStroke),
         "stroke-width": selected ? 2.5 : 1.2,
         "stroke-dasharray": "2 3",
       }));
-      gg.appendChild(svgEl("rect", { width: n.w, height: 26, rx: 8, fill: CONTAINER_HEADER }));
-      gg.appendChild(svgEl("rect", { y: 18, width: n.w, height: 8, fill: CONTAINER_HEADER }));
-      const ht = svgEl("text", { x: 10, y: 17, fill: NODE_TEXT, "font-size": "12.5", "font-weight": "600", "font-family": "system-ui, sans-serif" });
+      gg.appendChild(svgEl("rect", { width: n.w, height: 26, rx: 8, fill: th.containerHeader }));
+      gg.appendChild(svgEl("rect", { y: 18, width: n.w, height: 8, fill: th.containerHeader }));
+      const ht = svgEl("text", { x: 10, y: 17, fill: th.text, "font-size": "12.5", "font-weight": "600", "font-family": "system-ui, sans-serif" });
       ht.textContent = truncate((n.isStart ? "▶ " : "") + n.label, Math.max(6, Math.floor(n.w / 8)));
       gg.appendChild(ht);
     } else {
       gg.appendChild(svgEl("rect", {
         width: n.w, height: n.h, rx: 6,
-        fill: NODE_FILL,
-        stroke: selected ? SELECT_COLOR : (n.isStart ? START_STROKE : NODE_STROKE),
+        fill: th.nodeFill,
+        stroke: selected ? SELECT_COLOR : (n.isStart ? START_STROKE : th.nodeStroke),
         "stroke-width": selected ? 2.5 : 1.1,
       }));
       gg.appendChild(svgEl("rect", { width: 4, height: n.h, rx: 2, fill: color }));
-      const label = svgEl("text", { x: 12, y: n.sublabel ? 20 : n.h / 2 + 4, fill: NODE_TEXT, "font-size": "12", "font-family": "system-ui, sans-serif" });
+      const label = svgEl("text", { x: 12, y: n.sublabel ? 20 : n.h / 2 + 4, fill: th.text, "font-size": "12", "font-family": "system-ui, sans-serif" });
       label.textContent = truncate(n.label, Math.max(6, Math.floor((n.w - 16) / 6.6)));
       gg.appendChild(label);
       if (n.sublabel) {
-        const sub = svgEl("text", { x: 12, y: 37, fill: NODE_SUBTEXT, "font-size": "10.5", "font-family": "system-ui, sans-serif" });
+        const sub = svgEl("text", { x: 12, y: 37, fill: th.subText, "font-size": "10.5", "font-family": "system-ui, sans-serif" });
         sub.textContent = truncate(n.sublabel, Math.max(6, Math.floor((n.w - 16) / 5.6)));
         gg.appendChild(sub);
       }
@@ -751,9 +809,10 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
 
   // ── Selection + detail panel ────────────────────────────────────────────────
   function nodeStrokeSpec(n) {
+    const th = tc();
     if (n.id === state.selectedId || state.hlNodes.has(n.id)) return [SELECT_COLOR, "2.5"];
-    if (n.isContainer) return [n.isStart ? START_STROKE : CONTAINER_STROKE, "1.2"];
-    return [n.isStart ? START_STROKE : NODE_STROKE, "1.1"];
+    if (n.isContainer) return [n.isStart ? START_STROKE : th.containerStroke, "1.2"];
+    return [n.isStart ? START_STROKE : th.nodeStroke, "1.1"];
   }
   function refreshNodeStrokes() {
     if (!state.svg) return;
@@ -1021,9 +1080,10 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const w = Math.ceil((state.laid.width || 100) + pad * 2);
     const h = Math.ceil((state.laid.height || 100) + pad * 2);
     const svg = svgEl("svg", { xmlns: SVGNS, width: w, height: h, viewBox: `0 0 ${w} ${h}` });
-    svg.appendChild(svgEl("rect", { width: w, height: h, fill: CANVAS_BG }));
+    const th = tc();
+    svg.appendChild(svgEl("rect", { width: w, height: h, fill: th.bg }));
     const defs = svgEl("defs");
-    defs.appendChild(arrowMarker("fo-arrow", EDGE_COLOR));
+    defs.appendChild(arrowMarker("fo-arrow", th.edge));
     defs.appendChild(arrowMarker("fo-arrow-jump", JUMP_COLOR));
     defs.appendChild(arrowMarker("fo-arrow-dep", DEP_COLOR));
     svg.appendChild(defs);
@@ -1069,10 +1129,11 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   $("#foSaveHtml").addEventListener("click", () => {
     const { svg } = buildStandaloneSvg();
     const str = new XMLSerializer().serializeToString(svg);
+    const th = tc();
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(state.cfg.name)} — Flow Overview (${state.level})</title>
-<style>body{margin:0;background:${CANVAS_BG};color:${NODE_TEXT};font-family:system-ui,sans-serif}
-header{padding:12px 16px;border-bottom:1px solid ${NODE_STROKE}}h1{font-size:16px;margin:0}
-.meta{color:${NODE_SUBTEXT};font-size:12px;margin-top:4px}.wrap{padding:16px;overflow:auto}</style></head>
+<style>body{margin:0;background:${th.bg};color:${th.text};font-family:system-ui,sans-serif}
+header{padding:12px 16px;border-bottom:1px solid ${th.nodeStroke}}h1{font-size:16px;margin:0}
+.meta{color:${th.subText};font-size:12px;margin-top:4px}.wrap{padding:16px;overflow:auto}</style></head>
 <body><header><h1>${escapeHtml(state.cfg.name)}</h1><div class="meta">${escapeHtml(state.model.meta.type)} · ${state.level} detail · ${state.model.nodes.length} nodes · exported ${new Date().toISOString()}</div></header>
 <div class="wrap">${str}</div></body></html>`;
     download(`${slug(state.cfg.name)}-${state.level}.html`, textToB64(html), (m) => (statusEl.textContent = m));
@@ -1091,6 +1152,9 @@ header{padding:12px 16px;border-bottom:1px solid ${NODE_STROKE}}h1{font-size:16p
     };
     download(`${slug(state.cfg.name)}-${state.level}.json`, textToB64(JSON.stringify(payload, null, 2)), (m) => (statusEl.textContent = m));
   });
+
+  themeSel.value = state.themeName;
+  init();
 
   return el;
 }
