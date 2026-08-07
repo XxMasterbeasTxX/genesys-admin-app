@@ -96,9 +96,9 @@ function collectAbsolute(elkNode, offX, offY, out) {
   }
 }
 
-/** Gather every edge in the laid-out graph (root + nested), with container id. */
+/** Gather every edge in the laid-out graph (root + nested). */
 function collectEdges(elkNode, out) {
-  for (const e of elkNode.edges || []) out.push({ edge: e, container: elkNode.id });
+  for (const e of elkNode.edges || []) out.push(e);
   for (const c of elkNode.children || []) collectEdges(c, out);
 }
 
@@ -129,9 +129,13 @@ export async function layoutModel(model) {
   collectEdges(laid, rawEdges);
   const modelEdgeById = new Map(model.edges.map((e) => [e.id, e]));
   const edges = [];
-  for (const { edge, container } of rawEdges) {
+  for (const edge of rawEdges) {
     const me = modelEdgeById.get(edge.id);
-    const cont = container === laid.id ? { x: 0, y: 0 } : absPos.get(container) || { x: 0, y: 0 };
+    // ELK stores each edge's points relative to `edge.container` (the lowest
+    // common ancestor node, or the root graph). Offset by that container's
+    // absolute position so points land in the same coordinate space as nodes.
+    const contId = edge.container;
+    const cont = !contId || contId === laid.id ? { x: 0, y: 0 } : absPos.get(contId) || { x: 0, y: 0 };
     const sec = (edge.sections && edge.sections[0]) || null;
     if (!sec) continue;
     const pts = [sec.startPoint, ...(sec.bendPoints || []), sec.endPoint].map((p) => ({
