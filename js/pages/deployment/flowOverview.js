@@ -199,7 +199,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       <button class="btn btn--secondary btn-sm" id="foZoomOut" disabled title="Zoom out">−</button>
       <button class="btn btn--secondary btn-sm" id="foZoomIn" disabled title="Zoom in">+</button>
       <button class="btn btn--secondary btn-sm" id="foFit" disabled>Fit</button>
-      <span style="font-size:11px;color:${NODE_SUBTEXT}">Scroll to zoom · drag to pan</span>
+      <span style="font-size:11px;color:${NODE_SUBTEXT}">Scroll to zoom · drag to pan · click a line to trace it</span>
       <span style="flex:1"></span>
       <button class="btn btn--secondary btn-sm" id="foSaveSvg" disabled>Save SVG</button>
       <button class="btn btn--secondary btn-sm" id="foSavePng" disabled>Save PNG</button>
@@ -260,9 +260,12 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     actionIndex: null,
     laid: null,
     selectedId: null,
+    selectedEdgeId: null,
+    hlNodes: new Set(),
     vp: { s: 1, tx: 0, ty: 0 },
     svg: null,
     vpG: null,
+    overlayG: null,
   };
 
   levelBtns.forEach((b) => b.classList.toggle("is-active", b.dataset.level === state.level));
@@ -376,6 +379,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     defs.appendChild(arrowMarker("fo-arrow", EDGE_COLOR));
     defs.appendChild(arrowMarker("fo-arrow-jump", JUMP_COLOR));
     defs.appendChild(arrowMarker("fo-arrow-dep", DEP_COLOR));
+    defs.appendChild(arrowMarker("fo-arrow-hl", SELECT_COLOR));
     svg.appendChild(defs);
 
     const vpG = svgEl("g");
@@ -384,6 +388,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     state.vpG = vpG;
 
     drawGraph(vpG, state.laid, state.selectedId, true);
+    const overlayG = svgEl("g");
+    vpG.appendChild(overlayG);
+    state.overlayG = overlayG;
     canvas.appendChild(svg);
 
     fitToView();
@@ -393,7 +400,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   function drawGraph(root, laid, selectedId, interactive) {
     const edgeG = svgEl("g");
     root.appendChild(edgeG);
-    for (const e of laid.edges) drawEdge(edgeG, e);
+    for (const e of laid.edges) drawEdge(edgeG, e, interactive);
 
     const nodeG = svgEl("g");
     root.appendChild(nodeG);
@@ -404,22 +411,42 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     for (const n of rest) drawNode(nodeG, n, selectedId, interactive);
   }
 
-  function drawEdge(g, e) {
+  function edgeColor(kind) {
+    return kind === "jump" ? JUMP_COLOR : kind === "dep" ? DEP_COLOR : EDGE_COLOR;
+  }
+  function edgeMarker(kind) {
+    return kind === "jump" ? "fo-arrow-jump" : kind === "dep" ? "fo-arrow-dep" : "fo-arrow";
+  }
+  function edgePathD(pts) {
+    return "M " + pts.map((p) => `${p.x} ${p.y}`).join(" L ");
+  }
+
+  function drawEdge(g, e, interactive) {
     const pts = e.points || [];
     if (pts.length < 2) return;
-    const d = "M " + pts.map((p) => `${p.x} ${p.y}`).join(" L ");
-    const color = e.kind === "jump" ? JUMP_COLOR : e.kind === "dep" ? DEP_COLOR : EDGE_COLOR;
-    const marker = e.kind === "jump" ? "fo-arrow-jump" : e.kind === "dep" ? "fo-arrow-dep" : "fo-arrow";
+    const d = edgePathD(pts);
     const path = svgEl("path", {
       d,
       fill: "none",
-      stroke: color,
+      stroke: edgeColor(e.kind),
       "stroke-width": "1.4",
-      "marker-end": `url(#${marker})`,
+      "marker-end": `url(#${edgeMarker(e.kind)})`,
     });
     if (e.kind === "jump" || e.kind === "dep") path.setAttribute("stroke-dasharray", "5 4");
     path.setAttribute("id", `fo-edge-${cssId(e.id)}`);
     g.appendChild(path);
+
+    if (interactive) {
+      // Wide transparent hit path so the thin line is easy to click.
+      const hit = svgEl("path", { d, fill: "none", stroke: "transparent", "stroke-width": "12" });
+      hit.style.cursor = "pointer";
+      hit.style.pointerEvents = "stroke";
+      hit.addEventListener("click", (ev) => { ev.stopPropagation(); selectEdge(e); });
+      const title = svgEl("title");
+      title.textContent = `${nodeDisplay(e.source).title} → ${nodeDisplay(e.target).title}`;
+      hit.appendChild(title);
+      g.appendChild(hit);
+    }
 
     if (e.label && e.kind === "flow") {
       const mid = pts[Math.floor(pts.length / 2)];
@@ -567,17 +594,78 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   }
 
   // ── Selection + detail panel ────────────────────────────────────────────────
+  function nodeStrokeSpec(n) {
+    if (n.id === state.selectedId || state.hlNodes.has(n.id)) return [SELECT_COLOR, "2.5"];
+    if (n.isContainer) return [n.isStart ? START_STROKE : CONTAINER_STROKE, "1.2"];
+    return [n.isStart ? START_STROKE : NODE_STROKE, "1.1"];
+  }
+  function refreshNodeStrokes() {
+    if (!state.svg) return;
+    for (const n of state.laid.nodes) {
+      const rect = state.svg.querySelector(`#fo-node-${cssId(n.id)} rect`);
+      if (!rect) continue;
+      const [c, w] = nodeStrokeSpec(n);
+      rect.setAttribute("stroke", c);
+      rect.setAttribute("stroke-width", w);
+    }
+  }
+  function clearOverlay() {
+    if (state.overlayG) while (state.overlayG.firstChild) state.overlayG.removeChild(state.overlayG.firstChild);
+  }
+
   function selectNode(id) {
     state.selectedId = id;
-    // Update stroke on all nodes cheaply by re-highlighting.
-    for (const n of state.laid.nodes) {
-      const gEl = state.svg && state.svg.querySelector(`#fo-node-${cssId(n.id)} rect`);
-      if (!gEl) continue;
-      const selected = n.id === id;
-      gEl.setAttribute("stroke", selected ? SELECT_COLOR : (n.isContainer ? (n.isStart ? START_STROKE : CONTAINER_STROKE) : (n.isStart ? START_STROKE : NODE_STROKE)));
-      gEl.setAttribute("stroke-width", selected ? "2.5" : (n.isContainer ? "1.2" : "1.1"));
-    }
+    state.selectedEdgeId = null;
+    state.hlNodes = new Set();
+    clearOverlay();
+    refreshNodeStrokes();
     if (id) renderNodeDetail(id);
+  }
+
+  function selectEdge(e) {
+    state.selectedId = null;
+    state.selectedEdgeId = e.id;
+    state.hlNodes = new Set([e.source, e.target]);
+    clearOverlay();
+    // Draw a bright copy of the edge on top so it stands out above nodes.
+    if (state.overlayG && e.points && e.points.length >= 2) {
+      const hl = svgEl("path", {
+        d: edgePathD(e.points),
+        fill: "none",
+        stroke: SELECT_COLOR,
+        "stroke-width": "3",
+        "marker-end": "url(#fo-arrow-hl)",
+      });
+      if (e.kind === "jump" || e.kind === "dep") hl.setAttribute("stroke-dasharray", "6 4");
+      state.overlayG.appendChild(hl);
+    }
+    refreshNodeStrokes();
+    renderEdgeDetail(e);
+  }
+
+  /** Human title/subtitle for a node id (action, task container, or dependency). */
+  function nodeDisplay(id) {
+    const mn = state.model && state.model.nodes.find((n) => n.id === id);
+    if (!mn) return { title: id, sub: "" };
+    if (mn.isContainer || mn.kind === "task") return { title: mn.label, sub: "Task" };
+    return { title: mn.label, sub: mn.taskName ? `Task: ${mn.taskName}` : (mn.sublabel || "") };
+  }
+
+  function renderEdgeDetail(e) {
+    const s = nodeDisplay(e.source);
+    const t = nodeDisplay(e.target);
+    const kindLbl = e.kind === "jump" ? "Task jump" : e.kind === "dep" ? "Dependency" : "Flow";
+    detailEl.innerHTML = `
+      <h4>Connection</h4>
+      <div class="fo-sub"><span class="fo-chip" style="color:${edgeColor(e.kind)}">${kindLbl}</span>${e.label ? ` · ${escapeHtml(e.label)}` : ""}</div>
+      <div class="fo-usage" data-go="${escapeHtml(e.source)}"><span class="fo-meta">From</span><br><span class="fo-name">${escapeHtml(s.title)}</span>${s.sub ? `<br><span class="fo-meta">${escapeHtml(s.sub)}</span>` : ""}</div>
+      <div style="text-align:center;color:${NODE_SUBTEXT};margin:2px 0">↓</div>
+      <div class="fo-usage" data-go="${escapeHtml(e.target)}"><span class="fo-meta">To</span><br><span class="fo-name">${escapeHtml(t.title)}</span>${t.sub ? `<br><span class="fo-meta">${escapeHtml(t.sub)}</span>` : ""}</div>
+      <div class="fo-sub" style="margin-top:6px">Click either end to centre it in view.</div>
+    `;
+    detailEl.querySelectorAll("[data-go]").forEach((row) =>
+      row.addEventListener("click", () => centerOnNode(row.getAttribute("data-go")))
+    );
   }
 
   function renderNodeDetail(id) {
