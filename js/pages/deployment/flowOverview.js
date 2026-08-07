@@ -150,6 +150,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
                  border-top-color:#fff; border-radius:50%; animation:fo-spin .8s linear infinite; }
       .fo-layout { display:flex; gap:12px; align-items:stretch; height:78vh; min-height:460px; }
       .fo-layout:fullscreen { height:100vh; min-height:0; background:#0d1117; padding:10px; box-sizing:border-box; }
+      .fo-layout.fo-max { position:fixed; inset:0; z-index:9999; height:auto; background:#0d1117; padding:10px; box-sizing:border-box; }
       .fo-canvas-wrap { position:relative; flex:1; min-width:0; display:flex; flex-direction:column; }
       .fo-canvas { flex:1; min-height:0; border:1px solid ${NODE_STROKE}; border-radius:8px;
                    overflow:hidden; background:${CANVAS_BG}; position:relative; }
@@ -382,14 +383,40 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     if (state.laid) renderGraph();
   });
 
-  // ── Fullscreen ──────────────────────────────────────────────────────────────
+  // ── Fullscreen / maximize ───────────────────────────────────────────────────
+  function refitSoon() {
+    requestAnimationFrame(() => { if (state.svg) { updateViewBox(); fitToView(); } });
+  }
+  function setMaximized(on) {
+    layoutEl.classList.toggle("fo-max", on);
+    fullscreenBtn.textContent = on ? "⤢ Exit" : "⛶ Fullscreen";
+    refitSoon();
+  }
+  async function enterFullscreen() {
+    // Prefer true OS fullscreen; fall back to an in-app maximise overlay when the
+    // Fullscreen API is unavailable or blocked (embedded webviews, policies, …).
+    const req = layoutEl.requestFullscreen || layoutEl.webkitRequestFullscreen;
+    if (document.fullscreenEnabled && req) {
+      try { await req.call(layoutEl); return; } catch (_) { /* fall through */ }
+    }
+    setMaximized(true);
+  }
+  function exitFullscreen() {
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fsEl) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); }
+    else setMaximized(false);
+  }
   fullscreenBtn.addEventListener("click", () => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else if (layoutEl.requestFullscreen) layoutEl.requestFullscreen();
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fsEl === layoutEl || layoutEl.classList.contains("fo-max")) exitFullscreen();
+    else enterFullscreen();
   });
   document.addEventListener("fullscreenchange", () => {
-    fullscreenBtn.textContent = document.fullscreenElement ? "⤢ Exit" : "⛶ Fullscreen";
-    if (state.svg) { updateViewBox(); fitToView(); }
+    fullscreenBtn.textContent = document.fullscreenElement === layoutEl ? "⤢ Exit" : "⛶ Fullscreen";
+    refitSoon();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && layoutEl.classList.contains("fo-max")) setMaximized(false);
   });
   const canvasRO = new ResizeObserver(() => { if (state.svg) updateViewBox(); });
   canvasRO.observe(canvas);
