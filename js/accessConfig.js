@@ -48,6 +48,7 @@
  *   deployment.basic                   Basic
  *   deployment.datatables              Data Tables
  *   deployment.onboarding              Onboarding  (SUPERUSER only — never granted via GROUP_ACCESS)
+ *   deployment.flowoverview            Flow Overview  (read-only flow visualiser)
  *
  *   DIVISIONS  (reassign objects between divisions)
  *   divisions.people.users                  People — Users
@@ -153,7 +154,7 @@ const ADMIN_ALL_EXCEPT_ONBOARDING = [
   "audit.*", "data-actions.*", "data-tables.*", "divisions.*", "export.*",
   "flows.*", "gdpr.*", "interactions.*", "phones.*", "roles.*", "users.*",
   "utilities.*", "wrapupCodes.*",
-  "deployment.basic", "deployment.datatables",
+  "deployment.basic", "deployment.datatables", "deployment.flowoverview",
 ];
 export const GROUP_ACCESS = {
   // Full access EXCEPT the superuser-only Onboarding page. "*" can't express an
