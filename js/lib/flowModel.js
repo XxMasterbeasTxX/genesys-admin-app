@@ -244,7 +244,10 @@ function actionEdges(a) {
   for (const p of paths) {
     if (p.nextActionId) {
       edges.push({ target: p.nextActionId, label: p.label || "" });
-    } else if (a.nextAction) {
+    } else if (a.nextAction && !fallthroughUsed) {
+      // Only the FIRST target-less output (the default) continues to
+      // `nextAction`. Any further target-less outputs are genuinely unconnected
+      // in the flow (dead-ends) and must not be wired to nextAction as well.
       edges.push({ target: a.nextAction, label: p.label || "" });
       fallthroughUsed = true;
     }
