@@ -233,6 +233,9 @@ export function buildDependencyIndex(cfg) {
 // An action continues via `nextAction` (single) and/or branches via `paths[]`.
 // A path with `nextActionId` jumps there; a path WITHOUT one falls through to the
 // action's `nextAction`. Actions with neither are terminal.
+//
+// Loop actions additionally carry a singular `path` object (the loop-back output,
+// e.g. { nextActionId, label:"Loop" }) alongside their `nextAction` (loop exit).
 
 function actionEdges(a) {
   const edges = []; // { target, label }
@@ -245,6 +248,11 @@ function actionEdges(a) {
       edges.push({ target: a.nextAction, label: p.label || "" });
       fallthroughUsed = true;
     }
+  }
+  // Singular `path` (Loop actions): a distinct loop-back edge.
+  const singlePaths = a.path ? (Array.isArray(a.path) ? a.path : [a.path]) : [];
+  for (const p of singlePaths) {
+    if (p && p.nextActionId) edges.push({ target: p.nextActionId, label: p.label || "Loop" });
   }
   if (!paths.length && a.nextAction) {
     edges.push({ target: a.nextAction, label: "" });
