@@ -68,15 +68,42 @@ function truncate(str, max) {
   return str.length > max ? str.slice(0, max - 1) + "…" : str;
 }
 
-function download(filename, blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+function download(filename, b64, onError) {
+  // Downloads in this app go through the shared download.html helper page (direct
+  // anchor-click blob downloads are blocked in the hosting environment). The
+  // helper reads base64 payloads from window._xlsxDownload and offers a native
+  // Save dialog.
+  const key = "flowovw_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+  window._xlsxDownload = window._xlsxDownload || {};
+  window._xlsxDownload[key] = { filename, b64 };
+  const helperUrl = new URL("download.html", document.baseURI);
+  helperUrl.hash = key;
+  const popup = window.open(helperUrl.href, "_blank");
+  if (!popup) {
+    delete window._xlsxDownload[key];
+    if (onError) onError("Pop-up blocked. Please allow pop-ups for this site.");
+  }
+}
+
+/** Base64-encode a UTF-8 string (svg / html / json payloads). */
+function textToB64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/** Base64-encode a Blob (png payload). */
+function blobToB64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
 }
 
 function slug(s) {
@@ -106,6 +133,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       .fo-canvas svg { width:100%; height:100%; display:block; }
       .fo-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
                   color:${NODE_SUBTEXT}; font-size:14px; text-align:center; padding:20px; }
+      .fo-empty[hidden] { display:none; }
       .fo-side { width:340px; flex:none; display:flex; flex-direction:column; gap:10px; }
       .fo-side-box { border:1px solid ${NODE_STROKE}; border-radius:8px; background:rgba(255,255,255,.02);
                      display:flex; flex-direction:column; min-height:0; }
@@ -168,7 +196,11 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     </div>
 
     <div class="dt-actions" style="margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <button class="btn btn--secondary btn-sm" id="foZoomOut" disabled title="Zoom out">−</button>
+      <button class="btn btn--secondary btn-sm" id="foZoomIn" disabled title="Zoom in">+</button>
       <button class="btn btn--secondary btn-sm" id="foFit" disabled>Fit</button>
+      <span style="font-size:11px;color:${NODE_SUBTEXT}">Scroll to zoom · drag to pan</span>
+      <span style="flex:1"></span>
       <button class="btn btn--secondary btn-sm" id="foSaveSvg" disabled>Save SVG</button>
       <button class="btn btn--secondary btn-sm" id="foSavePng" disabled>Save PNG</button>
       <button class="btn btn--secondary btn-sm" id="foSaveHtml" disabled>Save HTML</button>
@@ -212,7 +244,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   const resultsEl = $("#foResults");
   const detailEl = $("#foDetail");
   const levelBtns = [...el.querySelectorAll(".fo-level .btn")];
-  const exportBtns = ["#foFit", "#foSaveSvg", "#foSavePng", "#foSaveHtml", "#foSaveJson"].map($);
+  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foSaveSvg", "#foSavePng", "#foSaveHtml", "#foSaveJson"].map($);
 
   // ── State ───────────────────────────────────────────────────────────────────
   const state = {
@@ -521,6 +553,19 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     return true;
   }
 
+  function zoomBy(factor) {
+    if (!state.vpG) return;
+    const W = canvas.clientWidth || 900;
+    const H = canvas.clientHeight || 700;
+    const cx = W / 2;
+    const cy = H / 2;
+    const ns = Math.max(0.1, Math.min(4, state.vp.s * factor));
+    state.vp.tx = cx - (cx - state.vp.tx) * (ns / state.vp.s);
+    state.vp.ty = cy - (cy - state.vp.ty) * (ns / state.vp.s);
+    state.vp.s = ns;
+    applyTransform();
+  }
+
   // ── Selection + detail panel ────────────────────────────────────────────────
   function selectNode(id) {
     state.selectedId = id;
@@ -723,11 +768,13 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   }
 
   $("#foFit").addEventListener("click", () => fitToView());
+  $("#foZoomIn").addEventListener("click", () => zoomBy(1.25));
+  $("#foZoomOut").addEventListener("click", () => zoomBy(1 / 1.25));
 
   $("#foSaveSvg").addEventListener("click", () => {
     const { svg } = buildStandaloneSvg();
     const str = new XMLSerializer().serializeToString(svg);
-    download(`${slug(state.cfg.name)}-${state.level}.svg`, new Blob([str], { type: "image/svg+xml" }));
+    download(`${slug(state.cfg.name)}-${state.level}.svg`, textToB64(str), (m) => (statusEl.textContent = m));
   });
 
   $("#foSavePng").addEventListener("click", () => {
@@ -744,7 +791,10 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       ctx.scale(scale, scale);
       ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
-      c.toBlob((blob) => blob && download(`${slug(state.cfg.name)}-${state.level}.png`, blob), "image/png");
+      c.toBlob(async (blob) => {
+        if (!blob) { statusEl.textContent = "PNG export failed."; return; }
+        download(`${slug(state.cfg.name)}-${state.level}.png`, await blobToB64(blob), (m) => (statusEl.textContent = m));
+      }, "image/png");
     };
     img.onerror = () => { URL.revokeObjectURL(url); statusEl.textContent = "PNG export failed."; };
     img.src = url;
@@ -759,7 +809,7 @@ header{padding:12px 16px;border-bottom:1px solid ${NODE_STROKE}}h1{font-size:16p
 .meta{color:${NODE_SUBTEXT};font-size:12px;margin-top:4px}.wrap{padding:16px;overflow:auto}</style></head>
 <body><header><h1>${escapeHtml(state.cfg.name)}</h1><div class="meta">${escapeHtml(state.model.meta.type)} · ${state.level} detail · ${state.model.nodes.length} nodes · exported ${new Date().toISOString()}</div></header>
 <div class="wrap">${str}</div></body></html>`;
-    download(`${slug(state.cfg.name)}-${state.level}.html`, new Blob([html], { type: "text/html" }));
+    download(`${slug(state.cfg.name)}-${state.level}.html`, textToB64(html), (m) => (statusEl.textContent = m));
   });
 
   $("#foSaveJson").addEventListener("click", () => {
@@ -773,7 +823,7 @@ header{padding:12px 16px;border-bottom:1px solid ${NODE_STROKE}}h1{font-size:16p
       variables: [...state.varIndex.values()].map((v) => ({ ...v.variable, usages: v.usages })),
       dependencies: [...state.depIndex.values()],
     };
-    download(`${slug(state.cfg.name)}-${state.level}.json`, new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+    download(`${slug(state.cfg.name)}-${state.level}.json`, textToB64(JSON.stringify(payload, null, 2)), (m) => (statusEl.textContent = m));
   });
 
   return el;

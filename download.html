@@ -56,12 +56,21 @@
           zip:  "application/zip",
           csv:  "text/csv",
           pdf:  "application/pdf",
+          svg:  "image/svg+xml",
+          png:  "image/png",
+          html: "text/html",
+          json: "application/json",
         };
         var mime = mimeMap[ext] || "application/octet-stream";
 
+        var descMap = {
+          xlsx: "Excel Workbook", zip: "ZIP Archive", csv: "CSV File", pdf: "PDF Document",
+          svg: "SVG Image", png: "PNG Image", html: "HTML Page", json: "JSON File",
+        };
+
         // File picker accepts config per extension
         var pickerTypes = [{
-          description: ext === "zip" ? "ZIP Archive" : "Excel Workbook",
+          description: descMap[ext] || "File",
           accept: {},
         }];
         pickerTypes[0].accept[mime] = ["." + ext];
