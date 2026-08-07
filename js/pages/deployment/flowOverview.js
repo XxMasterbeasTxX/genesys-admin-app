@@ -260,15 +260,15 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
         <div class="fo-legend" id="foLegend"></div>
       </div>
       <div class="fo-side">
+        <div class="fo-side-box fo-detail">
+          <div class="fo-side-head">Details</div>
+          <div class="fo-detail-body" id="foDetail"><div class="fo-sub">Select a node, variable or dependency.</div></div>
+        </div>
         <div class="fo-side-box fo-search">
           <div class="fo-side-head">Search <span id="foSearchCount" class="fo-chip">—</span></div>
           <div style="padding:8px 10px"><input class="dt-input" id="foSearchInput" type="text" placeholder="Variable or dependency…" style="width:100%" disabled /></div>
           <div class="fo-hint">Click a result, then a usage, to jump to the node.</div>
           <div class="fo-results" id="foResults"></div>
-        </div>
-        <div class="fo-side-box fo-detail">
-          <div class="fo-side-head">Details</div>
-          <div class="fo-detail-body" id="foDetail"><div class="fo-sub">Select a node, variable or dependency.</div></div>
         </div>
       </div>
     </div>
