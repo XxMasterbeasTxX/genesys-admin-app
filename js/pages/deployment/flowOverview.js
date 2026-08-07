@@ -110,6 +110,26 @@ function slug(s) {
   return String(s || "flow").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "flow";
 }
 
+// Matches a Genesys/GUID identifier anywhere in a serialized config (used to
+// discover dependency-flow references that the manifest doesn't enumerate).
+const GUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+const FLOW_TYPE_LABELS = {
+  inboundcall: "Inbound Call", inboundchat: "Inbound Chat", inboundemail: "Inbound Email",
+  inboundshortmessage: "Inbound Message", bot: "Bot", digitalbot: "Digital Bot",
+  commonmodule: "Common Module", inqueuecall: "In-Queue Call", inqueueemail: "In-Queue Email",
+  inqueueshortmessage: "In-Queue Message", securecall: "Secure Call", voicemail: "Voicemail",
+  workflow: "Workflow", workitem: "Workitem", voicesurvey: "Voice Survey",
+  surveyinvite: "Survey Invite", outboundcall: "Outbound Call",
+};
+
+function flowTypeOrder(t) {
+  const order = ["commonmodule", "inqueuecall", "inqueueemail", "inqueueshortmessage", "workflow",
+    "bot", "digitalbot", "voicesurvey", "surveyinvite", "securecall", "voicemail", "workitem"];
+  const i = order.indexOf(t);
+  return i === -1 ? 99 : i;
+}
+
 export default function renderFlowOverview({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
@@ -134,6 +154,15 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       .fo-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
                   color:${NODE_SUBTEXT}; font-size:14px; text-align:center; padding:20px; }
       .fo-empty[hidden] { display:none; }
+      .fo-tabs { display:flex; gap:4px; overflow-x:auto; padding:0 0 6px; align-items:flex-end; min-height:0; }
+      .fo-tab { flex:none; display:inline-flex; align-items:center; gap:6px; padding:5px 10px; font-size:12px;
+                border:1px solid ${NODE_STROKE}; border-radius:6px 6px 0 0; background:rgba(255,255,255,.02);
+                color:${NODE_SUBTEXT}; cursor:pointer; white-space:nowrap; }
+      .fo-tab:hover { background:rgba(255,255,255,.06); }
+      .fo-tab.is-active { color:${NODE_TEXT}; background:rgba(240,180,41,.12); border-color:rgba(240,180,41,.4); }
+      .fo-tab.is-main { border-bottom-color:${START_STROKE}; }
+      .fo-tab[disabled] { opacity:.45; cursor:not-allowed; }
+      .fo-tab-badge { font-size:9.5px; padding:1px 5px; border-radius:8px; border:1px solid ${NODE_STROKE}; color:${NODE_SUBTEXT}; }
       .fo-side { width:340px; flex:none; display:flex; flex-direction:column; gap:10px; }
       .fo-side-box { border:1px solid ${NODE_STROKE}; border-radius:8px; background:rgba(255,255,255,.02);
                      display:flex; flex-direction:column; min-height:0; }
@@ -209,6 +238,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
 
     <div class="fo-layout">
       <div class="fo-canvas-wrap">
+        <div class="fo-tabs" id="foTabs"></div>
         <div class="fo-canvas" id="foCanvas">
           <div class="fo-empty" id="foEmpty">Pick an org and a flow, then <strong>Load Flow</strong>.</div>
         </div>
@@ -237,6 +267,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   const loadBtn = $("#foLoad");
   const statusEl = $("#foStatus");
   const canvas = $("#foCanvas");
+  const tabsEl = $("#foTabs");
   const emptyEl = $("#foEmpty");
   const legendEl = $("#foLegend");
   const searchInput = $("#foSearchInput");
@@ -253,6 +284,10 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     flowId: "",
     flowName: "",
     level: "high",
+    flowList: null,
+    tabs: [],
+    cache: new Map(),
+    activeId: null,
     cfg: null,
     model: null,
     varIndex: null,
@@ -323,26 +358,140 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     })
   );
 
-  // ── Load flow ───────────────────────────────────────────────────────────────
+  // ── Load flow + dependency-flow tabs ────────────────────────────────────────
   loadBtn.addEventListener("click", async () => {
     if (!state.orgId || !state.flowId) return;
-    setBusy(true, "Fetching flow configuration…");
+    setBusy(true, "Loading flow list…");
     try {
-      const cfg = await api.proxyGenesys(state.orgId, "GET", `/api/v2/flows/${state.flowId}/latestconfiguration`);
-      state.cfg = cfg;
-      state.varIndex = buildVariableIndex(cfg);
-      state.depIndex = buildDependencyIndex(cfg);
-      state.actionIndex = buildActionIndex(cfg);
-      searchInput.disabled = false;
-      renderSearch("");
-      await rebuild();
-      setBusy(false, `Loaded “${cfg.name}” — ${state.varIndex.size} variables, ${state.depIndex.size} dependencies.`);
+      // Org flow list (id → {name, type}) for dependency resolution.
+      const flows = await gc.fetchAllFlows(api, state.orgId, { query: { pageSize: "100" } });
+      state.flowList = new Map(
+        (flows || [])
+          .filter((f) => f.id)
+          .map((f) => [f.id, { id: f.id, name: f.name, type: (f.type || "").toLowerCase() }])
+      );
+      // Reset tabs/cache for the new root flow.
+      state.cache = new Map();
+      const rootMeta = state.flowList.get(state.flowId) || {};
+      state.tabs = [{ id: state.flowId, name: rootMeta.name || state.flowName || "Flow", type: rootMeta.type || "", isMain: true, available: true }];
+      state.activeId = null;
+      renderTabs();
+      await activateTab(state.flowId);
     } catch (err) {
       setBusy(false, `Error: ${err.message || err}`);
       emptyEl.hidden = false;
-      emptyEl.innerHTML = `Failed to load flow configuration.<br><small>${escapeHtml(String(err.message || err))}</small>`;
+      emptyEl.innerHTML = `Failed to load flow.<br><small>${escapeHtml(String(err.message || err))}</small>`;
     }
   });
+
+  /** Fetch + index a flow's config (cached). Also merges its dependency tabs. */
+  async function ensureFlowLoaded(id) {
+    if (state.cache.has(id)) return state.cache.get(id);
+    const cfg = await api.proxyGenesys(state.orgId, "GET", `/api/v2/flows/${id}/latestconfiguration`);
+    const entry = {
+      cfg,
+      varIndex: buildVariableIndex(cfg),
+      depIndex: buildDependencyIndex(cfg),
+      actionIndex: buildActionIndex(cfg),
+    };
+    state.cache.set(id, entry);
+    mergeDeps(id, cfg);
+    return entry;
+  }
+
+  /** Discover dependency FLOW ids from a config (manifest + GUID scan). */
+  function discoverDepFlowIds(cfg, selfId) {
+    const ids = new Set();
+    const m = cfg.manifest || {};
+    for (const d of m.commonModuleFlow || []) if (d.id) ids.add(d.id);
+    for (const d of m.inqueueCallFlow || []) if (d.id) ids.add(d.id);
+    for (const g of JSON.stringify(cfg).match(GUID_RE) || []) {
+      const gl = g.toLowerCase();
+      if (state.flowList.has(gl) && gl !== selfId) ids.add(gl);
+    }
+    ids.delete(selfId);
+    return [...ids].filter((id) => state.flowList.has(id));
+  }
+
+  /** Add any newly discovered dependency flows as tabs (transitive closure). */
+  function mergeDeps(id, cfg) {
+    const have = new Set(state.tabs.map((t) => t.id));
+    let added = false;
+    for (const depId of discoverDepFlowIds(cfg, id)) {
+      if (have.has(depId)) continue;
+      const f = state.flowList.get(depId);
+      state.tabs.push({ id: depId, name: f ? f.name : depId, type: f ? f.type : "", isMain: false, available: true });
+      have.add(depId);
+      added = true;
+    }
+    if (added) {
+      state.tabs.sort((a, b) => {
+        if (a.isMain !== b.isMain) return a.isMain ? -1 : 1;
+        const ta = flowTypeOrder(a.type), tb = flowTypeOrder(b.type);
+        if (ta !== tb) return ta - tb;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+      renderTabs();
+    }
+  }
+
+  function renderTabs() {
+    if (!state.tabs || !state.tabs.length) { tabsEl.innerHTML = ""; return; }
+    tabsEl.innerHTML = state.tabs
+      .map((t) => {
+        const active = t.id === state.activeId ? " is-active" : "";
+        const main = t.isMain ? " is-main" : "";
+        const badge = t.isMain ? "Main" : (FLOW_TYPE_LABELS[t.type] || t.type || "flow");
+        const spin = t.loading ? `<span class="fo-spin" style="width:10px;height:10px"></span>` : "";
+        const dis = t.available === false ? " disabled" : "";
+        return `<div class="fo-tab${active}${main}" data-id="${escapeHtml(t.id)}"${dis} title="${escapeHtml(t.name)}">${spin}<span>${escapeHtml(truncate(t.name, 28))}</span><span class="fo-tab-badge">${escapeHtml(badge)}</span></div>`;
+      })
+      .join("");
+    tabsEl.querySelectorAll(".fo-tab").forEach((tb) => {
+      if (tb.hasAttribute("disabled")) return;
+      tb.addEventListener("click", () => { const id = tb.dataset.id; if (id !== state.activeId) activateTab(id); });
+    });
+  }
+
+  /** Switch to a flow tab, lazily fetching + laying it out. */
+  async function activateTab(id) {
+    state.activeId = id;
+    const tab = state.tabs.find((t) => t.id === id);
+    if (tab) tab.loading = true;
+    renderTabs();
+    setBusy(true, `Loading “${tab ? tab.name : id}”…`);
+    try {
+      const entry = await ensureFlowLoaded(id);
+      state.cfg = entry.cfg;
+      state.varIndex = entry.varIndex;
+      state.depIndex = entry.depIndex;
+      state.actionIndex = entry.actionIndex;
+      if (tab) { tab.loading = false; tab.available = true; }
+      searchInput.disabled = false;
+      searchInput.value = "";
+      renderSearch("");
+      detailEl.innerHTML = `<div class="fo-sub">Select a node, line, variable or dependency.</div>`;
+      await rebuild();
+      renderTabs();
+      const deps = state.tabs.length - 1;
+      setBusy(false, `“${entry.cfg.name}” — ${entry.varIndex.size} variables, ${entry.depIndex.size} dependencies${deps ? ` · ${deps} dependent flow(s)` : ""}`);
+    } catch (err) {
+      if (tab) { tab.loading = false; tab.available = false; }
+      renderTabs();
+      setBusy(false, `Error loading flow: ${err.message || err}`);
+    }
+  }
+
+  /** Open (or add then open) a dependency flow's tab. */
+  function openFlowTab(id) {
+    if (!state.flowList || !state.flowList.has(id)) return;
+    if (!state.tabs.some((t) => t.id === id)) {
+      const f = state.flowList.get(id);
+      state.tabs.push({ id, name: f.name, type: f.type, isMain: false, available: true });
+      renderTabs();
+    }
+    activateTab(id);
+  }
 
   function setBusy(busy, msg) {
     loadBtn.disabled = busy || !state.flowId;
@@ -355,6 +504,8 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       state.model = buildModel(state.cfg, { level: state.level });
       state.laid = await layoutModel(state.model);
       state.selectedId = null;
+      state.selectedEdgeId = null;
+      state.hlNodes = new Set();
       renderGraph();
       renderLegend();
       exportBtns.forEach((b) => (b.disabled = false));
@@ -706,6 +857,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const inputs = Array.isArray(a.inputs) ? a.inputs : [];
     const outputs = Array.isArray(a.outputs) ? a.outputs : [];
     const expr = a.expression && a.expression.text ? a.expression.text : "";
+    const flowRefs = [...new Set((JSON.stringify(a).match(GUID_RE) || [])
+      .map((g) => g.toLowerCase())
+      .filter((g) => state.flowList && state.flowList.has(g) && g !== state.activeId))];
     detailEl.innerHTML = `
       <h4>${escapeHtml(a.name || "(action)")}</h4>
       <div class="fo-sub"><span class="fo-chip" style="color:${kindColor(kind)}">${escapeHtml(kindLabel(kind))}</span> · Task: ${escapeHtml(loc.taskName)}</div>
@@ -713,9 +867,13 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       ${expr ? `<div style="margin:6px 0"><strong>Expression</strong><br><code>${escapeHtml(truncate(expr, 200))}</code></div>` : ""}
       ${inputs.length ? `<div style="margin:6px 0"><strong>Inputs</strong><br>${inputs.map((i) => `<code>${escapeHtml(i.name || "")}</code>`).join(" ")}</div>` : ""}
       ${outputs.length ? `<div style="margin:6px 0"><strong>Outputs</strong><br>${outputs.map((i) => `<code>${escapeHtml(i.name || "")}</code>`).join(" ")}</div>` : ""}
+      ${flowRefs.length ? `<div style="margin:6px 0"><strong>Referenced flows</strong></div>${flowRefs.map((fid) => { const f = state.flowList.get(fid); return `<div class="fo-usage" data-openflow="${escapeHtml(fid)}"><span class="fo-name">▸ ${escapeHtml(f.name)}</span> <span class="fo-meta">${escapeHtml(FLOW_TYPE_LABELS[f.type] || f.type || "")}</span></div>`; }).join("")}` : ""}
       <div style="margin:6px 0"><strong>Variables used (${vars.length})</strong></div>
       ${vars.length ? vars.map((v) => `<div class="fo-usage" data-var="${escapeHtml(v.id)}"><span class="fo-name">${escapeHtml(v.name)}</span> <span class="fo-meta">${escapeHtml(v.type || "")}</span></div>`).join("") : `<div class="fo-sub">None</div>`}
     `;
+    detailEl.querySelectorAll("[data-openflow]").forEach((row) =>
+      row.addEventListener("click", () => openFlowTab(row.getAttribute("data-openflow")))
+    );
     detailEl.querySelectorAll("[data-var]").forEach((row) =>
       row.addEventListener("click", () => showVariable(row.getAttribute("data-var")))
     );
@@ -732,11 +890,16 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   }
 
   function renderDependencyDetail(dep) {
+    const isFlow = (dep.type === "commonModule" || dep.type === "inqueueCall") && state.flowList && state.flowList.has(dep.id);
     detailEl.innerHTML = `
       <h4>${escapeHtml(dep.name)}</h4>
       <div class="fo-sub"><span class="fo-chip" style="color:${DEP_COLOR}">${escapeHtml(dep.type)}</span> · used by ${dep.usages.length} action(s)</div>
+      ${isFlow ? `<div class="fo-usage" data-openflow="${escapeHtml(dep.id)}"><span class="fo-name">▸ Open this flow in a tab</span></div>` : ""}
       ${dep.usages.map((u) => `<div class="fo-usage" data-action="${escapeHtml(u.actionId)}"><span class="fo-name">${escapeHtml(u.actionName)}</span><br><span class="fo-meta">${escapeHtml(u.taskName || "")}</span></div>`).join("")}
     `;
+    detailEl.querySelectorAll("[data-openflow]").forEach((row) =>
+      row.addEventListener("click", () => openFlowTab(row.getAttribute("data-openflow")))
+    );
     wireUsageJumps();
   }
 
