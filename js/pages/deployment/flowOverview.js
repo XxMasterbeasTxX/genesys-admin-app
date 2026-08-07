@@ -537,7 +537,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     applyTransform();
   }
   function attachPanZoom(svg) {
-    let panning = false, sx = 0, sy = 0;
+    let panning = false, sx = 0, sy = 0, downX = 0, downY = 0, moved = false;
     svg.addEventListener("wheel", (e) => {
       e.preventDefault();
       const r = svg.getBoundingClientRect();
@@ -551,9 +551,10 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       state.vp.s = ns;
       applyTransform();
     }, { passive: false });
-    svg.addEventListener("mousedown", (e) => { panning = true; sx = e.clientX; sy = e.clientY; svg.style.cursor = "grabbing"; });
+    svg.addEventListener("mousedown", (e) => { panning = true; moved = false; sx = e.clientX; sy = e.clientY; downX = e.clientX; downY = e.clientY; svg.style.cursor = "grabbing"; });
     svg.addEventListener("mousemove", (e) => {
       if (!panning) return;
+      if (Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > 4) moved = true;
       const r = svg.getBoundingClientRect();
       const k = (svg.viewBox.baseVal.width || r.width) / r.width;
       state.vp.tx += (e.clientX - sx) * k;
@@ -564,7 +565,11 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const stop = () => { panning = false; svg.style.cursor = "grab"; };
     svg.addEventListener("mouseup", stop);
     svg.addEventListener("mouseleave", stop);
-    svg.addEventListener("click", () => selectNode(null));
+    // Only a genuine (non-drag) click on the background clears the selection.
+    svg.addEventListener("click", () => {
+      if (moved) { moved = false; return; }
+      selectNode(null);
+    });
   }
 
   function centerOnNode(id) {
