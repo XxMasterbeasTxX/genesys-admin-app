@@ -105,6 +105,17 @@ function kindFor(actionKey) {
   return YAML_KIND[actionKey] || "action";
 }
 
+// The primary/continuation output of a branching action is usually OMITTED from
+// the YAML `outputs` (it just continues to the next sibling). If none of these
+// keys is present, we add the implicit primary edge, labelled per action type.
+const PRIMARY_OUTPUT_KEYS = new Set(["found", "success", "default", "out", "complete", "exit"]);
+const PRIMARY_OUTPUT_LABEL = {
+  dataTableLookup: "Found",
+  callData: "Success",
+  callBridge: "Success",
+  collectInput: "Next",
+};
+
 // ── Parse ────────────────────────────────────────────────────────────────────
 
 export function parseFlowYaml(root) {
@@ -281,7 +292,8 @@ function processAction(it, next, scope, ctx) {
   }
 
   if (key === "switch") {
-    const cases = (((body || {}).evaluate || {}).firstTrue || {}).cases || (body || {}).cases || [];
+    const ft = (((body || {}).evaluate || {}).firstTrue) || {};
+    const cases = ft.cases || (body || {}).cases || [];
     let ci = 0;
     for (const c of cases) {
       const cc = c && c.case ? c.case : c;
@@ -291,8 +303,10 @@ function processAction(it, next, scope, ctx) {
       if (acts && acts.length) addEdge(id, walk(acts, scope, next, ctx), label, "flow");
       else addEdge(id, next, label, "flow");
     }
-    // default output → continuation
-    addEdge(id, next, "Default", "flow");
+    // Default case: may carry its own actions (evaluate.firstTrue.default.actions).
+    const defActs = ft.default && ft.default.actions;
+    if (defActs && defActs.length) addEdge(id, walk(defActs, scope, next, ctx), "Default", "flow");
+    else addEdge(id, next, "Default", "flow");
     return;
   }
 
@@ -336,12 +350,21 @@ function processAction(it, next, scope, ctx) {
   if (body && body.outputs && typeof body.outputs === "object" && !Array.isArray(body.outputs)) {
     const keys = Object.keys(body.outputs);
     if (keys.length) {
+      let hasPrimary = false;
       for (const label of keys) {
+        const norm = label.replace(/"/g, "").toLowerCase();
+        if (PRIMARY_OUTPUT_KEYS.has(norm)) hasPrimary = true;
         const branch = body.outputs[label];
         const acts = branch && branch.actions;
         const lbl = prettyOutputLabel(label);
         if (acts && acts.length) addEdge(id, walk(acts, scope, next, ctx), lbl, "flow");
         else addEdge(id, next, lbl, "flow");
+      }
+      // The primary output (found/success/default) is usually omitted from the
+      // YAML — it simply continues to the next sibling. Add that edge so e.g. a
+      // data-table lookup's "Found" path isn't lost.
+      if (!hasPrimary && !TERMINAL_KINDS.has(key)) {
+        addEdge(id, next, PRIMARY_OUTPUT_LABEL[key] || "Default", "flow");
       }
       return;
     }
