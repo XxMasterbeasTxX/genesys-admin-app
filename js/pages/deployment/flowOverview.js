@@ -120,6 +120,20 @@ function slug(s) {
   return String(s || "flow").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "flow";
 }
 
+/**
+ * Pick a raster scale that keeps the export canvas within browser limits.
+ * Large flow diagrams can be many thousands of px wide; at a naive 2× scale the
+ * canvas exceeds the per-dimension (~16k) and total-area caps and renders as
+ * corrupted stripes. Cap each side and the total area, aiming for 2× when it fits.
+ */
+function rasterScale(w, h) {
+  const MAX_DIM = 8000;
+  const MAX_AREA = 24e6;
+  let s = 2;
+  s = Math.min(s, MAX_DIM / w, MAX_DIM / h, Math.sqrt(MAX_AREA / (w * h)));
+  return Math.max(0.25, s);
+}
+
 // Matches a Genesys/GUID identifier anywhere in a serialized config (used to
 // discover dependency-flow references that the manifest doesn't enumerate).
 const GUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -1138,10 +1152,10 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const img = new Image();
     const url = URL.createObjectURL(new Blob([str], { type: "image/svg+xml" }));
     img.onload = () => {
-      const scale = 2;
+      const scale = rasterScale(w, h);
       const c = document.createElement("canvas");
-      c.width = w * scale;
-      c.height = h * scale;
+      c.width = Math.round(w * scale);
+      c.height = Math.round(h * scale);
       const ctx = c.getContext("2d");
       ctx.scale(scale, scale);
       ctx.drawImage(img, 0, 0);
@@ -1164,10 +1178,10 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     img.onload = () => {
       // Rasterise the diagram (same faithful pipeline as PNG) then place it on a
       // single PDF page sized to the diagram (poster-style, prints/zooms cleanly).
-      const scale = 2;
+      const scale = rasterScale(w, h);
       const c = document.createElement("canvas");
-      c.width = w * scale;
-      c.height = h * scale;
+      c.width = Math.round(w * scale);
+      c.height = Math.round(h * scale);
       const ctx = c.getContext("2d");
       ctx.fillStyle = tc().bg;
       ctx.fillRect(0, 0, c.width, c.height);
