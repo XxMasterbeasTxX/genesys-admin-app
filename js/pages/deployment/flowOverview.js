@@ -1191,7 +1191,10 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       try {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ orientation: w >= h ? "landscape" : "portrait", unit: "px", format: [w, h], compress: true });
-        doc.addImage(c, "PNG", 0, 0, w, h);
+        // Embed as JPEG: jsPDF stores JPEG bytes directly, avoiding its PNG
+        // decoder which corrupts large images (the striped-glitch symptom).
+        const jpeg = c.toDataURL("image/jpeg", 0.92);
+        doc.addImage(jpeg, "JPEG", 0, 0, w, h);
         const b64 = doc.output("datauristring").split(",")[1];
         download(`${slug(state.data.meta.name)}-${state.level}.pdf`, b64, (m) => (statusEl.textContent = m));
       } catch (err) {
