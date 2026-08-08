@@ -186,8 +186,8 @@ const registry = {
     import("./pages/deployment/basic.js").then((m) => m.default(ctx)),
   "/deployment/datatables": (ctx) =>
     import("./pages/deployment/datatables.js").then((m) => m.default(ctx)),
-  "/deployment/flow-overview": (ctx) =>
-    import("./pages/deployment/flowOverview.js").then((m) => m.default(ctx)),
+  "/flows/flow-overview": (ctx) =>
+    import("./pages/flows/flowOverview.js").then((m) => m.default(ctx)),
   "/deployment/onboarding": (ctx) =>
     import("./pages/deployment/onboarding.js").then((m) => m.default(ctx)),
   // ── Phones ─────────────────────────────────────────
