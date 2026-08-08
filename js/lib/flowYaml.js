@@ -359,6 +359,23 @@ function extractDetails(key, body, action, ctx) {
   }
   if (key === "callTask") action.sublabel = "Task: " + ((body.targetTaskRef && taskRefId(body.targetTaskRef)) || "");
 
+  // Cross-flow references (any flow type → its own tab):
+  //   overrideInQueueFlow (nested on ACD transfers) → in-queue flow
+  //   transferToFlow / transferToFlowSecure         → target call/secure flow
+  //   bot-call actions                              → bot / digital-bot flow
+  const inq = findNested(body, "overrideInQueueFlow");
+  if (inq && inq.name) addDep(ctx, "inqueueCall", inq.name, action);
+  if (/^transferToFlow/i.test(key)) {
+    const tf = body.targetFlow || body.flow || (findNested(body, "targetFlow"));
+    const nm = tf && tf.name;
+    if (nm) { action.depName = nm; action.sublabel = nm; addDep(ctx, "flow", nm, action); }
+  }
+  if (/bot/i.test(key)) {
+    const bf = body.botFlow || body.digitalBotFlow || body.flow || (findNested(body, "botFlow"));
+    const nm = bf && bf.name;
+    if (nm) { action.depName = nm; action.sublabel = nm; addDep(ctx, "bot", nm, action); }
+  }
+
   // updateData assignments.
   if (key === "updateData" && Array.isArray(body.statements)) {
     for (const st of body.statements) {
@@ -380,6 +397,21 @@ function addDep(ctx, type, name, action) {
   let dep = ctx.depMap.get(key);
   if (!dep) { dep = { key, id: name, name, type, usages: [] }; ctx.depMap.set(key, dep); }
   dep.usages.push({ actionId: action.id, actionName: action.name, taskId: action.taskId, taskName: action.taskName });
+}
+
+/** Find the first nested object stored under `key` anywhere within `node`. */
+function findNested(node, key) {
+  if (node == null || typeof node !== "object") return null;
+  if (Array.isArray(node)) {
+    for (const x of node) { const r = findNested(x, key); if (r) return r; }
+    return null;
+  }
+  if (node[key] && typeof node[key] === "object") return node[key];
+  for (const k of Object.keys(node)) {
+    const r = findNested(node[k], key);
+    if (r) return r;
+  }
+  return null;
 }
 
 function collectRefs(node, out, varNames) {

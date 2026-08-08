@@ -490,11 +490,10 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     return entry;
   }
 
-  /** Discover dependency FLOW ids from parsed YAML data (common-module deps). */
+  /** Discover dependency FLOW ids from parsed YAML data (any flow-type ref). */
   function discoverDepFlowIds(data, selfId) {
     const ids = new Set();
     for (const dep of data.dependencies || []) {
-      if (dep.type !== "commonModule") continue;
       const f = state.flowByName && state.flowByName.get(dep.name);
       if (f && f.id !== selfId) ids.add(f.id);
     }
@@ -948,7 +947,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const vars = actionVarsFor(actionId);
     const sets = action.sets || [];
     const taskRef = action.targetTaskRef && state.data.tasks.find((t) => t.id === action.targetTaskRef);
-    const isModule = action.kind === "callCommonModule" && action.depName && state.flowByName && state.flowByName.has(action.depName);
+    const isModule = action.depName && state.flowByName && state.flowByName.has(action.depName);
     detailEl.innerHTML = `
       <h4>${escapeHtml(action.name || "(action)")}</h4>
       <div class="fo-sub"><span class="fo-chip" style="color:${kindColor(kind)}">${escapeHtml(kindLabel(kind))}</span> · Task: ${escapeHtml(action.taskName || "")}</div>
@@ -982,7 +981,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   }
 
   function renderDependencyDetail(dep) {
-    const isFlow = dep.type === "commonModule" && state.flowByName && state.flowByName.has(dep.name);
+    const isFlow = state.flowByName && state.flowByName.has(dep.name);
     detailEl.innerHTML = `
       <h4>${escapeHtml(dep.name)}</h4>
       <div class="fo-sub"><span class="fo-chip" style="color:${DEP_COLOR}">${escapeHtml(dep.type)}</span> · used by ${dep.usages.length} action(s)</div>
