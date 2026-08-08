@@ -34,6 +34,12 @@ function scopeOf(name) {
   const m = /^([A-Za-z]+)\./.exec(name || "");
   return m ? m[1] : "";
 }
+/** "success"→"Success", "notFound"→"Not Found", '"yes"'→"Yes". */
+function prettyOutputLabel(l) {
+  l = String(l == null ? "" : l).replace(/^"|"$/g, "");
+  if (!l) return "";
+  return (l.charAt(0).toUpperCase() + l.slice(1)).replace(/([a-z])([A-Z])/g, "$1 $2");
+}
 /** Read an expression/value node → its text ("exp"/"lit"/"var"/"noValue"). */
 function valueText(v) {
   if (v == null) return "";
@@ -324,6 +330,23 @@ function processAction(it, next, scope, ctx) {
     return;
   }
 
+  // Generic named-output branches: data actions (success/failure), data-table
+  // lookups (found/notFound), bridge/API calls, transfers with a failure output,
+  // etc. Each present branch's nested actions are walked and reconverge to `next`.
+  if (body && body.outputs && typeof body.outputs === "object" && !Array.isArray(body.outputs)) {
+    const keys = Object.keys(body.outputs);
+    if (keys.length) {
+      for (const label of keys) {
+        const branch = body.outputs[label];
+        const acts = branch && branch.actions;
+        const lbl = prettyOutputLabel(label);
+        if (acts && acts.length) addEdge(id, walk(acts, scope, next, ctx), lbl, "flow");
+        else addEdge(id, next, lbl, "flow");
+      }
+      return;
+    }
+  }
+
   if (TERMINAL_KINDS.has(key)) {
     // Terminal: no default edge. (Transfers may add a failure output later.)
     return;
@@ -359,9 +382,15 @@ function extractDetails(key, body, action, ctx) {
     addDep(ctx, "dataTable", tbl, action);
   }
   if (key === "callData") {
-    const nm = body.name || "";
+    // Data-action name is nested: category.<integration>.dataAction.<name>.
+    const cat = body.category && singleKey(body.category);
+    const catObj = cat && body.category[cat];
+    const da = catObj && catObj.dataAction;
+    const daName = da && singleKey(da);
+    const nm = daName || body.name || "";
     action.sublabel = nm;
-    addDep(ctx, "dataAction", body.dataAction || nm, action);
+    action.depName = nm;
+    addDep(ctx, "dataAction", nm, action);
   }
   if (key === "callTask") action.sublabel = "Task: " + ((body.targetTaskRef && taskRefId(body.targetTaskRef)) || "");
 
