@@ -48,29 +48,33 @@ function toElkGraph(model) {
   for (const n of model.nodes) sizes.set(n.id, nodeSize(n));
 
   if (model.level === "high") {
-    const containers = new Map();
+    // Build a nested container tree: tasks contain their actions, and `loop`
+    // actions are themselves containers holding their body (which may nest
+    // further). Every node is placed under `node.parent` (a task or loop id).
+    const elkById = new Map();
     for (const n of model.nodes) {
       if (n.isContainer) {
-        containers.set(n.id, {
+        elkById.set(n.id, {
           id: n.id,
           layoutOptions: { "elk.padding": "[top=36,left=16,bottom=16,right=16]" },
           children: [],
         });
+      } else {
+        const sz = sizes.get(n.id);
+        elkById.set(n.id, { id: n.id, width: sz.w, height: sz.h });
       }
     }
-    const orphans = [];
+    const rootChildren = [];
     for (const n of model.nodes) {
-      if (n.isContainer) continue;
-      const sz = sizes.get(n.id);
-      const child = { id: n.id, width: sz.w, height: sz.h };
-      const parent = n.parent && containers.get(n.parent);
-      if (parent) parent.children.push(child);
-      else orphans.push(child);
+      const child = elkById.get(n.id);
+      const parent = n.parent && n.parent !== n.id ? elkById.get(n.parent) : null;
+      if (parent && parent !== child) parent.children.push(child);
+      else rootChildren.push(child);
     }
     return {
       id: "root",
       layoutOptions: BASE_OPTS,
-      children: [...containers.values(), ...orphans],
+      children: rootChildren,
       edges: model.edges.map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
     };
   }

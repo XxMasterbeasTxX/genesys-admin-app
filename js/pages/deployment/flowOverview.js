@@ -911,7 +911,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   function nodeDisplay(id) {
     const mn = state.model && state.model.nodes.find((n) => n.id === id);
     if (!mn) return { title: id, sub: "" };
-    if (mn.isContainer || mn.kind === "task") return { title: mn.label, sub: "Task" };
+    if (mn.kind === "task") return { title: mn.label, sub: "Task" };
     return { title: mn.label, sub: mn.taskName ? `Task: ${mn.taskName}` : (mn.sublabel || "") };
   }
 
@@ -940,9 +940,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       if (dep) return renderDependencyDetail(dep);
     }
     if (id === "__flow__") return renderFlowDetail();
-    // Task container?
+    // Task container? (loop containers fall through to the action detail below.)
     const modelNode = state.model.nodes.find((n) => n.id === id);
-    if (modelNode && (modelNode.isContainer || modelNode.kind === "task")) return renderTaskDetail(id, modelNode);
+    if (modelNode && modelNode.kind === "task") return renderTaskDetail(id, modelNode);
     // Action node.
     const loc = state.actionIndex.get(id);
     if (loc) return renderActionDetail(id, loc);

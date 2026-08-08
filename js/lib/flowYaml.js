@@ -153,7 +153,14 @@ export function parseFlowYaml(root) {
     tasks.push({ id: t.refId, name: t.name, isStart });
     nodes.push({ id: t.refId, kind: "task", label: t.name, isContainer: true, isStart });
     // Each task's actions reconverge to an implicit "end of task" (no node).
-    walk(t.actions || [], { taskId: t.refId, taskName: t.name, loopCtx: null }, null, ctx);
+    // `walk` returns the id of the task's first (entry) action. In tasks whose
+    // first action is a loop, that entry node has ONLY loop-back incoming edges,
+    // so ELK can't tell it's the start — mark it explicitly so the layout can
+    // pin it to the first layer (top of the container).
+    const entryId = walk(t.actions || [], { taskId: t.refId, taskName: t.name, containerId: t.refId, loopCtx: null }, null, ctx);
+    const entryNode = nodes.find((n) => n.id === entryId);
+    if (entryNode && !entryNode.isContainer) entryNode.isEntry = true;
+    tasks[tasks.length - 1].entryId = entryId || null;
   });
 
   // Drop edges to unknown nodes (defensive).
@@ -253,11 +260,15 @@ function processAction(it, next, scope, ctx) {
     id,
     kind,
     label: name,
-    parent: scope.taskId,
+    parent: scope.containerId || scope.taskId,
     taskId: scope.taskId,
     taskName: scope.taskName,
     sublabel: "",
   };
+  // A `loop` action is a visual container: its body actions nest inside it
+  // (matching Architect). loopNext/loopExit share the "loop" kind but are leaf
+  // actions, so only the real `loop` key becomes a container.
+  if (key === "loop") node.isContainer = true;
   const action = {
     id, kind, name, actionKey: key,
     taskId: scope.taskId, taskName: scope.taskName,
@@ -327,7 +338,7 @@ function processAction(it, next, scope, ctx) {
   if (key === "loop") {
     const outs = (body && body.outputs) || {};
     const bodyActs = (outs.loop && outs.loop.actions) || [];
-    const loopScope = { ...scope, loopCtx: { loopId: id, exitId: next } };
+    const loopScope = { ...scope, containerId: id, loopCtx: { loopId: id, exitId: next } };
     if (bodyActs.length) addEdge(id, walkLoopBody(bodyActs, loopScope, id, ctx), "Loop", "flow");
     addEdge(id, next, "Exit", "flow");
     return;
@@ -360,11 +371,13 @@ function processAction(it, next, scope, ctx) {
         if (acts && acts.length) addEdge(id, walk(acts, scope, next, ctx), lbl, "flow");
         else addEdge(id, next, lbl, "flow");
       }
-      // The primary output (found/success/default) is usually omitted from the
-      // YAML — it simply continues to the next sibling. Add that edge so e.g. a
-      // data-table lookup's "Found" path isn't lost.
-      if (!hasPrimary && !TERMINAL_KINDS.has(key)) {
-        addEdge(id, next, PRIMARY_OUTPUT_LABEL[key] || "Default", "flow");
+      // The primary output (found/success) is usually omitted from the YAML — it
+      // just continues to the next sibling. Add that edge ONLY for action types
+      // whose primary output is a known continuation (data-table Found, data-
+      // action Success, …). Other actions (evaluateScheduleGroup open/closed/…,
+      // menus, …) leave their unlisted outputs unconnected, as Architect does.
+      if (!hasPrimary && PRIMARY_OUTPUT_LABEL[key]) {
+        addEdge(id, next, PRIMARY_OUTPUT_LABEL[key], "flow");
       }
       return;
     }
