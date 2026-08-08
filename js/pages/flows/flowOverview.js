@@ -1,5 +1,5 @@
 /**
- * Deployment › Flow Overview
+ * Flows › Flow Overview
  *
  * Read-only graphical overview of a Genesys Architect flow and all its
  * dependencies, with three detail levels and a variable / dependency cross-
@@ -207,7 +207,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       .fo-flow-item .fo-meta { color:${NODE_SUBTEXT}; font-size:11px; }
     </style>
 
-    <h2>Deployment — Flow Overview</h2>
+    <h2>Flows — Flow Overview</h2>
     <p class="page-desc">
       Visualise an Architect flow and everything it depends on. The org comes from the
       selector at the top of the page — pick a flow, choose a detail level, then

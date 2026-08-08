@@ -274,6 +274,7 @@ export const NAV_TREE = [
     path: "flows",
     enabled: true,
     children: [
+      { label: "Flow Overview", path: "flow-overview", enabled: true, access: "flows.flowoverview" },
       { label: "Journey Flow", path: "journey", enabled: true, access: "flows.journey" },
     ],
   },
@@ -292,7 +293,6 @@ export const NAV_TREE = [
     children: [
       { label: "Basic",       path: "basic",      enabled: true, access: "deployment.basic"      },
       { label: "Data Tables", path: "datatables", enabled: true, access: "deployment.datatables" },
-      { label: "Flow Overview", path: "flow-overview", enabled: true, access: "deployment.flowoverview" },
       { label: "Onboarding",  path: "onboarding", enabled: true, access: "deployment.onboarding" },
     ],
   },

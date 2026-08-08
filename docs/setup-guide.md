@@ -789,7 +789,7 @@ Alternatively, go to GitHub → **Actions** → **Scheduled Export Runner** work
 
 4. **How it works** — the operator picks callflows on **Deployment › Onboarding** and clicks Deploy → `POST /api/onboarding-deploy` writes a queued job to `onboardingjobs`. The runner's `process-queue` timer (every minute) claims the next queued job (etag-guarded), exports each flow + dependencies from the source org, strips the `Template - ` prefix (and applies any name prefix), creates the data tables, data actions, scripts, and survey forms in the target org, then publishes the flows with the Flow Scripting SDK. The page polls `GET /api/onboarding-deploy?jobId=…` and shows per-object phase status. Only inbound / chat / email / message / workflow callflows are supported (outbound is excluded).
 
-5. **Enable Flow Overview (optional, internal)** — **Deployment › Flow Overview** reuses this runner to fetch a flow's *structured* Archy YAML (the flat REST config omits implicit *Default* links). The SWA `flow-yaml` function forwards to the runner's `export-yaml` HTTP function over a shared secret. To enable it:
+5. **Enable Flow Overview (optional, internal)** — **Flows › Flow Overview** reuses this runner to fetch a flow's *structured* Archy YAML (the flat REST config omits implicit *Default* links). The SWA `flow-yaml` function forwards to the runner's `export-yaml` HTTP function over a shared secret. To enable it:
 
    - On the **runner**, set `EXPORT_YAML_KEY` (any long random string) — see step 2. The `export-yaml` folder must be included in the deploy zip (step 3 already lists it).
    - On the **SWA**, set two app settings:
@@ -799,7 +799,7 @@ Alternatively, go to GitHub → **Actions** → **Scheduled Export Runner** work
      | `RUNNER_BASE_URL` | The runner's base URL, e.g. `https://<app>-onboarding-runner.azurewebsites.net` (no trailing slash) |
      | `EXPORT_YAML_KEY` | **Same** value as on the runner |
 
-   - Grant the `deployment.flowoverview` access key to the internal group(s) that should see the page (already covered by admin `*`).
+   - Grant the `flows.flowoverview` access key to the internal group(s) that should see the page (already covered by admin `*`).
 
    Verify with: on Flow Overview, pick an org and a live flow — the graph should render within a few seconds. A `401` means the two `EXPORT_YAML_KEY` values differ; a timeout usually means `RUNNER_BASE_URL` is wrong or the `export-yaml` function was not deployed.
 
