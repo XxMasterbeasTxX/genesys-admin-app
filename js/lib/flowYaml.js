@@ -127,16 +127,17 @@ export function parseFlowYaml(root) {
 
   const taskList = collectTasks(flow);
   const taskByRef = new Map(taskList.map((t) => [t.refId, t]));
+  const hasStartRef = !!startRef && taskList.some((t) => t.refId === startRef);
 
   const ctx = { nodes, edges, actionById, varUsages, depMap, varNames, newId, taskByRef };
 
-  for (const t of taskList) {
-    const isStart = t.refId === startRef;
+  taskList.forEach((t, i) => {
+    const isStart = hasStartRef ? t.refId === startRef : (t.isStartup || i === 0);
     tasks.push({ id: t.refId, name: t.name, isStart });
     nodes.push({ id: t.refId, kind: "task", label: t.name, isContainer: true, isStart });
     // Each task's actions reconverge to an implicit "end of task" (no node).
     walk(t.actions || [], { taskId: t.refId, taskName: t.name, loopCtx: null }, null, ctx);
-  }
+  });
 
   // Drop edges to unknown nodes (defensive).
   const nodeIds = new Set(nodes.map((n) => n.id));
@@ -169,6 +170,11 @@ function collectTasks(flow) {
   for (const item of arr) {
     const t = item && item.task ? item.task : item;
     if (t && (t.refId || t.name)) out.push({ refId: t.refId || t.name, name: t.name || t.refId, actions: t.actions || [] });
+  }
+  // Common modules / in-queue and other single-sequence flow types keep their
+  // main sequence under `startUpTaskActions` (one implicit startup task).
+  if (Array.isArray(flow.startUpTaskActions) && flow.startUpTaskActions.length) {
+    out.push({ refId: "__startup__", name: flow.name || "Main", actions: flow.startUpTaskActions, isStartup: true });
   }
   return out;
 }
