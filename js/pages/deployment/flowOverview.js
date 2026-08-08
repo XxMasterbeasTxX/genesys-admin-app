@@ -248,6 +248,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       <span style="flex:1"></span>
       <button class="btn btn--secondary btn-sm" id="foSaveSvg" disabled>Save SVG</button>
       <button class="btn btn--secondary btn-sm" id="foSavePng" disabled>Save PNG</button>
+      <button class="btn btn--secondary btn-sm" id="foSavePdf" disabled>Save PDF</button>
       <button class="btn btn--secondary btn-sm" id="foSaveHtml" disabled>Save HTML</button>
       <button class="btn btn--secondary btn-sm" id="foSaveJson" disabled>Save JSON</button>
     </div>
@@ -292,7 +293,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   const resultsEl = $("#foResults");
   const detailEl = $("#foDetail");
   const levelBtns = [...el.querySelectorAll(".fo-level .btn")];
-  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foFullscreen", "#foSaveSvg", "#foSavePng", "#foSaveHtml", "#foSaveJson"].map($);
+  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foFullscreen", "#foSaveSvg", "#foSavePng", "#foSavePdf", "#foSaveHtml", "#foSaveJson"].map($);
 
   // ── State ───────────────────────────────────────────────────────────────────
   const state = {
@@ -1151,6 +1152,39 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       }, "image/png");
     };
     img.onerror = () => { URL.revokeObjectURL(url); statusEl.textContent = "PNG export failed."; };
+    img.src = url;
+  });
+
+  $("#foSavePdf").addEventListener("click", () => {
+    if (!window.jspdf || !window.jspdf.jsPDF) { statusEl.textContent = "PDF library not loaded."; return; }
+    const { svg, w, h } = buildStandaloneSvg();
+    const str = new XMLSerializer().serializeToString(svg);
+    const img = new Image();
+    const url = URL.createObjectURL(new Blob([str], { type: "image/svg+xml" }));
+    img.onload = () => {
+      // Rasterise the diagram (same faithful pipeline as PNG) then place it on a
+      // single PDF page sized to the diagram (poster-style, prints/zooms cleanly).
+      const scale = 2;
+      const c = document.createElement("canvas");
+      c.width = w * scale;
+      c.height = h * scale;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = tc().bg;
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: w >= h ? "landscape" : "portrait", unit: "px", format: [w, h], compress: true });
+        doc.addImage(c, "PNG", 0, 0, w, h);
+        const b64 = doc.output("datauristring").split(",")[1];
+        download(`${slug(state.data.meta.name)}-${state.level}.pdf`, b64, (m) => (statusEl.textContent = m));
+      } catch (err) {
+        statusEl.textContent = "PDF export failed: " + (err.message || err);
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); statusEl.textContent = "PDF export failed."; };
     img.src = url;
   });
 
