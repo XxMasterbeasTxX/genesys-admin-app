@@ -106,16 +106,6 @@ function textToB64(str) {
   return btoa(binary);
 }
 
-/** Base64-encode a Blob (png payload). */
-function blobToB64(blob) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result).split(",")[1] || "");
-    r.onerror = reject;
-    r.readAsDataURL(blob);
-  });
-}
-
 function slug(s) {
   return String(s || "flow").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "flow";
 }
@@ -260,11 +250,14 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       </label>
       <span style="font-size:11px;color:${NODE_SUBTEXT}">Scroll to zoom · drag to pan · click a line to trace it</span>
       <span style="flex:1"></span>
-      <button class="btn btn--secondary btn-sm" id="foSaveSvg" disabled>Save SVG</button>
-      <button class="btn btn--secondary btn-sm" id="foSavePng" disabled>Save PNG</button>
       <button class="btn btn--secondary btn-sm" id="foSavePdf" disabled>Save PDF</button>
       <button class="btn btn--secondary btn-sm" id="foSaveHtml" disabled>Save HTML</button>
       <button class="btn btn--secondary btn-sm" id="foSaveJson" disabled>Save JSON</button>
+      <span style="width:1px;height:20px;background:${NODE_STROKE};margin:0 3px"></span>
+      <span style="font-size:11px;color:${NODE_SUBTEXT}">All flows:</span>
+      <button class="btn btn--secondary btn-sm" id="foSaveAllPdf" disabled title="Root flow + every dependency flow (auto-loaded, transitive) as one multi-page PDF">PDF</button>
+      <button class="btn btn--secondary btn-sm" id="foSaveAllHtml" disabled title="Root flow + every dependency flow (auto-loaded, transitive) as one HTML file with tabs">HTML</button>
+      <button class="btn btn--secondary btn-sm" id="foSaveAllJson" disabled title="Root flow + every dependency flow (auto-loaded, transitive) bundled into one JSON file">JSON</button>
     </div>
 
     <div class="fo-layout">
@@ -307,7 +300,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   const resultsEl = $("#foResults");
   const detailEl = $("#foDetail");
   const levelBtns = [...el.querySelectorAll(".fo-level .btn")];
-  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foFullscreen", "#foSaveSvg", "#foSavePng", "#foSavePdf", "#foSaveHtml", "#foSaveJson"].map($);
+  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foFullscreen", "#foSavePdf", "#foSaveHtml", "#foSaveJson", "#foSaveAllPdf", "#foSaveAllHtml", "#foSaveAllJson"].map($);
 
   // ── State ───────────────────────────────────────────────────────────────────
   const state = {
@@ -1118,10 +1111,11 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   }
 
   // ── Export ──────────────────────────────────────────────────────────────────
-  function buildStandaloneSvg() {
+  /** Build a self-contained SVG for an arbitrary laid-out flow (current theme). */
+  function buildSvgForLaid(laid) {
     const pad = 24;
-    const w = Math.ceil((state.laid.width || 100) + pad * 2);
-    const h = Math.ceil((state.laid.height || 100) + pad * 2);
+    const w = Math.ceil((laid.width || 100) + pad * 2);
+    const h = Math.ceil((laid.height || 100) + pad * 2);
     const svg = svgEl("svg", { xmlns: SVGNS, width: w, height: h, viewBox: `0 0 ${w} ${h}` });
     const th = tc();
     svg.appendChild(svgEl("rect", { width: w, height: h, fill: th.bg }));
@@ -1132,77 +1126,81 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     svg.appendChild(defs);
     const g = svgEl("g", { transform: `translate(${pad},${pad})` });
     svg.appendChild(g);
-    drawGraph(g, state.laid, null, false);
+    drawGraph(g, laid, null, false);
     return { svg, w, h };
   }
+
+  function buildStandaloneSvg() {
+    return buildSvgForLaid(state.laid);
+  }
+
+  /** Rasterise a standalone SVG to a JPEG data URI (jsPDF-safe; theme bg). */
+  function rasterizeSvgToJpeg(svg, w, h) {
+    return new Promise((resolve, reject) => {
+      const str = new XMLSerializer().serializeToString(svg);
+      const img = new Image();
+      const url = URL.createObjectURL(new Blob([str], { type: "image/svg+xml" }));
+      img.onload = () => {
+        const scale = rasterScale(w, h);
+        const c = document.createElement("canvas");
+        c.width = Math.round(w * scale);
+        c.height = Math.round(h * scale);
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = tc().bg;
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL("image/jpeg", 0.92));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("raster failed")); };
+      img.src = url;
+    });
+  }
+
+  /**
+   * Auto-load the full transitive closure: keep loading every tab that isn't
+   * cached yet — each load discovers its own dependency flows and adds them as
+   * tabs (so common-module → common-module chains are pulled in) — until no new
+   * flows appear. Returns the cached tabs in display order (root/main first).
+   */
+  async function loadAllFlows(onProgress) {
+    for (let guard = 0; guard < 500; guard++) {
+      const pending = state.tabs.filter((t) => t.available !== false && !state.cache.has(t.id));
+      if (!pending.length) break;
+      for (const t of pending) {
+        if (state.cache.has(t.id)) continue;
+        if (onProgress) onProgress(t.name);
+        t.loading = true; renderTabs();
+        try { await ensureFlowLoaded(t.id); t.available = true; }
+        catch (_e) { t.available = false; }
+        t.loading = false; renderTabs();
+      }
+    }
+    return state.tabs.filter((t) => state.cache.has(t.id));
+  }
+
 
   $("#foFit").addEventListener("click", () => fitToView());
   $("#foZoomIn").addEventListener("click", () => zoomBy(1.25));
   $("#foZoomOut").addEventListener("click", () => zoomBy(1 / 1.25));
 
-  $("#foSaveSvg").addEventListener("click", () => {
-    const { svg } = buildStandaloneSvg();
-    const str = new XMLSerializer().serializeToString(svg);
-    download(`${slug(state.data.meta.name)}-${state.level}.svg`, textToB64(str), (m) => (statusEl.textContent = m));
-  });
-
-  $("#foSavePng").addEventListener("click", () => {
-    const { svg, w, h } = buildStandaloneSvg();
-    const str = new XMLSerializer().serializeToString(svg);
-    const img = new Image();
-    const url = URL.createObjectURL(new Blob([str], { type: "image/svg+xml" }));
-    img.onload = () => {
-      const scale = rasterScale(w, h);
-      const c = document.createElement("canvas");
-      c.width = Math.round(w * scale);
-      c.height = Math.round(h * scale);
-      const ctx = c.getContext("2d");
-      ctx.scale(scale, scale);
-      ctx.drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
-      c.toBlob(async (blob) => {
-        if (!blob) { statusEl.textContent = "PNG export failed."; return; }
-        download(`${slug(state.data.meta.name)}-${state.level}.png`, await blobToB64(blob), (m) => (statusEl.textContent = m));
-      }, "image/png");
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); statusEl.textContent = "PNG export failed."; };
-    img.src = url;
-  });
-
-  $("#foSavePdf").addEventListener("click", () => {
+  $("#foSavePdf").addEventListener("click", async () => {
     if (!window.jspdf || !window.jspdf.jsPDF) { statusEl.textContent = "PDF library not loaded."; return; }
-    const { svg, w, h } = buildStandaloneSvg();
-    const str = new XMLSerializer().serializeToString(svg);
-    const img = new Image();
-    const url = URL.createObjectURL(new Blob([str], { type: "image/svg+xml" }));
-    img.onload = () => {
-      // Rasterise the diagram (same faithful pipeline as PNG) then place it on a
-      // single PDF page sized to the diagram (poster-style, prints/zooms cleanly).
-      const scale = rasterScale(w, h);
-      const c = document.createElement("canvas");
-      c.width = Math.round(w * scale);
-      c.height = Math.round(h * scale);
-      const ctx = c.getContext("2d");
-      ctx.fillStyle = tc().bg;
-      ctx.fillRect(0, 0, c.width, c.height);
-      ctx.scale(scale, scale);
-      ctx.drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
-      try {
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ orientation: w >= h ? "landscape" : "portrait", unit: "px", format: [w, h], compress: true });
-        // Embed as JPEG: jsPDF stores JPEG bytes directly, avoiding its PNG
-        // decoder which corrupts large images (the striped-glitch symptom).
-        const jpeg = c.toDataURL("image/jpeg", 0.92);
-        doc.addImage(jpeg, "JPEG", 0, 0, w, h);
-        const b64 = doc.output("datauristring").split(",")[1];
-        download(`${slug(state.data.meta.name)}-${state.level}.pdf`, b64, (m) => (statusEl.textContent = m));
-      } catch (err) {
-        statusEl.textContent = "PDF export failed: " + (err.message || err);
-      }
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); statusEl.textContent = "PDF export failed."; };
-    img.src = url;
+    try {
+      // Rasterise the diagram then place it on a single PDF page sized to the
+      // diagram (poster-style, prints/zooms cleanly). JPEG bytes are embedded
+      // directly by jsPDF, avoiding its PNG decoder that corrupts large images.
+      const { svg, w, h } = buildStandaloneSvg();
+      const jpeg = await rasterizeSvgToJpeg(svg, w, h);
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: w >= h ? "landscape" : "portrait", unit: "px", format: [w, h], compress: true });
+      doc.addImage(jpeg, "JPEG", 0, 0, w, h);
+      const b64 = doc.output("datauristring").split(",")[1];
+      download(`${slug(state.data.meta.name)}-${state.level}.pdf`, b64, (m) => (statusEl.textContent = m));
+    } catch (err) {
+      statusEl.textContent = "PDF export failed: " + (err.message || err);
+    }
   });
 
   $("#foSaveHtml").addEventListener("click", () => {
@@ -1231,6 +1229,105 @@ header{padding:12px 16px;border-bottom:1px solid ${th.nodeStroke}}h1{font-size:1
     };
     download(`${slug(state.data.meta.name)}-${state.level}.json`, textToB64(JSON.stringify(payload, null, 2)), (m) => (statusEl.textContent = m));
   });
+
+  // ── Save all (root + full transitive dependency closure) ─────────────────────
+  let exportingAll = false;
+  async function withExportGuard(fn) {
+    if (exportingAll) return;
+    exportingAll = true;
+    exportBtns.forEach((b) => (b.disabled = true));
+    try { await fn(); }
+    catch (err) { setBusy(false, "Export failed: " + (err.message || err)); }
+    finally { exportingAll = false; exportBtns.forEach((b) => (b.disabled = false)); }
+  }
+
+  /** Build the model + ELK layout for one loaded flow (does not touch state). */
+  async function laidForFlow(entry) {
+    const model = buildModel(entry.data, { level: state.level });
+    const laid = await layoutModel(model);
+    return { model, laid };
+  }
+
+  $("#foSaveAllPdf").addEventListener("click", () => withExportGuard(async () => {
+    if (!window.jspdf || !window.jspdf.jsPDF) { statusEl.textContent = "PDF library not loaded."; return; }
+    const rootName = state.data.meta.name;
+    const flows = await loadAllFlows((name) => setBusy(true, `Loading “${name}”…`));
+    const { jsPDF } = window.jspdf;
+    let doc = null;
+    for (let i = 0; i < flows.length; i++) {
+      const entry = state.cache.get(flows[i].id);
+      setBusy(true, `Rendering PDF ${i + 1}/${flows.length}: ${entry.data.meta.name}…`);
+      const { laid } = await laidForFlow(entry);
+      const { svg, w, h } = buildSvgForLaid(laid);
+      const jpeg = await rasterizeSvgToJpeg(svg, w, h);
+      const orient = w >= h ? "landscape" : "portrait";
+      if (!doc) doc = new jsPDF({ orientation: orient, unit: "px", format: [w, h], compress: true });
+      else doc.addPage([w, h], orient);
+      doc.addImage(jpeg, "JPEG", 0, 0, w, h);
+    }
+    if (!doc) { setBusy(false, "Nothing to export."); return; }
+    const b64 = doc.output("datauristring").split(",")[1];
+    download(`${slug(rootName)}-all-${state.level}.pdf`, b64, (m) => (statusEl.textContent = m));
+    setBusy(false, `Exported ${flows.length} flow(s) to PDF.`);
+  }));
+
+  $("#foSaveAllHtml").addEventListener("click", () => withExportGuard(async () => {
+    const rootName = state.data.meta.name;
+    const flows = await loadAllFlows((name) => setBusy(true, `Loading “${name}”…`));
+    const th = tc();
+    const tabsHtml = [];
+    const sections = [];
+    for (let i = 0; i < flows.length; i++) {
+      const entry = state.cache.get(flows[i].id);
+      setBusy(true, `Rendering HTML ${i + 1}/${flows.length}: ${entry.data.meta.name}…`);
+      const { model, laid } = await laidForFlow(entry);
+      const { svg } = buildSvgForLaid(laid);
+      const str = new XMLSerializer().serializeToString(svg);
+      const nm = entry.data.meta.name;
+      tabsHtml.push(`<button class="ftab${i === 0 ? " active" : ""}" data-i="${i}">${escapeHtml(nm)}${flows[i].isMain ? " ★" : ""}</button>`);
+      sections.push(`<section class="fsec${i === 0 ? " active" : ""}" data-i="${i}"><div class="meta">${escapeHtml(model.meta.type)} · ${state.level} detail · ${model.nodes.length} nodes, ${model.edges.length} edges</div><div class="wrap">${str}</div></section>`);
+    }
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(rootName)} — Flow Overview (all flows)</title>
+<style>body{margin:0;background:${th.bg};color:${th.text};font-family:system-ui,sans-serif}
+header{padding:12px 16px;border-bottom:1px solid ${th.nodeStroke}}h1{font-size:16px;margin:0}
+.sub{color:${th.subText};font-size:12px;margin-top:4px}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px;border-bottom:1px solid ${th.nodeStroke};position:sticky;top:0;background:${th.bg};z-index:1}
+.ftab{background:${th.nodeFill};color:${th.text};border:1px solid ${th.nodeStroke};border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
+.ftab.active{border-color:${SELECT_COLOR};color:${SELECT_COLOR}}
+.fsec{display:none;padding:16px;overflow:auto}.fsec.active{display:block}
+.meta{color:${th.subText};font-size:12px;margin-bottom:8px}</style></head>
+<body><header><h1>${escapeHtml(rootName)} — all flows</h1><div class="sub">${flows.length} flow(s) · ${state.level} detail · exported ${new Date().toISOString()}</div></header>
+<div class="tabs">${tabsHtml.join("")}</div>${sections.join("")}
+<script>
+var tabs=document.querySelectorAll('.ftab'),secs=document.querySelectorAll('.fsec');
+for(var i=0;i<tabs.length;i++){tabs[i].addEventListener('click',function(){var k=this.getAttribute('data-i');for(var j=0;j<tabs.length;j++){tabs[j].classList.toggle('active',tabs[j].getAttribute('data-i')===k);secs[j].classList.toggle('active',secs[j].getAttribute('data-i')===k);}});}
+<\/script></body></html>`;
+    download(`${slug(rootName)}-all-${state.level}.html`, textToB64(html), (m) => (statusEl.textContent = m));
+    setBusy(false, `Exported ${flows.length} flow(s) to HTML.`);
+  }));
+
+  $("#foSaveAllJson").addEventListener("click", () => withExportGuard(async () => {
+    const rootName = state.data.meta.name;
+    const flows = await loadAllFlows((name) => setBusy(true, `Loading “${name}”…`));
+    const out = { exportedAt: new Date().toISOString(), org: state.orgId, rootFlowId: state.flowId, level: state.level, flowCount: flows.length, flows: [] };
+    for (let i = 0; i < flows.length; i++) {
+      const entry = state.cache.get(flows[i].id);
+      setBusy(true, `Building JSON ${i + 1}/${flows.length}…`);
+      const model = buildModel(entry.data, { level: state.level });
+      out.flows.push({
+        flowId: flows[i].id,
+        name: entry.data.meta.name,
+        type: entry.data.meta.type,
+        isMain: !!flows[i].isMain,
+        meta: model.meta,
+        model: { nodes: model.nodes, edges: model.edges, warnings: model.warnings },
+        variables: [...entry.varIndex.values()].map((v) => ({ ...v.variable, usages: v.usages })),
+        dependencies: [...entry.depIndex.values()],
+      });
+    }
+    download(`${slug(rootName)}-all-${state.level}.json`, textToB64(JSON.stringify(out, null, 2)), (m) => (statusEl.textContent = m));
+    setBusy(false, `Exported ${flows.length} flow(s) to JSON.`);
+  }));
 
   themeSel.value = state.themeName;
   init();
