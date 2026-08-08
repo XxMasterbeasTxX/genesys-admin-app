@@ -11,6 +11,21 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.0",
+    date: "2026-08-08",
+    title: "Deployment › Flow Overview (internal)",
+    internalOnly: true,
+    changes: [
+      "New Deployment › Flow Overview: an interactive, read-only graphical overview of an Architect callflow and all of its dependency flows. Pick an org and a live flow and the whole call flow is drawn as a diagram.",
+      "Built from the flow's structured Archy/SDK YAML (exported on demand), so implicit ‘Default’ paths that the flat REST config leaves out are drawn correctly.",
+      "Tasks and loops are shown as nested boxes (loops inside their task, inner loops inside outer loops), and every task starts at its true first action. Decisions, switches, menus, data-table lookups, data actions, common-module calls, transfers and jumps all get labelled connections.",
+      "A tab per dependency flow — common modules, in-queue flows, transfer/bot targets of any type (including outbound) — discovered automatically from referenced flow names.",
+      "High / Mid / Low detail levels, dark/light/white themes, fullscreen, and a combined variable & dependency search: click a variable to jump to where it is set or used, or a dependency to open its flow.",
+      "Click any node to see the values set in that node, its condition/expression, referenced flow or called task, and variables used; click a connection to see its From/To.",
+      "Download the current view as SVG, PNG, PDF, self-contained HTML, or JSON.",
+    ],
+  },
+  {
     version: "1.9",
     date: "2026-08-06",
     title: "Data Tables › Edit improvements",

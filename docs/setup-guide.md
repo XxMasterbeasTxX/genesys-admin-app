@@ -770,9 +770,10 @@ Alternatively, go to GitHub → **Actions** → **Scheduled Export Runner** work
    | --- | --- |
    | `AZURE_STORAGE_CONNECTION_STRING` | Same storage account as the SWA (holds the `onboardingjobs` table) |
    | `GENESYS_<ORG>_CLIENT_ID` / `GENESYS_<ORG>_CLIENT_SECRET` | Client-credentials for **every** org that can be a source (Demo) or target |
+   | `EXPORT_YAML_KEY` | Shared secret guarding the runner's `export-yaml` HTTP function (used by **Flow Overview** — see step 5). Any long random string; must match the same setting on the SWA. Omit if you are not deploying Flow Overview. |
    | `APPLICATIONINSIGHTS_CONNECTION_STRING` | (Recommended) App Insights for runner logs/traces |
 
-   There is no `x-runner-key` — the runner is driven by its own timer, not over HTTP. The quickest way to populate creds is to copy every `AZURE_STORAGE_CONNECTION_STRING` + `GENESYS_*` setting from the SWA to the runner.
+   The `process-queue` job is driven by the runner's own timer (no HTTP key). The only HTTP-triggered function is `export-yaml` (Flow Overview), protected by the `x-export-key` header compared to `EXPORT_YAML_KEY`. The quickest way to populate creds is to copy every `AZURE_STORAGE_CONNECTION_STRING` + `GENESYS_*` setting from the SWA to the runner.
 
 3. **Deploy the runner** — from [onboarding-runner/](../onboarding-runner/), zip-deploy (mirrors the timer app; `func publish` hits the same Windows-Consumption bug):
 
@@ -780,13 +781,27 @@ Alternatively, go to GitHub → **Actions** → **Scheduled Export Runner** work
    cd onboarding-runner
    npm install --omit=dev
    $zip = Join-Path $env:TEMP 'onboarding-runner.zip'
-   Compress-Archive -Path host.json,package.json,lib,process-queue,node_modules -DestinationPath $zip -Force
+   Compress-Archive -Path host.json,package.json,lib,process-queue,export-yaml,node_modules -DestinationPath $zip -Force
    az functionapp deployment source config-zip -g <rg> -n <app>-onboarding-runner --src $zip --build-remote false
    ```
 
    Verify the `process-queue` timerTrigger registered: `az functionapp function list -g <rg> -n <app>-onboarding-runner -o table`.
 
 4. **How it works** — the operator picks callflows on **Deployment › Onboarding** and clicks Deploy → `POST /api/onboarding-deploy` writes a queued job to `onboardingjobs`. The runner's `process-queue` timer (every minute) claims the next queued job (etag-guarded), exports each flow + dependencies from the source org, strips the `Template - ` prefix (and applies any name prefix), creates the data tables, data actions, scripts, and survey forms in the target org, then publishes the flows with the Flow Scripting SDK. The page polls `GET /api/onboarding-deploy?jobId=…` and shows per-object phase status. Only inbound / chat / email / message / workflow callflows are supported (outbound is excluded).
+
+5. **Enable Flow Overview (optional, internal)** — **Deployment › Flow Overview** reuses this runner to fetch a flow's *structured* Archy YAML (the flat REST config omits implicit *Default* links). The SWA `flow-yaml` function forwards to the runner's `export-yaml` HTTP function over a shared secret. To enable it:
+
+   - On the **runner**, set `EXPORT_YAML_KEY` (any long random string) — see step 2. The `export-yaml` folder must be included in the deploy zip (step 3 already lists it).
+   - On the **SWA**, set two app settings:
+
+     | Setting | Value |
+     | --- | --- |
+     | `RUNNER_BASE_URL` | The runner's base URL, e.g. `https://<app>-onboarding-runner.azurewebsites.net` (no trailing slash) |
+     | `EXPORT_YAML_KEY` | **Same** value as on the runner |
+
+   - Grant the `deployment.flowoverview` access key to the internal group(s) that should see the page (already covered by admin `*`).
+
+   Verify with: on Flow Overview, pick an org and a live flow — the graph should render within a few seconds. A `401` means the two `EXPORT_YAML_KEY` values differ; a timeout usually means `RUNNER_BASE_URL` is wrong or the `export-yaml` function was not deployed.
 
 ---
 
@@ -1167,12 +1182,14 @@ Browser (SPA)                    Azure Static Web App (Standard)
 | `activity-log` | HTTP GET/POST | [api/activity-log/](../api/activity-log/) | Reads and writes audit-log entries (Table Storage) |
 | `doc-export` | HTTP POST | [api/doc-export/](../api/doc-export/) | Generates the Documentation Export workbook (config + data tables) |
 | `onboarding-deploy` | HTTP GET/POST | [api/onboarding-deploy/](../api/onboarding-deploy/) | Internal-only: enqueue an onboarding-deployment job and poll its status (`onboardingjobs` table) |
+| `flow-yaml` | HTTP POST | [api/flow-yaml/](../api/flow-yaml/) | Internal-only: returns the structured Archy YAML of a flow for Flow Overview (forwards to the runner's `export-yaml`; needs `RUNNER_BASE_URL` + `EXPORT_YAML_KEY`) |
 | `scrape-disqualifying-permissions` | HTTP GET | [api/scrape-disqualifying-permissions/](../api/scrape-disqualifying-permissions/) | Live scrape of CX Cloud disqualifying permissions list |
 | `schedule-trigger` | TimerTrigger (every 5 min) | [timer-functions/schedule-trigger/](../timer-functions/schedule-trigger/) | Wakes up and POSTs to `/api/scheduled-runner` |
 | `template-schedule-starter` | HTTP POST | [timer-functions/template-schedule-starter/](../timer-functions/template-schedule-starter/) | Starts a Durable orchestrator instance for a template schedule |
 | `template-schedule-orchestrator` | Durable Orchestrator | [timer-functions/template-schedule-orchestrator/](../timer-functions/template-schedule-orchestrator/) | Sleeps until the scheduled moment, then calls the activity |
 | `template-schedule-activity` | Durable Activity | [timer-functions/template-schedule-activity/](../timer-functions/template-schedule-activity/) | Calls Genesys APIs to apply the template at execution time |
 | `process-queue` | TimerTrigger (every 1 min) | [onboarding-runner/process-queue/](../onboarding-runner/process-queue/) | Onboarding runner: claims a queued `onboardingjobs` job and deploys callflows into the target org via the Flow Scripting SDK |
+| `export-yaml` | HTTP POST | [onboarding-runner/export-yaml/](../onboarding-runner/export-yaml/) | Onboarding runner: exports one flow to Archy YAML via the Flow Scripting SDK (`x-export-key`); consumed by the SWA `flow-yaml` function for Flow Overview |
 
 > **Note:** [timer-functions-check/](../timer-functions-check/) is a parallel copy of the Durable Function App used as a staging/verification deployment. Confirm with the Azure administrator whether one or both will be deployed in your environment, and the empty stub folders [api/recordings-export/](../api/recordings-export/) and [api/recordings-export-runner/](../api/recordings-export-runner/) are placeholders (no code) and can be ignored or removed before deployment.
 
