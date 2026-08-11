@@ -12,6 +12,9 @@ import {
   getValidAccessToken,
   scheduleTokenRefresh,
   refreshSession,
+  isAuthPopup,
+  runAuthPopup,
+  loginViaPopup,
 } from "./services/authService.js";
 import { createApiClient } from "./services/apiClient.js";
 import { orgContext } from "./services/orgContext.js";
@@ -61,7 +64,54 @@ function renderFatalError(message) {
   `;
 }
 
+/**
+ * Sign-in gate shown when there is no valid session. A user gesture is required
+ * because the pop-out login window (window.open) is blocked by browsers unless
+ * triggered by a click. On success the app reloads in-frame with the token in
+ * place; the boot flow then proceeds normally.
+ */
+function renderSignInGate() {
+  setHeader({ authText: "Auth: sign in required" });
+  const outletEl = document.getElementById("appMain");
+  outletEl.innerHTML = `
+    <section class="card">
+      <h1 class="h1">Sign in</h1>
+      <p class="p">Sign in with your Genesys Cloud account to continue.</p>
+      <button type="button" class="btn" id="signInBtn">Sign in with Genesys</button>
+      <p class="p" id="signInHint" style="margin-top:12px;opacity:0.8;"></p>
+    </section>
+  `;
+  const btn = document.getElementById("signInBtn");
+  const hint = document.getElementById("signInHint");
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    hint.textContent = "Opening sign-in window…";
+    try {
+      await loginViaPopup();
+      hint.textContent = "Signed in. Loading…";
+      window.location.reload();
+    } catch (e) {
+      btn.disabled = false;
+      const msg = (e && e.message) || "unknown error";
+      if (msg === "popup-blocked") {
+        hint.textContent = "Your browser blocked the sign-in window. Please allow pop-ups for this app, then click Sign in again.";
+      } else if (msg === "popup-closed") {
+        hint.textContent = "The sign-in window was closed before completing. Click Sign in to try again.";
+      } else {
+        hint.textContent = "Sign-in failed: " + msg + ". Click Sign in to try again.";
+      }
+    }
+  });
+}
+
 (async function main() {
+  // If this window is the OAuth sign-in popup, run the popup controller and stop
+  // before booting the full app shell.
+  if (isAuthPopup()) {
+    await runAuthPopup();
+    return;
+  }
+
   printSecurityNotice();
   setHeader({ authText: "Auth: starting…" });
 
@@ -71,6 +121,11 @@ function renderFatalError(message) {
 
   if (res.status === "redirecting") {
     setHeader({ authText: "Auth: redirecting…" });
+    return;
+  }
+
+  if (res.status === "needs-login") {
+    renderSignInGate();
     return;
   }
 

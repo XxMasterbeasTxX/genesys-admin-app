@@ -11,6 +11,16 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.1",
+    date: "2026-08-11",
+    title: "Sign-in: pop-out authentication",
+    changes: [
+      "Login now uses a pop-out sign-in window instead of loading the Genesys login page inside the embedded app. This prepares the app for the Genesys Cloud deprecation of iframe-embedded login (effective 4 February 2027).",
+      "When your session is needed, the app shows a “Sign in with Genesys” button. Clicking it opens a small sign-in window; if you are already signed in to Genesys Cloud, it recognises your session and closes automatically — no credentials to re-enter.",
+      "If your browser blocks the sign-in window, allow pop-ups for the app and click Sign in again.",
+    ],
+  },
+  {
     version: "2.0",
     date: "2026-08-08",
     title: "Flows › Flow Overview",
