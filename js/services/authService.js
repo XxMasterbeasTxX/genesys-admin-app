@@ -214,6 +214,166 @@ async function usersMe(accessToken) {
   return json;
 }
 
+// --- POP-OUT AUTHENTICATION ---
+// The app is embedded inside a Genesys Cloud iframe. Genesys is deprecating the
+// ability to embed the login web application within an iframe (effective
+// 2027-02-04), so we must NOT navigate the iframe to the login page. Instead we
+// open a small TOP-LEVEL popup window that performs the whole PKCE flow in a
+// first-party context and hands the resulting token back to the iframe via
+// postMessage. Because browser storage partitioning gives the third-party iframe
+// and the top-level popup separate storage buckets, we cannot share the PKCE
+// verifier through sessionStorage/localStorage — the popup therefore runs the
+// full flow itself and postMessage (a direct window handle) is the only reliable
+// channel back to the opener.
+const AUTH_POPUP_NAME = "gcLoginPopup";
+
+/**
+ * True when THIS window is the sign-in popup (opened by the iframe). Detected by
+ * the presence of an opener plus our own `gcauth=start` marker or the OAuth
+ * `code` returned from Genesys.
+ */
+export function isAuthPopup() {
+  let hasOpener = false;
+  try { hasOpener = !!window.opener && window.opener !== window; }
+  catch (_) { hasOpener = !!window.opener; }
+  if (!hasOpener) return false;
+  const p = qp();
+  return p.get("gcauth") === "start" || p.has("code");
+}
+
+/**
+ * Controller for the popup window. On the initial `gcauth=start` load it kicks
+ * off the PKCE redirect (top-level, so NOT an embedded login). When Genesys
+ * redirects back with a `code`, it exchanges it and posts the token to the
+ * opener, then closes itself.
+ */
+export async function runAuthPopup() {
+  renderPopupStatus("Completing sign-in\u2026");
+  const p = qp();
+  try {
+    if (p.get("gcauth") === "start") {
+      await startLoginRedirect(); // top-level navigation of the popup to Genesys login
+      return;
+    }
+    if (p.has("code")) {
+      await completeAuthInPopup(p.get("code"), p.get("state") || "");
+      return;
+    }
+  } catch (e) {
+    notifyOpener({ ok: false, error: String((e && e.message) || e) });
+    renderPopupStatus("Sign-in failed. You can close this window.");
+  }
+}
+
+async function completeAuthInPopup(code, returnedState) {
+  const expectedState = sessionStorage.getItem(K_OAUTH_STATE) || "";
+  if (!expectedState || returnedState !== expectedState) {
+    throw new Error("OAuth state mismatch");
+  }
+  const token = await exchangeCodeForToken(code);
+  const expiresAt = Date.now() + (Number(token.expires_in) * 1000);
+  sessionStorage.removeItem(K_PKCE_VERIFIER);
+  sessionStorage.removeItem(K_OAUTH_STATE);
+  notifyOpener({
+    ok: true,
+    accessToken: token.access_token,
+    expiresAt,
+    loginRegion: getLoginRegion(),
+    loginClientId: getLoginClientId(),
+    orgHint: getOrgHint(),
+  });
+  renderPopupStatus("Signed in. You can close this window.");
+  setTimeout(() => { try { window.close(); } catch (_) { /* ignore */ } }, 150);
+}
+
+function notifyOpener(payload) {
+  try {
+    if (window.opener && !window.opener.closed) {
+      window.opener.postMessage({ __gcAuth: true, ...payload }, window.location.origin);
+    }
+  } catch (_) { /* opener gone — nothing to do */ }
+}
+
+function renderPopupStatus(text) {
+  try {
+    document.title = "Sign in";
+    const host = document.body || document.documentElement;
+    host.textContent = "";
+    const box = document.createElement("div");
+    box.style.cssText = "font:14px/1.5 system-ui,-apple-system,sans-serif;padding:2rem;color:#333";
+    box.textContent = text;
+    host.appendChild(box);
+  } catch (_) { /* DOM not ready — ignore */ }
+}
+
+/**
+ * Called from the iframe on a user gesture (Sign-in button). Opens the popup,
+ * waits for the token via postMessage, and persists it into the iframe's own
+ * session storage. Resolves on success; rejects with `popup-blocked`,
+ * `popup-closed`, or an error message.
+ */
+export function loginViaPopup() {
+  return new Promise((resolve, reject) => {
+    cacheOrgHintFromUrl();
+    const hint = getOrgHint();
+    const base = window.location.origin + window.location.pathname;
+    const url = base + "?gcauth=start" + (hint ? "&org=" + encodeURIComponent(hint) : "");
+
+    const w = 500, h = 660;
+    const dualLeft = (window.screenLeft != null ? window.screenLeft : window.screenX) || 0;
+    const dualTop = (window.screenTop != null ? window.screenTop : window.screenY) || 0;
+    const outerW = window.outerWidth || document.documentElement.clientWidth || screen.width;
+    const outerH = window.outerHeight || document.documentElement.clientHeight || screen.height;
+    const left = dualLeft + Math.max(0, (outerW - w) / 2);
+    const top = dualTop + Math.max(0, (outerH - h) / 2);
+
+    const popup = window.open(
+      url, AUTH_POPUP_NAME,
+      `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+    if (!popup) { reject(new Error("popup-blocked")); return; }
+    try { popup.focus(); } catch (_) { /* ignore */ }
+
+    let settled = false;
+
+    const onMsg = (event) => {
+      if (event.origin !== window.location.origin) return;
+      const d = event.data;
+      if (!d || d.__gcAuth !== true) return;
+      if (event.source && event.source !== popup) return;
+      finish(d);
+    };
+
+    const poll = setInterval(() => {
+      if (settled) return;
+      if (popup.closed) finish({ ok: false, error: "popup-closed" });
+    }, 500);
+
+    function cleanup() {
+      window.removeEventListener("message", onMsg);
+      clearInterval(poll);
+    }
+
+    function finish(d) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try { if (!popup.closed) popup.close(); } catch (_) { /* ignore */ }
+      if (d && d.ok) {
+        sessionStorage.setItem(K_ACCESS_TOKEN, d.accessToken);
+        sessionStorage.setItem(K_EXPIRES_AT, String(d.expiresAt));
+        storeLoginTarget(d.loginRegion || CONFIG.region, d.loginClientId || CONFIG.oauthClientId);
+        if (d.orgHint) sessionStorage.setItem(K_ORG_HINT, d.orgHint);
+        resolve({ status: "authenticated" });
+      } else {
+        reject(new Error((d && d.error) || "auth-failed"));
+      }
+    }
+
+    window.addEventListener("message", onMsg);
+  });
+}
+
 /**
  * Bootstraps auth exactly like your template:
  * - If returned with code: validate state, exchange, store token, clear URL, call /users/me
@@ -239,8 +399,7 @@ export async function ensureAuthenticatedWithMe() {
 
     if (!expectedState || returnedState !== expectedState) {
       clearAuthSession();
-      await startLoginRedirect();
-      return { status: "redirecting" };
+      return { status: "needs-login" };
     }
 
     try {
@@ -261,8 +420,7 @@ export async function ensureAuthenticatedWithMe() {
       };
     } catch (e) {
       clearAuthSession();
-      await startLoginRedirect();
-      return { status: "redirecting" };
+      return { status: "needs-login" };
     }
   }
 
@@ -279,22 +437,22 @@ export async function ensureAuthenticatedWithMe() {
       };
     } catch {
       clearAuthSession();
-      await startLoginRedirect();
-      return { status: "redirecting" };
+      return { status: "needs-login" };
     }
   }
 
-  // C) No token and no code => login
-  await startLoginRedirect();
-  return { status: "redirecting" };
+  // C) No token and no code => show the in-frame Sign-in gate (pop-out login).
+  return { status: "needs-login" };
 }
 
 /**
  * Force a new login (e.g. after token revocation or manual sign-out).
+ * Reloads the app in-frame (same-origin self navigation, NOT an embedded login)
+ * so the boot flow presents the Sign-in gate again.
  */
-export async function refreshSession() {
+export function refreshSession() {
   clearAuthSession();
-  await startLoginRedirect();
+  window.location.reload();
 }
 
 // --- PROACTIVE SESSION REFRESH ---
@@ -331,10 +489,10 @@ export function scheduleTokenRefresh({ onExpiringSoon, onSessionExpired } = {}) 
   // Auto-redirect when token becomes unusable (EXPIRY_SKEW_MS before actual expiry)
   const expireIn = expiresAt - EXPIRY_SKEW_MS - now;
   if (expireIn > 0) {
-    timers.push(setTimeout(async () => {
+    timers.push(setTimeout(() => {
       if (onSessionExpired) onSessionExpired();
       clearAuthSession();
-      await startLoginRedirect();
+      window.location.reload();
     }, expireIn));
   }
 
