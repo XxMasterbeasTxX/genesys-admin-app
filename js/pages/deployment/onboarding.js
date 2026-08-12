@@ -125,19 +125,49 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     </style>
     <h2>Deployment — Onboarding</h2>
     <p class="page-desc">
-      Deploy a template set from a demo org into a customer org. Pick the source
-      (demo) org, the target customer and division, then choose the callflows to
-      deploy. Their dependencies — common modules, in-queue flows, data tables and
-      data actions — are found automatically, renamed (dropping the
-      <code>Template -&nbsp;</code> prefix) and deployed in the right order.
+      Copy a set of callflows from a source org into a customer org. Pick the
+      source org, the target customer and division, then choose the callflows.
+      Everything they depend on — other flows, data tables, data actions,
+      screen-pop scripts, survey forms and user prompts — is found automatically
+      and deployed in the right order. You only pick the callflows themselves.
     </p>
+    <details class="page-desc" style="margin:-4px 0 14px">
+      <summary style="cursor:pointer;user-select:none">What gets deployed</summary>
+      <ul style="margin:8px 0 0;padding-left:18px;line-height:1.6">
+        <li><strong>Callflows</strong> you select, plus every flow they reference —
+            common modules, in-queue flows, and transfer or post-interaction targets.</li>
+        <li><strong>Data tables</strong>, including their rows.</li>
+        <li><strong>Data actions</strong>, matched to the equivalent integration in the
+            target org. If that integration is missing, the deploy stops and tells you
+            before anything is written.</li>
+        <li><strong>Screen-pop scripts</strong> and <strong>survey forms</strong>, published
+            so the flows can reference them.</li>
+        <li><strong>User prompts</strong> referenced directly by a flow action — the prompt
+            and its per-language wording. <strong>Recordings are not copied</strong>: where a
+            source prompt has only audio, the prompt name is used as placeholder wording so
+            the flow still publishes, and the results list says which languages to record.
+            Recording over it later takes precedence automatically.</li>
+      </ul>
+      <p style="margin:8px 0 0">
+        Names have the <code>Template -&nbsp;</code> prefix removed and your optional name
+        prefix applied. Prompt names are copied exactly as they are, since they cannot
+        contain spaces.
+      </p>
+      <p style="margin:6px 0 0">
+        <strong>Deploy</strong> runs straight through, pausing only if a name already exists
+        in the destination or something is found that would make the deploy fail.
+        <strong>Preview and Deploy</strong> always stops first and shows you the full plan.
+        Whenever it does stop, nothing has been written yet — and you have 30 minutes to
+        confirm before the preview is abandoned.
+      </p>
+    </details>
 
     <div class="dt-controls">
       <div class="dt-control-group">
         <label class="dt-label">Source Org (demo)</label>
         <div style="display:flex;align-items:center;gap:10px">
           <select class="dt-select" id="obSrcOrg" disabled>${orgOptions}</select>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap" title="Unlock to pick a source org other than the Demo template org">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap" title="Unlock to pick a source org other than the Demo org">
             <input type="checkbox" id="obOtherOrgs"> <span>Other orgs</span>
           </label>
         </div>
@@ -168,7 +198,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
               title="Deploy now. Pauses only if a name already exists in the destination, or if a problem is found that would make the deploy fail.">Deploy…</button>
       <button class="btn btn--secondary" id="obPreviewBtn" disabled
               title="Work out exactly what would be created, then stop and show it before anything is written.">Preview and Deploy…</button>
-      <input class="dt-input" id="obPrefix" type="text" placeholder="Name prefix (optional)" style="max-width:220px" title="Created objects will be named “prefix - Original name”" />
+      <input class="dt-input" id="obPrefix" type="text" placeholder="Name prefix (optional)" style="max-width:220px" title="Created objects will be named “prefix - Original name”. Prompt names are never prefixed — they cannot contain spaces." />
     </div>
 
     <details class="dt-control-group" id="obFlowsWrap" hidden open>
