@@ -53,8 +53,9 @@ function resultBadge(result) {
 //     omitted } ], warnings: [ "…" ], truncated }
 
 // Item status → glyph + modifier class. Matches the onboarding page's vocabulary
-// so the same deploy reads identically in both places.
-const ITEM_GLYPH = { ok: "✓", error: "✗", skipped: "↷" };
+// so the same deploy reads identically in both places. `none` is informational
+// ("No scripts found") and is deliberately excluded from the phase counts.
+const ITEM_GLYPH = { ok: "✓", error: "✗", skipped: "↷", none: "–" };
 
 /** "targetOrgName" → "Target org name" — labels summary keys we don't know. */
 function humanizeKey(key) {

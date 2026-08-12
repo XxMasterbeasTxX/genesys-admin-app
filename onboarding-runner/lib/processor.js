@@ -240,6 +240,21 @@ async function processJob(job, store, log) {
   const addPhase = (name) => { const p = { phase: name, items: [] }; phases.push(p); return p; };
   const persist = () => store.updateJob(job.jobId, { phases, warnings });
 
+  /**
+   * Close a phase that produced no items by recording why. Without this an empty
+   * phase is ambiguous in the results list — "nothing was referenced" looks the
+   * same as "this never ran" — and phases skipped entirely used to vanish from
+   * the stepper altogether.
+   *
+   * The `none` status is informational: it is deliberately neither ok, skipped
+   * nor error, so it stays out of the created/skipped/failed tallies.
+   */
+  const closePhase = async (phase, what) => {
+    if (phase.items.length) return;
+    phase.items.push({ new: `No ${what} found`, status: "none" });
+    await persist();
+  };
+
   try {
     // ── Source indexes (id → name/type) for GUID-based reference discovery ──
     const [srcFlowsAll, srcScriptsAll, srcSurveyFormsAll] = await Promise.all([
@@ -385,6 +400,7 @@ async function processJob(job, store, log) {
       }
       await persist();
     }
+    await closePhase(tablePhase, "data tables");
 
     // ── Phase: data actions (REST) ────────────────────────────────────
     const actionPhase = addPhase("Data actions");
@@ -444,12 +460,15 @@ async function processJob(job, store, log) {
       }
       await persist();
     }
+    await closePhase(actionPhase, "data actions");
 
     // ── Phase: scripts (screen-pop references) ───────────────────────
     //    Any script referenced by a flow (e.g. a screen pop) is exported from the
     //    source and imported into the target, then its GUID is remapped in the .i3.
+    //    The phase is recorded even when nothing references a script, so the
+    //    results list and stepper show it rather than silently omitting it.
+    const scriptPhase = addPhase("Scripts");
     if (scriptRefs.size) {
-      const scriptPhase = addPhase("Scripts");
       const tgtScriptByName = new Map((await rest.listScripts(target)).map((s) => [s.name, s]));
       for (const [srcId, srcName] of scriptRefs) {
         const newName = finalName(srcName);
@@ -507,14 +526,15 @@ async function processJob(job, store, log) {
         await persist();
       }
     }
+    await closePhase(scriptPhase, "scripts");
 
     // ── Phase: survey forms (voice-survey flow dependency) ───────────
     //    A voice-survey flow can only be CREATED against an existing survey form,
     //    and its imported .i3 references the form by GUID. So deploy + publish the
     //    form first, remap its id/contextId (demo → customer) in guidMap, and
     //    remember the target form NAME to pass to the SDK create call.
+    const surveyPhase = addPhase("Survey forms");
     if (surveyFormRefs.size) {
-      const surveyPhase = addPhase("Survey forms");
       const uniqueForms = new Map(); // source form id → { id, contextId, name }
       for (const sf of surveyFormRefs.values()) uniqueForms.set(sf.id, sf);
       const tgtFormByName = new Map((await rest.listSurveyForms(target)).map((f) => [f.name, f]));
@@ -544,6 +564,7 @@ async function processJob(job, store, log) {
         await persist();
       }
     }
+    await closePhase(surveyPhase, "survey forms");
 
     // ── Publish ALL flows (common modules, in-queue, transfer targets, callflows)
     //    in dependency order via the architect (.i3) format. .i3 is
@@ -620,6 +641,7 @@ async function processJob(job, store, log) {
       }
       await persist();
     }
+    await closePhase(flowPhase, "flows");
 
     // ── Finalize ──────────────────────────────────────────────────────
     const allItems = phases.flatMap((p) => p.items);
