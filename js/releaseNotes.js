@@ -11,6 +11,19 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.3",
+    date: "2026-08-12",
+    title: "Onboarding: phases with nothing to deploy are now listed (internal)",
+    internalOnly: true,
+    changes: [
+      "Deployment › Onboarding: when a deploy has no data tables, data actions, scripts or survey forms to create, the step is now listed in the results with e.g. “No scripts found” instead of being left out.",
+      "Previously the Scripts and Survey forms steps disappeared entirely in that case, and Data tables / Data actions showed an empty section — so you couldn’t tell “nothing was referenced” apart from “this step didn’t run”.",
+      "The step indicator at the top shows these steps normally rather than greyed out.",
+      "These informational lines are not counted as created, skipped or failed, so the deploy totals are unchanged.",
+      "The same lines appear under Details on the deploy’s Activity Log entry.",
+    ],
+  },
+  {
     version: "2.2",
     date: "2026-08-12",
     title: "Onboarding deploys in the Activity Log (internal)",

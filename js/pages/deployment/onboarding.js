@@ -74,22 +74,34 @@ const CANON_PHASES = [
   { name: "Flows", short: "Flows" },
 ];
 
+// Item status → glyph + colour. `none` is the informational "nothing to do" row
+// the runner records for a phase with no items; unknown statuses read as errors.
+const ITEM_ICON  = { ok: "✓", skipped: "↷", error: "✗", none: "–" };
+const ITEM_COLOR = { ok: "#4ade80", skipped: "#fbbf24", error: "#f87171", none: "var(--muted)" };
+
 // Derive a phase's display state from the polled job.
 function stepStateFor(job, name) {
   const phases = job.phases || [];
   const running = job.status === "running" || job.status === "queued";
   const idx = phases.findIndex(p => p.phase === name);
   if (idx === -1) {
+    // Jobs that ran before phases were recorded unconditionally can still be
+    // missing one entirely — keep treating that as passed over.
     const canonIdx = CANON_PHASES.findIndex(p => p.name === name);
     const laterPresent = phases.some(p => CANON_PHASES.findIndex(c => c.name === p.phase) > canonIdx);
     if (laterPresent) return "skipped";        // passed over (not applicable)
     return running ? "pending" : "skipped";
   }
   const p = phases[idx];
-  const hasError = (p.items || []).some(i => i.status === "error");
+  const items = p.items || [];
+  const hasError = items.some(i => i.status === "error");
   const isLast = idx === phases.length - 1;
   if (job.status === "running" && isLast) return "running";
-  return hasError ? "error" : "done";
+  if (hasError) return "error";
+  // Ran, but there was nothing to do — shown, not dimmed, so the phase reads as
+  // "completed with nothing to deploy" rather than disappearing.
+  if (items.length && items.every(i => i.status === "none")) return "empty";
+  return "done";
 }
 
 export default function renderOnboarding({ route, me, api, orgContext }) {
@@ -406,8 +418,8 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
 
   // ── Phase progress stepper ────────────────────────────
   function renderSteps(job) {
-    const glyph = { done: "✓", pending: "○", error: "✗", skipped: "–" };
-    const color = { done: "#4ade80", running: "var(--accent,#60a5fa)", pending: "var(--muted)", error: "#f87171", skipped: "var(--muted)" };
+    const glyph = { done: "✓", pending: "○", error: "✗", skipped: "–", empty: "–" };
+    const color = { done: "#4ade80", running: "var(--accent,#60a5fa)", pending: "var(--muted)", error: "#f87171", skipped: "var(--muted)", empty: "var(--muted)" };
     $steps.innerHTML = CANON_PHASES.map(ph => {
       const st = stepStateFor(job, ph.name);
       const dim = (st === "skipped" || st === "pending") ? "opacity:.5;" : "";
@@ -430,9 +442,9 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       for (const item of phase.items || []) {
         const li = document.createElement("li");
         li.style.cssText = "padding:4px 0;border-bottom:1px solid var(--border)";
-        const ok = item.status === "ok" || item.status === "skipped";
-        const icon = item.status === "skipped" ? "↷" : ok ? "✓" : "✗";
-        const color = item.status === "skipped" ? "#fbbf24" : ok ? "#4ade80" : "#f87171";
+        const st = ITEM_ICON[item.status] ? item.status : "error";
+        const icon = ITEM_ICON[st];
+        const color = ITEM_COLOR[st];
         const label = item.new || item.old || "";
         li.innerHTML = `<span style="color:${color}">${icon}</span> ${escapeHtml(label)}` +
           (item.detail ? ` <span style="color:var(--muted);font-size:.82em">${escapeHtml(item.detail)}</span>` : "");
