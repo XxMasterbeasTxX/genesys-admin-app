@@ -20,6 +20,7 @@ const { spawn } = require("child_process");
 const { resolveOrg } = require("./regions");
 const rest = require("./genesysRest");
 const activityLog = require("./activityLogStore");
+const exportCache = require("./exportCache");
 const {
   transformFlowYaml, resolveDeps, parseFlowMeta, stripPrefix, transformI3, getDefaultLanguage,
 } = require("./onboardingEngine");
@@ -137,7 +138,11 @@ function topoSort(nodes, edges) {
 // ── activity log ────────────────────────────────────────
 
 const LOG_ACTION = "deployment_onboarding";
-const RESULT_FOR_STATUS = { succeeded: "success", partial: "partial", failed: "failure" };
+// A preview that was never approved is its own kind of event: nothing was
+// written, so it is not a failure — but it must never be mistaken for a deploy
+// either. A distinct action keeps the two apart in the log.
+const LOG_ACTION_PREVIEW = "deployment_onboarding_preview";
+const RESULT_FOR_STATUS = { succeeded: "success", partial: "partial", failed: "failure", expired: "success" };
 
 /** "3 callflow(s)" etc. — keeps the description readable for a single item. */
 function plural(n, noun) {
@@ -156,12 +161,18 @@ async function logJobOutcome({ job, source, target, division, phases, warnings, 
     const ok = items.filter((i) => i.status === "ok").length;
     const skipped = items.filter((i) => i.status === "skipped").length;
     const failed = items.filter((i) => i.status === "error");
+    const planned = items.filter((i) => i.status === "planned").length;
 
     const srcName = source?.name || job.sourceOrgId;
     const tgtName = target?.name || job.targetOrgId;
+    const expired = status === "expired";
 
-    // The exception path (`error`) aborted the run; otherwise summarize what landed.
-    const description = error
+    // Three shapes: an abandoned preview, an aborted run, and a completed one.
+    const description = expired
+      ? `[Onboarding] Previewed ${plural(job.flows?.length || 0, "callflow")} from ${srcName} ` +
+        `into ${tgtName} · division '${division}' — NOT deployed ` +
+        `(${planned} object(s) would have been created; approval expired after 30 minutes)`
+      : error
       ? `[Onboarding] Deploy of ${plural(job.flows?.length || 0, "callflow")} from ${srcName} ` +
         `into ${tgtName} · division '${division}' aborted: ${error}`
       : `[Onboarding] Deployed ${plural(job.flows?.length || 0, "callflow")} (+ dependencies) ` +
@@ -182,11 +193,11 @@ async function logJobOutcome({ job, source, target, division, phases, warnings, 
       userId: job.startedById || "",
       orgId: job.targetOrgId,        // the org that was written to
       orgName: tgtName,
-      action: LOG_ACTION,
+      action: expired ? LOG_ACTION_PREVIEW : LOG_ACTION,
       description,
       result: RESULT_FOR_STATUS[status] || "failure",
       errorMessage,
-      count: ok,
+      count: expired ? planned : ok,
       details: {
         summary: {
           jobId: job.jobId,
@@ -201,6 +212,7 @@ async function logJobOutcome({ job, source, target, division, phases, warnings, 
           created: ok,
           skipped,
           failed: failed.length,
+          ...(planned ? { plannedObjects: planned } : {}),
           startedAt: job.startedAt || null,
           finishedAt: new Date().toISOString(),
         },
@@ -216,14 +228,78 @@ async function logJobOutcome({ job, source, target, division, phases, warnings, 
   }
 }
 
-// ── main ────────────────────────────────────────────────
+// ── name conflicts ──────────────────────────────────────
+
+// Fields that always differ between two orgs (or between two copies of the same
+// object) and say nothing about whether the content was edited.
+const VOLATILE_KEYS = new Set([
+  "id", "selfUri", "name", "division", "contextId", "version",
+  "dateCreated", "dateModified", "createdBy", "modifiedBy", "self",
+]);
+
+/** Deep copy with volatile fields dropped and object keys sorted. */
+function normalizeForCompare(value) {
+  if (Array.isArray(value)) return value.map(normalizeForCompare);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const k of Object.keys(value).sort()) {
+      if (VOLATILE_KEYS.has(k)) continue;
+      out[k] = normalizeForCompare(value[k]);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** True when two objects match once volatile fields are ignored. */
+function sameContent(a, b) {
+  return JSON.stringify(normalizeForCompare(a)) === JSON.stringify(normalizeForCompare(b));
+}
 
 /**
- * @param {object} job   the claimed job (status already "running")
- * @param {object} store onboardingStore (for updateJob)
- * @param {object} log   context.log
+ * Next free name for a "create new" choice.
+ *
+ * With no suffix supplied this numbers upward — "X (2)", "X (3)" — so a second
+ * conflict never lands on an existing object. A custom suffix is used verbatim
+ * and only numbered if that is taken too.
  */
-async function processJob(job, store, log) {
+function suffixedName(base, suffix, taken) {
+  const sfx = String(suffix || "").trim();
+  if (!sfx) {
+    let n = 2;
+    let candidate = `${base} (${n})`;
+    while (taken && taken.has(candidate)) candidate = `${base} (${++n})`;
+    return candidate;
+  }
+  let candidate = `${base} ${sfx}`;
+  let n = 1;
+  while (taken && taken.has(candidate)) candidate = `${base} ${sfx} ${++n}`;
+  return candidate;
+}
+
+// ── one pass over the pipeline ──────────────────────────
+
+/**
+ * Run the pipeline once.
+ *
+ * The SAME function performs both the preview and the real deploy — only the
+ * create/publish calls are guarded. That is deliberate: a preview that walked a
+ * separate code path could drift from what a deploy actually does, and then it
+ * would be worse than no preview at all. Name resolution, existence checks and
+ * integration matching are therefore identical in both modes.
+ *
+ * @param {object} job    the claimed job
+ * @param {object} store  onboardingStore (for updateJob)
+ * @param {object} log    context.log
+ * @param {object} opts   { preview, decisions, cacheDir }
+ *   preview   — record what WOULD happen; perform no writes
+ *   decisions — operator's per-collision choices, keyed by collision id
+ *   cacheDir  — where exported artifacts are read from / written to
+ * @returns {Promise<{phases, warnings, collisions, error}>}
+ */
+async function runPass(job, store, log, opts) {
+  const { preview = false, decisions = {}, cacheDir = null, priorRunNames = new Set() } = opts || {};
+
   const source = resolveOrg(job.sourceOrgId);
   const target = resolveOrg(job.targetOrgId);
   const division = job.divisionName || "Home";
@@ -236,9 +312,64 @@ async function processJob(job, store, log) {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), `onboarding-${job.jobId}-`));
   const phases = [];
   const warnings = [];
+  const collisions = [];
 
   const addPhase = (name) => { const p = { phase: name, items: [] }; phases.push(p); return p; };
   const persist = () => store.updateJob(job.jobId, { phases, warnings });
+
+  /**
+   * Export via the cache. On the approved second pass every flow is already
+   * cached, so this returns immediately and no SDK session is opened at all.
+   */
+  const exportText = async (name, type, format) => {
+    if (cacheDir) {
+      const hit = exportCache.read(cacheDir, name, type, format);
+      if (hit != null) return hit;
+    }
+    const text = fs.readFileSync(await sdkExport(source, name, type, workDir, format), "utf8");
+    if (cacheDir) exportCache.write(cacheDir, name, type, format, text);
+    return text;
+  };
+
+  /**
+   * Record a name conflict and resolve what to do about it.
+   *
+   * The default is chosen by comparing the target object with the source:
+   * identical means there is nothing to gain from a duplicate (and makes a
+   * re-run of a failed job safe, since its own objects match by construction),
+   * while a difference is the case worth defaulting away from — someone has
+   * edited it, and binding new flows to it would not behave as deployed.
+   *
+   * `differs` is null when no meaningful comparison exists (see sameContent).
+   *
+   * `decisions` is keyed by collision id, plus one reserved key `__suffix`
+   * holding the suffix the operator chose for "create new" (blank = number it).
+   */
+  const resolveCollision = ({ kind, key, sourceName, targetName, existing, differs, taken, priorRun = false }) => {
+    const id = `${kind}::${key}`;
+    const decided = decisions[id];
+    const suggested = suffixedName(targetName, decisions.__suffix, taken);
+    const action = decided?.action || (differs === true ? "new" : "existing");
+    const newName = decided?.name || suggested;
+    collisions.push({
+      id, kind, sourceName, targetName,
+      existingId: existing?.id || null,
+      differs,                       // true | false | null (not comparable)
+      priorRun,                      // an earlier deploy of this pair created it
+      defaultAction: differs === true ? "new" : "existing",
+      suggestedName: suggested,
+      action, chosenName: action === "new" ? newName : targetName,
+    });
+    return { action, name: action === "new" ? newName : targetName };
+  };
+
+  /** Wording for a conflict resolved as "keep the existing object". */
+  const reuseDetail = (differs, extra = "") => {
+    const state = differs === true ? " · differs" : differs === false ? " · identical" : "";
+    return `already exists in destination${state} · ${preview ? "would be reused" : "reused"}${extra}`;
+  };
+  /** Reused objects are a result when deploying, and a plan when previewing. */
+  const reuseStatus = () => (preview ? "planned" : "skipped");
 
   /**
    * Close a phase that produced no items by recording why. Without this an empty
@@ -304,8 +435,7 @@ async function processJob(job, store, log) {
         if (exported.has(key)) continue;
 
         // YAML export → data table / data action refs + default language.
-        const yamlPath = await sdkExport(source, f.name, type, workDir);
-        const yaml = fs.readFileSync(yamlPath, "utf8");
+        const yaml = await exportText(f.name, type, null);
         const deps = resolveDeps(yaml);
         deps.dataTables.forEach((t) => tableNames.add(t));
         deps.dataActions.forEach((a) => actionRefs.set(`${a.integration}::${a.action}`, a));
@@ -315,7 +445,7 @@ async function processJob(job, store, log) {
         // flow/script whose id appears is a dependency — regardless of the action
         // that references it (transfer targets, post-flow refs, screen-pop scripts,
         // common modules, in-queue flows, …). This is the general reference map.
-        const i3raw = fs.readFileSync(await sdkExport(source, f.name, type, workDir, "architect"), "utf8");
+        const i3raw = await exportText(f.name, type, "architect");
         const i3text = Buffer.from(i3raw.trim(), "base64").toString("utf8");
         const guidSet = new Set((i3text.match(GUID_RE) || []).map((g) => g.toLowerCase()));
         const self = [...srcFlowById].find(([, info]) => info.name === f.name && info.type === type);
@@ -368,17 +498,42 @@ async function processJob(job, store, log) {
     const tgtTableNames = new Set(tgtTables.map((t) => t.name));
 
     for (const srcName of [...tableNames].sort()) {
-      const newName = finalName(srcName);
+      let newName = finalName(srcName);
       try {
         const srcMeta = srcTableByName.get(srcName);
-        if (tgtTableNames.has(newName)) {
-          const existing = tgtTableByName.get(newName);
-          if (srcMeta && existing) guidMap.set(srcMeta.id, existing.id);
-          tablePhase.items.push({ old: srcName, new: newName, status: "skipped", detail: "already exists" });
-          continue;
-        }
         if (!srcMeta) throw new Error("not found in source");
         const full = await rest.getDataTable(source, srcMeta.id);
+
+        if (tgtTableNames.has(newName)) {
+          const existing = tgtTableByName.get(newName);
+          // Compare schemas so the default choice reflects whether the target
+          // copy has been edited since it was deployed.
+          let differs = null;
+          try {
+            const tgtFull = await rest.getDataTable(target, existing.id);
+            differs = !sameContent(full.schema, tgtFull.schema);
+          } catch (_) { differs = null; }
+
+          const choice = resolveCollision({
+            kind: "dataTable", key: srcName, sourceName: srcName, targetName: newName,
+            existing, differs, taken: tgtTableNames,
+          });
+          if (choice.action === "existing") {
+            if (existing) guidMap.set(srcMeta.id, existing.id);
+            tablePhase.items.push({ old: srcName, new: newName, status: reuseStatus(), detail: reuseDetail(differs) });
+            await persist();
+            continue;
+          }
+          newName = choice.name;           // create alongside it under a new name
+          tgtTableNames.add(newName);
+        }
+
+        if (preview) {
+          tablePhase.items.push({ old: srcName, new: newName, status: "planned", detail: "would be created" });
+          await persist();
+          continue;
+        }
+
         const created = await rest.createDataTable(target, {
           name: newName,
           description: full.description || undefined,
@@ -420,17 +575,38 @@ async function processJob(job, store, log) {
     }
 
     for (const { action: srcName } of [...actionRefs.values()]) {
-      const newName = finalName(srcName);
+      let newName = finalName(srcName);
       try {
         const srcSummary = srcActionByName.get(srcName);
-        if (tgtActionNames.has(newName)) {
-          const existing = tgtActionByName.get(newName);
-          if (srcSummary && existing) guidMap.set(srcSummary.id, existing.id);
-          actionPhase.items.push({ old: srcName, new: newName, status: "skipped", detail: "already exists" });
-          continue;
-        }
         if (!srcSummary) throw new Error("not found in source");
         const full = await rest.getDataAction(source, srcSummary.id);
+
+        if (tgtActionNames.has(newName)) {
+          const existing = tgtActionByName.get(newName);
+          // The contract and config are what a flow actually depends on, so
+          // compare those rather than the whole action envelope.
+          let differs = null;
+          try {
+            const tgtFull = await rest.getDataAction(target, existing.id);
+            differs = !sameContent(
+              { contract: full.contract, config: full.config },
+              { contract: tgtFull.contract, config: tgtFull.config }
+            );
+          } catch (_) { differs = null; }
+
+          const choice = resolveCollision({
+            kind: "dataAction", key: srcName, sourceName: srcName, targetName: newName,
+            existing, differs, taken: tgtActionNames,
+          });
+          if (choice.action === "existing") {
+            if (existing) guidMap.set(srcSummary.id, existing.id);
+            actionPhase.items.push({ old: srcName, new: newName, status: reuseStatus(), detail: reuseDetail(differs) });
+            await persist();
+            continue;
+          }
+          newName = choice.name;
+          tgtActionNames.add(newName);
+        }
         // Match target integration by connector TYPE first (robust to renames),
         // then by display name.
         const srcInteg = srcIntegById.get(full.integrationId);
@@ -444,6 +620,14 @@ async function processJob(job, store, log) {
             `target org has no '${srcInteg ? srcInteg.name : "?"}' integration ` +
             `(type ${srcType || "?"}) — install/activate it in the target first`
           );
+        }
+        if (preview) {
+          actionPhase.items.push({
+            old: srcName, new: newName, status: "planned",
+            detail: `would be created · ${tgtInteg.name}`,
+          });
+          await persist();
+          continue;
         }
         const createdAction = await rest.createDataAction(target, {
           name: newName,
@@ -470,17 +654,36 @@ async function processJob(job, store, log) {
     const scriptPhase = addPhase("Scripts");
     if (scriptRefs.size) {
       const tgtScriptByName = new Map((await rest.listScripts(target)).map((s) => [s.name, s]));
+      const tgtScriptNames = new Set(tgtScriptByName.keys());
       for (const [srcId, srcName] of scriptRefs) {
-        const newName = finalName(srcName);
+        let newName = finalName(srcName);
         try {
           const existing = tgtScriptByName.get(newName);
           if (existing) {
-            // The script exists but earlier runs imported it as an unpublished
-            // draft — the flow validator only sees PUBLISHED scripts, so publish
-            // it now (idempotent) before recording the GUID remap.
-            try { await rest.publishScript(target, existing.id); } catch (e) { log(`[onboarding] publish existing script '${newName}' failed: ${e.message}`); }
-            guidMap.set(srcId, existing.id);
-            scriptPhase.items.push({ old: srcName, new: newName, status: "skipped", detail: "already exists · published" });
+            // A script's exported payload carries ids and timestamps that always
+            // differ between orgs, so there is no comparison here that would mean
+            // anything — `differs: null` says "not checked" rather than guessing.
+            const choice = resolveCollision({
+              kind: "script", key: srcName, sourceName: srcName, targetName: newName,
+              existing, differs: null, taken: tgtScriptNames,
+            });
+            if (choice.action === "existing") {
+              if (!preview) {
+                // The script exists but earlier runs imported it as an unpublished
+                // draft — the flow validator only sees PUBLISHED scripts, so publish
+                // it now (idempotent) before recording the GUID remap.
+                try { await rest.publishScript(target, existing.id); } catch (e) { log(`[onboarding] publish existing script '${newName}' failed: ${e.message}`); }
+                guidMap.set(srcId, existing.id);
+              }
+              scriptPhase.items.push({ old: srcName, new: newName, status: reuseStatus(), detail: reuseDetail(null, " · published") });
+              await persist();
+              continue;
+            }
+            newName = choice.name;
+            tgtScriptNames.add(newName);
+          }
+          if (preview) {
+            scriptPhase.items.push({ old: srcName, new: newName, status: "planned", detail: "would be imported · published" });
             await persist();
             continue;
           }
@@ -515,7 +718,9 @@ async function processJob(job, store, log) {
         await persist();
       }
       // Place newly-created scripts in the chosen division (default Home otherwise).
-      if (divisionId && createdScriptIds.length) {
+      // !preview is redundant today (nothing is created in a preview, so the id
+      // list is empty) but states the invariant rather than relying on it.
+      if (!preview && divisionId && createdScriptIds.length) {
         try {
           await rest.moveObjectsToDivision(target, divisionId, "SCRIPT", createdScriptIds);
           scriptPhase.items.push({ old: "(division)", new: division, status: "ok", detail: `${createdScriptIds.length} script(s) → ${division}` });
@@ -538,26 +743,58 @@ async function processJob(job, store, log) {
       const uniqueForms = new Map(); // source form id → { id, contextId, name }
       for (const sf of surveyFormRefs.values()) uniqueForms.set(sf.id, sf);
       const tgtFormByName = new Map((await rest.listSurveyForms(target)).map((f) => [f.name, f]));
+      const tgtFormNames = new Set(tgtFormByName.keys());
       for (const sf of uniqueForms.values()) {
-        const newName = finalName(sf.name);
+        let newName = finalName(sf.name);
         try {
+          const full = await rest.getSurveyForm(source, sf.id);
           let tgt = tgtFormByName.get(newName);
-          if (!tgt) {
-            // Fetch the full source form, strip server-assigned ids, create + publish.
-            const full = await rest.getSurveyForm(source, sf.id);
-            const body = sanitizeSurveyForm(full, newName);
-            const created = await rest.createSurveyForm(target, body);
-            const published = await rest.publishSurveyForm(target, created.id);
-            tgt = published && published.id ? published : created;
-          } else {
-            // Ensure the existing form is published so flows can reference it.
-            try { await rest.publishSurveyForm(target, tgt.id); } catch (_) { /* already published */ }
+
+          if (tgt) {
+            // The question structure is what the flow depends on; ids and version
+            // metadata differ between orgs by definition.
+            let differs = null;
+            try {
+              const tgtFull = await rest.getSurveyForm(target, tgt.id);
+              differs = !sameContent(full.questionGroups, tgtFull.questionGroups);
+            } catch (_) { differs = null; }
+
+            const choice = resolveCollision({
+              kind: "surveyForm", key: sf.name, sourceName: sf.name, targetName: newName,
+              existing: tgt, differs, taken: tgtFormNames,
+            });
+            if (choice.action === "existing") {
+              if (!preview) {
+                // Ensure the existing form is published so flows can reference it.
+                try { await rest.publishSurveyForm(target, tgt.id); } catch (_) { /* already published */ }
+                if (sf.id && tgt.id) guidMap.set(String(sf.id).toLowerCase(), tgt.id);
+                if (sf.contextId && tgt.contextId) guidMap.set(String(sf.contextId).toLowerCase(), tgt.contextId);
+              }
+              surveyPhase.items.push({ old: sf.name, new: newName, status: reuseStatus(), detail: reuseDetail(differs, " · published") });
+              await persist();
+              continue;
+            }
+            newName = choice.name;
+            tgtFormNames.add(newName);
+            tgt = null;                    // create a separate form under the new name
           }
+
+          if (preview) {
+            surveyPhase.items.push({ old: sf.name, new: newName, status: "planned", detail: "would be created · published" });
+            await persist();
+            continue;
+          }
+
+          // Strip server-assigned ids from the source form, then create + publish.
+          const body = sanitizeSurveyForm(full, newName);
+          const created = await rest.createSurveyForm(target, body);
+          const published = await rest.publishSurveyForm(target, created.id);
+          tgt = published && published.id ? published : created;
           // Remap both the source version id and contextId → target values so the
           // imported .i3 (whichever it stores) points at the deployed form.
           if (sf.id && tgt.id) guidMap.set(String(sf.id).toLowerCase(), tgt.id);
           if (sf.contextId && tgt.contextId) guidMap.set(String(sf.contextId).toLowerCase(), tgt.contextId);
-          surveyPhase.items.push({ old: sf.name, new: newName, status: "ok", detail: tgtFormByName.get(newName) ? "already exists · published" : "created · published" });
+          surveyPhase.items.push({ old: sf.name, new: newName, status: "ok", detail: "created · published" });
         } catch (err) {
           surveyPhase.items.push({ old: sf.name, new: newName, status: "error", detail: err.message });
         }
@@ -580,7 +817,7 @@ async function processJob(job, store, log) {
     for (const key of publishOrder) {
       const rec = exported.get(key);
       const name = rec.name;
-      const newName = finalName(name);
+      let newName = finalName(name);
       try {
         // Skip if the flow already exists in the target (record its id for remap).
         const existing = await rest.fetchAllPages(target, "/api/v2/flows", {
@@ -588,9 +825,26 @@ async function processJob(job, store, log) {
         });
         const existingFlow = existing.find((fl) => fl.name === newName);
         if (existingFlow) {
-          const demoId = await rest.findFlowIdByName(source, rec.type, name);
-          if (demoId) guidMap.set(demoId, existingFlow.id);
-          flowPhase.items.push({ old: name, new: newName, status: "skipped", detail: `${rec.type} · already exists` });
+          // A deployed flow has remapped GUIDs and a stripped name, so it can
+          // never compare equal to its source — "differs" would be meaningless
+          // here. `priorRun` (this pair was deployed before) is the honest
+          // signal instead; see buildPriorRunNames.
+          const choice = resolveCollision({
+            kind: "flow", key: `${rec.type}::${name}`, sourceName: name, targetName: newName,
+            existing: existingFlow, differs: null, taken: null,
+            priorRun: priorRunNames.has(newName),
+          });
+          if (choice.action === "existing") {
+            const demoId = await rest.findFlowIdByName(source, rec.type, name);
+            if (demoId) guidMap.set(demoId, existingFlow.id);
+            flowPhase.items.push({ old: name, new: newName, status: reuseStatus(), detail: `${rec.type} · ${reuseDetail(null)}` });
+            await persist();
+            continue;
+          }
+          newName = choice.name;
+        }
+        if (preview) {
+          flowPhase.items.push({ old: name, new: newName, status: "planned", detail: `${rec.type} · would be published` });
           await persist();
           continue;
         }
@@ -631,7 +885,7 @@ async function processJob(job, store, log) {
 
     // Place newly-created flows (roots + common modules + in-queue + survey …) in
     // the chosen division — the Flow Scripting SDK creates them in Home by default.
-    if (divisionId && createdFlowIds.length) {
+    if (!preview && divisionId && createdFlowIds.length) {
       try {
         await rest.moveObjectsToDivision(target, divisionId, "FLOW", createdFlowIds);
         flowPhase.items.push({ old: "(division)", new: division, status: "ok", detail: `${createdFlowIds.length} flow(s) → ${division}` });
@@ -643,23 +897,140 @@ async function processJob(job, store, log) {
     }
     await closePhase(flowPhase, "flows");
 
-    // ── Finalize ──────────────────────────────────────────────────────
-    const allItems = phases.flatMap((p) => p.items);
-    const anyError = allItems.some((i) => i.status === "error");
-    const anyOk = allItems.some((i) => i.status === "ok");
-    const status = anyError ? (anyOk ? "partial" : "failed") : "succeeded";
-    await store.updateJob(job.jobId, { phases, warnings, status, finishedAt: new Date().toISOString() });
-    log(`[onboarding-runner] job ${job.jobId} → ${status}`);
-    await logJobOutcome({ job, source, target, division, phases, warnings, status, error: null, log });
+    return { phases, warnings, collisions, error: null };
   } catch (err) {
     log.error ? log.error(`[onboarding-runner] job ${job.jobId} failed: ${err.message}`) : log(`job failed: ${err.message}`);
-    await store.updateJob(job.jobId, {
-      phases, warnings, status: "failed", error: err.message, finishedAt: new Date().toISOString(),
-    });
-    await logJobOutcome({ job, source, target, division, phases, warnings, status: "failed", error: err.message, log });
+    return { phases, warnings, collisions, error: err.message };
   } finally {
     try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
   }
 }
 
-module.exports = { processJob };
+// ── orchestration ───────────────────────────────────────
+
+/** How long an unapproved preview waits before it is abandoned. */
+const APPROVAL_TTL_MS = 30 * 60 * 1000;
+
+/** resolveOrg, but never throwing — used on paths that only need a display name. */
+function safeOrg(orgId) {
+  try { return resolveOrg(orgId); } catch (_) { return { id: orgId, name: orgId }; }
+}
+
+/**
+ * Names an earlier deploy of this same source→target pair created. For flows
+ * this is the only honest signal that a conflict is "our own previous run"
+ * rather than something that was already in the org.
+ */
+async function buildPriorRunNames(store, job, log) {
+  const names = new Set();
+  try {
+    if (typeof store.listForPair !== "function") return names;
+    for (const prior of await store.listForPair(job.sourceOrgId, job.targetOrgId)) {
+      if (prior.jobId === job.jobId) continue;
+      for (const phase of prior.phases || []) {
+        if (phase.phase !== "Flows") continue;
+        for (const item of phase.items || []) {
+          if (item.status === "ok" && item.new) names.add(item.new);
+        }
+      }
+    }
+  } catch (err) {
+    log(`[onboarding] prior-run lookup failed (non-critical): ${err.message}`);
+  }
+  return names;
+}
+
+/** Record a pass's terminal state and write the activity-log entry. */
+async function finish(job, store, log, res, ctx) {
+  const allItems = res.phases.flatMap((p) => p.items);
+  const anyError = allItems.some((i) => i.status === "error") || !!res.error;
+  const anyOk = allItems.some((i) => i.status === "ok");
+  const status = anyError ? (anyOk ? "partial" : "failed") : "succeeded";
+  await store.updateJob(job.jobId, {
+    phases: res.phases, warnings: res.warnings, status,
+    error: res.error || null, finishedAt: new Date().toISOString(),
+  });
+  log(`[onboarding-runner] job ${job.jobId} → ${status}`);
+  await logJobOutcome({ ...ctx, job, phases: res.phases, warnings: res.warnings, status, error: res.error || null, log });
+  exportCache.drop(job.jobId);
+}
+
+/**
+ * Process one claimed job.
+ *
+ * A job always previews first. It then either stops for approval — because
+ * "Preview and Deploy" was used, or because there is a name conflict to resolve
+ * — or, with nothing to decide, carries straight on into the deploy reusing the
+ * artifacts it just exported. An approved job skips the preview and deploys the
+ * snapshot it was approved against.
+ */
+async function processJob(job, store, log) {
+  const cacheDir = exportCache.dirFor(job.jobId);
+  const ctx = {
+    source: safeOrg(job.sourceOrgId),
+    target: safeOrg(job.targetOrgId),
+    division: job.divisionName || "Home",
+  };
+
+  // ── Approved: deploy what was previewed (no SDK exports — all cached) ──
+  if (job.approved) {
+    log(`[onboarding-runner] job ${job.jobId} approved — deploying`);
+    const res = await runPass(job, store, log, { preview: false, decisions: job.decisions || {}, cacheDir });
+    await finish(job, store, log, res, ctx);
+    return;
+  }
+
+  // ── Pass 1: preview. Writes nothing. ──
+  const priorRunNames = await buildPriorRunNames(store, job, log);
+  const pre = await runPass(job, store, log, { preview: true, decisions: {}, cacheDir, priorRunNames });
+
+  if (pre.error) {
+    await finish(job, store, log, pre, ctx);
+    return;
+  }
+
+  // Stop when there is something to decide. A conflict is one reason; so is a
+  // failure the preview already proved will happen — a missing integration, say.
+  // Ploughing on would write half the objects and then fail on the one we
+  // already knew about, which is the mess this pass exists to prevent.
+  const previewErrors = pre.phases
+    .flatMap((p) => p.items || [])
+    .filter((i) => i.status === "error").length;
+
+  if (job.stopForPreview || pre.collisions.length || previewErrors) {
+    const expiresAt = new Date(Date.now() + APPROVAL_TTL_MS).toISOString();
+    await store.updateJob(job.jobId, {
+      phases: pre.phases, warnings: pre.warnings, collisions: pre.collisions,
+      status: "awaiting-approval", expiresAt,
+    });
+    log(
+      `[onboarding-runner] job ${job.jobId} awaiting approval ` +
+      `(${pre.collisions.length} conflict(s), ${previewErrors} predicted failure(s), expires ${expiresAt})`
+    );
+    return; // nothing is logged yet — the entry is written when it resolves
+  }
+
+  // ── Nothing to decide: deploy straight through from the warm cache ──
+  const res = await runPass(job, store, log, { preview: false, decisions: {}, cacheDir, priorRunNames });
+  await finish(job, store, log, res, ctx);
+}
+
+/**
+ * Abandon a preview nobody approved. Logged so the audit trail shows the deploy
+ * was considered and did not happen, rather than leaving no trace at all.
+ */
+async function expireJob(job, store, log) {
+  await store.updateJob(job.jobId, { status: "expired", finishedAt: new Date().toISOString() });
+  exportCache.drop(job.jobId);
+  log(`[onboarding-runner] job ${job.jobId} expired without approval`);
+  await logJobOutcome({
+    job,
+    source: safeOrg(job.sourceOrgId),
+    target: safeOrg(job.targetOrgId),
+    division: job.divisionName || "Home",
+    phases: job.phases || [], warnings: job.warnings || [],
+    status: "expired", error: null, log,
+  });
+}
+
+module.exports = { processJob, expireJob };

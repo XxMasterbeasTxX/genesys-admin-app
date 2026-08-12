@@ -45,6 +45,12 @@ function entityToJob(e) {
     flows: safeParse(e.flows, []),
     phases: safeParse(e.phases, []),
     warnings: safeParse(e.warnings, []),
+    // Preview / approval — see api/lib/onboardingStore.js for the field notes.
+    stopForPreview: e.stopForPreview === true,
+    approved: e.approved === true,
+    collisions: safeParse(e.collisions, []),
+    decisions: safeParse(e.decisions, {}),
+    expiresAt: e.expiresAt || null,
     error: e.error || null,
     startedBy: e.startedBy || "",
     startedByName: e.startedByName || "",
@@ -70,6 +76,11 @@ function jobToEntity(job) {
     flows: JSON.stringify(job.flows || []),
     phases: JSON.stringify(job.phases || []),
     warnings: JSON.stringify(job.warnings || []),
+    stopForPreview: job.stopForPreview === true,
+    approved: job.approved === true,
+    collisions: JSON.stringify(job.collisions || []),
+    decisions: JSON.stringify(job.decisions || {}),
+    expiresAt: job.expiresAt || "",
     error: job.error || "",
     startedBy: job.startedBy || "",
     startedByName: job.startedByName || "",
@@ -136,4 +147,33 @@ async function claimNextQueued() {
   return null;
 }
 
-module.exports = { getJob, updateJob, listByStatus, claimNextQueued };
+/**
+ * Jobs for the same source→target pair, newest first. Used to tell "this
+ * conflict is something an earlier run of ours created" apart from "this was
+ * already in the org" — the only signal available for flows, whose deployed
+ * copies can never be compared against their source.
+ */
+async function listForPair(sourceOrgId, targetOrgId, limit = 25) {
+  await ensureTable();
+  const out = [];
+  const iter = getClient().listEntities({
+    queryOptions: {
+      filter: odata`PartitionKey eq 'job' and sourceOrgId eq ${sourceOrgId} and targetOrgId eq ${targetOrgId}`,
+    },
+  });
+  for await (const e of iter) out.push(entityToJob(e));
+  out.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  return out.slice(0, limit);
+}
+
+/**
+ * Jobs parked for approval whose window has passed. Returned rather than
+ * mutated so the caller can log each one before abandoning it.
+ */
+async function listExpired() {
+  const now = Date.now();
+  return (await listByStatus("awaiting-approval"))
+    .filter((j) => j.expiresAt && Date.parse(j.expiresAt) <= now);
+}
+
+module.exports = { getJob, updateJob, listByStatus, listForPair, listExpired, claimNextQueued };

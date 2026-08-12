@@ -76,8 +76,9 @@ const CANON_PHASES = [
 
 // Item status → glyph + colour. `none` is the informational "nothing to do" row
 // the runner records for a phase with no items; unknown statuses read as errors.
-const ITEM_ICON  = { ok: "✓", skipped: "↷", error: "✗", none: "–" };
-const ITEM_COLOR = { ok: "#4ade80", skipped: "#fbbf24", error: "#f87171", none: "var(--muted)" };
+// `planned` is a preview row: what WOULD happen, nothing written yet.
+const ITEM_ICON  = { ok: "✓", skipped: "↷", error: "✗", none: "–", planned: "+" };
+const ITEM_COLOR = { ok: "#4ade80", skipped: "#fbbf24", error: "#f87171", none: "var(--muted)", planned: "var(--accent,#60a5fa)" };
 
 // Derive a phase's display state from the polled job.
 function stepStateFor(job, name) {
@@ -98,6 +99,8 @@ function stepStateFor(job, name) {
   const isLast = idx === phases.length - 1;
   if (job.status === "running" && isLast) return "running";
   if (hasError) return "error";
+  // Previewed: these are things that WOULD be created, not results.
+  if (items.some(i => i.status === "planned")) return "planned";
   // Ran, but there was nothing to do — shown, not dimmed, so the phase reads as
   // "completed with nothing to deploy" rather than disappearing.
   if (items.length && items.every(i => i.status === "none")) return "empty";
@@ -159,8 +162,11 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       </div>
     </div>
 
-    <div class="dt-actions" style="margin:0 0 12px;display:flex;align-items:center;gap:10px">
-      <button class="btn" id="obDeployBtn" disabled>Deploy…</button>
+    <div class="dt-actions" style="margin:0 0 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button class="btn" id="obDeployBtn" disabled
+              title="Deploy now. Pauses only if a name already exists in the destination, or if a problem is found that would make the deploy fail.">Deploy…</button>
+      <button class="btn btn--secondary" id="obPreviewBtn" disabled
+              title="Work out exactly what would be created, then stop and show it before anything is written.">Preview and Deploy…</button>
       <input class="dt-input" id="obPrefix" type="text" placeholder="Name prefix (optional)" style="max-width:220px" title="Created objects will be named “prefix - Original name”" />
     </div>
 
@@ -186,6 +192,8 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
 
     <div class="dt-status" id="obStatus">Select a source and target org to begin.</div>
 
+    <div id="obApproval" hidden></div>
+
     <ul id="obResults" style="list-style:none;padding:0;margin-top:12px;max-height:420px;overflow-y:auto"></ul>
   `;
 
@@ -207,6 +215,8 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   const $status   = el.querySelector("#obStatus");
   const $results  = el.querySelector("#obResults");
   const $steps    = el.querySelector("#obSteps");
+  const $previewBtn = el.querySelector("#obPreviewBtn");
+  const $approval = el.querySelector("#obApproval");
 
   // ── State ─────────────────────────────────────────────
   let flows = [];                 // root callflows loaded from source
@@ -229,8 +239,9 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   }
 
   function updateDeployBtn() {
-    $deployBtn.disabled =
-      !$destOrg.value || !$division.value || selected.size === 0;
+    const blocked = !$destOrg.value || !$division.value || selected.size === 0;
+    $deployBtn.disabled = blocked;
+    $previewBtn.disabled = blocked;
   }
 
   function updateSelCount() {
@@ -353,8 +364,12 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   }
 
   async function startDeploy(plan) {
-    setStatus("Starting deployment…");
+    setStatus(plan.stopForPreview ? "Working out what would be deployed…" : "Starting deployment…");
     $deployBtn.disabled = true;
+    $previewBtn.disabled = true;
+    $approval.hidden = true;
+    $approval.innerHTML = "";
+    approvalShownFor = null;
     try {
       const { jobId } = await api.appRequest("/api/onboarding-deploy", { method: "POST", body: plan });
       setStatus(`Deployment job created (${jobId}).`);
@@ -369,7 +384,211 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     }
   }
 
+  // ── Approval checkpoint ───────────────────────────────
+  // Rendered once per job: re-rendering on every poll would wipe the choices
+  // being made in it.
+  let approvalShownFor = null;
+  let countdownTimer = null;
+
+  function conflictNote(c) {
+    if (c.differs === true)  return { text: "differs from source", cls: "warn" };
+    if (c.differs === false) return { text: "identical to source", cls: "ok" };
+    if (c.priorRun)          return { text: "created by an earlier run", cls: "ok" };
+    return { text: "not compared", cls: "muted" };
+  }
+
+  function renderApproval(job) {
+    if (approvalShownFor === job.jobId) return;
+    approvalShownFor = job.jobId;
+
+    const conflicts = job.collisions || [];
+    const problems = (job.phases || [])
+      .flatMap(p => (p.items || []).map(i => ({ ...i, phase: p.phase })))
+      .filter(i => i.status === "error");
+    const planned = (job.phases || []).flatMap(p => p.items || []).filter(i => i.status === "planned").length;
+
+    $approval.hidden = false;
+    $approval.innerHTML = `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin:12px 0;background:var(--panel)">
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+          <h3 style="margin:0;font-size:1rem">Review before deploying</h3>
+          <span style="color:var(--muted);font-size:.85rem">
+            Nothing has been created yet — ${planned} object${planned === 1 ? "" : "s"} would be created.
+          </span>
+          <span id="obCountdown" style="margin-left:auto;color:var(--muted);font-size:.85rem"></span>
+        </div>
+
+        ${problems.length ? `
+          <div class="ob-problem-box" style="margin-top:12px;padding:9px 11px;border-radius:6px">
+            <strong class="ob-problem">${problems.length} problem${problems.length === 1 ? "" : "s"} found</strong>
+            <ul style="margin:6px 0 0;padding-left:18px;font-size:.85rem">
+              ${problems.map(p => `<li>${escapeHtml(p.new || p.old || "")} <span style="color:var(--muted)">— ${escapeHtml(p.detail || "")}</span></li>`).join("")}
+            </ul>
+            <p style="margin:6px 0 0;font-size:.82rem;color:var(--muted)">
+              Deploying anyway will create everything else and fail on these.
+            </p>
+          </div>` : ""}
+
+        ${conflicts.length ? `
+          <p style="margin:12px 0 6px;font-size:.88rem">
+            ${conflicts.length} name${conflicts.length === 1 ? "" : "s"} already exist in the destination.
+            Keep what is there, or create a new object alongside it.
+          </p>
+          <div style="display:flex;align-items:center;gap:8px;margin:0 0 8px">
+            <label style="font-size:.82rem;color:var(--muted)">Suffix for new objects</label>
+            <input class="dt-input" id="obSuffix" type="text" placeholder="(2)" style="max-width:120px">
+          </div>
+          <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+            <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+              <thead>
+                <tr style="color:var(--muted);text-align:left">
+                  <th style="padding:6px 10px;font-weight:600">Name</th>
+                  <th style="padding:6px 10px;font-weight:600">State</th>
+                  <th style="padding:6px 10px;font-weight:600">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${conflicts.map((c, i) => {
+                  const note = conflictNote(c);
+                  const isNew = c.defaultAction === "new";
+                  return `
+                  <tr data-idx="${i}" style="border-top:1px solid var(--border)">
+                    <td style="padding:7px 10px">
+                      ${escapeHtml(c.targetName)}
+                      <div style="color:var(--muted);font-size:.78rem">${escapeHtml(c.kind)}</div>
+                    </td>
+                    <td style="padding:7px 10px" class="ob-state--${note.cls}">${escapeHtml(note.text)}</td>
+                    <td style="padding:7px 10px">
+                      <label style="display:inline-flex;align-items:center;gap:5px;margin-right:12px">
+                        <input type="radio" name="ob-c-${i}" value="existing" ${isNew ? "" : "checked"}> Use existing
+                      </label>
+                      <label style="display:inline-flex;align-items:center;gap:5px">
+                        <input type="radio" name="ob-c-${i}" value="new" ${isNew ? "checked" : ""}> Create new
+                      </label>
+                      <input class="dt-input ob-newname" type="text" data-idx="${i}"
+                             value="${escapeHtml(c.suggestedName)}" ${isNew ? "" : "disabled"}
+                             style="display:block;margin-top:5px;max-width:280px">
+                    </td>
+                  </tr>`;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>` : ""}
+
+        <div style="display:flex;gap:10px;margin-top:14px">
+          <button class="btn" id="obApproveBtn">Deploy now</button>
+          <button class="btn btn--secondary" id="obCancelBtn">Cancel</button>
+        </div>
+      </div>`;
+
+    // Suffix drives every name the operator has not edited by hand.
+    const $suffix = $approval.querySelector("#obSuffix");
+    if ($suffix) {
+      $suffix.addEventListener("input", () => {
+        const sfx = $suffix.value.trim();
+        for (const input of $approval.querySelectorAll(".ob-newname")) {
+          if (input.dataset.touched === "1") continue;
+          const c = conflicts[Number(input.dataset.idx)];
+          input.value = sfx ? `${c.targetName} ${sfx}` : c.suggestedName;
+        }
+      });
+    }
+    for (const input of $approval.querySelectorAll(".ob-newname")) {
+      input.addEventListener("input", () => { input.dataset.touched = "1"; });
+    }
+    $approval.addEventListener("change", (ev) => {
+      const radio = ev.target.closest('input[type="radio"]');
+      if (!radio) return;
+      const idx = radio.name.replace("ob-c-", "");
+      const nameInput = $approval.querySelector(`.ob-newname[data-idx="${idx}"]`);
+      if (nameInput) nameInput.disabled = radio.value !== "new";
+    });
+
+    $approval.querySelector("#obApproveBtn").addEventListener("click", () => approveJob(job));
+    $approval.querySelector("#obCancelBtn").addEventListener("click", () => cancelJob(job));
+
+    startCountdown(job);
+  }
+
+  function startCountdown(job) {
+    clearInterval(countdownTimer);
+    const $c = $approval.querySelector("#obCountdown");
+    if (!$c || !job.expiresAt) return;
+    const deadline = Date.parse(job.expiresAt);
+    const tick = () => {
+      // The page may have been navigated away from — never leave a timer running.
+      if (!el.isConnected) { clearInterval(countdownTimer); return; }
+      const left = deadline - Date.now();
+      if (left <= 0) {
+        clearInterval(countdownTimer);
+        $c.textContent = "Expired";
+        $c.style.color = "#f87171";
+        const btn = $approval.querySelector("#obApproveBtn");
+        if (btn) btn.disabled = true;
+        setStatus("This preview expired without being approved. Nothing was deployed — start again to retry.", "error");
+        updateDeployBtn();
+        return;
+      }
+      const m = Math.floor(left / 60000);
+      const s = Math.floor((left % 60000) / 1000);
+      $c.textContent = `Expires in ${m}:${String(s).padStart(2, "0")}`;
+    };
+    tick();
+    countdownTimer = setInterval(tick, 1000);
+  }
+
+  function collectDecisions(job) {
+    const decisions = { __suffix: ($approval.querySelector("#obSuffix")?.value || "").trim() };
+    (job.collisions || []).forEach((c, i) => {
+      const picked = $approval.querySelector(`input[name="ob-c-${i}"]:checked`);
+      const action = picked ? picked.value : c.defaultAction;
+      const name = ($approval.querySelector(`.ob-newname[data-idx="${i}"]`)?.value || "").trim();
+      decisions[c.id] = { action, name: action === "new" ? (name || c.suggestedName) : c.targetName };
+    });
+    return decisions;
+  }
+
+  async function approveJob(job) {
+    const btn = $approval.querySelector("#obApproveBtn");
+    if (btn) btn.disabled = true;
+    clearInterval(countdownTimer);
+    setStatus("Approved — deploying…");
+    try {
+      await api.appRequest("/api/onboarding-deploy", {
+        method: "POST",
+        body: { action: "approve", jobId: job.jobId, decisions: collectDecisions(job) },
+      });
+      $approval.hidden = true;
+      approvalShownFor = null;
+      pollJob(job.jobId, 0);
+    } catch (err) {
+      setStatus(`Could not approve: ${err.message}`, "error");
+      if (btn) btn.disabled = false;
+      updateDeployBtn();
+    }
+  }
+
+  async function cancelJob(job) {
+    clearInterval(countdownTimer);
+    try {
+      await api.appRequest("/api/onboarding-deploy", {
+        method: "POST",
+        body: {
+          action: "cancel", jobId: job.jobId,
+          userEmail: me?.email || "", userName: me?.name || "", userId: me?.id || "",
+        },
+      });
+      $approval.hidden = true;
+      approvalShownFor = null;
+      setStatus("Cancelled — nothing was deployed.", "");
+    } catch (err) {
+      setStatus(`Could not cancel: ${err.message}`, "error");
+    }
+    updateDeployBtn();
+  }
+
   async function pollJob(jobId, attempt) {
+    if (!el.isConnected) return;   // navigated away — stop polling
     let job;
     try {
       job = await api.appRequest("/api/onboarding-deploy", { query: { jobId } });
@@ -381,11 +600,22 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     renderJob(job);
     renderSteps(job);
 
-    const terminal = ["succeeded", "partial", "failed"].includes(job.status);
+    // Parked for approval: show the checkpoint and stop polling. The countdown
+    // handles expiry locally — continuing to poll would re-render the panel and
+    // wipe the choices being made in it.
+    if (job.status === "awaiting-approval") {
+      setStatus("Preview ready — review below. Nothing has been created yet.", "");
+      renderApproval(job);
+      return;
+    }
+
+    const terminal = ["succeeded", "partial", "failed", "expired", "cancelled"].includes(job.status);
     if (terminal) {
       setStatus(
         job.status === "succeeded" ? "Deployment complete." :
         job.status === "partial" ? "Deployment finished with some issues — see results." :
+        job.status === "expired" ? "This preview expired without being approved. Nothing was deployed." :
+        job.status === "cancelled" ? "Cancelled — nothing was deployed." :
         `Deployment failed${job.error ? `: ${job.error}` : ""}.`,
         job.status === "succeeded" ? "success" : job.status === "failed" ? "error" : ""
       );
@@ -418,8 +648,8 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
 
   // ── Phase progress stepper ────────────────────────────
   function renderSteps(job) {
-    const glyph = { done: "✓", pending: "○", error: "✗", skipped: "–", empty: "–" };
-    const color = { done: "#4ade80", running: "var(--accent,#60a5fa)", pending: "var(--muted)", error: "#f87171", skipped: "var(--muted)", empty: "var(--muted)" };
+    const glyph = { done: "✓", pending: "○", error: "✗", skipped: "–", empty: "–", planned: "+" };
+    const color = { done: "#4ade80", running: "var(--accent,#60a5fa)", pending: "var(--muted)", error: "#f87171", skipped: "var(--muted)", empty: "var(--muted)", planned: "var(--accent,#60a5fa)" };
     $steps.innerHTML = CANON_PHASES.map(ph => {
       const st = stepStateFor(job, ph.name);
       const dim = (st === "skipped" || st === "pending") ? "opacity:.5;" : "";
@@ -482,7 +712,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
     overlay.innerHTML = `
       <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:360px;max-width:640px;width:90%">
-        <h3 style="margin:0 0 16px;font-size:1.1rem">Confirm Onboarding Deploy</h3>
+        <h3 style="margin:0 0 16px;font-size:1.1rem">${plan.stopForPreview ? "Preview Onboarding Deploy" : "Confirm Onboarding Deploy"}</h3>
         <table style="width:100%;border-collapse:collapse;font-size:.9rem">
           <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Source (demo)</td><td><strong>${escapeHtml(orgName(plan.sourceOrgId))}</strong></td></tr>
           <tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Target</td><td><strong>${escapeHtml(orgName(plan.targetOrgId))}</strong></td></tr>
@@ -494,12 +724,14 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
           ${plan.flows.map(f => `<li>${escapeHtml(f.name)} <span style="color:var(--muted)">(${escapeHtml(f.type)})</span></li>`).join("")}
         </ul>
         <p style="margin:12px 0 0;color:var(--muted);font-size:.85rem">
-          Dependencies are found and deployed automatically. Objects that already
-          exist in the target (matched by their stripped name) are skipped.
+          Dependencies are found and deployed automatically.
+          ${plan.stopForPreview
+            ? "You will be shown exactly what would be created, and nothing is written until you confirm."
+            : "If a name already exists in the destination, or a problem is found that would make the deploy fail, this will stop and ask before writing anything."}
         </p>
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
           <button id="obCancel" class="btn btn--secondary">Cancel</button>
-          <button id="obConfirm" class="btn">Deploy</button>
+          <button id="obConfirm" class="btn">${plan.stopForPreview ? "Preview" : "Deploy"}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -588,12 +820,17 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     updateDeployBtn();
   });
 
-  $deployBtn.addEventListener("click", () => {
-    const plan = buildPlan();
+  // Two ways in, one code path: "Preview and Deploy" always stops to show the
+  // plan; plain "Deploy" stops only if there is a conflict or a predicted
+  // failure to resolve.
+  const start = (stopForPreview) => {
+    const plan = { ...buildPlan(), stopForPreview };
     if (!plan.flows.length) return;
     $flowsWrap.open = false; // collapse the callflows list when deploying
     showConfirm(plan);
-  });
+  };
+  $deployBtn.addEventListener("click", () => start(false));
+  $previewBtn.addEventListener("click", () => start(true));
 
   // ── Init: default the source org to the "Demo" template org and lock the
   //    field. The "Other orgs" checkbox unlocks it for selecting a different source.

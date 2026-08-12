@@ -11,6 +11,22 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.4",
+    date: "2026-08-12",
+    title: "Onboarding: see what will be deployed before it happens (internal)",
+    internalOnly: true,
+    changes: [
+      "Deployment › Onboarding now works out everything it would create — including all the dependencies it discovers — before writing anything to the destination org.",
+      "New “Preview and Deploy” button: always stops and shows you the full plan first. Nothing is created until you press Deploy now.",
+      "The ordinary “Deploy” button still runs straight through, but stops if there is something to decide: a name that already exists in the destination, or a problem found that would make the deploy fail (for example a data action whose integration is missing in the destination). Previously that failure only appeared partway through, after other objects had already been created.",
+      "When a name already exists you now choose per object: keep the existing one, or create a new one alongside it under a different name. You can set a suffix for all of them at once and still rename any individually.",
+      "The choice is pre-selected for you by comparing the existing object with the source: identical means it is reused, while one that has been changed since it was deployed defaults to creating a new object — so an edit made by a colleague or a customer no longer silently becomes part of your deployment.",
+      "Architect flows cannot be compared this way, so instead you are told when an earlier deploy of the same source and destination created the flow.",
+      "You have 30 minutes to confirm; a countdown is shown. After that the preview is abandoned, nothing is deployed, and the Activity Log records it as previewed only — never as a deploy.",
+      "Confirming deploys exactly what you were shown, and is faster than starting over: nothing needs to be exported from the source org a second time.",
+    ],
+  },
+  {
     version: "2.3",
     date: "2026-08-12",
     title: "Onboarding: phases with nothing to deploy are now listed (internal)",

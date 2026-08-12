@@ -26,6 +26,7 @@ const ACTION_LABELS = {
   dataaction_publish:     "Data Action Publish",
   deployment_basic:       "Deployment — Basic",
   deployment_onboarding:  "Deployment — Onboarding",
+  deployment_onboarding_preview: "Deployment — Onboarding (previewed only)",
   phone_create:           "Phone Create",
   phone_move:             "Phone Move",
   schedule_create:        "Schedule Create",
@@ -55,7 +56,7 @@ function resultBadge(result) {
 // Item status → glyph + modifier class. Matches the onboarding page's vocabulary
 // so the same deploy reads identically in both places. `none` is informational
 // ("No scripts found") and is deliberately excluded from the phase counts.
-const ITEM_GLYPH = { ok: "✓", error: "✗", skipped: "↷", none: "–" };
+const ITEM_GLYPH = { ok: "✓", error: "✗", skipped: "↷", none: "–", planned: "+" };
 
 /** "targetOrgName" → "Target org name" — labels summary keys we don't know. */
 function humanizeKey(key) {
@@ -65,6 +66,7 @@ function humanizeKey(key) {
 
 const SUMMARY_LABELS = {
   jobId:          "Job",
+  plannedObjects: "Would have been created",
   sourceOrgName:  "Source org",
   targetOrgName:  "Target org",
   division:       "Division",
@@ -117,7 +119,7 @@ function itemHtml(item) {
 
 function phaseHtml(phase) {
   const items = phase.items || [];
-  const counts = ["ok", "skipped", "error"]
+  const counts = ["ok", "skipped", "error", "planned"]
     .map(s => [s, items.filter(i => i.status === s).length])
     .filter(([, n]) => n > 0)
     .map(([s, n]) => `${n} ${s === "ok" ? "ok" : s}`)
