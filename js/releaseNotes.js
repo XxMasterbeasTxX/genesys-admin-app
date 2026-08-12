@@ -11,6 +11,21 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.5",
+    date: "2026-08-12",
+    title: "Onboarding: prompts are deployed too (internal)",
+    internalOnly: true,
+    changes: [
+      "Deployment › Onboarding now brings across the user prompts a callflow refers to directly. Previously they were missed entirely, which left the deployed flow pointing at a prompt that does not exist in the destination org.",
+      "A new Prompts step appears in the deploy results, before Flows, listing each prompt and how many languages were copied.",
+      "The prompt, its description and every language’s text-to-speech wording and tags are copied. The recorded audio is not — customers record their own, so a copied prompt carries the wording but no sound file.",
+      "Prompt names are copied exactly as they are: the “Template - ” removal and any name prefix you set do not apply to them, because prompt names cannot contain those characters.",
+      "If a prompt of the same name already exists in the destination it is reused by default, on the assumption that it is the customer’s own recording. You can still choose to create a separate one, which is named with an underscore (for example TemplateTestPrompt_2).",
+      "If a callflow refers to a prompt that is missing from the source org, that is now reported as a warning rather than passing silently.",
+      "Prompts that are looked up while the call is running — where the name comes from a data table — are not covered by this. Only prompts referenced directly in the callflow are deployed.",
+    ],
+  },
+  {
     version: "2.4",
     date: "2026-08-12",
     title: "Onboarding: see what will be deployed before it happens (internal)",

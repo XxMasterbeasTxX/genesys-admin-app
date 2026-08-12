@@ -263,17 +263,22 @@ function sameContent(a, b) {
  * conflict never lands on an existing object. A custom suffix is used verbatim
  * and only numbered if that is taken too.
  */
-function suffixedName(base, suffix, taken) {
+function suffixedName(base, suffix, taken, identifier = false) {
   const sfx = String(suffix || "").trim();
+  // Prompt names are identifiers — " (2)" would not be a legal name — so they
+  // are numbered with an underscore and any custom suffix is joined without a
+  // space. Everything else keeps the readable " (2)" form.
+  const join = identifier ? "_" : " ";
   if (!sfx) {
     let n = 2;
-    let candidate = `${base} (${n})`;
-    while (taken && taken.has(candidate)) candidate = `${base} (${++n})`;
+    const numbered = (i) => (identifier ? `${base}_${i}` : `${base} (${i})`);
+    let candidate = numbered(n);
+    while (taken && taken.has(candidate)) candidate = numbered(++n);
     return candidate;
   }
-  let candidate = `${base} ${sfx}`;
+  let candidate = `${base}${join}${sfx}`;
   let n = 1;
-  while (taken && taken.has(candidate)) candidate = `${base} ${sfx} ${++n}`;
+  while (taken && taken.has(candidate)) candidate = `${base}${join}${sfx}${join}${++n}`;
   return candidate;
 }
 
@@ -348,7 +353,7 @@ async function runPass(job, store, log, opts) {
   const resolveCollision = ({ kind, key, sourceName, targetName, existing, differs, taken, priorRun = false }) => {
     const id = `${kind}::${key}`;
     const decided = decisions[id];
-    const suggested = suffixedName(targetName, decisions.__suffix, taken);
+    const suggested = suffixedName(targetName, decisions.__suffix, taken, kind === "prompt");
     const action = decided?.action || (differs === true ? "new" : "existing");
     const newName = decided?.name || suggested;
     collisions.push({
@@ -388,9 +393,15 @@ async function runPass(job, store, log, opts) {
 
   try {
     // ── Source indexes (id → name/type) for GUID-based reference discovery ──
-    const [srcFlowsAll, srcScriptsAll, srcSurveyFormsAll] = await Promise.all([
+    const [srcFlowsAll, srcScriptsAll, srcSurveyFormsAll, srcPromptsAll] = await Promise.all([
       rest.listFlows(source), rest.listScripts(source), rest.listSurveyForms(source),
+      rest.listPrompts(source),
     ]);
+    // Prompts are found two ways — by name from the YAML (`prompt: Prompt.X`)
+    // and by id from the .i3 GUID scan — because it is not certain which form
+    // Architect serialises into the .i3. Indexing both makes it work either way.
+    const srcPromptById = new Map(srcPromptsAll.map((p) => [String(p.id).toLowerCase(), p]));
+    const srcPromptByName = new Map(srcPromptsAll.map((p) => [p.name, p]));
     const srcFlowById = new Map(
       srcFlowsAll.map((fl) => [String(fl.id).toLowerCase(), { name: fl.name, type: String(fl.type || "").toLowerCase() }])
     );
@@ -414,6 +425,7 @@ async function runPass(job, store, log, opts) {
     const actionRefs = new Map();    // key → { integration, action }
     const scriptRefs = new Map();    // source script id → source script name
     const surveyFormRefs = new Map();// source form id/contextId key → { id, contextId, name }
+    const promptRefs = new Map();    // source prompt id → source prompt record
 
     const queue = job.flows.map((f) => ({ name: f.name, type: f.type }));
     while (queue.length) {
@@ -439,6 +451,14 @@ async function runPass(job, store, log, opts) {
         const deps = resolveDeps(yaml);
         deps.dataTables.forEach((t) => tableNames.add(t));
         deps.dataActions.forEach((a) => actionRefs.set(`${a.integration}::${a.action}`, a));
+        // Directly referenced user prompts, by name. A name the source org does
+        // not have is reported rather than silently dropped — it would otherwise
+        // become a flow that fails to publish in the destination.
+        for (const promptName of deps.prompts) {
+          const p = srcPromptByName.get(promptName);
+          if (p) promptRefs.set(String(p.id).toLowerCase(), p);
+          else warnings.push(`Flow '${f.name}' references prompt '${promptName}', which does not exist in ${source.name}`);
+        }
 
         // Architect (.i3) export → scan for EVERY referenced flow & script GUID.
         // .i3 is base64(url-encoded(JSON)); GUIDs appear verbatim, so any source
@@ -461,6 +481,9 @@ async function runPass(job, store, log, opts) {
         }
         for (const [id, sname] of srcScriptById) {
           if (guidSet.has(id)) scriptRefs.set(id, sname);
+        }
+        for (const [id, prompt] of srcPromptById) {
+          if (guidSet.has(id)) promptRefs.set(id, prompt);
         }
         // Voice-survey flows reference a survey form (by version id or contextId).
         // Record the form so it can be deployed + remapped, and remember it on the
@@ -802,6 +825,90 @@ async function runPass(job, store, log, opts) {
       }
     }
     await closePhase(surveyPhase, "survey forms");
+
+    // ── Phase: user prompts (referenced directly by a flow action) ───
+    //    Everything but the recorded audio is copied: the prompt itself and
+    //    each language resource's TTS text and tags. Customers record their own
+    //    audio, so copying media between orgs is deliberately not attempted.
+    const promptPhase = addPhase("Prompts");
+    if (promptRefs.size) {
+      const tgtPrompts = await rest.listPrompts(target);
+      const tgtPromptByName = new Map(tgtPrompts.map((p) => [p.name, p]));
+      const tgtPromptNames = new Set(tgtPromptByName.keys());
+
+      for (const srcPrompt of promptRefs.values()) {
+        // Prompt names are identifiers, so the "Template - " strip and the name
+        // prefix are both skipped — the name is carried across verbatim.
+        let newName = srcPrompt.name;
+        try {
+          const existing = tgtPromptByName.get(newName);
+          if (existing) {
+            // No comparison: a prompt of this name in the destination is the
+            // customer's own recording, and duplicating it would be worse than
+            // reusing it. `differs: null` defaults the choice to "use existing".
+            const choice = resolveCollision({
+              kind: "prompt", key: srcPrompt.name, sourceName: srcPrompt.name, targetName: newName,
+              existing, differs: null, taken: tgtPromptNames,
+            });
+            if (choice.action === "existing") {
+              if (!preview) guidMap.set(String(srcPrompt.id).toLowerCase(), existing.id);
+              promptPhase.items.push({ old: srcPrompt.name, new: newName, status: reuseStatus(), detail: reuseDetail(null) });
+              await persist();
+              continue;
+            }
+            newName = choice.name;
+            tgtPromptNames.add(newName);
+          }
+
+          const resources = await rest.listPromptResources(source, srcPrompt.id);
+          const langs = resources.map((r) => r.language).filter(Boolean);
+
+          if (preview) {
+            promptPhase.items.push({
+              old: srcPrompt.name, new: newName, status: "planned",
+              detail: `would be created · ${langs.length} language(s)${langs.length ? ` (${langs.join(", ")})` : ""} · no audio`,
+            });
+            await persist();
+            continue;
+          }
+
+          const created = await rest.createPrompt(target, {
+            name: newName,
+            description: srcPrompt.description || undefined,
+          });
+          guidMap.set(String(srcPrompt.id).toLowerCase(), created.id);
+
+          // One resource per language, carrying everything except the media.
+          let copied = 0;
+          const failed = [];
+          for (const r of resources) {
+            if (!r.language) continue;
+            try {
+              await rest.createPromptResource(target, created.id, {
+                language: r.language,
+                ttsString: r.ttsString || undefined,
+                text: r.text || undefined,
+                tags: r.tags || undefined,
+              });
+              copied++;
+            } catch (err) {
+              failed.push(`${r.language}: ${err.message}`);
+            }
+          }
+          promptPhase.items.push({
+            old: srcPrompt.name, new: newName,
+            status: failed.length && !copied ? "error" : "ok",
+            detail: failed.length
+              ? `${copied} language(s) copied, no audio — failed: ${failed.join("; ")}`
+              : `${copied} language(s) copied · no audio`,
+          });
+        } catch (err) {
+          promptPhase.items.push({ old: srcPrompt.name, new: newName, status: "error", detail: err.message });
+        }
+        await persist();
+      }
+    }
+    await closePhase(promptPhase, "prompts");
 
     // ── Publish ALL flows (common modules, in-queue, transfer targets, callflows)
     //    in dependency order via the architect (.i3) format. .i3 is

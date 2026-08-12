@@ -71,6 +71,7 @@ const CANON_PHASES = [
   { name: "Data actions", short: "Data actions" },
   { name: "Scripts", short: "Scripts" },
   { name: "Survey forms", short: "Survey forms" },
+  { name: "Prompts", short: "Prompts" },
   { name: "Flows", short: "Flows" },
 ];
 
