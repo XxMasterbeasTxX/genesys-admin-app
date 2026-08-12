@@ -55,6 +55,14 @@ function validatePlan(body) {
   const namePrefix = String(body.namePrefix || "").trim();
   const flows = Array.isArray(body.flows) ? body.flows : [];
 
+  // Operator identity, carried through to the runner so it can write the
+  // activity-log entry when the job finishes. Client-supplied — the same trust
+  // model as every other logAction() writer. Not required: a missing identity
+  // costs attribution on the log entry, it must never block a deploy.
+  const startedBy = String(body.startedBy || "").trim();
+  const startedByName = String(body.startedByName || "").trim();
+  const startedById = String(body.startedById || "").trim();
+
   if (!sourceOrgId) errors.push("sourceOrgId is required");
   else if (!customers.find((c) => c.id === sourceOrgId)) errors.push(`unknown source org '${sourceOrgId}'`);
 
@@ -83,7 +91,11 @@ function validatePlan(body) {
 
   return {
     errors,
-    plan: { sourceOrgId, targetOrgId, divisionId, divisionName, namePrefix, flows: cleanFlows },
+    plan: {
+      sourceOrgId, targetOrgId, divisionId, divisionName, namePrefix,
+      startedBy, startedByName, startedById,
+      flows: cleanFlows,
+    },
   };
 }
 

@@ -16,6 +16,12 @@
  *     result,      // "success" (default) | "partial" | "failure"
  *     errorMessage,// error text when result !== "success"
  *     count,       // number of affected items (optional)
+ *     details,     // optional structured breakdown, rendered as an expandable
+ *                  // row on the Activity Log page:
+ *                  //   { summary: {…}, phases: [ { phase, items: [
+ *                  //       { old, new, status: "ok"|"error"|"skipped", detail }
+ *                  //     ] } ], warnings: [ "…" ] }
+ *                  // Oversized payloads are truncated server-side, not rejected.
  *   });
  *
  * Action type constants (use these strings for consistency):
@@ -34,6 +40,8 @@
  *   schedule_delete      — Delete an automated schedule
  *   gdpr_request         — Submit a GDPR data subject request
  *   export_run           — Run an on-demand export
+ *   deployment_basic     — Basic deployment (sites, queues, users, …)
+ *   deployment_onboarding — Onboarding deploy (written by the runner, not here)
  */
 import { withUserToken } from "./apiAuth.js";
 
@@ -46,6 +54,7 @@ export function logAction({
   result       = "success",
   errorMessage = null,
   count        = null,
+  details      = null,
 } = {}) {
   if (!me?.email) return; // Nothing to log without user identity
 
@@ -63,6 +72,7 @@ export function logAction({
       result,
       errorMessage,
       count,
+      details,
     }),
   }).catch((err) =>
     console.warn("[activityLog] write failed (non-critical):", err?.message || err)

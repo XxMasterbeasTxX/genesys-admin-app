@@ -19,6 +19,13 @@ const ADMIN_EMAIL      = "thva@tdc.dk";
 const RETENTION_MONTHS = 12;
 const MAX_TS           = 9_999_999_999_999; // stays valid until ~year 2286
 
+// Azure Table Storage caps a single string property at 32 K characters. Stay
+// well under it — the entity carries other properties too, and the whole entity
+// is capped at 1 MB.
+const MAX_DETAILS_CHARS    = 30000;
+// Per-phase item caps, tried in order until the payload fits.
+const ITEM_CAP_LADDER      = [50, 25, 12, 6, 3, 1];
+
 let _client       = null;
 let _tableEnsured = false;
 
@@ -61,6 +68,69 @@ function retentionCutoff() {
 
 // ── Entity ↔ LogEntry mapping ───────────────────────────
 
+function safeParse(str, fallback) {
+  if (!str) return fallback;
+  try { return JSON.parse(str); } catch { return fallback; }
+}
+
+/**
+ * Serialize the structured `details` payload to a JSON string that fits in a
+ * table property. Oversized payloads are shrunk progressively rather than
+ * dropped, so a big deploy still shows its failures.
+ *
+ * Keep in sync with onboarding-runner/lib/activityLogStore.js — both apps write
+ * entries the same reader has to render.
+ */
+function serializeDetails(details) {
+  if (details == null) return "";
+  if (typeof details === "string") return details.slice(0, MAX_DETAILS_CHARS);
+
+  let json = JSON.stringify(details);
+  if (json.length <= MAX_DETAILS_CHARS) return json;
+
+  const shrunk = JSON.parse(json);
+  shrunk.truncated = true;
+
+  // 1) Drop the free-text detail from everything that did not fail.
+  for (const p of shrunk.phases || []) {
+    for (const i of p.items || []) {
+      if (i.status !== "error") delete i.detail;
+    }
+  }
+  json = JSON.stringify(shrunk);
+  if (json.length <= MAX_DETAILS_CHARS) return json;
+
+  // 2) Still too big — cap each phase's item list, keeping failures first and
+  //    tightening the cap until it fits. A fixed cap isn't enough: a job with
+  //    many phases, or one whose failures all keep their detail text, can still
+  //    overflow at 50 and would otherwise fall through to the summary-only
+  //    fallback, losing every item.
+  const fullItems = (shrunk.phases || []).map((p) => p.items || []);
+  for (const cap of ITEM_CAP_LADDER) {
+    (shrunk.phases || []).forEach((p, idx) => {
+      const items = fullItems[idx];
+      if (items.length <= cap) {
+        p.items = items;
+        delete p.omitted;
+        return;
+      }
+      const errors = items.filter((i) => i.status === "error");
+      const rest   = items.filter((i) => i.status !== "error");
+      p.items   = [...errors, ...rest].slice(0, cap);
+      p.omitted = items.length - p.items.length;
+    });
+    json = JSON.stringify(shrunk);
+    if (json.length <= MAX_DETAILS_CHARS) return json;
+  }
+
+  // 3) Last resort — keep the summary and warnings, drop the item lists.
+  return JSON.stringify({
+    summary:   shrunk.summary  || null,
+    warnings:  shrunk.warnings || [],
+    truncated: true,
+  }).slice(0, MAX_DETAILS_CHARS);
+}
+
 function entityToEntry(e) {
   return {
     id:           e.rowKey,
@@ -76,6 +146,8 @@ function entityToEntry(e) {
     result:       e.result       || "success",
     errorMessage: e.errorMessage || null,
     count:        e.count        ?? null,
+    // Structured breakdown (onboarding deploys today) — null for plain entries.
+    details:      safeParse(e.details, null),
   };
 }
 
@@ -95,6 +167,7 @@ function entryToEntity(data) {
     result:       data.result       || "success",
     errorMessage: data.errorMessage || null,
     count:        data.count        ?? null,
+    details:      serializeDetails(data.details),
   };
 }
 

@@ -328,6 +328,12 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       divisionId: $division.value,
       divisionName: $division.selectedOptions[0]?.textContent || "",
       namePrefix: $prefix.value.trim(),
+      // Who to attribute the deploy to. The job runs later, in the runner app,
+      // long after this session is gone — so the operator's identity travels
+      // with the job and the runner writes the activity-log entry as them.
+      startedBy: me?.email || "",
+      startedByName: me?.name || "",
+      startedById: me?.id || "",
       flows: flows
         .filter(f => selected.has(f.id))
         .map(f => ({ id: f.id, name: f.name, type: (f.type || "").toLowerCase() })),

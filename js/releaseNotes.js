@@ -11,6 +11,20 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.2",
+    date: "2026-08-12",
+    title: "Onboarding deploys in the Activity Log (internal)",
+    internalOnly: true,
+    changes: [
+      "Deployment › Onboarding now records every deploy in the Activity Log — one entry per job, attributed to the operator who started it, against the target org.",
+      "Because an onboarding deploy runs in the background long after you click Deploy, the entry is written when the job finishes — including when it fails outright — so the record no longer depends on keeping the page open.",
+      "Click Details on the entry to expand the full breakdown: source and target org, division, name prefix, the callflows you picked, and every created / skipped / failed object per phase, plus any warnings.",
+      "The result badge reflects the job: success, partial (some objects failed) or failure. Failed object names are shown on the row itself, so you can spot a problem without expanding it.",
+      "Very large deploys are summarised to fit the log entry — failures are always kept, and the entry says when the item list was shortened.",
+      "The Action filter gained the missing Deployment — Onboarding, Deployment — Basic and Data Table Create entries.",
+    ],
+  },
+  {
     version: "2.1",
     date: "2026-08-11",
     title: "Sign-in: pop-out authentication",
