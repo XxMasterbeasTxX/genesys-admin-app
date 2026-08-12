@@ -877,17 +877,11 @@ async function runPass(job, store, log, opts) {
           const silentLangs = resources.filter((r) => !ttsOf(r)).map((r) => r.language);
 
           if (preview) {
-            // Since audio is not copied, a language with no wording produces a
-            // prompt that cannot be played — and Architect rejects the flow that
-            // references it. Report it as a failure now, while the destination
-            // is still untouched, instead of at publish time.
             promptPhase.items.push({
-              old: srcPrompt.name, new: newName,
-              status: silentLangs.length ? "error" : "planned",
-              detail: silentLangs.length
-                ? `no text-to-speech wording for ${silentLangs.join(", ")} and audio is not copied — ` +
-                  `the prompt would have nothing to play and flows using it would fail to publish`
-                : `would be created · ${langs.length} language(s)${langs.length ? ` (${langs.join(", ")})` : ""} · no audio`,
+              old: srcPrompt.name, new: newName, status: "planned",
+              detail: `would be created · ${langs.length} language(s)` +
+                `${langs.length ? ` (${langs.join(", ")})` : ""} · no audio` +
+                (silentLangs.length ? ` · placeholder wording for ${silentLangs.join(", ")}` : ""),
             });
             await persist();
             continue;
@@ -901,51 +895,56 @@ async function runPass(job, store, log, opts) {
 
           // One resource per language, carrying everything except the media.
           let copied = 0;
-          let silent = 0;               // copied, but with nothing to play
+          const placeheld = [];         // languages given placeholder wording
           const failed = [];
           for (const r of resources) {
             if (!r.language) continue;
-            // Field name for the spoken text is read defensively: the copy is
-            // worthless if we look in the wrong place, and a resource with
-            // neither audio nor wording fails flow validation.
-            const tts = ttsOf(r);
+            const sourceTts = ttsOf(r);
             log(
               `[onboarding] prompt '${srcPrompt.name}' ${r.language}: ` +
-              `fields=[${Object.keys(r).join(",")}] tts=${tts ? "yes" : "NO"} ` +
+              `fields=[${Object.keys(r).join(",")}] tts=${sourceTts ? "yes" : "NO"} ` +
               `audio=${r.mediaUri ? "yes" : "no"}`
             );
+            // A resource with neither audio nor wording cannot be played, and
+            // Architect rejects any flow referencing it. Since audio is never
+            // copied, a recording-only source resource would land empty — so it
+            // gets the prompt's own name as placeholder wording. That keeps the
+            // flow publishable and names the prompt that still needs recording.
+            //
+            // The placeholder is self-clearing: a recorded audio resource takes
+            // precedence over the TTS string, so once the customer records over
+            // it the placeholder is never heard again.
+            const tts = sourceTts || newName;
             try {
               await rest.createPromptResource(target, created.id, {
                 language: r.language,
-                ttsString: tts || undefined,
+                ttsString: tts,
                 tags: r.tags || undefined,
               });
               copied++;
-              if (!tts) silent++;
+              if (!sourceTts) placeheld.push(r.language);
             } catch (err) {
               failed.push(`${r.language}: ${err.message}`);
             }
           }
 
-          // A prompt with no audio AND no wording cannot be played, and any flow
-          // referencing it will fail to publish. Say so here rather than letting
-          // it surface later as an opaque Architect validation error.
-          if (silent) {
+          if (placeheld.length) {
             warnings.push(
-              `Prompt '${newName}': ${silent} language(s) have no text-to-speech wording in ${source.name}, ` +
-              `and audio is not copied — the prompt has nothing to play, so flows referencing it will fail to publish`
+              `Prompt '${newName}': no wording in ${source.name} for ${placeheld.join(", ")} ` +
+              `and audio is not copied — placeholder wording was used. Record the prompt in ` +
+              `${target.name} before go-live; the recording will take precedence automatically.`
             );
           }
 
           const detail = [
             `${copied} language(s) copied`,
             "no audio",
-            silent ? `${silent} with no wording — will not play` : null,
+            placeheld.length ? `placeholder wording for ${placeheld.join(", ")} — record before go-live` : null,
           ].filter(Boolean).join(" · ");
 
           promptPhase.items.push({
             old: srcPrompt.name, new: newName,
-            status: failed.length && !copied ? "error" : silent ? "error" : "ok",
+            status: failed.length && !copied ? "error" : "ok",
             detail: failed.length ? `${detail} — failed: ${failed.join("; ")}` : detail,
           });
         } catch (err) {

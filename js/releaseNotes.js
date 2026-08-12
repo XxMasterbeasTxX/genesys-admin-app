@@ -19,6 +19,8 @@ export const RELEASE_NOTES = [
       "Deployment › Onboarding now brings across the user prompts a callflow refers to directly. Previously they were missed entirely, which left the deployed flow pointing at a prompt that does not exist in the destination org.",
       "A new Prompts step appears in the deploy results, before Flows, listing each prompt and how many languages were copied.",
       "The prompt, its description and every language’s text-to-speech wording and tags are copied. The recorded audio is not — customers record their own, so a copied prompt carries the wording but no sound file.",
+      "Where a source prompt has only a recording and no wording, the prompt’s own name is used as placeholder wording. Without it the copied prompt would have nothing to play at all and the callflow would fail to publish. The results list and the Activity Log both flag which languages got a placeholder, so you can see what still needs recording.",
+      "The placeholder clears itself: once someone records audio for that prompt, the recording takes precedence over the wording and the placeholder is never heard again.",
       "Prompt names are copied exactly as they are: the “Template - ” removal and any name prefix you set do not apply to them, because prompt names cannot contain those characters.",
       "If a prompt of the same name already exists in the destination it is reused by default, on the assumption that it is the customer’s own recording. You can still choose to create a separate one, which is named with an underscore (for example TemplateTestPrompt_2).",
       "If a callflow refers to a prompt that is missing from the source org, that is now reported as a warning rather than passing silently.",
