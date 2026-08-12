@@ -73,8 +73,17 @@ function resolveDeps(yaml) {
   const transferFlows = new Set();
   const dataTables = new Set();
   const dataActions = new Map();
+  const prompts = new Set();
 
   let lastIntegration = null;
+
+  // A directly referenced user prompt, e.g.
+  //     audio:
+  //       prompt: Prompt.TemplateTestPrompt
+  // Anchored on the whole value so "SystemPrompt.x" does NOT match — system
+  // prompts exist in every org and must not be copied. Keys that merely end in
+  // "prompt" (processingPrompt:) can't match either, because the key is anchored.
+  const PROMPT_REF = /^\s*prompt:\s*["']?Prompt\.(.+?)["']?\s*$/;
 
   const nextMappingKey = (i) => {
     for (let j = i + 1; j < lines.length; j++) {
@@ -96,6 +105,9 @@ function resolveDeps(yaml) {
   };
 
   lines.forEach((line, i) => {
+    const promptMatch = line.match(PROMPT_REF);
+    if (promptMatch) prompts.add(stripQuotes(promptMatch[1].trim()));
+
     switch (line.trim()) {
       case "commonModule:": { const n = nextMappingKey(i); if (n) commonModules.add(n); break; }
       case "dataTable:": { const n = nextMappingKey(i); if (n) dataTables.add(n); break; }
@@ -119,6 +131,7 @@ function resolveDeps(yaml) {
     inQueueFlows: [...inQueueFlows].sort(),
     transferFlows: [...transferFlows].sort(),
     dataTables: [...dataTables].sort(),
+    prompts: [...prompts].sort(),
     dataActions: [...dataActions.values()].sort((a, b) =>
       (a.integration + a.action).localeCompare(b.integration + b.action)
     ),

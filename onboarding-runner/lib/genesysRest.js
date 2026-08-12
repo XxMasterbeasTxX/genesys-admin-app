@@ -162,6 +162,29 @@ const publishSurveyForm = (org, formId) =>
     body: { id: formId, published: true },
   });
 
+// ── User prompts (referenced directly by flow actions) ──
+// System prompts are deliberately not handled: they exist in every org, so
+// there is nothing to copy.
+
+/** All user prompts in an org. */
+const listPrompts = (org) => fetchAllPages(org, "/api/v2/architect/prompts");
+
+/** One user prompt's per-language resources (TTS text, audio, tags). */
+const listPromptResources = (org, promptId) =>
+  fetchAllPages(org, `/api/v2/architect/prompts/${promptId}/resources`);
+
+/** Create a user prompt. Body: { name, description? }. */
+const createPrompt = (org, body) =>
+  gcFetch(org, "POST", "/api/v2/architect/prompts", { body });
+
+/**
+ * Add one language resource to a prompt. Body carries everything except the
+ * audio itself: { language, ttsString?, text?, tags? }. Recorded audio is
+ * intentionally never copied — the customer records their own.
+ */
+const createPromptResource = (org, promptId, body) =>
+  gcFetch(org, "POST", `/api/v2/architect/prompts/${promptId}/resources`, { body });
+
 /** Find a flow's id by exact name + type in an org (or null). */
 async function findFlowIdByName(org, type, name) {
   const flows = await fetchAllPages(org, "/api/v2/flows", {
@@ -211,6 +234,10 @@ module.exports = {
   getSurveyForm,
   createSurveyForm,
   publishSurveyForm,
+  listPrompts,
+  listPromptResources,
+  createPrompt,
+  createPromptResource,
   findFlowIdByName,
   moveObjectsToDivision,
 };

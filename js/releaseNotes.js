@@ -11,6 +11,39 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.5",
+    date: "2026-08-12",
+    title: "Onboarding: prompts are deployed too (internal)",
+    internalOnly: true,
+    changes: [
+      "Deployment › Onboarding now brings across the user prompts a callflow refers to directly. Previously they were missed entirely, which left the deployed flow pointing at a prompt that does not exist in the destination org.",
+      "A new Prompts step appears in the deploy results, before Flows, listing each prompt and how many languages were copied.",
+      "The prompt, its description and every language’s text-to-speech wording and tags are copied. The recorded audio is not — customers record their own, so a copied prompt carries the wording but no sound file.",
+      "Where a source prompt has only a recording and no wording, the prompt’s own name is used as placeholder wording. Without it the copied prompt would have nothing to play at all and the callflow would fail to publish. The results list and the Activity Log both flag which languages got a placeholder, so you can see what still needs recording.",
+      "The placeholder clears itself: once someone records audio for that prompt, the recording takes precedence over the wording and the placeholder is never heard again.",
+      "Prompt names are copied exactly as they are: the “Template - ” removal and any name prefix you set do not apply to them, because prompt names cannot contain those characters.",
+      "If a prompt of the same name already exists in the destination it is reused by default, on the assumption that it is the customer’s own recording. You can still choose to create a separate one, which is named with an underscore (for example TemplateTestPrompt_2).",
+      "If a callflow refers to a prompt that is missing from the source org, that is now reported as a warning rather than passing silently.",
+      "Prompts that are looked up while the call is running — where the name comes from a data table — are not covered by this. Only prompts referenced directly in the callflow are deployed.",
+    ],
+  },
+  {
+    version: "2.4",
+    date: "2026-08-12",
+    title: "Onboarding: see what will be deployed before it happens (internal)",
+    internalOnly: true,
+    changes: [
+      "Deployment › Onboarding now works out everything it would create — including all the dependencies it discovers — before writing anything to the destination org.",
+      "New “Preview and Deploy” button: always stops and shows you the full plan first. Nothing is created until you press Deploy now.",
+      "The ordinary “Deploy” button still runs straight through, but stops if there is something to decide: a name that already exists in the destination, or a problem found that would make the deploy fail (for example a data action whose integration is missing in the destination). Previously that failure only appeared partway through, after other objects had already been created.",
+      "When a name already exists you now choose per object: keep the existing one, or create a new one alongside it under a different name. You can set a suffix for all of them at once and still rename any individually.",
+      "The choice is pre-selected for you by comparing the existing object with the source: identical means it is reused, while one that has been changed since it was deployed defaults to creating a new object — so an edit made by a colleague or a customer no longer silently becomes part of your deployment.",
+      "Architect flows cannot be compared this way, so instead you are told when an earlier deploy of the same source and destination created the flow.",
+      "You have 30 minutes to confirm; a countdown is shown. After that the preview is abandoned, nothing is deployed, and the Activity Log records it as previewed only — never as a deploy.",
+      "Confirming deploys exactly what you were shown, and is faster than starting over: nothing needs to be exported from the source org a second time.",
+    ],
+  },
+  {
     version: "2.3",
     date: "2026-08-12",
     title: "Onboarding: phases with nothing to deploy are now listed (internal)",

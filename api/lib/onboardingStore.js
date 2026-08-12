@@ -57,6 +57,18 @@ function entityToJob(e) {
     flows: safeParse(e.flows, []),
     phases: safeParse(e.phases, []),
     warnings: safeParse(e.warnings, []),
+    // Preview / approval (see docs/onboarding-deployment-design.md):
+    //   stopForPreview — "Preview and Deploy" always pauses; plain "Deploy"
+    //                    pauses only when there is a name conflict to resolve
+    //   collisions     — conflicts found during the preview pass, for the UI
+    //   decisions      — the operator's per-object choices, keyed by collision id
+    //   approved       — set when the operator confirms; the runner then deploys
+    //   expiresAt      — an unapproved job is abandoned after this moment
+    stopForPreview: e.stopForPreview === true,
+    approved: e.approved === true,
+    collisions: safeParse(e.collisions, []),
+    decisions: safeParse(e.decisions, {}),
+    expiresAt: e.expiresAt || null,
     error: e.error || null,
     startedBy: e.startedBy || "",
     startedByName: e.startedByName || "",
@@ -81,6 +93,11 @@ function jobToEntity(job) {
     flows: JSON.stringify(job.flows || []),
     phases: JSON.stringify(job.phases || []),
     warnings: JSON.stringify(job.warnings || []),
+    stopForPreview: job.stopForPreview === true,
+    approved: job.approved === true,
+    collisions: JSON.stringify(job.collisions || []),
+    decisions: JSON.stringify(job.decisions || {}),
+    expiresAt: job.expiresAt || "",
     error: job.error || "",
     startedBy: job.startedBy || "",
     startedByName: job.startedByName || "",
@@ -114,6 +131,11 @@ async function createJob(plan) {
     flows: plan.flows || [],
     phases: [],
     warnings: [],
+    stopForPreview: plan.stopForPreview === true,
+    approved: false,
+    collisions: [],
+    decisions: {},
+    expiresAt: null,
     error: null,
     startedBy: plan.startedBy || "",
     startedByName: plan.startedByName || "",

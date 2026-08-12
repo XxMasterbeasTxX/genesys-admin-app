@@ -12,7 +12,8 @@
  * SWA managed API mirrors how the repo isolates timer-functions.
  */
 const customers = require("../lib/customers.json");
-const { createJob, getJob } = require("../lib/onboardingStore");
+const { createJob, getJob, updateJob } = require("../lib/onboardingStore");
+const activityLog = require("../lib/activityLogStore");
 const { classifyCaller, getBearerToken } = require("../lib/orgConfigResolver");
 
 const ROOT_FLOW_TYPES = new Set([
@@ -94,9 +95,88 @@ function validatePlan(body) {
     plan: {
       sourceOrgId, targetOrgId, divisionId, divisionName, namePrefix,
       startedBy, startedByName, startedById,
+      // "Preview and Deploy" always pauses for approval. Plain "Deploy" pauses
+      // only when the preview finds a name conflict or a predicted failure.
+      stopForPreview: body.stopForPreview === true,
       flows: cleanFlows,
     },
   };
+}
+
+/**
+ * Approve a parked job: record the operator's conflict decisions and put it back
+ * on the queue for the runner to deploy. The runner deploys the artifacts it
+ * cached during the preview, so what lands is what was approved.
+ */
+async function approve(context, req, jobId) {
+  const job = await getJob(jobId);
+  if (!job) return json(context, 404, { error: "job_not_found" });
+  if (job.status !== "awaiting-approval") {
+    return json(context, 409, { error: "not_awaiting_approval", status: job.status });
+  }
+  if (job.expiresAt && Date.parse(job.expiresAt) <= Date.now()) {
+    // The cached exports are gone by now, so this can't be resumed.
+    return json(context, 409, { error: "approval_expired", expiresAt: job.expiresAt });
+  }
+
+  const body = req.body || {};
+  const decisions = (body.decisions && typeof body.decisions === "object") ? body.decisions : {};
+
+  const updated = await updateJob(jobId, { decisions, approved: true, status: "queued" });
+  context.log(`[onboarding-deploy] job ${jobId} approved (${Object.keys(decisions).length} decision(s))`);
+  return json(context, 200, { jobId, status: updated.status });
+}
+
+/**
+ * Cancel a parked job. Nothing was written, so this only records that the deploy
+ * was considered and abandoned — under the preview action, never the deploy one.
+ */
+async function cancel(context, req, jobId) {
+  const job = await getJob(jobId);
+  if (!job) return json(context, 404, { error: "job_not_found" });
+  if (job.status !== "awaiting-approval") {
+    return json(context, 409, { error: "not_awaiting_approval", status: job.status });
+  }
+
+  await updateJob(jobId, { status: "cancelled", finishedAt: new Date().toISOString() });
+
+  const b = req.body || {};
+  const planned = (job.phases || [])
+    .flatMap((p) => p.items || [])
+    .filter((i) => i.status === "planned").length;
+  try {
+    await activityLog.create({
+      userEmail: b.userEmail || job.startedBy || "",
+      userName:  b.userName  || job.startedByName || "",
+      userId:    b.userId    || job.startedById || "",
+      orgId: job.targetOrgId,
+      orgName: (customers.find((c) => c.id === job.targetOrgId) || {}).name || job.targetOrgId,
+      action: "deployment_onboarding_preview",
+      description:
+        `[Onboarding] Previewed ${job.flows?.length || 0} callflow(s) into ` +
+        `${(customers.find((c) => c.id === job.targetOrgId) || {}).name || job.targetOrgId} ` +
+        `· division '${job.divisionName || "Home"}' — NOT deployed (cancelled; ` +
+        `${planned} object(s) would have been created)`,
+      result: "success",
+      count: planned,
+      details: {
+        summary: {
+          jobId: job.jobId, status: "cancelled",
+          sourceOrgId: job.sourceOrgId, targetOrgId: job.targetOrgId,
+          division: job.divisionName || "Home",
+          rootFlows: (job.flows || []).map((f) => f.name),
+          plannedObjects: planned,
+        },
+        phases: job.phases || [],
+        warnings: job.warnings || [],
+      },
+    });
+  } catch (err) {
+    context.log.warn(`[onboarding-deploy] cancel log write failed (non-critical): ${err.message}`);
+  }
+
+  context.log(`[onboarding-deploy] job ${jobId} cancelled before deploying`);
+  return json(context, 200, { jobId, status: "cancelled" });
 }
 
 module.exports = async function (context, req) {
@@ -112,8 +192,17 @@ module.exports = async function (context, req) {
       return json(context, 200, job);
     }
 
-    // POST — create job
+    // POST — approve / cancel a parked job, or create a new one
     const body = req.body || {};
+
+    if (body.action === "approve" || body.action === "cancel") {
+      const jobId = String(body.jobId || "").trim();
+      if (!jobId) return json(context, 400, { error: "jobId is required" });
+      return body.action === "approve"
+        ? await approve(context, req, jobId)
+        : await cancel(context, req, jobId);
+    }
+
     const { errors, plan } = validatePlan(body);
     if (errors.length) return json(context, 400, { error: "invalid_plan", details: errors });
 

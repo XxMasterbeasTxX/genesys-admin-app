@@ -4038,6 +4038,7 @@ body {
 .al-item--skipped .al-item-glyph { color: #fbbf24; }
 .al-item--none    .al-item-glyph { color: var(--muted); }
 .al-item--none    .al-item-name  { color: var(--muted); font-style: italic; }
+.al-item--planned .al-item-glyph { color: var(--accent, #60a5fa); }
 .al-item-name   { word-break: break-word; }
 .al-item-arrow  { color: var(--muted); }
 .al-item-detail { color: var(--muted); font-size: 11px; }
@@ -4062,6 +4063,27 @@ body {
   font-size: 11px;
   color: var(--muted);
   font-style: italic;
+}
+
+/* ── Onboarding approval checkpoint ─────────────────────── */
+/* Class-based rather than inline so the light theme can override them —
+   the dark palette's green/amber are barely legible on a white panel. */
+
+.ob-state--ok    { color: #4ade80; }
+.ob-state--warn  { color: #fbbf24; }
+.ob-state--muted { color: var(--muted); }
+.ob-problem      { color: #f87171; }
+
+.ob-problem-box {
+  border: 1px solid #f87171;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+@media (prefers-color-scheme: light) {
+  .ob-state--ok   { color: #16a34a; }
+  .ob-state--warn { color: #b45309; }
+  .ob-problem     { color: #dc2626; }
+  .ob-problem-box { border-color: #dc2626; background: rgba(220, 38, 38, 0.06); }
 }
 
 .al-count {
