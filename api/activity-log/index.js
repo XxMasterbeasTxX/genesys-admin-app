@@ -52,6 +52,7 @@ module.exports = async function (context, req) {
         result:       b.result       || "success",
         errorMessage: b.errorMessage || null,
         count:        b.count        ?? null,
+        details:      b.details      ?? null,
       });
 
       context.res = json(201, entry);

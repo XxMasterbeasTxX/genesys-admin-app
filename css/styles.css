@@ -3977,6 +3977,91 @@ body {
   margin-top: 2px;
 }
 
+/* ── Expandable entry details (onboarding deploys, …) ──── */
+
+.al-details-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 1px 7px 1px 5px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.al-details-toggle:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.al-caret { font-size: 9px; line-height: 1; }
+
+.al-details-row td { background: rgba(255,255,255,0.02); }
+
+.al-details {
+  padding: 4px 2px 8px;
+  max-width: 900px;
+}
+
+.al-sum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin-bottom: 10px;
+}
+.al-sum-item { display: flex; gap: 6px; font-size: 12px; }
+.al-sum-key  { color: var(--muted); }
+.al-sum-val  { word-break: break-word; }
+
+.al-phase { margin-bottom: 10px; }
+.al-phase-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+}
+.al-phase-name   { font-weight: 600; font-size: 12px; color: var(--accent, #60a5fa); }
+.al-phase-counts { font-size: 11px; color: var(--muted); }
+
+.al-items { list-style: none; margin: 4px 0 0; padding: 0; }
+.al-item {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+.al-item-glyph { font-weight: 700; width: 11px; flex: none; }
+.al-item--ok      .al-item-glyph { color: #4ade80; }
+.al-item--error   .al-item-glyph { color: #f87171; }
+.al-item--skipped .al-item-glyph { color: #fbbf24; }
+.al-item-name   { word-break: break-word; }
+.al-item-arrow  { color: var(--muted); }
+.al-item-detail { color: var(--muted); font-size: 11px; }
+
+.al-warnings {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 11px;
+  color: #fbbf24;
+}
+.al-warnings li { padding: 2px 0; }
+
+.al-detail-error {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #f87171;
+}
+
+.al-omitted {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+
 .al-count {
   font-size: 11px;
   color: var(--muted);
@@ -3994,6 +4079,13 @@ body {
   .al-badge--failure  { color: #dc2626; }
   .al-error-detail   { color: #dc2626; }
   .al-action-tag { background: rgba(0,0,0,0.05); }
+  .al-details-toggle:hover { background: rgba(0,0,0,0.05); }
+  .al-details-row td { background: rgba(0,0,0,0.02); }
+  .al-item--ok      .al-item-glyph { color: #16a34a; }
+  .al-item--error   .al-item-glyph { color: #dc2626; }
+  .al-item--skipped .al-item-glyph { color: #b45309; }
+  .al-warnings      { color: #b45309; }
+  .al-detail-error  { color: #dc2626; }
 }
 
 /* ══════════════════════════════════════════════════════════

@@ -19,6 +19,7 @@ const { spawn } = require("child_process");
 
 const { resolveOrg } = require("./regions");
 const rest = require("./genesysRest");
+const activityLog = require("./activityLogStore");
 const {
   transformFlowYaml, resolveDeps, parseFlowMeta, stripPrefix, transformI3, getDefaultLanguage,
 } = require("./onboardingEngine");
@@ -131,6 +132,88 @@ function topoSort(nodes, edges) {
   };
   for (const n of nodes) visit(n);
   return order;
+}
+
+// ── activity log ────────────────────────────────────────
+
+const LOG_ACTION = "deployment_onboarding";
+const RESULT_FOR_STATUS = { succeeded: "success", partial: "partial", failed: "failure" };
+
+/** "3 callflow(s)" etc. — keeps the description readable for a single item. */
+function plural(n, noun) {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * Write the job's outcome to the activity log: one entry per deploy, carrying
+ * the full phase/item breakdown in `details` for the log page to expand.
+ *
+ * Best-effort — a logging failure must never change the job's outcome.
+ */
+async function logJobOutcome({ job, source, target, division, phases, warnings, status, error, log }) {
+  try {
+    const items = phases.flatMap((p) => p.items || []);
+    const ok = items.filter((i) => i.status === "ok").length;
+    const skipped = items.filter((i) => i.status === "skipped").length;
+    const failed = items.filter((i) => i.status === "error");
+
+    const srcName = source?.name || job.sourceOrgId;
+    const tgtName = target?.name || job.targetOrgId;
+
+    // The exception path (`error`) aborted the run; otherwise summarize what landed.
+    const description = error
+      ? `[Onboarding] Deploy of ${plural(job.flows?.length || 0, "callflow")} from ${srcName} ` +
+        `into ${tgtName} · division '${division}' aborted: ${error}`
+      : `[Onboarding] Deployed ${plural(job.flows?.length || 0, "callflow")} (+ dependencies) ` +
+        `from ${srcName} into ${tgtName} · division '${division}' — ` +
+        `${ok} created, ${skipped} skipped, ${failed.length} failed`;
+
+    // Surface the failures inline so the row is useful before it is expanded.
+    const failedNames = failed.map((i) => i.new || i.old).filter(Boolean);
+    const errorMessage = error
+      || (failedNames.length
+        ? "Failed: " + failedNames.slice(0, 3).join(", ")
+          + (failedNames.length > 3 ? ` and ${failedNames.length - 3} more` : "")
+        : null);
+
+    await activityLog.create({
+      userEmail: job.startedBy || "",
+      userName: job.startedByName || "",
+      userId: job.startedById || "",
+      orgId: job.targetOrgId,        // the org that was written to
+      orgName: tgtName,
+      action: LOG_ACTION,
+      description,
+      result: RESULT_FOR_STATUS[status] || "failure",
+      errorMessage,
+      count: ok,
+      details: {
+        summary: {
+          jobId: job.jobId,
+          status,
+          sourceOrgId: job.sourceOrgId,
+          sourceOrgName: srcName,
+          targetOrgId: job.targetOrgId,
+          targetOrgName: tgtName,
+          division,
+          namePrefix: job.namePrefix || "",
+          rootFlows: (job.flows || []).map((f) => f.name),
+          created: ok,
+          skipped,
+          failed: failed.length,
+          startedAt: job.startedAt || null,
+          finishedAt: new Date().toISOString(),
+        },
+        phases,
+        warnings,
+        error: error || null,
+      },
+    });
+  } catch (err) {
+    log.error
+      ? log.error(`[onboarding-runner] activity log write failed (non-critical): ${err.message}`)
+      : log(`activity log write failed: ${err.message}`);
+  }
 }
 
 // ── main ────────────────────────────────────────────────
@@ -545,11 +628,13 @@ async function processJob(job, store, log) {
     const status = anyError ? (anyOk ? "partial" : "failed") : "succeeded";
     await store.updateJob(job.jobId, { phases, warnings, status, finishedAt: new Date().toISOString() });
     log(`[onboarding-runner] job ${job.jobId} → ${status}`);
+    await logJobOutcome({ job, source, target, division, phases, warnings, status, error: null, log });
   } catch (err) {
     log.error ? log.error(`[onboarding-runner] job ${job.jobId} failed: ${err.message}`) : log(`job failed: ${err.message}`);
     await store.updateJob(job.jobId, {
       phases, warnings, status: "failed", error: err.message, finishedAt: new Date().toISOString(),
     });
+    await logJobOutcome({ job, source, target, division, phases, warnings, status: "failed", error: err.message, log });
   } finally {
     try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
   }

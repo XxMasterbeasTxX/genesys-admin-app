@@ -19,10 +19,13 @@ const ACTION_LABELS = {
   division_move:          "Division Move",
   interaction_move:       "Interaction Move",
   interaction_disconnect: "Interaction Disconnect",
+  datatable_create:       "Data Table Create",
   datatable_copy:         "Data Table Copy",
   dataaction_copy:        "Data Action Copy",
   dataaction_save:        "Data Action Save",
   dataaction_publish:     "Data Action Publish",
+  deployment_basic:       "Deployment — Basic",
+  deployment_onboarding:  "Deployment — Onboarding",
   phone_create:           "Phone Create",
   phone_move:             "Phone Move",
   schedule_create:        "Schedule Create",
@@ -42,6 +45,117 @@ function resultBadge(result) {
     result === "partial" ? "al-badge al-badge--partial" :
                            "al-badge al-badge--failure";
   return `<span class="${cls}">${escapeHtml(result)}</span>`;
+}
+
+// ── Structured details (expandable row) ──────────────────
+// Written today by the onboarding runner; any writer can supply the same shape:
+//   { summary: {…}, phases: [ { phase, items: [ { old, new, status, detail } ],
+//     omitted } ], warnings: [ "…" ], truncated }
+
+// Item status → glyph + modifier class. Matches the onboarding page's vocabulary
+// so the same deploy reads identically in both places.
+const ITEM_GLYPH = { ok: "✓", error: "✗", skipped: "↷" };
+
+/** "targetOrgName" → "Target org name" — labels summary keys we don't know. */
+function humanizeKey(key) {
+  const spaced = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+}
+
+const SUMMARY_LABELS = {
+  jobId:          "Job",
+  sourceOrgName:  "Source org",
+  targetOrgName:  "Target org",
+  division:       "Division",
+  namePrefix:     "Name prefix",
+  rootFlows:      "Selected callflows",
+  created:        "Created",
+  skipped:        "Skipped",
+  failed:         "Failed",
+  startedAt:      "Started",
+  finishedAt:     "Finished",
+};
+
+// Ids duplicate the names already shown, and `status` duplicates the result badge.
+const SUMMARY_HIDDEN = new Set(["sourceOrgId", "targetOrgId", "status"]);
+
+function summaryValue(key, value) {
+  if (Array.isArray(value)) return value.join(", ");
+  if (key === "startedAt" || key === "finishedAt") return formatDateTime(value);
+  return String(value);
+}
+
+function summaryHtml(summary) {
+  const rows = Object.entries(summary)
+    .filter(([k, v]) =>
+      !SUMMARY_HIDDEN.has(k) && v !== null && v !== "" &&
+      !(Array.isArray(v) && !v.length))
+    .map(([k, v]) => `
+      <div class="al-sum-item">
+        <span class="al-sum-key">${escapeHtml(SUMMARY_LABELS[k] || humanizeKey(k))}</span>
+        <span class="al-sum-val">${escapeHtml(summaryValue(k, v))}</span>
+      </div>`)
+    .join("");
+  return rows ? `<div class="al-sum">${rows}</div>` : "";
+}
+
+function itemHtml(item) {
+  const status = ITEM_GLYPH[item.status] ? item.status : "ok";
+  // "Template - Sales" → "Sales" renames read best as old → new.
+  const renamed = item.old && item.new && item.old !== item.new;
+  const label = renamed
+    ? `${escapeHtml(item.old)} <span class="al-item-arrow">→</span> ${escapeHtml(item.new)}`
+    : escapeHtml(item.new || item.old || "—");
+  return `
+    <li class="al-item al-item--${status}">
+      <span class="al-item-glyph">${ITEM_GLYPH[status]}</span>
+      <span class="al-item-name">${label}</span>
+      ${item.detail ? `<span class="al-item-detail">${escapeHtml(item.detail)}</span>` : ""}
+    </li>`;
+}
+
+function phaseHtml(phase) {
+  const items = phase.items || [];
+  const counts = ["ok", "skipped", "error"]
+    .map(s => [s, items.filter(i => i.status === s).length])
+    .filter(([, n]) => n > 0)
+    .map(([s, n]) => `${n} ${s === "ok" ? "ok" : s}`)
+    .join(" · ");
+  return `
+    <div class="al-phase">
+      <div class="al-phase-head">
+        <span class="al-phase-name">${escapeHtml(phase.phase || "—")}</span>
+        ${counts ? `<span class="al-phase-counts">${escapeHtml(counts)}</span>` : ""}
+      </div>
+      <ul class="al-items">${items.map(itemHtml).join("")}</ul>
+      ${phase.omitted ? `<p class="al-omitted">…and ${phase.omitted} more not stored</p>` : ""}
+    </div>`;
+}
+
+function detailsHtml(details) {
+  if (!details || typeof details !== "object") return "";
+  const parts = [];
+
+  if (details.summary) parts.push(summaryHtml(details.summary));
+
+  for (const phase of details.phases || []) parts.push(phaseHtml(phase));
+
+  if (details.warnings?.length) {
+    parts.push(`
+      <ul class="al-warnings">
+        ${details.warnings.map(w => `<li>⚠ ${escapeHtml(String(w))}</li>`).join("")}
+      </ul>`);
+  }
+
+  if (details.error) {
+    parts.push(`<p class="al-detail-error">${escapeHtml(String(details.error))}</p>`);
+  }
+
+  if (details.truncated) {
+    parts.push(`<p class="al-omitted">Detail list was shortened to fit the log entry.</p>`);
+  }
+
+  return parts.join("") || `<p class="al-omitted">No further detail recorded.</p>`;
 }
 
 // ── Page renderer ────────────────────────────────────────
@@ -230,7 +344,11 @@ export default async function renderActivityLog({ me }) {
     $status.style.display   = "none";
     $tableWrap.style.display = "";
 
-    $tbody.innerHTML = filtered.map(e => `
+    const colSpan = isAdmin ? 6 : 5;
+
+    $tbody.innerHTML = filtered.map((e, i) => {
+      const hasDetails = !!e.details && typeof e.details === "object";
+      return `
       <tr class="al-row${e.result === "failure" ? " al-row--fail" : e.result === "partial" ? " al-row--partial" : ""}">
         <td class="al-cell-time">${escapeHtml(formatDateTime(e.logTimestamp))}</td>
         ${isAdmin ? `<td class="al-cell-user" title="${escapeHtml(e.userEmail)}">${escapeHtml(e.userName || e.userEmail)}</td>` : ""}
@@ -239,15 +357,37 @@ export default async function renderActivityLog({ me }) {
         <td class="al-cell-desc">
           ${escapeHtml(e.description)}
           ${e.errorMessage ? `<br><span class="al-error-detail">${escapeHtml(e.errorMessage)}</span>` : ""}
+          ${hasDetails ? `
+            <button type="button" class="al-details-toggle" data-idx="${i}"
+                    aria-expanded="false" aria-controls="alDetails${i}">
+              <span class="al-caret">▸</span> Details
+            </button>` : ""}
         </td>
         <td class="al-cell-result">${resultBadge(e.result)}</td>
       </tr>
-    `).join("");
+      ${hasDetails ? `
+      <tr class="al-details-row" id="alDetails${i}" hidden>
+        <td colspan="${colSpan}"><div class="al-details">${detailsHtml(e.details)}</div></td>
+      </tr>` : ""}`;
+    }).join("");
 
     $count.textContent = `Showing ${filtered.length} of ${allEntries.length} entr${allEntries.length !== 1 ? "ies" : "y"}`;
   }
 
   // ── Event listeners ───────────────────────────────────
+
+  // Delegated: the table body is rebuilt on every filter change.
+  $tbody.addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".al-details-toggle");
+    if (!btn) return;
+    const row = el.querySelector(`#alDetails${btn.dataset.idx}`);
+    if (!row) return;
+    const open = row.hidden;
+    row.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+    btn.querySelector(".al-caret").textContent = open ? "▾" : "▸";
+  });
+
   [$from, $to, $result, $action].forEach(el => {
     if (el) el.addEventListener("change", renderTable);
   });
