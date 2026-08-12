@@ -257,6 +257,17 @@ function sameContent(a, b) {
 }
 
 /**
+ * The spoken text of a prompt resource.
+ *
+ * Read defensively across the plausible field names: the whole copy is
+ * worthless if we look in the wrong place, and since audio is never copied, a
+ * resource with no wording leaves a prompt that cannot be played at all.
+ */
+function ttsOf(resource) {
+  return resource.ttsString || resource.tts || resource.text || null;
+}
+
+/**
  * Next free name for a "create new" choice.
  *
  * With no suffix supplied this numbers upward — "X (2)", "X (3)" — so a second
@@ -860,13 +871,23 @@ async function runPass(job, store, log, opts) {
             tgtPromptNames.add(newName);
           }
 
-          const resources = await rest.listPromptResources(source, srcPrompt.id);
-          const langs = resources.map((r) => r.language).filter(Boolean);
+          const resources = (await rest.listPromptResources(source, srcPrompt.id))
+            .filter((r) => r.language);
+          const langs = resources.map((r) => r.language);
+          const silentLangs = resources.filter((r) => !ttsOf(r)).map((r) => r.language);
 
           if (preview) {
+            // Since audio is not copied, a language with no wording produces a
+            // prompt that cannot be played — and Architect rejects the flow that
+            // references it. Report it as a failure now, while the destination
+            // is still untouched, instead of at publish time.
             promptPhase.items.push({
-              old: srcPrompt.name, new: newName, status: "planned",
-              detail: `would be created · ${langs.length} language(s)${langs.length ? ` (${langs.join(", ")})` : ""} · no audio`,
+              old: srcPrompt.name, new: newName,
+              status: silentLangs.length ? "error" : "planned",
+              detail: silentLangs.length
+                ? `no text-to-speech wording for ${silentLangs.join(", ")} and audio is not copied — ` +
+                  `the prompt would have nothing to play and flows using it would fail to publish`
+                : `would be created · ${langs.length} language(s)${langs.length ? ` (${langs.join(", ")})` : ""} · no audio`,
             });
             await persist();
             continue;
@@ -880,27 +901,52 @@ async function runPass(job, store, log, opts) {
 
           // One resource per language, carrying everything except the media.
           let copied = 0;
+          let silent = 0;               // copied, but with nothing to play
           const failed = [];
           for (const r of resources) {
             if (!r.language) continue;
+            // Field name for the spoken text is read defensively: the copy is
+            // worthless if we look in the wrong place, and a resource with
+            // neither audio nor wording fails flow validation.
+            const tts = ttsOf(r);
+            log(
+              `[onboarding] prompt '${srcPrompt.name}' ${r.language}: ` +
+              `fields=[${Object.keys(r).join(",")}] tts=${tts ? "yes" : "NO"} ` +
+              `audio=${r.mediaUri ? "yes" : "no"}`
+            );
             try {
               await rest.createPromptResource(target, created.id, {
                 language: r.language,
-                ttsString: r.ttsString || undefined,
-                text: r.text || undefined,
+                ttsString: tts || undefined,
                 tags: r.tags || undefined,
               });
               copied++;
+              if (!tts) silent++;
             } catch (err) {
               failed.push(`${r.language}: ${err.message}`);
             }
           }
+
+          // A prompt with no audio AND no wording cannot be played, and any flow
+          // referencing it will fail to publish. Say so here rather than letting
+          // it surface later as an opaque Architect validation error.
+          if (silent) {
+            warnings.push(
+              `Prompt '${newName}': ${silent} language(s) have no text-to-speech wording in ${source.name}, ` +
+              `and audio is not copied — the prompt has nothing to play, so flows referencing it will fail to publish`
+            );
+          }
+
+          const detail = [
+            `${copied} language(s) copied`,
+            "no audio",
+            silent ? `${silent} with no wording — will not play` : null,
+          ].filter(Boolean).join(" · ");
+
           promptPhase.items.push({
             old: srcPrompt.name, new: newName,
-            status: failed.length && !copied ? "error" : "ok",
-            detail: failed.length
-              ? `${copied} language(s) copied, no audio — failed: ${failed.join("; ")}`
-              : `${copied} language(s) copied · no audio`,
+            status: failed.length && !copied ? "error" : silent ? "error" : "ok",
+            detail: failed.length ? `${detail} — failed: ${failed.join("; ")}` : detail,
           });
         } catch (err) {
           promptPhase.items.push({ old: srcPrompt.name, new: newName, status: "error", detail: err.message });
