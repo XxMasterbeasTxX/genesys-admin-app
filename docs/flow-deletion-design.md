@@ -1,7 +1,6 @@
 # Flow Deletion — Design
 
-Status: **Phase 2 built** — deletion implemented, not yet exercised against a
-real deletion on a live org
+Status: **Live** — deletion verified end-to-end on a real org
 Author: Genesys Admin App
 Last updated: 2026-08-13
 
@@ -379,12 +378,16 @@ override.
 
 | Type | Endpoint | Status |
 |---|---|---|
-| Flow | `DELETE /api/v2/flows/{flowId}` | ✅ verified |
+| Flow (all types) | `DELETE /api/v2/flows/{flowId}` | ✅ verified — no unpublish or deactivate step needed |
+| Data table | `DELETE /api/v2/flows/datatables/{datatableId}` | ✅ verified, including a table with rows |
 | Data action | `DELETE /api/v2/integrations/actions/{actionId}` | ✅ verified |
-| Data table | `DELETE /api/v2/flows/datatables/{datatableId}` | ⏳ refused while still in use — correct behaviour, not yet seen succeed |
-| User prompt | `DELETE /api/v2/architect/prompts/{promptId}?allResources=true` | ⚠️ `allResources` **required** — without it: *"Cannot delete prompt … since it contains prompt resources."* That is the prompt's own per-language resources, not another object depending on it, so it is not the kind of force flag this tool refuses |
+| User prompt | `DELETE /api/v2/architect/prompts/{promptId}?allResources=true` | ✅ verified. `allResources` is **required** — without it: *"Cannot delete prompt … since it contains prompt resources."* Those are the prompt's own per-language resources, not another object depending on it, so it is not the kind of force flag this tool refuses |
 | Script | `DELETE /api/v2/scripts/{scriptId}` | ⏳ untested |
 | Survey form | `DELETE /api/v2/quality/forms/surveys/{formId}` | ⏳ untested |
+
+Verified end-to-end on a live org (2026-08-13): a callflow with a common module,
+data table (1 row), data action and user prompt deleted cleanly in
+consumer-first order — flow → module → prompt → table.
 | Queue | `DELETE /api/v2/routing/queues/{queueId}` |
 | Schedule | `DELETE /api/v2/architect/schedules/{scheduleId}` |
 | Schedule group | `DELETE /api/v2/architect/schedulegroups/{scheduleGroupId}` |
@@ -655,11 +658,18 @@ Live-org checks, in order. Each one can change the design.
    state is `OPERATIONAL`; `dateCompleted` tracks full rebuilds only and is
    expected to be old; `failedObjects` is now used to force affected objects to
    UNKNOWN.
-4. **Which types have a DELETE endpoint** (§8.1), flow outcomes especially.
-5. **Permission strings** for §12.
-6. **A real end-to-end run** against a test org: onboard a flow with Deployment ›
-   Onboarding, then delete it with this tool, and confirm the org is back to its
-   prior state. This is the acceptance test the feature exists to pass.
+4. **Which types have a DELETE endpoint** (§8.1) — **ANSWERED for the common
+   path**: flows, data tables, data actions and user prompts all verified.
+   Scripts, survey forms and the org-level types remain untested; they will
+   surface the first time a tree contains one.
+5. **Permission strings** for §12 — still unconfirmed. The entries are plausible
+   rather than verified; the real enforcement is Genesys refusing the DELETE,
+   which is reported per object.
+6. **A real end-to-end run** — **PARTLY DONE.** A hand-built callflow with a
+   common module, data table, data action and prompt was deleted cleanly. The
+   full round trip (deploy a Template set with Deployment › Onboarding into a
+   test org, then delete it and confirm the org is back to its prior state) is
+   still the acceptance test worth running.
 
 ## 14. Phased implementation
 
