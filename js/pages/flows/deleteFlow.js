@@ -524,12 +524,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
 
     // Record what the payload actually offers, not just what we matched — a
     // second round of guessing is worse than one look at the real field names.
-    if (!findings.detailKeys.has(type)) {
-      const shape = containers
-        .map(({ where, obj }) => `${where || "(root)"}{${Object.keys(obj).join(",")}}`)
-        .join(" ");
-      findings.detailKeys.set(type, shape.slice(0, 700));
-    }
     if (!findings.creatorFields.has(type)) findings.creatorFields.set(type, hit?.field || "(none)");
 
     if (!hit) return { kind: "none", basis: null };
@@ -881,7 +875,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       probes: [],               // attachment probes and their outcomes
       consumerCalls: [],        // which version each consumer answer came from
       creatorFields: new Map(), // which provenance field each type actually has
-      detailKeys: new Map(),    // the real field names each detail payload returns
       errors: [],
       buildStatus: null,
     };
@@ -1477,9 +1470,18 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
   }
 
   /**
-   * Diagnostics for design §13. Phase 1's second job is telling us what the
-   * Dependency Tracking API actually returns, so the raw shapes are surfaced
-   * rather than swallowed.
+   * Diagnostics — collapsed, and kept for a concrete reason.
+   *
+   * Every defect found in this feature was diagnosed from this panel and not
+   * from the report: the objectType enum, the missing `version` parameter, each
+   * flow having its own version, the platform-vocabulary flood, and the missing
+   * consumer edge that mis-ordered the first real deletion. Scripts, survey
+   * forms and the org-level delete endpoints are still unexercised, so the next
+   * surprise is likely to need it too.
+   *
+   * What it shows is pruned to what still answers a question. The payload-field
+   * dump that established where provenance lives has been removed — that one is
+   * settled, and re-printing it on every run is scaffolding.
    */
   function renderFindings() {
     const host = $("#dfFindings") || $report;
@@ -1491,7 +1493,8 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     block.style.cssText = "padding:10px 12px";
     block.innerHTML = `
       <summary style="cursor:pointer;user-select:none;font-size:.88rem">
-        Findings — what the dependency-tracking API returned
+        Diagnostics — what the dependency-tracking API returned${
+          f.errors?.length ? ` <span class="df-block">(${f.errors.length} error${f.errors.length === 1 ? "" : "s"})</span>` : ""}
       </summary>
       <div style="margin-top:9px;font-size:.82rem;line-height:1.6">
         <div><strong>Object types seen:</strong> ${
@@ -1509,14 +1512,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
                 `${escapeHtml(t)}=${escapeHtml(fld)}`).join(" · ")
             : "none"
         }</div>
-        <div style="margin-top:5px"><strong>Detail payload fields (what the API really returns):</strong>
-          <ul style="margin:3px 0 0;padding-left:18px">
-            ${f.detailKeys?.size
-              ? [...f.detailKeys.entries()].map(([t, shape]) =>
-                  `<li><strong>${escapeHtml(t)}</strong>: <code style="font-size:.92em">${escapeHtml(shape)}</code></li>`).join("")
-              : "<li>none</li>"}
-          </ul>
-        </div>
         <div style="margin-top:5px"><strong>Attachment probes:</strong> ${
           f.probes?.length
             ? f.probes.map((p) => `${escapeHtml(p.probe)} ${p.ok
