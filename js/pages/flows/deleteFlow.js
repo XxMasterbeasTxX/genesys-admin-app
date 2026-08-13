@@ -107,7 +107,8 @@ const TYPE_LABELS = {
   COMMONMODULEFLOW: "Common Module", SECURECALLFLOW: "Secure Call Flow",
   VOICEMAILFLOW: "Voicemail Flow", BOTFLOW: "Bot Flow", DIGITALBOTFLOW: "Digital Bot Flow",
   VOICESURVEYFLOW: "Voice Survey Flow", SURVEYINVITEFLOW: "Survey Invite Flow",
-  OUTBOUNDCALLFLOW: "Outbound Call Flow",
+  OUTBOUNDCALLFLOW: "Outbound Call Flow", WORKITEMFLOW: "Workitem Flow",
+  VOICEFLOW: "Voice Flow", EMAILSENDFLOW: "Email Send Flow",
   DATATABLE: "Data Table", DATAACTION: "Data Action",
   SCRIPT: "Script", COMPOSERSCRIPT: "Script",
   SURVEYFORM: "Survey Form", USERPROMPT: "User Prompt", PROMPT: "Prompt",
@@ -309,9 +310,15 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     <div class="dt-controls" style="margin-top:14px">
       <div class="dt-control-group">
         <label class="dt-label">Callflow</label>
-        <div class="df-combo">
-          <input class="dt-input" id="dfFlowInput" type="text" placeholder="Search a flow…" autocomplete="off" disabled style="width:100%" />
-          <div class="df-menu" id="dfFlowMenu"></div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="df-combo">
+            <input class="dt-input" id="dfFlowInput" type="text" placeholder="Search a flow…" autocomplete="off" disabled style="width:100%" />
+            <div class="df-menu" id="dfFlowMenu"></div>
+          </div>
+          <select class="dt-select" id="dfTypeFilter" style="max-width:210px" disabled
+                  title="Narrow the list to one callflow type">
+            <option value="">All types</option>
+          </select>
         </div>
       </div>
       <div class="dt-actions" style="margin-bottom:12px;display:flex;flex-direction:column;align-items:flex-start;gap:8px">
@@ -328,6 +335,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
   const $ = (sel) => el.querySelector(sel);
   const $flowInput = $("#dfFlowInput");
   const $flowMenu = $("#dfFlowMenu");
+  const $typeFilter = $("#dfTypeFilter");
   const $analyse = $("#dfAnalyse");
   const $deleteBtn = $("#dfDeleteBtn");
   const $status = $("#dfStatus");
@@ -1580,17 +1588,45 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
   });
 
   // ── Flow picker ───────────────────────────────────────
+
+  /** Readable name for an Architect flow type, reusing the objectType labels. */
+  const flowTypeLabel = (t) => typeLabel(DT_FLOW_TYPE[t] || "") || t;
+
+  /**
+   * The type dropdown offers only the types actually present in this org, so it
+   * never lists a filter that would return nothing.
+   */
+  function populateTypeFilter() {
+    const types = [...new Set(state.flows.map((f) => f.type).filter(Boolean))]
+      .sort((a, b) => flowTypeLabel(a).localeCompare(flowTypeLabel(b)));
+    const current = $typeFilter.value;
+    $typeFilter.innerHTML = `<option value="">All types</option>`
+      + types.map((t) =>
+          `<option value="${escapeHtml(t)}">${escapeHtml(flowTypeLabel(t))}</option>`).join("");
+    $typeFilter.value = types.includes(current) ? current : "";
+    $typeFilter.disabled = !types.length;
+  }
+
+  function visibleFlows(term) {
+    const q = (term || "").trim().toLowerCase();
+    const type = $typeFilter.value;
+    return state.flows.filter((f) =>
+      (!q || f.name.toLowerCase().includes(q)) &&
+      (!type || f.type === type));
+  }
+
   function renderMenu(term) {
-    const q = term.trim().toLowerCase();
-    const list = state.flows
-      .filter((f) => !q || f.name.toLowerCase().includes(q))
-      .slice(0, 60);
+    const all = visibleFlows(term);
+    const list = all.slice(0, 60);
     $flowMenu.innerHTML = list.length
       ? list.map((f) => `
           <div class="df-item" data-id="${escapeHtml(f.id)}">
             ${escapeHtml(f.name)}
-            <span class="df-meta">· ${escapeHtml(f.type)}</span>
+            <span class="df-meta">· ${escapeHtml(flowTypeLabel(f.type))}</span>
           </div>`).join("")
+        + (all.length > list.length
+            ? `<div class="df-item df-meta">…and ${all.length - list.length} more — keep typing to narrow it down.</div>`
+            : "")
       : `<div class="df-item df-meta">No flows match.</div>`;
     $flowMenu.classList.add("open");
   }
@@ -1603,6 +1639,13 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     renderMenu($flowInput.value);
   });
   $flowInput.addEventListener("focus", () => renderMenu($flowInput.value));
+  // Changing the type re-opens the list so the effect is visible immediately.
+  // A flow already picked is deliberately left alone — the filter narrows what
+  // you can choose next, it does not undo a choice already made.
+  $typeFilter.addEventListener("change", () => {
+    renderMenu($flowInput.value);
+    $flowInput.focus();
+  });
   $flowMenu.addEventListener("click", (ev) => {
     const item = ev.target.closest(".df-item[data-id]");
     if (!item) return;
@@ -1637,6 +1680,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         .map((f) => ({ id: f.id, name: f.name, type: (f.type || "").toLowerCase() }))
         .sort((a, b) => a.name.localeCompare(b.name));
       state.flowById = new Map(state.flows.map((f) => [f.id, f]));
+      populateTypeFilter();
       $flowInput.disabled = false;
       $flowInput.placeholder = `Search ${state.flows.length} flows…`;
       setStatus("Pick a callflow to analyse.");
