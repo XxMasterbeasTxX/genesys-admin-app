@@ -120,7 +120,7 @@
  *   PHONES
  *   phones.webrtc.changeSite           WebRTC — Change Site
  *   phones.webrtc.create               WebRTC — Create WebRTC
- *   phones.webrtc.delete               WebRTC — Delete (Master Admin only)
+ *   phones.webrtc.delete               WebRTC — Delete (Master Admin; customers by entitlement)
  *
  *   ROLES
  *   roles.copy.singleOrg               Copy — Copy from current org
