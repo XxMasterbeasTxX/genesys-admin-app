@@ -11,6 +11,15 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "3.0",
+    date: "2026-08-14",
+    title: "Data Tables › Edit: the key column fits its keys",
+    changes: [
+      "Rows mode sizes the key column to the widest key in the table instead of giving it the same fixed width as every other column. Tables with short keys stop spending screen space on an empty column, and the space goes to the columns you are editing.",
+      "The width is measured across every row, not just the page on screen, so the column stays put as you page through the table.",
+    ],
+  },
+  {
     version: "2.9",
     date: "2026-08-13",
     title: "Phones: find and delete WebRTC phones nobody is using",
