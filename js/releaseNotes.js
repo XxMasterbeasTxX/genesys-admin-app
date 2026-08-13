@@ -11,7 +11,7 @@
  */
 export const RELEASE_NOTES = [
   {
-    version: "2.9",
+    version: "2.8",
     date: "2026-08-13",
     title: "WebRTC Phones — Change Site: filters, and a confirmation before moving",
     changes: [
@@ -23,10 +23,11 @@ export const RELEASE_NOTES = [
       "After a run the phone list clears. It described phones at the source site that are no longer there, and leaving it on screen invited a second move of phones that had already gone.",
       "A run that breaks part-way now still writes its Activity Log entry, covering the phones that were moved before it stopped.",
       "Phones with no assigned user cannot match a holder filter and are excluded when one is set — the count is stated so they are not silently missing.",
+      "Load Phones asks Genesys for that site's phones instead of fetching every phone in the org and discarding the rest, which is noticeably quicker on large orgs.",
     ],
   },
   {
-    version: "2.8",
+    version: "2.7",
     date: "2026-08-13",
     title: "WebRTC Phones — Create: see who gets a phone before any are made",
     changes: [

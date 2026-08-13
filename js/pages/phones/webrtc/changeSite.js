@@ -368,7 +368,15 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
       const orgId = orgContext.get();
       setStatus("Loading phones…");
 
-      const allPhones = await gc.fetchAllPhones(api, orgId);
+      // `siteId` is the documented server-side filter for this endpoint, so a
+      // site's phones cost one page instead of paging the whole org.
+      //
+      // The client-side filter below is deliberately kept rather than trusted
+      // away. If a future API change stops honouring the parameter, the list
+      // comes back org-wide and silently — and a page that moved every phone
+      // in the org while labelled "phones at Copenhagen" is a far worse
+      // failure than a slow one. Belt and braces costs a single pass.
+      const allPhones = await gc.fetchAllPhones(api, orgId, { query: { siteId: fromId } });
       const atSource = allPhones.filter((p) => p.site?.id === fromId);
 
       if (!atSource.length) {
