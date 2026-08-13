@@ -1,6 +1,7 @@
 # Flow Deletion — Design
 
-Status: **Phase 1 built** (discovery only — nothing is deleted yet)
+Status: **Phase 2 built** — deletion implemented, not yet exercised against a
+real deletion on a live org
 Author: Genesys Admin App
 Last updated: 2026-08-13
 
@@ -338,12 +339,12 @@ Open Messaging integrations and Bring-Your-Own-Channel routing may attach flows
 too. A probe that fails to run is reported prominently — a blocker list that is
 not exhaustive must say so rather than present a flow as free.
 
-**Phase 2 open question:** should a *failed* probe block deletion outright? For a
-report-only phase a prominent warning is right; once deletion is real, "we could
-not check whether this flow is attached" is arguably the same as "do not delete".
-Erring toward blocking is consistent with the rest of the safety model, but it
-would also mean an org lacking one of these features cannot delete anything if
-the endpoint 404s — so the check must distinguish "not applicable" from "failed".
+**Resolved in Phase 2:** a failed probe **stops the run before anything is
+written** — "could not check whether this flow is attached" is treated as "do not
+delete". A **404 is not a failure**: it means the org does not have that feature,
+so there is nothing to check. The probes are re-run immediately before deletion
+begins, so a flow attached since the review aborts the run rather than being
+removed from under whatever now uses it.
 
 ## 8. Execution
 
@@ -645,9 +646,23 @@ Live-org checks, in order. Each one can change the design.
   - A **Findings** panel records the object types seen, which `objectType` values
     the API accepted, the raw build status, and every error — answering §13
     items 1–4 from a real org the first time it is run.
-- **Phase 2 — execution.** Confirm dialog, ordered deletion with execute-time
-  re-verification, per-object results, Activity Log entry, and the
-  `featurePermissionMap` entry (§12).
+- **Phase 2 — execution. BUILT.** Confirm dialog (typed flow name), ordered
+  deletion with execute-time re-verification, per-object results, Activity Log
+  entry, and the `featurePermissionMap` entry (§12). Decisions taken while
+  building, both recorded here because they are safety choices rather than
+  implementation detail:
+  - **A failed attachment probe stops the run before anything is written**, but
+    a **404 does not** — that means the org lacks the feature entirely, and
+    conflating "not applicable" with "could not check" would leave an org
+    without web messaging permanently unable to delete anything.
+  - **A 404 on delete counts as success** ("already removed"). Owned artifacts
+    such as an NLU domain can disappear with their parent flow, so this is an
+    expected outcome rather than a failure.
+  - **Deletion order comes from the consumer graph**, not a fixed type sequence
+    (§8), with the type order kept only as a tie-break. The graph is the actual
+    constraint; the type sequence was only ever an approximation of it.
+  - **The confirmation requires typing the flow name.** This is the one action in
+    the app that cannot be undone.
 - **Phase 3 — polish.** Re-scan without re-picking, kept/failed reasons surfaced
   more richly, §13 item 6 as a repeatable round-trip test.
 

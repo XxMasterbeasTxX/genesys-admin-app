@@ -1,32 +1,34 @@
 /**
- * Flows › Delete Flow — PHASE 1 (discovery only)
+ * Flows › Delete Flow
  *
- * Reports exactly what removing a callflow would touch: the flow's dependency
- * closure, who else uses each object, what is blocked, and what could be
- * deleted. See docs/flow-deletion-design.md.
- *
- * *** THIS PAGE DELETES NOTHING. *** There is no delete path in Phase 1 — not a
- * disabled button, not a guarded code path. Execution lands in Phase 2, once the
- * §13 validation items have been answered against a live org. Until then this is
- * a read-only report, and it is also the instrument that answers them: the
- * Findings panel records the raw Dependency Tracking shapes encountered.
+ * Removes a callflow and the objects it depends on, after reporting exactly what
+ * that would touch. See docs/flow-deletion-design.md.
  *
  * Pipeline:
  *   1. Check the dependency-tracking build. Refuse to run on a stale index.
  *   2. Walk `consumedresources` from the root flow, recursing ONLY into flows.
  *   3. Fetch `consumingresources` for every object found — the consumer graph.
- *   4. Render the review; recompute orphan state locally on every toggle.
+ *   4. Probe attachments the index cannot see (deployments, queues, call routes).
+ *   5. Render the review; recompute orphan state locally on every toggle.
+ *   6. On confirmation, delete in consumer-first order, re-checking each object
+ *      immediately before removing it.
  *
  * The orphan rule (design §5):
  *   deletable(o) ⟺ consumers(o) \ (selection ∪ {root}) = ∅
  * "outside" is the operative word — orphan status is relative to the current
  * selection, so unticking a common module re-locks the data table only it used.
+ *
+ * Nothing is written before the confirmation, and the safety model is entirely
+ * the review, the typed confirmation, the re-check before each delete, and the
+ * Activity Log record. There is no rollback.
  */
 import { escapeHtml } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import {
   keyOf, hardBlockers, softBlockers, isDeletable, settleSelection, defaultSelection,
+  deletionOrder,
 } from "../../lib/flowDeleteGraph.js";
+import { logAction } from "../../services/activityLogService.js";
 
 // ── Object types ────────────────────────────────────────
 //
@@ -171,6 +173,41 @@ const BUILD_NOT_READY = {
   UNKNOWN: "the index state could not be determined",
 };
 
+// ── Deletion ────────────────────────────────────────────
+//
+// Flows are deleted through /api/v2/flows/{id} regardless of their specific
+// type. Everything else needs its own endpoint. A type absent from this map has
+// no delete path and is never offered (see NO_DELETE_API / neverOffer).
+//
+// `forceDelete`-style parameters are deliberately not used anywhere: a refusal
+// is information the operator needs to see, not something to override.
+const DELETE_PATH = {
+  DATATABLE: (id) => `/api/v2/flows/datatables/${id}`,
+  DATAACTION: (id) => `/api/v2/integrations/actions/${id}`,
+  COMPOSERSCRIPT: (id) => `/api/v2/scripts/${id}`,
+  USERPROMPT: (id) => `/api/v2/architect/prompts/${id}`,
+  SURVEYFORM: (id) => `/api/v2/quality/forms/surveys/${id}`,
+  QUEUE: (id) => `/api/v2/routing/queues/${id}`,
+  SCHEDULE: (id) => `/api/v2/architect/schedules/${id}`,
+  SCHEDULEGROUP: (id) => `/api/v2/architect/schedulegroups/${id}`,
+  EMERGENCYGROUP: (id) => `/api/v2/architect/emergencygroups/${id}`,
+  FLOWMILESTONE: (id) => `/api/v2/flows/milestones/${id}`,
+  RESPONSE: (id) => `/api/v2/responsemanagement/responses/${id}`,
+  NLUDOMAIN: (id) => `/api/v2/languageunderstanding/domains/${id}`,
+  ACDSKILL: (id) => `/api/v2/routing/skills/${id}`,
+  ACDWRAPUPCODE: (id) => `/api/v2/routing/wrapupcodes/${id}`,
+};
+
+/** Tie-break order for objects that do not constrain each other. */
+const PHASE_RANK = {
+  USERPROMPT: 1, SURVEYFORM: 2, COMPOSERSCRIPT: 3,
+  DATAACTION: 4, DATATABLE: 5, SCHEDULEGROUP: 6, SCHEDULE: 7,
+};
+const phaseOf = (node) => {
+  const t = String(node.type || "").toUpperCase();
+  return node.isFlow ? 0 : (PHASE_RANK[t] ?? 8);
+};
+
 // ── Provenance ──────────────────────────────────────────
 //
 // "Who made this" is decision-relevant: a data table a person built last month
@@ -256,9 +293,10 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       you can act on them. The org comes from the selector at the top of the page.
     </p>
     <p class="df-caveat">
-      <strong>Phase 1 — report only.</strong> This page does not delete anything yet.
-      Dependencies are read from flow authoring; references built at runtime from
-      variables or data-table values are not visible and are not checked.
+      <strong>Deletion cannot be undone.</strong> Nothing is removed until you review
+      the report below and confirm. Dependencies are read from flow authoring;
+      references built at runtime from variables or data-table values are not visible
+      and are not checked.
     </p>
 
     <div class="dt-controls" style="margin-top:14px">
@@ -300,6 +338,8 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     failedObjectIds: new Set(),// objects the index could not process
     rootVersions: [],          // real version ids read off the root flow
     incomplete: [],            // flows whose dependencies could not be read
+    deleted: false,            // a deletion run has been carried out
+    results: null,             // its per-object outcomes
     closure: new Map(),   // key → node
     consumers: new Map(), // key → normalised consumer list
     selection: new Set(), // keys ticked for (eventual) deletion
@@ -611,6 +651,26 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       byFlowId.set(String(flowId), list);
     };
 
+    /**
+     * A probe that fails is not the same as a probe that does not apply.
+     *
+     * 404 means the org does not have that feature at all — there is nothing to
+     * check and nothing to worry about. Anything else means we tried and could
+     * not find out, which before an irreversible action has to count against us.
+     * Conflating the two would leave an org without web messaging permanently
+     * unable to delete anything.
+     */
+    const probeFailed = (label, err) => {
+      const notApplicable = err && err.status === 404;
+      findings.probes.push({
+        probe: label,
+        ok: false,
+        notApplicable,
+        error: notApplicable ? "not available in this org" : (err.message || String(err)).slice(0, 200),
+      });
+      if (!notApplicable) unchecked.push(label);
+    };
+
     // Web / messaging deployments → an inbound message flow.
     try {
       const resp = await api.proxyGenesys(state.orgId, "GET", "/api/v2/webdeployments/deployments");
@@ -618,8 +678,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       for (const d of list) add(d?.flow?.id, d?.id, d?.name || "(unnamed deployment)", "WEBDEPLOYMENT");
       findings.probes.push({ probe: "web deployments", ok: true, count: list.length });
     } catch (err) {
-      unchecked.push("web/messaging deployments");
-      findings.probes.push({ probe: "web deployments", ok: false, error: (err.message || String(err)).slice(0, 200) });
+      probeFailed("web/messaging deployments", err);
     }
 
     // Queues → in-queue call / message / email flows.
@@ -632,8 +691,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       }
       findings.probes.push({ probe: "queues", ok: true, count: queues.length });
     } catch (err) {
-      unchecked.push("queue in-queue flow assignments");
-      findings.probes.push({ probe: "queues", ok: false, error: (err.message || String(err)).slice(0, 200) });
+      probeFailed("queue in-queue flow assignments", err);
     }
 
     // Call routes (IVR configurations) → open/closed/holiday hours flows.
@@ -646,8 +704,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       }
       findings.probes.push({ probe: "call routes", ok: true, count: ivrs.length });
     } catch (err) {
-      unchecked.push("call routes");
-      findings.probes.push({ probe: "call routes", ok: false, error: (err.message || String(err)).slice(0, 200) });
+      probeFailed("call routes", err);
     }
 
     return { byFlowId, unchecked };
@@ -865,6 +922,258 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     }
   }
 
+  // ── Execution ─────────────────────────────────────────
+
+  /**
+   * Re-check an object's consumers immediately before deleting it.
+   *
+   * The review may have sat open for a while, and creating a duplicate is
+   * recoverable where deleting something that just acquired a consumer is not.
+   *
+   * Compared against the DELETE SET, not against what still exists: the
+   * dependency index updates asynchronously, so an object already removed in
+   * this run can still be listed as a consumer for a while. Treating that as a
+   * blocker would abandon the second half of every run.
+   */
+  async function stillSafeToDelete(node, deleteSetIds) {
+    let list;
+    try {
+      const version = node.version || (node.isFlow ? await resolveFlowVersion(node.id) : null);
+      list = await gc.fetchConsumingResources(api, state.orgId, node.id, node.type,
+        version ? { query: { version } } : {});
+    } catch (err) {
+      // Could not confirm — and unconfirmed is not safe.
+      return { ok: false, reason: `could not re-check consumers (${err.message || err})` };
+    }
+    const outside = list.filter((c) => !deleteSetIds.has(String(c.id).toLowerCase()));
+    if (!outside.length) return { ok: true };
+    return {
+      ok: false,
+      reason: `now used by ${consumerNames(outside.map((c) => ({ name: c.name, type: c.type })))}`,
+    };
+  }
+
+  /** Delete one object. A 404 means it is already gone, which is the goal. */
+  async function deleteObject(node) {
+    const type = String(node.type).toUpperCase();
+    const path = node.isFlow ? `/api/v2/flows/${node.id}` : DELETE_PATH[type]?.(node.id);
+    if (!path) return { status: "error", detail: "no delete endpoint for this type" };
+    try {
+      await api.proxyGenesys(state.orgId, "DELETE", path);
+      return { status: "ok", detail: "deleted" };
+    } catch (err) {
+      if (err.status === 404) {
+        // Already absent. Owned artifacts (an NLU domain, say) can disappear
+        // with their parent flow, so this is an expected outcome, not a failure.
+        return { status: "ok", detail: "already removed" };
+      }
+      return { status: "error", detail: err.message || String(err) };
+    }
+  }
+
+  /**
+   * Run the deletion.
+   *
+   * Fail-forward: one failure does not abort the run, it is recorded and the
+   * sequence continues. Anything whose turn comes after a failed prerequisite
+   * will simply be refused by Genesys and recorded too.
+   */
+  async function runDeletion() {
+    const order = deletionOrder(state, phaseOf);
+    const deleteSetIds = new Set(
+      order.map((k) => String(state.closure.get(k)?.id || "").toLowerCase()).filter(Boolean)
+    );
+
+    // One last attachment sweep before writing anything: a flow attached since
+    // the review is the case this whole feature exists to avoid.
+    setStatus("Re-checking attachments…", "", true);
+    const flowIds = new Set(
+      order.map((k) => state.closure.get(k)).filter((n) => n?.isFlow).map((n) => String(n.id))
+    );
+    const { byFlowId, unchecked } = await probeAttachments(flowIds, state.findings || { probes: [] });
+    const nowAttached = [...flowIds].filter((id) => (byFlowId.get(id) || []).length);
+    if (nowAttached.length) {
+      const names = nowAttached
+        .map((id) => [...state.closure.values()].find((n) => String(n.id) === id)?.name || id);
+      setStatus(
+        `Stopped before deleting anything: ${names.join(", ")} ${names.length === 1 ? "is" : "are"} ` +
+        `now attached to something. Re-analyse to see the current picture.`, "error");
+      return;
+    }
+    if (unchecked.length) {
+      // Cannot confirm the flows are unattached, and "cannot confirm" is not
+      // "safe" when the next step is irreversible.
+      setStatus(
+        `Stopped before deleting anything: could not check ${unchecked.join(", ")}. ` +
+        `A flow may be attached without this being able to tell.`, "error");
+      return;
+    }
+
+    const results = [];
+    let done = 0;
+    for (const key of order) {
+      const node = state.closure.get(key);
+      if (!node) continue;
+      setStatus(`Deleting… ${++done}/${order.length} — ${node.name}`, "", true);
+
+      const safe = await stillSafeToDelete(node, deleteSetIds);
+      if (!safe.ok) {
+        results.push({ node, status: "skipped", detail: `kept — ${safe.reason}` });
+        renderResults(results, order.length);
+        continue;
+      }
+      const outcome = await deleteObject(node);
+      results.push({ node, ...outcome });
+      renderResults(results, order.length);
+    }
+
+    state.results = results;
+    const ok = results.filter((r) => r.status === "ok").length;
+    const skipped = results.filter((r) => r.status === "skipped").length;
+    const failed = results.filter((r) => r.status === "error").length;
+
+    setStatus(
+      failed ? `Finished with ${failed} failure${failed === 1 ? "" : "s"} — ${ok} deleted, ${skipped} kept.`
+             : `Deleted ${ok} object${ok === 1 ? "" : "s"}${skipped ? `, kept ${skipped}` : ""}.`,
+      failed ? "error" : "success"
+    );
+    writeActivityLog(results);
+    state.deleted = true;
+    renderSummary();          // drop the delete button; the run is over
+  }
+
+  /** One Activity Log entry per run, carrying the full breakdown. */
+  function writeActivityLog(results) {
+    const root = state.closure.get(state.rootKey);
+    const ok = results.filter((r) => r.status === "ok").length;
+    const skipped = results.filter((r) => r.status === "skipped").length;
+    const failed = results.filter((r) => r.status === "error");
+
+    // Grouped by type so the expandable row reads like the report did.
+    const byType = new Map();
+    for (const r of results) {
+      const label = typeLabel(r.node.type);
+      if (!byType.has(label)) byType.set(label, []);
+      byType.get(label).push({
+        old: r.node.name,
+        new: r.node.name,
+        status: r.status,
+        detail: r.detail,
+      });
+    }
+
+    logAction({
+      me,
+      orgId: state.orgId,
+      orgName: (orgContext.getCustomers().find((c) => c.id === state.orgId) || {}).name || state.orgId,
+      action: "flow_delete",
+      description:
+        `[Flow Delete] Deleted callflow '${root?.name || ""}' (${typeLabel(root?.type)}) — ` +
+        `${ok} object(s) deleted, ${skipped} kept, ${failed.length} failed`,
+      result: failed.length ? (ok ? "partial" : "failure") : "success",
+      errorMessage: failed.length
+        ? "Failed: " + failed.slice(0, 3).map((r) => r.node.name).join(", ")
+          + (failed.length > 3 ? ` and ${failed.length - 3} more` : "")
+        : null,
+      count: ok,
+      details: {
+        summary: {
+          flowName: root?.name || "",
+          flowType: root?.type || "",
+          orgId: state.orgId,
+          deleted: ok, kept: skipped, failed: failed.length,
+          finishedAt: new Date().toISOString(),
+        },
+        phases: [...byType.entries()].map(([phase, items]) => ({ phase, items })),
+        warnings: state.uncheckedAttachments || [],
+      },
+    });
+  }
+
+  function renderResults(results, total) {
+    const host = $("#dfResults");
+    if (!host) return;
+    const icon = { ok: "✓", skipped: "↷", error: "✗" };
+    const colour = { ok: "#4ade80", skipped: "#fbbf24", error: "#f87171" };
+    host.innerHTML = `
+      <div class="df-sect">
+        <div class="df-sect-head"><h3>Deletion — ${results.length} of ${total}</h3></div>
+        ${results.map((r) => `
+          <div class="df-row">
+            <span style="color:${colour[r.status]};font-weight:700">${icon[r.status]}</span>
+            <div class="df-row-main">
+              <div class="df-name">${escapeHtml(r.node.name)}
+                <span class="df-badge">${escapeHtml(typeLabel(r.node.type))}</span>
+              </div>
+              <div class="df-sub">${escapeHtml(r.detail || "")}</div>
+            </div>
+          </div>`).join("")}
+      </div>`;
+  }
+
+  /**
+   * Final confirmation. Deletion cannot be undone and there is no rollback, so
+   * the flow's name has to be typed: it makes the operator read what they are
+   * about to remove instead of clicking past a dialog.
+   */
+  function showDeleteConfirm() {
+    const root = state.closure.get(state.rootKey);
+    const order = deletionOrder(state, phaseOf);
+    const nodes = order.map((k) => state.closure.get(k)).filter(Boolean);
+    const rows = state.rowCountTotal = nodes
+      .filter((n) => typeof n.rowCount === "number" && n.rowCount > 0)
+      .map((n) => `${n.name} (${n.rowCount} row${n.rowCount === 1 ? "" : "s"})`);
+
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.innerHTML = `
+      <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:22px;min-width:420px;max-width:640px;width:92%">
+        <h3 style="margin:0 0 12px;font-size:1.05rem">Delete “${escapeHtml(root.name)}” and ${nodes.length - 1} dependencies?</h3>
+        <p style="margin:0 0 10px;font-size:.88rem">
+          <strong class="df-block">This cannot be undone.</strong> There is no rollback —
+          deleted objects and their contents are gone.
+        </p>
+        ${rows.length ? `
+          <div class="df-note" style="margin:10px 0">
+            <strong>Data will be lost with these tables:</strong>
+            <ul style="margin:5px 0 0;padding-left:18px;font-size:.85rem">
+              ${rows.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}
+            </ul>
+          </div>` : ""}
+        <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin:10px 0">
+          ${nodes.map((n, i) => `
+            <div style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:.85rem">
+              <span style="color:var(--muted)">${i + 1}.</span> ${escapeHtml(n.name)}
+              <span style="color:var(--muted)">— ${escapeHtml(typeLabel(n.type))}</span>
+            </div>`).join("")}
+        </div>
+        <label class="dt-label" for="dfConfirmName" style="font-size:.85rem">
+          Type the callflow name to confirm:
+        </label>
+        <input class="dt-input" id="dfConfirmName" type="text" autocomplete="off"
+               placeholder="${escapeHtml(root.name)}" style="width:100%;margin-top:4px" />
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+          <button id="dfCancelDel" class="btn btn--secondary">Cancel</button>
+          <button id="dfDoDelete" class="btn" disabled>Delete permanently</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const $name = overlay.querySelector("#dfConfirmName");
+    const $go = overlay.querySelector("#dfDoDelete");
+    const close = () => { if (overlay.parentNode) document.body.removeChild(overlay); };
+    $name.focus();
+    $name.addEventListener("input", () => {
+      $go.disabled = $name.value.trim() !== root.name;
+    });
+    overlay.querySelector("#dfCancelDel").addEventListener("click", close);
+    $go.addEventListener("click", () => {
+      close();
+      $report.querySelectorAll("input[type=checkbox]").forEach((cb) => { cb.disabled = true; });
+      runDeletion();
+    });
+  }
+
   // ── Render ────────────────────────────────────────────
 
   function consumerNames(list, limit = 6) {
@@ -1052,6 +1361,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         "and may be used in ways that are not visible here — queues and skills are often " +
         "looked up by name at runtime. Never selected by default.")}
       <div id="dfSummary"></div>
+      <div id="dfResults"></div>
       <div id="dfFindings"></div>`;
 
     renderSummary();
@@ -1063,6 +1373,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     if (!sum) return;
     const total = state.closure.size - 1;
     const kept = total - state.selection.size;
+    const canDelete = !state.rootHardBlocked && !state.deleted;
     sum.innerHTML = `
       <div class="df-sect">
         <div class="df-sect-head">
@@ -1070,16 +1381,22 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
           <div class="df-sub" style="margin-top:4px">
             ${state.rootHardBlocked
               ? "Nothing can be removed while the callflow is blocked."
-              : `The callflow plus <strong>${state.selection.size}</strong> of ${total} dependencies would be removed; <strong>${kept}</strong> kept.`}
+              : state.deleted
+              ? "This analysis has been carried out. Re-analyse to see the current state."
+              : `The callflow plus <strong>${state.selection.size}</strong> of ${total} dependencies will be removed; <strong>${kept}</strong> kept.`}
           </div>
         </div>
         <div class="df-row">
           <div class="df-row-main df-sub">
-            Phase 1 reports only — no deletion is performed. Execution, with the
-            re-verification step, lands in Phase 2.
+            Each object's consumers are checked again immediately before it is deleted,
+            and anything that has gained one since this report is kept and reported.
+            Deletion cannot be undone.
           </div>
+          ${canDelete ? `<button class="btn" id="dfDeleteBtn">Delete…</button>` : ""}
         </div>
       </div>`;
+    const btn = $("#dfDeleteBtn");
+    if (btn) btn.addEventListener("click", showDeleteConfirm);
   }
 
   /**

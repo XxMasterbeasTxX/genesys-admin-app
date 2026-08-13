@@ -27,6 +27,7 @@ const ACTION_LABELS = {
   deployment_basic:       "Deployment — Basic",
   deployment_onboarding:  "Deployment — Onboarding",
   deployment_onboarding_preview: "Deployment — Onboarding (previewed only)",
+  flow_delete:            "Flow Delete",
   phone_create:           "Phone Create",
   phone_move:             "Phone Move",
   schedule_create:        "Schedule Create",

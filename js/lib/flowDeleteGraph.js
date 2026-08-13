@@ -92,6 +92,53 @@ export function settleSelection(graph) {
 }
 
 /**
+ * The order objects must be deleted in: every consumer before the thing it uses.
+ *
+ * Derived from the consumer graph rather than a fixed type sequence, because the
+ * graph is the actual constraint — Genesys refuses to delete anything still
+ * referenced. A fixed "flows, then tables" order is only an approximation of it.
+ * `phaseOf` breaks ties so the sequence still reads in a sensible order
+ * (flows, prompts, forms, scripts, actions, tables) among objects that do not
+ * constrain each other.
+ *
+ * Cycle-safe: mutually-referencing flows cannot all become ready, so whatever
+ * remains is appended rather than dropped. Deleting a cycle works in practice
+ * because its members go together — but nothing is silently lost either way.
+ *
+ * @param {object} graph
+ * @param {(node) => number} phaseOf  lower sorts earlier among ready objects
+ * @returns {string[]} keys, in the order they should be deleted
+ */
+export function deletionOrder(graph, phaseOf = () => 0) {
+  const pending = new Set([graph.rootKey, ...graph.selection]);
+  const order = [];
+  const rank = (k) => {
+    const n = graph.closure.get(k);
+    return n ? phaseOf(n) : 99;
+  };
+  const bySequence = (a, b) => (rank(a) - rank(b)) || a.localeCompare(b);
+
+  let guard = pending.size + 1;
+  while (pending.size && guard-- > 0) {
+    // Ready = nothing still pending consumes it.
+    const ready = [...pending].filter((k) => {
+      const consumers = graph.consumers.get(k) || [];
+      return !consumers.some((c) => {
+        const ck = keyOf(c.type, c.id);
+        return ck !== k && pending.has(ck);
+      });
+    });
+    if (!ready.length) break;                  // cycle — handled below
+    ready.sort(bySequence);
+    for (const k of ready) { order.push(k); pending.delete(k); }
+  }
+
+  // Anything left is in a reference cycle. Append it rather than drop it.
+  order.push(...[...pending].sort(bySequence));
+  return order;
+}
+
+/**
  * The largest self-consistent set of tier A objects — the default selection.
  *
  * Starts from every candidate and settles, rather than adding one at a time:

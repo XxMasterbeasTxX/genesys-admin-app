@@ -42,6 +42,7 @@
  *   export_run           — Run an on-demand export
  *   deployment_basic     — Basic deployment (sites, queues, users, …)
  *   deployment_onboarding — Onboarding deploy (written by the runner, not here)
+ *   flow_delete          — Delete a callflow and its orphaned dependencies
  */
 import { withUserToken } from "./apiAuth.js";
 
