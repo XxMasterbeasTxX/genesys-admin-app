@@ -408,6 +408,12 @@ flow author wired up. References built at runtime are invisible to it:
 - `FindQueue()` / `FindSkill()` / `FindScheduleGroup()` by computed name
 - Data-table cells holding queue, flow or prompt names
 
+**Narrowed by observation (2026-08-13):** a queue picked in the Architect
+designer *does* appear as a consumed resource (`QUEUE`), so the blind spot is
+specifically **runtime name lookups**, not queue references in general. That is a
+smaller hole than §11 originally assumed — but it is still a hole, and it is
+still concentrated in tier B.
+
 This cuts both ways, and the second way is the one that matters:
 
 - An object the flow uses may never appear in the tree. Harmless — we only delete

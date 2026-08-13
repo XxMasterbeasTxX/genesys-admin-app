@@ -697,7 +697,15 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     } else if (node.noDeleteApi) {
       reason = `<span class="df-lock">No delete API for this type — reported only.</span>`;
     } else if (state.rootHardBlocked) {
-      reason = `<span class="df-lock">Locked — the callflow itself cannot be deleted yet.</span>`;
+      // The tree is locked, but the findings still have to be reported — a
+      // blocked flow is when knowing what you are dealing with matters most.
+      // Reported selection-independently, since nothing can be selected: who
+      // uses this today, full stop.
+      const all = consumers || [];
+      reason = (all.length
+        ? `Used by ${escapeHtml(consumerNames(all))}.`
+        : `Nothing else uses this.`)
+        + ` <span class="df-lock">Locked while the callflow is blocked.</span>`;
     } else if (hard.length) {
       reason = `<span class="df-lock">Kept — still used by ${escapeHtml(consumerNames(hard))}.</span>`;
     } else if (soft.length) {
