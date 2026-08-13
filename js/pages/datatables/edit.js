@@ -88,11 +88,14 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       .dte-row-grid td.dte-col {
         min-width: 150px;
       }
-      /* The key column opts out of that floor and takes a width measured from
-         the longest key in the table (set as --dte-key-w when rendering). */
+      /* The key column swaps that floor for one measured from the longest key
+         in the table (set as --dte-key-w when rendering). It has to be a
+         min-width, not just a width: auto table layout treats width as a
+         preference and, once the columns overflow the wrapper, squeezes
+         whichever column is allowed to shrink — which would be this one. */
       .dte-row-grid th.dte-col-key,
       .dte-row-grid td.dte-col-key {
-        min-width: 0;
+        min-width: var(--dte-key-w, 150px);
         width: var(--dte-key-w, 150px);
       }
       .dte-row-grid tbody td {
@@ -181,6 +184,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         /* Stacked cards ignore the measured key width. */
         .dte-row-grid th.dte-col-key,
         .dte-row-grid td.dte-col-key {
+          min-width: 0;
           width: 100%;
         }
         .dte-row-grid tbody td:last-child {
