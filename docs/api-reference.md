@@ -310,7 +310,7 @@ Used by: WebRTC Phones — Create/Change Site, Documentation Export, Divisions �
 | GET | `/api/v2/telephony/providers/edges/didpools/dids` | List DID numbers (assigned and unassigned) |
 | GET | `/api/v2/telephony/providers/edges/phonebasesettings` | List phone base settings |
 | GET | `/api/v2/telephony/providers/edges/phonebasesettings/{id}` | Get a phone base setting (includes line templates) |
-| GET | `/api/v2/telephony/providers/edges/phones` | List phones (paginated) |
+| GET | `/api/v2/telephony/providers/edges/phones` | List phones (paginated). Server-side filters: `siteId`, `phoneBaseSettingsId`, `webRtcUserId`, `linesId`, `linesName`, `name`, plus `expand`/`fields` (allowed `expand` values are not documented — do not guess one in). Change Site passes `siteId`. **The list does not reliably return `webRtcUser`** — use `GET .../phones/{id}` for the holder (see `js/lib/phoneHolders.js`). Filtered results cap at 10,000 |
 | POST | `/api/v2/telephony/providers/edges/phones` | Create a phone |
 | GET | `/api/v2/telephony/providers/edges/phones/{id}` | Get a phone by ID |
 | PUT | `/api/v2/telephony/providers/edges/phones/{id}` | Update a phone (e.g., change site) |
