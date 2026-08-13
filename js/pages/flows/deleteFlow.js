@@ -534,44 +534,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
   }
 
   /**
-   * EXPERIMENT — a version-free consumer lookup.
-   *
-   * `consumingresources` requires a version and appears to answer only for that
-   * version: two runs returned disjoint consumer sets for the same data action.
-   * If that is right, the whole orphan test is unsound, because the version we
-   * happen to ask about decides which consumers we are told about.
-   *
-   * `GET /api/v2/architect/dependencytracking?name=…&consumingResources=true`
-   * searches by name and takes no version. If it returns the UNION of consumers,
-   * it is the primitive this feature should have been built on.
-   *
-   * Runs against one object per analysis, purely to record what comes back.
-   * Nothing depends on the result yet.
-   */
-  async function tryVersionFreeLookup(node, findings) {
-    if (!node) return;
-    try {
-      const resp = await api.proxyGenesys(state.orgId, "GET",
-        "/api/v2/architect/dependencytracking", {
-          query: { name: node.name, objectType: node.type, consumingResources: "true", pageSize: "25" },
-        });
-      const entities = resp?.entities || [];
-      const match = entities.find((e) => String(e?.id) === String(node.id)) || entities[0];
-      const consuming = match?.consumingResources || [];
-      findings.altLookup = {
-        object: node.name, type: node.type, ok: true,
-        matched: !!match, count: consuming.length,
-        names: consuming.map((c) => `${c.name} (${c.type || "?"})`).slice(0, 12),
-      };
-    } catch (err) {
-      findings.altLookup = {
-        object: node.name, type: node.type, ok: false,
-        error: (err.message || String(err)).slice(0, 300),
-      };
-    }
-  }
-
-  /**
    * Add the numbers that make the cost of a tick visible before it is made
    * (design §3): rows on a data table, members on a queue. Best-effort — a
    * missing count is cosmetic, so a failure here never interrupts the analysis.
@@ -606,7 +568,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       objectTypeCalls: [],
       probes: [],               // attachment probes and their outcomes
       consumerCalls: [],        // which version each consumer answer came from
-      altLookup: null,          // version-free lookup experiment (see below)
       errors: [],
       buildStatus: null,
     };
@@ -685,14 +646,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         // A null (unknown) list stays unknown — it is already the stricter state.
         if (existing !== null) state.consumers.set(node.key, [...(existing || []), ...found]);
       }
-
-      // One version-free lookup, on a non-flow object (data actions and tables
-      // are where the disjoint consumer sets showed up).
-      await tryVersionFreeLookup(
-        [...state.closure.values()].find((n) => !n.isRoot && !n.isFlow)
-          || [...state.closure.values()].find((n) => !n.isRoot),
-        findings
-      );
 
       await enrichNodes(state.closure);
       state.findings = findings;
@@ -968,14 +921,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
                  c.names?.length ? `: ${escapeHtml(c.names.join(", "))}` : ""}</li>`).join("") || "<li>none</li>"}
           </ul>
         </div>
-        ${f.altLookup ? `
-          <div style="margin-top:7px"><strong>Version-free lookup experiment</strong>
-            (${escapeHtml(f.altLookup.object)} [${escapeHtml(f.altLookup.type)}]):
-            ${f.altLookup.ok
-              ? `matched=${f.altLookup.matched} · ${f.altLookup.count} consumer(s)${
-                  f.altLookup.names?.length ? ` — ${escapeHtml(f.altLookup.names.join(", "))}` : ""}`
-              : `<span class="df-block">FAILED: ${escapeHtml(f.altLookup.error || "")}</span>`}
-          </div>` : ""}
         ${f.errors.length ? `
           <div style="margin-top:7px"><strong class="df-block">Errors (${f.errors.length}):</strong>
             <ul style="margin:4px 0 0;padding-left:18px">

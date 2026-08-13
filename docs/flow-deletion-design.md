@@ -428,11 +428,16 @@ Kept rows now show both — outside consumers and in-tree ones — because a row
 that displays half the picture reads as the whole of it. That asymmetry, not the
 API, is what made a deliberate change look like a defect.
 
+**Positively confirmed, not merely explained away.** The version-free endpoint
+(`dependencytracking?name=…&consumingResources=true`, which takes no version)
+was run against the same data table and returned the *same distinct consumers*
+as the version-scoped call. Two independent routes agree, so `consumingresources`
+is not under-reporting. The experiment has been removed now that it has answered.
+
 Worth keeping as a caution: **an apparent API anomaly is more likely to be our
-own display logic or a real change in the org.** The diagnostics that settled it
-(per-object consumer lookups with the version used, and a version-free lookup
-experiment) remain in the Findings panel — cheap, and they make the next such
-question answerable in one run instead of three.
+own display logic or a real change in the org.** The per-object consumer lookups
+remain in the Findings panel — cheap, and they were what made the live graph
+reproducible offline when the next question came up.
 
 ## 11. Known limitations (accepted)
 
