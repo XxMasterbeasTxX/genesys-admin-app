@@ -882,13 +882,11 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
    */
   function creatorHtml(node) {
     const c = node.creator;
-    if (!c || c.kind === "none") {
-      // Confirmed against a live org: the detail payloads for data tables, data
-      // actions and user prompts carry no provenance field at any depth. Genesys
-      // holds the answer in its audit trail, not on the object — so the message
-      // says where it is not, rather than implying nobody knows.
-      return `<span style="color:var(--muted)">Not available — this object type's API returns no creator.</span>`;
-    }
+    // Nothing to say, so say nothing. Data tables, data actions and user prompts
+    // return no provenance at all (confirmed live), and a line repeating that on
+    // every one of them is noise on rows where the real content is who still uses
+    // the object. Provenance appears only where it is actually known.
+    if (!c || c.kind === "none") return "";
     const verb = c.basis === "created" ? "Created"
       : c.basis === "operated" ? "Last change"
       : "Last modified";
@@ -947,6 +945,8 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
 
     // The cost of a tick, made visible before it is made: rows are customer data,
     // and a queue with members is live infrastructure, not a callflow artifact.
+    const creator = creatorHtml(node);
+
     const extra = [];
     if (node.tier === "B") extra.push("org-level");
     if (typeof node.rowCount === "number") extra.push(`${node.rowCount} row${node.rowCount === 1 ? "" : "s"}`);
@@ -963,7 +963,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
             ${extra.length ? `<span class="df-badge">${escapeHtml(extra.join(" · "))}</span>` : ""}
           </div>
           <div class="df-sub">${reason}</div>
-          <div class="df-sub" style="margin-top:1px">${creatorHtml(node)}</div>
+          ${creator ? `<div class="df-sub" style="margin-top:1px">${creator}</div>` : ""}
         </div>
       </div>`;
   }
@@ -1014,7 +1014,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
             <span class="df-badge">${state.rootHardBlocked ? "blocked" : "deletable"}</span>
           </h3>
           <div class="df-sub" style="margin-top:4px">The callflow being removed.</div>
-          <div class="df-sub" style="margin-top:1px">${creatorHtml(root)}</div>
+          ${creatorHtml(root) ? `<div class="df-sub" style="margin-top:1px">${creatorHtml(root)}</div>` : ""}
           ${state.buildDate ? `
             <div class="df-sub" style="margin-top:1px">
               Dependency index last fully rebuilt ${escapeHtml(new Date(state.buildDate).toLocaleString())}
