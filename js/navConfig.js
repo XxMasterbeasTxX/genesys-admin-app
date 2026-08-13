@@ -276,6 +276,7 @@ export const NAV_TREE = [
     children: [
       { label: "Flow Overview", path: "flow-overview", enabled: true, access: "flows.flowoverview" },
       { label: "Journey Flow", path: "journey", enabled: true, access: "flows.journey" },
+      { label: "Delete Flow", path: "delete", enabled: true, access: "flows.delete" },
     ],
   },
   {
