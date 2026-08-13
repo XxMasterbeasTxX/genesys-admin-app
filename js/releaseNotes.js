@@ -11,6 +11,39 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.8",
+    date: "2026-08-13",
+    title: "WebRTC Phones — Create: filter by group or division",
+    changes: [
+      "Two optional filters above the site picker narrow who a run covers: Groups — every group type, social as well as official — and Division. Leave them empty to cover the whole org, as before.",
+      "The two combine: picking a group and a division gives the members of that group who are also in that division, not everyone in either.",
+      "The summary states both numbers when a filter is on — \"40 of 900 active users (group 'Sales Team')\" — so a narrow run never reads like an org-wide one.",
+      "The site picker is now labelled Destination Site.",
+      "Fixed: users who already had a WebRTC phone were being offered one anyway. The phone list Genesys returns does not always say which user a phone belongs to, and those phones were being read as unassigned — so an org's existing phones were invisible and the review offered a duplicate for everyone. Phones the list does not account for are now read individually.",
+      "The Findings panel states how many existing WebRTC phones were matched to users. If that number is zero on an org that has WebRTC phones, the match has failed and the run should not be confirmed.",
+      "A phone counts as belonging to a user whether it is recorded as their WebRTC user or their owner, and phones on any WebRTC base count — not only the base new phones are created on.",
+    ],
+  },
+  {
+    version: "2.7",
+    date: "2026-08-13",
+    title: "WebRTC Phones — Create: see who gets a phone before any are made",
+    changes: [
+      "Phones › WebRTC › Create now works in two steps. Analyse reads the org's active users, their licences and its existing phones, and shows you exactly who would get a phone and who would be skipped. Nothing is created until you confirm.",
+      "Every skipped user is listed with the reason — already has a WebRTC phone, holds only a collaborate licence, or holds no licence at all — so a user who unexpectedly misses out can be checked on the spot.",
+      "The collaborate rule now actually applies. It never fired in earlier versions: licences were read in the wrong shape, so every user looked unlicensed to it and collaborate users were sent to Genesys anyway. A user holding a collaborate licence alongside a real one is correctly treated as needing a phone.",
+      "Users who already have a WebRTC phone are found by reading the org's phones up front, instead of being discovered by a create that fails. That also means the run no longer sends a request for every user who is already set up.",
+      "Failures now say what went wrong. Previously any error whose text happened to contain '400' or '409' was recorded as 'already exists', which hid real problems — a misconfigured site or a rejected licence looked identical to a duplicate.",
+      "Phone names that would clash with an existing phone are resolved automatically (the user's email name is added), and the review flags which ones were adjusted. Before, the second person with the same name simply failed.",
+      "The Findings panel lists every licence found in the org and which ones were read as collaborate, so if an org uses a licence name the tool does not recognise you can see it in the review rather than after the fact.",
+      "Rows can be unticked to narrow a run, and the confirmation dialog restates the count and the site before anything is written.",
+      "Rate-limit responses are retried with a backoff instead of being counted as failures.",
+      "The Excel log now covers everyone considered, not just the users acted on: skipped users appear with their reason, and users who were left unticked or not reached appear as 'Not run'.",
+      "Only active users are considered. Inactive and deleted users are no longer sent phones.",
+      "Phones are still never removed by this page — undoing a run means deleting the phones in Genesys Cloud.",
+    ],
+  },
+  {
     version: "2.6",
     date: "2026-08-13",
     title: "Flows: delete a callflow and everything only it used (internal)",
