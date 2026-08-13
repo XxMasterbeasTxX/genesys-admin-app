@@ -96,6 +96,28 @@ const FLOW_TYPE_GUESS = {
   outboundcall: "OUTBOUNDCALLFLOW",
 };
 
+// ── Dependency-tracking build status ────────────────────
+//
+// Confirmed against a live org (2026-08-13). The endpoint returns:
+//   { user, buildId, dateStarted, dateCompleted, status: "OPERATIONAL",
+//     failedObjects: [], selfUri }
+//
+// "OPERATIONAL" means the index is live and maintained. `dateCompleted` is the
+// last FULL rebuild and is routinely weeks old — ordinary publishes update the
+// index incrementally — so an old date is NOT a staleness signal on its own and
+// must not be treated as one. It is surfaced for the operator to judge.
+
+/** Status values that mean the index can be trusted. */
+const BUILD_READY = new Set(["OPERATIONAL"]);
+
+/** Status values known to mean "not usable", with the reason to show. */
+const BUILD_NOT_READY = {
+  BUILDING: "a rebuild is in progress",
+  NOTBUILT: "the index has never been built",
+  FAILED: "the last build failed",
+  UNKNOWN: "the index state could not be determined",
+};
+
 export default function renderDeleteFlow({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
@@ -181,6 +203,8 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
                           // re-analysis still has the raw id to start from
     rootMeta: null,
     rootHardBlocked: false,
+    buildDate: null,          // last full rebuild of the dependency index
+    failedObjectIds: new Set(),// objects the index could not process
     closure: new Map(),   // key → node
     consumers: new Map(), // key → normalised consumer list
     selection: new Set(), // keys ticked for (eventual) deletion
@@ -293,6 +317,14 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     const consumers = new Map();
     let done = 0;
     for (const node of closure.values()) {
+      // The index reported it could not process this object, so whatever it says
+      // about the object's consumers is incomplete by its own admission.
+      if (state.failedObjectIds?.has(String(node.id).toLowerCase())) {
+        consumers.set(node.key, null);
+        findings.errors.push(`'${node.name}' is listed in the index's failedObjects — dependency data for it is incomplete`);
+        done++;
+        continue;
+      }
       try {
         const list = await gc.fetchConsumingResources(api, state.orgId, node.id, node.type);
         consumers.set(node.key, list.filter((c) => !c.deleted && c.id !== node.id));
@@ -357,13 +389,26 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
           `so the analysis is stopped here.`
         );
       }
-      const buildState = String(build?.status || build?.state || "").toLowerCase();
-      if (buildState && !/complete|success|ok|done|current/.test(buildState)) {
-        throw new Error(
-          `The dependency-tracking index is not ready (status "${buildState}"). ` +
-          `Results would be incomplete or out of date. Wait for the build to finish and re-run.`
-        );
+      const buildState = String(build?.status || build?.state || "").toUpperCase();
+      if (!BUILD_READY.has(buildState)) {
+        const why = BUILD_NOT_READY[buildState];
+        throw new Error(why
+          ? `The dependency-tracking index is not usable — ${why} (status "${buildState}"). ` +
+            `Wait for it to become OPERATIONAL and re-run.`
+          : `Unrecognised dependency-tracking build status "${buildState}". Refusing to ` +
+            `continue rather than guess whether the dependency data can be trusted.`);
       }
+      state.buildDate = build?.dateCompleted || null;
+
+      // Objects the index itself failed to process have incomplete dependency
+      // data — precisely the case that produces a false orphan. They are not
+      // fatal to the run, but any that turn up in this closure are forced to
+      // UNKNOWN rather than trusted.
+      state.failedObjectIds = new Set(
+        (Array.isArray(build?.failedObjects) ? build.failedObjects : [])
+          .map((o) => String(o?.id || o || "").toLowerCase())
+          .filter(Boolean)
+      );
 
       // 2. Root flow metadata — including any Architect checkout.
       setStatus("Reading the flow…", "", true);
@@ -511,7 +556,11 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
             <span class="df-badge">${escapeHtml(typeLabel(root.type))}</span>
             <span class="df-badge">${state.rootHardBlocked ? "blocked" : "deletable"}</span>
           </h3>
-          <div class="df-sub" style="margin-top:4px">The callflow being removed.</div>
+          <div class="df-sub" style="margin-top:4px">
+            The callflow being removed.${state.buildDate ? `
+            Dependency index last fully rebuilt ${escapeHtml(new Date(state.buildDate).toLocaleString())}
+            — normal for this to be old, as publishing updates it incrementally.` : ""}
+          </div>
         </div>
       </div>
       ${blockersHtml}

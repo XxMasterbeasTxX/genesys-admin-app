@@ -113,8 +113,33 @@ Endpoints (**exact response shapes to be confirmed against a live org — see §
 
 The index is built **asynchronously**. A stale or in-progress build produces
 wrong answers, and wrong answers here delete things. The page therefore checks
-build status first and **refuses to proceed** on anything other than a completed,
-current build, rather than silently trusting it.
+build status first and **refuses to proceed** unless the index is usable, rather
+than silently trusting it.
+
+**Confirmed against a live org (2026-08-13)** — §13 item 3 is answered:
+
+```json
+{ "user": {…}, "buildId": "…", "dateStarted": "2026-08-02T09:17:55.731Z",
+  "dateCompleted": "2026-08-02T09:18:23.440Z", "status": "OPERATIONAL",
+  "failedObjects": [], "selfUri": "…" }
+```
+
+Three things follow, all of them corrections to the original guesswork:
+
+- **`OPERATIONAL` is the ready state.** The first implementation tested the
+  status against a fuzzy "looks finished" pattern and rejected `OPERATIONAL`,
+  blocking a perfectly healthy org. The check is now an explicit allowlist, with
+  known not-ready states (`BUILDING`, `NOTBUILT`, `FAILED`, `UNKNOWN`) named in
+  the message and any *unrecognised* value still refused — the safe direction,
+  but now clearly labelled as unrecognised rather than as staleness.
+- **`dateCompleted` is the last FULL rebuild and is routinely weeks old.**
+  Publishing updates the index incrementally, so an old date is *not* a
+  staleness signal and must never be treated as one. It is shown in the report
+  for the operator to judge.
+- **`failedObjects` is a safety input, not decoration.** An object the index
+  could not process has incomplete dependency data by the index's own admission
+  — exactly the false-orphan case. Any such object appearing in the closure is
+  forced to UNKNOWN and cannot be selected.
 
 ### 4.2 Building the two graphs
 
@@ -403,8 +428,10 @@ Live-org checks, in order. Each one can change the design.
    configurations, queue in-queue assignments and campaigns appear as consuming
    resources of a flow? §7 depends on this. Anything that does not appear needs
    a separate, type-specific blocker lookup.
-3. **Build status semantics** — what `dependencytracking/build` returns, and how
-   long after publishing a flow the index is current.
+3. ~~**Build status semantics**~~ — **ANSWERED 2026-08-13**, see §4.1. Ready
+   state is `OPERATIONAL`; `dateCompleted` tracks full rebuilds only and is
+   expected to be old; `failedObjects` is now used to force affected objects to
+   UNKNOWN.
 4. **Which types have a DELETE endpoint** (§8.1), flow outcomes especially.
 5. **Permission strings** for §12.
 6. **A real end-to-end run** against a test org: onboard a flow with Deployment ›
