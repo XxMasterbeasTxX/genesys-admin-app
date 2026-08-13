@@ -212,13 +212,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       Dependencies are read from flow authoring; references built at runtime from
       variables or data-table values are not visible and are not checked.
     </p>
-    <p class="df-caveat" style="margin-top:8px;background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.35)">
-      <strong>Known unresolved issue —</strong> two analyses of the same object have
-      returned <em>different</em> consumer lists, apparently depending on which
-      version was asked about. Until that is understood, treat “nothing else uses
-      this” as <strong>unconfirmed</strong>: the list of who uses an object may be
-      incomplete. This is why deletion is not enabled.
-    </p>
 
     <div class="dt-controls" style="margin-top:14px">
       <div class="dt-control-group">
@@ -770,7 +763,15 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         : `Nothing else uses this.`)
         + ` <span class="df-lock">Locked while the callflow is blocked.</span>`;
     } else if (hard.length) {
-      reason = `<span class="df-lock">Kept — still used by ${escapeHtml(consumerNames(hard))}.</span>`;
+      // Show the in-tree consumers too. A row listing only the outside ones
+      // reads as the complete picture and is not — that asymmetry once made a
+      // deliberate org change look like an API defect.
+      const inTree = (consumers || [])
+        .filter((c) => state.closure.has(keyOf(c.type, c.id)))
+        .map((c) => state.closure.get(keyOf(c.type, c.id)));
+      reason = `<span class="df-lock">Kept — still used by ${escapeHtml(consumerNames(hard))}, `
+        + `outside this callflow.</span>`
+        + (inTree.length ? ` <span style="color:var(--muted)">Also used inside it by ${escapeHtml(consumerNames(inTree))}.</span>` : "");
     } else if (soft.length) {
       reason = `<span class="df-lock">Kept — used by ${escapeHtml(consumerNames(soft))}, which ${soft.length === 1 ? "is" : "are"} not selected.</span>`;
     } else {
