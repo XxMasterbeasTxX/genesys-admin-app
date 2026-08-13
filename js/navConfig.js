@@ -228,6 +228,7 @@ export const NAV_TREE = [
         children: [
           { label: "Change Site", path: "change-site", enabled: true, access: "phones.webrtc.changeSite" },
           { label: "Create WebRTC", path: "create", enabled: true, access: "phones.webrtc.create" },
+          { label: "Delete", path: "delete", enabled: true, access: "phones.webrtc.delete" },
         ],
       },
     ],

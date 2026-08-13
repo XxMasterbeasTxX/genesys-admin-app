@@ -120,6 +120,7 @@
  *   PHONES
  *   phones.webrtc.changeSite           WebRTC — Change Site
  *   phones.webrtc.create               WebRTC — Create WebRTC
+ *   phones.webrtc.delete               WebRTC — Delete (Master Admin only)
  *
  *   ROLES
  *   roles.copy.singleOrg               Copy — Copy from current org
@@ -155,25 +156,30 @@
  * here, which would have handed `flows.delete` to both admin groups the moment
  * it was registered — hence the explicit leaves. Adding a new restricted page
  * under an existing section means breaking that section's wildcard too.
+ *
+ * `phones.*` was broken up for exactly that reason when `phones.webrtc.delete`
+ * was added: leaving the wildcard would have handed both admin groups the
+ * ability to bulk-delete phones without anyone granting it.
  */
 const ADMIN_BASE = [
   "audit.*", "data-actions.*", "data-tables.*", "divisions.*", "export.*",
-  "gdpr.*", "interactions.*", "phones.*", "roles.*", "users.*",
+  "gdpr.*", "interactions.*", "roles.*", "users.*",
   "utilities.*", "wrapupCodes.*",
   "deployment.basic", "deployment.datatables",
   "flows.flowoverview", "flows.journey",
+  "phones.webrtc.changeSite", "phones.webrtc.create",
 ];
 export const GROUP_ACCESS = {
   // "*" can't express an exclusion, so the admin groups enumerate every section
   // and grant Deployment and Flows per page. Superusers bypass this map entirely
   // (see accessService.js).
   //
-  // Master Admin additionally gets `flows.delete`. It is a destructive,
-  // irreversible page, so it is granted to the top admin group by name rather
-  // than inherited through a wildcard — and `deployment.onboarding`, which
-  // writes into customer orgs with client credentials, stays superuser-only for
-  // both groups.
-  "Genesys App - Master Admin": [...ADMIN_BASE, "flows.delete"],
+  // Master Admin additionally gets `flows.delete` and `phones.webrtc.delete`.
+  // Both are destructive and irreversible, so they are granted to the top admin
+  // group by name rather than inherited through a wildcard — and
+  // `deployment.onboarding`, which writes into customer orgs with client
+  // credentials, stays superuser-only for both groups.
+  "Genesys App - Master Admin": [...ADMIN_BASE, "flows.delete", "phones.webrtc.delete"],
   "Genesys App - Admin": ADMIN_BASE,
   "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*", "roles.compare", "roles.search", "flows.journey"],
   "Genesys App - Export": ["export.*"],

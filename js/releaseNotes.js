@@ -11,6 +11,23 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.9",
+    date: "2026-08-13",
+    title: "Phones: find and delete WebRTC phones nobody is using (internal)",
+    internalOnly: true,
+    changes: [
+      "New page Phones › WebRTC › Delete. It finds WebRTC phones with no user assigned, or whose user has been deleted or deactivated, sorts them by reason and removes the ones you confirm.",
+      "Only phones on a WebRTC base are considered. A lobby or conference phone legitimately has nobody assigned to it, and sweeping those in would make \"no user\" meaningless — they are never listed.",
+      "Phones belonging to an inactive user are listed but not ticked. Inactive usually means on leave or suspended rather than gone, and deleting the phone means they return to no phone. Phones with no user at all, or a deleted user, are ticked ready to go.",
+      "Phones Genesys would not return when asked for them individually are reported in their own section and cannot be selected. Not knowing who holds a phone is not the same as knowing nobody does, and the difference matters when the next step is deletion.",
+      "Every phone is re-checked immediately before it is removed. Anything that has been assigned to an active user since you ran the report is kept and reported rather than deleted — the review can sit open for a while, and someone else can be working in the org at the same time.",
+      "Confirming requires typing DELETE. There is no undo: a phone can be recreated from Create, but its id is gone.",
+      "Optional Site, Groups and Division filters; leave them all empty to sweep the whole org. Note that groups and divisions describe a person, so setting one hides the phones that have no user — the Findings panel says so when it happens.",
+      "Every run writes one Activity Log entry, and the Excel log covers every phone considered, including the ones kept and why.",
+      "Available to Master Admins only, and never to customer logins. Adding it meant splitting the `phones.*` access wildcard into named pages, so that a page which deletes phones across an org can never be granted by inheritance.",
+    ],
+  },
+  {
     version: "2.8",
     date: "2026-08-13",
     title: "WebRTC Phones — Change Site: filters, and a confirmation before moving",

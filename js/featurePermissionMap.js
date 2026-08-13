@@ -72,6 +72,7 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   // ── Phones (no granular phone perm → telephony:plugin:all) ──
   "phones.webrtc.create":     { create: ["telephony:plugin:all"] },
   "phones.webrtc.changeSite": { edit: ["telephony:plugin:all"] },
+  "phones.webrtc.delete":     { delete: ["telephony:plugin:all"] },
 
   // ── Deployment (bulk, composite — any-of for nav; per-sheet at runtime) ──
   "deployment.basic":      { create: ["authorization:division:add", "routing:skill:create", "routing:language:manage", "routing:schedule:add", "routing:scheduleGroup:add", "telephony:plugin:all"] },

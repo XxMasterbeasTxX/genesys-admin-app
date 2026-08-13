@@ -285,6 +285,9 @@ const CUSTOMER_EXCLUDED_KEYS = [
   // dependencies — irreversibly, with no rollback. Listed explicitly because the
   // wildcard would grant it silently.
   "flows.delete",
+  // Same reasoning for bulk phone deletion: a `phones.*` entitlement must not
+  // carry the ability to delete phones across an org.
+  "phones.webrtc.delete",
 ];
 
 /** True if a page key is an internal-only feature excluded from customer mode. */
