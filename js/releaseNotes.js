@@ -11,6 +11,20 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.9",
+    date: "2026-08-13",
+    title: "Phones: find and delete WebRTC phones nobody is using",
+    changes: [
+      "New page Phones › WebRTC › Delete. Analyse lists the WebRTC phones nobody is using — no user assigned, or a user who has been deleted or deactivated — grouped by reason. Nothing is deleted until you review the list and confirm.",
+      "Phones with no user, or a deleted user, are ticked ready to go. Phones belonging to an inactive user are listed unticked, so removing one is a deliberate choice.",
+      "Phones Genesys will not return when asked for them individually are listed in their own section and cannot be selected. Not knowing who holds a phone is not the same as knowing nobody does.",
+      "Only phones on a WebRTC base are considered, so shared desk and conference phones are never listed. An optional Site filter narrows the sweep further.",
+      "Confirming requires typing DELETE, and every phone is re-checked immediately before it goes — anything assigned to an active user since you ran the report is kept and reported instead. There is no undo, though a phone can be recreated from Create.",
+      "The Findings panel states what the run actually saw: how many phones were examined, and how many users were read in each state. An empty category is only meaningful if the lookup behind it returned anything, so it says when one did not.",
+      "Every run writes an Activity Log entry, and the Excel log covers every phone considered, including the ones kept and why.",
+    ],
+  },
+  {
     version: "2.8",
     date: "2026-08-13",
     title: "WebRTC Phones — Change Site: filters, and a confirmation before moving",
@@ -23,7 +37,6 @@ export const RELEASE_NOTES = [
       "After a run the phone list clears. It described phones at the source site that are no longer there, and leaving it on screen invited a second move of phones that had already gone.",
       "A run that breaks part-way now still writes its Activity Log entry, covering the phones that were moved before it stopped.",
       "Phones with no assigned user cannot match a holder filter and are excluded when one is set — the count is stated so they are not silently missing.",
-      "Load Phones asks Genesys for that site's phones instead of fetching every phone in the org and discarding the rest, which is noticeably quicker on large orgs.",
     ],
   },
   {

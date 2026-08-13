@@ -266,10 +266,16 @@ export function resolveCustomerAccess(entitlements) {
 }
 
 /**
+/**
  * Access keys (or prefixes) that are INTERNAL-ONLY and must never be available in
  * customer mode — cross-org copies, trustee/all-orgs/billing exports, and the
  * internal Utilities module (IP Ranges uses client-credentials; Permission
  * Catalog is internal). GDPR is intentionally NOT excluded (open decision O2).
+ *
+ * `phones.webrtc.delete` is deliberately NOT listed: a customer may have it if
+ * their package grants it. Note the consequence — a `phones.*` entitlement
+ * carries it implicitly, so a package meant to exclude bulk phone deletion has
+ * to name the phone pages it does grant rather than use the wildcard.
  */
 const CUSTOMER_EXCLUDED_KEYS = [
   "data-actions.copy.betweenOrgs",

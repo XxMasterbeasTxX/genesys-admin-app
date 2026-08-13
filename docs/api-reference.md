@@ -156,7 +156,7 @@ Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Truste
 | PATCH | `/api/v2/users/{userId}` | Update user (e.g., change division) |
 | GET | `/api/v2/groups` | List all groups |
 | GET | `/api/v2/groups/{groupId}` | Get a single group by ID — used to resolve group display name in Compare Users and All Roles Export (group name for "Assigned by" column) |
-| GET | `/api/v2/groups/{groupId}/members` | List members of a group — also the group filter on WebRTC Phones — Create, which offers every group type the list returns |
+| GET | `/api/v2/groups/{groupId}/members` | List members of a group — also the group filter on WebRTC Phones — Create and Change Site, which offer every group type the list returns |
 | GET | `/api/v2/teams` | List all work teams (paginated) — used by Skill Templates — Add Users To Templates for work team assignment |
 | GET | `/api/v2/teams/{teamId}/members` | List members of a work team — used by Add Users To Templates to apply/remove template for all team members |
 
@@ -310,9 +310,10 @@ Used by: WebRTC Phones — Create/Change Site, Documentation Export, Divisions �
 | GET | `/api/v2/telephony/providers/edges/didpools/dids` | List DID numbers (assigned and unassigned) |
 | GET | `/api/v2/telephony/providers/edges/phonebasesettings` | List phone base settings |
 | GET | `/api/v2/telephony/providers/edges/phonebasesettings/{id}` | Get a phone base setting (includes line templates) |
-| GET | `/api/v2/telephony/providers/edges/phones` | List phones (paginated). Server-side filters: `siteId`, `phoneBaseSettingsId`, `webRtcUserId`, `linesId`, `linesName`, `name`, plus `expand`/`fields` (allowed `expand` values are not documented — do not guess one in). Change Site passes `siteId`. **The list does not reliably return `webRtcUser`** — use `GET .../phones/{id}` for the holder (see `js/lib/phoneHolders.js`). Filtered results cap at 10,000 |
+| GET | `/api/v2/telephony/providers/edges/phones` | List phones (paginated). **`siteId` is documented by the platform SDK but is NOT honoured in practice** — observed 2026-08-13: one request per site returned the full org list each time, tripling the counts on a 3-site selection. Filter by site in JS instead. Other documented filters (`phoneBaseSettingsId`, `webRtcUserId`, `linesId`, `name`) are unverified; `expand` values are undocumented — do not guess one in. **The list does not reliably return `webRtcUser`, and `site` may carry an id without a name** — use `GET .../phones/{id}` for the holder (see `js/lib/phoneHolders.js`) and resolve site names from the sites list |
 | POST | `/api/v2/telephony/providers/edges/phones` | Create a phone |
-| GET | `/api/v2/telephony/providers/edges/phones/{id}` | Get a phone by ID |
+| GET | `/api/v2/telephony/providers/edges/phones/{id}` | Get a phone by ID — the only reliable source of a phone's `webRtcUser`/`owner` |
+| DELETE | `/api/v2/telephony/providers/edges/phones/{id}` | **Delete** a phone and its lines (WebRTC Phones — Delete). Irreversible. A 404 is treated as already gone |
 | PUT | `/api/v2/telephony/providers/edges/phones/{id}` | Update a phone (e.g., change site) |
 | GET | `/api/v2/telephony/providers/edges/trunkbasesettings` | List trunk base settings |
 | GET | `/api/v2/telephony/providers/edges/extensionpools` | List extension pools |

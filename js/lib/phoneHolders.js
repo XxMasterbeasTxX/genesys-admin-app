@@ -43,8 +43,14 @@ export function phoneHolder(phone) {
  * @param {Function} [opts.shouldStop]  Polled between reads so a long resolve
  *   can be cancelled.
  * @returns {Promise<{ byUser: Map<string, Object>, byPhone: Map<string, string>,
- *   detailFetches: number, unresolved: number }>}
+ *   detailFetches: number, noHolder: Object[], unreadable: Object[] }>}
  *   `byUser` is user id → phone, `byPhone` is phone id → user id.
+ *
+ *   `noHolder` and `unreadable` are deliberately separate, and the distinction
+ *   only matters to a caller that deletes. "We read this phone and it has no
+ *   user" and "we could not read this phone" look the same in an empty map,
+ *   but acting on them is not the same act: the first is an orphan, the second
+ *   might be someone's phone. Delete treats only `noHolder` as deletable.
  */
 export async function resolvePhoneHolders(phones, webRtcBaseIds, getFullPhone, { onProgress, shouldStop } = {}) {
   const byUser = new Map();
@@ -71,6 +77,8 @@ export async function resolvePhoneHolders(phones, webRtcBaseIds, getFullPhone, {
 
   const CONCURRENCY = 6;
   const queue = [...needDetail];
+  const noHolder = [];    // read succeeded, the phone genuinely has no user
+  const unreadable = [];  // the read failed, so nothing is known either way
   let done = 0;
 
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
@@ -81,21 +89,22 @@ export async function resolvePhoneHolders(phones, webRtcBaseIds, getFullPhone, {
         const full = await getFullPhone(p.id);
         const holder = phoneHolder(full);
         if (holder) record(full, holder);
+        else noHolder.push(full);
       } catch {
-        // A phone we cannot read is left unresolved. For Create that can only
-        // cause a create Genesys then rejects — recorded as a failure, not a
-        // silent duplicate. For Change Site it drops out of a filtered view,
-        // which the caller reports as a count.
+        // Not merged into `noHolder`: a phone we could not read is unknown,
+        // not unassigned, and a caller that deletes must be able to tell the
+        // difference. Create and Change Site both treat it as unassigned,
+        // which for them costs at most a rejected create or a row missing
+        // from a filtered list.
+        unreadable.push(p);
       }
       onProgress?.(++done, needDetail.length);
     }
   }));
 
-  return {
-    byUser,
-    byPhone,
-    detailFetches: needDetail.length,
-    // Candidate phones still without a holder: never had one, or the read failed.
-    unresolved: needDetail.filter((p) => !byPhone.has(p.id)).length,
-  };
+  // Phones never queued for a read are those the list already answered for, so
+  // anything still unaccounted for was cancelled mid-resolve — treat as unknown.
+  if (queue.length) unreadable.push(...queue);
+
+  return { byUser, byPhone, detailFetches: needDetail.length, noHolder, unreadable };
 }

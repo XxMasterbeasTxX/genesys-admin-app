@@ -917,6 +917,12 @@ export async function getPhone(api, orgId, phoneId) {
     `/api/v2/telephony/providers/edges/phones/${phoneId}`);
 }
 
+/** Delete a phone. Irreversible — the phone and its lines are removed. */
+export async function deletePhone(api, orgId, phoneId) {
+  return api.proxyGenesys(orgId, "DELETE",
+    `/api/v2/telephony/providers/edges/phones/${phoneId}`);
+}
+
 /** Update a phone (full PUT — requires the complete phone object). */
 export async function updatePhone(api, orgId, phoneId, body) {
   return api.proxyGenesys(orgId, "PUT",
