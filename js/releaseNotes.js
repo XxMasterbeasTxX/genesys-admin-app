@@ -11,6 +11,20 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.8",
+    date: "2026-08-13",
+    title: "WebRTC Phones — Create: filter by group or division",
+    changes: [
+      "Two optional filters above the site picker narrow who a run covers: Groups — every group type, social as well as official — and Division. Leave them empty to cover the whole org, as before.",
+      "The two combine: picking a group and a division gives the members of that group who are also in that division, not everyone in either.",
+      "The summary states both numbers when a filter is on — \"40 of 900 active users (group 'Sales Team')\" — so a narrow run never reads like an org-wide one.",
+      "The site picker is now labelled Destination Site.",
+      "Fixed: users who already had a WebRTC phone were being offered one anyway. The phone list Genesys returns does not always say which user a phone belongs to, and those phones were being read as unassigned — so an org's existing phones were invisible and the review offered a duplicate for everyone. Phones the list does not account for are now read individually.",
+      "The Findings panel states how many existing WebRTC phones were matched to users. If that number is zero on an org that has WebRTC phones, the match has failed and the run should not be confirmed.",
+      "A phone counts as belonging to a user whether it is recorded as their WebRTC user or their owner, and phones on any WebRTC base count — not only the base new phones are created on.",
+    ],
+  },
+  {
     version: "2.7",
     date: "2026-08-13",
     title: "WebRTC Phones — Create: see who gets a phone before any are made",

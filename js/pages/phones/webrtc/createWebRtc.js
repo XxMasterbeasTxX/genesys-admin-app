@@ -31,6 +31,7 @@
  */
 import { escapeHtml, sleep, timestampedFilename, exportLogXlsx } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
+import { createMultiSelect } from "../../../components/multiSelect.js";
 import { logAction } from "../../../services/activityLogService.js";
 
 // ── Licence classification ──────────────────────────────────────────
@@ -178,6 +179,31 @@ export async function resolvePhoneHolders(phones, webRtcBaseIds, getFullPhone, {
 }
 
 /**
+ * Narrow the org's users to those the operator asked for.
+ *
+ * Both filters are optional and independent: leaving one empty means "any".
+ * A user must satisfy every filter that IS set, so picking a group and a
+ * division gives the members of that group who are also in that division,
+ * not the union of the two.
+ *
+ * Filtered-out users are not "skipped" — they were never in scope, and
+ * listing them as skipped would bury the users who were considered and
+ * rejected for a reason worth reading.
+ *
+ * @param {Object[]} users        Active users (with `division` expanded).
+ * @param {Set<string>|null} groupMemberIds  Union of the selected groups'
+ *   members, or null when no group filter is set.
+ * @param {Set<string>} divisionIds  Selected division ids; empty means any.
+ */
+export function applyUserFilters(users, groupMemberIds, divisionIds) {
+  return users.filter((u) => {
+    if (groupMemberIds && !groupMemberIds.has(u.id)) return false;
+    if (divisionIds.size && !divisionIds.has(u.division?.id)) return false;
+    return true;
+  });
+}
+
+/**
  * Classify every user into eligible / skipped. Pure — no API, no DOM.
  *
  * @param {Object[]} users         Active users (with `division` expanded).
@@ -299,6 +325,8 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
   // ── State ───────────────────────────────────────────
   const state = {
     sites: [],
+    groups: [],          // filter options; empty is fine, the filter is optional
+    divisions: [],
     analysis: null,      // { orgId, siteId, siteName, base, eligible, skipped, licenceKinds }
     selection: new Set(),// user ids ticked for creation
     results: new Map(),  // user id → { status, detail }
@@ -338,17 +366,30 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
     <hr class="hr">
 
     <p class="page-desc">
-      Creates a WebRTC phone for every active user in the organisation who should
-      have one. Pick a site and analyse first: nothing is created until you have
-      seen who is in scope and confirmed. Users who already have a WebRTC phone,
-      hold only a <strong>collaborate</strong> licence, or hold no licence at all
-      are skipped, and the review says which applies to whom.
+      Creates a WebRTC phone for every active user who should have one. Optionally
+      narrow the scope to particular groups or divisions, pick the destination site,
+      and analyse first: nothing is created until you have seen who is in scope and
+      confirmed. Users who already have a WebRTC phone, hold only a
+      <strong>collaborate</strong> licence, or hold no licence at all are skipped,
+      and the review says which applies to whom.
     </p>
+
+    <!-- Filters: narrow which users are considered. Both optional. -->
+    <div class="wc-controls">
+      <div class="wc-control-group">
+        <label class="wc-label">Groups</label>
+        <div id="wcGroupSlot"></div>
+      </div>
+      <div class="wc-control-group">
+        <label class="wc-label">Division</label>
+        <div id="wcDivisionSlot"></div>
+      </div>
+    </div>
 
     <!-- Site selector -->
     <div class="wc-controls">
       <div class="wc-control-group">
-        <label class="wc-label" for="wcSite">Site</label>
+        <label class="wc-label" for="wcSite">Destination Site</label>
         <select class="input wc-site-select" id="wcSite" disabled>
           <option value="">Loading sites…</option>
         </select>
@@ -382,6 +423,23 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
     </div>
   `;
 
+  // ── Filter pickers ──────────────────────────────────
+  // Changing a filter invalidates any report on screen: it was computed for a
+  // different set of users, and leaving it visible under new filter settings
+  // would misrepresent what a create would do.
+  const onFilterChange = () => {
+    resetReport();
+    setStatus($site.value ? "Filters changed. Click Analyse." : "Select a destination site.");
+  };
+  const groupSelect = createMultiSelect({
+    placeholder: "All groups", searchable: true, onChange: onFilterChange,
+  });
+  const divisionSelect = createMultiSelect({
+    placeholder: "All divisions", searchable: true, onChange: onFilterChange,
+  });
+  el.querySelector("#wcGroupSlot").append(groupSelect.el);
+  el.querySelector("#wcDivisionSlot").append(divisionSelect.el);
+
   // ── DOM refs ────────────────────────────────────────
   const $ = (sel) => el.querySelector(sel);
   const $site         = $("#wcSite");
@@ -412,6 +470,8 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
   function setBusy(busy) {
     state.running = busy;
     $site.disabled = busy;
+    groupSelect.setEnabled(!busy);
+    divisionSelect.setEnabled(!busy);
     $analyseBtn.disabled = busy || !$site.value;
     $cancelBtn.hidden = !busy;
     updateRunBtn();
@@ -449,10 +509,27 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
   $site.addEventListener("change", () => {
     $analyseBtn.disabled = !$site.value;
     resetReport();
-    setStatus($site.value ? "Ready. Click Analyse." : "Select a site.");
+    setStatus($site.value ? "Ready. Click Analyse." : "Select a destination site.");
   });
 
   // ── Phase 1: analyse ────────────────────────────────
+
+  /** Name the active filters for the summary, or "" when none are set. */
+  function describeFilters(groupIds, divisionIds) {
+    const nameOf = (items, id) => items.find((i) => i.id === id)?.name || id;
+    const parts = [];
+    if (groupIds.size) {
+      parts.push(groupIds.size === 1
+        ? `group '${nameOf(state.groups, [...groupIds][0])}'`
+        : `${groupIds.size} groups`);
+    }
+    if (divisionIds.size) {
+      parts.push(divisionIds.size === 1
+        ? `division '${nameOf(state.divisions, [...divisionIds][0])}'`
+        : `${divisionIds.size} divisions`);
+    }
+    return parts.join(" + ");
+  }
 
   async function findWebRtcBase(orgId) {
     const bases = await gc.fetchAllPhoneBaseSettings(api, orgId);
@@ -510,12 +587,35 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
       ]);
 
       if (state.cancelled) { setStatus("Cancelled."); return; }
-      showProgress(85);
+      showProgress(80);
 
       if (!users.length) {
         setStatus("No active users found in this org.", "error");
         return;
       }
+
+      // Apply the filters. Group membership needs a call per selected group;
+      // division comes off the user records already fetched.
+      const groupIds = groupSelect.getSelected();
+      const divisionIds = divisionSelect.getSelected();
+      let groupMemberIds = null;
+      if (groupIds.size) {
+        setStatus(`Reading members of ${groupIds.size} group${groupIds.size === 1 ? "" : "s"}…`);
+        const memberLists = await Promise.all(
+          [...groupIds].map((id) => gc.fetchGroupMembers(api, orgId, id).catch(() => []))
+        );
+        groupMemberIds = new Set(memberLists.flat().map((m) => m.id));
+      }
+      if (state.cancelled) { setStatus("Cancelled."); return; }
+
+      const scopedUsers = applyUserFilters(users, groupMemberIds, divisionIds);
+      const filterLabel = describeFilters(groupIds, divisionIds);
+
+      if (!scopedUsers.length) {
+        setStatus(`No active users match the selected ${filterLabel || "filters"}.`, "error");
+        return;
+      }
+      showProgress(85);
 
       setStatus("Matching existing WebRTC phones to their users…");
       const { byUser: phoneByUser, detailFetches } = await resolvePhoneHolders(
@@ -533,11 +633,13 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
       if (state.cancelled) { setStatus("Cancelled."); return; }
 
       setStatus("Classifying users…");
-      const { eligible, skipped, licenceKinds } = analyseUsers(users, licenseUsers, phones, phoneByUser);
+      const { eligible, skipped, licenceKinds } = analyseUsers(scopedUsers, licenseUsers, phones, phoneByUser);
 
       state.analysis = {
         orgId, siteId, siteName, base, eligible, skipped, licenceKinds,
-        userCount: users.length,
+        userCount: scopedUsers.length,
+        orgUserCount: users.length,
+        filterLabel,
         phoneCount: phones.length,
         existingWebRtc: phoneByUser.size,
         detailFetches,
@@ -674,10 +776,17 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
   }
 
   function renderReport() {
-    const { eligible, skipped, siteName, userCount } = state.analysis;
+    const { eligible, skipped, siteName, userCount, orgUserCount, filterLabel } = state.analysis;
+
+    // When a filter is on, both numbers are stated: how many the org has, and
+    // how many the filter left. A create that covers 40 of 900 users should
+    // not read the same as one that covers the whole org.
+    const scope = filterLabel
+      ? `${userCount} of ${orgUserCount} active users (${filterLabel})`
+      : `${userCount} active users`;
 
     $summary.textContent =
-      `${userCount} active users — ${eligible.length} to create, ${skipped.length} skipped — site '${siteName}'`;
+      `${scope} — ${eligible.length} to create, ${skipped.length} skipped — site '${siteName}'`;
     $summary.style.display = "";
 
     $report.innerHTML = `
@@ -946,23 +1055,66 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
     }
   });
 
-  // ── Load sites on mount ────────────────────────────
+  // ── Load sites and filter options on mount ─────────
   (async () => {
-    try {
-      state.sites = await gc.fetchAllSites(api, orgContext.get());
-      state.sites.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    // Sites gate the page; the filters do not. A failure to load groups or
+    // divisions leaves those pickers empty and the page still usable, rather
+    // than blocking a create over an optional filter.
+    const [sitesRes, groupsRes, divisionsRes] = await Promise.allSettled([
+      gc.fetchAllSites(api, orgContext.get()),
+      gc.fetchAllGroups(api, orgContext.get()),
+      gc.fetchAllDivisions(api, orgContext.get()),
+    ]);
 
-      $site.innerHTML = `<option value="">— Select a site —</option>`
-        + state.sites.map((s) =>
-          `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name || s.id)}</option>`
-        ).join("");
-
-      $site.disabled = false;
-      setStatus("Ready. Select a site, then click Analyse.");
-    } catch (err) {
-      setStatus(`Failed to load sites: ${err.message}`, "error");
-      console.error("Site load error:", err);
+    if (sitesRes.status === "rejected") {
+      setStatus(`Failed to load sites: ${sitesRes.reason?.message || sitesRes.reason}`, "error");
+      console.error("Site load error:", sitesRes.reason);
+      return;
     }
+
+    state.sites = sitesRes.value.sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || "")));
+    $site.innerHTML = `<option value="">— Select a site —</option>`
+      + state.sites.map((s) =>
+        `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name || s.id)}</option>`
+      ).join("");
+    $site.disabled = false;
+
+    const notes = [];
+
+    if (groupsRes.status === "fulfilled") {
+      state.groups = groupsRes.value;
+      // Every group type is offered. The type is shown for anything that is
+      // not an official group, so a social group is not mistaken for one.
+      groupSelect.setItems(state.groups.map((g) => ({
+        id: g.id,
+        label: g.type && String(g.type).toLowerCase() !== "official"
+          ? `${g.name} (${String(g.type).toLowerCase()})`
+          : g.name || g.id,
+      })));
+      groupSelect.setPlaceholder(`All groups (${state.groups.length})`);
+    } else {
+      groupSelect.setPlaceholder("Groups unavailable");
+      groupSelect.setEnabled(false);
+      notes.push("groups");
+      console.error("Group load error:", groupsRes.reason);
+    }
+
+    if (divisionsRes.status === "fulfilled") {
+      state.divisions = divisionsRes.value;
+      divisionSelect.setItems(state.divisions.map((d) => ({ id: d.id, label: d.name || d.id })));
+      divisionSelect.setPlaceholder(`All divisions (${state.divisions.length})`);
+    } else {
+      divisionSelect.setPlaceholder("Divisions unavailable");
+      divisionSelect.setEnabled(false);
+      notes.push("divisions");
+      console.error("Division load error:", divisionsRes.reason);
+    }
+
+    setStatus(notes.length
+      ? `Ready, but the ${notes.join(" and ")} filter could not load. Select a destination site, then click Analyse.`
+      : "Ready. Optionally filter by group or division, select a destination site, then click Analyse.",
+    notes.length ? "error" : "");
   })();
 
   return el;
