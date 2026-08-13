@@ -98,7 +98,7 @@
  *   FLOWS
  *   flows.flowoverview                 Flow Overview  (read-only flow visualiser)
  *   flows.journey                      Journey Flow
- *   flows.delete                       Delete Flow  (SUPERUSER only — never granted via GROUP_ACCESS)
+ *   flows.delete                       Delete Flow  (Master Admin + SUPERUSER only; never available to customers)
  *
  *   GDPR
  *   gdpr.subjectRequest                Subject Request
@@ -146,17 +146,17 @@
  */
 
 /**
- * Full access for admin groups EXCEPT the superuser-only pages.
+ * Shared base for the admin groups: everything except the restricted pages.
  * Most sections are granted by wildcard; Deployment and Flows are granted
- * per-page so `deployment.onboarding` and `flows.delete` stay reserved for
- * SUPERUSER_IDS. Add new top-level sections here to keep admins current.
+ * per-page so `deployment.onboarding` and `flows.delete` are never handed out
+ * implicitly. Add new top-level sections here to keep admins current.
  *
  * NB: a wildcard grants keys that do not exist yet. `flows.*` used to be listed
  * here, which would have handed `flows.delete` to both admin groups the moment
- * it was registered — hence the explicit leaves. Adding a new superuser-only
- * page under an existing section means breaking that section's wildcard too.
+ * it was registered — hence the explicit leaves. Adding a new restricted page
+ * under an existing section means breaking that section's wildcard too.
  */
-const ADMIN_ALL_EXCEPT_SUPERUSER = [
+const ADMIN_BASE = [
   "audit.*", "data-actions.*", "data-tables.*", "divisions.*", "export.*",
   "gdpr.*", "interactions.*", "phones.*", "roles.*", "users.*",
   "utilities.*", "wrapupCodes.*",
@@ -164,12 +164,17 @@ const ADMIN_ALL_EXCEPT_SUPERUSER = [
   "flows.flowoverview", "flows.journey",
 ];
 export const GROUP_ACCESS = {
-  // Full access EXCEPT the superuser-only pages. "*" can't express an exclusion,
-  // so the admin groups enumerate every section and grant Deployment and Flows
-  // per page. `deployment.onboarding` and `flows.delete` are reserved for
-  // SUPERUSER_IDS, who bypass this map entirely (see accessService.js).
-  "Genesys App - Master Admin": ADMIN_ALL_EXCEPT_SUPERUSER,
-  "Genesys App - Admin": ADMIN_ALL_EXCEPT_SUPERUSER,
+  // "*" can't express an exclusion, so the admin groups enumerate every section
+  // and grant Deployment and Flows per page. Superusers bypass this map entirely
+  // (see accessService.js).
+  //
+  // Master Admin additionally gets `flows.delete`. It is a destructive,
+  // irreversible page, so it is granted to the top admin group by name rather
+  // than inherited through a wildcard — and `deployment.onboarding`, which
+  // writes into customer orgs with client credentials, stays superuser-only for
+  // both groups.
+  "Genesys App - Master Admin": [...ADMIN_BASE, "flows.delete"],
+  "Genesys App - Admin": ADMIN_BASE,
   "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*", "roles.compare", "roles.search", "flows.journey"],
   "Genesys App - Export": ["export.*"],
 };

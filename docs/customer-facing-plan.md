@@ -95,7 +95,7 @@ the existing wildcard matching in `hasAccess()` — **no change to that logic**.
 | GDPR | `gdpr.*` | **TBD** (sensitive — see open decisions) |
 | Roles | `roles.*` | Compare/Search/Create/Edit/Copy-Single ✅ · Copy Between Orgs ❌ |
 | Wrapup Codes | `wrapupCodes.*` | ✅ |
-| Flows | `flows.*` | ✅ |
+| Flows | `flows.*` | Flow Overview / Journey ✅ · **Delete Flow ❌ internal-only** |
 | Audit | `audit.*` | ✅ single-org |
 | Deployment | `deployment.*` | ✅ (powerful; consider higher tier) |
 | Users | `users.*` | ✅ single-org |
@@ -107,6 +107,12 @@ the existing wildcard matching in `hasAccess()` — **no change to that logic**.
 - **Billing (all variants) — excluded completely for customers** (trustee endpoint, requires your
   company's trustee relationship).
 - Utilities → IP Ranges (Genesys mode) and scrape/IP-range helpers → **internal-only**.
+- **Flows → Delete Flow (`flows.delete`) — internal-only.** Flows is otherwise a
+  customer-suitable module, so this one is excluded by name: a `flows.*`
+  entitlement would otherwise grant it silently. It permanently removes a
+  callflow and its dependencies with no rollback, which is not an operation to
+  expose on a self-service tier. Internally it is limited to **Master Admin and
+  superusers** — not the ordinary Admin group.
 
 ---
 

@@ -26,7 +26,7 @@ export const RELEASE_NOTES = [
       "Every run writes one Activity Log entry with the full breakdown — what was deleted, and what was kept and why.",
       "Rows show who created each object where Genesys records it, including when the object was created by an integration rather than a person.",
       "Two things this cannot see, by design: anything referenced only while a call is running (a queue looked up by name, a prompt named in a data table cell), and the contents of data tables — those are never scanned. Published survey forms also cannot be deleted; Genesys does not allow it, and the report says so.",
-      "Available to superusers only.",
+      "Available to Master Admins and superusers. Not available to the ordinary Admin group, and never to customer logins.",
     ],
   },
   {

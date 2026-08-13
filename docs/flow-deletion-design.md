@@ -635,12 +635,26 @@ loudly and safely.
 - `pageRegistry.js` — `/flows/delete` → `pages/flows/deleteFlow.js`
 - `accessConfig.js` — register `flows.delete` in the key documentation block.
 
-**The `flows.*` wildcard must be broken.** `ADMIN_ALL_EXCEPT_ONBOARDING`
-currently grants `"flows.*"` ([accessConfig.js:155](../js/accessConfig.js:155)),
-so a new `flows.delete` key would be handed to *Master Admin* and *Admin*
-automatically. Enumerate the leaves instead — `"flows.flowoverview",
-"flows.journey"` — exactly as Deployment already does to keep
-`deployment.onboarding` superuser-only. Superusers bypass the map entirely.
+**Who gets it:** **Master Admin and superusers only.**
+
+- `GROUP_ACCESS` grants `flows.delete` to *Genesys App - Master Admin* by name.
+  The ordinary *Admin* group does not get it.
+- **The `flows.*` wildcard had to be broken** to make that possible. It used to
+  grant `"flows.*"` to both admin groups, which would have handed out
+  `flows.delete` the moment the key existed — a wildcard grants keys that do not
+  exist yet. The Flows leaves are enumerated instead, exactly as Deployment
+  already does for `deployment.onboarding`.
+- **Customers can never reach it.** `flows.delete` is listed in
+  `CUSTOMER_EXCLUDED_KEYS` ([accessService.js](../js/services/accessService.js)).
+  This is load-bearing rather than belt-and-braces: Flows is a
+  *customer-suitable* module, so a `flows.*` entitlement would otherwise grant
+  permanent, unrollback-able deletion to a self-service tenant.
+- Superusers bypass the map entirely.
+
+Because the key is in `featurePermissionMap`, a Master Admin who lacks the
+underlying Genesys delete permissions in the company org sees the page **listed
+but disabled**, with the missing permission named — the standard two-factor
+model for internal write features.
 
 `featurePermissionMap.js` — **no entry in Phase 1.** That file gates *write*
 actions only; its own rules state that read-only features carry no entry and are
