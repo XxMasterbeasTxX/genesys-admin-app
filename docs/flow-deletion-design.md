@@ -61,9 +61,9 @@ graph (§4), then renders the review. Nothing has been written.
     and name (call route `+45 …`, IVR configuration `Main`, queue `Support`
     in-queue flow, campaign `…`, checked out by `user@…`). The user clears these
     in Genesys and re-scans; the flow is always deletable once detached.
-- **Created by onboarding** — data tables, data actions, scripts, survey forms,
+- **Callflow objects** — data tables, data actions, scripts, survey forms,
   user prompts, dependency flows. Ticked by default when orphaned.
-- **Shared org objects** — queues, skills, wrap-up codes, schedules, schedule
+- **Org-level objects** — queues, skills, wrap-up codes, schedules, schedule
   groups, emergency groups, flow milestones/outcomes, and anything else the flow
   references. Listed, **unticked**, in a visually distinct section.
 - Every row shows what it is, and either a checkbox (orphaned) or the reason it
@@ -187,15 +187,24 @@ and detach them.
 Both tiers are discovered, consumer-checked and listed identically. The tier
 decides **only the default tick state**.
 
-**Tier A — created by onboarding (default: ticked when orphaned)**
+The split is about the **type of object**, not who created it. An earlier
+labelling ("created by onboarding" / "shared org objects") was wrong in exactly
+the orgs this tool is for: most flows and their data tables are built by hand,
+so the label asserted a provenance it had no way to know. A data table serves
+flows however it was made; a queue does not.
+
+**Tier A — callflow objects (default: ticked when orphaned)**
 
 data tables · data actions · scripts · survey forms · user prompts ·
 dependency flows (common modules, in-queue, transfer/bot/post-interaction targets)
 
-**Tier B — shared org objects (default: unticked)**
+**Tier B — org-level objects (default: unticked)**
 
 queues · skills · wrap-up codes · schedules · schedule groups · emergency groups ·
 flow milestones · flow outcomes · anything else the flow authors a reference to
+
+The set in tier A happens to match what Deployment › Onboarding creates — that
+is where the rule came from — but the rule stands on its own without it.
 
 Tier B is defaulted off and sectioned separately for two independent reasons:
 
@@ -296,7 +305,7 @@ anything still referenced:
 4. **Scripts**
 5. **Data actions**
 6. **Data tables**
-7. **Shared org objects** — schedule groups before schedules, then the rest
+7. **Org-level objects** — schedule groups before schedules, then the rest
 
 **Re-verify before each delete.** Immediately before deleting object `o`, re-run
 `consumingresources(o)` and re-apply the §5 rule against what remains. If `o`

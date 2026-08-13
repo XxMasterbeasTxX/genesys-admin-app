@@ -39,7 +39,15 @@ import {
 // Unrecognised values are still handled defensively — the enum can grow — and
 // land in tier B (unticked) with the raw value shown.
 
-/** Types created by Deployment › Onboarding — ticked by default when orphaned. */
+/**
+ * Object types that belong to a callflow — ticked by default when orphaned.
+ *
+ * This is a statement about the TYPE, not about who made a particular object. A
+ * data table exists to serve flows whether it was deployed by a tool or built by
+ * hand; a queue does not. The set happens to match what Deployment › Onboarding
+ * creates, which is where the rule came from, but the label must not claim
+ * provenance it cannot know.
+ */
 const TIER_A = new Set([
   "DATATABLE", "DATAACTION", "COMPOSERSCRIPT", "SURVEYFORM", "USERPROMPT",
 ]);
@@ -746,9 +754,9 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     }
 
     // The cost of a tick, made visible before it is made: rows are customer data,
-    // and a queue with members is live infrastructure, not an onboarding artifact.
+    // and a queue with members is live infrastructure, not a callflow artifact.
     const extra = [];
-    if (node.tier === "B") extra.push("shared org object");
+    if (node.tier === "B") extra.push("org-level");
     if (typeof node.rowCount === "number") extra.push(`${node.rowCount} row${node.rowCount === 1 ? "" : "s"}`);
     if (typeof node.memberCount === "number") extra.push(`${node.memberCount} member${node.memberCount === 1 ? "" : "s"}`);
 
@@ -841,12 +849,13 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
             the list below. Treat this as a partial picture, not a clean one.
           </p>
         </div>` : ""}
-      ${sectionHtml("Created by onboarding", tierA, "A",
-        "Deployed alongside a callflow. Selected by default where nothing else uses them.")}
-      ${sectionHtml("Shared org objects", tierB, "B",
-        "Not created by onboarding — these belong to the org and may be used in ways " +
-        "that are not visible here (queues and skills are often looked up by name at " +
-        "runtime). Never selected by default.")}
+      ${sectionHtml("Callflow objects", tierA, "A",
+        "Object types that belong to a callflow — other flows, data tables, data actions, " +
+        "scripts, survey forms and prompts. Selected by default where nothing else uses them.")}
+      ${sectionHtml("Org-level objects", tierB, "B",
+        "Queues, skills, schedules and the like. They exist independently of any callflow, " +
+        "and may be used in ways that are not visible here — queues and skills are often " +
+        "looked up by name at runtime. Never selected by default.")}
       <div id="dfSummary"></div>
       <div id="dfFindings"></div>`;
 
