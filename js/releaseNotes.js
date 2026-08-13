@@ -11,6 +11,25 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.6",
+    date: "2026-08-13",
+    title: "Flows: delete a callflow and everything only it used (internal)",
+    internalOnly: true,
+    changes: [
+      "New page Flows › Delete Flow — the opposite of Deployment › Onboarding. Pick one callflow and it works out everything that callflow depends on, checks what else in the org still uses each of those objects, and shows you the whole picture before anything is removed.",
+      "Objects nothing else uses are ticked ready to go: other flows, common modules, data tables, data actions, scripts, survey forms and prompts. Objects something else still needs are listed too, with the name of what is holding them, so you know what to detach if you want them gone.",
+      "The ticks are live. A data table used only by a common module can be removed only while that module is also being removed — untick the module and the table locks itself again, along with anything else that depended on it.",
+      "Queues, skills, schedules and similar org-level objects are always listed but never ticked for you. They can be referenced in ways that are impossible to see from the callflow, so removing one is always a deliberate choice.",
+      "If the callflow itself cannot be deleted — attached to a web or messaging deployment, a call route, a queue's in-queue flow, or simply open in Architect — you are told exactly what is holding it and nothing below it can be removed either, since the flow still uses all of it.",
+      "Deletion happens in dependency order and every object is re-checked immediately before it is removed, so anything that has gained a user since you ran the report is kept and reported rather than deleted.",
+      "Confirming requires typing the callflow's name. Data tables show how many rows will go with them. There is no undo.",
+      "Every run writes one Activity Log entry with the full breakdown — what was deleted, and what was kept and why.",
+      "Rows show who created each object where Genesys records it, including when the object was created by an integration rather than a person.",
+      "Two things this cannot see, by design: anything referenced only while a call is running (a queue looked up by name, a prompt named in a data table cell), and the contents of data tables — those are never scanned. Published survey forms also cannot be deleted; Genesys does not allow it, and the report says so.",
+      "Available to superusers only.",
+    ],
+  },
+  {
     version: "2.5",
     date: "2026-08-12",
     title: "Onboarding: prompts are deployed too (internal)",

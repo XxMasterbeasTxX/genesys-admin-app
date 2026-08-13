@@ -615,6 +615,102 @@ export async function fetchAllFlows(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/flows", { ...opts, query });
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Architect — Dependency Tracking
+//
+// The index behind "what does this flow use" and "what uses this object".
+// Consumed by Flows › Delete Flow (see docs/flow-deletion-design.md).
+//
+// The index is built ASYNCHRONOUSLY by Genesys. A stale or in-progress build
+// returns answers that look authoritative and are not, so callers must check
+// the build status before trusting anything here.
+//
+// Response shapes are normalised defensively: this repo has not previously
+// called these endpoints, and every caller acts on the result irreversibly.
+// Reading a field that turns out to be named differently must degrade to
+// "unknown", never to a confident empty list — see normalizeDependency().
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Normalise one dependency-tracking entry to a stable shape.
+ *
+ * Returns null for an entry with no usable identity, so a response shaped
+ * differently than expected yields fewer entries rather than a list of blanks
+ * that would read as "nothing depends on this".
+ */
+function normalizeDependency(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = raw.id || raw.objectId || "";
+  const name = raw.name || raw.objectName || "";
+  if (!id && !name) return null;
+  return {
+    id,
+    name: name || id,
+    // Genesys spells this `type` on some resources and `objectType` on others.
+    type: String(raw.type || raw.objectType || "").toUpperCase(),
+    // Present on flow-ish resources; used to spot deleted/unpublished state.
+    deleted: raw.deleted === true,
+    version: raw.version || null,
+    raw,
+  };
+}
+
+/**
+ * Collapse a dependency list to distinct objects.
+ *
+ * The API returns one entry per reference — in practice one per VERSION of the
+ * consuming resource — so a single flow that has been published four times
+ * appears four times. Left raw this reads as four separate consumers and inflates
+ * every "and N more" tally. Identity here is type + id; the version is dropped
+ * deliberately, since "which versions reference this" is not a question this
+ * feature asks.
+ */
+function distinctByObject(list) {
+  const seen = new Map();
+  for (const d of list) {
+    const key = `${d.type}::${d.id}`;
+    if (!seen.has(key)) seen.set(key, d);
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Dependency-tracking index build status.
+ *
+ * Returns the raw status object. Callers decide what is acceptable — this
+ * deliberately does not collapse the answer to a boolean, because "no build has
+ * ever run" and "a build is running now" call for different messages.
+ */
+export async function getDependencyTrackingBuildStatus(api, orgId) {
+  return api.proxyGenesys(orgId, "GET", "/api/v2/architect/dependencytracking/build");
+}
+
+/**
+ * Resources that the given object USES (its direct dependencies).
+ *
+ * @param {string} objectType  Dependency-tracking object type, e.g. "FLOW".
+ * @param {Object} [opts.query] Extra params, e.g. { version: "…" }.
+ */
+export async function fetchConsumedResources(api, orgId, id, objectType, opts = {}) {
+  const entities = await fetchAllPages(api, orgId,
+    "/api/v2/architect/dependencytracking/consumedresources",
+    { ...opts, query: { id, objectType, ...(opts.query || {}) } });
+  return distinctByObject(entities.map(normalizeDependency).filter(Boolean));
+}
+
+/**
+ * Resources that USE the given object (its consumers).
+ *
+ * This is the call the delete review's orphan test rests on: an empty result
+ * means "safe to delete". Treat a failure as unknown, never as empty.
+ */
+export async function fetchConsumingResources(api, orgId, id, objectType, opts = {}) {
+  const entities = await fetchAllPages(api, orgId,
+    "/api/v2/architect/dependencytracking/consumingresources",
+    { ...opts, query: { id, objectType, ...(opts.query || {}) } });
+  return distinctByObject(entities.map(normalizeDependency).filter(Boolean));
+}
+
 /** Fetch all schedules. */
 export async function fetchAllSchedules(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/architect/schedules", opts);

@@ -218,12 +218,13 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 
 ## 8. Architect
 
-Used by: Data Tables — Create/Copy/Edit, Deployment — Data Tables, Divisions — Flows/DataTables/Schedules/etc., Documentation Export, Deployment — Basic
+Used by: Data Tables — Create/Copy/Edit, Deployment — Data Tables, Divisions — Flows/DataTables/Schedules/etc., Documentation Export, Deployment — Basic, **Flows — Delete Flow**
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/flows` | List architect flows |
-| GET | `/api/v2/flows/{id}` | Get a flow by ID (entity name resolution in audit) |
+| GET | `/api/v2/flows/{id}` | Get a flow by ID (entity name resolution in audit; Delete Flow reads `publishedVersion` for its version + creator) |
+| DELETE | `/api/v2/flows/{flowId}` | **Delete** a flow of any type (Delete Flow). No unpublish step is required |
 | GET | `/api/v2/flows/outcomes` | List flow outcomes |
 | GET | `/api/v2/flows/milestones` | List flow milestones |
 | GET | `/api/v2/flows/datatables` | List data tables (add `?expand=schema` for full schema) |
@@ -243,16 +244,50 @@ Used by: Data Tables — Create/Copy/Edit, Deployment — Data Tables, Divisions
 | PUT | `/api/v2/architect/schedulegroups/{groupId}` | **Update** a routing schedule group (Deployment — Basic) |
 | GET | `/api/v2/architect/emergencygroups` | List emergency groups |
 | GET | `/api/v2/architect/prompts` | List architect prompts |
+| DELETE | `/api/v2/flows/datatables/{id}` | **Delete** a data table, rows included (Delete Flow) |
+| DELETE | `/api/v2/architect/prompts/{promptId}?allResources=true` | **Delete** a user prompt (Delete Flow). `allResources` is **required** — without it Genesys refuses while the prompt still holds its own per-language resources |
+
+### 8.1 Dependency Tracking
+
+Used by: **Flows — Delete Flow**. The index that answers what a flow uses and
+what uses an object. Built asynchronously by Genesys; `status` must be
+`OPERATIONAL` before any answer can be trusted. `dateCompleted` refers to the
+last *full* rebuild and is routinely years old — publishing updates the index
+incrementally, so an old date is **not** a staleness signal.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v2/architect/dependencytracking/build` | Index build status (`status`, `dateCompleted`, `failedObjects`) |
+| GET | `/api/v2/architect/dependencytracking/consumedresources` | What an object uses. Requires `id`, `objectType`, `version` |
+| GET | `/api/v2/architect/dependencytracking/consumingresources` | What uses an object — the orphan test. Same required params |
+
+Three constraints learned the hard way, all load-bearing:
+
+- **`version` is required**, and answers are **scoped to it**. Each flow has its
+  own version, and a caller may reference an older one than the object's
+  current — so consumers are queried across every known version and unioned. A
+  single-version query reported *zero* consumers for a common module a flow was
+  actively calling.
+- **There is no generic `FLOW` objectType.** Values are per type
+  (`INBOUNDCALLFLOW`, `COMMONMODULEFLOW`, …); scripts are `COMPOSERSCRIPT`,
+  prompts `USERPROMPT`, workitem flows `WORKITEMFLOW`.
+- **Results include platform vocabulary** — `FLOWACTION`, `FLOWDATATYPE`,
+  `LANGUAGE`, `SYSTEMPROMPT`, `TTSENGINE`/`TTSVOICE`/`STTENGINE`. A single flow
+  pulls in 50+ of these; they exist in every org and are filtered out.
+- **It does not index every attachment.** A flow attached to a web/messaging
+  deployment reports no consumers at all, so attachments are probed separately
+  (see §7 Routing, §10 Telephony).
 
 ---
 
 ## 9. Scripts
 
-Used by: Divisions — Scripts, Documentation Export
+Used by: Divisions — Scripts, Documentation Export, Flows — Delete Flow
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/scripts` | List scripts (supports `?status=PUBLISHED`) |
+| DELETE | `/api/v2/scripts/{scriptId}` | **Delete** a script (Delete Flow) |
 
 ---
 
@@ -411,12 +446,12 @@ Used by: Divisions — Workbins / Work Types
 
 ## 20. Web Deployments
 
-Used by: Documentation Export
+Used by: Documentation Export, Flows — Delete Flow
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/webdeployments/configurations` | List web deployment configurations (published only) |
-| GET | `/api/v2/webdeployments/deployments` | List web deployments |
+| GET | `/api/v2/webdeployments/deployments` | List web deployments. **Delete Flow reads `flow.id`** — a deployment holding a flow is invisible to Dependency Tracking, so this is the only thing preventing a deployed messaging flow from reading as free to delete |
 
 ---
 

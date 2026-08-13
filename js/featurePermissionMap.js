@@ -78,6 +78,17 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   "deployment.datatables": { create: ["architect:datatable:add"] },
   "deployment.onboarding": { create: ["architect:flow:add", "architect:datatable:add", "integrations:action:add"] },
 
+  // ── Flows ────────────────────────────────────────────
+  // Delete Flow removes a callflow and its orphaned dependencies. Listed as
+  // any-of for nav purposes; each object's delete is gated by Genesys itself at
+  // runtime, which is the real enforcement.
+  "flows.delete": {
+    delete: [
+      "architect:flow:delete", "architect:datatable:delete",
+      "architect:userPrompt:delete", "integrations:action:delete",
+    ],
+  },
+
   // ── Users ────────────────────────────────────────────
   "users.rolesSkills.configureUsers":      { roles: ["authorization:grant:add"], skills: ["routing:skill:assign"], languages: ["routing:language:assign"], queues: ["routing:queueMember:manage"] },
   "users.rolesSkills.copyFromUser":        { apply: ["authorization:grant:add", "routing:skill:assign", "routing:language:assign", "routing:queueMember:manage"] },

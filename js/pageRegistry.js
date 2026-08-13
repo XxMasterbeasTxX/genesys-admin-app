@@ -176,6 +176,8 @@ const registry = {
   // ── Flows ─────────────────────────────────────────────
   "/flows/journey": (ctx) =>
     import("./pages/flows/journeyFlow.js").then((m) => m.default(ctx)),
+  "/flows/delete": (ctx) =>
+    import("./pages/flows/deleteFlow.js").then((m) => m.default(ctx)),
 
   // ── Audit ─────────────────────────────────────────────
   "/audit/search": (ctx) =>
