@@ -656,6 +656,25 @@ function normalizeDependency(raw) {
 }
 
 /**
+ * Collapse a dependency list to distinct objects.
+ *
+ * The API returns one entry per reference — in practice one per VERSION of the
+ * consuming resource — so a single flow that has been published four times
+ * appears four times. Left raw this reads as four separate consumers and inflates
+ * every "and N more" tally. Identity here is type + id; the version is dropped
+ * deliberately, since "which versions reference this" is not a question this
+ * feature asks.
+ */
+function distinctByObject(list) {
+  const seen = new Map();
+  for (const d of list) {
+    const key = `${d.type}::${d.id}`;
+    if (!seen.has(key)) seen.set(key, d);
+  }
+  return [...seen.values()];
+}
+
+/**
  * Dependency-tracking index build status.
  *
  * Returns the raw status object. Callers decide what is acceptable — this
@@ -676,7 +695,7 @@ export async function fetchConsumedResources(api, orgId, id, objectType, opts = 
   const entities = await fetchAllPages(api, orgId,
     "/api/v2/architect/dependencytracking/consumedresources",
     { ...opts, query: { id, objectType, ...(opts.query || {}) } });
-  return entities.map(normalizeDependency).filter(Boolean);
+  return distinctByObject(entities.map(normalizeDependency).filter(Boolean));
 }
 
 /**
@@ -689,7 +708,7 @@ export async function fetchConsumingResources(api, orgId, id, objectType, opts =
   const entities = await fetchAllPages(api, orgId,
     "/api/v2/architect/dependencytracking/consumingresources",
     { ...opts, query: { id, objectType, ...(opts.query || {}) } });
-  return entities.map(normalizeDependency).filter(Boolean);
+  return distinctByObject(entities.map(normalizeDependency).filter(Boolean));
 }
 
 /** Fetch all schedules. */

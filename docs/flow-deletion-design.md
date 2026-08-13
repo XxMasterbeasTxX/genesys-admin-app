@@ -335,6 +335,16 @@ override.
 - A flow whose dependencies cannot be read is reported **at the top of the
   report**, not only in diagnostics: anything used solely by that flow is missing
   from the list, and an incomplete tree must not look like a clean one.
+- **One entry per reference, not per object.** A flow published four times
+  appears four times in `consumingresources`. Both lookups now collapse to
+  distinct `type::id`, since "which versions reference this" is not a question
+  this feature asks — and left raw it inflated every "and N more" tally and made
+  one consumer read as four.
+- **Consumers appear to be transitive** (to confirm). A data action referenced
+  only by a common module also listed the in-queue flow that calls that module.
+  If so the orphan test is *more* conservative than strictly required, which is
+  the safe direction: the intermediate is itself blocked by the same outside
+  consumer, so nothing that should be deletable is wrongly held.
 
 ### 8.3 Platform vocabulary is excluded
 
