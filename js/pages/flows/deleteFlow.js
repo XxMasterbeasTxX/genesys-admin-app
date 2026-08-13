@@ -420,16 +420,41 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
    */
   async function describeCreator(detail, type, findings) {
     if (!detail) return { kind: "none", basis: null };
-    let field = CREATED_FIELDS.find((f) => detail[f] != null);
-    let basis = "created";
-    if (!field) {
-      field = MODIFIED_FIELDS.find((f) => detail[f] != null);
-      basis = "modified";
+
+    // Provenance is not always on the object itself. On a flow it hangs off the
+    // VERSION — publishedVersion.createdBy and friends — which is why a first
+    // pass reading only the top level found nothing anywhere, including on types
+    // whose creator Architect displays in its own UI.
+    const containers = [{ where: "", obj: detail }];
+    for (const k of ["publishedVersion", "checkedInVersion", "savedVersion", "currentOperation"]) {
+      if (detail[k] && typeof detail[k] === "object") containers.push({ where: `${k}.`, obj: detail[k] });
     }
-    if (!findings.creatorFields.has(type)) findings.creatorFields.set(type, field || "(none)");
-    if (!field) return { kind: "none", basis: null };
-    const actor = await resolveActor(detail[field]);
-    return { ...actor, basis, field };
+
+    let hit = null;
+    for (const { where, obj } of containers) {
+      const f = CREATED_FIELDS.find((k) => obj[k] != null);
+      if (f) { hit = { field: `${where}${f}`, value: obj[f], basis: "created" }; break; }
+    }
+    if (!hit) {
+      for (const { where, obj } of containers) {
+        const f = MODIFIED_FIELDS.find((k) => obj[k] != null);
+        if (f) { hit = { field: `${where}${f}`, value: obj[f], basis: "modified" }; break; }
+      }
+    }
+
+    // Record what the payload actually offers, not just what we matched — a
+    // second round of guessing is worse than one look at the real field names.
+    if (!findings.detailKeys.has(type)) {
+      const shape = containers
+        .map(({ where, obj }) => `${where || "(root)"}{${Object.keys(obj).join(",")}}`)
+        .join(" ");
+      findings.detailKeys.set(type, shape.slice(0, 700));
+    }
+    if (!findings.creatorFields.has(type)) findings.creatorFields.set(type, hit?.field || "(none)");
+
+    if (!hit) return { kind: "none", basis: null };
+    const actor = await resolveActor(hit.value);
+    return { ...actor, basis: hit.basis, field: hit.field };
   }
 
   /**
@@ -696,6 +721,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       probes: [],               // attachment probes and their outcomes
       consumerCalls: [],        // which version each consumer answer came from
       creatorFields: new Map(), // which provenance field each type actually has
+      detailKeys: new Map(),    // the real field names each detail payload returns
       errors: [],
       buildStatus: null,
     };
@@ -834,7 +860,9 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
   function creatorHtml(node) {
     const c = node.creator;
     if (!c || c.kind === "none") {
-      return `<span style="color:var(--muted)">Creator not recorded for this object type.</span>`;
+      // Deliberately "not returned by the API" rather than "not recorded":
+      // Genesys may well hold this and simply not expose it on this endpoint.
+      return `<span style="color:var(--muted)">Creator not returned by this object's API.</span>`;
     }
     const verb = c.basis === "created" ? "Created" : "Last modified";
     const when = node.dateCreated && c.basis === "created"
@@ -1058,6 +1086,14 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
                 `${escapeHtml(t)}=${escapeHtml(fld)}`).join(" · ")
             : "none"
         }</div>
+        <div style="margin-top:5px"><strong>Detail payload fields (what the API really returns):</strong>
+          <ul style="margin:3px 0 0;padding-left:18px">
+            ${f.detailKeys?.size
+              ? [...f.detailKeys.entries()].map(([t, shape]) =>
+                  `<li><strong>${escapeHtml(t)}</strong>: <code style="font-size:.92em">${escapeHtml(shape)}</code></li>`).join("")
+              : "<li>none</li>"}
+          </ul>
+        </div>
         <div style="margin-top:5px"><strong>Attachment probes:</strong> ${
           f.probes?.length
             ? f.probes.map((p) => `${escapeHtml(p.probe)} ${p.ok
