@@ -212,6 +212,13 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       Dependencies are read from flow authoring; references built at runtime from
       variables or data-table values are not visible and are not checked.
     </p>
+    <p class="df-caveat" style="margin-top:8px;background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.35)">
+      <strong>Known unresolved issue —</strong> two analyses of the same object have
+      returned <em>different</em> consumer lists, apparently depending on which
+      version was asked about. Until that is understood, treat “nothing else uses
+      this” as <strong>unconfirmed</strong>: the list of who uses an object may be
+      incomplete. This is why deletion is not enabled.
+    </p>
 
     <div class="dt-controls" style="margin-top:14px">
       <div class="dt-control-group">
@@ -513,7 +520,15 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
           || (node.isFlow ? await resolveFlowVersion(node.id) : null);
         const list = await gc.fetchConsumingResources(api, state.orgId, node.id, node.type,
           version ? { query: { version } } : {});
-        consumers.set(node.key, list.filter((c) => !c.deleted && c.id !== node.id));
+        const kept = list.filter((c) => !c.deleted && c.id !== node.id);
+        // Which version each answer came from. Two runs returned DISJOINT
+        // consumer sets for the same data action, and version scoping is the
+        // leading explanation — this records the evidence to confirm it.
+        findings.consumerCalls.push({
+          name: node.name, type: node.type, version: version || "(none)",
+          count: kept.length, names: kept.map((c) => c.name).slice(0, 8),
+        });
+        consumers.set(node.key, kept);
       } catch (err) {
         // Unknown, never empty: an object we cannot check must not read as safe.
         consumers.set(node.key, null);
@@ -523,6 +538,44 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       setStatus(`Checking dependencies… ${done}/${closure.size}`, "", true);
     }
     return consumers;
+  }
+
+  /**
+   * EXPERIMENT — a version-free consumer lookup.
+   *
+   * `consumingresources` requires a version and appears to answer only for that
+   * version: two runs returned disjoint consumer sets for the same data action.
+   * If that is right, the whole orphan test is unsound, because the version we
+   * happen to ask about decides which consumers we are told about.
+   *
+   * `GET /api/v2/architect/dependencytracking?name=…&consumingResources=true`
+   * searches by name and takes no version. If it returns the UNION of consumers,
+   * it is the primitive this feature should have been built on.
+   *
+   * Runs against one object per analysis, purely to record what comes back.
+   * Nothing depends on the result yet.
+   */
+  async function tryVersionFreeLookup(node, findings) {
+    if (!node) return;
+    try {
+      const resp = await api.proxyGenesys(state.orgId, "GET",
+        "/api/v2/architect/dependencytracking", {
+          query: { name: node.name, objectType: node.type, consumingResources: "true", pageSize: "25" },
+        });
+      const entities = resp?.entities || [];
+      const match = entities.find((e) => String(e?.id) === String(node.id)) || entities[0];
+      const consuming = match?.consumingResources || [];
+      findings.altLookup = {
+        object: node.name, type: node.type, ok: true,
+        matched: !!match, count: consuming.length,
+        names: consuming.map((c) => `${c.name} (${c.type || "?"})`).slice(0, 12),
+      };
+    } catch (err) {
+      findings.altLookup = {
+        object: node.name, type: node.type, ok: false,
+        error: (err.message || String(err)).slice(0, 300),
+      };
+    }
   }
 
   /**
@@ -559,6 +612,8 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       excluded: new Map(),      // platform vocabulary kept out of the tree
       objectTypeCalls: [],
       probes: [],               // attachment probes and their outcomes
+      consumerCalls: [],        // which version each consumer answer came from
+      altLookup: null,          // version-free lookup experiment (see below)
       errors: [],
       buildStatus: null,
     };
@@ -637,6 +692,14 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         // A null (unknown) list stays unknown — it is already the stricter state.
         if (existing !== null) state.consumers.set(node.key, [...(existing || []), ...found]);
       }
+
+      // One version-free lookup, on a non-flow object (data actions and tables
+      // are where the disjoint consumer sets showed up).
+      await tryVersionFreeLookup(
+        [...state.closure.values()].find((n) => !n.isRoot && !n.isFlow)
+          || [...state.closure.values()].find((n) => !n.isRoot),
+        findings
+      );
 
       await enrichNodes(state.closure);
       state.findings = findings;
@@ -896,6 +959,22 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         <div style="margin-top:5px"><strong>Build status:</strong> <code>${
           escapeHtml(JSON.stringify(f.buildStatus || null).slice(0, 400))
         }</code></div>
+        <div style="margin-top:7px"><strong>Consumer lookups (version → who came back):</strong>
+          <ul style="margin:3px 0 0;padding-left:18px">
+            ${(f.consumerCalls || []).slice(0, 30).map((c) =>
+              `<li>${escapeHtml(c.name)} <span style="color:var(--muted)">[${escapeHtml(c.type)}]</span>
+               @ ${escapeHtml(String(c.version))} → ${c.count}${
+                 c.names?.length ? `: ${escapeHtml(c.names.join(", "))}` : ""}</li>`).join("") || "<li>none</li>"}
+          </ul>
+        </div>
+        ${f.altLookup ? `
+          <div style="margin-top:7px"><strong>Version-free lookup experiment</strong>
+            (${escapeHtml(f.altLookup.object)} [${escapeHtml(f.altLookup.type)}]):
+            ${f.altLookup.ok
+              ? `matched=${f.altLookup.matched} · ${f.altLookup.count} consumer(s)${
+                  f.altLookup.names?.length ? ` — ${escapeHtml(f.altLookup.names.join(", "))}` : ""}`
+              : `<span class="df-block">FAILED: ${escapeHtml(f.altLookup.error || "")}</span>`}
+          </div>` : ""}
         ${f.errors.length ? `
           <div style="margin-top:7px"><strong class="df-block">Errors (${f.errors.length}):</strong>
             <ul style="margin:4px 0 0;padding-left:18px">

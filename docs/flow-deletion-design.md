@@ -409,6 +409,47 @@ of *considered* deletions is wanted, this is the decision to revisit.
 seconds, so the window is small, but it is a real difference from onboarding's
 runner-written record.
 
+## 10.1 BLOCKING ISSUE — consumer answers may be version-scoped
+
+**Status: unresolved. Phase 2 cannot start until this is settled.**
+
+Two analyses of the same data action (`Template - Get Interactions In Queue`)
+returned **disjoint** consumer sets:
+
+| Run | Consumers reported |
+|---|---|
+| A | `Demo - InQueue`, `Demo - Callback` |
+| B | `Template - CM - Callback`, `Template - In Queue` |
+
+The true set is almost certainly the union. Between the runs, the in-queue flow
+went `4.0 → 5.0` and a common module `1.0 → 2.0`, which points at
+`consumingresources` answering **only for the version asked about**.
+
+If that is right, the orphan test as built is **unsound**: the version we happen
+to ask about decides which consumers we are told about, and run B would have
+shown that data action as orphaned and ticked it for deletion while
+`Demo - InQueue` still used it. That is the exact false-orphan data-loss case,
+arriving from a direction §11 never considered — not runtime lookups, but the
+query itself under-reporting.
+
+It is **not** covered by the §11.1 server-side backstop either: Genesys computes
+its refusal from the same index, and if the index answer is version-scoped the
+refusal may be too.
+
+Candidate fixes, in preference order:
+
+1. **A version-free lookup.** `GET /api/v2/architect/dependencytracking?name=…&
+   consumingResources=true` searches by name and takes no version. If it returns
+   the union, it is the primitive this feature should be built on. An experiment
+   recording its output ships in the page's Findings panel.
+2. **Union across versions.** Query every known version of an object and merge.
+   Workable for flows, unclear for data actions and tables.
+3. **Treat "no consumers" as unproven** and never offer those objects — which
+   would gut the feature.
+
+Until resolved the page carries a prominent warning that "nothing else uses this"
+is unconfirmed, and deletion stays disabled.
+
 ## 11. Known limitations (accepted)
 
 **Only authored references are visible.** Dependency Tracking indexes what the
