@@ -45,18 +45,35 @@ const TIER_A = new Set([
 ]);
 
 /**
- * Types this tool must never offer to delete, however orphaned they look.
+ * Platform vocabulary — EXCLUDED from the tree entirely.
  *
- * These are org-level identity and platform objects that can appear as flow
- * dependencies but are categorically not flow artifacts — removing a division or
- * a user because a callflow referenced it would be well outside what "delete a
- * callflow and its dependencies" can reasonably mean. They are still discovered
- * and REPORTED, per the requirement that everything is reported; they simply
- * carry no checkbox.
+ * Dependency Tracking reports everything a flow consumes, which includes the
+ * building blocks the flow is written in: the action types it uses
+ * (PlayAudioAction, DecisionAction…), its data types (str, int, que…), its
+ * supported languages, system prompts, and TTS engines/voices. A single flow
+ * pulls in 50+ of these.
+ *
+ * They are not dependencies in any sense this tool cares about: they exist in
+ * every org, are never created or deleted, and nothing is gained by listing
+ * them. Reporting them buried the twenty real findings under sixty rows of
+ * noise. Onboarding draws the same line from the other side — resolveDeps
+ * excludes `SystemPrompt.` references because they exist in every org.
+ *
+ * Counted in the Findings panel, so the exclusion is visible rather than silent.
+ */
+const PLATFORM_VOCABULARY = new Set([
+  "FLOWACTION", "FLOWDATATYPE", "LANGUAGE", "SYSTEMPROMPT",
+  "TTSENGINE", "TTSVOICE", "STTENGINE",
+]);
+
+/**
+ * Real objects that are nonetheless never this tool's to delete: org identity
+ * and knowledge platform. Discovered and REPORTED, but no checkbox — removing a
+ * division or a user because a callflow referenced it is well outside what
+ * "delete a callflow and its dependencies" can mean.
  */
 const NEVER_OFFER = new Set([
-  "USER", "DIVISION", "OAUTHCLIENT", "LANGUAGE", "STTENGINE", "TTSENGINE",
-  "TTSVOICE", "SYSTEMPROMPT", "FLOWDATATYPE", "FLOWACTION", "SECUREACTION",
+  "USER", "DIVISION", "OAUTHCLIENT",
   "KNOWLEDGEBASE", "KNOWLEDGEBASEDOCUMENT", "KNOWLEDGESETTING",
 ]);
 
@@ -230,7 +247,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     buildDate: null,           // last full rebuild of the dependency index
     failedObjectIds: new Set(),// objects the index could not process
     rootVersions: [],          // real version ids read off the root flow
-    workingVersion: undefined, // the version value the API actually accepted
+    incomplete: [],            // flows whose dependencies could not be read
     closure: new Map(),   // key → node
     consumers: new Map(), // key → normalised consumer list
     selection: new Set(), // keys ticked for (eventual) deletion
@@ -272,7 +289,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         const out = await gc.fetchConsumedResources(api, state.orgId, id, objectType,
           version ? { query: { version } } : {});
         findings.objectTypeCalls.push({ objectType, version: version || "(none)", ok: true, count: out.length });
-        state.workingVersion = version;      // reuse the winner for later calls
         return { entries: out, objectType, version };
       } catch (err) {
         lastErr = err;
@@ -286,15 +302,38 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
   }
 
   /**
-   * Version candidates to try, most likely first. Once one works it is reused,
-   * so the fallback costs at most a few extra calls on the first object.
+   * A flow's own version, read from the flow itself and cached.
+   *
+   * Dependency Tracking wants the version OF THE OBJECT being asked about, and
+   * every flow has its own — the root was 8.0 while its common modules were 3.0.
+   * Guessing from a shared pool therefore failed repeatedly and dropped three
+   * common modules out of the tree altogether, leaving it quietly incomplete.
+   * One lookup per flow removes the guesswork entirely.
    */
-  function versionCandidates(explicit) {
-    const list = [];
-    if (state.workingVersion !== undefined) list.push(state.workingVersion);
-    if (explicit) list.push(explicit);
-    list.push("LATEST", ...state.rootVersions, "");
-    return [...new Set(list.filter((v) => v !== undefined))];
+  const flowVersionCache = new Map();
+  async function resolveFlowVersion(id) {
+    if (flowVersionCache.has(id)) return flowVersionCache.get(id);
+    let version = null;
+    try {
+      const f = await api.proxyGenesys(state.orgId, "GET", `/api/v2/flows/${id}`);
+      const v = f?.publishedVersion?.id || f?.checkedInVersion?.id || f?.savedVersion?.id;
+      version = v ? String(v) : null;
+    } catch (_) { /* fall back to whatever the dependency entry carried */ }
+    flowVersionCache.set(id, version);
+    return version;
+  }
+
+  /**
+   * Version candidates, evidence-first.
+   *
+   * The first live run proved two candidates are always wasted: "LATEST" is
+   * never accepted ("Could not find the dependency object with specified ID and
+   * version") and omitting the parameter is rejected outright ("Query parameter
+   * 'version' is missing or empty"). Both are gone — the object's own version is
+   * the only thing that has ever worked.
+   */
+  function versionCandidates(own, fromEntry) {
+    return [...new Set([own, fromEntry].filter(Boolean).map(String))];
   }
 
   /** Walk the closure from the root, recursing only into flow-typed objects. */
@@ -327,8 +366,13 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
 
       let entries;
       try {
-        ({ entries } = await consumedWithFallback(
-          cur.id, cur.type, versionCandidates(cur.version), findings));
+        const own = await resolveFlowVersion(cur.id);
+        const versions = versionCandidates(own, cur.version);
+        if (!versions.length) throw new Error("no version could be determined for this flow");
+        // Remember it so the consumer lookup asks about the same version.
+        const node = closure.get(cur.key);
+        if (node) node.version = versions[0];
+        ({ entries } = await consumedWithFallback(cur.id, cur.type, versions, findings));
       } catch (err) {
         // A failure on the ROOT is fatal. Continuing would produce a closure of
         // one and a report reading "no dependencies found" — which is not a
@@ -340,13 +384,22 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
             `No conclusions can be drawn about this flow.`
           );
         }
-        findings.errors.push(`consumedresources for '${cur.id}' (${cur.type}): ${err.message || err}`);
+        // Not fatal — but the tree is now missing whatever this flow used, so it
+        // must be said out loud rather than left in the diagnostics.
+        const label = closure.get(cur.key)?.name || cur.id;
+        findings.errors.push(`consumedresources for '${label}' (${cur.type}): ${err.message || err}`);
+        state.incomplete.push(label);
         continue;
       }
 
       for (const dep of entries) {
         findings.typesSeen.set(dep.type, (findings.typesSeen.get(dep.type) || 0) + 1);
         if (dep.deleted) continue;                // already gone
+        // Platform vocabulary never enters the tree — see PLATFORM_VOCABULARY.
+        if (PLATFORM_VOCABULARY.has(String(dep.type).toUpperCase())) {
+          findings.excluded.set(dep.type, (findings.excluded.get(dep.type) || 0) + 1);
+          continue;
+        }
         const k = keyOf(dep.type, dep.id);
         if (k === cur.key || visited.has(k)) continue;
         visited.add(k);
@@ -380,7 +433,10 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         continue;
       }
       try {
-        const version = state.workingVersion ?? node.version ?? "LATEST";
+        // Ask about the same version the object was discovered at; flows get
+        // their own resolved version, everything else what the entry carried.
+        const version = node.version
+          || (node.isFlow ? await resolveFlowVersion(node.id) : null);
         const list = await gc.fetchConsumingResources(api, state.orgId, node.id, node.type,
           version ? { query: { version } } : {});
         consumers.set(node.key, list.filter((c) => !c.deleted && c.id !== node.id));
@@ -426,10 +482,12 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
 
     const findings = {
       typesSeen: new Map(),
+      excluded: new Map(),      // platform vocabulary kept out of the tree
       objectTypeCalls: [],
       errors: [],
       buildStatus: null,
     };
+    state.incomplete = [];
 
     try {
       // 1. The index must be current, or every answer below is fiction (§4.1).
@@ -470,7 +528,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       setStatus("Reading the flow…", "", true);
       state.lockNote = null;
       state.rootVersions = [];
-      state.workingVersion = undefined;
+      flowVersionCache.clear();
       try {
         const flow = await api.proxyGenesys(state.orgId, "GET", `/api/v2/flows/${state.rootId}`);
         const locker = flow?.lockedUser?.name || flow?.lockedUser?.email || flow?.lockedUser?.id;
@@ -630,6 +688,17 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         </div>
       </div>
       ${blockersHtml}
+      ${state.incomplete.length ? `
+        <div class="df-note">
+          <strong class="df-block">This report is incomplete.</strong>
+          <p style="margin:6px 0 0;font-size:.85rem">
+            The dependencies of ${state.incomplete.length} flow${state.incomplete.length === 1 ? "" : "s"}
+            could not be read — ${escapeHtml(state.incomplete.slice(0, 5).join(", "))}${
+              state.incomplete.length > 5 ? `, and ${state.incomplete.length - 5} more` : ""}.
+            Anything used only by ${state.incomplete.length === 1 ? "it" : "them"} is missing from
+            the list below. Treat this as a partial picture, not a clean one.
+          </p>
+        </div>` : ""}
       ${sectionHtml("Created by onboarding", tierA, "A",
         "Deployed alongside a callflow. Selected by default where nothing else uses them.")}
       ${sectionHtml("Shared org objects", tierB, "B",
@@ -687,6 +756,12 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       <div style="margin-top:9px;font-size:.82rem;line-height:1.6">
         <div><strong>Object types seen:</strong> ${
           types.length ? types.map(([t, n]) => `${escapeHtml(t || "(blank)")} ×${n}`).join(" · ") : "none"
+        }</div>
+        <div style="margin-top:5px"><strong>Excluded as platform vocabulary:</strong> ${
+          f.excluded?.size
+            ? [...f.excluded.entries()].sort((a, b) => b[1] - a[1])
+                .map(([t, n]) => `${escapeHtml(t)} ×${n}`).join(" · ")
+            : "none"
         }</div>
         <div style="margin-top:5px"><strong>Flow versions available:</strong> ${
           escapeHtml((f.flowVersions || []).join(", ") || "none read")

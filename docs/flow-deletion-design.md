@@ -284,6 +284,34 @@ override.
 | Flow milestone | `DELETE /api/v2/flows/milestones/{milestoneId}` |
 | Flow outcome | *believed to have none — verify* |
 
+### 8.2 Querying Dependency Tracking (confirmed 2026-08-13)
+
+- **`version` is required** on both `consumedresources` and `consumingresources`,
+  and it is the version *of the object being asked about*. Omitting it returns
+  "Query parameter 'version' is missing or empty".
+- **`LATEST` is not accepted.** Every attempt returned "Could not find the
+  dependency object with specified ID and version".
+- **Each flow has its own version.** A real run had the root callflow at `8.0`
+  and its common modules at `3.0`. Reusing one version across the closure failed
+  on every module and dropped three of them out of the tree — leaving the report
+  quietly incomplete. Each flow's version is now read from the flow itself.
+- A flow whose dependencies cannot be read is reported **at the top of the
+  report**, not only in diagnostics: anything used solely by that flow is missing
+  from the list, and an incomplete tree must not look like a clean one.
+
+### 8.3 Platform vocabulary is excluded
+
+Dependency Tracking reports everything a flow consumes, including the building
+blocks it is written in: `FLOWACTION` (PlayAudioAction, DecisionAction…),
+`FLOWDATATYPE` (str, int, que…), `LANGUAGE`, `SYSTEMPROMPT`, `TTSENGINE`,
+`TTSVOICE`, `STTENGINE`. A single real callflow pulled in **~59 of these against
+20 genuine artifacts**.
+
+They exist in every org, are never created or deleted, and listing them buries
+the real findings. They are excluded from the tree entirely and counted in the
+Findings panel instead. Onboarding draws the same line from the other side —
+`resolveDeps` excludes `SystemPrompt.` references for the same reason.
+
 ## 9. Idempotency and re-runs
 
 A partially completed deletion is safe to re-run: objects already gone drop out
@@ -420,14 +448,17 @@ produce a clear message rather than an empty dependency list.
 
 Live-org checks, in order. Each one can change the design.
 
-1. **Dependency Tracking response shapes** — `consumedresources` /
-   `consumingresources`: pagination, the `objectType` / `resourceType` enums, and
-   whether `consumedresources` returns direct references only (assumed) or
-   transitive ones.
-2. **Which consumer types actually surface** — do call routes, IVR
-   configurations, queue in-queue assignments and campaigns appear as consuming
-   resources of a flow? §7 depends on this. Anything that does not appear needs
-   a separate, type-specific blocker lookup.
+1. ~~**Dependency Tracking response shapes**~~ — **ANSWERED 2026-08-13.** The
+   full `objectType` enum was returned by the API; there is **no generic
+   `FLOW`**, scripts are `COMPOSERSCRIPT`, prompts `USERPROMPT`/`SYSTEMPROMPT`,
+   workitem flows `WORKITEMFLOW`. `version` is **required** and must be the
+   version *of the object being asked about* — `LATEST` is rejected, and each
+   flow has its own (a root at 8.0 with common modules at 3.0). See §8.2.
+2. **Which consumer types actually surface** — **PARTLY ANSWERED.**
+   `IVRCONFIGURATION` does surface as a consuming resource and correctly blocked
+   a real flow. Call routes, queue in-queue assignments and campaigns are still
+   unconfirmed — no test flow has exercised them yet. Anything that turns out not
+   to appear needs a separate, type-specific blocker lookup.
 3. ~~**Build status semantics**~~ — **ANSWERED 2026-08-13**, see §4.1. Ready
    state is `OPERATIONAL`; `dateCompleted` tracks full rebuilds only and is
    expected to be old; `failedObjects` is now used to force affected objects to
