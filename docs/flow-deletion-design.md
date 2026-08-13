@@ -263,6 +263,16 @@ Each hit becomes a synthetic consumer with a key deliberately outside the
 closure, so it is a hard blocker under the existing rule with no change to
 [flowDeleteGraph.js](../js/lib/flowDeleteGraph.js).
 
+**Confirmed on a live org (2026-08-13), and the two probes behave differently:**
+
+- **Queue assignments ARE indexed by Dependency Tracking.** Setting a queue's
+  in-queue flow made the queue appear as a consuming resource *and* as a probe
+  hit — the same fact twice, under two labels. Probe hits are therefore
+  de-duplicated against the index by the attaching object's real id. The probe
+  stays as a second source, but it is belt-and-braces here.
+- **Web/messaging deployments are NOT indexed.** This probe is the only thing
+  standing between a deployed flow and a report saying it is free to delete.
+
 **This list is not proven complete.** Outbound campaigns, email routes, SMS/
 Open Messaging integrations and Bring-Your-Own-Channel routing may attach flows
 too. A probe that fails to run is reported prominently — a blocker list that is
@@ -537,13 +547,14 @@ Live-org checks, in order. Each one can change the design.
    workitem flows `WORKITEMFLOW`. `version` is **required** and must be the
    version *of the object being asked about* — `LATEST` is rejected, and each
    flow has its own (a root at 8.0 with common modules at 3.0). See §8.2.
-2. **Which consumer types actually surface** — **PARTLY ANSWERED, and the answer
-   changed the design.** `IVRCONFIGURATION` does surface and correctly blocked a
-   real flow. But a **web/messaging deployment does not** — a flow attached to
-   one reported zero consumers and read as deletable. Dependency Tracking is not
-   a complete blocker source; attachments are now probed directly (§7.1). Still
-   unconfirmed: outbound campaigns, email routes, SMS/Open Messaging
-   integrations, BYOC routing.
+2. **Which consumer types actually surface** — **ANSWERED for the common cases,
+   and the answer changed the design.** `IVRCONFIGURATION` surfaces and blocked a
+   real flow. `QUEUE` surfaces, both as a flow's dependency and as a consumer
+   when a queue's in-queue flow points at it. A **web/messaging deployment does
+   not** — a flow attached to one reported zero consumers and read as deletable.
+   Dependency Tracking is not a complete blocker source; attachments are probed
+   directly (§7.1). Still unconfirmed: outbound campaigns, email routes,
+   SMS/Open Messaging integrations, BYOC routing.
 3. ~~**Build status semantics**~~ — **ANSWERED 2026-08-13**, see §4.1. Ready
    state is `OPERATIONAL`; `dateCompleted` tracks full rebuilds only and is
    expected to be old; `failedObjects` is now used to force affected objects to

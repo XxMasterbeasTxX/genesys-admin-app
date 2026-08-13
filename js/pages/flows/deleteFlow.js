@@ -444,10 +444,17 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
   async function probeAttachments(flowIds, findings) {
     const byFlowId = new Map();
     const unchecked = [];
-    const add = (flowId, name, type) => {
+    /**
+     * `holderId` is the REAL id of the attaching object, not a synthetic one, so
+     * that a probe hit which Dependency Tracking already reported can be
+     * recognised as the same fact and dropped. Queue assignments turn out to be
+     * indexed by DT; web deployments are not. Reporting both sources blindly
+     * listed one queue twice under two different labels.
+     */
+    const add = (flowId, holderId, name, type) => {
       if (!flowId || !flowIds.has(String(flowId))) return;
       const list = byFlowId.get(String(flowId)) || [];
-      list.push({ id: `attach:${type}:${name}`, name, type });
+      list.push({ id: String(holderId || `attach:${type}:${name}`), name, type });
       byFlowId.set(String(flowId), list);
     };
 
@@ -455,7 +462,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     try {
       const resp = await api.proxyGenesys(state.orgId, "GET", "/api/v2/webdeployments/deployments");
       const list = Array.isArray(resp) ? resp : (resp?.entities || []);
-      for (const d of list) add(d?.flow?.id, d?.name || "(unnamed deployment)", "WEBDEPLOYMENT");
+      for (const d of list) add(d?.flow?.id, d?.id, d?.name || "(unnamed deployment)", "WEBDEPLOYMENT");
       findings.probes.push({ probe: "web deployments", ok: true, count: list.length });
     } catch (err) {
       unchecked.push("web/messaging deployments");
@@ -467,7 +474,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       const queues = await gc.fetchAllPages(api, state.orgId, "/api/v2/routing/queues");
       for (const q of queues) {
         for (const field of ["queueFlow", "messageInQueueFlow", "emailInQueueFlow"]) {
-          add(q?.[field]?.id, `${q.name} (${field})`, "QUEUEASSIGNMENT");
+          add(q?.[field]?.id, q?.id, `${q.name} (${field})`, "QUEUEASSIGNMENT");
         }
       }
       findings.probes.push({ probe: "queues", ok: true, count: queues.length });
@@ -481,7 +488,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       const ivrs = await gc.fetchAllPages(api, state.orgId, "/api/v2/architect/ivrs");
       for (const ivr of ivrs) {
         for (const field of ["openHoursFlow", "closedHoursFlow", "holidayHoursFlow"]) {
-          add(ivr?.[field]?.id, `${ivr.name} (${field})`, "CALLROUTE");
+          add(ivr?.[field]?.id, ivr?.id, `${ivr.name} (${field})`, "CALLROUTE");
         }
       }
       findings.probes.push({ probe: "call routes", ok: true, count: ivrs.length });
@@ -644,7 +651,14 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         if (!found?.length) continue;
         const existing = state.consumers.get(node.key);
         // A null (unknown) list stays unknown — it is already the stricter state.
-        if (existing !== null) state.consumers.set(node.key, [...(existing || []), ...found]);
+        if (existing === null) continue;
+        // Drop probe hits the index already reported. Queue assignments ARE
+        // indexed by Dependency Tracking; web deployments are not. Without this
+        // one queue was listed twice under two different labels, which reads as
+        // two separate things holding the flow.
+        const known = new Set((existing || []).map((c) => String(c.id).toLowerCase()));
+        const novel = found.filter((f) => !known.has(String(f.id).toLowerCase()));
+        if (novel.length) state.consumers.set(node.key, [...(existing || []), ...novel]);
       }
 
       await enrichNodes(state.closure);
