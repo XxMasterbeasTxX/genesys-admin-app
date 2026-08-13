@@ -382,12 +382,38 @@ override.
 | Data table | `DELETE /api/v2/flows/datatables/{datatableId}` | ✅ verified, including a table with rows |
 | Data action | `DELETE /api/v2/integrations/actions/{actionId}` | ✅ verified |
 | User prompt | `DELETE /api/v2/architect/prompts/{promptId}?allResources=true` | ✅ verified. `allResources` is **required** — without it: *"Cannot delete prompt … since it contains prompt resources."* Those are the prompt's own per-language resources, not another object depending on it, so it is not the kind of force flag this tool refuses |
-| Script | `DELETE /api/v2/scripts/{scriptId}` | ⏳ untested |
-| Survey form | `DELETE /api/v2/quality/forms/surveys/{formId}` | ⏳ untested |
+| Script | `DELETE /api/v2/scripts/{scriptId}` | ✅ verified |
+| Survey form | `DELETE /api/v2/quality/forms/surveys/{formId}` | ⚠️ **fails when the form is published** — see below |
+| NLU domain | `DELETE /api/v2/languageunderstanding/domains/{id}` | ✅ verified (usually already gone with its parent flow) |
 
-Verified end-to-end on a live org (2026-08-13): a callflow with a common module,
-data table (1 row), data action and user prompt deleted cleanly in
-consumer-first order — flow → module → prompt → table.
+**Published survey forms cannot be deleted.** Genesys returns *"The survey with
+name &lt;guid&gt; cannot be deleted because it has been already published"* — with
+the form's id where its name should be. The row reports the constraint in
+readable terms instead and leaves the form in place; an unpublished form deletes
+normally, so the attempt is still made. No unpublish-then-delete workaround is
+attempted, because none is confirmed to exist.
+
+Verified end-to-end on a live org (2026-08-13), twice:
+
+1. A hand-built callflow with a common module, data table (1 row), data action
+   and user prompt — deleted cleanly, consumer-first: flow → module → prompt →
+   table.
+2. **The round trip (§13 item 6)**: an onboarding-deployed `Test Deployment - `
+   set — 21 objects across flows, in-queue and voice-survey flows, common
+   module, 3 scripts, 5 data tables, 8 data actions, a survey form and an NLU
+   domain. **20 of 21 removed**; the survey form was the only object left, for
+   the published-form reason above.
+
+That run also confirmed three design decisions with real data:
+
+- **A 404 counts as success.** The NLU domain reported *already removed* — it had
+  gone with its parent survey flow, exactly the owned-artifact case predicted.
+- **`createdByClient` resolves an OAuth client**, so objects deployed by an
+  integration read as *"Created via API — OAuth client …"* rather than blank.
+- **An old build date is not staleness.** That org's index was last fully rebuilt
+  in **June 2023**, still `OPERATIONAL`, and every answer was correct. Treating
+  the date as a staleness signal would have locked the org out of the feature
+  entirely.
 | Queue | `DELETE /api/v2/routing/queues/{queueId}` |
 | Schedule | `DELETE /api/v2/architect/schedules/{scheduleId}` |
 | Schedule group | `DELETE /api/v2/architect/schedulegroups/{scheduleGroupId}` |
@@ -665,11 +691,10 @@ Live-org checks, in order. Each one can change the design.
 5. **Permission strings** for §12 — still unconfirmed. The entries are plausible
    rather than verified; the real enforcement is Genesys refusing the DELETE,
    which is reported per object.
-6. **A real end-to-end run** — **PARTLY DONE.** A hand-built callflow with a
-   common module, data table, data action and prompt was deleted cleanly. The
-   full round trip (deploy a Template set with Deployment › Onboarding into a
-   test org, then delete it and confirm the org is back to its prior state) is
-   still the acceptance test worth running.
+6. **A real end-to-end run** — **DONE.** Both a hand-built tree and a full
+   onboarding-deployed set (21 objects) were removed; 20 of 21 in the round
+   trip, the exception being a published survey form (§8.1). The acceptance
+   test the feature exists to pass, passes.
 
 ## 14. Phased implementation
 

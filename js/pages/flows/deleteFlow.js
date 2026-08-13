@@ -1040,7 +1040,17 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         // with their parent flow, so this is an expected outcome, not a failure.
         return { status: "ok", detail: "already removed" };
       }
-      return { status: "error", detail: err.message || String(err) };
+      const raw = err.message || String(err);
+      // Genesys refuses to delete a published survey form, and reports it with
+      // the form's ID where its name should be — unreadable next to a row that
+      // already names the object. Say what happened instead.
+      if (type === "SURVEYFORM" && /already been published|already published/i.test(raw)) {
+        return {
+          status: "error",
+          detail: "Genesys does not allow deleting a published survey form — left in place",
+        };
+      }
+      return { status: "error", detail: raw };
     }
   }
 
