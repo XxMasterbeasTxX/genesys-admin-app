@@ -108,6 +108,10 @@ const TYPE_LABELS = {
   FLOWMILESTONE: "Flow Milestone", FLOWOUTCOME: "Flow Outcome",
   CONTACTLIST: "Contact List", RESPONSE: "Response", SYSTEMPROMPT: "System Prompt",
   TTSENGINE: "TTS Engine", TTSVOICE: "TTS Voice", RECORDINGPOLICY: "Recording Policy",
+  NLUDOMAIN: "NLU Domain", KNOWLEDGEBASE: "Knowledge Base", DECISIONTABLE: "Decision Table",
+  // Synthetic types from the attachment probes — not Dependency Tracking values.
+  WEBDEPLOYMENT: "Web/Messaging Deployment", QUEUEASSIGNMENT: "Queue assignment",
+  CALLROUTE: "Call route",
 };
 
 const typeLabel = (t) => TYPE_LABELS[String(t || "").toUpperCase()] || String(t || "unknown");
@@ -419,6 +423,76 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     return closure;
   }
 
+  /**
+   * Attachment probes — things that point AT a flow from outside Architect.
+   *
+   * Dependency Tracking indexes what a flow references, and what references it
+   * *within Architect*. It does not know about the places a flow is attached to
+   * the platform: a web messaging deployment, a queue's in-queue flow, a call
+   * route. Those hold the flow just as firmly, and Genesys will refuse to delete
+   * it, but `consumingresources` returns nothing for them.
+   *
+   * Proven, not theorised: a messaging flow attached to a deployment reported
+   * zero consumers and read as fully deletable.
+   *
+   * Each hit becomes a synthetic consumer whose key is deliberately outside the
+   * closure, so the existing §5 rule treats it as a hard blocker with no changes
+   * to the graph module.
+   *
+   * @returns {{ byFlowId: Map<string, object[]>, unchecked: string[] }}
+   */
+  async function probeAttachments(flowIds, findings) {
+    const byFlowId = new Map();
+    const unchecked = [];
+    const add = (flowId, name, type) => {
+      if (!flowId || !flowIds.has(String(flowId))) return;
+      const list = byFlowId.get(String(flowId)) || [];
+      list.push({ id: `attach:${type}:${name}`, name, type });
+      byFlowId.set(String(flowId), list);
+    };
+
+    // Web / messaging deployments → an inbound message flow.
+    try {
+      const resp = await api.proxyGenesys(state.orgId, "GET", "/api/v2/webdeployments/deployments");
+      const list = Array.isArray(resp) ? resp : (resp?.entities || []);
+      for (const d of list) add(d?.flow?.id, d?.name || "(unnamed deployment)", "WEBDEPLOYMENT");
+      findings.probes.push({ probe: "web deployments", ok: true, count: list.length });
+    } catch (err) {
+      unchecked.push("web/messaging deployments");
+      findings.probes.push({ probe: "web deployments", ok: false, error: (err.message || String(err)).slice(0, 200) });
+    }
+
+    // Queues → in-queue call / message / email flows.
+    try {
+      const queues = await gc.fetchAllPages(api, state.orgId, "/api/v2/routing/queues");
+      for (const q of queues) {
+        for (const field of ["queueFlow", "messageInQueueFlow", "emailInQueueFlow"]) {
+          add(q?.[field]?.id, `${q.name} (${field})`, "QUEUEASSIGNMENT");
+        }
+      }
+      findings.probes.push({ probe: "queues", ok: true, count: queues.length });
+    } catch (err) {
+      unchecked.push("queue in-queue flow assignments");
+      findings.probes.push({ probe: "queues", ok: false, error: (err.message || String(err)).slice(0, 200) });
+    }
+
+    // Call routes (IVR configurations) → open/closed/holiday hours flows.
+    try {
+      const ivrs = await gc.fetchAllPages(api, state.orgId, "/api/v2/architect/ivrs");
+      for (const ivr of ivrs) {
+        for (const field of ["openHoursFlow", "closedHoursFlow", "holidayHoursFlow"]) {
+          add(ivr?.[field]?.id, `${ivr.name} (${field})`, "CALLROUTE");
+        }
+      }
+      findings.probes.push({ probe: "call routes", ok: true, count: ivrs.length });
+    } catch (err) {
+      unchecked.push("call routes");
+      findings.probes.push({ probe: "call routes", ok: false, error: (err.message || String(err)).slice(0, 200) });
+    }
+
+    return { byFlowId, unchecked };
+  }
+
   /** Fetch the consumer list for every object in the closure. */
   async function buildConsumerGraph(closure, findings) {
     const consumers = new Map();
@@ -484,10 +558,12 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       typesSeen: new Map(),
       excluded: new Map(),      // platform vocabulary kept out of the tree
       objectTypeCalls: [],
+      probes: [],               // attachment probes and their outcomes
       errors: [],
       buildStatus: null,
     };
     state.incomplete = [];
+    state.uncheckedAttachments = [];
 
     try {
       // 1. The index must be current, or every answer below is fiction (§4.1).
@@ -545,6 +621,23 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       setStatus("Resolving dependencies…", "", true);
       state.closure = await buildClosure(findings);
       state.consumers = await buildConsumerGraph(state.closure, findings);
+
+      // Attachments the index cannot see — merged in as synthetic consumers so
+      // the ordinary blocker rules apply to them.
+      setStatus("Checking where these flows are attached…", "", true);
+      const flowIds = new Set(
+        [...state.closure.values()].filter((n) => n.isFlow).map((n) => String(n.id))
+      );
+      const { byFlowId, unchecked } = await probeAttachments(flowIds, findings);
+      state.uncheckedAttachments = unchecked;
+      for (const node of state.closure.values()) {
+        const found = byFlowId.get(String(node.id));
+        if (!found?.length) continue;
+        const existing = state.consumers.get(node.key);
+        // A null (unknown) list stays unknown — it is already the stricter state.
+        if (existing !== null) state.consumers.set(node.key, [...(existing || []), ...found]);
+      }
+
       await enrichNodes(state.closure);
       state.findings = findings;
 
@@ -688,6 +781,16 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         </div>
       </div>
       ${blockersHtml}
+      ${state.uncheckedAttachments?.length ? `
+        <div class="df-note">
+          <strong class="df-block">Some attachments could not be checked.</strong>
+          <p style="margin:6px 0 0;font-size:.85rem">
+            ${escapeHtml(state.uncheckedAttachments.join(", "))} could not be read, so a
+            flow shown as deletable here may still be attached to one. Dependency
+            Tracking does not report these — they are checked separately, and that
+            check did not complete.
+          </p>
+        </div>` : ""}
       ${state.incomplete.length ? `
         <div class="df-note">
           <strong class="df-block">This report is incomplete.</strong>
@@ -761,6 +864,12 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
           f.excluded?.size
             ? [...f.excluded.entries()].sort((a, b) => b[1] - a[1])
                 .map(([t, n]) => `${escapeHtml(t)} ×${n}`).join(" · ")
+            : "none"
+        }</div>
+        <div style="margin-top:5px"><strong>Attachment probes:</strong> ${
+          f.probes?.length
+            ? f.probes.map((p) => `${escapeHtml(p.probe)} ${p.ok
+                ? `ok (${p.count} scanned)` : `FAILED: ${escapeHtml(p.error || "")}`}`).join(" · ")
             : "none"
         }</div>
         <div style="margin-top:5px"><strong>Flow versions available:</strong> ${

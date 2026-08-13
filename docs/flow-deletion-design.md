@@ -216,6 +216,16 @@ types these are is a §13 validation item; flow outcomes are the likely case.
 
 ## 7. Blockers
 
+> **Dependency Tracking is not a complete source of blockers.** Proven on a live
+> org (2026-08-13): a messaging flow attached to a **web/messaging deployment**
+> returned **zero consuming resources** and read as fully deletable. The index
+> knows what references a flow *within Architect*; it does not know where the
+> flow is attached to the platform. The same hole made an in-queue flow — almost
+> certainly assigned to a queue — read as "nothing else uses this".
+>
+> Attachments are therefore **probed directly** (§7.1) and merged in as synthetic
+> consumers, so the ordinary §5 rule treats them as hard blockers.
+
 A blocker is an attachment that prevents deletion outright, as opposed to a
 consumer inside the closure. Known categories:
 
@@ -237,6 +247,33 @@ operator clears the blockers and re-scans.
 Tier B objects have their own type-specific blockers (a queue with members, a
 schedule belonging to a group, a script attached to a queue). Same treatment:
 report, don't force.
+
+### 7.1 Attachment probes
+
+Run for **every flow in the closure**, not just the root — a dependency flow can
+be independently attached, and that must block it alone rather than the tree.
+
+| Probe | Endpoint | Fields |
+|---|---|---|
+| Web/messaging deployments | `GET /api/v2/webdeployments/deployments` | `flow.id` |
+| Queue assignments | `GET /api/v2/routing/queues` | `queueFlow`, `messageInQueueFlow`, `emailInQueueFlow` |
+| Call routes | `GET /api/v2/architect/ivrs` | `openHoursFlow`, `closedHoursFlow`, `holidayHoursFlow` |
+
+Each hit becomes a synthetic consumer with a key deliberately outside the
+closure, so it is a hard blocker under the existing rule with no change to
+[flowDeleteGraph.js](../js/lib/flowDeleteGraph.js).
+
+**This list is not proven complete.** Outbound campaigns, email routes, SMS/
+Open Messaging integrations and Bring-Your-Own-Channel routing may attach flows
+too. A probe that fails to run is reported prominently — a blocker list that is
+not exhaustive must say so rather than present a flow as free.
+
+**Phase 2 open question:** should a *failed* probe block deletion outright? For a
+report-only phase a prominent warning is right; once deletion is real, "we could
+not check whether this flow is attached" is arguably the same as "do not delete".
+Erring toward blocking is consistent with the rest of the safety model, but it
+would also mean an org lacking one of these features cannot delete anything if
+the endpoint 404s — so the check must distinguish "not applicable" from "failed".
 
 ## 8. Execution
 
@@ -454,11 +491,13 @@ Live-org checks, in order. Each one can change the design.
    workitem flows `WORKITEMFLOW`. `version` is **required** and must be the
    version *of the object being asked about* — `LATEST` is rejected, and each
    flow has its own (a root at 8.0 with common modules at 3.0). See §8.2.
-2. **Which consumer types actually surface** — **PARTLY ANSWERED.**
-   `IVRCONFIGURATION` does surface as a consuming resource and correctly blocked
-   a real flow. Call routes, queue in-queue assignments and campaigns are still
-   unconfirmed — no test flow has exercised them yet. Anything that turns out not
-   to appear needs a separate, type-specific blocker lookup.
+2. **Which consumer types actually surface** — **PARTLY ANSWERED, and the answer
+   changed the design.** `IVRCONFIGURATION` does surface and correctly blocked a
+   real flow. But a **web/messaging deployment does not** — a flow attached to
+   one reported zero consumers and read as deletable. Dependency Tracking is not
+   a complete blocker source; attachments are now probed directly (§7.1). Still
+   unconfirmed: outbound campaigns, email routes, SMS/Open Messaging
+   integrations, BYOC routing.
 3. ~~**Build status semantics**~~ — **ANSWERED 2026-08-13**, see §4.1. Ready
    state is `OPERATIONAL`; `dateCompleted` tracks full rebuilds only and is
    expected to be old; `failedObjects` is now used to force affected objects to
