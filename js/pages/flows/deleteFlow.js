@@ -286,6 +286,9 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
                  border-radius:8px;padding:11px 13px;margin:12px 0; }
       .df-caveat { background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);
                    border-radius:6px;padding:8px 11px;margin:0;font-size:.82rem; }
+      /* Destructive action — deliberately not the same colour as Analyse. */
+      .df-danger { background:#b91c1c; border-color:#b91c1c; }
+      .df-danger:hover:not(:disabled) { background:#dc2626; border-color:#dc2626; }
     </style>
 
     <h2>Flows — Delete Flow</h2>
@@ -311,8 +314,9 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
           <div class="df-menu" id="dfFlowMenu"></div>
         </div>
       </div>
-      <div class="dt-actions" style="margin-bottom:12px;display:flex;align-items:flex-end;gap:10px">
+      <div class="dt-actions" style="margin-bottom:12px;display:flex;flex-direction:column;align-items:flex-start;gap:8px">
         <button class="btn" id="dfAnalyse" disabled>Analyse</button>
+        <button class="btn df-danger" id="dfDeleteBtn" hidden>Delete…</button>
       </div>
     </div>
 
@@ -325,8 +329,19 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
   const $flowInput = $("#dfFlowInput");
   const $flowMenu = $("#dfFlowMenu");
   const $analyse = $("#dfAnalyse");
+  const $deleteBtn = $("#dfDeleteBtn");
   const $status = $("#dfStatus");
   const $report = $("#dfReport");
+
+  /**
+   * The delete button sits under Analyse but only exists once there is a report
+   * to act on — and disappears again once the run is done, so a finished result
+   * cannot be mistaken for a live one.
+   */
+  function updateDeleteBtn() {
+    const ready = state.closure.size > 0 && !state.rootHardBlocked && !state.deleted;
+    $deleteBtn.hidden = !ready;
+  }
 
   // ── State ─────────────────────────────────────────────
   const state = {
@@ -852,6 +867,12 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     state.busy = true;
     $analyse.disabled = true;
     $report.innerHTML = "";
+    // A fresh analysis supersedes any previous run: no stale delete button, and
+    // no results panel implying the new report has already been acted on.
+    state.deleted = false;
+    state.results = null;
+    state.closure = new Map();
+    $deleteBtn.hidden = true;
 
     const findings = {
       typesSeen: new Map(),
@@ -1432,7 +1453,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     if (!sum) return;
     const total = state.closure.size - 1;
     const kept = total - state.selection.size;
-    const canDelete = !state.rootHardBlocked && !state.deleted;
     sum.innerHTML = `
       <div class="df-sect">
         <div class="df-sect-head">
@@ -1451,11 +1471,9 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
             and anything that has gained one since this report is kept and reported.
             Deletion cannot be undone.
           </div>
-          ${canDelete ? `<button class="btn" id="dfDeleteBtn">Delete…</button>` : ""}
         </div>
       </div>`;
-    const btn = $("#dfDeleteBtn");
-    if (btn) btn.addEventListener("click", showDeleteConfirm);
+    updateDeleteBtn();
   }
 
   /**
@@ -1576,6 +1594,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     state.rootId = "";
     state.rootMeta = null;
     $analyse.disabled = true;
+    $deleteBtn.hidden = true;      // the report on screen is no longer the one selected
     renderMenu($flowInput.value);
   });
   $flowInput.addEventListener("focus", () => renderMenu($flowInput.value));
@@ -1596,6 +1615,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     if (!el.contains(ev.target)) $flowMenu.classList.remove("open");
   });
   $analyse.addEventListener("click", analyse);
+  $deleteBtn.addEventListener("click", showDeleteConfirm);
 
   // ── Init ──────────────────────────────────────────────
   (async function init() {
