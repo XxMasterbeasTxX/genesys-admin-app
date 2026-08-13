@@ -280,6 +280,11 @@ const CUSTOMER_EXCLUDED_KEYS = [
   "export.billing",
   "utilities",
   "deployment",
+  // Flows is otherwise a customer-suitable module, so a `flows.*` entitlement
+  // would hand a customer the ability to permanently delete a callflow and its
+  // dependencies — irreversibly, with no rollback. Listed explicitly because the
+  // wildcard would grant it silently.
+  "flows.delete",
 ];
 
 /** True if a page key is an internal-only feature excluded from customer mode. */
