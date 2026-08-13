@@ -881,6 +881,30 @@ export async function fetchAllPhones(api, orgId, opts = {}) {
     "/api/v2/telephony/providers/edges/phones", opts);
 }
 
+/**
+ * Run an API call, retrying it when Genesys rate-limits.
+ *
+ * For bulk write loops. The proxy returns a JSON body only, so the server's
+ * own `Retry-After` header is not visible to the browser and the delay is a
+ * fixed exponential instead. Without this a burst of 429s is indistinguishable
+ * from real failures in a run log, and the affected objects are silently left
+ * untouched.
+ *
+ * Only 429 is retried. A 4xx does not become correct by being repeated.
+ */
+export async function withRateLimitRetry(fn, { attempts = 4, initialDelayMs = 1000 } = {}) {
+  let wait = initialDelayMs;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err?.status !== 429 || attempt >= attempts) throw err;
+      await sleep(wait);
+      wait *= 2;
+    }
+  }
+}
+
 /** Create a phone. */
 export async function createPhone(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST",

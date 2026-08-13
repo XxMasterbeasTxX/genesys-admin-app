@@ -32,6 +32,7 @@
 import { escapeHtml, sleep, timestampedFilename, exportLogXlsx } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
+import { resolvePhoneHolders } from "../../../lib/phoneHolders.js";
 import { logAction } from "../../../services/activityLogService.js";
 
 // ── Licence classification ──────────────────────────────────────────
@@ -103,80 +104,6 @@ function uniquePhoneName(user, taken) {
 }
 
 // ── Analysis ────────────────────────────────────────────────────────
-
-/**
- * Which user does an existing phone belong to?
- *
- * A WebRTC phone carries the user twice — as `webRtcUser` and as `owner` —
- * and either identifies the holder. Only ever applied to phones on a WebRTC
- * base: an ordinary desk phone also has an `owner`, and treating that as a
- * WebRTC assignment would skip a user who genuinely needs one.
- */
-function phoneHolder(phone) {
-  return phone?.webRtcUser?.id || phone?.owner?.id || null;
-}
-
-/**
- * Map existing WebRTC phones to the users holding them.
- *
- * The phones LIST endpoint does not reliably return `webRtcUser` — the same
- * omission changeSite.js works around by re-fetching each phone before moving
- * it, and the reason `getPhone` is documented as the "full object". Building
- * this map from the list alone yields an empty map in orgs where the field is
- * absent, which does not fail loudly: it simply reports that nobody has a
- * phone yet and offers to create duplicates for the entire org.
- *
- * So the list is used when it does carry the holder, and only the phones it
- * does not answer for are fetched individually — restricted to phones on a
- * WebRTC base, and run a few at a time so a large org does not issue a
- * thousand serial requests.
- *
- * @param {Function} getFullPhone  `(phoneId) => Promise<phone>`
- * @param {Set<string>} webRtcBaseIds  Every WebRTC base in the org, not just
- *   the one used for creating — a phone on a second WebRTC base still counts.
- * @param {Function} [shouldStop]  Polled between batches so the operator can
- *   cancel a long resolve.
- */
-export async function resolvePhoneHolders(phones, webRtcBaseIds, getFullPhone, { onProgress, shouldStop } = {}) {
-  const byUser = new Map();
-  const needDetail = [];
-
-  for (const p of phones) {
-    // A phone with no phoneBaseSettings in the list response cannot be ruled
-    // out, so it is checked rather than assumed to be a desk phone.
-    const baseId = p.phoneBaseSettings?.id;
-    if (baseId && !webRtcBaseIds.has(baseId)) continue;
-
-    const holder = phoneHolder(p);
-    if (holder) {
-      if (!byUser.has(holder)) byUser.set(holder, p);
-    } else {
-      needDetail.push(p);
-    }
-  }
-
-  const CONCURRENCY = 6;
-  const queue = [...needDetail];
-  let done = 0;
-
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-    while (queue.length) {
-      if (shouldStop?.()) return;
-      const p = queue.shift();
-      try {
-        const full = await getFullPhone(p.id);
-        const holder = phoneHolder(full);
-        if (holder && !byUser.has(holder)) byUser.set(holder, full);
-      } catch {
-        // A phone we cannot read is left out. It can only cause a create that
-        // Genesys then rejects — recorded as a failure, not a silent double.
-      }
-      onProgress?.(++done, needDetail.length);
-    }
-  }));
-
-  return { byUser, detailFetches: needDetail.length };
-}
 
 /**
  * Narrow the org's users to those the operator asked for.
@@ -286,25 +213,6 @@ function classifyCreateError(err) {
     return { kind: "exists", text: "Skipped (created by someone else during this run)" };
   }
   return { kind: "failed", text: `Failed: ${err?.status ? `${err.status} — ` : ""}${message}`.slice(0, 200) };
-}
-
-/**
- * POST with backoff on 429.
- *
- * The proxy returns only a JSON body, so `Retry-After` is not visible to the
- * browser; the delay is a fixed exponential instead of the server's own hint.
- */
-async function createWithRetry(fn, attempts = 4) {
-  let wait = 1000;
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      if (err?.status !== 429 || attempt >= attempts) throw err;
-      await sleep(wait);
-      wait *= 2;
-    }
-  }
 }
 
 // ── Page renderer ───────────────────────────────────────────────────
@@ -937,7 +845,7 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
         showProgress((i / rows.length) * 100);
 
         try {
-          await createWithRetry(() => gc.createPhone(api, orgId, {
+          await gc.withRateLimitRetry(() => gc.createPhone(api, orgId, {
             name: row.phoneName,
             site: { id: siteId },
             phoneBaseSettings: { id: base.phoneBaseSettingsId },

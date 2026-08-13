@@ -11,6 +11,21 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "2.9",
+    date: "2026-08-13",
+    title: "WebRTC Phones — Change Site: filters, and a confirmation before moving",
+    changes: [
+      "The same Groups and Division filters as on Create, applied to the phone's holder: \"show me the phones belonging to people in Sales\". Leave them empty to list everything at the site, as before.",
+      "Moving now asks for confirmation, restating how many phones and where they are going. Moving a phone re-registers it and can drop anyone on a call through it, so the run no longer starts on a single click.",
+      "The destination can no longer be the source. Previously choosing the same site both sides ran a move that changed nothing and still reported every phone as moved.",
+      "Rate-limit responses are retried with a backoff instead of being recorded as failures, so a large move no longer leaves phones behind on a busy org.",
+      "Failures now include the status code, so a phone someone else was editing at the same time reads differently from one the site rejected.",
+      "After a run the phone list clears. It described phones at the source site that are no longer there, and leaving it on screen invited a second move of phones that had already gone.",
+      "A run that breaks part-way now still writes its Activity Log entry, covering the phones that were moved before it stopped.",
+      "Phones with no assigned user cannot match a holder filter and are excluded when one is set — the count is stated so they are not silently missing.",
+    ],
+  },
+  {
     version: "2.8",
     date: "2026-08-13",
     title: "WebRTC Phones — Create: filter by group or division",
