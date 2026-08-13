@@ -185,7 +185,11 @@ const DELETE_PATH = {
   DATATABLE: (id) => `/api/v2/flows/datatables/${id}`,
   DATAACTION: (id) => `/api/v2/integrations/actions/${id}`,
   COMPOSERSCRIPT: (id) => `/api/v2/scripts/${id}`,
-  USERPROMPT: (id) => `/api/v2/architect/prompts/${id}`,
+  // `allResources=true` deletes the prompt's own per-language resources with it.
+  // Without it Genesys refuses: "Cannot delete prompt … since it contains prompt
+  // resources." That is the prompt's own contents, not another object depending
+  // on it — so this is not the kind of force flag this tool refuses to use.
+  USERPROMPT: (id) => `/api/v2/architect/prompts/${id}?allResources=true`,
   SURVEYFORM: (id) => `/api/v2/quality/forms/surveys/${id}`,
   QUEUE: (id) => `/api/v2/routing/queues/${id}`,
   SCHEDULE: (id) => `/api/v2/architect/schedules/${id}`,
@@ -549,7 +553,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     closure.set(rootKey, {
       key: rootKey, id: state.rootId, name: state.rootMeta.name,
       type: rootType, isRoot: true, isFlow: true, tier: "A", noDeleteApi: false,
-      version: null,
+      version: null, versions: new Set(),
     });
 
     const queue = [{ key: rootKey, id: state.rootId, type: rootType, isFlow: true, version: null }];
@@ -598,7 +602,15 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
           continue;
         }
         const k = keyOf(dep.type, dep.id);
-        if (k === cur.key || visited.has(k)) continue;
+        if (k === cur.key) continue;
+        // The version RECORDED BY THE REFERENCE is the one that matters for
+        // "who uses this" — a caller can reference an older version than the
+        // object's current one. Collected even for objects already seen, since
+        // different parents may reference different versions.
+        if (visited.has(k)) {
+          if (dep.version) closure.get(k)?.versions?.add(String(dep.version));
+          continue;
+        }
         visited.add(k);
         const flowish = isFlowType(dep.type);
         const upper = String(dep.type).toUpperCase();
@@ -607,6 +619,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
           isRoot: false, isFlow: flowish,
           tier: tierOf(dep.type),
           version: dep.version || null,
+          versions: new Set([dep.version].filter(Boolean).map(String)),
           noDeleteApi: NO_DELETE_API.has(upper),
           neverOffer: NEVER_OFFER.has(upper),
         });
@@ -710,6 +723,27 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     return { byFlowId, unchecked };
   }
 
+  /**
+   * Every version of an object worth asking "who uses this?" about.
+   *
+   * The versions recorded by the references that led us here come first — those
+   * are the ones callers actually bind to — followed by the object's own
+   * published, checked-in and saved versions.
+   */
+  async function consumerVersionsFor(node) {
+    const out = new Set([...(node.versions || [])].filter(Boolean).map(String));
+    if (node.isFlow) {
+      const f = await getFlowDetail(node.id);
+      for (const v of [f?.publishedVersion?.id, f?.checkedInVersion?.id, f?.savedVersion?.id]) {
+        if (v) out.add(String(v));
+      }
+    }
+    if (node.version) out.add(String(node.version));
+    // Non-flow objects often carry no version anywhere; a single unqualified
+    // call is what has always worked for them.
+    return out.size ? [...out] : [null];
+  }
+
   /** Fetch the consumer list for every object in the closure. */
   async function buildConsumerGraph(closure, findings) {
     const consumers = new Map();
@@ -724,18 +758,43 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         continue;
       }
       try {
-        // Ask about the same version the object was discovered at; flows get
-        // their own resolved version, everything else what the entry carried.
-        const version = node.version
-          || (node.isFlow ? await resolveFlowVersion(node.id) : null);
-        const list = await gc.fetchConsumingResources(api, state.orgId, node.id, node.type,
-          version ? { query: { version } } : {});
-        const kept = list.filter((c) => !c.deleted && c.id !== node.id);
-        // Which version each answer came from. Two runs returned DISJOINT
-        // consumer sets for the same data action, and version scoping is the
-        // leading explanation — this records the evidence to confirm it.
+        // Consumer answers are VERSION-SCOPED. Asking only about an object's
+        // current version misses callers that reference an older one — proven
+        // live, where a common module called by a flow reported ZERO consumers
+        // because the flow referenced an earlier version. It then looked
+        // unconstrained and was ordered ahead of the flow that used it.
+        //
+        // So every version we know of is queried and the answers unioned: the
+        // versions recorded by the references that led us here, plus the
+        // object's own published/checked-in/saved versions. More consumers is
+        // the conservative direction; missing one is the direction that deletes
+        // something still in use.
+        const versions = await consumerVersionsFor(node);
+        const merged = new Map();
+        const asked = [];
+        let answered = 0;
+        let lastErr = null;
+        for (const version of versions) {
+          try {
+            const list = await gc.fetchConsumingResources(api, state.orgId, node.id, node.type,
+              version ? { query: { version } } : {});
+            answered++;
+            asked.push(`${version || "(none)"}→${list.length}`);
+            for (const c of list) {
+              if (c.deleted || c.id === node.id) continue;
+              merged.set(`${c.type}::${c.id}`, c);
+            }
+          } catch (err) {
+            lastErr = err;
+            asked.push(`${version || "(none)"}→err`);
+          }
+        }
+        // Not one version answered, so we know nothing about this object's
+        // consumers — which must never read as "none".
+        if (!answered) throw lastErr || new Error("no version could be queried");
+        const kept = [...merged.values()];
         findings.consumerCalls.push({
-          name: node.name, type: node.type, version: version || "(none)",
+          name: node.name, type: node.type, version: asked.join(" "),
           count: kept.length, names: kept.map((c) => c.name).slice(0, 8),
         });
         consumers.set(node.key, kept);

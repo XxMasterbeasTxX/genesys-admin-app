@@ -377,14 +377,14 @@ All **to be verified** (§13); `forceDelete`-style parameters are deliberately n
 used — a refusal is information the operator should see, not something to
 override.
 
-| Type | Endpoint |
-|---|---|
-| Flow | `DELETE /api/v2/flows/{flowId}` |
-| Data table | `DELETE /api/v2/flows/datatables/{datatableId}` |
-| Data action | `DELETE /api/v2/integrations/actions/{actionId}` |
-| Script | `DELETE /api/v2/scripts/{scriptId}` |
-| Survey form | `DELETE /api/v2/quality/forms/surveys/{formId}` |
-| User prompt | `DELETE /api/v2/architect/prompts/{promptId}` |
+| Type | Endpoint | Status |
+|---|---|---|
+| Flow | `DELETE /api/v2/flows/{flowId}` | ✅ verified |
+| Data action | `DELETE /api/v2/integrations/actions/{actionId}` | ✅ verified |
+| Data table | `DELETE /api/v2/flows/datatables/{datatableId}` | ⏳ refused while still in use — correct behaviour, not yet seen succeed |
+| User prompt | `DELETE /api/v2/architect/prompts/{promptId}?allResources=true` | ⚠️ `allResources` **required** — without it: *"Cannot delete prompt … since it contains prompt resources."* That is the prompt's own per-language resources, not another object depending on it, so it is not the kind of force flag this tool refuses |
+| Script | `DELETE /api/v2/scripts/{scriptId}` | ⏳ untested |
+| Survey form | `DELETE /api/v2/quality/forms/surveys/{formId}` | ⏳ untested |
 | Queue | `DELETE /api/v2/routing/queues/{queueId}` |
 | Schedule | `DELETE /api/v2/architect/schedules/{scheduleId}` |
 | Schedule group | `DELETE /api/v2/architect/schedulegroups/{scheduleGroupId}` |
@@ -479,6 +479,41 @@ of *considered* deletions is wanted, this is the decision to revisit.
 **Known gap:** if the page is closed mid-run the entry is lost. Deletes take
 seconds, so the window is small, but it is a real difference from onboarding's
 runner-written record.
+
+## 10.0 CONFIRMED — consumer answers ARE version-scoped
+
+**Proven by a real deletion (2026-08-13).** A common module called by a flow
+reported **zero consumers**:
+
+```
+Test - Delete [COMMONMODULEFLOW] @ 3.0 → 0
+```
+
+The module's current published version was 3.0; the flow referenced an earlier
+one. `consumingresources` answers only for the version asked about, so the module
+looked unconstrained. With no edge to order against, the tie-break put it ahead
+of the flow that called it, Genesys refused the delete, and the data table failed
+behind it for the same reason.
+
+Nothing was wrongly deleted — Genesys refused, fail-forward reported it — but the
+same asymmetry could have gone the other way: an object that *is* still used
+reading as orphaned, and being deleted.
+
+Two fixes:
+
+1. **Consumers are unioned across every known version** — the versions recorded
+   by the references that led to the object (a caller binds to a specific
+   version), plus its own published, checked-in and saved versions. More
+   consumers is the conservative direction; missing one is the direction that
+   deletes something in use.
+2. **The chosen callflow is always deleted first** among equally-ready objects.
+   When an edge is missing from the index the tie-break is all that decides the
+   order, and the root can never be the wrong thing to remove first.
+
+Note this is a *different* mechanism from §10.1, which was investigated and
+correctly dismissed — there the two runs differed because the org had changed and
+because two display branches showed different subsets. Version scoping is real;
+the earlier evidence for it simply was not.
 
 ## 10.1 Investigated and dismissed — "version-scoped consumers"
 

@@ -114,7 +114,14 @@ export function deletionOrder(graph, phaseOf = () => 0) {
   const order = [];
   const rank = (k) => {
     const n = graph.closure.get(k);
-    return n ? phaseOf(n) : 99;
+    if (!n) return 99;
+    // The chosen callflow always goes first among equally-ready objects. When a
+    // consumer edge is missing from the index, the tie-break is all that decides
+    // the order — and it once sent a common module ahead of the flow calling it,
+    // which Genesys then refused. The root can never be the wrong thing to
+    // delete first: nothing in the set is above it.
+    if (n.isRoot) return -1;
+    return phaseOf(n);
   };
   const bySequence = (a, b) => (rank(a) - rank(b)) || a.localeCompare(b);
 
