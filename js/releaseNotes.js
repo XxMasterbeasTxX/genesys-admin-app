@@ -24,6 +24,7 @@ export const RELEASE_NOTES = [
       "Confirming requires typing DELETE. There is no undo: a phone can be recreated from Create, but its id is gone.",
       "Optional Site, Groups and Division filters; leave them all empty to sweep the whole org. Note that groups and divisions describe a person, so setting one hides the phones that have no user — the Findings panel says so when it happens.",
       "Every run writes one Activity Log entry, and the Excel log covers every phone considered, including the ones kept and why.",
+      "Findings reports how many users were read and their states. The deleted- and inactive-user categories can only be populated if the user lookup actually returns those users, so if none came back the panel says so — an empty category then means nothing rather than nothing found.",
       "The Site column shows the site name. The phone list Genesys returns carries a site id but not always its name, which left the column blank.",
       "Available to Master Admins only, and never to customer logins. Adding it meant splitting the `phones.*` access wildcard into named pages, so that a page which deletes phones across an org can never be granted by inheritance.",
     ],

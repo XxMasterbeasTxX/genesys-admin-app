@@ -416,6 +416,18 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
 
       const usersById = new Map(users.map((u) => [u.id, u]));
 
+      // Count what came back by state. The deleted- and inactive-user
+      // categories can only ever be populated if this request actually
+      // returns those users, and `state: "any"` is exactly the kind of
+      // parameter that turned out to be ignored for `siteId`. Reported in
+      // Findings so an empty category can be read as "none exist" rather
+      // than "we never looked".
+      const userStates = users.reduce((acc, u) => {
+        const s = String(u.state || "unknown").toLowerCase();
+        acc[s] = (acc[s] || 0) + 1;
+        return acc;
+      }, {});
+
       // De-duplicate by phone id as well as filtering. Every count on this
       // page — and the delete loop itself — assumes one row per phone; a
       // repeated phone inflates the totals and would be deleted once and then
@@ -478,7 +490,7 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
       state.analysis = {
         orgId, rows, activeCount, filterLabel, holderFilterDropped,
         phoneCount: candidates.length, detailFetches,
-        usersById, webRtcBaseIds,
+        usersById, webRtcBaseIds, userStates,
         groupOrDivisionFilter: groupIds.size > 0 || divisionIds.size > 0,
       };
       state.selection = new Set(
@@ -573,6 +585,21 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
       + `.`,
       `${a.activeCount} belong${a.activeCount === 1 ? "s" : ""} to an active user and ${a.activeCount === 1 ? "is" : "are"} not listed.`,
     ];
+    // What the org actually contains, so an empty category can be told apart
+    // from a lookup that never returned the users it needed.
+    const st = a.userStates || {};
+    const total = Object.values(st).reduce((n, v) => n + v, 0);
+    const breakdown = Object.entries(st).sort((x, y) => y[1] - x[1])
+      .map(([s, n]) => `${n} ${s}`).join(", ");
+    notes.push(`${total} user${total === 1 ? "" : "s"} read — ${breakdown || "none"}.`);
+    if (!st.inactive && !st.deleted) {
+      notes.push(
+        `<span class="wd-warn">No inactive or deleted users came back, so those two categories `
+        + `could not be populated by this run. If the org does have inactive or deleted users, `
+        + `the lookup is not returning them and an empty category here means nothing.</span>`
+      );
+    }
+
     const unreadable = a.rows.filter((r) => r.category === "UNREADABLE").length;
     if (unreadable) {
       notes.push(`<span class="wd-warn">${unreadable} phone${unreadable === 1 ? "" : "s"} could not be read and ${unreadable === 1 ? "is" : "are"} locked. Unknown is not unused.</span>`);
