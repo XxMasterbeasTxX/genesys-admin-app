@@ -104,27 +104,98 @@ function uniquePhoneName(user, taken) {
 // ── Analysis ────────────────────────────────────────────────────────
 
 /**
+ * Which user does an existing phone belong to?
+ *
+ * A WebRTC phone carries the user twice — as `webRtcUser` and as `owner` —
+ * and either identifies the holder. Only ever applied to phones on a WebRTC
+ * base: an ordinary desk phone also has an `owner`, and treating that as a
+ * WebRTC assignment would skip a user who genuinely needs one.
+ */
+function phoneHolder(phone) {
+  return phone?.webRtcUser?.id || phone?.owner?.id || null;
+}
+
+/**
+ * Map existing WebRTC phones to the users holding them.
+ *
+ * The phones LIST endpoint does not reliably return `webRtcUser` — the same
+ * omission changeSite.js works around by re-fetching each phone before moving
+ * it, and the reason `getPhone` is documented as the "full object". Building
+ * this map from the list alone yields an empty map in orgs where the field is
+ * absent, which does not fail loudly: it simply reports that nobody has a
+ * phone yet and offers to create duplicates for the entire org.
+ *
+ * So the list is used when it does carry the holder, and only the phones it
+ * does not answer for are fetched individually — restricted to phones on a
+ * WebRTC base, and run a few at a time so a large org does not issue a
+ * thousand serial requests.
+ *
+ * @param {Function} getFullPhone  `(phoneId) => Promise<phone>`
+ * @param {Set<string>} webRtcBaseIds  Every WebRTC base in the org, not just
+ *   the one used for creating — a phone on a second WebRTC base still counts.
+ * @param {Function} [shouldStop]  Polled between batches so the operator can
+ *   cancel a long resolve.
+ */
+export async function resolvePhoneHolders(phones, webRtcBaseIds, getFullPhone, { onProgress, shouldStop } = {}) {
+  const byUser = new Map();
+  const needDetail = [];
+
+  for (const p of phones) {
+    // A phone with no phoneBaseSettings in the list response cannot be ruled
+    // out, so it is checked rather than assumed to be a desk phone.
+    const baseId = p.phoneBaseSettings?.id;
+    if (baseId && !webRtcBaseIds.has(baseId)) continue;
+
+    const holder = phoneHolder(p);
+    if (holder) {
+      if (!byUser.has(holder)) byUser.set(holder, p);
+    } else {
+      needDetail.push(p);
+    }
+  }
+
+  const CONCURRENCY = 6;
+  const queue = [...needDetail];
+  let done = 0;
+
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+    while (queue.length) {
+      if (shouldStop?.()) return;
+      const p = queue.shift();
+      try {
+        const full = await getFullPhone(p.id);
+        const holder = phoneHolder(full);
+        if (holder && !byUser.has(holder)) byUser.set(holder, full);
+      } catch {
+        // A phone we cannot read is left out. It can only cause a create that
+        // Genesys then rejects — recorded as a failure, not a silent double.
+      }
+      onProgress?.(++done, needDetail.length);
+    }
+  }));
+
+  return { byUser, detailFetches: needDetail.length };
+}
+
+/**
  * Classify every user into eligible / skipped. Pure — no API, no DOM.
  *
  * @param {Object[]} users         Active users (with `division` expanded).
  * @param {Object[]} licenseUsers  `/api/v2/license/users` entities.
- * @param {Object[]} phones        Every phone in the org.
+ * @param {Object[]} phones        Every phone in the org (for name uniqueness).
+ * @param {Map}      phoneByUser   From `resolvePhoneHolders`.
  * @returns {{ eligible: Object[], skipped: Object[], licenceKinds: Map }}
  */
-export function analyseUsers(users, licenseUsers, phones) {
+export function analyseUsers(users, licenseUsers, phones, phoneByUser = new Map()) {
   const licencesByUser = new Map(
     licenseUsers.map((l) => [l.id, (l.licenses || []).filter(Boolean)])
   );
 
-  // Existing WebRTC phones, keyed by the user they are assigned to. Every
-  // phone name in the org goes into `taken`, WebRTC or not — the uniqueness
-  // constraint is org-wide.
-  const phoneByUser = new Map();
+  // Every phone name in the org, WebRTC or not — the uniqueness constraint
+  // Genesys enforces on phone names is org-wide.
   const taken = new Set();
   for (const p of phones) {
     if (p.name) taken.add(String(p.name).toLowerCase());
-    const uid = p.webRtcUser?.id;
-    if (uid && !phoneByUser.has(uid)) phoneByUser.set(uid, p);
   }
 
   const eligible = [];
@@ -385,15 +456,20 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
 
   async function findWebRtcBase(orgId) {
     const bases = await gc.fetchAllPhoneBaseSettings(api, orgId);
-    const match = bases.find(isWebRtcBase);
-    if (!match) return null;
+    const webRtcBases = bases.filter(isWebRtcBase);
+    if (!webRtcBases.length) return null;
 
-    // The list response omits `lines`; the single-base GET carries it.
-    const full = await gc.getPhoneBaseSetting(api, orgId, match.id);
+    // New phones go on the first WebRTC base, but every WebRTC base counts
+    // when deciding whether a user already has a phone — an org that has more
+    // than one must not get a second phone per user.
+    const match = webRtcBases[0];
+    const full = await gc.getPhoneBaseSetting(api, orgId, match.id); // list omits `lines`
     return {
       phoneBaseSettingsId: match.id,
       phoneBaseSettingsName: match.name || match.id,
       lineBaseSettingsId: full.lines?.[0]?.id ?? null,
+      webRtcBaseIds: new Set(webRtcBases.map((b) => b.id)),
+      webRtcBaseCount: webRtcBases.length,
     };
   }
 
@@ -441,12 +517,30 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
         return;
       }
 
+      setStatus("Matching existing WebRTC phones to their users…");
+      const { byUser: phoneByUser, detailFetches } = await resolvePhoneHolders(
+        phones,
+        base.webRtcBaseIds,
+        (phoneId) => gc.getPhone(api, orgId, phoneId),
+        {
+          shouldStop: () => state.cancelled,
+          onProgress: (n, total) => {
+            showProgress(85 + (n / Math.max(total, 1)) * 10);
+            setStatus(`Matching existing WebRTC phones to their users… ${n} of ${total}`);
+          },
+        }
+      );
+      if (state.cancelled) { setStatus("Cancelled."); return; }
+
       setStatus("Classifying users…");
-      const { eligible, skipped, licenceKinds } = analyseUsers(users, licenseUsers, phones);
+      const { eligible, skipped, licenceKinds } = analyseUsers(users, licenseUsers, phones, phoneByUser);
 
       state.analysis = {
         orgId, siteId, siteName, base, eligible, skipped, licenceKinds,
         userCount: users.length,
+        phoneCount: phones.length,
+        existingWebRtc: phoneByUser.size,
+        detailFetches,
       };
       // Everything eligible is ticked by default; untick to narrow the run.
       state.selection = new Set(eligible.filter((r) => !r.nameConflict).map((r) => r.userId));
@@ -528,13 +622,27 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
   }
 
   function findingsHtml() {
-    const { licenceKinds, eligible, base } = state.analysis;
+    const { licenceKinds, eligible, base, phoneCount, existingWebRtc, detailFetches } = state.analysis;
     const notes = [];
 
     const collab = [...licenceKinds.entries()].filter(([, v]) => v.collaborate);
     const other = [...licenceKinds.entries()].filter(([, v]) => !v.collaborate);
     notes.push(
-      `Phone base: <strong>${escapeHtml(base.phoneBaseSettingsName)}</strong>.`
+      `Phone base: <strong>${escapeHtml(base.phoneBaseSettingsName)}</strong>`
+      + (base.webRtcBaseCount > 1
+        ? ` — ${base.webRtcBaseCount} WebRTC bases exist in this org; new phones use this one, and a phone on any of them counts as already having one.`
+        : ".")
+    );
+
+    // The existing-phone count is the number this run will NOT duplicate, so
+    // it is stated outright: a zero here on an org that plainly has WebRTC
+    // phones means the match failed, not that the org is empty.
+    notes.push(
+      `Existing WebRTC phones matched to users: <strong>${existingWebRtc}</strong>`
+      + ` (of ${phoneCount} phone${phoneCount === 1 ? "" : "s"} in the org)`
+      + (detailFetches
+        ? ` — ${detailFetches} had to be read individually, because the phones list did not name their user.`
+        : ".")
     );
     notes.push(
       `Licences read as <em>collaborate</em> (holders skipped when they hold nothing else): ` +
