@@ -88,6 +88,16 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       .dte-row-grid td.dte-col {
         min-width: 150px;
       }
+      /* The key column swaps that floor for one measured from the longest key
+         in the table (set as --dte-key-w when rendering). It has to be a
+         min-width, not just a width: auto table layout treats width as a
+         preference and, once the columns overflow the wrapper, squeezes
+         whichever column is allowed to shrink — which would be this one. */
+      .dte-row-grid th.dte-col-key,
+      .dte-row-grid td.dte-col-key {
+        min-width: var(--dte-key-w, 150px);
+        width: var(--dte-key-w, 150px);
+      }
       .dte-row-grid tbody td {
         padding: 8px 10px;
         border-bottom: 1px solid var(--border);
@@ -170,6 +180,12 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         }
         .dte-row-grid tbody td {
           border-bottom: 1px solid var(--border);
+        }
+        /* Stacked cards ignore the measured key width. */
+        .dte-row-grid th.dte-col-key,
+        .dte-row-grid td.dte-col-key {
+          min-width: 0;
+          width: 100%;
         }
         .dte-row-grid tbody td:last-child {
           border-bottom: none;
@@ -373,6 +389,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   let _rowsPageSizeValue = 100;
   let _rowsPage = 1;
   let _selectedRowIds = new Set();
+  let _keyMeasureCtx = null;
 
   function setStatus(msg, type = "") {
     $status.textContent = msg;
@@ -625,6 +642,43 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     });
   }
 
+  // Size the key column to the widest key across every row in the table — not
+  // just the visible page, so the column doesn't jump while paging. The keys
+  // are measured in real pixels: a character count over-estimates narrow text
+  // and clips wide text such as an all-caps key. The header can't be clipped
+  // by a too-narrow result because thead cells are nowrap, so auto table
+  // layout keeps them at their own min-content width.
+  const KEY_COL_MIN_PX = 90;
+  const KEY_COL_MAX_PX = 460;
+
+  function applyKeyColumnWidth() {
+    const $table = $rowsGrid.querySelector(".dte-row-grid");
+    const $sample = $table?.querySelector("td.dte-col-key .dt-input");
+    if (!$table || !$sample) return;
+
+    const cs = getComputedStyle($sample);
+    const cell = getComputedStyle($sample.parentElement);
+    if (!_keyMeasureCtx) _keyMeasureCtx = document.createElement("canvas").getContext("2d");
+    _keyMeasureCtx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+
+    let widest = 0;
+    for (const model of _rowsModels) {
+      const w = _keyMeasureCtx.measureText(String(model.data.key ?? "")).width;
+      if (w > widest) widest = w;
+    }
+
+    // The measured text sits inside the input's own padding and border, and
+    // the input inside the cell's padding; 4px of slack leaves room for the
+    // caret at the end of the longest value.
+    const chrome =
+      parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) +
+      parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth) +
+      parseFloat(cell.paddingLeft) + parseFloat(cell.paddingRight) + 4;
+
+    const width = Math.min(KEY_COL_MAX_PX, Math.max(KEY_COL_MIN_PX, Math.ceil(widest + chrome)));
+    $table.style.setProperty("--dte-key-w", `${width}px`);
+  }
+
   function updateRowsSummary(filteredCount, totalCount) {
     const dirty = getDirtyRowsCount();
     $rowsSummary.textContent = `Showing ${filteredCount} of ${totalCount} row(s). Dirty rows: ${dirty}. Selected rows: ${_selectedRowIds.size}.`;
@@ -653,7 +707,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     }
 
     const header = _rowsColumns
-      .map(col => `<th class="dte-col">${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}</th>`)
+      .map(col => `<th class="dte-col${col.name === "key" ? " dte-col-key" : ""}">${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}</th>`)
       .join("");
 
     const allSelectedOnPage = pageRows.length > 0 && pageRows.every(m => _selectedRowIds.has(m.id));
@@ -663,9 +717,10 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         const value = model.data[col.name];
         const inputId = `dte-r-${model.id}-${idx}`;
         const label = `${col.title}${col.name === "key" ? " *" : ""}`;
+        const colClass = `dte-col${col.name === "key" ? " dte-col-key" : ""}`;
         if (col.type === "boolean") {
           return `
-            <td class="dte-col" data-label="${escapeHtml(label)}">
+            <td class="${colClass}" data-label="${escapeHtml(label)}">
               <label class="dtc-bool-wrap" for="${inputId}">
                 <input id="${inputId}" type="checkbox" data-row-id="${model.id}" data-col-name="${escapeHtml(col.name)}" data-col-type="boolean" ${value === true ? "checked" : ""} />
                 <span class="dtc-bool-label">${value === true ? "true" : "false"}</span>
@@ -677,7 +732,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         const inputType = (col.type === "integer" || col.type === "number") ? "number" : "text";
         const step = col.type === "integer" ? "step=\"1\"" : (col.type === "number" ? "step=\"any\"" : "");
         return `
-          <td class="dte-col" data-label="${escapeHtml(label)}">
+          <td class="${colClass}" data-label="${escapeHtml(label)}">
             <input id="${inputId}" class="dt-input" type="${inputType}" ${step} data-row-id="${model.id}" data-col-name="${escapeHtml(col.name)}" data-col-type="${escapeHtml(col.type)}" value="${escapeHtml(String(value ?? ""))}" autocomplete="off" />
           </td>
         `;
@@ -714,6 +769,8 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         </table>
       </div>
     `;
+
+    applyKeyColumnWidth();
 
     $rowsPagerInfo.textContent = `Page ${_rowsPage}/${pageCount}`;
     $rowsPrevBtn.disabled = _rowsPage <= 1;
