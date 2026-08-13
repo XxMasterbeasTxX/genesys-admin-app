@@ -475,10 +475,19 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
 
       renderReport();
       showProgress(100);
+
+      // "Unused" and "ticked" are different numbers, because the unticked-by-
+      // default categories sit between them. Saying only the first leaves the
+      // delete button looking like it disagrees with the summary, so the gap
+      // is spelled out rather than left to be worked out.
       const deletable = rows.filter((r) => CATEGORIES[r.category].deletable).length;
+      const held = deletable - state.selection.size;
       setStatus(
         deletable
-          ? `${deletable} phone${deletable === 1 ? "" : "s"} look unused. Review below, then confirm.`
+          ? `${deletable} phone${deletable === 1 ? "" : "s"} look unused — `
+            + `${state.selection.size} ticked for deletion`
+            + (held ? `, ${held} held by inactive users and left unticked` : "")
+            + `. Review below, then confirm.`
           : "Nothing to delete — every WebRTC phone in scope belongs to an active user.",
         deletable ? "" : "success"
       );
@@ -559,15 +568,30 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
     return `<div class="wd-find"><strong>Findings</strong><ul>${notes.map((n) => `<li>${n}</li>`).join("")}</ul></div>`;
   }
 
-  function renderReport() {
-    const { rows, filterLabel, phoneCount } = state.analysis;
-    const byCategory = (key) => rows.filter((r) => r.category === key);
+  /**
+   * The summary carries the ticked count, so it has to follow the ticks. It is
+   * rewritten on every selection change — a summary that still reports the
+   * count from analysis time is the same mismatch in a different place.
+   * Not called once a run has finished: the results replace it.
+   */
+  function renderSummary() {
+    if (!state.analysis || state.done) return;
+    const { rows, filterLabel, phoneCount, activeCount } = state.analysis;
+    const deletable = rows.filter((r) => CATEGORIES[r.category].deletable).length;
 
     $summary.textContent =
       `${phoneCount} WebRTC phone${phoneCount === 1 ? "" : "s"} examined`
       + (filterLabel ? ` (${filterLabel})` : "")
-      + ` — ${rows.filter((r) => CATEGORIES[r.category].deletable).length} unused, ${state.analysis.activeCount} in use`;
+      + ` — ${deletable} unused (${state.selection.size} ticked)`
+      + `, ${activeCount} in use`;
     $summary.style.display = "";
+  }
+
+  function renderReport() {
+    const { rows } = state.analysis;
+    const byCategory = (key) => rows.filter((r) => r.category === key);
+
+    renderSummary();
 
     $report.innerHTML = findingsHtml()
       + Object.keys(CATEGORIES).map((key) => sectionHtml(key, byCategory(key))).join("");
@@ -586,6 +610,7 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
       if (cb.checked) state.selection.add(cb.dataset.phone);
       else state.selection.delete(cb.dataset.phone);
       updateDeleteBtn();
+      renderSummary();
     }
   });
 
