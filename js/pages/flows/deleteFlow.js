@@ -171,6 +171,38 @@ const BUILD_NOT_READY = {
   UNKNOWN: "the index state could not be determined",
 };
 
+// ── Provenance ──────────────────────────────────────────
+//
+// "Who made this" is decision-relevant: a data table a person built last month
+// is a different deletion risk from one a deploy tool produced. Genesys exposes
+// this unevenly, so it is read defensively and reported in three honest states —
+// a person, an API client, or "not recorded". Never guessed.
+
+/** Where to fetch an object's detail, per Dependency Tracking type. */
+const DETAIL_PATH = {
+  DATATABLE: (id) => `/api/v2/flows/datatables/${id}`,
+  DATAACTION: (id) => `/api/v2/integrations/actions/${id}`,
+  COMPOSERSCRIPT: (id) => `/api/v2/scripts/${id}`,
+  USERPROMPT: (id) => `/api/v2/architect/prompts/${id}`,
+  QUEUE: (id) => `/api/v2/routing/queues/${id}`,
+  SURVEYFORM: (id) => `/api/v2/quality/forms/surveys/${id}`,
+  SCHEDULE: (id) => `/api/v2/architect/schedules/${id}`,
+  SCHEDULEGROUP: (id) => `/api/v2/architect/schedulegroups/${id}`,
+  EMERGENCYGROUP: (id) => `/api/v2/architect/emergencygroups/${id}`,
+  RESPONSE: (id) => `/api/v2/responsemanagement/responses/${id}`,
+  NLUDOMAIN: (id) => `/api/v2/languageunderstanding/domains/${id}`,
+};
+
+// Fields that mean "who made this", most authoritative first, then the
+// fallbacks that only mean "who touched it last". The two are reported
+// differently rather than blurred: on a flow, `createdBy` often reflects whoever
+// last saved a version, not the original author, and claiming otherwise would be
+// worse than saying nothing.
+const CREATED_FIELDS = ["createdBy", "createdByUser", "createdByClient", "createdByApp", "owner"];
+const MODIFIED_FIELDS = ["modifiedBy", "lastModifiedBy", "updatedBy", "publishedBy"];
+
+const GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 export default function renderDeleteFlow({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
@@ -322,17 +354,82 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
    * common modules out of the tree altogether, leaving it quietly incomplete.
    * One lookup per flow removes the guesswork entirely.
    */
-  const flowVersionCache = new Map();
-  async function resolveFlowVersion(id) {
-    if (flowVersionCache.has(id)) return flowVersionCache.get(id);
-    let version = null;
+  const flowDetailCache = new Map();
+  async function getFlowDetail(id) {
+    if (flowDetailCache.has(id)) return flowDetailCache.get(id);
+    let detail = null;
     try {
-      const f = await api.proxyGenesys(state.orgId, "GET", `/api/v2/flows/${id}`);
-      const v = f?.publishedVersion?.id || f?.checkedInVersion?.id || f?.savedVersion?.id;
-      version = v ? String(v) : null;
-    } catch (_) { /* fall back to whatever the dependency entry carried */ }
-    flowVersionCache.set(id, version);
-    return version;
+      detail = await api.proxyGenesys(state.orgId, "GET", `/api/v2/flows/${id}`);
+    } catch (_) { /* caller degrades */ }
+    flowDetailCache.set(id, detail);
+    return detail;
+  }
+
+  async function resolveFlowVersion(id) {
+    const f = await getFlowDetail(id);
+    const v = f?.publishedVersion?.id || f?.checkedInVersion?.id || f?.savedVersion?.id;
+    return v ? String(v) : null;
+  }
+
+  /**
+   * Turn an id into a named actor: a person, or an API client.
+   *
+   * Tried as a user first, then as an OAuth client. An id that resolves to
+   * neither is left as an id rather than labelled — it may be a deleted user, and
+   * calling that "an API client" would be a guess presented as a fact.
+   * Cached: a handful of distinct actors typically cover a whole analysis.
+   */
+  const actorCache = new Map();
+  async function actorById(id) {
+    if (actorCache.has(id)) return actorCache.get(id);
+    let out = null;
+    try {
+      const u = await api.proxyGenesys(state.orgId, "GET", `/api/v2/users/${id}`);
+      if (u?.name) out = { kind: "user", name: u.name };
+    } catch (_) { /* not a user, or deleted */ }
+    if (!out) {
+      try {
+        const c = await api.proxyGenesys(state.orgId, "GET", `/api/v2/oauth/clients/${id}`);
+        if (c?.name) out = { kind: "oauth", name: c.name };
+      } catch (_) { /* not a client, or no permission to read clients */ }
+    }
+    if (!out) out = { kind: "unresolved", name: id };
+    actorCache.set(id, out);
+    return out;
+  }
+
+  /** Resolve whatever shape a creator field holds into a named actor. */
+  async function resolveActor(ref) {
+    if (!ref) return { kind: "none", name: null };
+    if (typeof ref === "object") {
+      const uri = String(ref.selfUri || "");
+      if (ref.name) {
+        return { kind: /\/oauth\/clients\//.test(uri) ? "oauth" : "user", name: ref.name };
+      }
+      return ref.id ? actorById(String(ref.id)) : { kind: "none", name: null };
+    }
+    const s = String(ref).trim();
+    if (!s) return { kind: "none", name: null };
+    return GUID_RE.test(s) ? actorById(s) : { kind: "label", name: s };
+  }
+
+  /**
+   * Who made this object, from whatever the detail payload exposes.
+   * Records the field used per type so the Findings panel shows which types
+   * actually carry provenance and which simply do not.
+   */
+  async function describeCreator(detail, type, findings) {
+    if (!detail) return { kind: "none", basis: null };
+    let field = CREATED_FIELDS.find((f) => detail[f] != null);
+    let basis = "created";
+    if (!field) {
+      field = MODIFIED_FIELDS.find((f) => detail[f] != null);
+      basis = "modified";
+    }
+    if (!findings.creatorFields.has(type)) findings.creatorFields.set(type, field || "(none)");
+    if (!field) return { kind: "none", basis: null };
+    const actor = await resolveActor(detail[field]);
+    return { ...actor, basis, field };
   }
 
   /**
@@ -553,9 +650,11 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
    * (design §3): rows on a data table, members on a queue. Best-effort — a
    * missing count is cosmetic, so a failure here never interrupts the analysis.
    */
-  async function enrichNodes(closure) {
+  async function enrichNodes(closure, findings) {
     for (const node of closure.values()) {
       const type = String(node.type).toUpperCase();
+
+      // Counts that make the cost of a tick visible.
       try {
         if (type === "DATATABLE") {
           const r = await api.proxyGenesys(state.orgId, "GET",
@@ -567,6 +666,19 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
           if (typeof r?.total === "number") node.memberCount = r.total;
         }
       } catch (_) { /* cosmetic only */ }
+
+      // Provenance. Flows reuse the detail already fetched for their version.
+      try {
+        let detail = null;
+        if (node.isFlow) detail = await getFlowDetail(node.id);
+        else if (DETAIL_PATH[type]) {
+          detail = await api.proxyGenesys(state.orgId, "GET", DETAIL_PATH[type](node.id));
+        }
+        node.creator = await describeCreator(detail, type, findings);
+        if (detail?.dateCreated) node.dateCreated = detail.dateCreated;
+      } catch (_) {
+        node.creator = { kind: "none", basis: null };
+      }
     }
   }
 
@@ -583,6 +695,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       objectTypeCalls: [],
       probes: [],               // attachment probes and their outcomes
       consumerCalls: [],        // which version each consumer answer came from
+      creatorFields: new Map(), // which provenance field each type actually has
       errors: [],
       buildStatus: null,
     };
@@ -628,7 +741,8 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       setStatus("Reading the flow…", "", true);
       state.lockNote = null;
       state.rootVersions = [];
-      flowVersionCache.clear();
+      flowDetailCache.clear();
+      actorCache.clear();
       try {
         const flow = await api.proxyGenesys(state.orgId, "GET", `/api/v2/flows/${state.rootId}`);
         const locker = flow?.lockedUser?.name || flow?.lockedUser?.email || flow?.lockedUser?.id;
@@ -669,7 +783,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         if (novel.length) state.consumers.set(node.key, [...(existing || []), ...novel]);
       }
 
-      await enrichNodes(state.closure);
+      await enrichNodes(state.closure, findings);
       state.findings = findings;
 
       // 4. Root blockers: consumers outside the closure hold the flow itself, and
@@ -709,6 +823,29 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     return names.length > limit
       ? names.slice(0, limit).join(", ") + ` and ${names.length - limit} more`
       : names.join(", ");
+  }
+
+  /**
+   * Provenance line. Three honest states and no fourth: a person, an API client,
+   * or not recorded. "created" and "last modified" are kept distinct because on
+   * several object types only the latter is available, and presenting it as
+   * authorship would be a guess dressed as a fact.
+   */
+  function creatorHtml(node) {
+    const c = node.creator;
+    if (!c || c.kind === "none") {
+      return `<span style="color:var(--muted)">Creator not recorded for this object type.</span>`;
+    }
+    const verb = c.basis === "created" ? "Created" : "Last modified";
+    const when = node.dateCreated && c.basis === "created"
+      ? ` on ${new Date(node.dateCreated).toLocaleDateString()}` : "";
+    if (c.kind === "user")  return `${verb} by <strong>${escapeHtml(c.name)}</strong>${when}.`;
+    if (c.kind === "oauth") return `${verb} via API — OAuth client <strong>${escapeHtml(c.name)}</strong>${when}.`;
+    if (c.kind === "label") return `${verb} by ${escapeHtml(c.name)}${when}.`;
+    // Resolved to neither a user nor a client: could be a deleted user or a
+    // client we cannot read. Say that, rather than pick one.
+    return `<span style="color:var(--muted)">${verb} by an account that no longer resolves `
+      + `(${escapeHtml(String(c.name).slice(0, 8))}…) — a deleted user or an API client.</span>`;
   }
 
   /** One dependency row: checkbox when deletable, reason when not. */
@@ -771,6 +908,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
             ${extra.length ? `<span class="df-badge">${escapeHtml(extra.join(" · "))}</span>` : ""}
           </div>
           <div class="df-sub">${reason}</div>
+          <div class="df-sub" style="margin-top:1px">${creatorHtml(node)}</div>
         </div>
       </div>`;
   }
@@ -912,6 +1050,12 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
           f.excluded?.size
             ? [...f.excluded.entries()].sort((a, b) => b[1] - a[1])
                 .map(([t, n]) => `${escapeHtml(t)} ×${n}`).join(" · ")
+            : "none"
+        }</div>
+        <div style="margin-top:5px"><strong>Provenance field per type:</strong> ${
+          f.creatorFields?.size
+            ? [...f.creatorFields.entries()].map(([t, fld]) =>
+                `${escapeHtml(t)}=${escapeHtml(fld)}`).join(" · ")
             : "none"
         }</div>
         <div style="margin-top:5px"><strong>Attachment probes:</strong> ${

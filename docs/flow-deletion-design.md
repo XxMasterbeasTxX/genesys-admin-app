@@ -206,6 +206,40 @@ flow milestones · flow outcomes · anything else the flow authors a reference t
 The set in tier A happens to match what Deployment › Onboarding creates — that
 is where the rule came from — but the rule stands on its own without it.
 
+### 6.1 Provenance
+
+Every row reports **who made the object**, which is the information the old tier
+label was gesturing at without being able to know it. A data table a person built
+last month is a different deletion risk from one a deploy tool produced.
+
+Read from the object's own detail payload — `createdBy` and friends, falling back
+to `modifiedBy` — and resolved by id: user first, then OAuth client. Three honest
+states, and no fourth:
+
+| State | Shown as |
+|---|---|
+| A person | *Created by **Name** on <date>.* |
+| An API client | *Created via API — OAuth client **Name**.* |
+| Nothing recorded | *Creator not recorded for this object type.* |
+
+Two deliberate refusals to guess:
+
+- **"Created" and "last modified" are kept distinct.** Several types expose only
+  the latter, and on a flow `createdBy` often reflects whoever last saved a
+  version rather than the original author. Presenting that as authorship would
+  be a guess dressed as a fact.
+- **An id resolving to neither a user nor a client is reported as exactly that** —
+  a deleted user *or* an unreadable client — rather than assumed to be one.
+
+The **Audit API** would give a complete answer including the acting OAuth client,
+but it is an async job per query with retention limits — too slow for 20+ objects
+per analysis, and it would silently return nothing for older objects. Deliberately
+not used; an on-demand per-row lookup is the option if the blanks prove
+unacceptable.
+
+The Findings panel reports which provenance field each object type actually
+carried, so the blanks are a known map rather than a mystery.
+
 Tier B is defaulted off and sectioned separately for two independent reasons:
 
 1. **Blast radius.** A queue is not an onboarding artifact — it has members,
