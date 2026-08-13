@@ -325,7 +325,7 @@ Used by: License Consumption Export, WebRTC Phones — Create
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/v2/license/users` | Per-user license consumption (paginated) |
+| GET | `/api/v2/license/users` | Per-user license consumption (paginated). Entities are `{ id, licenses: ["genesysCloudCX2", …] }` — **`licenses` is an array of id strings, not objects**; reading `.name`/`.id` off them yields `undefined` |
 | GET | `/api/v2/license/definitions` | List all available license definitions |
 
 ---
