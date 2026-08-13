@@ -30,16 +30,34 @@ import {
 
 // ── Object types ────────────────────────────────────────
 //
-// Dependency Tracking's objectType enum has NOT been verified against a live org
-// (design §13 item 1). Everything here is therefore written to degrade safely on
-// an unrecognised value: unknown types are classified TIER B (unticked by
-// default) and recorded in the Findings panel rather than dropped, so a wrong
-// guess shows up as a reported surprise instead of a silent omission.
+// The objectType enum is CONFIRMED — the API returned the full allowable list on
+// 2026-08-13 (design §13 item 1). Notable corrections to the original guesses:
+// there is no generic "FLOW", scripts are "COMPOSERSCRIPT" not "SCRIPT", prompts
+// are "USERPROMPT"/"SYSTEMPROMPT" not "PROMPT", and workitem flows are
+// "WORKITEMFLOW" not "WORKITEM".
+//
+// Unrecognised values are still handled defensively — the enum can grow — and
+// land in tier B (unticked) with the raw value shown.
 
 /** Types created by Deployment › Onboarding — ticked by default when orphaned. */
 const TIER_A = new Set([
-  "DATATABLE", "DATAACTION", "SCRIPT", "COMPOSERSCRIPT",
-  "SURVEYFORM", "USERPROMPT", "PROMPT",
+  "DATATABLE", "DATAACTION", "COMPOSERSCRIPT", "SURVEYFORM", "USERPROMPT",
+]);
+
+/**
+ * Types this tool must never offer to delete, however orphaned they look.
+ *
+ * These are org-level identity and platform objects that can appear as flow
+ * dependencies but are categorically not flow artifacts — removing a division or
+ * a user because a callflow referenced it would be well outside what "delete a
+ * callflow and its dependencies" can reasonably mean. They are still discovered
+ * and REPORTED, per the requirement that everything is reported; they simply
+ * carry no checkbox.
+ */
+const NEVER_OFFER = new Set([
+  "USER", "DIVISION", "OAUTHCLIENT", "LANGUAGE", "STTENGINE", "TTSENGINE",
+  "TTSVOICE", "SYSTEMPROMPT", "FLOWDATATYPE", "FLOWACTION", "SECUREACTION",
+  "KNOWLEDGEBASE", "KNOWLEDGEBASEDOCUMENT", "KNOWLEDGESETTING",
 ]);
 
 /** Anything whose type name looks like a flow — recursed into, and tier A. */
@@ -82,18 +100,24 @@ const typeLabel = (t) => TYPE_LABELS[String(t || "").toUpperCase()] || String(t 
  * rather than offered, so the tree never shows an action that would fail.
  * UNVERIFIED; confirm before Phase 2.
  */
-const NO_DELETE_API = new Set(["FLOWOUTCOME", "SYSTEMPROMPT", "TTSENGINE", "TTSVOICE"]);
+const NO_DELETE_API = new Set(["FLOWOUTCOME"]);
 
-/** Architect flow type → likely Dependency Tracking objectType, plus a fallback. */
-const FLOW_TYPE_GUESS = {
+/**
+ * Architect flow type → Dependency Tracking objectType.
+ *
+ * Confirmed against the enum the API returned. There is NO generic "FLOW" value,
+ * so an unmapped type is an error rather than something to fall back on — a
+ * silent fallback here would produce a report about the wrong object.
+ */
+const DT_FLOW_TYPE = {
   inboundcall: "INBOUNDCALLFLOW", inboundemail: "INBOUNDEMAILFLOW",
   inboundchat: "INBOUNDCHATFLOW", inboundshortmessage: "INBOUNDSHORTMESSAGEFLOW",
   inqueuecall: "INQUEUECALLFLOW", inqueueemail: "INQUEUEEMAILFLOW",
   inqueueshortmessage: "INQUEUESHORTMESSAGEFLOW", commonmodule: "COMMONMODULEFLOW",
   securecall: "SECURECALLFLOW", voicemail: "VOICEMAILFLOW", bot: "BOTFLOW",
   digitalbot: "DIGITALBOTFLOW", voicesurvey: "VOICESURVEYFLOW",
-  surveyinvite: "SURVEYINVITEFLOW", workflow: "WORKFLOW", workitem: "WORKITEM",
-  outboundcall: "OUTBOUNDCALLFLOW",
+  surveyinvite: "SURVEYINVITEFLOW", workflow: "WORKFLOW", workitem: "WORKITEMFLOW",
+  outboundcall: "OUTBOUNDCALLFLOW", voice: "VOICEFLOW", emailsend: "EMAILSENDFLOW",
 };
 
 // ── Dependency-tracking build status ────────────────────
@@ -203,8 +227,10 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
                           // re-analysis still has the raw id to start from
     rootMeta: null,
     rootHardBlocked: false,
-    buildDate: null,          // last full rebuild of the dependency index
+    buildDate: null,           // last full rebuild of the dependency index
     failedObjectIds: new Set(),// objects the index could not process
+    rootVersions: [],          // real version ids read off the root flow
+    workingVersion: undefined, // the version value the API actually accepted
     closure: new Map(),   // key → node
     consumers: new Map(), // key → normalised consumer list
     selection: new Set(), // keys ticked for (eventual) deletion
@@ -230,39 +256,67 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
   // ── Discovery ─────────────────────────────────────────
 
   /**
-   * consumedresources with an objectType fallback.
+   * consumedresources, trying each candidate `version` in turn.
    *
-   * The enum is unverified (§13), so try the specific flow type first and fall
-   * back to the generic one. Whichever answers is recorded in the findings —
-   * that record IS the validation deliverable.
+   * Dependency Tracking requires a version alongside the id and objectType, and
+   * which value it wants is not obvious — a flow has published, checked-in and
+   * saved versions, and "LATEST" may or may not be accepted. Each attempt is
+   * recorded with its own error text: the first live run failed on a VALID
+   * objectType and the reason was lost because only the last error survived,
+   * which is precisely the mistake this records against.
    */
-  async function consumedWithFallback(id, candidates, findings) {
+  async function consumedWithFallback(id, objectType, versions, findings) {
     let lastErr = null;
-    for (const objectType of candidates) {
+    for (const version of versions) {
       try {
-        const out = await gc.fetchConsumedResources(api, state.orgId, id, objectType);
-        findings.objectTypeCalls.push({ objectType, ok: true, count: out.length });
-        return { entries: out, objectType };
+        const out = await gc.fetchConsumedResources(api, state.orgId, id, objectType,
+          version ? { query: { version } } : {});
+        findings.objectTypeCalls.push({ objectType, version: version || "(none)", ok: true, count: out.length });
+        state.workingVersion = version;      // reuse the winner for later calls
+        return { entries: out, objectType, version };
       } catch (err) {
         lastErr = err;
-        findings.objectTypeCalls.push({ objectType, ok: false, error: err.message || String(err) });
+        findings.objectTypeCalls.push({
+          objectType, version: version || "(none)", ok: false,
+          error: (err.message || String(err)).slice(0, 300),
+        });
       }
     }
-    throw lastErr || new Error("no usable objectType");
+    throw lastErr || new Error("no usable objectType/version combination");
+  }
+
+  /**
+   * Version candidates to try, most likely first. Once one works it is reused,
+   * so the fallback costs at most a few extra calls on the first object.
+   */
+  function versionCandidates(explicit) {
+    const list = [];
+    if (state.workingVersion !== undefined) list.push(state.workingVersion);
+    if (explicit) list.push(explicit);
+    list.push("LATEST", ...state.rootVersions, "");
+    return [...new Set(list.filter((v) => v !== undefined))];
   }
 
   /** Walk the closure from the root, recursing only into flow-typed objects. */
   async function buildClosure(findings) {
     const closure = new Map();
-    const rootType = FLOW_TYPE_GUESS[state.rootMeta.type] || "FLOW";
+    const rootType = DT_FLOW_TYPE[state.rootMeta.type];
+    if (!rootType) {
+      // No generic "FLOW" exists in the enum, so there is nothing safe to guess.
+      throw new Error(
+        `Flow type '${state.rootMeta.type}' has no known dependency-tracking ` +
+        `object type, so its dependencies cannot be resolved.`
+      );
+    }
     const rootKey = keyOf(rootType, state.rootId);
 
     closure.set(rootKey, {
       key: rootKey, id: state.rootId, name: state.rootMeta.name,
       type: rootType, isRoot: true, isFlow: true, tier: "A", noDeleteApi: false,
+      version: null,
     });
 
-    const queue = [{ key: rootKey, id: state.rootId, type: rootType, isFlow: true }];
+    const queue = [{ key: rootKey, id: state.rootId, type: rootType, isFlow: true, version: null }];
     const visited = new Set([rootKey]);
 
     while (queue.length) {
@@ -271,13 +325,10 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       // design (§2), so non-flow objects are leaves.
       if (!cur.isFlow) continue;
 
-      const candidates = cur.key === rootKey
-        ? [rootType, "FLOW"].filter((v, i, a) => a.indexOf(v) === i)
-        : [cur.type, "FLOW"].filter((v, i, a) => a.indexOf(v) === i);
-
       let entries;
       try {
-        ({ entries } = await consumedWithFallback(cur.id, candidates, findings));
+        ({ entries } = await consumedWithFallback(
+          cur.id, cur.type, versionCandidates(cur.version), findings));
       } catch (err) {
         // A failure on the ROOT is fatal. Continuing would produce a closure of
         // one and a report reading "no dependencies found" — which is not a
@@ -300,13 +351,16 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         if (k === cur.key || visited.has(k)) continue;
         visited.add(k);
         const flowish = isFlowType(dep.type);
+        const upper = String(dep.type).toUpperCase();
         closure.set(k, {
           key: k, id: dep.id, name: dep.name, type: dep.type,
           isRoot: false, isFlow: flowish,
           tier: tierOf(dep.type),
-          noDeleteApi: NO_DELETE_API.has(String(dep.type).toUpperCase()),
+          version: dep.version || null,
+          noDeleteApi: NO_DELETE_API.has(upper),
+          neverOffer: NEVER_OFFER.has(upper),
         });
-        queue.push({ key: k, id: dep.id, type: dep.type, isFlow: flowish });
+        queue.push({ key: k, id: dep.id, type: dep.type, isFlow: flowish, version: dep.version || null });
       }
     }
     return closure;
@@ -326,7 +380,9 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         continue;
       }
       try {
-        const list = await gc.fetchConsumingResources(api, state.orgId, node.id, node.type);
+        const version = state.workingVersion ?? node.version ?? "LATEST";
+        const list = await gc.fetchConsumingResources(api, state.orgId, node.id, node.type,
+          version ? { query: { version } } : {});
         consumers.set(node.key, list.filter((c) => !c.deleted && c.id !== node.id));
       } catch (err) {
         // Unknown, never empty: an object we cannot check must not read as safe.
@@ -413,10 +469,18 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       // 2. Root flow metadata — including any Architect checkout.
       setStatus("Reading the flow…", "", true);
       state.lockNote = null;
+      state.rootVersions = [];
+      state.workingVersion = undefined;
       try {
         const flow = await api.proxyGenesys(state.orgId, "GET", `/api/v2/flows/${state.rootId}`);
         const locker = flow?.lockedUser?.name || flow?.lockedUser?.email || flow?.lockedUser?.id;
         if (locker) state.lockNote = `Checked out in Architect by ${locker}`;
+        // Dependency Tracking wants a version alongside the id. Collect the real
+        // ones so the lookup has something concrete to try beyond "LATEST".
+        state.rootVersions = [
+          flow?.publishedVersion?.id, flow?.checkedInVersion?.id, flow?.savedVersion?.id,
+        ].filter(Boolean).map(String);
+        findings.flowVersions = state.rootVersions;
       } catch (_) { /* metadata is a nicety; discovery does not depend on it */ }
 
       // 3. Closure, then consumer graph.
@@ -477,6 +541,8 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     let reason;
     if (unknown) {
       reason = `<span class="df-block">Could not be checked — treated as in use.</span>`;
+    } else if (node.neverOffer) {
+      reason = `<span class="df-lock">Org-level object — reported, but never removed by this tool.</span>`;
     } else if (node.noDeleteApi) {
       reason = `<span class="df-lock">No delete API for this type — reported only.</span>`;
     } else if (state.rootHardBlocked) {
@@ -622,12 +688,19 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         <div><strong>Object types seen:</strong> ${
           types.length ? types.map(([t, n]) => `${escapeHtml(t || "(blank)")} ×${n}`).join(" · ") : "none"
         }</div>
-        <div style="margin-top:5px"><strong>objectType calls:</strong> ${
-          f.objectTypeCalls.length
-            ? f.objectTypeCalls.map((c) =>
-                `${escapeHtml(c.objectType)} ${c.ok ? `ok (${c.count})` : `failed`}`).join(" · ")
-            : "none"
+        <div style="margin-top:5px"><strong>Flow versions available:</strong> ${
+          escapeHtml((f.flowVersions || []).join(", ") || "none read")
         }</div>
+        <div style="margin-top:5px"><strong>objectType / version calls:</strong>
+          <ul style="margin:3px 0 0;padding-left:18px">
+            ${f.objectTypeCalls.length
+              ? f.objectTypeCalls.slice(0, 14).map((c) =>
+                  `<li>${escapeHtml(c.objectType)} @ ${escapeHtml(String(c.version ?? "—"))} — ${
+                    c.ok ? `<strong>ok (${c.count})</strong>`
+                         : `failed: ${escapeHtml(c.error || "")}`}</li>`).join("")
+              : "<li>none</li>"}
+          </ul>
+        </div>
         <div style="margin-top:5px"><strong>Build status:</strong> <code>${
           escapeHtml(JSON.stringify(f.buildStatus || null).slice(0, 400))
         }</code></div>

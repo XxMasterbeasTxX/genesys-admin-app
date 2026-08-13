@@ -61,7 +61,7 @@ export function softBlockers(graph, key) {
 export function isDeletable(graph, key) {
   const node = graph.closure.get(key);
   if (!node || node.isRoot) return false;     // the root is not optional
-  if (node.noDeleteApi) return false;
+  if (node.noDeleteApi || node.neverOffer) return false;
   if (graph.rootHardBlocked) return false;    // §7 — a blocked root locks the tree
   if (graph.consumers.get(key) === null) return false;   // unknown ≠ safe
   return hardBlockers(graph, key).length === 0
