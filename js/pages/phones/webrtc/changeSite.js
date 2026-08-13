@@ -368,14 +368,16 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
       const orgId = orgContext.get();
       setStatus("Loading phones…");
 
-      // `siteId` is the documented server-side filter for this endpoint, so a
-      // site's phones cost one page instead of paging the whole org.
+      // `siteId` is the filter name the platform SDK documents for this
+      // endpoint, but it is NOT honoured in practice: the Delete page briefly
+      // issued one request per selected site and got the full org list back
+      // from each, tripling its counts for three sites. The parameter is left
+      // in place because it costs nothing and may be honoured on other org
+      // versions — but nothing depends on it.
       //
-      // The client-side filter below is deliberately kept rather than trusted
-      // away. If a future API change stops honouring the parameter, the list
-      // comes back org-wide and silently — and a page that moved every phone
-      // in the org while labelled "phones at Copenhagen" is a far worse
-      // failure than a slow one. Belt and braces costs a single pass.
+      // The client-side filter below is what actually scopes this page, which
+      // is why that discovery cost a page's counts and not a wrong site's
+      // phones being moved.
       const allPhones = await gc.fetchAllPhones(api, orgId, { query: { siteId: fromId } });
       const atSource = allPhones.filter((p) => p.site?.id === fromId);
 

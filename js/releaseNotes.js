@@ -24,6 +24,7 @@ export const RELEASE_NOTES = [
       "Confirming requires typing DELETE. There is no undo: a phone can be recreated from Create, but its id is gone.",
       "Optional Site, Groups and Division filters; leave them all empty to sweep the whole org. Note that groups and divisions describe a person, so setting one hides the phones that have no user — the Findings panel says so when it happens.",
       "Every run writes one Activity Log entry, and the Excel log covers every phone considered, including the ones kept and why.",
+      "The Site column shows the site name. The phone list Genesys returns carries a site id but not always its name, which left the column blank.",
       "Available to Master Admins only, and never to customer logins. Adding it meant splitting the `phones.*` access wildcard into named pages, so that a page which deletes phones across an org can never be granted by inheritance.",
     ],
   },
@@ -40,7 +41,6 @@ export const RELEASE_NOTES = [
       "After a run the phone list clears. It described phones at the source site that are no longer there, and leaving it on screen invited a second move of phones that had already gone.",
       "A run that breaks part-way now still writes its Activity Log entry, covering the phones that were moved before it stopped.",
       "Phones with no assigned user cannot match a holder filter and are excluded when one is set — the count is stated so they are not silently missing.",
-      "Load Phones asks Genesys for that site's phones instead of fetching every phone in the org and discarding the rest, which is noticeably quicker on large orgs.",
     ],
   },
   {

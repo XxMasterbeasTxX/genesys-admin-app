@@ -95,20 +95,24 @@ export const CATEGORIES = {
  * @param {Map<string,string>} holderByPhone  phone id → user id, resolved.
  * @param {Object[]} unreadable      Phones whose individual read failed.
  * @param {Map<string,Object>} usersById  Every user in any state.
+ * @param {Map<string,string>} [siteNames]  site id → name. The phones list
+ *   returns `site.id` but not always `site.name`, which left the Site column
+ *   showing a dash for every row.
  * @returns {{ rows: Object[], activeCount: number }}
  *   `rows` excludes phones held by an active user; those are only counted.
  */
-export function categorisePhones(phones, holderByPhone, unreadable, usersById) {
+export function categorisePhones(phones, holderByPhone, unreadable, usersById, siteNames = new Map()) {
   const unreadableIds = new Set(unreadable.map((p) => p.id));
   const rows = [];
   let activeCount = 0;
 
   for (const phone of phones) {
+    const siteId = phone.site?.id || "";
     const base = {
       phoneId: phone.id,
       phoneName: phone.name || phone.id,
-      siteName: phone.site?.name || "—",
-      siteId: phone.site?.id || "",
+      siteName: siteNames.get(siteId) || phone.site?.name || "—",
+      siteId,
     };
 
     if (unreadableIds.has(phone.id)) {
@@ -396,11 +400,14 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
       setStatus("Reading phones and users…");
       showProgress(10);
       const [allPhones, users] = await Promise.all([
-        // One request per selected site, or the whole org when none is chosen.
-        siteIds.size
-          ? Promise.all([...siteIds].map((id) => gc.fetchAllPhones(api, orgId, { query: { siteId: id } })))
-              .then((lists) => lists.flat())
-          : gc.fetchAllPhones(api, orgId),
+        // ONE request, filtered locally by site.
+        //
+        // This used to fan out — a request per selected site, carrying the
+        // `siteId` filter, flattened together. Selecting three sites then
+        // counted every phone three times, because the endpoint returns the
+        // whole org regardless of that parameter. Fanning out is only safe
+        // when the responses are actually disjoint, and here they were not.
+        gc.fetchAllPhones(api, orgId),
         // `state: "any"` returns active, inactive and deleted users in one
         // pass, each carrying its own `state` — which is the whole question.
         gc.fetchAllUsers(api, orgId, { expand: ["division"], state: "any" }),
@@ -409,13 +416,18 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
 
       const usersById = new Map(users.map((u) => [u.id, u]));
 
-      // Server-side siteId is trusted for narrowing but verified locally, and
-      // the base restriction is applied here rather than in the query so a
-      // phone with no phoneBaseSettings in the list is still examined.
+      // De-duplicate by phone id as well as filtering. Every count on this
+      // page — and the delete loop itself — assumes one row per phone; a
+      // repeated phone inflates the totals and would be deleted once and then
+      // 404-ed twice more, each 404 counted as another successful deletion.
+      const seen = new Set();
       const candidates = allPhones.filter((p) => {
+        if (!p?.id || seen.has(p.id)) return false;
         if (siteIds.size && !siteIds.has(p.site?.id)) return false;
         const baseId = p.phoneBaseSettings?.id;
-        return !baseId || webRtcBaseIds.has(baseId);
+        if (baseId && !webRtcBaseIds.has(baseId)) return false;
+        seen.add(p.id);
+        return true;
       });
 
       if (!candidates.length) {
@@ -436,7 +448,8 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
       );
       if (state.cancelled) { setStatus("Cancelled."); return; }
 
-      let { rows, activeCount } = categorisePhones(candidates, holderByPhone, unreadable, usersById);
+      const siteNames = new Map(state.sites.map((s) => [s.id, s.name || s.id]));
+      let { rows, activeCount } = categorisePhones(candidates, holderByPhone, unreadable, usersById, siteNames);
 
       // Group and division describe a PERSON, so they can only be applied to
       // rows that have one. A phone with no user has nothing to match against
@@ -479,17 +492,23 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
       // "Unused" and "ticked" are different numbers, because the unticked-by-
       // default categories sit between them. Saying only the first leaves the
       // delete button looking like it disagrees with the summary, so the gap
-      // is spelled out rather than left to be worked out.
-      const deletable = rows.filter((r) => CATEGORIES[r.category].deletable).length;
-      const held = deletable - state.selection.size;
+      // is spelled out.
+      //
+      // The remainder is COUNTED, never assumed. An earlier version wrote
+      // "held by inactive users" on the strength of the arithmetic alone, and
+      // when a different bug made the two numbers diverge, that sentence
+      // dressed the discrepancy up as an explanation instead of exposing it.
+      const deletable = rows.filter((r) => CATEGORIES[r.category].deletable);
+      const unticked = deletable.filter((r) => !state.selection.has(r.phoneId));
+      const untickedReasons = [...new Set(unticked.map((r) => CATEGORIES[r.category].label.toLowerCase()))];
       setStatus(
-        deletable
-          ? `${deletable} phone${deletable === 1 ? "" : "s"} look unused — `
+        deletable.length
+          ? `${deletable.length} phone${deletable.length === 1 ? "" : "s"} look unused — `
             + `${state.selection.size} ticked for deletion`
-            + (held ? `, ${held} held by inactive users and left unticked` : "")
+            + (unticked.length ? `, ${unticked.length} left unticked (${untickedReasons.join("; ")})` : "")
             + `. Review below, then confirm.`
           : "Nothing to delete — every WebRTC phone in scope belongs to an active user.",
-        deletable ? "" : "success"
+        deletable.length ? "" : "success"
       );
       setTimeout(hideProgress, 800);
     } catch (err) {
