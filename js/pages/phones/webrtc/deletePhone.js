@@ -35,8 +35,13 @@
  *   GET    /api/v2/telephony/providers/edges/phones/{id}
  *   DELETE /api/v2/telephony/providers/edges/phones/{id}
  *   GET    /api/v2/users?state=any&expand=division
- *   GET    /api/v2/groups, /api/v2/groups/{id}/members
- *   GET    /api/v2/authorization/divisions
+ *
+ * There are deliberately no group or division filters here, unlike Create and
+ * Change Site. Both resolve through the phone's holder, and the phones this
+ * page exists to find have no holder — so setting either one hid every orphan
+ * and left the page reporting nothing. A filter that excludes exactly the rows
+ * the page is for is worse than no filter. Site is the one that still means
+ * something, because it describes the phone rather than a person.
  */
 import { escapeHtml, sleep, timestampedFilename, exportLogXlsx } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
@@ -197,7 +202,7 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
   }
 
   const state = {
-    sites: [], groups: [], divisions: [],
+    sites: [],
     analysis: null,
     selection: new Set(),
     results: new Map(),
@@ -212,8 +217,6 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
     setStatus("Filters changed. Click Analyse.");
   };
   const siteSelect = createMultiSelect({ placeholder: "All sites", searchable: true, onChange: onFilterChange });
-  const groupSelect = createMultiSelect({ placeholder: "All groups", searchable: true, onChange: onFilterChange });
-  const divisionSelect = createMultiSelect({ placeholder: "All divisions", searchable: true, onChange: onFilterChange });
 
   el.innerHTML = `
     <style>
@@ -266,14 +269,6 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
         <label class="wc-label">Site</label>
         <div id="wdSiteSlot"></div>
       </div>
-      <div class="wc-control-group">
-        <label class="wc-label">Groups</label>
-        <div id="wdGroupSlot"></div>
-      </div>
-      <div class="wc-control-group">
-        <label class="wc-label">Division</label>
-        <div id="wdDivisionSlot"></div>
-      </div>
     </div>
 
     <div class="wc-actions">
@@ -297,8 +292,6 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
   `;
 
   el.querySelector("#wdSiteSlot").append(siteSelect.el);
-  el.querySelector("#wdGroupSlot").append(groupSelect.el);
-  el.querySelector("#wdDivisionSlot").append(divisionSelect.el);
 
   const $ = (sel) => el.querySelector(sel);
   const $analyseBtn   = $("#wdAnalyseBtn");
@@ -329,8 +322,6 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
     $analyseBtn.disabled = busy;
     $cancelBtn.hidden = !busy;
     siteSelect.setEnabled(!busy);
-    groupSelect.setEnabled(!busy);
-    divisionSelect.setEnabled(!busy);
     updateDeleteBtn();
     // Locked rows stay locked whatever the page is doing — re-enabling a
     // checkbox for a phone we could not read would offer exactly the deletion
@@ -361,15 +352,13 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
 
   // ── Phase 1: analyse ────────────────────────────────
 
-  function describeFilters(siteIds, groupIds, divisionIds) {
-    const nameOf = (items, id) => items.find((i) => i.id === id)?.name || id;
-    const part = (ids, items, one, many) => ids.size === 1
-      ? `${one} '${nameOf(items, [...ids][0])}'` : `${ids.size} ${many}`;
-    const parts = [];
-    if (siteIds.size) parts.push(part(siteIds, state.sites, "site", "sites"));
-    if (groupIds.size) parts.push(part(groupIds, state.groups, "group", "groups"));
-    if (divisionIds.size) parts.push(part(divisionIds, state.divisions, "division", "divisions"));
-    return parts.join(" + ");
+  function describeFilters(siteIds) {
+    if (!siteIds.size) return "";
+    if (siteIds.size === 1) {
+      const id = [...siteIds][0];
+      return `site '${state.sites.find((s) => s.id === id)?.name || id}'`;
+    }
+    return `${siteIds.size} sites`;
   }
 
   $analyseBtn.addEventListener("click", async () => {
@@ -393,9 +382,7 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
       const webRtcBaseIds = new Set(webRtcBases.map((b) => b.id));
 
       const siteIds = siteSelect.getSelected();
-      const groupIds = groupSelect.getSelected();
-      const divisionIds = divisionSelect.getSelected();
-      const filterLabel = describeFilters(siteIds, groupIds, divisionIds);
+      const filterLabel = describeFilters(siteIds);
 
       setStatus("Reading phones and users…");
       showProgress(10);
@@ -461,37 +448,12 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
       if (state.cancelled) { setStatus("Cancelled."); return; }
 
       const siteNames = new Map(state.sites.map((s) => [s.id, s.name || s.id]));
-      let { rows, activeCount } = categorisePhones(candidates, holderByPhone, unreadable, usersById, siteNames);
-
-      // Group and division describe a PERSON, so they can only be applied to
-      // rows that have one. A phone with no user has nothing to match against
-      // and drops out — stated plainly, because those are the rows this page
-      // is most about and their disappearance would otherwise be baffling.
-      let holderFilterDropped = 0;
-      if (groupIds.size || divisionIds.size) {
-        let groupMemberIds = null;
-        if (groupIds.size) {
-          setStatus(`Reading members of ${groupIds.size} group${groupIds.size === 1 ? "" : "s"}…`);
-          const lists = await Promise.all(
-            [...groupIds].map((id) => gc.fetchGroupMembers(api, orgId, id).catch(() => []))
-          );
-          groupMemberIds = new Set(lists.flat().map((m) => m.id));
-        }
-        const before = rows.length;
-        rows = rows.filter((r) => {
-          if (!r.holderId) return false;
-          if (groupMemberIds && !groupMemberIds.has(r.holderId)) return false;
-          if (divisionIds.size && !divisionIds.has(usersById.get(r.holderId)?.division?.id)) return false;
-          return true;
-        });
-        holderFilterDropped = before - rows.length;
-      }
+      const { rows, activeCount } = categorisePhones(candidates, holderByPhone, unreadable, usersById, siteNames);
 
       state.analysis = {
-        orgId, rows, activeCount, filterLabel, holderFilterDropped,
+        orgId, rows, activeCount, filterLabel,
         phoneCount: candidates.length, detailFetches,
         usersById, webRtcBaseIds, userStates,
-        groupOrDivisionFilter: groupIds.size > 0 || divisionIds.size > 0,
       };
       state.selection = new Set(
         rows.filter((r) => CATEGORIES[r.category].deletable && CATEGORIES[r.category].ticked)
@@ -603,13 +565,6 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
     const unreadable = a.rows.filter((r) => r.category === "UNREADABLE").length;
     if (unreadable) {
       notes.push(`<span class="wd-warn">${unreadable} phone${unreadable === 1 ? "" : "s"} could not be read and ${unreadable === 1 ? "is" : "are"} locked. Unknown is not unused.</span>`);
-    }
-    if (a.holderFilterDropped) {
-      notes.push(
-        `${a.holderFilterDropped} row${a.holderFilterDropped === 1 ? "" : "s"} dropped by the group/division filter. `
-        + `<strong>Phones with no user are among them</strong> — a group or a division describes a person, so a phone with nobody on it cannot match one. `
-        + `Clear those filters to see unassigned phones.`
-      );
     }
     return `<div class="wd-find"><strong>Findings</strong><ul>${notes.map((n) => `<li>${n}</li>`).join("")}</ul></div>`;
   }
@@ -867,41 +822,21 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
     }
   });
 
-  // ── Load filter options on mount ───────────────────
+  // ── Load the site filter on mount ──────────────────
   (async () => {
-    const [sitesRes, groupsRes, divisionsRes] = await Promise.allSettled([
-      gc.fetchAllSites(api, orgContext.get()),
-      gc.fetchAllGroups(api, orgContext.get()),
-      gc.fetchAllDivisions(api, orgContext.get()),
-    ]);
-
-    const notes = [];
-    const fill = (res, select, store, label, mapItem) => {
-      if (res.status === "fulfilled") {
-        state[store] = res.value;
-        select.setItems(res.value.map(mapItem));
-        select.setPlaceholder(`All ${label} (${res.value.length})`);
-      } else {
-        select.setPlaceholder(`${label} unavailable`);
-        select.setEnabled(false);
-        notes.push(label);
-        console.error(`${label} load error:`, res.reason);
-      }
-    };
-
-    fill(sitesRes, siteSelect, "sites", "sites", (s) => ({ id: s.id, label: s.name || s.id }));
-    fill(groupsRes, groupSelect, "groups", "groups", (g) => ({
-      id: g.id,
-      label: g.type && String(g.type).toLowerCase() !== "official"
-        ? `${g.name} (${String(g.type).toLowerCase()})` : g.name || g.id,
-    }));
-    fill(divisionsRes, divisionSelect, "divisions", "divisions", (d) => ({ id: d.id, label: d.name || d.id }));
-
-    // Every filter is optional, so none of these failures blocks the page.
-    setStatus(notes.length
-      ? `Ready, but the ${notes.join(" and ")} filter could not load. Click Analyse to sweep the whole org.`
-      : "Ready. Optionally filter by site, group or division, then click Analyse.",
-    notes.length ? "error" : "");
+    try {
+      state.sites = await gc.fetchAllSites(api, orgContext.get());
+      siteSelect.setItems(state.sites.map((s) => ({ id: s.id, label: s.name || s.id })));
+      siteSelect.setPlaceholder(`All sites (${state.sites.length})`);
+      setStatus("Ready. Optionally narrow to particular sites, then click Analyse.");
+    } catch (err) {
+      // The filter is optional, so a failure here does not block Analyse —
+      // it just means the sweep covers the whole org.
+      siteSelect.setPlaceholder("Sites unavailable");
+      siteSelect.setEnabled(false);
+      console.error("Site load error:", err);
+      setStatus("Ready, but the site filter could not load. Click Analyse to sweep the whole org.", "error");
+    }
   })();
 
   return el;

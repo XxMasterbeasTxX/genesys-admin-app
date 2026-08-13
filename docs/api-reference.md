@@ -156,7 +156,7 @@ Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Truste
 | PATCH | `/api/v2/users/{userId}` | Update user (e.g., change division) |
 | GET | `/api/v2/groups` | List all groups |
 | GET | `/api/v2/groups/{groupId}` | Get a single group by ID — used to resolve group display name in Compare Users and All Roles Export (group name for "Assigned by" column) |
-| GET | `/api/v2/groups/{groupId}/members` | List members of a group — also the group filter on WebRTC Phones — Create, which offers every group type the list returns |
+| GET | `/api/v2/groups/{groupId}/members` | List members of a group — also the group filter on WebRTC Phones — Create and Change Site, which offer every group type the list returns |
 | GET | `/api/v2/teams` | List all work teams (paginated) — used by Skill Templates — Add Users To Templates for work team assignment |
 | GET | `/api/v2/teams/{teamId}/members` | List members of a work team — used by Add Users To Templates to apply/remove template for all team members |
 
