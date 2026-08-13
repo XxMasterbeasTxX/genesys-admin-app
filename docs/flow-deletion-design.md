@@ -231,14 +231,31 @@ Two deliberate refusals to guess:
 - **An id resolving to neither a user nor a client is reported as exactly that** —
   a deleted user *or* an unreadable client — rather than assumed to be one.
 
-The **Audit API** would give a complete answer including the acting OAuth client,
-but it is an async job per query with retention limits — too slow for 20+ objects
-per analysis, and it would silently return nothing for older objects. Deliberately
-not used; an on-demand per-row lookup is the option if the blanks prove
-unacceptable.
+**Confirmed against a live org (2026-08-13)** — which types answer, and how:
 
-The Findings panel reports which provenance field each object type actually
-carried, so the blanks are a known map rather than a mystery.
+| Type | Field | Result |
+|---|---|---|
+| All flow types | `publishedVersion.createdBy` | ✅ a real name |
+| Flows (fallback) | `currentOperation.user` / `.client` | ✅ last change, and the clearest signal an *integration* did it |
+| `DATATABLE` | — | ❌ payload is `{id,name,division,description,selfUri}` |
+| `DATAACTION` | — | ❌ payload is `{id,name,integrationId,category,contract,version,secure,selfUri}` |
+| `USERPROMPT` | — | ❌ payload is `{id,name,description,resources,selfUri}` |
+
+Those three carry **no provenance field at any depth**. This is not a gap in the
+lookup — it is what the endpoints return. The object API cannot answer it, so the
+row says the API returns no creator rather than implying nobody knows.
+
+The **Audit API** is the only remaining route for them. It was left out of the
+analysis deliberately: `/api/v2/audits/query` is an async job per query, far too
+slow to run for 20+ objects and silently empty beyond its retention window. The
+right shape if the blanks matter is an **on-demand per-row lookup** — the
+operator asks about one object, one query runs — trying the synchronous
+`audits/query/realtime` first and falling back to the async job.
+
+The Findings panel reports the field each type carried *and dumps the actual
+payload field names*, so the blanks are an evidenced map rather than a mystery.
+That dump is what proved these three are genuinely empty, after a first
+implementation wrongly reported every type as having nothing.
 
 Tier B is defaulted off and sectioned separately for two independent reasons:
 

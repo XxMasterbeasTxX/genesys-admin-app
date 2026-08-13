@@ -201,6 +201,14 @@ const DETAIL_PATH = {
 const CREATED_FIELDS = ["createdBy", "createdByUser", "createdByClient", "createdByApp", "owner"];
 const MODIFIED_FIELDS = ["modifiedBy", "lastModifiedBy", "updatedBy", "publishedBy"];
 
+// A flow's `currentOperation` records who performed the last publish/check-in,
+// as EITHER `user` or `client` — confirmed on a live org, where call flows
+// carried `user` and a common module carried `client`. That is the clearest
+// signal available that something was changed by an integration rather than a
+// person, so it is used when nothing better exists. Reported as "last change",
+// never as authorship.
+const OPERATION_FIELDS = ["user", "client"];
+
 const GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 export default function renderDeleteFlow({ route, me, api, orgContext }) {
@@ -441,6 +449,19 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
         if (f) { hit = { field: `${where}${f}`, value: obj[f], basis: "modified" }; break; }
       }
     }
+    // Last resort: who performed the last operation. `client` here is the
+    // strongest available indication that an integration, not a person, did it.
+    if (!hit && detail.currentOperation && typeof detail.currentOperation === "object") {
+      const f = OPERATION_FIELDS.find((k) => detail.currentOperation[k] != null);
+      if (f) {
+        hit = {
+          field: `currentOperation.${f}`,
+          value: detail.currentOperation[f],
+          basis: "operated",
+          forceKind: f === "client" ? "oauth" : null,
+        };
+      }
+    }
 
     // Record what the payload actually offers, not just what we matched — a
     // second round of guessing is worse than one look at the real field names.
@@ -454,7 +475,9 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
 
     if (!hit) return { kind: "none", basis: null };
     const actor = await resolveActor(hit.value);
-    return { ...actor, basis: hit.basis, field: hit.field };
+    // `currentOperation.client` is an OAuth client by definition, whatever the
+    // reference shape resolves to.
+    return { ...actor, kind: hit.forceKind || actor.kind, basis: hit.basis, field: hit.field };
   }
 
   /**
@@ -860,11 +883,15 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
   function creatorHtml(node) {
     const c = node.creator;
     if (!c || c.kind === "none") {
-      // Deliberately "not returned by the API" rather than "not recorded":
-      // Genesys may well hold this and simply not expose it on this endpoint.
-      return `<span style="color:var(--muted)">Creator not returned by this object's API.</span>`;
+      // Confirmed against a live org: the detail payloads for data tables, data
+      // actions and user prompts carry no provenance field at any depth. Genesys
+      // holds the answer in its audit trail, not on the object — so the message
+      // says where it is not, rather than implying nobody knows.
+      return `<span style="color:var(--muted)">Not available — this object type's API returns no creator.</span>`;
     }
-    const verb = c.basis === "created" ? "Created" : "Last modified";
+    const verb = c.basis === "created" ? "Created"
+      : c.basis === "operated" ? "Last change"
+      : "Last modified";
     const when = node.dateCreated && c.basis === "created"
       ? ` on ${new Date(node.dateCreated).toLocaleDateString()}` : "";
     if (c.kind === "user")  return `${verb} by <strong>${escapeHtml(c.name)}</strong>${when}.`;
@@ -986,11 +1013,13 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
             <span class="df-badge">${escapeHtml(typeLabel(root.type))}</span>
             <span class="df-badge">${state.rootHardBlocked ? "blocked" : "deletable"}</span>
           </h3>
-          <div class="df-sub" style="margin-top:4px">
-            The callflow being removed.${state.buildDate ? `
-            Dependency index last fully rebuilt ${escapeHtml(new Date(state.buildDate).toLocaleString())}
-            — normal for this to be old, as publishing updates it incrementally.` : ""}
-          </div>
+          <div class="df-sub" style="margin-top:4px">The callflow being removed.</div>
+          <div class="df-sub" style="margin-top:1px">${creatorHtml(root)}</div>
+          ${state.buildDate ? `
+            <div class="df-sub" style="margin-top:1px">
+              Dependency index last fully rebuilt ${escapeHtml(new Date(state.buildDate).toLocaleString())}
+              — normal for this to be old, as publishing updates it incrementally.
+            </div>` : ""}
         </div>
       </div>
       ${blockersHtml}
