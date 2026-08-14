@@ -242,6 +242,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       <button class="btn btn--secondary btn-sm" id="foZoomOut" disabled title="Zoom out">−</button>
       <button class="btn btn--secondary btn-sm" id="foZoomIn" disabled title="Zoom in">+</button>
       <button class="btn btn--secondary btn-sm" id="foFit" disabled>Fit</button>
+      <button class="btn btn--secondary btn-sm" id="foStart" disabled title="Centre the view on this flow's start">⌖ Start</button>
       <button class="btn btn--secondary btn-sm" id="foFullscreen" disabled title="Fullscreen">⛶ Fullscreen</button>
       <label style="font-size:11px;color:${NODE_SUBTEXT};display:inline-flex;align-items:center;gap:4px">Background
         <select class="dt-select" id="foTheme" style="padding:3px 6px;font-size:12px">
@@ -300,7 +301,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   const resultsEl = $("#foResults");
   const detailEl = $("#foDetail");
   const levelBtns = [...el.querySelectorAll(".fo-level .btn")];
-  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foFullscreen", "#foSavePdf", "#foSaveHtml", "#foSaveJson", "#foSaveAllPdf", "#foSaveAllHtml", "#foSaveAllJson"].map($);
+  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foStart", "#foFullscreen", "#foSavePdf", "#foSaveHtml", "#foSaveJson", "#foSaveAllPdf", "#foSaveAllHtml", "#foSaveAllJson"].map($);
 
   // ── State ───────────────────────────────────────────────────────────────────
   const state = {
@@ -328,6 +329,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     svg: null,
     vpG: null,
     overlayG: null,
+    hudG: null,
   };
 
   levelBtns.forEach((b) => b.classList.toggle("is-active", b.dataset.level === state.level));
@@ -436,6 +438,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const W = canvas.clientWidth || 900;
     const H = canvas.clientHeight || 700;
     state.svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    renderStartBadge(); // clamped to the canvas, so a resize moves it
   }
 
   // ── Init: org from the header selector, then load the flow list ─────────────
@@ -641,6 +644,11 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const overlayG = svgEl("g");
     vpG.appendChild(overlayG);
     state.overlayG = overlayG;
+    // HUD layer: a sibling of vpG rather than a child, so it is NOT pan/zoomed.
+    // Its coordinates are canvas pixels (the viewBox matches the canvas size).
+    const hudG = svgEl("g");
+    svg.appendChild(hudG);
+    state.hudG = hudG;
     canvas.appendChild(svg);
 
     fitToView();
@@ -693,7 +701,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       hit.style.pointerEvents = "stroke";
       hit.addEventListener("click", (ev) => { ev.stopPropagation(); selectEdge(e); });
       const title = svgEl("title");
-      title.textContent = `${nodeDisplay(e.source).title} → ${nodeDisplay(e.target).title}`;
+      title.textContent = `${nodeDisplay(e.source).title} → ${nodeDisplay(e.target).title}`
+        + (e.label ? ` · ${e.label}` : "")
+        + (e.detail ? `\n${e.detail}` : "");
       hit.appendChild(title);
       g.appendChild(hit);
     }
@@ -719,26 +729,44 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const th = tc();
 
     if (n.isContainer) {
-      gg.appendChild(svgEl("rect", {
+      // The start container is drawn solid and thick; every other container is a
+      // thin dashed outline. Differing in shape as well as hue means it still
+      // reads as the start on a white background or a monochrome print.
+      const border = svgEl("rect", {
         width: n.w, height: n.h, rx: 8,
         fill: "none",
         stroke: selected ? SELECT_COLOR : (n.isStart ? START_STROKE : th.containerStroke),
-        "stroke-width": selected ? 2.5 : 1.2,
-        "stroke-dasharray": "2 3",
-      }));
+        "stroke-width": selected ? 2.5 : (n.isStart ? 3 : 1.2),
+      });
+      if (!n.isStart) border.setAttribute("stroke-dasharray", "2 3");
+      gg.appendChild(border);
       gg.appendChild(svgEl("rect", { width: n.w, height: 26, rx: 8, fill: th.containerHeader }));
       gg.appendChild(svgEl("rect", { y: 18, width: n.w, height: 8, fill: th.containerHeader }));
       const ht = svgEl("text", { x: 10, y: 17, fill: th.text, "font-size": "12.5", "font-weight": "600", "font-family": "system-ui, sans-serif" });
       ht.textContent = truncate((n.isStart ? "▶ " : "") + n.label, Math.max(6, Math.floor(n.w / 8)));
       gg.appendChild(ht);
+      // A START pill in the header, room permitting — this is what carries into
+      // PDF/HTML exports, where the screen-space badge does not exist.
+      if (n.isStart && n.w >= 150) {
+        gg.appendChild(svgEl("rect", { x: n.w - 52, y: 5, width: 46, height: 16, rx: 8, fill: START_STROKE }));
+        const pill = svgEl("text", {
+          x: n.w - 29, y: 17, fill: "#ffffff", "font-size": "10", "font-weight": "700",
+          "text-anchor": "middle", "font-family": "system-ui, sans-serif",
+        });
+        pill.textContent = "START";
+        gg.appendChild(pill);
+      }
     } else {
+      // At mid and low level the start is a leaf node rather than a container,
+      // so it needs the same emphasis the container branch gives: a heavy border
+      // and a green accent bar in place of the kind colour.
       gg.appendChild(svgEl("rect", {
         width: n.w, height: n.h, rx: 6,
         fill: th.nodeFill,
         stroke: selected ? SELECT_COLOR : (n.isStart ? START_STROKE : th.nodeStroke),
-        "stroke-width": selected ? 2.5 : 1.1,
+        "stroke-width": selected || n.isStart ? 2.5 : 1.1,
       }));
-      gg.appendChild(svgEl("rect", { width: 4, height: n.h, rx: 2, fill: color }));
+      gg.appendChild(svgEl("rect", { width: 4, height: n.h, rx: 2, fill: n.isStart ? START_STROKE : color }));
       const label = svgEl("text", { x: 12, y: n.sublabel ? 20 : n.h / 2 + 4, fill: th.text, "font-size": "12", "font-family": "system-ui, sans-serif" });
       label.textContent = truncate(n.label, Math.max(6, Math.floor((n.w - 16) / 6.6)));
       gg.appendChild(label);
@@ -775,6 +803,69 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   // ── Pan / zoom ──────────────────────────────────────────────────────────────
   function applyTransform() {
     if (state.vpG) state.vpG.setAttribute("transform", `translate(${state.vp.tx},${state.vp.ty}) scale(${state.vp.s})`);
+    renderStartBadge();
+  }
+
+  function startNode() {
+    return state.laid && state.laid.nodes.find((n) => n.isStart);
+  }
+
+  function goToStart() {
+    const n = startNode();
+    if (!n) return;
+    if (centerOnNode(n.id)) selectNode(n.id);
+  }
+
+  /**
+   * "▶ START" chip drawn in the HUD layer, so it keeps a constant pixel size at
+   * any zoom. Fit-to-view on a large flow lands around 0.04× — where the start
+   * container's own 3px border renders thinner than one pixel and its header
+   * text is sub-pixel, making every in-diagram marker invisible.
+   *
+   * It is clamped to the canvas, so when the start is scrolled out of view the
+   * chip sits on the nearest edge (dimmed) and still points the way home.
+   */
+  function renderStartBadge() {
+    const hud = state.hudG;
+    if (!hud) return;
+    while (hud.firstChild) hud.removeChild(hud.firstChild);
+    const n = startNode();
+    if (!n) return;
+
+    const W = canvas.clientWidth || 900;
+    const H = canvas.clientHeight || 700;
+    const { s, tx, ty } = state.vp;
+    const nx = n.x * s + tx, ny = n.y * s + ty;
+    const nw = n.w * s, nh = n.h * s;
+    const bw = 64, bh = 18;
+
+    // "Off screen" means the node's whole rect misses the canvas — not that its
+    // top-left corner does. A start container zoomed to 0.75 is taller than the
+    // canvas, so its corner sits above the viewport while you are looking
+    // straight at it.
+    const ix0 = Math.max(0, nx), iy0 = Math.max(0, ny);
+    const offscreen = !(Math.min(W, nx + nw) > ix0 && Math.min(H, ny + nh) > iy0);
+    const clampX = (v) => Math.max(6, Math.min(W - bw - 6, v));
+    const clampY = (v) => Math.max(6, Math.min(H - bh - 6, v));
+    // Sit just above the node's top edge when there is room; otherwise tuck into
+    // the top-left of whatever part of it is actually on screen.
+    const x = clampX(offscreen ? nx : ix0 + 4);
+    const y = ny - bh - 4 >= 6 ? clampY(ny - bh - 4) : clampY(offscreen ? ny : iy0 + 4);
+
+    const g = svgEl("g", { transform: `translate(${x},${y})`, opacity: offscreen ? "0.6" : "1" });
+    g.style.cursor = "pointer";
+    g.appendChild(svgEl("rect", { width: bw, height: bh, rx: 9, fill: START_STROKE }));
+    const t = svgEl("text", {
+      x: bw / 2, y: 13, fill: "#ffffff", "font-size": "10.5", "font-weight": "700",
+      "text-anchor": "middle", "font-family": "system-ui, sans-serif",
+    });
+    t.textContent = "▶ START";
+    g.appendChild(t);
+    const title = svgEl("title");
+    title.textContent = `Start: ${n.label}${offscreen ? " (off screen — click to jump there)" : ""}`;
+    g.appendChild(title);
+    g.addEventListener("click", (e) => { e.stopPropagation(); goToStart(); });
+    hud.appendChild(g);
   }
   function fitToView() {
     const W = canvas.clientWidth || 900;
@@ -853,8 +944,8 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   function nodeStrokeSpec(n) {
     const th = tc();
     if (n.id === state.selectedId || state.hlNodes.has(n.id)) return [SELECT_COLOR, "2.5"];
-    if (n.isContainer) return [n.isStart ? START_STROKE : th.containerStroke, "1.2"];
-    return [n.isStart ? START_STROKE : th.nodeStroke, "1.1"];
+    if (n.isContainer) return [n.isStart ? START_STROKE : th.containerStroke, n.isStart ? "3" : "1.2"];
+    return [n.isStart ? START_STROKE : th.nodeStroke, n.isStart ? "2.5" : "1.1"];
   }
   function refreshNodeStrokes() {
     if (!state.svg) return;
@@ -915,6 +1006,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     detailEl.innerHTML = `
       <h4>Connection</h4>
       <div class="fo-sub"><span class="fo-chip" style="color:${edgeColor(e.kind)}">${kindLbl}</span>${e.label ? ` · ${escapeHtml(e.label)}` : ""}</div>
+      ${e.detail ? `<div style="margin:6px 0"><strong>Condition</strong><br><code>${escapeHtml(e.detail)}</code></div>` : ""}
       <div class="fo-usage" data-go="${escapeHtml(e.source)}"><span class="fo-meta">From</span><br><span class="fo-name">${escapeHtml(s.title)}</span>${s.sub ? `<br><span class="fo-meta">${escapeHtml(s.sub)}</span>` : ""}</div>
       <div style="text-align:center;color:${NODE_SUBTEXT};margin:2px 0">↓</div>
       <div class="fo-usage" data-go="${escapeHtml(e.target)}"><span class="fo-meta">To</span><br><span class="fo-name">${escapeHtml(t.title)}</span>${t.sub ? `<br><span class="fo-meta">${escapeHtml(t.sub)}</span>` : ""}</div>
@@ -956,14 +1048,23 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const sets = action.sets || [];
     const taskRef = action.targetTaskRef && state.data.tasks.find((t) => t.id === action.targetTaskRef);
     const isModule = action.depName && state.flowByName && state.flowByName.has(action.depName);
+    // A switch lists its cases in full (they are far too long for the diagram,
+    // and sibling conditions often differ only near the end); everything else
+    // falls back to the single condition/expression line.
+    const exprBlock = (action.cases || []).length
+      ? `<div style="margin:6px 0"><strong>Cases</strong> <span class="fo-meta">(first true wins)</span></div>` +
+        action.cases.map((c) => `<div class="fo-usage" style="cursor:default"><span class="fo-meta">${escapeHtml(c.label)}</span>${c.exprText ? `<br><code>${escapeHtml(c.exprText)}</code>` : ""}</div>`).join("")
+      : action.exprText
+        ? `<div style="margin:6px 0"><strong>Condition / expression</strong><br><code>${escapeHtml(truncate(action.exprText, 200))}</code></div>`
+        : "";
     detailEl.innerHTML = `
       <h4>${escapeHtml(action.name || "(action)")}</h4>
       <div class="fo-sub"><span class="fo-chip" style="color:${kindColor(kind)}">${escapeHtml(kindLabel(kind))}</span> · Task: ${escapeHtml(action.taskName || "")}</div>
       ${action.sublabel ? `<div class="fo-sub">Target: <code>${escapeHtml(action.sublabel)}</code></div>` : ""}
       ${sets.length ? `<div style="margin:6px 0"><strong>Sets values (${sets.length})</strong></div>${sets.map((x) => `<div class="fo-usage"${x.target ? ` data-var="${escapeHtml(x.target)}"` : ""}><span class="fo-name">${escapeHtml(x.target)}</span> <span class="fo-meta">=</span> <code>${escapeHtml(x.value === "" ? '""' : truncate(x.value, 120))}</code></div>`).join("")}` : ""}
-      ${action.exprText ? `<div style="margin:6px 0"><strong>Condition / expression</strong><br><code>${escapeHtml(truncate(action.exprText, 200))}</code></div>` : ""}
+      ${exprBlock}
       ${isModule ? `<div style="margin:6px 0"><strong>Referenced flow</strong></div><div class="fo-usage" data-openflowname="${escapeHtml(action.depName)}"><span class="fo-name">▸ ${escapeHtml(action.depName)}</span></div>` : ""}
-      ${taskRef ? `<div style="margin:6px 0"><strong>Calls task</strong></div><div class="fo-usage" data-gotask="${escapeHtml(action.targetTaskRef)}"><span class="fo-name">▸ ${escapeHtml(taskRef.name)}</span></div>` : ""}
+      ${taskRef ? `<div style="margin:6px 0"><strong>${action.actionKey === "jumpToMenu" ? "Jumps to menu" : action.actionKey === "jumpToTask" ? "Jumps to task" : "Calls task"}</strong></div><div class="fo-usage" data-gotask="${escapeHtml(action.targetTaskRef)}"><span class="fo-name">▸ ${escapeHtml(taskRef.name)}</span></div>` : ""}
       <div style="margin:6px 0"><strong>Variables used (${vars.length})</strong></div>
       ${vars.length ? vars.map((v) => `<div class="fo-usage" data-var="${escapeHtml(v.id)}"><span class="fo-name">${escapeHtml(v.name)}</span> <span class="fo-meta">${escapeHtml(v.type || "")}</span></div>`).join("") : `<div class="fo-sub">None</div>`}
     `;
@@ -983,7 +1084,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const isStart = (state.data.tasks || []).some((t) => t.id === taskId && t.isStart);
     detailEl.innerHTML = `
       <h4>${escapeHtml(modelNode.label)}</h4>
-      <div class="fo-sub"><span class="fo-chip">Task</span>${modelNode.isStart ? ' · <span class="fo-chip" style="color:' + START_STROKE + '">Start</span>' : ""} · ${count} action(s)</div>
+      <div class="fo-sub"><span class="fo-chip">${modelNode.isMenu ? "Menu" : "Task"}</span>${modelNode.isStart ? ' · <span class="fo-chip" style="color:' + START_STROKE + '">Start</span>' : ""} · ${count} action(s)</div>
       <div class="fo-sub">${isStart ? "This is the flow's start task." : ""}</div>
     `;
   }
@@ -1012,7 +1113,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const m = state.model.meta;
     detailEl.innerHTML = `
       <h4>${escapeHtml(m.name)}</h4>
-      <div class="fo-sub"><span class="fo-chip">${escapeHtml(m.type)}</span> · ${m.taskCount} tasks · ${m.variableCount} variables</div>
+      <div class="fo-sub"><span class="fo-chip">${escapeHtml(m.type)}</span> · ${m.taskCount} tasks${m.menuCount ? ` · ${m.menuCount} menu(s)` : ""} · ${m.variableCount} variables</div>
       <div class="fo-sub">Default language: ${escapeHtml(m.defaultLanguage || "—")}</div>
       ${m.description ? `<div style="margin-top:6px">${escapeHtml(m.description)}</div>` : ""}
     `;
@@ -1105,6 +1206,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   function renderLegend() {
     const kinds = new Set(state.model.nodes.map((n) => n.kind));
     const items = [...kinds].map((k) => `<span><i style="background:${kindColor(k)}"></i>${escapeHtml(kindLabel(k))}</span>`);
+    if (state.model.nodes.some((n) => n.isStart)) items.unshift(`<span><i style="background:${START_STROKE}"></i>Start</span>`);
     items.push(`<span><i style="background:${JUMP_COLOR}"></i>Task jump</span>`);
     items.push(`<span><i style="background:${DEP_COLOR}"></i>Dependency</span>`);
     legendEl.innerHTML = items.join("");
@@ -1182,6 +1284,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
 
 
   $("#foFit").addEventListener("click", () => fitToView());
+  $("#foStart").addEventListener("click", () => goToStart());
   $("#foZoomIn").addEventListener("click", () => zoomBy(1.25));
   $("#foZoomOut").addEventListener("click", () => zoomBy(1 / 1.25));
 

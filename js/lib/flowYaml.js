@@ -30,6 +30,16 @@ function taskRefId(ref) {
   const m = /task\[([^\]]+)\]/.exec(String(ref || ""));
   return m ? m[1] : null;
 }
+/**
+ * refId out of a jump pointer, which addresses either collection:
+ *   "/inboundCall/tasks/task[Main_12]"      → "Main_12"
+ *   "/inboundCall/menus/menu[Leasy - Main_44]" → "Leasy - Main_44"
+ * Menus are containers keyed by refId alongside tasks, so both resolve the same.
+ */
+function jumpTargetId(ref) {
+  const m = /(?:task|menu)\[([^\]]+)\]/.exec(String(ref || ""));
+  return m ? m[1] : null;
+}
 function scopeOf(name) {
   const m = /^([A-Za-z]+)\./.exec(name || "");
   return m ? m[1] : "";
@@ -61,6 +71,7 @@ const YAML_KIND = {
   switch: "switch",
   menu: "menu",
   getInput: "menu",
+  repeatMenu: "menu",
   collectInput: "collect",
   loop: "loop",
   loopNext: "loop",
@@ -149,9 +160,9 @@ export function parseFlowYaml(root) {
   const ctx = { nodes, edges, actionById, varUsages, depMap, varNames, newId, taskByRef };
 
   taskList.forEach((t, i) => {
-    const isStart = hasStartRef ? t.refId === startRef : (t.isStartup || i === 0);
-    tasks.push({ id: t.refId, name: t.name, isStart });
-    nodes.push({ id: t.refId, kind: "task", label: t.name, isContainer: true, isStart });
+    const isStart = hasStartRef ? t.refId === startRef : (!t.isMenu && (t.isStartup || i === 0));
+    tasks.push({ id: t.refId, name: t.name, isStart, isMenu: !!t.isMenu });
+    nodes.push({ id: t.refId, kind: "task", label: t.name, isContainer: true, isStart, isMenu: !!t.isMenu });
     // Each task's actions reconverge to an implicit "end of task" (no node).
     // `walk` returns the id of the task's first (entry) action. In tasks whose
     // first action is a loop, that entry node has ONLY loop-back incoming edges,
@@ -174,7 +185,8 @@ export function parseFlowYaml(root) {
       division: flow.division || "",
       defaultLanguage: flow.defaultLanguage || "",
       description: flow.description || "",
-      taskCount: tasks.length,
+      taskCount: tasks.filter((t) => !t.isMenu).length,
+      menuCount: tasks.filter((t) => t.isMenu).length,
       variableCount: variables.length,
     },
     variables,
@@ -199,6 +211,64 @@ function collectTasks(flow) {
   // main sequence under `startUpTaskActions` (one implicit startup task).
   if (Array.isArray(flow.startUpTaskActions) && flow.startUpTaskActions.length) {
     out.push({ refId: "__startup__", name: flow.name || "Main", actions: flow.startUpTaskActions, isStartup: true });
+  }
+  // Menus live under `flow.menus`, a top-level sibling of `flow.tasks`. Each is
+  // its own refId-addressable container (a jumpToMenu target, just as a task is
+  // a jumpToTask target), holding one synthetic `menu` action whose choices
+  // branch out inside it. Appended last so they can never win the "first task is
+  // the start" fallback below.
+  const menus = Array.isArray(flow.menus) ? flow.menus : [];
+  for (const item of menus) {
+    const m = item && item.menu ? item.menu : item;
+    if (!m || (!m.refId && !m.name)) continue;
+    out.push({ refId: m.refId || m.name, name: m.name || m.refId, actions: [{ menu: m }], isMenu: true });
+  }
+  return out;
+}
+
+/**
+ * DTMF key of a menu choice: "digit_1" → "1", "digit_#" → "#", "star" → "*".
+ * The symbol keys matter — a menu's two repeat choices are * and #, and without
+ * them both branches would render as the same bare label.
+ */
+const DTMF_SYMBOL = { star: "*", pound: "#" };
+function dtmfLabel(d) {
+  const s = String(d || "");
+  const m = /^digit_(.)$/.exec(s);
+  if (m) return m[1];
+  return DTMF_SYMBOL[s] || "";
+}
+
+/**
+ * Menu choices come in two shapes: the object map an inline `menu` action uses
+ * ({ label: { actions } }), and the ordered list a top-level menu uses
+ * ([{ menuTask: { name, dtmf, task: { actions } } }]). Normalize both to
+ * { label, actions }.
+ */
+function normalizeChoices(body) {
+  const raw = (body && body.choices) || (body && body.outputs) || null;
+  if (!raw) return [];
+  if (!Array.isArray(raw)) {
+    return Object.keys(raw).map((label) => ({ label, actions: (raw[label] && raw[label].actions) || [] }));
+  }
+  const out = [];
+  for (const item of raw) {
+    const key = singleKey(item);
+    if (!key) continue;
+    const c = item[key] || {};
+    const digit = dtmfLabel(c.dtmf);
+    const name = c.name || key;
+    let actions = (c.task && c.task.actions) || c.actions || null;
+    if (!actions) {
+      // A choice that carries no nested sequence is itself the destination.
+      // A sub-menu re-enters this handler; anything else (menuDisconnect,
+      // menuTransferToAcd, …) is re-keyed to the action it wraps so it renders
+      // as an ordinary node instead of disappearing.
+      const inner = key.replace(/^menu/, "");
+      const actionKey = inner ? inner.charAt(0).toLowerCase() + inner.slice(1) : "action";
+      actions = c.choices ? [{ menu: c }] : [{ [actionKey]: c }];
+    }
+    out.push({ label: digit ? `${digit} · ${name}` : name, actions });
   }
   return out;
 }
@@ -273,7 +343,7 @@ function processAction(it, next, scope, ctx) {
     id, kind, name, actionKey: key,
     taskId: scope.taskId, taskName: scope.taskName,
     sets: [], refs: [], exprText: "", sublabel: "", depName: "", targetTaskRef: null,
-    inputs: [], outputs: [],
+    inputs: [], outputs: [], cases: [],
   };
 
   // Collect variable references + assignments + dependency + condition text.
@@ -285,9 +355,13 @@ function processAction(it, next, scope, ctx) {
   recordUsages(action, ctx);
 
   // ── Edges by action type ───────────────────────────────────────────────────
-  const addEdge = (source, target, label, ekind) => {
+  // `detail` is long-form text for the edge (a switch case's condition): too long
+  // for the on-diagram label, shown on hover and in the connection panel.
+  const addEdge = (source, target, label, ekind, detail) => {
     if (!target) return;
-    ctx.edges.push({ id: `${source}->${target}:${label || ""}`, source, target, label: label || "", kind: ekind || "flow" });
+    const edge = { id: `${source}->${target}:${label || ""}`, source, target, label: label || "", kind: ekind || "flow" };
+    if (detail) edge.detail = detail;
+    ctx.edges.push(edge);
   };
 
   // Branching actions with named outputs.
@@ -309,10 +383,15 @@ function processAction(it, next, scope, ctx) {
     for (const c of cases) {
       const cc = c && c.case ? c.case : c;
       ci++;
+      // The ordinal is the label: `firstTrue` means order decides which branch
+      // wins, and sibling conditions routinely share a long common prefix, so a
+      // truncated expression would render several edges as identical text. The
+      // condition rides along as `detail` instead.
       const label = "Case " + ci;
+      const expr = valueText(cc && cc.value);
       const acts = cc && cc.actions;
-      if (acts && acts.length) addEdge(id, walk(acts, scope, next, ctx), label, "flow");
-      else addEdge(id, next, label, "flow");
+      if (acts && acts.length) addEdge(id, walk(acts, scope, next, ctx), label, "flow", expr);
+      else addEdge(id, next, label, "flow", expr);
     }
     // Default case: may carry its own actions (evaluate.firstTrue.default.actions).
     const defActs = ft.default && ft.default.actions;
@@ -322,18 +401,19 @@ function processAction(it, next, scope, ctx) {
   }
 
   if (key === "menu" || key === "getInput") {
-    const choices = (body && body.choices) || (body && body.outputs) || {};
-    let any = false;
-    for (const label of Object.keys(choices)) {
-      const branch = choices[label];
-      const acts = branch && branch.actions;
-      any = true;
-      if (acts && acts.length) addEdge(id, walk(acts, scope, next, ctx), label, "flow");
-      else addEdge(id, next, label, "flow");
+    const choices = normalizeChoices(body);
+    // Choices are walked knowing which menu they belong to, so a "Repeat Menu"
+    // choice can point back at it (the same trick loopNext uses for its loop).
+    const menuScope = { ...scope, menuCtx: { menuId: id } };
+    for (const ch of choices) {
+      if (ch.actions && ch.actions.length) addEdge(id, walk(ch.actions, menuScope, next, ctx), ch.label, "flow");
+      else addEdge(id, next, ch.label, "flow");
     }
-    if (!any) addEdge(id, next, "", "flow");
+    if (!choices.length) addEdge(id, next, "", "flow");
     return;
   }
+
+  if (key === "repeatMenu") { addEdge(id, scope.menuCtx ? scope.menuCtx.menuId : next, "", "flow"); return; }
 
   if (key === "loop") {
     const outs = (body && body.outputs) || {};
@@ -347,11 +427,36 @@ function processAction(it, next, scope, ctx) {
   if (key === "loopNext") { addEdge(id, scope.loopCtx ? scope.loopCtx.loopId : next, "", "flow"); return; }
   if (key === "loopExit") { addEdge(id, scope.loopCtx ? scope.loopCtx.exitId : next, "", "flow"); return; }
 
-  if (key === "callTask") {
-    const ref = taskRefId(body && body.targetTaskRef);
-    if (ref && ctx.taskByRef.has(ref)) addEdge(id, ref, "call", "jump");
+  // All three address a container by refId — callTask/jumpToTask via
+  // `targetTaskRef`, jumpToMenu via `targetMenuRef`. They differ in what happens
+  // afterwards: callTask returns via Default to the next sibling, while a jump
+  // hands control over for good — the flow stays in the target until it jumps,
+  // transfers or ends. So a jump gets no fall-through edge, which also means any
+  // sibling after it is unreachable (as in Architect).
+  if (key === "callTask" || key === "jumpToTask" || key === "jumpToMenu") {
+    const isCall = key === "callTask";
+    const ref = jumpTargetId(body && (body.targetTaskRef || body.targetMenuRef));
+    if (ref && ctx.taskByRef.has(ref)) addEdge(id, ref, isCall ? "call" : "jump", "jump");
     action.targetTaskRef = ref;
-    addEdge(id, next, "", "flow"); // returns via Default to the next sibling
+    if (isCall) {
+      // A callTask's `outputs` comes in two shapes, and it can carry both:
+      //   outputs.paths[] — { path: { name, actions } }, the named output paths
+      //                     the called task declares (Failure, Timeout, …).
+      //   outputs.default — a nested sequence run once the called task returns,
+      //                     in place of simply continuing at the next sibling.
+      // Anything not covered by a named path still falls through to `next`.
+      const outs = (body && body.outputs) || {};
+      for (const item of Array.isArray(outs.paths) ? outs.paths : []) {
+        const p = (item && item.path) || item;
+        if (!p) continue;
+        const lbl = p.name || "Path";
+        if (p.actions && p.actions.length) addEdge(id, walk(p.actions, scope, next, ctx), lbl, "flow");
+        else addEdge(id, next, lbl, "flow");
+      }
+      const defActs = outs.default && outs.default.actions;
+      if (defActs && defActs.length) addEdge(id, walk(defActs, scope, next, ctx), "Default", "flow");
+      else addEdge(id, next, "", "flow"); // returns via Default to the next sibling
+    }
     return;
   }
 
@@ -403,7 +508,22 @@ function extractDetails(key, body, action, ctx) {
   if (!body || typeof body !== "object") return;
 
   if (key === "decision" && body.condition) action.exprText = valueText(body.condition);
-  if (key === "switch") action.exprText = "switch";
+  if (key === "switch") {
+    // Keep the per-case conditions structured so the detail panel can list them
+    // in full, and flatten them into exprText for the variable-usage rows (which
+    // previously read just "switch" for every variable a switch touched).
+    const ft = ((body.evaluate || {}).firstTrue) || {};
+    const list = ft.cases || body.cases || [];
+    action.cases = list.map((c, i) => {
+      const cc = c && c.case ? c.case : c;
+      return { label: "Case " + (i + 1), exprText: valueText(cc && cc.value) };
+    });
+    if (ft.default) action.cases.push({ label: "Default", exprText: "" });
+    action.exprText = action.cases
+      .filter((c) => c.exprText)
+      .map((c) => `${c.label}: ${c.exprText}`)
+      .join("  ·  ");
+  }
 
   if (key === "callCommonModule" && body.commonModule) {
     const modName = singleKey(body.commonModule);
@@ -428,7 +548,14 @@ function extractDetails(key, body, action, ctx) {
     action.depName = nm;
     addDep(ctx, "dataAction", nm, action);
   }
-  if (key === "callTask") action.sublabel = "Task: " + ((body.targetTaskRef && taskRefId(body.targetTaskRef)) || "");
+  if (key === "callTask" || key === "jumpToTask" || key === "jumpToMenu") {
+    // Show the target's display name rather than its refId ("Backup GDF
+    // Scheduling", not "Backup GDF Scheduling_215"); fall back to the raw ref
+    // when the target lives outside this flow's containers.
+    const ref = jumpTargetId(body.targetTaskRef || body.targetMenuRef);
+    const target = ref && ctx.taskByRef.get(ref);
+    action.sublabel = (key === "jumpToMenu" ? "Menu: " : "Task: ") + ((target && target.name) || ref || "");
+  }
 
   // Cross-flow references (any flow type → its own tab):
   //   overrideInQueueFlow (nested on ACD transfers) → in-queue flow
@@ -549,7 +676,7 @@ export function buildModel(data, opts = {}) {
   const pushEdge = (s, t, label, kind) => { const id = `${kind}:${s}->${t}`; if (seen.has(id)) return; seen.add(id); edges.push({ id, source: s, target: t, label, kind }); };
 
   if (level === "mid") {
-    for (const t of data.tasks) nodes.push({ id: t.id, kind: "task", label: t.name, isStart: t.isStart });
+    for (const t of data.tasks) nodes.push({ id: t.id, kind: "task", label: t.name, isStart: t.isStart, isMenu: t.isMenu });
     const taskIds = new Set(nodes.map((n) => n.id));
     // task→task edges from callTask jumps
     for (const e of data.edges) {
