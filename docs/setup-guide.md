@@ -68,7 +68,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Direct Routing — Add user(s)** — Assign the `directrouting` integration tag to user phone numbers (Work Phone 1–3) or email addresses, manage the primary phone number, and configure agent-level backup routing. Multi-select user picker with parallel batch loading. Only users with a work phone or email are shown. Email domain validation against configured inbound domains. Collapsible Addresses and Backup Settings sections per user. Change detection — only modified users are submitted. Backup supports None / User / Queue with Wait for Agent. Access key: `users.directRouting.add`.
 - **Divisions** — Reassign objects between divisions across the full Genesys Cloud object hierarchy. All pages share an identical two-column layout: load objects (with source-division filter + text search) on the left; choose target division and apply on the right. Table section is collapsible and auto-collapses after each apply. Uses `POST /api/v2/authorization/divisions/{id}/objects/{TYPE}`.
   - **People:** Users — Work Teams
-  - **Routing:** Queues — Call Routes — Emergency Groups — Extension Pools — Routing Schedules — Routing Schedule Groups — Skill Groups
+  - **Routing:** Queues — Call Routes — Emergency Groups — Extension Pools — Routing Schedules — Routing Schedule Groups — Skill Groups — Skills — Wrap-up Codes
   - **Architect:** Flows *(with Type dropdown filter)* — Flow Milestones — Flow Outcomes — Scripts *(with Status column — Published/Draft — and Status filter)* — Data Tables
   - **Outbound:** Campaigns — Contact Lists — DNC Lists — Email Campaigns — Messaging Campaigns
   - **Workforce Management:** Business Units — Management Units
@@ -892,6 +892,8 @@ After pushing the config update:
 | 55 | Divisions — Routing — Routing Schedules | Same layout; loads routing schedules |
 | 56 | Divisions — Routing — Routing Schedule Groups | Same layout; loads routing schedule groups |
 | 57 | Divisions — Routing — Skill Groups | Same layout; loads skill groups |
+| 57a | Divisions — Routing — Skills | Same layout; loads ACD skills; Current Division populated and source-division dropdown offers the divisions in use |
+| 57b | Divisions — Routing — Wrap-up Codes | Same layout; loads wrap-up codes with Name and Description columns; codes still on the All division show as such |
 | 58 | Divisions — Architect — Flows | Same layout; loads flows; Type dropdown filter populated from loaded data (In-Queue Flow, Inbound Call Flow, etc.) |
 | 59 | Divisions — Architect — Flow Milestones | Same layout; loads flow milestones |
 | 60 | Divisions — Architect — Flow Outcomes | Same layout; loads flow outcomes |
@@ -1243,7 +1245,7 @@ genesys-admin-app/
 │   │   ├── divisions/
 │   │   │   ├── _generic.js          Shared generic renderer with hooks (extraFilters, extraFilterFn, onItemsLoaded)
 │   │   │   ├── users.js             People — Users
-│   │   │   ├── team.js              People — Teams
+│   │   │   ├── team.js              People — Work Teams
 │   │   │   ├── queues.js            Routing — Queues
 │   │   │   ├── callroute.js         Routing — Call Routes
 │   │   │   ├── emergencyGroups.js   Routing — Emergency Groups
@@ -1251,6 +1253,8 @@ genesys-admin-app/
 │   │   │   ├── routingSchedules.js  Routing — Schedules
 │   │   │   ├── routingScheduleGroups.js  Routing — Schedule Groups
 │   │   │   ├── skillGroup.js        Routing — Skill Groups
+│   │   │   ├── skill.js             Routing — Skills
+│   │   │   ├── wrapupCode.js        Routing — Wrap-up Codes
 │   │   │   ├── flow.js              Architect — Flows (Type dropdown filter)
 │   │   │   ├── flowMilestone.js     Architect — Flow Milestones
 │   │   │   ├── flowOutcome.js       Architect — Flow Outcomes

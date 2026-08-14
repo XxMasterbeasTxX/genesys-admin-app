@@ -56,6 +56,8 @@ export const NAV_TREE = [
           { label: "Routing Schedules",       path: "routing-schedules",       enabled: true, access: "divisions.routing.routingSchedules"        },
           { label: "Routing Schedule Groups",  path: "routing-schedule-groups", enabled: true, access: "divisions.routing.routingScheduleGroups"   },
           { label: "Skill Groups",             path: "skill-group",             enabled: true, access: "divisions.routing.skillGroup"              },
+          { label: "Skills",                   path: "skill",                   enabled: true, access: "divisions.routing.skill"                   },
+          { label: "Wrap-up Codes",            path: "wrapup-code",             enabled: true, access: "divisions.routing.wrapupCode"              },
         ],
       },
       // ── Architect ─────────────────────────────────────
@@ -72,6 +74,15 @@ export const NAV_TREE = [
         ],
       },
       // ── Outbound ──────────────────────────────────────
+      //
+      // NOT YET COVERED — to be added later. Genesys makes more of the outbound
+      // dialing objects division aware than the five leaves below: Callable Time
+      // Sets, Rule Sets, Sequences, Attempt Limits and Contact List Filters all
+      // carry a division. Each is one wrapper file over _generic.js plus a
+      // fetch helper, the same shape as campaign.js. Confirm the `objectType`
+      // enum string for each against the live API before wiring it up — the
+      // names are not guessable from the endpoint path (compare EMERGENCYGROUPS
+      // and ROUTINGSCHEDULES against QUEUE and FLOW).
       {
         label: "Outbound",
         path: "outbound",

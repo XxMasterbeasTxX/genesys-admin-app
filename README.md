@@ -92,7 +92,7 @@ Internal web application for the Genesys Team to perform administrative actions 
 - **Direct Routing — Add user(s)** — Assign the `directrouting` integration tag to user phone numbers (Work Phone 1–3) or email addresses, manage the primary phone number, and configure agent-level backup routing. Multi-select user picker → Load Details fetches addresses + backup settings in parallel batches of 10. Only users with at least one Work Phone or email address are shown (others are skipped with a count). Email domain validation: inbound email domains are fetched from `GET /api/v2/routing/email/domains`; if a user's email domain is not configured in Genesys, the DR checkbox is hidden and an orange warning is shown. Collapsible Addresses and Backup Settings sections per user. Fixed-width address table (Type 20%, Address 40%, Primary 15%, Direct Routing 25%) for consistent column alignment across cards. Deselectable radio buttons for both Primary and Direct Routing (clicking a checked radio unchecks it). Bulk pre-select dropdown to set the same phone type across all loaded users. Backup routing supports None, User (search-as-you-type picker), or Queue (dropdown) with Wait for Agent toggle and configurable wait duration. Change detection: only users with actual modifications are submitted. Apply patches addresses/primary via `PATCH /api/v2/users/{id}` and backup via `PUT/DELETE /api/v2/routing/users/{id}/directroutingbackup/settings`. Progress bar and per-user status. Activity Log entry on completion. Access key: `users.directRouting.add`.
 - **Divisions** — Reassign objects between divisions across the full Genesys Cloud object hierarchy. All pages share an identical two-column layout: load objects (with source-division filter + text search) on the left; choose target division and apply on the right. Table section is collapsible and auto-collapses after each apply. Uses `POST /api/v2/authorization/divisions/{id}/objects/{TYPE}`.
   - **People:** Users — Work Teams
-  - **Routing:** Queues — Call Routes — Emergency Groups — Extension Pools — Routing Schedules — Routing Schedule Groups — Skill Groups
+  - **Routing:** Queues — Call Routes — Emergency Groups — Extension Pools — Routing Schedules — Routing Schedule Groups — Skill Groups — Skills — Wrap-up Codes
   - **Architect:** Flows *(with Type dropdown filter)* — Flow Milestones — Flow Outcomes — Scripts *(with Status column — Published/Draft — and Status filter)* — Data Tables
   - **Outbound:** Campaigns — Contact Lists — DNC Lists — Email Campaigns — Messaging Campaigns
   - **Workforce Management:** Business Units — Management Units
@@ -330,7 +330,7 @@ genesys-admin-app/
 │   │   ├── divisions/
 │   │   │   ├── _generic.js          Shared generic renderer with hooks (extraFilters, extraFilterFn, onItemsLoaded)
 │   │   │   ├── users.js             People — Users
-│   │   │   ├── team.js              People — Teams
+│   │   │   ├── team.js              People — Work Teams
 │   │   │   ├── queues.js            Routing — Queues
 │   │   │   ├── callroute.js         Routing — Call Routes
 │   │   │   ├── emergencyGroups.js   Routing — Emergency Groups
@@ -338,6 +338,8 @@ genesys-admin-app/
 │   │   │   ├── routingSchedules.js  Routing — Schedules
 │   │   │   ├── routingScheduleGroups.js  Routing — Schedule Groups
 │   │   │   ├── skillGroup.js        Routing — Skill Groups
+│   │   │   ├── skill.js             Routing — Skills
+│   │   │   ├── wrapupCode.js        Routing — Wrap-up Codes
 │   │   │   ├── flow.js              Architect — Flows (Type dropdown filter)
 │   │   │   ├── flowMilestone.js     Architect — Flow Milestones
 │   │   │   ├── flowOutcome.js       Architect — Flow Outcomes

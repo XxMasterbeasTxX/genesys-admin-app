@@ -1015,6 +1015,12 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       ...(divisionId ? { division: { id: divisionId } } : {}),
     };
 
+    // Edit is a full-replace PUT, so "(No division)" has to be stated rather than
+    // left out: an omitted key relies on Genesys defaulting the field back, which
+    // is not something to infer. Sending null makes the intent explicit, and a
+    // refusal surfaces as an error instead of a save that appears to do nothing.
+    if (modalState.mode === "edit" && !divisionId) body.division = null;
+
     try {
       if (modalState.mode === "create") {
         await gc.createWrapupCode(api, org.id, body);

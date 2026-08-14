@@ -59,6 +59,8 @@
  *   divisions.routing.routingSchedules      Routing — Routing Schedules
  *   divisions.routing.routingScheduleGroups Routing — Routing Schedule Groups
  *   divisions.routing.skillGroup            Routing — Skill Groups
+ *   divisions.routing.skill                 Routing — Skills
+ *   divisions.routing.wrapupCode            Routing — Wrap-up Codes
  *   divisions.architect.flow                Architect — Flows
  *   divisions.architect.flowMilestone       Architect — Milestones
  *   divisions.architect.flowOutcome         Architect — Flow Outcomes

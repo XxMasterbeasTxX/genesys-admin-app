@@ -218,6 +218,8 @@ Confirmed against the live demo permission catalog (2026-07-06). Only **write ac
 | Routing → Routing Schedules | `routing:schedule:edit` |
 | Routing → Routing Schedule Groups | `routing:scheduleGroup:edit` |
 | Routing → Skill Groups | `routing:skillgroup:edit` |
+| Routing → Skills | `routing:skill:edit` |
+| Routing → Wrap-up Codes | `routing:wrapupCode:edit` |
 | Architect → Flows | `architect:flow:edit` |
 | Architect → Milestones | `architect:flowMilestone:edit` |
 | Architect → Flow Outcomes | `architect:flowOutcome:edit` |
