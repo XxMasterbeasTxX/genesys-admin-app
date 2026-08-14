@@ -167,10 +167,11 @@ export const RELEASE_NOTES = [
     changes: [
       "New Flows › Flow Overview: an interactive, read-only graphical overview of an Architect callflow and all of its dependency flows. Pick an org and a live flow and the whole call flow is drawn as a diagram.",
       "Built from the flow's structured Archy/SDK YAML (exported on demand), so implicit ‘Default’ paths that the flat REST config leaves out are drawn correctly.",
-      "Tasks and loops are shown as nested boxes (loops inside their task, inner loops inside outer loops), and every task starts at its true first action. Decisions, switches, menus, data-table lookups, data actions, common-module calls, transfers and task links all get labelled connections — both Call Task (which returns to the next action) and Jump to Task (which hands control over for good) are drawn to their target task.",
+      "Tasks, menus and loops are shown as nested boxes (loops inside their task, inner loops inside outer loops), and every task starts at its true first action. Decisions, switches, menus, data-table lookups, data actions, common-module calls, transfers and task links all get labelled connections — both Call Task (which returns to the next action) and Jump to Task (which hands control over for good) are drawn to their target task.",
+      "A flow's menus get their own box, with every DTMF choice drawn as a labelled branch into the actions behind it, and a Call Task shows the output paths of the task it calls (Failure, Timeout, …) alongside its normal return.",
       "A tab per dependency flow — common modules, in-queue flows, transfer/bot targets of any type (including outbound) — discovered automatically from referenced flow names.",
       "High / Mid / Low detail levels, dark/light/white themes, fullscreen, and a combined variable & dependency search: click a variable to jump to where it is set or used, or a dependency to open its flow.",
-      "Click any node to see the values set in that node, its condition/expression, referenced flow or called task, and variables used; click a connection to see its From/To.",
+      "Click any node to see the values set in that node, its condition/expression, referenced flow or called task, and variables used; click a connection to see its From/To. A switch lists every case in full, in first-true order, and each case's condition is on its connection — hover the line or click it.",
       "Download as PDF, self-contained HTML, or JSON — either the current flow, or Save all, which auto-loads every dependency flow (including nested common modules) and bundles them into one file: a multi-page PDF, a single tabbed HTML file, or one combined JSON.",
     ],
   },

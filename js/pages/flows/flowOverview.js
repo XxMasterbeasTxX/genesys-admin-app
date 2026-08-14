@@ -693,7 +693,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       hit.style.pointerEvents = "stroke";
       hit.addEventListener("click", (ev) => { ev.stopPropagation(); selectEdge(e); });
       const title = svgEl("title");
-      title.textContent = `${nodeDisplay(e.source).title} → ${nodeDisplay(e.target).title}`;
+      title.textContent = `${nodeDisplay(e.source).title} → ${nodeDisplay(e.target).title}`
+        + (e.label ? ` · ${e.label}` : "")
+        + (e.detail ? `\n${e.detail}` : "");
       hit.appendChild(title);
       g.appendChild(hit);
     }
@@ -915,6 +917,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     detailEl.innerHTML = `
       <h4>Connection</h4>
       <div class="fo-sub"><span class="fo-chip" style="color:${edgeColor(e.kind)}">${kindLbl}</span>${e.label ? ` · ${escapeHtml(e.label)}` : ""}</div>
+      ${e.detail ? `<div style="margin:6px 0"><strong>Condition</strong><br><code>${escapeHtml(e.detail)}</code></div>` : ""}
       <div class="fo-usage" data-go="${escapeHtml(e.source)}"><span class="fo-meta">From</span><br><span class="fo-name">${escapeHtml(s.title)}</span>${s.sub ? `<br><span class="fo-meta">${escapeHtml(s.sub)}</span>` : ""}</div>
       <div style="text-align:center;color:${NODE_SUBTEXT};margin:2px 0">↓</div>
       <div class="fo-usage" data-go="${escapeHtml(e.target)}"><span class="fo-meta">To</span><br><span class="fo-name">${escapeHtml(t.title)}</span>${t.sub ? `<br><span class="fo-meta">${escapeHtml(t.sub)}</span>` : ""}</div>
@@ -956,12 +959,21 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const sets = action.sets || [];
     const taskRef = action.targetTaskRef && state.data.tasks.find((t) => t.id === action.targetTaskRef);
     const isModule = action.depName && state.flowByName && state.flowByName.has(action.depName);
+    // A switch lists its cases in full (they are far too long for the diagram,
+    // and sibling conditions often differ only near the end); everything else
+    // falls back to the single condition/expression line.
+    const exprBlock = (action.cases || []).length
+      ? `<div style="margin:6px 0"><strong>Cases</strong> <span class="fo-meta">(first true wins)</span></div>` +
+        action.cases.map((c) => `<div class="fo-usage" style="cursor:default"><span class="fo-meta">${escapeHtml(c.label)}</span>${c.exprText ? `<br><code>${escapeHtml(c.exprText)}</code>` : ""}</div>`).join("")
+      : action.exprText
+        ? `<div style="margin:6px 0"><strong>Condition / expression</strong><br><code>${escapeHtml(truncate(action.exprText, 200))}</code></div>`
+        : "";
     detailEl.innerHTML = `
       <h4>${escapeHtml(action.name || "(action)")}</h4>
       <div class="fo-sub"><span class="fo-chip" style="color:${kindColor(kind)}">${escapeHtml(kindLabel(kind))}</span> · Task: ${escapeHtml(action.taskName || "")}</div>
       ${action.sublabel ? `<div class="fo-sub">Target: <code>${escapeHtml(action.sublabel)}</code></div>` : ""}
       ${sets.length ? `<div style="margin:6px 0"><strong>Sets values (${sets.length})</strong></div>${sets.map((x) => `<div class="fo-usage"${x.target ? ` data-var="${escapeHtml(x.target)}"` : ""}><span class="fo-name">${escapeHtml(x.target)}</span> <span class="fo-meta">=</span> <code>${escapeHtml(x.value === "" ? '""' : truncate(x.value, 120))}</code></div>`).join("")}` : ""}
-      ${action.exprText ? `<div style="margin:6px 0"><strong>Condition / expression</strong><br><code>${escapeHtml(truncate(action.exprText, 200))}</code></div>` : ""}
+      ${exprBlock}
       ${isModule ? `<div style="margin:6px 0"><strong>Referenced flow</strong></div><div class="fo-usage" data-openflowname="${escapeHtml(action.depName)}"><span class="fo-name">▸ ${escapeHtml(action.depName)}</span></div>` : ""}
       ${taskRef ? `<div style="margin:6px 0"><strong>${action.actionKey === "jumpToTask" ? "Jumps to task" : "Calls task"}</strong></div><div class="fo-usage" data-gotask="${escapeHtml(action.targetTaskRef)}"><span class="fo-name">▸ ${escapeHtml(taskRef.name)}</span></div>` : ""}
       <div style="margin:6px 0"><strong>Variables used (${vars.length})</strong></div>
@@ -983,7 +995,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const isStart = (state.data.tasks || []).some((t) => t.id === taskId && t.isStart);
     detailEl.innerHTML = `
       <h4>${escapeHtml(modelNode.label)}</h4>
-      <div class="fo-sub"><span class="fo-chip">Task</span>${modelNode.isStart ? ' · <span class="fo-chip" style="color:' + START_STROKE + '">Start</span>' : ""} · ${count} action(s)</div>
+      <div class="fo-sub"><span class="fo-chip">${modelNode.isMenu ? "Menu" : "Task"}</span>${modelNode.isStart ? ' · <span class="fo-chip" style="color:' + START_STROKE + '">Start</span>' : ""} · ${count} action(s)</div>
       <div class="fo-sub">${isStart ? "This is the flow's start task." : ""}</div>
     `;
   }
@@ -1012,7 +1024,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const m = state.model.meta;
     detailEl.innerHTML = `
       <h4>${escapeHtml(m.name)}</h4>
-      <div class="fo-sub"><span class="fo-chip">${escapeHtml(m.type)}</span> · ${m.taskCount} tasks · ${m.variableCount} variables</div>
+      <div class="fo-sub"><span class="fo-chip">${escapeHtml(m.type)}</span> · ${m.taskCount} tasks${m.menuCount ? ` · ${m.menuCount} menu(s)` : ""} · ${m.variableCount} variables</div>
       <div class="fo-sub">Default language: ${escapeHtml(m.defaultLanguage || "—")}</div>
       ${m.description ? `<div style="margin-top:6px">${escapeHtml(m.description)}</div>` : ""}
     `;
