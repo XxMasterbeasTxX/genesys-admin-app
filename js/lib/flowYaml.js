@@ -30,6 +30,16 @@ function taskRefId(ref) {
   const m = /task\[([^\]]+)\]/.exec(String(ref || ""));
   return m ? m[1] : null;
 }
+/**
+ * refId out of a jump pointer, which addresses either collection:
+ *   "/inboundCall/tasks/task[Main_12]"      → "Main_12"
+ *   "/inboundCall/menus/menu[Leasy - Main_44]" → "Leasy - Main_44"
+ * Menus are containers keyed by refId alongside tasks, so both resolve the same.
+ */
+function jumpTargetId(ref) {
+  const m = /(?:task|menu)\[([^\]]+)\]/.exec(String(ref || ""));
+  return m ? m[1] : null;
+}
 function scopeOf(name) {
   const m = /^([A-Za-z]+)\./.exec(name || "");
   return m ? m[1] : "";
@@ -61,6 +71,7 @@ const YAML_KIND = {
   switch: "switch",
   menu: "menu",
   getInput: "menu",
+  repeatMenu: "menu",
   collectInput: "collect",
   loop: "loop",
   loopNext: "loop",
@@ -215,11 +226,15 @@ function collectTasks(flow) {
   return out;
 }
 
-/** DTMF key of a menu choice: "digit_1" → "1", "star" → "*". */
+/**
+ * DTMF key of a menu choice: "digit_1" → "1", "digit_#" → "#", "star" → "*".
+ * The symbol keys matter — a menu's two repeat choices are * and #, and without
+ * them both branches would render as the same bare label.
+ */
 const DTMF_SYMBOL = { star: "*", pound: "#" };
 function dtmfLabel(d) {
   const s = String(d || "");
-  const m = /^digit_(\w)$/.exec(s);
+  const m = /^digit_(.)$/.exec(s);
   if (m) return m[1];
   return DTMF_SYMBOL[s] || "";
 }
@@ -387,13 +402,18 @@ function processAction(it, next, scope, ctx) {
 
   if (key === "menu" || key === "getInput") {
     const choices = normalizeChoices(body);
+    // Choices are walked knowing which menu they belong to, so a "Repeat Menu"
+    // choice can point back at it (the same trick loopNext uses for its loop).
+    const menuScope = { ...scope, menuCtx: { menuId: id } };
     for (const ch of choices) {
-      if (ch.actions && ch.actions.length) addEdge(id, walk(ch.actions, scope, next, ctx), ch.label, "flow");
+      if (ch.actions && ch.actions.length) addEdge(id, walk(ch.actions, menuScope, next, ctx), ch.label, "flow");
       else addEdge(id, next, ch.label, "flow");
     }
     if (!choices.length) addEdge(id, next, "", "flow");
     return;
   }
+
+  if (key === "repeatMenu") { addEdge(id, scope.menuCtx ? scope.menuCtx.menuId : next, "", "flow"); return; }
 
   if (key === "loop") {
     const outs = (body && body.outputs) || {};
@@ -407,14 +427,15 @@ function processAction(it, next, scope, ctx) {
   if (key === "loopNext") { addEdge(id, scope.loopCtx ? scope.loopCtx.loopId : next, "", "flow"); return; }
   if (key === "loopExit") { addEdge(id, scope.loopCtx ? scope.loopCtx.exitId : next, "", "flow"); return; }
 
-  // Both carry `targetTaskRef: "/<flowType>/tasks/task[<refId>]"`. They differ in
-  // what happens afterwards: callTask returns via Default to the next sibling,
-  // while jumpToTask hands control over for good — the flow stays in the target
-  // task until it jumps, transfers or ends. So a jump gets no fall-through edge,
-  // which also means any sibling after it is unreachable (as in Architect).
-  if (key === "callTask" || key === "jumpToTask") {
+  // All three address a container by refId — callTask/jumpToTask via
+  // `targetTaskRef`, jumpToMenu via `targetMenuRef`. They differ in what happens
+  // afterwards: callTask returns via Default to the next sibling, while a jump
+  // hands control over for good — the flow stays in the target until it jumps,
+  // transfers or ends. So a jump gets no fall-through edge, which also means any
+  // sibling after it is unreachable (as in Architect).
+  if (key === "callTask" || key === "jumpToTask" || key === "jumpToMenu") {
     const isCall = key === "callTask";
-    const ref = taskRefId(body && body.targetTaskRef);
+    const ref = jumpTargetId(body && (body.targetTaskRef || body.targetMenuRef));
     if (ref && ctx.taskByRef.has(ref)) addEdge(id, ref, isCall ? "call" : "jump", "jump");
     action.targetTaskRef = ref;
     if (isCall) {
@@ -527,13 +548,13 @@ function extractDetails(key, body, action, ctx) {
     action.depName = nm;
     addDep(ctx, "dataAction", nm, action);
   }
-  if (key === "callTask" || key === "jumpToTask") {
-    // Show the task's display name rather than its refId ("Backup GDF
+  if (key === "callTask" || key === "jumpToTask" || key === "jumpToMenu") {
+    // Show the target's display name rather than its refId ("Backup GDF
     // Scheduling", not "Backup GDF Scheduling_215"); fall back to the raw ref
-    // when the target lives outside this flow's task list.
-    const ref = taskRefId(body.targetTaskRef);
+    // when the target lives outside this flow's containers.
+    const ref = jumpTargetId(body.targetTaskRef || body.targetMenuRef);
     const target = ref && ctx.taskByRef.get(ref);
-    action.sublabel = "Task: " + ((target && target.name) || ref || "");
+    action.sublabel = (key === "jumpToMenu" ? "Menu: " : "Task: ") + ((target && target.name) || ref || "");
   }
 
   // Cross-flow references (any flow type → its own tab):

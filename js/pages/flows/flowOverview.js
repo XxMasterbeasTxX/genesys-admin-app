@@ -975,7 +975,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       ${sets.length ? `<div style="margin:6px 0"><strong>Sets values (${sets.length})</strong></div>${sets.map((x) => `<div class="fo-usage"${x.target ? ` data-var="${escapeHtml(x.target)}"` : ""}><span class="fo-name">${escapeHtml(x.target)}</span> <span class="fo-meta">=</span> <code>${escapeHtml(x.value === "" ? '""' : truncate(x.value, 120))}</code></div>`).join("")}` : ""}
       ${exprBlock}
       ${isModule ? `<div style="margin:6px 0"><strong>Referenced flow</strong></div><div class="fo-usage" data-openflowname="${escapeHtml(action.depName)}"><span class="fo-name">▸ ${escapeHtml(action.depName)}</span></div>` : ""}
-      ${taskRef ? `<div style="margin:6px 0"><strong>${action.actionKey === "jumpToTask" ? "Jumps to task" : "Calls task"}</strong></div><div class="fo-usage" data-gotask="${escapeHtml(action.targetTaskRef)}"><span class="fo-name">▸ ${escapeHtml(taskRef.name)}</span></div>` : ""}
+      ${taskRef ? `<div style="margin:6px 0"><strong>${action.actionKey === "jumpToMenu" ? "Jumps to menu" : action.actionKey === "jumpToTask" ? "Jumps to task" : "Calls task"}</strong></div><div class="fo-usage" data-gotask="${escapeHtml(action.targetTaskRef)}"><span class="fo-name">▸ ${escapeHtml(taskRef.name)}</span></div>` : ""}
       <div style="margin:6px 0"><strong>Variables used (${vars.length})</strong></div>
       ${vars.length ? vars.map((v) => `<div class="fo-usage" data-var="${escapeHtml(v.id)}"><span class="fo-name">${escapeHtml(v.name)}</span> <span class="fo-meta">${escapeHtml(v.type || "")}</span></div>`).join("") : `<div class="fo-sub">None</div>`}
     `;
