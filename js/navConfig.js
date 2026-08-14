@@ -75,14 +75,14 @@ export const NAV_TREE = [
       },
       // ── Outbound ──────────────────────────────────────
       //
-      // NOT YET COVERED — to be added later. Genesys makes more of the outbound
-      // dialing objects division aware than the five leaves below: Callable Time
-      // Sets, Rule Sets, Sequences, Attempt Limits and Contact List Filters all
-      // carry a division. Each is one wrapper file over _generic.js plus a
-      // fetch helper, the same shape as campaign.js. Confirm the `objectType`
-      // enum string for each against the live API before wiring it up — the
-      // names are not guessable from the endpoint path (compare EMERGENCYGROUPS
-      // and ROUTINGSCHEDULES against QUEUE and FLOW).
+      // NOT YET COVERED — to be added later. Genesys also makes Callable Time
+      // Sets, Rule Sets, Sequences, Attempt Limits and Contact List Filters
+      // division aware, but none of them is accepted by the bulk division
+      // endpoint (see gc.moveToDivision for the list it does accept), so each
+      // needs a `moveFn` that writes the division onto the object itself — the
+      // shape wrapupCode.js uses. Check first whether that object's PUT even
+      // takes a division: division-aware in the UI has not meant writable
+      // through the API for every type.
       {
         label: "Outbound",
         path: "outbound",

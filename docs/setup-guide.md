@@ -892,8 +892,8 @@ After pushing the config update:
 | 55 | Divisions — Routing — Routing Schedules | Same layout; loads routing schedules |
 | 56 | Divisions — Routing — Routing Schedule Groups | Same layout; loads routing schedule groups |
 | 57 | Divisions — Routing — Skill Groups | Same layout; loads skill groups |
-| 57a | Divisions — Routing — Skills | Same layout; loads ACD skills; Current Division populated and source-division dropdown offers the divisions in use |
-| 57b | Divisions — Routing — Wrap-up Codes | Same layout; loads wrap-up codes with Name and Description columns; codes still on the All division show as such |
+| 57a | Divisions — Routing — Skills | Same layout; loads ACD skills; Current Division populated and source-division dropdown offers the divisions in use. Moves via `PUT /api/v2/routing/skills/{id}`, not the bulk division endpoint, which rejects skills |
+| 57b | Divisions — Routing — Wrap-up Codes | Same layout; loads wrap-up codes with Name and Description columns; codes still on the All division show as such. Moves via `PUT /api/v2/routing/wrapupcodes/{id}`, so check the Description survives the move and that moving the same code twice without reloading still works (version is carried forward) |
 | 58 | Divisions — Architect — Flows | Same layout; loads flows; Type dropdown filter populated from loaded data (In-Queue Flow, Inbound Call Flow, etc.) |
 | 59 | Divisions — Architect — Flow Milestones | Same layout; loads flow milestones |
 | 60 | Divisions — Architect — Flow Outcomes | Same layout; loads flow outcomes |
