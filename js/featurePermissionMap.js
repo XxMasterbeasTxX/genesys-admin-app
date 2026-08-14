@@ -46,7 +46,7 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   "divisions.routing.routingSchedules":      { edit: ["routing:schedule:edit"] },
   "divisions.routing.routingScheduleGroups": { edit: ["routing:scheduleGroup:edit"] },
   "divisions.routing.skillGroup":            { edit: ["routing:skillgroup:edit"] },
-  "divisions.routing.skill":                 { edit: ["routing:skill:edit"] },
+  "divisions.routing.skill":                 { edit: ["routing:skill:update"] },
   "divisions.routing.wrapupCode":            { edit: ["routing:wrapupCode:edit"] },
   "divisions.architect.flow":                { edit: ["architect:flow:edit"] },
   "divisions.architect.flowMilestone":       { edit: ["architect:flowMilestone:edit"] },

@@ -591,16 +591,19 @@ export async function createSkill(api, orgId, body) {
 }
 
 /**
- * Update a routing skill. Body: { name, division: { id } }.
+ * Reassign a skill's division (patchRoutingSkill, `routing:skill:update`).
+ * Skills are not accepted by the bulk division endpoint — see moveToDivision.
  *
- * Used to reassign a skill's division — skills are not accepted by the bulk
- * division endpoint (see moveToDivision). The method is documented nowhere:
- * PUT was tried first and the resource answered 405, so the path is right and
- * PATCH is the next candidate. If this 405s too, the proxy now appends the
- * Allow header to the message, which settles it.
+ * The body is UpdateSkillDivisionRequest: a flat `{ divisionId }` string, NOT
+ * the `{ division: { id } }` shape every other object in this file uses. The
+ * endpoint answers 200 and silently ignores properties outside that schema, so
+ * the wrong shape here looks exactly like a successful move. Returns the
+ * updated RoutingSkill, which carries `division` — check it.
  */
-export async function updateSkill(api, orgId, skillId, body) {
-  return api.proxyGenesys(orgId, "PATCH", `/api/v2/routing/skills/${skillId}`, { body });
+export async function updateSkillDivision(api, orgId, skillId, divisionId) {
+  return api.proxyGenesys(orgId, "PATCH", `/api/v2/routing/skills/${skillId}`, {
+    body: { divisionId },
+  });
 }
 
 /** Fetch a single routing skill. */
