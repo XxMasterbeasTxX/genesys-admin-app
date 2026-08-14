@@ -603,6 +603,11 @@ export async function updateSkill(api, orgId, skillId, body) {
   return api.proxyGenesys(orgId, "PATCH", `/api/v2/routing/skills/${skillId}`, { body });
 }
 
+/** Fetch a single routing skill. */
+export async function fetchSkill(api, orgId, skillId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/routing/skills/${skillId}`);
+}
+
 /** Fetch all routing languages. */
 export async function fetchAllLanguages(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/routing/languages", opts);
