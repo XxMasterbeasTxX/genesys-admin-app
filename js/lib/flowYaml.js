@@ -347,11 +347,17 @@ function processAction(it, next, scope, ctx) {
   if (key === "loopNext") { addEdge(id, scope.loopCtx ? scope.loopCtx.loopId : next, "", "flow"); return; }
   if (key === "loopExit") { addEdge(id, scope.loopCtx ? scope.loopCtx.exitId : next, "", "flow"); return; }
 
-  if (key === "callTask") {
+  // Both carry `targetTaskRef: "/<flowType>/tasks/task[<refId>]"`. They differ in
+  // what happens afterwards: callTask returns via Default to the next sibling,
+  // while jumpToTask hands control over for good — the flow stays in the target
+  // task until it jumps, transfers or ends. So a jump gets no fall-through edge,
+  // which also means any sibling after it is unreachable (as in Architect).
+  if (key === "callTask" || key === "jumpToTask") {
+    const isCall = key === "callTask";
     const ref = taskRefId(body && body.targetTaskRef);
-    if (ref && ctx.taskByRef.has(ref)) addEdge(id, ref, "call", "jump");
+    if (ref && ctx.taskByRef.has(ref)) addEdge(id, ref, isCall ? "call" : "jump", "jump");
     action.targetTaskRef = ref;
-    addEdge(id, next, "", "flow"); // returns via Default to the next sibling
+    if (isCall) addEdge(id, next, "", "flow");
     return;
   }
 
@@ -428,7 +434,14 @@ function extractDetails(key, body, action, ctx) {
     action.depName = nm;
     addDep(ctx, "dataAction", nm, action);
   }
-  if (key === "callTask") action.sublabel = "Task: " + ((body.targetTaskRef && taskRefId(body.targetTaskRef)) || "");
+  if (key === "callTask" || key === "jumpToTask") {
+    // Show the task's display name rather than its refId ("Backup GDF
+    // Scheduling", not "Backup GDF Scheduling_215"); fall back to the raw ref
+    // when the target lives outside this flow's task list.
+    const ref = taskRefId(body.targetTaskRef);
+    const target = ref && ctx.taskByRef.get(ref);
+    action.sublabel = "Task: " + ((target && target.name) || ref || "");
+  }
 
   // Cross-flow references (any flow type → its own tab):
   //   overrideInQueueFlow (nested on ACD transfers) → in-queue flow
