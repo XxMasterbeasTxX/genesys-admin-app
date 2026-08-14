@@ -57,6 +57,18 @@ async function callGenesys({ region, token, method, path, body, query }) {
     parsed = { raw: respBody };
   }
 
+  // A 405 body says only that the method is wrong; the Allow header says which
+  // one is right. Genesys does not document every method it accepts, so for
+  // newer endpoints this header is the only way to find out — surface it in the
+  // message the page shows instead of dropping it with the other headers.
+  if (genesysResp.status === 405 && parsed && !Array.isArray(parsed)) {
+    const allow = genesysResp.headers.get("allow");
+    if (allow) {
+      parsed.allowedMethods = allow;
+      parsed.message = `${parsed.message || "HTTP 405 Method Not Allowed"} (allowed: ${allow})`;
+    }
+  }
+
   return {
     status: genesysResp.status,
     headers: { "Content-Type": "application/json" },

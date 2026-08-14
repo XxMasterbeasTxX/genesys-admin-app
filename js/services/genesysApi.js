@@ -551,6 +551,26 @@ export async function putQueue(api, orgId, queueId, body) {
  * objectType: "USER", "QUEUE", "DATATABLES", "FLOW", etc. — goes in the URL path.
  * ids: array of object ID strings.
  */
+/**
+ * Move objects into a division in bulk.
+ *
+ * `objectType` must be one of the values this endpoint accepts. The list below
+ * is the API's own, returned verbatim in the 400 body when an unknown value is
+ * sent — it is not published in the API docs or the SDKs, and it is not
+ * derivable from the endpoint paths (note EMERGENCYGROUPS and ROUTINGSCHEDULES
+ * plural against QUEUE and FLOW singular):
+ *
+ *   QUEUE, CAMPAIGN, CONTACTLIST, DNCLIST, EMAILCAMPAIGN, MESSAGINGCAMPAIGN,
+ *   MANAGEMENTUNIT, BUSINESSUNIT, FLOW, FLOWMILESTONE, FLOWOUTCOME, USER,
+ *   CALLROUTE, EMERGENCYGROUPS, ROUTINGSCHEDULES, ROUTINGSCHEDULEGROUPS,
+ *   DATATABLES, TEAM, WORKBIN, WORKTYPE, EXTENSIONPOOL, SKILLGROUP, SCRIPT,
+ *   LIBRARY
+ *
+ * Being division-aware in Genesys does NOT put an object type on that list.
+ * Skills and wrap-up codes both carry a division and neither is accepted here;
+ * they are moved one at a time by writing the division onto the object itself.
+ * Re-check the 400 body before assuming a new type is unsupported.
+ */
 export async function moveToDivision(api, orgId, divisionId, objectType, ids) {
   const BATCH = 100;
   for (let i = 0; i < ids.length; i += BATCH) {
@@ -568,6 +588,27 @@ export async function fetchAllSkills(api, orgId, opts = {}) {
 /** Create a routing skill. Body: { name }. */
 export async function createSkill(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/routing/skills", { body });
+}
+
+/**
+ * Reassign a skill's division (patchRoutingSkill, `routing:skill:update`).
+ * Skills are not accepted by the bulk division endpoint — see moveToDivision.
+ *
+ * The body is UpdateSkillDivisionRequest: a flat `{ divisionId }` string, NOT
+ * the `{ division: { id } }` shape every other object in this file uses. The
+ * endpoint answers 200 and silently ignores properties outside that schema, so
+ * the wrong shape here looks exactly like a successful move. Returns the
+ * updated RoutingSkill, which carries `division` — check it.
+ */
+export async function updateSkillDivision(api, orgId, skillId, divisionId) {
+  return api.proxyGenesys(orgId, "PATCH", `/api/v2/routing/skills/${skillId}`, {
+    body: { divisionId },
+  });
+}
+
+/** Fetch a single routing skill. */
+export async function fetchSkill(api, orgId, skillId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/routing/skills/${skillId}`);
 }
 
 /** Fetch all routing languages. */

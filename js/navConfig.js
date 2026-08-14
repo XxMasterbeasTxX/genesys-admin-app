@@ -56,6 +56,8 @@ export const NAV_TREE = [
           { label: "Routing Schedules",       path: "routing-schedules",       enabled: true, access: "divisions.routing.routingSchedules"        },
           { label: "Routing Schedule Groups",  path: "routing-schedule-groups", enabled: true, access: "divisions.routing.routingScheduleGroups"   },
           { label: "Skill Groups",             path: "skill-group",             enabled: true, access: "divisions.routing.skillGroup"              },
+          { label: "Skills",                   path: "skill",                   enabled: true, access: "divisions.routing.skill"                   },
+          { label: "Wrap-up Codes",            path: "wrapup-code",             enabled: true, access: "divisions.routing.wrapupCode"              },
         ],
       },
       // ── Architect ─────────────────────────────────────
@@ -72,6 +74,15 @@ export const NAV_TREE = [
         ],
       },
       // ── Outbound ──────────────────────────────────────
+      //
+      // NOT YET COVERED — to be added later. Genesys also makes Callable Time
+      // Sets, Rule Sets, Sequences, Attempt Limits and Contact List Filters
+      // division aware, but none of them is accepted by the bulk division
+      // endpoint (see gc.moveToDivision for the list it does accept), so each
+      // needs a `moveFn` that writes the division onto the object itself — the
+      // shape wrapupCode.js uses. Check first whether that object's PUT even
+      // takes a division: division-aware in the UI has not meant writable
+      // through the API for every type.
       {
         label: "Outbound",
         path: "outbound",

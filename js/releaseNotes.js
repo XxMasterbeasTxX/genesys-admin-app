@@ -11,6 +11,16 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "3.1",
+    date: "2026-08-14",
+    title: "Divisions: move Skills and Wrap-up Codes between divisions",
+    changes: [
+      "Genesys made ACD skills division aware, and wrap-up codes already were. Both now have their own page under Divisions › Routing, working the same way as every other page in the section: load, narrow by source division or search by name, tick what to move, pick a target division, apply.",
+      "Wrap-up codes could already be given a division one at a time from Wrapup Codes › Create/Edit/Mapping. The new page is for moving many at once, and shows the division each code sits in today — including the ones still on All.",
+      "On that same Create/Edit page, choosing \"(No division)\" for an existing code now states the change rather than leaving the field out of the save, so the result no longer depends on what Genesys does with a missing value.",
+    ],
+  },
+  {
     version: "3.0",
     date: "2026-08-14",
     title: "Data Tables › Edit: the key column fits its keys",

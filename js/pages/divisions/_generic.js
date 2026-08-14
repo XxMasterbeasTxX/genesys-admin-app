@@ -7,8 +7,14 @@
  *
  * @param {{ route, me, api, orgContext }} ctx   Standard page context.
  * @param {{
- *   objectType         : string,                        e.g. "FLOW"
+ *   objectType         : string,                        e.g. "FLOW" — see gc.moveToDivision for the accepted list
  *   label              : string,                        Display name, e.g. "FLOW"
+ *   moveFn?            : (api, orgId, divisionId, item) => Promise<void>,
+ *                        Overrides the bulk division endpoint for object types
+ *                        it does not accept (skills, wrap-up codes): write the
+ *                        division onto the object instead. Called once per item,
+ *                        which is what the apply loop already does. Supply
+ *                        either this or objectType.
  *   fetchFn            : (api, orgId, opts) => Promise<Object[]>,
  *   columns            : { header: string, get: (item: Object) => string }[],
  *   searchFn?          : (item: Object, query: string) => boolean,
@@ -27,8 +33,10 @@ import { logAction } from "../../services/activityLogService.js";
 export default function renderDivisionPage(ctx, cfg) {
   const { api, orgContext, me } = ctx;
   const { objectType, label, fetchFn, columns, searchFn, extraFilters, onExtraFilterSetup,
-          extraFilterFn, onItemsLoaded,
+          extraFilterFn, onItemsLoaded, moveFn: _moveFn,
           getDivision: _getDivision, setDivision: _setDivision } = cfg;
+  const moveFn = _moveFn
+    || ((a, orgId, divisionId, item) => gc.moveToDivision(a, orgId, divisionId, objectType, [item.id]));
   const getDivision = _getDivision || (i => i.division);
   const setDivision = _setDivision || ((i, d) => { i.division = d; });
 
@@ -374,7 +382,7 @@ export default function renderDivisionPage(ctx, cfg) {
       setStatus(`Moving ${i + 1} of ${toMove.length}: ${item.name || item.id}…`);
 
       try {
-        await gc.moveToDivision(api, org.id, targetId, objectType, [item.id]);
+        await moveFn(api, org.id, targetId, item);
         setDivision(item, { id: targetId, name: targetName });
         selectedIds.delete(item.id);
         results.push({ item, ok: true, detail: `→ ${targetName}` });

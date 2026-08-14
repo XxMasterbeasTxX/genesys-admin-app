@@ -111,6 +111,10 @@ const registry = {
     import("./pages/divisions/routingScheduleGroups.js").then((m) => m.default(ctx)),
   "/divisions/routing/skill-group": (ctx) =>
     import("./pages/divisions/skillGroup.js").then((m) => m.default(ctx)),
+  "/divisions/routing/skill": (ctx) =>
+    import("./pages/divisions/skill.js").then((m) => m.default(ctx)),
+  "/divisions/routing/wrapup-code": (ctx) =>
+    import("./pages/divisions/wrapupCode.js").then((m) => m.default(ctx)),
 
   // ── Divisions › Architect ─────────────────────────────
   "/divisions/architect/flow": (ctx) =>
