@@ -343,7 +343,7 @@ function processAction(it, next, scope, ctx) {
     id, kind, name, actionKey: key,
     taskId: scope.taskId, taskName: scope.taskName,
     sets: [], refs: [], exprText: "", sublabel: "", depName: "", targetTaskRef: null,
-    inputs: [], outputs: [], cases: [],
+    inputs: [], outputs: [], cases: [], depCategory: "", dynamicRefs: [],
   };
 
   // Collect variable references + assignments + dependency + condition text.
@@ -546,6 +546,9 @@ function extractDetails(key, body, action, ctx) {
     const nm = daName || body.name || "";
     action.sublabel = nm;
     action.depName = nm;
+    // `category` is the integration the data action belongs to ("Genesys Cloud
+    // Data Actions", "CX Cloud - Salesforce Data Actions - Sandbox", …).
+    action.depCategory = cat || "";
     addDep(ctx, "dataAction", nm, action);
   }
   if (key === "callTask" || key === "jumpToTask" || key === "jumpToMenu") {
@@ -561,7 +564,11 @@ function extractDetails(key, body, action, ctx) {
   //   overrideInQueueFlow (nested on ACD transfers) → in-queue flow
   //   transferToFlow / transferToFlowSecure         → target call/secure flow
   //   bot-call actions                              → bot / digital-bot flow
-  const inq = findNested(body, "overrideInQueueFlow");
+  // Read directly, NOT via findNested: an action's body contains its nested
+  // output actions, so a deep search hands the in-queue flow to every ancestor
+  // as well as the transfer that owns it (in one real flow: 15 usages across
+  // decisions and data actions, for 3 actual transfers).
+  const inq = body.overrideInQueueFlow;
   if (inq && inq.name) addDep(ctx, "inqueueCall", inq.name, action);
   if (/^transferToFlow/i.test(key)) {
     const tf = body.targetFlow || body.flow || (findNested(body, "targetFlow"));
@@ -583,10 +590,55 @@ function extractDetails(key, body, action, ctx) {
     }
   }
 
+  scanReferences(body, action, ctx);
+
   // Deep-scan for variable references (exp/var/variable tokens) matching declared vars.
   const refs = new Set();
   collectRefs(body, refs, ctx.varNames);
   action.refs = [...refs];
+}
+
+/**
+ * Action fields that point at an org resource. In data-driven flows these are
+ * nearly always expressions resolved at run time — `FindQueue(Flow.Queue)`,
+ * `ToAudio(FindUserPrompt(Task.Audio))` — so there is no name to enumerate.
+ * Those are recorded as `dynamicRefs` so an export can flag them for manual
+ * checking. Where a field IS a literal name it becomes a real dependency, but
+ * only for the kinds worth drawing (a hardcoded queue or prompt); a literal
+ * phone number or language code is not a dependency.
+ */
+const REF_FIELDS = {
+  targetQueue:    { kind: "Queue",           dep: "queue" },
+  scheduleGroup:  { kind: "Schedule group",  dep: "scheduleGroup" },
+  emergencyGroup: { kind: "Emergency group", dep: "scheduleGroup" },
+  audio:          { kind: "Prompt / audio",  dep: "prompt" },
+  wrapupCode:     { kind: "Wrap-up code",    dep: "wrapupCode" },
+  targetNumber:   { kind: "Number",          dep: "" },
+  targetUser:     { kind: "User",            dep: "" },
+  targetGroup:    { kind: "Group",           dep: "" },
+  language:       { kind: "Language",        dep: "" },
+};
+
+/** A literal reference: { prompt: "Prompt.X" } or { lit: { name } } / { lit }. */
+function staticRefName(v) {
+  if (typeof v.prompt === "string") return v.prompt;
+  if (v.lit && typeof v.lit === "object" && v.lit.name) return v.lit.name;
+  if (typeof v.lit === "string") return v.lit;
+  return "";
+}
+
+function scanReferences(body, action, ctx) {
+  for (const field of Object.keys(REF_FIELDS)) {
+    const v = body[field];
+    if (!v || typeof v !== "object" || v.noValue) continue;
+    const spec = REF_FIELDS[field];
+    const name = staticRefName(v);
+    if (name) {
+      if (spec.dep) addDep(ctx, spec.dep, name, action);
+    } else if (typeof v.exp === "string") {
+      action.dynamicRefs.push({ kind: spec.kind, exprText: v.exp });
+    }
+  }
 }
 
 function addDep(ctx, type, name, action) {
@@ -594,7 +646,14 @@ function addDep(ctx, type, name, action) {
   const key = `${type}:${name}`;
   let dep = ctx.depMap.get(key);
   if (!dep) { dep = { key, id: name, name, type, usages: [] }; ctx.depMap.set(key, dep); }
-  dep.usages.push({ actionId: action.id, actionName: action.name, taskId: action.taskId, taskName: action.taskName });
+  // Category rides on the usage rather than the dependency: the dep key is
+  // `<type>:<name>`, so two integrations exposing a same-named data action would
+  // merge into one entry and lose a category. Per-usage keeps both.
+  dep.usages.push({
+    actionId: action.id, actionName: action.name,
+    taskId: action.taskId, taskName: action.taskName,
+    category: action.depCategory || "",
+  });
 }
 
 /** Find the first nested object stored under `key` anywhere within `node`. */

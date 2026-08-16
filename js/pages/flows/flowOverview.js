@@ -20,7 +20,7 @@
  *   Low  — the flow + its direct dependencies.
  */
 
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, exportXlsx } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import {
   parseFlowYaml,
@@ -136,6 +136,14 @@ const FLOW_TYPE_LABELS = {
   workflow: "Workflow", workitem: "Workitem", voicesurvey: "Voice Survey",
   surveyinvite: "Survey Invite", outboundcall: "Outbound Call",
 };
+
+// Friendly names for dependency types in the Excel export.
+const DEP_TYPE_LABELS = {
+  dataTable: "Data Table", dataAction: "Data Action", commonModule: "Common Module",
+  inqueueCall: "In-Queue Flow", flow: "Flow", bot: "Bot", queue: "Queue",
+  prompt: "Prompt", scheduleGroup: "Schedule Group", wrapupCode: "Wrap-up Code",
+};
+const depTypeLabel = (t) => DEP_TYPE_LABELS[t] || t;
 
 function flowTypeOrder(t) {
   const order = ["commonmodule", "inqueuecall", "inqueueemail", "inqueueshortmessage", "workflow",
@@ -259,6 +267,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       <button class="btn btn--secondary btn-sm" id="foSaveAllPdf" disabled title="Root flow + every dependency flow (auto-loaded, transitive) as one multi-page PDF">PDF</button>
       <button class="btn btn--secondary btn-sm" id="foSaveAllHtml" disabled title="Root flow + every dependency flow (auto-loaded, transitive) as one HTML file with tabs">HTML</button>
       <button class="btn btn--secondary btn-sm" id="foSaveAllJson" disabled title="Root flow + every dependency flow (auto-loaded, transitive) bundled into one JSON file">JSON</button>
+      <button class="btn btn--secondary btn-sm" id="foSaveAllDeps" disabled title="Every dependency of the root flow and its dependency flows (auto-loaded, transitive) as a styled Excel workbook">Export Dependencies</button>
     </div>
 
     <div class="fo-layout">
@@ -301,7 +310,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   const resultsEl = $("#foResults");
   const detailEl = $("#foDetail");
   const levelBtns = [...el.querySelectorAll(".fo-level .btn")];
-  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foStart", "#foFullscreen", "#foSavePdf", "#foSaveHtml", "#foSaveJson", "#foSaveAllPdf", "#foSaveAllHtml", "#foSaveAllJson"].map($);
+  const exportBtns = ["#foZoomOut", "#foZoomIn", "#foFit", "#foStart", "#foFullscreen", "#foSavePdf", "#foSaveHtml", "#foSaveJson", "#foSaveAllPdf", "#foSaveAllHtml", "#foSaveAllJson", "#foSaveAllDeps"].map($);
 
   // ── State ───────────────────────────────────────────────────────────────────
   const state = {
@@ -1407,6 +1416,86 @@ for(var i=0;i<tabs.length;i++){tabs[i].addEventListener('click',function(){var k
 <\/script></body></html>`;
     download(`${slug(rootName)}-all-${state.level}.html`, textToB64(html), (m) => (statusEl.textContent = m));
     setBusy(false, `Exported ${flows.length} flow(s) to HTML.`);
+  }));
+
+  /**
+   * Dependency workbook for the whole tree: the root flow plus every dependency
+   * flow, transitively. Three sheets, all led by Flow:
+   *   Dependencies — one row per dependency, with its integration category
+   *   Usages       — one row per use, so each can be traced to a task + action
+   *   Dynamic refs — queue/prompt/schedule references the flow resolves at run
+   *                  time, which cannot be enumerated and need a manual check
+   */
+  $("#foSaveAllDeps").addEventListener("click", () => withExportGuard(async () => {
+    const rootName = state.data.meta.name;
+    const flows = await loadAllFlows((name) => setBusy(true, `Loading “${name}”…`));
+    setBusy(true, "Collecting dependencies…");
+
+    const deps = [], usages = [], dynamic = [];
+    for (const t of flows) {
+      const entry = state.cache.get(t.id);
+      const flowName = entry.data.meta.name;
+      for (const dep of entry.depIndex.values()) {
+        const type = depTypeLabel(dep.type);
+        const cats = [...new Set(dep.usages.map((u) => u.category).filter(Boolean))];
+        const tasks = [...new Set(dep.usages.map((u) => u.taskName).filter(Boolean))];
+        deps.push({
+          flow: flowName, type, category: cats.join(" / "), name: dep.name,
+          uses: dep.usages.length, tasks: tasks.join(", "),
+        });
+        for (const u of dep.usages) {
+          const act = entry.actionIndex.get(u.actionId);
+          usages.push({
+            flow: flowName, type, category: u.category || "", name: dep.name,
+            task: u.taskName || "", action: u.actionName || "",
+            actionType: act ? kindLabel(act.kind) : "",
+          });
+        }
+      }
+      for (const a of entry.data.actionById.values()) {
+        for (const r of a.dynamicRefs || []) {
+          dynamic.push({ flow: flowName, kind: r.kind, expr: r.exprText, task: a.taskName || "", action: a.name || "" });
+        }
+      }
+    }
+
+    const by = (...keys) => (a, b) => {
+      for (const k of keys) { const c = String(a[k]).localeCompare(String(b[k])); if (c) return c; }
+      return 0;
+    };
+    deps.sort(by("type", "name", "flow"));
+    usages.sort(by("type", "name", "flow", "task"));
+    dynamic.sort(by("kind", "flow", "task"));
+
+    exportXlsx([
+      {
+        name: "Dependencies", rows: deps,
+        columns: [
+          { key: "flow", label: "Flow" }, { key: "type", label: "Type" },
+          { key: "category", label: "Category" }, { key: "name", label: "Name" },
+          { key: "uses", label: "Uses" }, { key: "tasks", label: "Used in tasks" },
+        ],
+      },
+      {
+        name: "Usages", rows: usages,
+        columns: [
+          { key: "flow", label: "Flow" }, { key: "type", label: "Type" },
+          { key: "category", label: "Category" }, { key: "name", label: "Dependency" },
+          { key: "task", label: "Task" }, { key: "action", label: "Action" },
+          { key: "actionType", label: "Action type" },
+        ],
+      },
+      {
+        name: "Dynamic references", rows: dynamic,
+        columns: [
+          { key: "flow", label: "Flow" }, { key: "kind", label: "Kind" },
+          { key: "expr", label: "Expression" }, { key: "task", label: "Task" },
+          { key: "action", label: "Action" },
+        ],
+      },
+    ], `${slug(rootName)}-dependencies.xlsx`);
+
+    setBusy(false, `Exported ${deps.length} dependencies across ${flows.length} flow(s) · ${usages.length} usages · ${dynamic.length} dynamic reference(s).`);
   }));
 
   $("#foSaveAllJson").addEventListener("click", () => withExportGuard(async () => {

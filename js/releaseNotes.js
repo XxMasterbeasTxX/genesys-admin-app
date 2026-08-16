@@ -172,6 +172,7 @@ export const RELEASE_NOTES = [
       "A tab per dependency flow — common modules, in-queue flows, transfer/bot targets of any type (including outbound) — discovered automatically from referenced flow names.",
       "High / Mid / Low detail levels, dark/light/white themes, fullscreen, and a combined variable & dependency search: click a variable to jump to where it is set or used, or a dependency to open its flow.",
       "Click any node to see the values set in that node, its condition/expression, referenced flow or called task, and variables used; click a connection to see its From/To. A switch lists every case in full, in first-true order, and each case's condition is on its connection — hover the line or click it.",
+      "Export Dependencies writes a styled Excel workbook covering the root flow and every dependency flow: one sheet listing each dependency with its type, name and — for data actions — the integration category it comes from; one listing every individual use, traced to its task and action; and one listing the queues, prompts and schedules the flow resolves at run time by expression, which cannot be listed by name and need checking by hand when moving a flow between orgs.",
       "Download as PDF, self-contained HTML, or JSON — either the current flow, or Save all, which auto-loads every dependency flow (including nested common modules) and bundles them into one file: a multi-page PDF, a single tabbed HTML file, or one combined JSON.",
     ],
   },
