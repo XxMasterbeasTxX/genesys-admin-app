@@ -228,18 +228,22 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     </p>
 
     <div class="dt-controls">
-      <div class="dt-control-group">
-        <label class="dt-label">Flow</label>
-        <div class="fo-flow-combo" style="width:300px">
-          <input class="dt-input" id="foFlowInput" type="text" placeholder="Search a flow…" autocomplete="off" disabled style="width:300px" />
-          <div class="fo-flow-menu" id="foFlowMenu"></div>
+      <!-- .dt-control-group stacks its children; this row keeps the type filter
+           beside the flow picker rather than under it. -->
+      <div class="dt-control-group" style="flex-direction:row;align-items:flex-end;gap:12px">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label class="dt-label">Flow</label>
+          <div class="fo-flow-combo" style="width:300px">
+            <input class="dt-input" id="foFlowInput" type="text" placeholder="Search a flow…" autocomplete="off" disabled style="width:300px" />
+            <div class="fo-flow-menu" id="foFlowMenu"></div>
+          </div>
         </div>
-      </div>
-      <div class="dt-control-group">
-        <label class="dt-label">Flow type</label>
-        <select class="dt-select" id="foTypeFilter" style="width:200px" title="Filter the flow list by type" disabled>
-          <option value="">All types</option>
-        </select>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label class="dt-label">Flow type</label>
+          <select class="dt-select" id="foTypeFilter" style="width:200px" title="Filter the flow list by type" disabled>
+            <option value="">All types</option>
+          </select>
+        </div>
       </div>
       <div class="dt-control-group">
         <label class="dt-label">Detail level</label>

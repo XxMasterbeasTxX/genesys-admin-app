@@ -83,7 +83,9 @@ const YAML_KIND = {
   exitBotFlow: "end",
   askForSlot: "collect",
   askForBoolean: "collect",
-  askForIntent: "collect",
+  // Not a collect: it routes by the intent the caller expressed, like a switch.
+  askForIntent: "intent",
+  loopAnythingElse: "loop",
   jumpToMenu: "jump",
   jumpToTask: "jump",
   changeState: "jump",
@@ -124,6 +126,10 @@ const TERMINAL_KINDS = new Set([
 function kindFor(actionKey) {
   return YAML_KIND[actionKey] || "action";
 }
+
+// Loop actions that carry their body under `outputs.loop`, and so are drawn as
+// containers. `loopAnythingElse` is a bot flow's main listening loop.
+const LOOP_CONTAINER_KEYS = new Set(["loop", "loopAnythingElse"]);
 
 // The primary/continuation output of a branching action is usually OMITTED from
 // the YAML `outputs` (it just continues to the next sibling). If none of these
@@ -379,10 +385,10 @@ function processAction(it, next, scope, ctx) {
     taskName: scope.taskName,
     sublabel: "",
   };
-  // A `loop` action is a visual container: its body actions nest inside it
+  // A loop action is a visual container: its body actions nest inside it
   // (matching Architect). loopNext/loopExit share the "loop" kind but are leaf
-  // actions, so only the real `loop` key becomes a container.
-  if (key === "loop") node.isContainer = true;
+  // actions, so only the keys that actually carry a body become containers.
+  if (LOOP_CONTAINER_KEYS.has(key)) node.isContainer = true;
   const action = {
     id, kind, name, actionKey: key,
     taskId: scope.taskId, taskName: scope.taskName,
@@ -459,7 +465,34 @@ function processAction(it, next, scope, ctx) {
 
   if (key === "repeatMenu") { addEdge(id, scope.menuCtx ? scope.menuCtx.menuId : next, "", "flow"); return; }
 
-  if (key === "loop") {
+  // Each intent is a branch to somewhere else, so this behaves like a switch on
+  // what the caller asked for. They are an ordered LIST, not keyed outputs —
+  // read as keyed outputs the whole list collapses into one bogus "Intents"
+  // edge and every branch is lost.
+  if (key === "askForIntent") {
+    const outs = (body && body.outputs) || {};
+    for (const item of Array.isArray(outs.intents) ? outs.intents : []) {
+      const intent = (item && item.intent) || item;
+      if (!intent) continue;
+      const label = intent.name || "Intent";
+      if (intent.actions && intent.actions.length) addEdge(id, walk(intent.actions, scope, next, ctx), label, "flow");
+      else addEdge(id, next, label, "flow");
+    }
+    // The rest (noIntent, knowledge, maxNoInputs, …) are ordinary named
+    // branches; a handler switched off with no actions is not a path the flow
+    // can take, so drawing it would invent a branch.
+    for (const label of Object.keys(outs)) {
+      if (label === "intents") continue;
+      const branch = outs[label] || {};
+      const acts = branch.actions;
+      if (!(acts && acts.length) && branch.enabled === false) continue;
+      if (acts && acts.length) addEdge(id, walk(acts, scope, next, ctx), prettyOutputLabel(label), "flow");
+      else addEdge(id, next, prettyOutputLabel(label), "flow");
+    }
+    return;
+  }
+
+  if (LOOP_CONTAINER_KEYS.has(key)) {
     const outs = (body && body.outputs) || {};
     const bodyActs = (outs.loop && outs.loop.actions) || [];
     const loopScope = { ...scope, containerId: id, loopCtx: { loopId: id, exitId: next } };
@@ -516,6 +549,10 @@ function processAction(it, next, scope, ctx) {
         if (PRIMARY_OUTPUT_KEYS.has(norm)) hasPrimary = true;
         const branch = body.outputs[label];
         const acts = branch && branch.actions;
+        // Bot-flow handlers carry an `enabled` flag. One switched off with no
+        // actions is not a path the flow can take (askForSlot's Max No Inputs,
+        // for instance), so drawing it would invent a branch.
+        if (!(acts && acts.length) && branch && branch.enabled === false) continue;
         const lbl = prettyOutputLabel(label);
         if (acts && acts.length) addEdge(id, walk(acts, scope, next, ctx), lbl, "flow");
         else addEdge(id, next, lbl, "flow");
