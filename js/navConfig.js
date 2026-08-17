@@ -307,6 +307,14 @@ export const NAV_TREE = [
       { label: "Basic",       path: "basic",      enabled: true, access: "deployment.basic"      },
       { label: "Data Tables", path: "datatables", enabled: true, access: "deployment.datatables" },
       { label: "Onboarding",  path: "onboarding", enabled: true, access: "deployment.onboarding" },
+      {
+        label: "Test",
+        path: "test",
+        enabled: true,
+        children: [
+          { label: "Test Cases", path: "test-cases", enabled: true, access: "deployment.test.testCases" },
+        ],
+      },
     ],
   },
   {
