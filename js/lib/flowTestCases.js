@@ -161,15 +161,34 @@ function syntheticEnd(nodeId) {
   return { id: `${nodeId}->#end`, source: nodeId, target: null, label: "", kind: "end", synthetic: true };
 }
 
+/**
+ * Where taking `edge` out of `nodeId` can lead, for REACHABILITY purposes.
+ *
+ * A Call Task's call branch leads into the called task AND, once that ends, on to
+ * the caller's continuation — and the continuation is deliberately not one of its
+ * branches (it is the return target, see branchesOf). A reachability check that
+ * ignores it concludes that everything after a call is unreachable, so steering
+ * gives up and the targets get retired. On a real flow that leans on Call Task
+ * this collapsed branch coverage to a quarter of what it should be.
+ */
+function branchReachTargets(g, nodeId, edge) {
+  const out = [];
+  const t = resolveTarget(g, edge);
+  if (t) out.push(t);
+  const action = g.actionById.get(nodeId);
+  if (action && action.actionKey === "callTask" && edge.kind === "jump") {
+    const ret = returnTargetOf(g, nodeId);
+    if (ret) out.push(ret);
+  }
+  return out;
+}
+
 /** Forward adjacency over branches, for reachability. Jumps resolve to entries. */
 function adjacency(g) {
   const adj = new Map();
   for (const nodeId of g.actionById.keys()) {
     const targets = [];
-    for (const e of branchesOf(g, nodeId)) {
-      const t = resolveTarget(g, e);
-      if (t) targets.push(t);
-    }
+    for (const e of branchesOf(g, nodeId)) targets.push(...branchReachTargets(g, nodeId, e));
     adj.set(nodeId, targets);
   }
   return adj;
@@ -273,6 +292,16 @@ function describeOutcome(g, action) {
   return action.name || key;
 }
 
+/**
+ * Collapse whitespace so a step reads as one line in a table cell. Architect
+ * expressions carry real newlines — a log string built over six lines is common
+ * — and pasted verbatim they turn one row of the document into twelve.
+ */
+function oneLine(s, max = 300) {
+  const t = String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+  return t.length > max ? t.slice(0, max - 1) + "…" : t;
+}
+
 /** Human label for an action's kind, for the Steps sheet. */
 export function kindLabel(kind) {
   return (ACTION_KINDS[kind] && ACTION_KINDS[kind].label) || kind || "";
@@ -326,17 +355,19 @@ function classify(g, nodeId, stack) {
 function walkPath(g, startId, choose) {
   const steps = [];
   const used = new Set();
-  const onPath = new Set();
+  const onPath = new Set();      // raw node ids, for the chooser's heuristics
+  const onPathKeys = new Set();  // node + call context, for the cycle guard
   const stack = [];
   let cur = startId;
   let outcome = null;
 
   while (cur) {
-    if (onPath.has(cur)) {
+    if (onPathKeys.has(contextKey(cur, stack))) {
       const node = g.nodeById.get(cur);
       outcome = { kind: "loop", text: `Loops back to "${(node && node.label) || cur}"` };
       break;
     }
+    onPathKeys.add(contextKey(cur, stack));
     onPath.add(cur);
 
     const c = classify(g, cur, stack);
@@ -375,6 +406,20 @@ function walkPath(g, startId, choose) {
   }
 
   return { steps, used, outcome: outcome || { kind: "unknown", text: "Path did not resolve" } };
+}
+
+/**
+ * Cycle-guard identity: an action plus the call context it is running in.
+ *
+ * Keying on the action alone is wrong for a flow that calls a shared task from
+ * two places on the same path — a validation module called before a menu and
+ * again after it. The second call is not a loop, but a bare node guard reads it
+ * as one and cuts the case short there, so the part of the flow after the second
+ * call never gets tested. A genuine loop revisits the same action with the same
+ * return stack, and that is still caught.
+ */
+function contextKey(nodeId, stack) {
+  return stack.length ? `${nodeId}@${stack.join(">")}` : nodeId;
 }
 
 /** A path's identity, for dropping duplicates. */
@@ -418,47 +463,206 @@ function preferPrimary(branches) {
 }
 
 /**
+ * Prefer a branch that carries on rather than one that closes a cycle. Stepping
+ * onto a node already on the path ends the case immediately (see walkPath), so a
+ * branch that goes somewhere new is nearly always the more useful test.
+ */
+function preferForward(g, branches, onPath) {
+  const forward = branches.filter((e) => {
+    const t = resolveTarget(g, e);
+    return !t || !onPath.has(t);
+  });
+  return preferPrimary(forward.length ? forward : branches);
+}
+
+/**
+ * A branch that keeps the walk going, for use when it is off-route inside a
+ * called task and still has somewhere to be.
+ *
+ * Walking into a called task means leaving the plotted route until the call
+ * returns, and the ordinary preference takes the primary branch at each step —
+ * which inside a task like "Check Schedule" is often the one that announces and
+ * disconnects. The case then ends inside the callee and never reaches what it
+ * was aiming at. On one production flow this stranded 367 of 389 attempts.
+ * Returns null when every branch ends the interaction.
+ */
+/**
+ * Which actions can reach the end of their own task without ending the
+ * interaction — i.e. from which a called task can still RETURN to its caller.
+ *
+ * A one-step "does this branch end the call" test is not enough. Inside a called
+ * task, `Blacklisted? → Yes` looks harmless: it goes to an Update Data. Four
+ * steps later it disconnects, the case dies inside the callee, and it never
+ * reaches what it was aiming at. Knowing which branches can still return is what
+ * lets the walk pick its way out of a called task.
+ *
+ * Least fixpoint from the task-end nodes backwards. Jumps are excluded: Jump to
+ * Task hands control over for good, so it never returns to the caller. A Call
+ * Task returns wherever its own return target leads, and a call with no return
+ * target ends the task, which is itself a return.
+ */
+function computeCanReturn(g) {
+  const nodes = [...g.actionById.keys()];
+  const can = new Set();
+
+  for (const n of nodes) {
+    if (branchesOf(g, n).length) continue;
+    const action = g.actionById.get(n);
+    // End of the sequence: a return, unless it ends the interaction outright.
+    if (!action || !isEnding(action) || TASK_SCOPED_ENDINGS.has(action.actionKey)) can.add(n);
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const n of nodes) {
+      if (can.has(n)) continue;
+      const action = g.actionById.get(n);
+      if (action && action.actionKey === "callTask") {
+        const ret = returnTargetOf(g, n);
+        if (!ret || can.has(ret)) { can.add(n); changed = true; }
+        continue;
+      }
+      for (const e of branchesOf(g, n)) {
+        if (e.synthetic || e.kind === "end" || e.kind === "jump") continue;
+        const t = resolveTarget(g, e);
+        if (t && can.has(t)) { can.add(n); changed = true; break; }
+      }
+    }
+  }
+  return can;
+}
+
+/** A branch that leaves the walk able to carry on and, if called, to return. */
+function keepsWalking(g, edge, onPath, canReturn) {
+  if (edge.synthetic || edge.kind === "end") return false;
+  const t = resolveTarget(g, edge);
+  if (!t || onPath.has(t)) return false;
+  return canReturn.has(t);
+}
+
+function preferNonTerminal(g, branches, onPath, canReturn) {
+  const alive = branches.filter((e) => keepsWalking(g, e, onPath, canReturn));
+  return alive.length ? preferPrimary(alive) : null;
+}
+
+/**
+ * Shortest route of nodes from `from` to `to` over `adj`, or null.
+ *
+ * BFS, which matters for more than speed: the route it returns never repeats a
+ * node, so following it can never trip the cycle guard. Steering step by step on
+ * a reachability estimate does trip it — on a real flow the walk went into a
+ * loop on 170 of 173 attempts, because a route that looked clear at step 3
+ * needed a node the walk had visited by step 7. Committing to a simple route up
+ * front removes the problem rather than mitigating it.
+ */
+function shortestRoute(adj, from, to) {
+  if (from === to) return [from];
+  const prev = new Map([[from, null]]);
+  const queue = [from];
+  let head = 0;
+  while (head < queue.length) {
+    const n = queue[head++];
+    for (const t of adj.get(n) || []) {
+      if (prev.has(t)) continue;
+      prev.set(t, n);
+      if (t === to) {
+        const route = [t];
+        for (let p = n; p != null; p = prev.get(p)) route.unshift(p);
+        return route;
+      }
+      queue.push(t);
+    }
+  }
+  return null;
+}
+
+/**
  * Greedy coverage walk, shared by "branch" and "happy" mode — the two differ
  * only in what counts as a target:
  *
  *   branch → every branch (edge) must be taken by some case
  *   happy  → every reachable terminal must be reached by some case
  *
- * Each iteration walks from the start preferring (1) a branch that is itself an
- * uncovered target, (2) a branch from which an uncovered target is still
- * reachable, (3) the primary continuation. Terminates because an iteration that
- * covers nothing new stops the loop: the targets still outstanding are then only
- * reachable by revisiting a node, which no simple path does.
+ * Each iteration aims at ONE outstanding target and walks from the start
+ * steering toward it, taking any other uncovered branch it passes on the way.
+ *
+ * Aiming at a single target matters. An earlier version steered at "anything
+ * still uncovered" and stopped the whole run the first time a path covered
+ * nothing new — and on a real flow that happens early, because once the walk
+ * commits to a prefix, some targets are only reachable through nodes already on
+ * the path. On a 546-branch production flow it gave up after 24 cases with 273
+ * reachable branches never tested. Retiring only the target that could not be
+ * reached, and carrying on, is what makes coverage complete.
+ *
+ * Terminates because every iteration either covers a target or retires one.
  */
 function greedyCover(g, startId, { targetEdges, targetNodes, cap }) {
   const adj = adjacency(g);
+  const canReturn = computeCanReturn(g);
   const uncoveredEdges = new Set(targetEdges || []);
   const uncoveredNodes = new Set(targetNodes || []);
   const paths = [];
+  const retired = new Set();
   let truncated = false;
+
+  // Branch lookup, so an aimed-at edge can be resolved back to its source node.
+  const edgeById = new Map();
+  for (const nodeId of g.actionById.keys()) {
+    for (const e of branchesOf(g, nodeId)) edgeById.set(e.id, e);
+  }
 
   const outstanding = () => uncoveredEdges.size + uncoveredNodes.size;
 
   while (outstanding() > 0) {
     if (paths.length >= cap) { truncated = true; break; }
 
-    // Nodes that still hold something uncovered — an uncovered target node, or a
-    // node with an uncovered branch out of it. Recomputed once per iteration.
-    const holders = new Set(uncoveredNodes);
-    for (const [nodeId] of adj) {
-      for (const e of branchesOf(g, nodeId)) {
-        if (uncoveredEdges.has(e.id)) { holders.add(nodeId); break; }
-      }
+    const aimEdgeId = uncoveredEdges.values().next().value || null;
+    const aimNodeId = aimEdgeId ? null : (uncoveredNodes.values().next().value || null);
+    const aimEdge = aimEdgeId ? edgeById.get(aimEdgeId) : null;
+    const aimSource = aimEdge ? aimEdge.source : aimNodeId;
+
+    // Plot a simple route to the aim before walking. No route at all means
+    // nothing reaches it — retire it without spending a walk.
+    const route = aimSource ? shortestRoute(adj, startId, aimSource) : null;
+    if (!route) {
+      if (aimEdgeId) { uncoveredEdges.delete(aimEdgeId); retired.add(aimEdgeId); }
+      else if (aimNodeId) { uncoveredNodes.delete(aimNodeId); retired.add(aimNodeId); }
+      continue;
     }
+    const pos = new Map(route.map((n, i) => [n, i]));
+    let want = 0;
 
     const path = walkPath(g, startId, (nodeId, branches, onPath) => {
-      const direct = branches.find((e) => uncoveredEdges.has(e.id));
-      if (direct) return direct;
-      const toward = branches.find((e) => {
+      // Standing on the target branch: take it.
+      if (aimEdgeId) {
+        const hit = branches.find((e) => e.id === aimEdgeId);
+        if (hit) return hit;
+      }
+      // Follow the plotted route. The walk may step off it — through a called
+      // task, whose actions are not on the route — and rejoin at the return.
+      if (pos.has(nodeId)) want = Math.max(want, pos.get(nodeId) + 1);
+      const next = route[want];
+      if (next) {
+        const step = branches.find((e) => branchReachTargets(g, nodeId, e).includes(next));
+        if (step) return step;
+      }
+      // Off-route — most likely inside a called task, waiting for it to return.
+      // While there is still somewhere to be, only pick up branches that keep
+      // the walk alive: taking an uncovered branch that disconnects ends the
+      // case inside the callee and it never gets where it was going.
+      if (next) {
+        const spareAlive = branches.find((e) => uncoveredEdges.has(e.id) && keepsWalking(g, e, onPath, canReturn));
+        if (spareAlive) return spareAlive;
+        const alive = preferNonTerminal(g, branches, onPath, canReturn);
+        if (alive) return alive;
+      }
+      const spare = branches.find((e) => {
+        if (!uncoveredEdges.has(e.id)) return false;
         const t = resolveTarget(g, e);
-        return t && !onPath.has(t) && reachesHolder(g, adj, t, holders, onPath);
+        return !t || !onPath.has(t);
       });
-      return toward || preferPrimary(branches);
+      return spare || preferForward(g, branches, onPath);
     });
 
     const before = outstanding();
@@ -467,56 +671,95 @@ function greedyCover(g, startId, { targetEdges, targetNodes, cap }) {
     // when the path merely passes through it. Walking through "To Sales Queue"
     // on the way to its Failure handler does not test the transfer succeeding.
     if (path.outcome.action) uncoveredNodes.delete(path.outcome.action.id);
+    const coveredSomething = outstanding() < before;
 
-    // A path that covers nothing new adds no test value, and means whatever is
-    // left is only reachable by revisiting a node — which no simple path does.
-    // Stop WITHOUT emitting it, or the set ends with a duplicate of an earlier
-    // case.
-    if (outstanding() === before) break;
-    paths.push(path);
+    const hit = aimEdgeId
+      ? path.used.has(aimEdgeId)
+      : !!(path.outcome.action && path.outcome.action.id === aimNodeId);
+
+    if (!hit) {
+      // Could not be reached on a simple path. Retire THIS target and carry on,
+      // rather than abandoning every other target too.
+      if (aimEdgeId) { uncoveredEdges.delete(aimEdgeId); retired.add(aimEdgeId); }
+      else if (aimNodeId) { uncoveredNodes.delete(aimNodeId); retired.add(aimNodeId); }
+    }
+    if (coveredSomething) paths.push(path);
   }
 
   // A flow with no branches at all still has one case to generate.
   if (!paths.length) paths.push(walkPath(g, startId, (_n, branches) => preferPrimary(branches)));
 
-  return { paths, truncated };
+  return { paths, truncated, retired };
+}
+
+/**
+ * Every branch reachable from the start, ignoring the cycle guard and the call
+ * stack — an UPPER BOUND on what any set of test cases could cover.
+ *
+ * Used to explain an uncovered branch rather than merely report it. "Nothing can
+ * reach this" and "one pass cannot reach this, but a second trip round the loop
+ * would" are different findings: the first is usually a defect in the flow, the
+ * second is a limit of testing each path once.
+ */
+function reachableBranchIds(g, startId) {
+  const seenNodes = new Set();
+  const seenEdges = new Set();
+  const queue = [startId];
+  while (queue.length) {
+    const n = queue.pop();
+    if (!n || seenNodes.has(n)) continue;
+    seenNodes.add(n);
+    for (const e of branchesOf(g, n)) {
+      seenEdges.add(e.id);
+      for (const t of branchReachTargets(g, n, e)) queue.push(t);
+    }
+  }
+  return seenEdges;
 }
 
 /**
  * Exhaustive enumeration: every distinct path, depth-first, capped.
  *
- * Explicit recursion over the branch set at each node, carrying the walk state
- * (steps so far, call stack, nodes on this path) down each branch as a copy.
- * Every path corresponds to one distinct sequence of branch choices, so no
- * de-duplication is needed and nothing is missed.
+ * Depth-first over an EXPLICIT worklist, carrying the walk state (steps so far,
+ * call stack, nodes on this path) down each branch as a copy. Every path is one
+ * distinct sequence of branch choices, so nothing is missed and no
+ * de-duplication is needed.
+ *
+ * Not recursive: a real bot flow overflowed the JS stack, because paths get long
+ * once the cycle guard is per call context and a deeply nested flow recurses one
+ * frame per step.
  */
 function allPaths(g, startId, cap) {
   const paths = [];
   let truncated = false;
+  const work = [{ cur: startId, steps: [], used: new Set(), onPath: new Set(), stack: [] }];
 
-  const visit = (cur, steps, used, onPath, stack) => {
-    if (paths.length >= cap) { truncated = true; return; }
+  while (work.length) {
+    if (paths.length >= cap) { truncated = true; break; }
+    const { cur, steps, used, onPath, stack } = work.pop();
 
-    if (onPath.has(cur)) {
+    const key = contextKey(cur, stack);
+    if (onPath.has(key)) {
       const node = g.nodeById.get(cur);
       paths.push({ steps, used, outcome: { kind: "loop", text: `Loops back to "${(node && node.label) || cur}"` } });
-      return;
+      continue;
     }
     const path = new Set(onPath);
-    path.add(cur);
+    path.add(key);
 
     const c = classify(g, cur, stack);
     if (c.outcome) {
       paths.push({ steps: [...steps, { action: c.action, edge: null }], used, outcome: c.outcome });
-      return;
+      continue;
     }
     if (c.popTo) {
-      visit(c.popTo, [...steps, { action: c.action, edge: null }], used, path, stack.slice(0, -1));
-      return;
+      work.push({ cur: c.popTo, steps: [...steps, { action: c.action, edge: null }], used, onPath: path, stack: stack.slice(0, -1) });
+      continue;
     }
 
-    for (const edge of c.branches) {
-      if (paths.length >= cap) { truncated = true; return; }
+    // Reversed, so popping the worklist explores the branches in their own order.
+    for (let i = c.branches.length - 1; i >= 0; i--) {
+      const edge = c.branches[i];
       const nextSteps = [...steps, { action: c.action, edge }];
       const nextUsed = new Set(used).add(edge.id);
 
@@ -531,15 +774,16 @@ function allPaths(g, startId, cap) {
       }
       const next = resolveTarget(g, edge);
       if (!next) {
-        if (nextStack.length) visit(nextStack[nextStack.length - 1], nextSteps, nextUsed, path, nextStack.slice(0, -1));
-        else paths.push({ steps: nextSteps, used: nextUsed, outcome: { kind: "endOfFlow", text: "End of flow (branch leads nowhere)" } });
+        if (nextStack.length) {
+          work.push({ cur: nextStack[nextStack.length - 1], steps: nextSteps, used: nextUsed, onPath: path, stack: nextStack.slice(0, -1) });
+        } else {
+          paths.push({ steps: nextSteps, used: nextUsed, outcome: { kind: "endOfFlow", text: "End of flow (branch leads nowhere)" } });
+        }
         continue;
       }
-      visit(next, nextSteps, nextUsed, path, nextStack);
+      work.push({ cur: next, steps: nextSteps, used: nextUsed, onPath: path, stack: nextStack });
     }
-  };
-
-  visit(startId, [], new Set(), new Set(), []);
+  }
   return { paths, truncated };
 }
 
@@ -572,6 +816,45 @@ function preconditionsFor(g, steps) {
   return [...out];
 }
 
+/** A bare positional branch label — meaningless without its condition. */
+const ORDINAL_LABEL_RE = /^Case \d+$/;
+
+/**
+ * What a branch label means, for reading on its own. "Case 3" is the label
+ * flowYaml gives a switch branch, because on a diagram the conditions are too
+ * long and too alike to tell apart — but in a document nobody knows which case
+ * is which by heart, so the condition is folded back in.
+ */
+function branchText(step, max = 70) {
+  const label = String((step.edge && step.edge.label) || "");
+  const detail = (step.edge && step.edge.detail) || "";
+  if (!ORDINAL_LABEL_RE.test(label) || !detail) return label;
+  return `${label}: ${oneLine(detail, max)}`;
+}
+
+/**
+ * The conditions a switch branch implies.
+ *
+ * A switch is FIRST TRUE: reaching Case 3 means cases 1 and 2 did NOT match, not
+ * merely that case 3 did. A tester who sets up data satisfying case 3 while
+ * case 1 also matches exercises a different branch entirely, and the case fails
+ * for a reason that has nothing to do with what it was testing. Spelling the
+ * earlier cases out is the difference between a document you can execute and one
+ * that looks executable.
+ */
+function switchConditions(action, label) {
+  const cases = action.cases || [];
+  const idx = cases.findIndex((c) => c.label === label);
+  if (idx === -1) return null;
+  const lines = [];
+  for (let i = 0; i < idx; i++) {
+    if (cases[i].exprText) lines.push(`${cases[i].label} must NOT match: ${cases[i].exprText}`);
+  }
+  const own = cases[idx];
+  lines.push(own.exprText ? `${own.label} must match: ${own.exprText}` : `${own.label} — no earlier case matched`);
+  return lines;
+}
+
 /**
  * The conditions that must hold to force this path. Stated, never solved:
  * Architect expressions are arbitrary, so the document says what must be true
@@ -581,10 +864,21 @@ function testDataFor(steps) {
   const out = [];
   for (const s of steps) {
     if (!s.edge || !s.edge.label) continue;
-    const expr = s.edge.detail || s.action.exprText || "";
     const where = s.action.name || s.action.actionKey;
-    if (expr) out.push(`${where} → "${s.edge.label}": ${expr}`);
-    else out.push(`${where} → "${s.edge.label}"`);
+    const label = String(s.edge.label);
+
+    if (s.action.actionKey === "switch") {
+      const lines = switchConditions(s.action, label);
+      if (lines) { for (const l of lines) out.push(oneLine(`${where} — ${l}`)); continue; }
+    }
+    // "Is VIP? → No: Flow.Type == "Gold"" reads like an instruction to set it to
+    // Gold. Say which way the condition has to go.
+    if (s.action.actionKey === "decision" && s.action.exprText) {
+      const want = /^yes$/i.test(label) ? "TRUE" : /^no$/i.test(label) ? "FALSE" : "";
+      if (want) { out.push(oneLine(`${where} — ${s.action.exprText} must be ${want}`)); continue; }
+    }
+    const expr = s.edge.detail || s.action.exprText || "";
+    out.push(oneLine(expr ? `${where} → "${label}": ${expr}` : `${where} → "${label}"`));
   }
   return out;
 }
@@ -612,19 +906,69 @@ function priorityFor(steps, outcome) {
 
 const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
 
+/**
+ * A case's one-line scenario: where it starts, the decisions that make it this
+ * case, and where it ends.
+ *
+ * Long paths are trimmed from the MIDDLE, keeping the first branches and the
+ * last. Keeping only the first four made 168 of one flow's 203 cases read
+ * identically: they shared an opening sequence and differed only near the end,
+ * and the part that told them apart was exactly the part being cut.
+ */
 function titleFor(startName, steps, outcome) {
   const branches = steps
     .filter((s) => s.edge && s.edge.label && !PRIMARY_LABELS.has(String(s.edge.label).toLowerCase()))
-    .map((s) => s.edge.label);
-  const parts = [startName, ...branches.slice(0, 4)];
-  if (branches.length > 4) parts.push("…");
-  parts.push(outcome.text);
-  const title = parts.filter(Boolean).join(" → ");
-  return title.length > 200 ? title.slice(0, 199) + "…" : title;
+    .map((s) => branchText(s));
+  const shown = branches.length > 5
+    ? [...branches.slice(0, 2), `… ${branches.length - 4} more …`, ...branches.slice(-2)]
+    : branches;
+  const title = [startName, ...shown, outcome.text].filter(Boolean).join(" → ");
+  return title.length > 300 ? title.slice(0, 299) + "…" : title;
 }
 
 function pad(n, width) {
   return String(n).padStart(width, "0");
+}
+
+/**
+ * Make every scenario line read differently from every other.
+ *
+ * A title lists the branches that make a case what it is, and leaves out the
+ * primary continuations — otherwise every line carries the same noise. But two
+ * paths CAN differ only in a primary output (one data action succeeded, the
+ * other returned Found), and then the two cases read identically while testing
+ * different things. On one real flow that was 111 of 203 cases.
+ *
+ * So: find the first step where the group actually diverges and name it. Any
+ * that still collide get an ordinal, which is at least honest about being one
+ * of several.
+ */
+function disambiguateTitles(cases) {
+  const groups = new Map();
+  for (const c of cases) {
+    if (!groups.has(c.title)) groups.set(c.title, []);
+    groups.get(c.title).push(c);
+  }
+  for (const [title, group] of groups) {
+    if (group.length < 2) continue;
+    const seqs = group.map((c) => c.steps.map((s) => `${s.actionName}:${s.branch}`));
+    const longest = Math.max(...seqs.map((s) => s.length));
+    let at = -1;
+    for (let i = 0; i < longest; i++) {
+      if (new Set(seqs.map((s) => s[i] || "")).size > 1) { at = i; break; }
+    }
+    for (const c of group) {
+      const step = at >= 0 ? c.steps[at] : null;
+      if (step) c.title = `${title} [${step.actionName} → "${step.branch || "continues"}"]`;
+    }
+  }
+  // Anything still identical gets numbered.
+  const seen = new Map();
+  for (const c of cases) {
+    const n = (seen.get(c.title) || 0) + 1;
+    seen.set(c.title, n);
+    if (n > 1) c.title = `${c.title} (${n})`;
+  }
 }
 
 /**
@@ -702,11 +1046,11 @@ export function generateTestCases(data, opts = {}) {
     const steps = p.steps.map((s, n) => ({
       index: n + 1,
       task: s.action.taskName || "",
-      action: describeStep(g, s.action),
+      action: oneLine(describeStep(g, s.action)),
       actionName: s.action.name || "",
       actionType: kindLabel(s.action.kind),
       branch: s.edge && !s.edge.synthetic ? s.edge.label || "" : "",
-      detail: (s.edge && s.edge.detail) || s.action.exprText || "",
+      detail: oneLine((s.edge && s.edge.detail) || s.action.exprText || ""),
     }));
     return {
       flow: flow.name,
@@ -727,11 +1071,13 @@ export function generateTestCases(data, opts = {}) {
   // the error handling follows. Ids are assigned after the sort, so TC-001 is
   // always the first case in the document.
   built.sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
+  disambiguateTitles(built);
   const cases = built.map((c, i) => ({ id: `${idPrefix}-${pad(i + 1, 3)}`, ...c }));
 
   // Coverage: which branches any case took, and which none could reach.
   const covered = new Set();
   for (const c of cases) for (const id of c.edgeIds) covered.add(id);
+  const reachable = reachableBranchIds(g, startId);
   const uncovered = allBranches
     .filter((e) => !covered.has(e.id))
     .map((e) => ({
@@ -740,13 +1086,27 @@ export function generateTestCases(data, opts = {}) {
       from: describeNodeLabel(g, e.source),
       to: e.target ? describeNodeLabel(g, e.target) : "(ends the interaction)",
       detail: e.detail || "",
+      reason: reachable.has(e.id)
+        ? "Only reachable by repeating a step already taken (e.g. a second pass round a loop)"
+        : "Nothing reaches this branch from the start of the flow",
     }));
 
   if (uncovered.length && mode === "branch") {
-    findings.push(
-      `${uncovered.length} branch(es) in "${flow.name}" could not be reached from the start — ` +
-      `usually an output wired to nothing, or a task nothing jumps to. Listed on the Coverage sheet.`
-    );
+    const dead = uncovered.filter((u) => !reachable.has(u.id)).length;
+    const loopOnly = uncovered.length - dead;
+    if (dead) {
+      findings.push(
+        `${dead} branch(es) in "${flow.name}" cannot be reached from the start — ` +
+        `usually an output wired to nothing, or a task nothing jumps to. Worth checking: ` +
+        `nothing a caller does will ever run them. Listed on the Coverage sheet.`
+      );
+    }
+    if (loopOnly) {
+      findings.push(
+        `${loopOnly} branch(es) in "${flow.name}" are reachable only by repeating a step ` +
+        `already taken — a second pass round a loop — so no single-pass test case covers them.`
+      );
+    }
   }
   if (result.truncated) {
     findings.push(

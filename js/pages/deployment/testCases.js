@@ -413,15 +413,23 @@ export default function renderTestCases({ route, me, api, orgContext }) {
 
     for (const r of state.reports) {
       const c = r.result.coverage;
-      const rows = r.result.cases.map((tc) => `
+      const rows = r.result.cases.map((tc) => {
+        // A first-true switch contributes one condition per preceding case, so a
+        // deep case can carry a dozen. The screen shows enough to recognise the
+        // case; the workbook carries every one of them.
+        const shown = tc.testData.slice(0, 3).join(" · ");
+        const rest = tc.testData.length - 3;
+        const data = tc.testData.length
+          ? ` · ${escapeHtml(shown)}${rest > 0 ? ` <em>+${rest} more</em>` : ""}`
+          : "";
+        return `
         <tr>
           <td style="white-space:nowrap">${escapeHtml(tc.id)}</td>
           <td class="tc-prio" style="color:${PRIORITY_COLOR[tc.priority] || MUTED}">${escapeHtml(tc.priority)}</td>
-          <td>${escapeHtml(tc.title)}<div class="tc-steps">${tc.steps.length} step${tc.steps.length === 1 ? "" : "s"}${
-            tc.testData.length ? ` · ${escapeHtml(tc.testData.join(" · "))}` : ""
-          }</div></td>
+          <td>${escapeHtml(tc.title)}<div class="tc-steps">${tc.steps.length} step${tc.steps.length === 1 ? "" : "s"}${data}</div></td>
           <td>${escapeHtml(tc.expected)}</td>
-        </tr>`).join("");
+        </tr>`;
+      }).join("");
 
       parts.push(`
         <div class="tc-flowsec">

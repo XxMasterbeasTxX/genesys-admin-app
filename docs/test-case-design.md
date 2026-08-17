@@ -119,6 +119,42 @@ node already on the current path** — it records `Loops back to <node>` and sto
 that path. A test case that goes round a loop twice tests nothing the
 once-through case doesn't.
 
+The guard is keyed on **the action plus its call context**, not the action alone.
+A flow that calls a shared task from two places on one path — a validation module
+before a menu and again after it — is not looping; a bare node guard reads it as
+one and cuts the case short, so everything after the second call goes untested.
+On a real flow this alone took branch coverage from 59% to 100%.
+
+### 4.5 Getting somewhere: routes, not steering
+
+Covering a specific branch means reaching it. Steering greedily — at each node
+picking whatever branch still has an uncovered target reachable from it — does
+not work on real flows: a route that looks clear at step 3 may need a node the
+walk has visited by step 7, and the cycle guard then ends the path. Measured on
+one production flow, 170 of 173 attempts died in a loop.
+
+Instead the walker **plots a route first**, by breadth-first search to the target
+branch's source, and follows it. A BFS route never repeats a node, so following
+it cannot trip the cycle guard.
+
+Two things that route has to know about:
+
+- **A Call Task's return is not one of its branches** (§4.2), so reachability has
+  to add it explicitly. Without that, everything after a call looks unreachable
+  and the walker gives up on it — on a call-heavy production flow that held
+  branch coverage at 30%.
+- **Inside a called task the walk is off-route** until the call returns, and the
+  ordinary "take the primary branch" preference will happily walk into a
+  Disconnect. So the walker computes, for every action, whether **the end of its
+  own task is still reachable** from there without ending the interaction, and
+  prefers branches that keep the return possible. A one-step "does this
+  disconnect" check is not enough: `Blacklisted? → Yes` looks harmless and
+  disconnects four steps later.
+
+Where a target genuinely cannot be reached, only **that target** is retired and
+the run continues. An earlier version stopped the whole run at the first
+unreachable target and left hundreds of reachable branches untested.
+
 ## 5. Coverage modes
 
 Path count is exponential in branch count: twenty binary decisions is a million
@@ -132,11 +168,9 @@ modes, each answering a different question:
 | **All paths** | Everything, for a small or critical flow | exponential — capped |
 
 **Branch coverage** is the standard acceptance criterion for IVR sign-off and the
-right default. Greedy construction: while any reachable edge is uncovered, walk
-from the start preferring (1) an outgoing edge not yet covered, (2) an edge from
-which an uncovered edge is still reachable, (3) the default. Mark the path's
-edges covered, emit the case, repeat. This terminates because every iteration
-covers at least one new edge.
+right default. Each iteration aims at one outstanding branch, plots a route to it
+(§4.5), walks it, and picks up any other uncovered branch on the way. It
+terminates because every iteration either covers a target or retires one.
 
 **Happy paths** prefers the primary output at every choice — the unlabelled
 default, or `Yes` / `Success` / `Found` / `Default` — giving one case per
@@ -146,9 +180,28 @@ reachable terminal. A smoke-test set.
 cases per flow. On truncation the workbook says so loudly, on the Summary sheet
 and in the page status — a silently truncated test document is worse than none.
 
-**Uncovered branches are a finding, not a silent omission.** Any edge not
-reachable from the start is listed on the Coverage sheet as unreachable. Those
-are usually real defects: an output wired to nothing, or a task nobody jumps to.
+**Uncovered branches are a finding, not a silent omission**, and the two kinds
+are reported separately because they mean different things:
+
+- **Nothing reaches it from the start** — usually a real defect in the flow: an
+  output wired to nothing, or a task nobody jumps to. One production bot flow has
+  180 of these.
+- **Only reachable by repeating a step already taken** — a second pass round a
+  loop. Not a defect; a limit of testing each path once.
+
+## 5a. Measured against real flows
+
+Run over 18 exported production flows covering every flow type (inbound call,
+messaging, email, bot, digital bot, common module, in-queue, workflow), from 4 to
+854 nodes:
+
+- Branch coverage reaches **100% on 9 of them**, 98–99% on 3, 91% on one, and
+  79–84% on the bot and messaging flows — where the shortfall is almost entirely
+  branches that are genuinely unreachable or loop-only, reported as findings.
+- The largest flow (854 nodes, 1087 edges) generates 162 cases in ~45 ms; all
+  three modes complete on every flow.
+
+These numbers are what the walker is tuned against; §4.5 exists because of them.
 
 ## 6. Cross-flow scope
 
