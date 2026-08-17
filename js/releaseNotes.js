@@ -11,6 +11,21 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "3.3",
+    date: "2026-08-17",
+    title: "Deployment › Test › Test Cases: a flow's test document, written for you",
+    changes: [
+      "New page Deployment › Test › Test Cases. Pick a flow, choose how thoroughly to cover it, and every route a caller can take through it comes out as a test case: what has to be true to send the call down that route, the steps it goes through, and where it ends up. Read-only — nothing is written to Genesys.",
+      "Three levels of coverage, because a flow with twenty decisions in it has a million routes through it and nobody tests a million things. Branch coverage is the default and gives you every branch exercised at least once — on that same twenty-decision flow, two test cases cover all forty branches. Happy paths gives one case per distinct ending. All paths gives you everything, capped at 500 per flow, and says so plainly when it stops early rather than handing you a document that quietly stops short.",
+      "Cases come out ordered with the ones that matter first: highest priority is a route that reaches an agent without going through an error handler, lowest is one that goes through a failure, timeout or no-input path, or that ends without resolving at all.",
+      "Everything the flow depends on is covered too — common modules, in-queue flows and bot flows are found automatically and each gets its own set of cases. A step that calls a common module names it and points at that module's own cases, rather than pretending one test case can span two flows: Architect does not record which of a module's endings maps to which of the caller's outputs, so that link would be invented.",
+      "Conditions are stated, not guessed. Where a route depends on a value, the document tells you the condition that has to hold — Flow.CustomerType == \"Gold\" — and leaves setting it up to you, instead of inventing a value that might not satisfy it.",
+      "Branches nothing can reach are reported rather than skipped. Usually that is an output wired to nothing, or a task nothing jumps to — worth knowing about, and easy to miss reading a flow by eye. Queues, prompts and schedules the flow picks at run time by expression cannot be listed by name at all, so they get their own sheet to check by hand.",
+      "Export writes a styled Excel workbook, customer name first: a summary, one row per test case with empty Result, Tester, Date and Notes columns to fill in as you go, the numbered steps in the shape a test tool imports, a coverage sheet showing which case covers which branch, and the manual checks. The summary also states what the document does not claim, so someone handed just the file knows where its limits are.",
+      "Under the hood, Flow Overview and Test Cases now share one flow loader rather than each keeping a copy, so a fix to how dependencies are discovered reaches both.",
+    ],
+  },
+  {
     version: "3.2",
     date: "2026-08-17",
     title: "Flows › Flow Overview: every flow type, and a dependency export",
