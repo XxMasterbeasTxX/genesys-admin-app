@@ -648,6 +648,17 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     activateTab(id);
   }
 
+  /**
+   * "Nemlig_" — the selected customer, for the front of a download name. Case is
+   * kept (unlike slug()) so it reads as the customer's own name, and it comes
+   * out empty when no customer is resolvable rather than inventing a prefix.
+   */
+  function orgPrefix() {
+    const details = orgContext.getDetails && orgContext.getDetails();
+    const safe = String((details && details.name) || "").replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "");
+    return safe ? safe + "_" : "";
+  }
+
   function setBusy(busy, msg) {
     statusEl.innerHTML = busy ? `<span class="fo-spin"></span> ${escapeHtml(msg || "")}` : escapeHtml(msg || "");
   }
@@ -1541,7 +1552,7 @@ for(var i=0;i<tabs.length;i++){tabs[i].addEventListener('click',function(){var k
           { key: "action", label: "Action" },
         ],
       },
-    ], `${slug(rootName)}-dependencies.xlsx`);
+    ], `${orgPrefix()}${slug(rootName)}-dependencies.xlsx`);
 
     setBusy(false, `Exported ${deps.length} dependencies across ${flows.length} flow(s) · ${usages.length} usages · ${dynamic.length} dynamic reference(s).`);
   }));
