@@ -142,6 +142,8 @@ const DEP_TYPE_LABELS = {
   dataTable: "Data Table", dataAction: "Data Action", commonModule: "Common Module",
   inqueueCall: "In-Queue Flow", flow: "Flow", bot: "Bot", queue: "Queue",
   prompt: "Prompt", scheduleGroup: "Schedule Group", wrapupCode: "Wrap-up Code",
+  skill: "Skill", screenPop: "Screen Pop Script", flowOutcome: "Flow Outcome",
+  milestone: "Milestone",
 };
 const depTypeLabel = (t) => DEP_TYPE_LABELS[t] || t;
 
@@ -234,6 +236,12 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
         </div>
       </div>
       <div class="dt-control-group">
+        <label class="dt-label">Flow type</label>
+        <select class="dt-select" id="foTypeFilter" style="width:200px" title="Filter the flow list by type" disabled>
+          <option value="">All types</option>
+        </select>
+      </div>
+      <div class="dt-control-group">
         <label class="dt-label">Detail level</label>
         <div class="fo-level" style="display:flex;gap:6px">
           <button class="btn btn-sm" data-level="high">High</button>
@@ -297,6 +305,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   const $ = (id) => el.querySelector(id);
   const flowInput = $("#foFlowInput");
   const flowMenu = $("#foFlowMenu");
+  const typeFilter = $("#foTypeFilter");
   const statusEl = $("#foStatus");
   const canvas = $("#foCanvas");
   const layoutEl = $(".fo-layout");
@@ -348,13 +357,38 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   const openMenu = () => flowMenu.classList.add("open");
   const closeMenu = () => { flowMenu.classList.remove("open"); comboActive = -1; };
 
-  function renderMenu() {
+  /** Flows matching both the typed query and the type filter. */
+  function visibleFlows() {
     const q = (flowInput.value || "").trim().toLowerCase();
-    const list = state.flows
-      .filter((f) => !q || f.name.toLowerCase().includes(q) || f.type.includes(q))
-      .slice(0, 60);
+    const t = typeFilter.value;
+    return state.flows.filter((f) =>
+      (!t || f.type === t) &&
+      (!q || f.name.toLowerCase().includes(q) || f.type.includes(q))
+    );
+  }
+
+  /** Offer only the types actually present, labelled and sorted by label. */
+  function populateTypeFilter() {
+    const types = [...new Set(state.flows.map((f) => f.type).filter(Boolean))]
+      .sort((a, b) => (FLOW_TYPE_LABELS[a] || a).localeCompare(FLOW_TYPE_LABELS[b] || b));
+    const cur = typeFilter.value;
+    typeFilter.innerHTML = `<option value="">All types</option>`
+      + types.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(FLOW_TYPE_LABELS[t] || t)}</option>`).join("");
+    typeFilter.value = types.includes(cur) ? cur : "";
+  }
+
+  function updateFlowPlaceholder() {
+    const t = typeFilter.value;
+    const n = t ? state.flows.filter((f) => f.type === t).length : state.flows.length;
+    flowInput.placeholder = `Search ${n} flow${n === 1 ? "" : "s"}…`;
+  }
+
+  function renderMenu() {
+    const list = visibleFlows().slice(0, 60);
     if (!list.length) {
-      flowMenu.innerHTML = `<div class="fo-flow-item" style="cursor:default;color:${NODE_SUBTEXT}">No matching flows</div>`;
+      const t = typeFilter.value;
+      const scope = t ? ` of type “${FLOW_TYPE_LABELS[t] || t}”` : "";
+      flowMenu.innerHTML = `<div class="fo-flow-item" style="cursor:default;color:${NODE_SUBTEXT}">No matching flows${escapeHtml(scope)}</div>`;
       openMenu();
       return;
     }
@@ -387,6 +421,14 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     else if (e.key === "Escape") { closeMenu(); }
   });
   flowInput.addEventListener("blur", () => setTimeout(closeMenu, 150));
+
+  // The type filter narrows the picker list only; it does not disturb the flow
+  // already open. The menu is not force-opened, so the only way it can be left
+  // hanging is via the input's own blur handler.
+  typeFilter.addEventListener("change", () => {
+    updateFlowPlaceholder();
+    if (flowMenu.classList.contains("open")) { comboActive = -1; renderMenu(); }
+  });
 
   // ── Level toggle ────────────────────────────────────────────────────────────
   levelBtns.forEach((b) =>
@@ -469,7 +511,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       state.flowList = new Map(norm.map((f) => [f.id, f]));
       state.flowByName = new Map(norm.map((f) => [f.name, f]));
       flowInput.disabled = false;
-      flowInput.placeholder = `Search ${norm.length} flows…`;
+      typeFilter.disabled = false;
+      populateTypeFilter();
+      updateFlowPlaceholder();
       setBusy(false, "Pick a flow to visualise.");
     } catch (err) {
       setBusy(false, `Error loading flows: ${err.message || err}`);
@@ -1093,7 +1137,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const isStart = (state.data.tasks || []).some((t) => t.id === taskId && t.isStart);
     detailEl.innerHTML = `
       <h4>${escapeHtml(modelNode.label)}</h4>
-      <div class="fo-sub"><span class="fo-chip">${modelNode.isMenu ? "Menu" : "Task"}</span>${modelNode.isStart ? ' · <span class="fo-chip" style="color:' + START_STROKE + '">Start</span>' : ""} · ${count} action(s)</div>
+      <div class="fo-sub"><span class="fo-chip">${modelNode.isMenu ? "Menu" : modelNode.isState ? "State" : modelNode.isBot ? "Bot" : "Task"}</span>${modelNode.isStart ? ' · <span class="fo-chip" style="color:' + START_STROKE + '">Start</span>' : ""} · ${count} action(s)</div>
       <div class="fo-sub">${isStart ? "This is the flow's start task." : ""}</div>
     `;
   }
@@ -1122,7 +1166,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const m = state.model.meta;
     detailEl.innerHTML = `
       <h4>${escapeHtml(m.name)}</h4>
-      <div class="fo-sub"><span class="fo-chip">${escapeHtml(m.type)}</span> · ${m.taskCount} tasks${m.menuCount ? ` · ${m.menuCount} menu(s)` : ""} · ${m.variableCount} variables</div>
+      <div class="fo-sub"><span class="fo-chip">${escapeHtml(m.type)}</span> · ${m.taskCount} tasks${m.stateCount ? ` · ${m.stateCount} state(s)` : ""}${m.botCount ? ` · ${m.botCount} bot(s)` : ""}${m.menuCount ? ` · ${m.menuCount} menu(s)` : ""} · ${m.variableCount} variables</div>
       <div class="fo-sub">Default language: ${escapeHtml(m.defaultLanguage || "—")}</div>
       ${m.description ? `<div style="margin-top:6px">${escapeHtml(m.description)}</div>` : ""}
     `;

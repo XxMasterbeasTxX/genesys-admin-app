@@ -38,6 +38,7 @@ export const ACTION_KINDS = Object.freeze({
   dataTable: { label: "Data Table Lookup", color: "#2c6a7a" },
   dataAction: { label: "Call Data Action", color: "#2c6a7a" },
   jump: { label: "Jump to Task", color: "#7a5a2c" },
+  bot: { label: "Call Bot Flow", color: "#7a2c6a" },
   loop: { label: "Loop", color: "#5a6b2c" },
   setData: { label: "Update / Set Data", color: "#4a6fa5" },
   audio: { label: "Play Audio / Prompt", color: "#4a6fa5" },

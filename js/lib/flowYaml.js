@@ -37,7 +37,7 @@ function taskRefId(ref) {
  * Menus are containers keyed by refId alongside tasks, so both resolve the same.
  */
 function jumpTargetId(ref) {
-  const m = /(?:task|menu)\[([^\]]+)\]/.exec(String(ref || ""));
+  const m = /(?:task|menu|state|bot)\[([^\]]+)\]/.exec(String(ref || ""));
   return m ? m[1] : null;
 }
 function scopeOf(name) {
@@ -80,8 +80,16 @@ const YAML_KIND = {
   endState: "end",
   endProgram: "end",
   disconnect: "end",
+  exitBotFlow: "end",
+  askForSlot: "collect",
+  askForBoolean: "collect",
+  askForIntent: "collect",
   jumpToMenu: "jump",
   jumpToTask: "jump",
+  changeState: "jump",
+  callDigitalBotFlow: "bot",
+  callBotFlow: "bot",
+  callBot: "bot",
   transferToAcd: "transfer",
   transferToNumber: "transfer",
   transferToGroup: "transfer",
@@ -106,7 +114,8 @@ const YAML_KIND = {
 
 // Action keys that terminate a sequence (no default fall-through edge).
 const TERMINAL_KINDS = new Set([
-  "endTask", "endState", "endProgram", "disconnect", "jumpToTask", "jumpToMenu",
+  "endTask", "endState", "endProgram", "disconnect", "exitBotFlow",
+  "jumpToTask", "jumpToMenu", "changeState",
   "transferToAcd", "transferToNumber", "transferToGroup", "transferToUser",
   "transferToFlow", "transferToFlowSecure", "transferToVoicemail",
   "transferToGroupVoicemail", "loopExit", "loopNext",
@@ -133,15 +142,28 @@ export function parseFlowYaml(root) {
   // js-yaml gives { <flowType>: {...} }. Accept either that or the inner object.
   let flowTypeKey = singleKey(root);
   let flow = root[flowTypeKey];
-  if (!flow || (!flow.tasks && !flow.variables && !flow.name)) {
+  if (!flow || (!flow.tasks && !flow.states && !flow.variables && !flow.name)) {
     // Maybe root IS the flow.
     flow = root;
     flowTypeKey = "flow";
   }
 
-  const variables = parseVariables(flow.variables);
+  const taskList = collectTasks(flow);
+
+  // Task- and state-scoped variables are declared on their container rather than
+  // at flow level. Without them, Task.X / State.X turn up in the search panel as
+  // untyped synthetic entries. Names are deduped: two tasks may each declare a
+  // Task.-scoped variable of the same name.
+  const variables = [];
+  const seenVar = new Set();
+  for (const v of [...parseVariables(flow.variables), ...taskList.flatMap((t) => parseVariables(t.variables))]) {
+    if (seenVar.has(v.name)) continue;
+    seenVar.add(v.name);
+    variables.push(v);
+  }
   const varNames = new Set(variables.map((v) => v.name));
-  const startRef = taskRefId(flow.startUpRef);
+  // startUpRef addresses a task OR a state, depending on the flow type.
+  const startRef = jumpTargetId(flow.startUpRef);
 
   const tasks = [];
   const nodes = [];
@@ -153,7 +175,6 @@ export function parseFlowYaml(root) {
   let uid = 0;
   const newId = (taskId) => `${taskId}#${uid++}`;
 
-  const taskList = collectTasks(flow);
   const taskByRef = new Map(taskList.map((t) => [t.refId, t]));
   const hasStartRef = !!startRef && taskList.some((t) => t.refId === startRef);
 
@@ -161,8 +182,8 @@ export function parseFlowYaml(root) {
 
   taskList.forEach((t, i) => {
     const isStart = hasStartRef ? t.refId === startRef : (!t.isMenu && (t.isStartup || i === 0));
-    tasks.push({ id: t.refId, name: t.name, isStart, isMenu: !!t.isMenu });
-    nodes.push({ id: t.refId, kind: "task", label: t.name, isContainer: true, isStart, isMenu: !!t.isMenu });
+    tasks.push({ id: t.refId, name: t.name, isStart, isMenu: !!t.isMenu, isState: !!t.isState, isBot: !!t.isBot });
+    nodes.push({ id: t.refId, kind: "task", label: t.name, isContainer: true, isStart, isMenu: !!t.isMenu, isState: !!t.isState, isBot: !!t.isBot });
     // Each task's actions reconverge to an implicit "end of task" (no node).
     // `walk` returns the id of the task's first (entry) action. In tasks whose
     // first action is a loop, that entry node has ONLY loop-back incoming edges,
@@ -185,8 +206,10 @@ export function parseFlowYaml(root) {
       division: flow.division || "",
       defaultLanguage: flow.defaultLanguage || "",
       description: flow.description || "",
-      taskCount: tasks.filter((t) => !t.isMenu).length,
+      taskCount: tasks.filter((t) => !t.isMenu && !t.isState && !t.isBot).length,
       menuCount: tasks.filter((t) => t.isMenu).length,
+      stateCount: tasks.filter((t) => t.isState).length,
+      botCount: tasks.filter((t) => t.isBot).length,
       variableCount: variables.length,
     },
     variables,
@@ -199,13 +222,34 @@ export function parseFlowYaml(root) {
   };
 }
 
+/**
+ * Architect groups a flow's top level into refId-keyed collections that vary by
+ * flow type: `states` for messaging and email, `bots` for bot flows, `tasks`
+ * everywhere. All three are plain action lists and become containers the same
+ * way; `menus` (call flows) is handled separately because a menu is a prompt
+ * plus choices rather than a sequence. Non-task collections come first so the
+ * flow's entry container reads at the top of the diagram.
+ */
+const CONTAINER_COLLECTIONS = [
+  { key: "states", item: "state", flag: "isState" },
+  { key: "bots", item: "bot", flag: "isBot" },
+  { key: "tasks", item: "task", flag: null },
+];
+
 function collectTasks(flow) {
-  // tasks may be flow.tasks (array of { task: {...} }) or a map.
   const out = [];
-  const arr = Array.isArray(flow.tasks) ? flow.tasks : [];
-  for (const item of arr) {
-    const t = item && item.task ? item.task : item;
-    if (t && (t.refId || t.name)) out.push({ refId: t.refId || t.name, name: t.name || t.refId, actions: t.actions || [] });
+  for (const spec of CONTAINER_COLLECTIONS) {
+    // A collection may be an array of { <item>: {...} } wrappers, or bare items.
+    for (const entry of Array.isArray(flow[spec.key]) ? flow[spec.key] : []) {
+      const c = (entry && entry[spec.item]) || entry;
+      if (!c || (!c.refId && !c.name)) continue;
+      const container = {
+        refId: c.refId || c.name, name: c.name || c.refId,
+        actions: c.actions || [], variables: c.variables,
+      };
+      if (spec.flag) container[spec.flag] = true;
+      out.push(container);
+    }
   }
   // Common modules / in-queue and other single-sequence flow types keep their
   // main sequence under `startUpTaskActions` (one implicit startup task).
@@ -433,9 +477,9 @@ function processAction(it, next, scope, ctx) {
   // hands control over for good — the flow stays in the target until it jumps,
   // transfers or ends. So a jump gets no fall-through edge, which also means any
   // sibling after it is unreachable (as in Architect).
-  if (key === "callTask" || key === "jumpToTask" || key === "jumpToMenu") {
+  if (key === "callTask" || key === "jumpToTask" || key === "jumpToMenu" || key === "changeState") {
     const isCall = key === "callTask";
-    const ref = jumpTargetId(body && (body.targetTaskRef || body.targetMenuRef));
+    const ref = jumpTargetId(body && (body.targetTaskRef || body.targetMenuRef || body.targetStateRef));
     if (ref && ctx.taskByRef.has(ref)) addEdge(id, ref, isCall ? "call" : "jump", "jump");
     action.targetTaskRef = ref;
     if (isCall) {
@@ -551,13 +595,14 @@ function extractDetails(key, body, action, ctx) {
     action.depCategory = cat || "";
     addDep(ctx, "dataAction", nm, action);
   }
-  if (key === "callTask" || key === "jumpToTask" || key === "jumpToMenu") {
+  if (key === "callTask" || key === "jumpToTask" || key === "jumpToMenu" || key === "changeState") {
     // Show the target's display name rather than its refId ("Backup GDF
     // Scheduling", not "Backup GDF Scheduling_215"); fall back to the raw ref
     // when the target lives outside this flow's containers.
-    const ref = jumpTargetId(body.targetTaskRef || body.targetMenuRef);
+    const ref = jumpTargetId(body.targetTaskRef || body.targetMenuRef || body.targetStateRef);
     const target = ref && ctx.taskByRef.get(ref);
-    action.sublabel = (key === "jumpToMenu" ? "Menu: " : "Task: ") + ((target && target.name) || ref || "");
+    const prefix = key === "jumpToMenu" ? "Menu: " : key === "changeState" ? "State: " : "Task: ";
+    action.sublabel = prefix + ((target && target.name) || ref || "");
   }
 
   // Cross-flow references (any flow type → its own tab):
@@ -577,7 +622,9 @@ function extractDetails(key, body, action, ctx) {
   }
   if (/bot/i.test(key)) {
     const bf = body.botFlow || body.digitalBotFlow || body.flow || (findNested(body, "botFlow"));
-    const nm = bf && bf.name;
+    // The bot flow is named by the KEY, not a `name` property — the value under
+    // it is the version ("Messaging - Categories 2: { ver_latestPublished: … }").
+    const nm = (bf && bf.name) || singleKey(bf);
     if (nm) { action.depName = nm; action.sublabel = nm; addDep(ctx, "bot", nm, action); }
   }
 
@@ -608,19 +655,31 @@ function extractDetails(key, body, action, ctx) {
  * phone number or language code is not a dependency.
  */
 const REF_FIELDS = {
-  targetQueue:    { kind: "Queue",           dep: "queue" },
-  scheduleGroup:  { kind: "Schedule group",  dep: "scheduleGroup" },
-  emergencyGroup: { kind: "Emergency group", dep: "scheduleGroup" },
-  audio:          { kind: "Prompt / audio",  dep: "prompt" },
-  wrapupCode:     { kind: "Wrap-up code",    dep: "wrapupCode" },
-  targetNumber:   { kind: "Number",          dep: "" },
-  targetUser:     { kind: "User",            dep: "" },
-  targetGroup:    { kind: "Group",           dep: "" },
-  language:       { kind: "Language",        dep: "" },
+  targetQueue:     { kind: "Queue",              dep: "queue" },
+  scheduleGroup:   { kind: "Schedule group",     dep: "scheduleGroup" },
+  emergencyGroup:  { kind: "Emergency group",    dep: "scheduleGroup" },
+  audio:           { kind: "Prompt / audio",     dep: "prompt" },
+  wrapupCode:      { kind: "Wrap-up code",       dep: "wrapupCode" },
+  languageSkill:   { kind: "Language skill",     dep: "skill" },
+  // Written as a single-key object: `screenPopScript: { "<script name>": … }`.
+  screenPopScript: { kind: "Screen pop script",  dep: "screenPop", shape: "key" },
+  // Written as a plain `{ name }`.
+  flowOutcome:     { kind: "Flow outcome",       dep: "flowOutcome", shape: "name" },
+  milestone:       { kind: "Milestone",          dep: "milestone",   shape: "name" },
+  targetNumber:    { kind: "Number",             dep: "" },
+  targetUser:      { kind: "User",               dep: "" },
+  targetGroup:     { kind: "Group",              dep: "" },
+  language:        { kind: "Language",           dep: "" },
 };
 
-/** A literal reference: { prompt: "Prompt.X" } or { lit: { name } } / { lit }. */
-function staticRefName(v) {
+/**
+ * The literal name in a reference. Fields differ in how they carry it, so the
+ * shape is declared per field rather than guessed — reading a key-shaped field
+ * generically would return "exp" for an expression.
+ */
+function staticRefName(v, shape) {
+  if (shape === "key") return singleKey(v) || "";
+  if (shape === "name") return typeof v.name === "string" ? v.name : "";
   if (typeof v.prompt === "string") return v.prompt;
   if (v.lit && typeof v.lit === "object" && v.lit.name) return v.lit.name;
   if (typeof v.lit === "string") return v.lit;
@@ -632,11 +691,27 @@ function scanReferences(body, action, ctx) {
     const v = body[field];
     if (!v || typeof v !== "object" || v.noValue) continue;
     const spec = REF_FIELDS[field];
-    const name = staticRefName(v);
-    if (name) {
-      if (spec.dep) addDep(ctx, spec.dep, name, action);
-    } else if (typeof v.exp === "string") {
+    // Expressions first: every shape can be an expression instead of a name.
+    if (typeof v.exp === "string") {
       action.dynamicRefs.push({ kind: spec.kind, exprText: v.exp });
+      continue;
+    }
+    const name = staticRefName(v, spec.shape);
+    if (name && spec.dep) addDep(ctx, spec.dep, name, action);
+  }
+  scanSkills(body, action, ctx);
+}
+
+/** ACD skills are a list — `acdSkills: [{ acdSkill: <value> }, …]` — not a field. */
+function scanSkills(body, action, ctx) {
+  if (!Array.isArray(body.acdSkills)) return;
+  for (const item of body.acdSkills) {
+    const v = (item && item.acdSkill) || item;
+    if (!v || typeof v !== "object" || v.noValue) continue;
+    if (typeof v.exp === "string") action.dynamicRefs.push({ kind: "Skill", exprText: v.exp });
+    else {
+      const nm = staticRefName(v);
+      if (nm) addDep(ctx, "skill", nm, action);
     }
   }
 }
@@ -723,6 +798,17 @@ export function buildDependencyIndex(data) {
   return index;
 }
 
+/**
+ * Dependency types kept out of the mid/low DIAGRAM only. Milestones and flow
+ * outcomes are reporting metadata rather than things the flow calls, and there
+ * are far too many to draw: five real flows declare 89 distinct milestones
+ * between them, which would bury the task nodes those levels exist to show.
+ * They stay in the index, so the search panel, the detail panel and the
+ * dependency export still list every one of them.
+ */
+const DIAGRAM_HIDDEN_DEP_TYPES = new Set(["milestone", "flowOutcome"]);
+const diagramDeps = (data) => data.dependencies.filter((d) => !DIAGRAM_HIDDEN_DEP_TYPES.has(d.type));
+
 export function buildModel(data, opts = {}) {
   const level = opts.level || "high";
   if (level === "high") {
@@ -735,7 +821,7 @@ export function buildModel(data, opts = {}) {
   const pushEdge = (s, t, label, kind) => { const id = `${kind}:${s}->${t}`; if (seen.has(id)) return; seen.add(id); edges.push({ id, source: s, target: t, label, kind }); };
 
   if (level === "mid") {
-    for (const t of data.tasks) nodes.push({ id: t.id, kind: "task", label: t.name, isStart: t.isStart, isMenu: t.isMenu });
+    for (const t of data.tasks) nodes.push({ id: t.id, kind: "task", label: t.name, isStart: t.isStart, isMenu: t.isMenu, isState: t.isState, isBot: t.isBot });
     const taskIds = new Set(nodes.map((n) => n.id));
     // task→task edges from callTask jumps
     for (const e of data.edges) {
@@ -744,7 +830,7 @@ export function buildModel(data, opts = {}) {
         if (from && taskIds.has(from.taskId) && taskIds.has(e.target) && from.taskId !== e.target) pushEdge(from.taskId, e.target, "", "jump");
       }
     }
-    for (const dep of data.dependencies) {
+    for (const dep of diagramDeps(data)) {
       const depNode = `dep:${dep.key}`;
       nodes.push({ id: depNode, kind: depKind(dep.type), label: dep.name, depType: dep.type, isDependency: true });
       for (const u of dep.usages) if (taskIds.has(u.taskId)) pushEdge(u.taskId, depNode, "", "dep");
@@ -755,7 +841,7 @@ export function buildModel(data, opts = {}) {
   // low
   const flowId = "__flow__";
   nodes.push({ id: flowId, kind: "task", label: data.meta.name, isStart: true, isFlowRoot: true });
-  for (const dep of data.dependencies) {
+  for (const dep of diagramDeps(data)) {
     const depNode = `dep:${dep.key}`;
     nodes.push({ id: depNode, kind: depKind(dep.type), label: dep.name, depType: dep.type, isDependency: true, sublabel: `${dep.usages.length} use${dep.usages.length === 1 ? "" : "s"}` });
     edges.push({ id: `dep:${flowId}->${depNode}`, source: flowId, target: depNode, label: "", kind: "dep" });
@@ -767,6 +853,7 @@ function depKind(type) {
   if (type === "commonModule") return "callCommonModule";
   if (type === "dataTable") return "dataTable";
   if (type === "dataAction") return "dataAction";
+  if (type === "bot") return "bot";
   return "action";
 }
 
