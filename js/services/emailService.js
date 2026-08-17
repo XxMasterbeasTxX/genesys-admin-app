@@ -8,7 +8,11 @@
  * Sender identity and Mailjet credentials are configured server-side
  * via Azure app settings (MAILJET_API_KEY, MAILJET_SECRET_KEY,
  * MAILJET_FROM_EMAIL, MAILJET_FROM_NAME).
+ *
+ * The send endpoint requires a signed-in caller, so the user's token goes with
+ * the request — otherwise anyone could send mail from the app's identity.
  */
+import { withUserToken } from "./apiAuth.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -81,7 +85,7 @@ export async function sendEmail(_api, { recipients, subject, body, attachment })
 
     const res = await fetch("/api/send-email", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withUserToken({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
 

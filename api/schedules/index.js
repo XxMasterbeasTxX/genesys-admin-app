@@ -14,6 +14,37 @@
 const store = require("../lib/scheduleStore");
 const { getCallerContext, ownerVisibleTo } = require("../lib/callerContext");
 
+/**
+ * Lock the schedule's TARGET org to the caller.
+ *
+ * `ownerOrgId` decides who can SEE a schedule. It says nothing about which org
+ * the schedule RUNS AGAINST — that lives in `exportConfig.orgId`, which the
+ * runner hands to the export handler, which authenticates to it with the app's
+ * client credentials.
+ *
+ * Until now that field was stored verbatim. A customer session could therefore
+ * create a schedule naming a different customer's org and have that org's data
+ * exported and emailed to an address of its choosing — the schedule would be
+ * invisible to them afterwards, since owner scoping hid it, but it would still
+ * run. `templates` and `template-schedules` already lock the target org this
+ * way; the export scheduler was missed because the org id is nested inside
+ * config it otherwise never inspects.
+ *
+ * Internal sessions may target any configured org — that is what internal mode
+ * is for.
+ *
+ * @returns {{ config: Object } | { error: string }}
+ */
+function lockTargetOrg(exportConfig, caller) {
+  const cfg = exportConfig && typeof exportConfig === "object" ? exportConfig : {};
+  if (caller.mode !== "customer") return { config: cfg };
+
+  if (cfg.orgId && cfg.orgId !== caller.customerId) return { error: "org_locked" };
+  // Absent or matching → pin it to the caller's own org explicitly, so a stored
+  // schedule always records the org it is allowed to run against.
+  return { config: { ...cfg, orgId: caller.customerId } };
+}
+
 module.exports = async function (context, req) {
   const method = req.method.toUpperCase();
   const id = context.bindingData.id || null;
@@ -61,6 +92,12 @@ module.exports = async function (context, req) {
         return;
       }
 
+      const lock = lockTargetOrg(b.exportConfig, caller);
+      if (lock.error) {
+        context.res = json(403, { error: lock.error });
+        return;
+      }
+
       const schedule = await store.create({
         ownerOrgId: caller.ownerOrgId,
         exportType: b.exportType,
@@ -72,7 +109,7 @@ module.exports = async function (context, req) {
         enabled: b.enabled !== false,
         emailRecipients: b.emailRecipients || "",
         emailMessage: b.emailMessage || "",
-        exportConfig: b.exportConfig || {},
+        exportConfig: lock.config,
         createdBy: b.userEmail,
         createdByName: b.userName || "",
       });
@@ -102,6 +139,20 @@ module.exports = async function (context, req) {
         return;
       }
 
+      // An edit can retarget the schedule, so the same lock applies here. The
+      // store treats an absent exportConfig as "leave unchanged", so only a
+      // supplied one is checked — and an existing schedule cannot have been
+      // stored with a foreign org once POST enforces this.
+      let exportConfig = b.exportConfig;
+      if (exportConfig !== undefined) {
+        const lock = lockTargetOrg(exportConfig, caller);
+        if (lock.error) {
+          context.res = json(403, { error: lock.error });
+          return;
+        }
+        exportConfig = lock.config;
+      }
+
       const updated = await store.update(id, {
         exportType: b.exportType,
         exportLabel: b.exportLabel,
@@ -112,7 +163,7 @@ module.exports = async function (context, req) {
         enabled: b.enabled,
         emailRecipients: b.emailRecipients,
         emailMessage: b.emailMessage,
-        exportConfig: b.exportConfig,
+        exportConfig,
       });
 
       context.res = json(200, updated);
