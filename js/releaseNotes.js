@@ -11,6 +11,22 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "3.2",
+    date: "2026-08-17",
+    title: "Flows › Flow Overview: every flow type, and a dependency export",
+    changes: [
+      "Messaging, email and bot flows are drawn properly. A flow groups its top level differently by type — states for messaging and email, bots for bot flows, tasks everywhere — and only tasks were being read, so everything else was skipped along with all of its contents. One messaging flow was losing 47 of its 130 actions, and the start marker sat on the wrong box. Change State is drawn to the state it moves to, and Exit Bot Flow ends its path instead of running on.",
+      "Ask for Intent is drawn as the branch point it is — one labelled connection per intent, going wherever that intent routes — instead of a dead-end Collect Input that hid all fifteen branches behind it. A bot's Anything Else loop is drawn as a loop with its body nested inside, and handlers that are switched off, such as an unused Max No Inputs, no longer appear as paths the flow can take.",
+      "Call Task and Jump to Task are now told apart: Call Task returns to the next action, Jump to Task hands control over for good, and both are drawn to the task they target with its real name. Jump to Menu is drawn to its target menu, and a Call Task shows the output paths of the task it calls (Failure, Timeout, …) alongside its normal return.",
+      "A flow's menus get their own box, with every DTMF choice drawn as a labelled branch into the actions behind it — sub-menus nest inside their parent, a choice that jumps straight to a task is drawn as that jump, and Repeat Menu loops back to the menu it belongs to. Menus were previously left out of the diagram altogether.",
+      "The start of a flow is findable: a START marker that stays the same size however far you zoom out, clamped to the edge and clickable when the start is off screen, a Start button in the toolbar, and the start box itself drawn solid and thick with a START tag that carries into the PDF and HTML exports.",
+      "A switch lists every case in full, in first-true order, and each case's condition rides on its connection — hover the line or click it. Call Bot Flow and Call Digital Bot Flow register the bot flow they call as a dependency, so it appears in the diagram, the search panel, the dependency export and its own tab.",
+      "Skills, screen pop scripts, flow outcomes and milestones count as dependencies too, alongside data tables, data actions, common modules, bot flows, queues, prompts, schedule groups and wrap-up codes. Milestones and flow outcomes are left off the Mid and Low diagrams — one flow declares 66 of them, which would bury the tasks those levels exist to show — but they are listed in full in the search panel, the details panel and the dependency export.",
+      "Export Dependencies writes a styled Excel workbook covering the root flow and every dependency flow, named after the customer first: one sheet listing each dependency with its type, name and — for data actions — the integration category it comes from; one listing every individual use, traced to its task and action; and one listing the queues, prompts and schedules the flow resolves at run time by expression, which cannot be listed by name and need checking by hand when moving a flow between orgs.",
+      "A flow type filter sits beside the flow picker, offering only the types the org actually has and narrowing the list alongside the name search.",
+    ],
+  },
+  {
     version: "3.1",
     date: "2026-08-14",
     title: "Divisions: move Skills and Wrap-up Codes between divisions",
@@ -167,11 +183,10 @@ export const RELEASE_NOTES = [
     changes: [
       "New Flows › Flow Overview: an interactive, read-only graphical overview of an Architect callflow and all of its dependency flows. Pick an org and a live flow and the whole call flow is drawn as a diagram.",
       "Built from the flow's structured Archy/SDK YAML (exported on demand), so implicit ‘Default’ paths that the flat REST config leaves out are drawn correctly.",
-      "Tasks, menus and loops are shown as nested boxes (loops inside their task, inner loops inside outer loops), and every task starts at its true first action. Decisions, switches, menus, data-table lookups, data actions, common-module calls, transfers and task links all get labelled connections — both Call Task (which returns to the next action) and Jump to Task (which hands control over for good) are drawn to their target task.",
-      "A flow's menus get their own box, with every DTMF choice drawn as a labelled branch into the actions behind it — sub-menus nest inside their parent, a choice that jumps straight to a task is drawn as that jump, and Repeat Menu loops back to the menu it belongs to. Jump to Menu is drawn to its target menu, and a Call Task shows the output paths of the task it calls (Failure, Timeout, …) alongside its normal return.",
+      "Tasks and loops are shown as nested boxes (loops inside their task, inner loops inside outer loops), and every task starts at its true first action. Decisions, switches, menus, data-table lookups, data actions, common-module calls, transfers and jumps all get labelled connections.",
       "A tab per dependency flow — common modules, in-queue flows, transfer/bot targets of any type (including outbound) — discovered automatically from referenced flow names.",
       "High / Mid / Low detail levels, dark/light/white themes, fullscreen, and a combined variable & dependency search: click a variable to jump to where it is set or used, or a dependency to open its flow.",
-      "Click any node to see the values set in that node, its condition/expression, referenced flow or called task, and variables used; click a connection to see its From/To. A switch lists every case in full, in first-true order, and each case's condition is on its connection — hover the line or click it.",
+      "Click any node to see the values set in that node, its condition/expression, referenced flow or called task, and variables used; click a connection to see its From/To.",
       "Download as PDF, self-contained HTML, or JSON — either the current flow, or Save all, which auto-loads every dependency flow (including nested common modules) and bundles them into one file: a multi-page PDF, a single tabbed HTML file, or one combined JSON.",
     ],
   },
