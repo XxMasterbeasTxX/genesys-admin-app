@@ -36,10 +36,14 @@ import {
   manualChecks,
 } from "../../lib/flowTestCases.js";
 
-const MUTED = "#8b949e";
-const BORDER = "#30363d";
+// Colours come from the app's theme variables, never hardcoded. styles.css is
+// dark by default with a light override on prefers-color-scheme, so a page that
+// hardcodes dark hex values renders dark-on-dark for anyone in light mode — the
+// flow picker's names were invisible until this was fixed.
+const MUTED = "var(--muted)";
+const BORDER = "var(--border)";
 
-const PRIORITY_COLOR = { High: "#4ade80", Medium: "#fbbf24", Low: "#8b949e" };
+const PRIORITY_COLOR = { High: "var(--tc-high)", Medium: "var(--tc-med)", Low: "var(--tc-low)" };
 
 /** Guard against a runaway closure; the same ceiling Flow Overview uses. */
 const MAX_CLOSURE_PASSES = 500;
@@ -55,44 +59,60 @@ function prefixFor(index) {
 
 export default function renderTestCases({ route, me, api, orgContext }) {
   const el = document.createElement("section");
-  el.className = "card";
+  el.className = "card tc-page";
 
   el.innerHTML = `
     <style>
+      /* Dark is the app's default; the light values override it, matching how
+         css/styles.css is organised. Everything else uses --text/--muted/--border
+         so both themes are handled without a second set of rules. */
+      .tc-page { --tc-high:#4ade80; --tc-med:#fbbf24; --tc-low:var(--muted); --tc-hover:rgba(255,255,255,.07); }
+      @media (prefers-color-scheme: light) {
+        .tc-page { --tc-high:#15803d; --tc-med:#b45309; --tc-hover:rgba(0,0,0,.05); }
+      }
+
       @keyframes tc-spin { to { transform: rotate(360deg); } }
-      .tc-spin { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.25);
-                 border-top-color:#fff; border-radius:50%; animation:tc-spin .8s linear infinite; }
+      .tc-spin { display:inline-block; width:14px; height:14px; border:2px solid var(--border);
+                 border-top-color:var(--text); border-radius:50%; animation:tc-spin .8s linear infinite;
+                 vertical-align:-2px; }
+      .tc-wip { display:inline-block; margin-left:10px; padding:2px 9px; border-radius:999px;
+                font-size:11.5px; font-weight:600; letter-spacing:.02em; vertical-align:middle;
+                color:var(--tc-med); border:1px solid var(--tc-med); background:rgba(251,191,36,.10); }
       .tc-flow-combo { position:relative; }
       .tc-flow-menu { position:absolute; z-index:40; top:100%; left:0; right:0; margin-top:2px; max-height:300px;
-                      overflow:auto; background:#161b22; border:1px solid ${BORDER}; border-radius:8px; display:none; }
+                      overflow-y:auto; overflow-x:hidden; background:var(--panel); color:var(--text);
+                      border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow); display:none; }
       .tc-flow-menu.open { display:block; }
-      .tc-flow-item { padding:6px 10px; font-size:13px; cursor:pointer; white-space:nowrap; }
-      .tc-flow-item:hover, .tc-flow-item.is-active { background:rgba(240,180,41,.15); }
-      .tc-flow-item .tc-meta { color:${MUTED}; font-size:11px; }
+      .tc-flow-item { padding:6px 10px; font-size:13px; cursor:pointer; color:var(--text);
+                      display:flex; justify-content:space-between; gap:14px; align-items:baseline; }
+      .tc-flow-item:hover, .tc-flow-item.is-active { background:var(--tc-hover); }
+      /* A long flow name truncates rather than forcing the menu to scroll sideways. */
+      .tc-flow-item .tc-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .tc-flow-item .tc-meta { color:var(--muted); font-size:11px; flex:none; white-space:nowrap; }
       .tc-mode { display:flex; gap:6px; }
-      .tc-mode .btn.is-active { background:rgba(240,180,41,.18); border-color:rgba(240,180,41,.4); color:#f0b429; }
+      .tc-mode .btn.is-active { background:rgba(240,180,41,.18); border-color:rgba(240,180,41,.5); color:var(--tc-med); }
       .tc-summary { display:flex; gap:18px; flex-wrap:wrap; margin:14px 0 6px; font-size:12.5px; }
-      .tc-stat { border:1px solid ${BORDER}; border-radius:8px; padding:8px 12px; min-width:110px; }
+      .tc-stat { border:1px solid var(--border); border-radius:8px; padding:8px 12px; min-width:110px; }
       .tc-stat b { display:block; font-size:19px; font-weight:600; margin-bottom:2px; }
-      .tc-stat span { color:${MUTED}; font-size:11px; }
+      .tc-stat span { color:var(--muted); font-size:11px; }
       .tc-findings { margin:10px 0; padding:9px 12px; border-radius:8px; font-size:12.5px; line-height:1.55;
-                     border:1px solid rgba(251,191,36,.35); background:rgba(251,191,36,.08); }
+                     border:1px solid rgba(251,191,36,.45); background:rgba(251,191,36,.10); }
       .tc-findings ul { margin:4px 0 0; padding-left:18px; }
-      .tc-flowsec { margin-top:16px; border:1px solid ${BORDER}; border-radius:8px; overflow:hidden; }
-      .tc-flowhead { padding:8px 12px; background:rgba(255,255,255,.03); border-bottom:1px solid ${BORDER};
+      .tc-flowsec { margin-top:16px; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+      .tc-flowhead { padding:8px 12px; background:var(--panel-2); border-bottom:1px solid var(--border);
                      display:flex; align-items:center; gap:10px; font-size:13px; }
-      .tc-flowhead .tc-meta { color:${MUTED}; font-size:11.5px; }
+      .tc-flowhead .tc-meta { color:var(--muted); font-size:11.5px; }
       .tc-table { width:100%; border-collapse:collapse; font-size:12.5px; }
-      .tc-table th { text-align:left; padding:6px 10px; color:${MUTED}; font-weight:600; font-size:11px;
-                     border-bottom:1px solid ${BORDER}; }
-      .tc-table td { padding:6px 10px; border-bottom:1px solid rgba(255,255,255,.05); vertical-align:top; }
+      .tc-table th { text-align:left; padding:6px 10px; color:var(--muted); font-weight:600; font-size:11px;
+                     border-bottom:1px solid var(--border); }
+      .tc-table td { padding:6px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
       .tc-table tr:last-child td { border-bottom:none; }
       .tc-prio { font-weight:600; }
-      .tc-steps { color:${MUTED}; font-size:11.5px; }
-      .tc-empty { color:${MUTED}; padding:18px; text-align:center; font-size:13px; }
+      .tc-steps { color:var(--muted); font-size:11.5px; }
+      .tc-empty { color:var(--muted); padding:18px; text-align:center; font-size:13px; }
     </style>
 
-    <h2>Deployment — Test Cases</h2>
+    <h2>Deployment — Test Cases <span class="tc-wip">Still Work in Progress</span></h2>
     <p class="page-desc">
       Generate a test case document from a live Architect flow. The org comes from
       the selector at the top of the page — pick a flow and a coverage level, and
@@ -243,7 +263,7 @@ export default function renderTestCases({ route, me, api, orgContext }) {
       return;
     }
     flowMenu.innerHTML = list
-      .map((f, i) => `<div class="tc-flow-item${i === comboActive ? " is-active" : ""}" data-id="${escapeHtml(f.id)}">${escapeHtml(f.name)} <span class="tc-meta">${escapeHtml(FLOW_TYPE_LABELS[f.type] || f.type || "")}</span></div>`)
+      .map((f, i) => `<div class="tc-flow-item${i === comboActive ? " is-active" : ""}" data-id="${escapeHtml(f.id)}" title="${escapeHtml(f.name)}"><span class="tc-name">${escapeHtml(f.name)}</span><span class="tc-meta">${escapeHtml(FLOW_TYPE_LABELS[f.type] || f.type || "")}</span></div>`)
       .join("");
     flowMenu.querySelectorAll(".tc-flow-item[data-id]").forEach((it) =>
       it.addEventListener("mousedown", (e) => { e.preventDefault(); pickFlow(it.dataset.id); })
