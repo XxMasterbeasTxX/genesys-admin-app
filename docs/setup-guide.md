@@ -491,29 +491,35 @@ GENESYS_<ID>_CLIENT_SECRET   (e.g. GENESYS_ACME_CLIENT_SECRET)
 
 Where `<ID>` is the customer id from `customers.json` with hyphens replaced by underscores, uppercased.
 
-#### Optional: internal-org credentials (verifying who scheduled a job)
+#### Verifying who scheduled a job (one setting)
 
 Scheduled jobs that **write** — currently WebRTC Phones — Create — re-check at
 every run that the person who created the schedule is still an active user and
 still holds the permission the page requires, and refuse to run otherwise.
 
-That check needs client credentials for the org the creator belongs to. For a
-customer-created schedule those already exist (the settings above). A schedule
-created by an **internal** user has its creator in your own Genesys org, for
-which the app holds no credentials — `INTERNAL_COMPANY_ORG_ID` is an identifier,
-not a credential. Those runs proceed but report `Creator NOT verified` in the
-result email and the run log.
+That check needs client credentials for the org the creator belongs to.
+Customer-created schedules already have them (the settings above). A schedule
+created by an **internal** user has its creator in your own Genesys org — which
+is normally also one of the entries in `customers.json` (the "internal/demo
+org"), so the credentials already exist. Name which entry it is:
 
-To close that gap, create an OAuth client (client-credentials grant) in your
-internal org with permission to read users, and set:
+```text
+INTERNAL_ORG_SLUG         (e.g. demo — the customers.json id of your own org)
+```
+
+The region comes from `GENESYS_HOME_REGION`, which is already set. No new OAuth
+client or secret is needed.
+
+If your internal org is *not* in `customers.json`, set a dedicated pair instead:
 
 ```text
 GENESYS_INTERNAL_CLIENT_ID
 GENESYS_INTERNAL_CLIENT_SECRET
-GENESYS_INTERNAL_REGION      (e.g. mypurecloud.de)
 ```
 
-Nothing else changes — the check starts working as soon as they are present.
+Until one of these is configured, internal-created runs still execute but report
+`Creator NOT verified` in the result email and the run log, rather than implying
+a check that did not happen.
 
 ### Step 3 org-mode settings (required for customer-mode rollout)
 

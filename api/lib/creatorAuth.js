@@ -24,12 +24,18 @@
  * caller decides what to do with that; they are not silently treated as
  * verified.
  *
- * To close the gap, add an OAuth client in the internal org with permission to
- * read users, and set:
- *   GENESYS_INTERNAL_CLIENT_ID
- *   GENESYS_INTERNAL_CLIENT_SECRET
- *   GENESYS_INTERNAL_REGION      (e.g. "mypurecloud.de")
- * This module picks them up automatically; nothing else changes.
+ * Closing the gap usually needs no new secret. The internal org is normally
+ * also one of the entries in customers.json — the onboarding runbook calls it
+ * "your internal/demo org" — so credentials for it already exist under that
+ * slug. Point at it with:
+ *   INTERNAL_ORG_SLUG=demo        (the customers.json id of your own org)
+ * and the existing GENESYS_DEMO_CLIENT_ID / _SECRET are used.
+ *
+ * The region comes from GENESYS_HOME_REGION, which is already configured.
+ *
+ * If your internal org is NOT in customers.json, set a dedicated pair instead:
+ *   GENESYS_INTERNAL_CLIENT_ID / GENESYS_INTERNAL_CLIENT_SECRET
+ * Either route works; nothing else changes.
  *
  * Group membership is deliberately NOT checked. App access for internal staff
  * comes from Genesys group membership (GROUP_ACCESS), but internal creators are
@@ -42,18 +48,41 @@ const { getGenesysToken } = require("./genesysAuth");
 
 const INTERNAL_OWNER = "internal";
 
-/** Credentials for an org key, or { available: false } when unconfigured. */
-function resolveOrgCredentials(orgKey) {
-  const envKey = `GENESYS_${String(orgKey).replace(/-/g, "_").toUpperCase()}`;
+/** Read a GENESYS_<KEY>_CLIENT_ID/_SECRET pair, or null. */
+function credentialPair(key) {
+  const envKey = `GENESYS_${String(key).replace(/-/g, "_").toUpperCase()}`;
   const clientId = process.env[`${envKey}_CLIENT_ID`];
   const clientSecret = process.env[`${envKey}_CLIENT_SECRET`];
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
 
-  const region = orgKey === INTERNAL_OWNER
-    ? process.env.GENESYS_INTERNAL_REGION
-    : customers.find((c) => c.id === orgKey)?.region;
+/**
+ * Credentials for an org key, or { available: false } when unconfigured.
+ *
+ * For the internal org, three sources are tried in order so that an existing
+ * deployment needs no new secret: an explicit GENESYS_INTERNAL_* pair, then the
+ * customers.json entry named by INTERNAL_ORG_SLUG (the usual case — the
+ * internal org is normally also a configured org), and its region from that
+ * entry or GENESYS_HOME_REGION, which is already set.
+ */
+function resolveOrgCredentials(orgKey) {
+  if (orgKey === INTERNAL_OWNER) {
+    const slug = String(process.env.INTERNAL_ORG_SLUG || "").trim();
+    const pair = credentialPair(INTERNAL_OWNER) || (slug ? credentialPair(slug) : null);
+    const region = process.env.GENESYS_INTERNAL_REGION
+      || (slug ? customers.find((c) => c.id === slug)?.region : null)
+      || process.env.GENESYS_HOME_REGION;
+    if (!pair || !region) return { available: false };
+    // The token cache is keyed per org, so use the slug when that is where the
+    // credentials came from — otherwise an internal lookup and a job against
+    // the same org would fight over one cache entry.
+    return { available: true, ...pair, region, tokenKey: slug || INTERNAL_OWNER };
+  }
 
-  if (!clientId || !clientSecret || !region) return { available: false };
-  return { available: true, clientId, clientSecret, region };
+  const pair = credentialPair(orgKey);
+  const region = customers.find((c) => c.id === orgKey)?.region;
+  if (!pair || !region) return { available: false };
+  return { available: true, ...pair, region, tokenKey: orgKey };
 }
 
 /**
@@ -111,14 +140,14 @@ async function verifyCreator(orgKey, { userId, requiredPermissions = [] } = {}) 
       verified: false,
       ok: false,
       reason: orgKey === INTERNAL_OWNER
-        ? "no client credentials are configured for the internal org, so the creator cannot be checked"
+        ? "the internal org has no credentials configured (set INTERNAL_ORG_SLUG), so the creator cannot be checked"
         : `no client credentials are configured for ${orgKey}`,
     };
   }
 
   let user;
   try {
-    const token = await getGenesysToken(orgKey, creds.region, creds.clientId, creds.clientSecret);
+    const token = await getGenesysToken(creds.tokenKey, creds.region, creds.clientId, creds.clientSecret);
     const url = `https://api.${creds.region}/api/v2/users/${encodeURIComponent(userId)}?expand=authorization`;
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
