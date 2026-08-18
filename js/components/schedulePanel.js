@@ -175,7 +175,7 @@ export function buildScheduleForm(opts) {
         <input  class="sp-form-input" id="spRecipients" type="text"
                 placeholder="user@example.com, user2@example.com"
                 value="${escapeHtml(s?.emailRecipients || "")}">
-        <span class="sp-form-hint">Separate with , or ; — export will be emailed to these addresses</span>
+        <span class="sp-form-hint">Separate with , or ; — the result will be emailed to these addresses</span>
       </div>
 
       <div class="sp-form-group sp-form-wide">
@@ -481,7 +481,7 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
     const filtered = schedules.filter((s) => s.exportType === exportType);
 
     if (!filtered.length) {
-      $body.innerHTML = `<p class="sp-empty">No scheduled exports yet. Click "+ New Schedule" to create one.</p>`;
+      $body.innerHTML = `<p class="sp-empty">No schedules yet. Click "+ New Schedule" to create one.</p>`;
       return;
     }
 
