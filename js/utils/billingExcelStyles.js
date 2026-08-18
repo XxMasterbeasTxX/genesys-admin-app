@@ -146,7 +146,7 @@ export function buildBillingSheet({ workbook, sheetName, processed, orgName, per
   ws["!views"]      = [{ state: "frozen", ySplit: 1 }];
   ws["!autofilter"] = { ref: `A1:D1` };
 
-  XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(sheetName));
+  XLSX.utils.book_append_sheet(workbook, ws, uniqueSheetName(workbook, sheetName));
   return ws;
 }
 
@@ -219,7 +219,7 @@ export function buildCalendarYearSheet({ workbook, orgName, year, periods }) {
   ws["!views"]      = [{ state: "frozen", ySplit: 1 }];
   ws["!autofilter"] = { ref: "A1:D1" };
 
-  XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(orgName));
+  XLSX.utils.book_append_sheet(workbook, ws, uniqueSheetName(workbook, orgName));
   return ws;
 }
 
@@ -291,7 +291,7 @@ export function buildDateRangeSheet({ workbook, orgName, fromLabel, toLabel, per
   ws["!views"]      = [{ state: "frozen", ySplit: 1 }];
   ws["!autofilter"] = { ref: "A1:D1" };
 
-  XLSX.utils.book_append_sheet(workbook, ws, safeSheetName(orgName));
+  XLSX.utils.book_append_sheet(workbook, ws, uniqueSheetName(workbook, orgName));
   return ws;
 }
 
@@ -452,4 +452,34 @@ export function safeSheetName(name) {
   return String(name || "Sheet1")
     .replace(/[\\\/\?\*\[\]:]/g, "_")
     .slice(0, 31);
+}
+
+/**
+ * A sanitised sheet name not already used in this workbook.
+ *
+ * safeSheetName truncates to Excel's 31-character limit, so two orgs agreeing
+ * in their first 31 characters produce the same name and `book_append_sheet`
+ * throws "Sheet name already exists" — losing the whole workbook partway
+ * through a multi-org run, after every API call has already been paid for.
+ *
+ * Not hypothetical: the identical collision in the documentation export's
+ * data-table sheets silently cost Demo and Nuuday their DataTables workbook
+ * for months.
+ *
+ * Compared case-insensitively, because Excel treats sheet names that way even
+ * where SheetJS would allow the append.
+ */
+export function uniqueSheetName(workbook, name) {
+  const taken = new Set((workbook?.SheetNames || []).map((n) => n.toLowerCase()));
+  const base  = safeSheetName(name);
+  if (!taken.has(base.toLowerCase())) return base;
+
+  for (let n = 2; n < 1000; n++) {
+    const suffix    = `_${n}`;
+    const candidate = base.slice(0, 31 - suffix.length) + suffix;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+  // 999 orgs sharing 31 characters is not a real scenario; stay collision-free
+  // rather than throw.
+  return `Sheet_${taken.size + 1}`.slice(0, 31);
 }
