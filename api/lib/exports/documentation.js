@@ -135,9 +135,12 @@ function sheetHref(name) {
 /**
  * Perform a single Genesys Cloud API GET using an already-obtained token.
  */
-// Transient statuses worth a second go. Anything else — 401, 403, 404 — will not
-// improve by asking again, so it fails immediately.
-const RETRY_STATUSES = new Set([429, 502, 503, 504]);
+// Transient statuses worth a second go. Every request this export makes is an
+// idempotent GET, so retrying is free of side effects — 408 (server-side request
+// timeout) and 500 both come back clean on a retry often enough to be worth it,
+// and a single one of them otherwise costs a whole sheet. Anything else — 401,
+// 403, 404 — will not improve by asking again, so it fails immediately.
+const RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS   = 3;
 
 /** How many pages of one paged endpoint to fetch at once. See genesysGetAllPages. */
@@ -2100,6 +2103,10 @@ async function execute(context, schedule) {
       // Error: create a styled error sheet (matching Python's create_error_sheet)
       createErrorSheet(wb, safeSheet(name), data.error, tsStr);
       inventory.push({ name, status: "error" });
+      // Logged as well as written into the sheet: a 403 is a missing OAuth scope
+      // and needs fixing at the client, a 408/500 is transient. Telling them
+      // apart previously meant opening the workbook.
+      context.log(`[sheet] error — ${name}: ${data.error}`);
     } else {
       const { headers, rows } = data;
       if (rows.length === 0) {
