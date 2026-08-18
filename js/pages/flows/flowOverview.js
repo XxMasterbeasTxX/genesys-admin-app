@@ -7,11 +7,11 @@
  *
  * Pipeline:
  *   1. Pick an org + a flow.
- *   2. GET /api/v2/flows/{id}/latestconfiguration  → full flow config JSON.
- *   3. js/lib/flowModel.js normalizes it into nodes/edges + variable and
- *      dependency indexes (renderer-agnostic).
- *   4. js/lib/flowLayout.js lays it out with ELK (layered, hierarchical).
- *   5. This module draws interactive SVG (pan / zoom / click) and a side panel,
+ *   2. js/lib/flowSource.js lists the org's flows, fetches the picked one's
+ *      structured Archy/SDK YAML via POST /api/flow-yaml, and parses it into
+ *      nodes/edges + variable and dependency indexes (renderer-agnostic).
+ *   3. js/lib/flowLayout.js lays it out with ELK (layered, hierarchical).
+ *   4. This module draws interactive SVG (pan / zoom / click) and a side panel,
  *      and exports the diagram (SVG / PNG / HTML / JSON).
  *
  * Detail levels:
@@ -21,15 +21,15 @@
  */
 
 import { escapeHtml, exportXlsx } from "../../utils.js";
-import * as gc from "../../services/genesysApi.js";
+import { buildModel, ACTION_KINDS } from "../../lib/flowYaml.js";
 import {
-  parseFlowYaml,
-  buildModel,
-  buildVariableIndex,
-  buildDependencyIndex,
-  buildActionIndex,
-  ACTION_KINDS,
-} from "../../lib/flowYaml.js";
+  FLOW_TYPE_LABELS,
+  flowTypeOrder,
+  listFlows,
+  indexFlows,
+  loadFlow,
+  discoverDepFlowIds,
+} from "../../lib/flowSource.js";
 import { layoutModel } from "../../lib/flowLayout.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -124,19 +124,6 @@ function rasterScale(w, h) {
   return Math.max(0.25, s);
 }
 
-// Matches a Genesys/GUID identifier anywhere in a serialized config (used to
-// discover dependency-flow references that the manifest doesn't enumerate).
-const GUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-
-const FLOW_TYPE_LABELS = {
-  inboundcall: "Inbound Call", inboundchat: "Inbound Chat", inboundemail: "Inbound Email",
-  inboundshortmessage: "Inbound Message", bot: "Bot", digitalbot: "Digital Bot",
-  commonmodule: "Common Module", inqueuecall: "In-Queue Call", inqueueemail: "In-Queue Email",
-  inqueueshortmessage: "In-Queue Message", securecall: "Secure Call", voicemail: "Voicemail",
-  workflow: "Workflow", workitem: "Workitem", voicesurvey: "Voice Survey",
-  surveyinvite: "Survey Invite", outboundcall: "Outbound Call",
-};
-
 // Friendly names for dependency types in the Excel export.
 const DEP_TYPE_LABELS = {
   dataTable: "Data Table", dataAction: "Data Action", commonModule: "Common Module",
@@ -146,13 +133,6 @@ const DEP_TYPE_LABELS = {
   milestone: "Milestone",
 };
 const depTypeLabel = (t) => DEP_TYPE_LABELS[t] || t;
-
-function flowTypeOrder(t) {
-  const order = ["commonmodule", "inqueuecall", "inqueueemail", "inqueueshortmessage", "workflow",
-    "bot", "digitalbot", "voicesurvey", "surveyinvite", "securecall", "voicemail", "workitem"];
-  const i = order.indexOf(t);
-  return i === -1 ? 99 : i;
-}
 
 export default function renderFlowOverview({ route, me, api, orgContext }) {
   const el = document.createElement("section");
@@ -506,14 +486,11 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     }
     setBusy(true, "Loading flow list…");
     try {
-      const flows = await gc.fetchAllFlows(api, state.orgId, { query: { pageSize: "100" } });
-      const norm = (flows || [])
-        .filter((f) => f.id && f.name)
-        .map((f) => ({ id: f.id, name: f.name, type: (f.type || "").toLowerCase() }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const norm = await listFlows(api, state.orgId);
+      const { byId, byName } = indexFlows(norm);
       state.flows = norm;
-      state.flowList = new Map(norm.map((f) => [f.id, f]));
-      state.flowByName = new Map(norm.map((f) => [f.name, f]));
+      state.flowList = byId;
+      state.flowByName = byName;
       flowInput.disabled = false;
       typeFilter.disabled = false;
       populateTypeFilter();
@@ -538,41 +515,17 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   /** Fetch YAML + parse + index a flow (cached). Also merges its dependency tabs. */
   async function ensureFlowLoaded(id) {
     if (state.cache.has(id)) return state.cache.get(id);
-    const meta = state.flowList.get(id) || {};
-    const resp = await api.appRequest("/api/flow-yaml", {
-      method: "POST",
-      body: { orgId: state.orgId, flowName: meta.name, flowType: meta.type },
-    });
-    if (!resp || !resp.yaml) throw new Error((resp && resp.error) || "no YAML returned");
-    if (!window.jsyaml) throw new Error("YAML parser not loaded (js/lib/js-yaml.min.js).");
-    const root = window.jsyaml.load(resp.yaml);
-    const data = parseFlowYaml(root);
-    const entry = {
-      data,
-      varIndex: buildVariableIndex(data),
-      depIndex: buildDependencyIndex(data),
-      actionIndex: buildActionIndex(data),
-    };
+    const entry = await loadFlow(api, state.orgId, state.flowList.get(id) || {});
     state.cache.set(id, entry);
-    mergeDeps(id, data);
+    mergeDeps(id, entry.data);
     return entry;
-  }
-
-  /** Discover dependency FLOW ids from parsed YAML data (any flow-type ref). */
-  function discoverDepFlowIds(data, selfId) {
-    const ids = new Set();
-    for (const dep of data.dependencies || []) {
-      const f = state.flowByName && state.flowByName.get(dep.name);
-      if (f && f.id !== selfId) ids.add(f.id);
-    }
-    return [...ids];
   }
 
   /** Add any newly discovered dependency flows as tabs (transitive closure). */
   function mergeDeps(id, data) {
     const have = new Set(state.tabs.map((t) => t.id));
     let added = false;
-    for (const depId of discoverDepFlowIds(data, id)) {
+    for (const depId of discoverDepFlowIds(data, state.flowByName, id)) {
       if (have.has(depId)) continue;
       const f = state.flowList.get(depId);
       state.tabs.push({ id: depId, name: f ? f.name : depId, type: f ? f.type : "", isMain: false, available: true });

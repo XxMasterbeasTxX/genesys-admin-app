@@ -196,6 +196,8 @@ const registry = {
     import("./pages/flows/flowOverview.js").then((m) => m.default(ctx)),
   "/deployment/onboarding": (ctx) =>
     import("./pages/deployment/onboarding.js").then((m) => m.default(ctx)),
+  "/deployment/test/test-cases": (ctx) =>
+    import("./pages/deployment/testCases.js").then((m) => m.default(ctx)),
   // ── Phones ─────────────────────────────────────────
   "/phones/webrtc/change-site": (ctx) =>
     import("./pages/phones/webrtc/changeSite.js").then((m) => m.default(ctx)),

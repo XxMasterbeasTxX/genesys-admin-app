@@ -48,6 +48,7 @@
  *   deployment.basic                   Basic
  *   deployment.datatables              Data Tables
  *   deployment.onboarding              Onboarding  (SUPERUSER only — never granted via GROUP_ACCESS)
+ *   deployment.test.testCases          Test — Test Cases  (read-only; generates a test document from a flow)
  *
  *   DIVISIONS  (reassign objects between divisions)
  *   divisions.people.users                  People — Users
@@ -167,7 +168,7 @@ const ADMIN_BASE = [
   "audit.*", "data-actions.*", "data-tables.*", "divisions.*", "export.*",
   "gdpr.*", "interactions.*", "roles.*", "users.*",
   "utilities.*", "wrapupCodes.*",
-  "deployment.basic", "deployment.datatables",
+  "deployment.basic", "deployment.datatables", "deployment.test.testCases",
   "flows.flowoverview", "flows.journey",
   "phones.webrtc.changeSite", "phones.webrtc.create",
 ];

@@ -29,7 +29,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
 - **Data Actions — Copy between Orgs** — Copy a data action (contract + config) from one customer org to another, with target integration mapping and draft/publish toggle. Searchable source-action picker; templates stored as `.vm` file references in the source org are fetched and inlined so the copy is an exact replica.
 - **Data Actions — Edit** — View, edit, and test existing data actions with draft/publish workflow, filter by status/category/integration. Edit name, category, request config (URL template, method, body, headers) and response config (translation map, success template) for any action; edit input/output contract schemas for draft-only actions. Save drafts, validate, publish, and run inline tests.
 - **Wrapup Codes — Create/Edit/Mapping** — Manage wrapup codes and outbound dialer wrap-up mappings in one page. Root navigation path: `Wrapup Codes > Create/Edit/Mapping`. Page auto-loads wrapup codes (Name, Id, Description, Division), supports live search and wrapup create/edit, and allows row-click expansion into a Genesys-style mapping editor with slider toggles (Contact Uncallable, Number Uncallable, Right Party Contact) and Business Category segment (None/Failure/Neutral/Success). Per-row save supports reset-to-default and version-safe retry on conflict. A top-right **Default Mapping** panel shows and edits outbound `defaultSet` values with an impact count for rows inheriting defaults. Access key: `wrapupCodes.createEditMapping`.
-- **WebRTC Phones — Create** — Review who needs a WebRTC phone (by licence and existing phones), optionally filtered by group or division, then bulk-create for the confirmed selection, with Excel log export
+- **WebRTC Phones — Create** — Can be scheduled to run unattended and email the log. Review who needs a WebRTC phone (by licence and existing phones), optionally filtered by group or division, then bulk-create for the confirmed selection, with Excel log export
 - **WebRTC Phones — Change Site** — Move selected phones from one site to another, optionally filtered by the group or division of the phone's holder, with a confirmation step and Excel log export
 - **WebRTC Phones — Delete** *(Master Admin internally; available to customers whose package grants it)* — Find and remove WebRTC phones with no user, or whose user is deleted or inactive, optionally narrowed by site, after a per-category review and a typed confirmation
 - **Trustee Export** — Export a matrix of trustee-org users and their access across all customer orgs, determined by group membership, with per-trustee-org Excel sheets and styled formatting
@@ -490,6 +490,36 @@ GENESYS_<ID>_CLIENT_SECRET   (e.g. GENESYS_ACME_CLIENT_SECRET)
 ```
 
 Where `<ID>` is the customer id from `customers.json` with hyphens replaced by underscores, uppercased.
+
+#### Verifying who scheduled a job (one setting)
+
+Scheduled jobs that **write** — currently WebRTC Phones — Create — re-check at
+every run that the person who created the schedule is still an active user and
+still holds the permission the page requires, and refuse to run otherwise.
+
+That check needs client credentials for the org the creator belongs to.
+Customer-created schedules already have them (the settings above). A schedule
+created by an **internal** user has its creator in your own Genesys org — which
+is normally also one of the entries in `customers.json` (the "internal/demo
+org"), so the credentials already exist. Name which entry it is:
+
+```text
+INTERNAL_ORG_SLUG         (e.g. demo — the customers.json id of your own org)
+```
+
+The region comes from `GENESYS_HOME_REGION`, which is already set. No new OAuth
+client or secret is needed.
+
+If your internal org is *not* in `customers.json`, set a dedicated pair instead:
+
+```text
+GENESYS_INTERNAL_CLIENT_ID
+GENESYS_INTERNAL_CLIENT_SECRET
+```
+
+Until one of these is configured, internal-created runs still execute but report
+`Creator NOT verified` in the result email and the run log, rather than implying
+a check that did not happen.
 
 ### Step 3 org-mode settings (required for customer-mode rollout)
 

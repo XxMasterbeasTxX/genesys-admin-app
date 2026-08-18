@@ -51,6 +51,39 @@ export function describeSchedule(s) {
   return s.scheduleType;
 }
 
+/** Danish wall-clock, matching the times schedules are expressed in. */
+const DK_DATETIME = {
+  timeZone: "Europe/Copenhagen",
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit",
+};
+
+/**
+ * When a schedule last ran, as HTML.
+ *
+ * Shared with the Scheduled Exports overview rather than copied, so the two
+ * views cannot drift into disagreeing about the same run.
+ */
+export function formatLastRun(s) {
+  if (!s.lastRun) return `<span class="se-none">Never</span>`;
+  const when = new Date(s.lastRun).toLocaleString("da-DK", DK_DATETIME);
+  return `<span class="${s.lastStatus === "success" ? "se-ok" : "se-fail"}">${escapeHtml(when)}</span>`;
+}
+
+/**
+ * How that run went, as HTML.
+ *
+ * Anything that is not a success shows its reason inline. That matters for the
+ * jobs that WRITE: a run refused by one of its own guards — the holder match
+ * failing, or the safety limit — is reported here, and a bare "Failure" would
+ * hide the one thing worth reading.
+ */
+export function formatLastStatus(s) {
+  if (!s.lastRun) return `<span class="se-none">—</span>`;
+  if (s.lastStatus === "success") return `<span class="se-ok">Success</span>`;
+  return `<span class="se-fail" title="${escapeHtml(s.lastError || "")}">Failure${s.lastError ? ` — ${escapeHtml(s.lastError)}` : ""}</span>`;
+}
+
 /** Check if the current user can edit/delete a schedule. */
 export function canEditSchedule(schedule, me) {
   if (!me?.email) return false;
@@ -175,7 +208,7 @@ export function buildScheduleForm(opts) {
         <input  class="sp-form-input" id="spRecipients" type="text"
                 placeholder="user@example.com, user2@example.com"
                 value="${escapeHtml(s?.emailRecipients || "")}">
-        <span class="sp-form-hint">Separate with , or ; — export will be emailed to these addresses</span>
+        <span class="sp-form-hint">Separate with , or ; — the result will be emailed to these addresses</span>
       </div>
 
       <div class="sp-form-group sp-form-wide">
@@ -481,7 +514,7 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
     const filtered = schedules.filter((s) => s.exportType === exportType);
 
     if (!filtered.length) {
-      $body.innerHTML = `<p class="sp-empty">No scheduled exports yet. Click "+ New Schedule" to create one.</p>`;
+      $body.innerHTML = `<p class="sp-empty">No schedules yet. Click "+ New Schedule" to create one.</p>`;
       return;
     }
 
@@ -496,6 +529,8 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
         <th>Recipients</th>
         <th>Enabled</th>
         <th>Created by</th>
+        <th>Last run</th>
+        <th>Status</th>
         <th></th>
       </tr></thead><tbody>`;
 
@@ -510,6 +545,8 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
           ? `<span class="sp-badge sp-badge--on">On</span>`
           : `<span class="sp-badge sp-badge--off">Off</span>`}</td>
         <td>${escapeHtml(s.createdByName || s.createdBy)}</td>
+        <td>${formatLastRun(s)}</td>
+        <td>${formatLastStatus(s)}</td>
         <td>${editable
           ? `<button class="btn btn-sm sp-btn-edit" data-id="${s.id}">Edit</button>`
           : ""}</td>
@@ -556,6 +593,10 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
             exportLabel,
             userEmail: me.email,
             userName: me.name,
+            // Genesys user id, so a scheduled job that WRITES can re-check at
+            // run time that its creator is still allowed to run it. Read-only
+            // exports ignore it.
+            userId: me.id,
           });
           logAction({
             me,

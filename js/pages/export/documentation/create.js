@@ -16,6 +16,7 @@
  *       A loading spinner is shown while the request is in progress.
  */
 import { sendEmail } from "../../../services/emailService.js";
+import { withUserToken } from "../../../services/apiAuth.js";
 import { logAction } from "../../../services/activityLogService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 
@@ -184,7 +185,7 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
     try {
       const resp = await fetch("/api/doc-export", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withUserToken({ "Content-Type": "application/json" }),
         body: JSON.stringify({ orgId: org.id, includeDataTables: true }),
       });
 

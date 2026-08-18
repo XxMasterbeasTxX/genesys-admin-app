@@ -34,6 +34,7 @@ import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { resolvePhoneHolders } from "../../../lib/phoneHolders.js";
 import { logAction } from "../../../services/activityLogService.js";
+import { createSchedulePanel } from "../../../components/schedulePanel.js";
 
 // ── Licence classification ──────────────────────────────────────────
 //
@@ -1024,6 +1025,76 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
       : "Ready. Optionally filter by group or division, select a destination site, then click Analyse.",
     notes.length ? "error" : "");
   })();
+
+  // ── Automation ──────────────────────────────────────
+  //
+  // A scheduled run does the same job at a chosen time, with nobody reading
+  // the review first. That is the whole difference, and the reason the server
+  // handler refuses to write when its own sanity checks look wrong: it aborts
+  // if the org has WebRTC phones but none could be matched to a user, if the
+  // run would exceed the safety limit below, or if whoever created the
+  // schedule no longer holds the permission this page requires.
+  //
+  // The filters mirror the ones above, except that a schedule needs its
+  // destination site chosen up front rather than picked at run time.
+  el.appendChild(createSchedulePanel({
+    exportType: "webrtcPhoneCreate",
+    exportLabel: "WebRTC Phones — Create",
+    me,
+    requiresOrg: true,
+    dynamicOrgFields: async (orgId) => {
+      const [sites, groups, divisions] = await Promise.all([
+        gc.fetchAllSites(api, orgId),
+        gc.fetchAllGroups(api, orgId).catch(() => []),
+        gc.fetchAllDivisions(api, orgId).catch(() => []),
+      ]);
+      const byName = (a, b) => String(a.label).localeCompare(String(b.label));
+      return [
+        {
+          key: "siteId",
+          label: "Destination site",
+          singleSelect: true,
+          options: sites
+            .map((x) => ({ value: x.id, label: x.name || x.id }))
+            .sort(byName),
+        },
+        {
+          key: "groupIds",
+          label: "Groups (optional — leave empty for the whole org)",
+          required: false,
+          options: groups
+            .map((g) => ({
+              value: g.id,
+              label: g.type && String(g.type).toLowerCase() !== "official"
+                ? `${g.name} (${String(g.type).toLowerCase()})`
+                : g.name || g.id,
+            }))
+            .sort(byName),
+        },
+        {
+          key: "divisionIds",
+          label: "Division (optional — leave empty for the whole org)",
+          required: false,
+          options: divisions
+            .map((d) => ({ value: d.id, label: d.name || d.id }))
+            .sort(byName),
+        },
+        {
+          key: "maxCreates",
+          label: "Safety limit — refuse the run if it would create more than this",
+          singleSelect: true,
+          options: ["25", "50", "100", "250"],
+        },
+      ];
+    },
+    configSummary: (cfg) => {
+      const parts = [];
+      if (cfg.groupIds?.length) parts.push(`${cfg.groupIds.length} group(s)`);
+      if (cfg.divisionIds?.length) parts.push(`${cfg.divisionIds.length} division(s)`);
+      parts.push(`max ${cfg.maxCreates || "100"}`);
+      return parts.join(", ");
+    },
+  }));
 
   return el;
 }

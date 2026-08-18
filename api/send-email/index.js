@@ -21,8 +21,31 @@
  *   MAILJET_FROM_EMAIL   (e.g. "noreply@versatech.nu")
  *   MAILJET_FROM_NAME    (e.g. "Genesys Admin App")
  */
+const { getCallerContext } = require("../lib/callerContext");
+
 module.exports = async function (context, req) {
   try {
+    // Authenticated callers only.
+    //
+    // This sends mail from the app's own Mailjet identity with a caller-chosen
+    // recipient list, subject, body and attachment. Azure Static Web Apps
+    // serves /api/* anonymously unless a route rule says otherwise, and
+    // staticwebapp.config.json declares none — so this was an open relay: any
+    // caller could send arbitrary mail, with attachments, from the app's
+    // sending domain.
+    //
+    // The scheduled export runner does NOT come through here — it talks to
+    // Mailjet directly — so requiring a user token costs it nothing.
+    const caller = await getCallerContext(context, req);
+    if (!caller.authorized) {
+      context.res = {
+        status: caller.status || 401,
+        headers: { "Content-Type": "application/json" },
+        body: { success: false, error: caller.error || "unauthorized" },
+      };
+      return;
+    }
+
     const { recipients, subject, body, attachment } = req.body || {};
 
     // --- Validate input ---

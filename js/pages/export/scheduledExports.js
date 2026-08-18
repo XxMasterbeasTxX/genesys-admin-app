@@ -14,6 +14,8 @@ import {
   describeSchedule,
   canEditSchedule,
   buildScheduleForm,
+  formatLastRun,
+  formatLastStatus,
 } from "../../components/schedulePanel.js";
 
 export default function renderScheduledExports({ route, me }) {
@@ -89,15 +91,8 @@ export default function renderScheduledExports({ route, me }) {
           ? `<span class="sp-badge sp-badge--on">On</span>`
           : `<span class="sp-badge sp-badge--off">Off</span>`}</td>
         <td>${escapeHtml(s.createdByName || s.createdBy)}</td>
-        <td>${s.lastRun
-          ? `<span class="${s.lastStatus === "success" ? "se-ok" : "se-fail"}">${escapeHtml(new Date(s.lastRun).toLocaleString("da-DK", { timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }))}</span>`
-          : `<span class="se-none">Never</span>`}</td>
-        <td>${!s.lastRun
-          ? `<span class="se-none">—</span>`
-          : s.lastStatus === "success"
-            ? `<span class="se-ok">Success</span>`
-            : `<span class="se-fail" title="${escapeHtml(s.lastError || "")}">Failure${s.lastError ? ` — ${escapeHtml(s.lastError)}` : ""}</span>`
-        }</td>
+        <td>${formatLastRun(s)}</td>
+        <td>${formatLastStatus(s)}</td>
         <td>${editable
           ? `<button class="btn btn-sm sp-btn-edit" data-id="${s.id}">Edit</button>`
           : ""}</td>
