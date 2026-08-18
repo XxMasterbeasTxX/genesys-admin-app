@@ -13,7 +13,7 @@
  * Sheet name: "Roles"
  * Filename prefix: Roles_{OrgName}_
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
@@ -256,16 +256,12 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
 
   // ── Download ──────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
-  if (!lastWorkbook || !lastFilename) return;
-  const XLSX = window.XLSX;
-  const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-  const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-  window._xlsxDownload = window._xlsxDownload || {};
-  window._xlsxDownload[key] = { filename: lastFilename, b64 };
-  const helperUrl = new URL("download.html", document.baseURI);
-  helperUrl.hash = key;
-  const popup = window.open(helperUrl.href, "_blank");
-  if (!popup) { delete window._xlsxDownload[key]; setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error"); }
+    if (!lastWorkbook || !lastFilename) return;
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
+    }
   });
 
   // ── Email toggle ──────────────────────────────────────

@@ -19,10 +19,10 @@
  *   GET /api/v2/groups/{groupId}/members
  *   GET /api/v2/users/{id}
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { fetchCustomers } from "../../../services/customerService.js";
-import { sendEmail, validateRecipients } from "../../../services/emailService.js";
+import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
 import { STYLE_HEADER, STYLE_ROW_EVEN, STYLE_ROW_ODD } from "../../../utils/excelStyles.js";
@@ -253,22 +253,20 @@ export default function renderTrusteeExport({ route, me, api }) {
     $progressBar.style.width = `${pct}%`;
   }
 
-  /** Build and trigger Excel download (styled). */
+  /**
+   * Build and trigger Excel download (styled).
+   *
+   * Runs from a plain click handler, so a blocked pop-up has to be reported
+   * here — an escaping throw would leave the button looking dead.
+   */
   function downloadExcel(byTrusteeOrg, customerNames) {
     const wb = buildTrusteeWorkbook(byTrusteeOrg, customerNames);
     if (!wb.SheetNames.length) return;
 
-    const b64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
-    const filename = timestampedFilename("trustee_export", "xlsx");
-    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    window._xlsxDownload = window._xlsxDownload || {};
-    window._xlsxDownload[key] = { filename, b64 };
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = key;
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) {
-      delete window._xlsxDownload[key];
-      throw new Error("Pop-up blocked. Please allow pop-ups for this site and try again.");
+    try {
+      downloadWorkbook(wb, timestampedFilename("trustee_export", "xlsx"));
+    } catch (err) {
+      setStatus(err.message, "error");
     }
   }
 

@@ -187,15 +187,21 @@ export function exportLogXlsx({ sheetName, columns, rows, filename, statusKey = 
 }
 
 /**
- * Hand a finished workbook to download.html.
+ * Hand an already-encoded file to download.html.
  *
  * The app runs inside a Genesys Cloud iframe where direct blob downloads are
  * blocked. The data is stashed on `window` under a random key (not in the URL
  * — browsers reject megabytes of base64 there) and the helper page reads it
- * back through `window.opener`.
+ * back through `window.opener`. download.html picks the MIME type from the
+ * filename extension, so this serves .xlsx, .zip, .csv and .pdf alike.
+ *
+ * Throws when the pop-up is blocked. Callers are expected to catch and surface
+ * the message — a silent no-op reads as a broken button.
+ *
+ * @param {string} filename  Suggested filename, extension included.
+ * @param {string} b64       Base64-encoded file content.
  */
-function downloadWorkbook(wb, filename) {
-  const b64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
+export function downloadBase64(filename, b64) {
   const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
   window._xlsxDownload = window._xlsxDownload || {};
   window._xlsxDownload[key] = { filename, b64 };
@@ -208,6 +214,19 @@ function downloadWorkbook(wb, filename) {
     delete window._xlsxDownload[key];
     throw new Error("Pop-up blocked. Please allow pop-ups for this site and try again.");
   }
+}
+
+/**
+ * Encode a finished workbook and hand it to download.html.
+ *
+ * @param {object} wb        SheetJS workbook.
+ * @param {string} filename  Suggested filename, e.g. "Report_2026-02-27.xlsx".
+ */
+export function downloadWorkbook(wb, filename) {
+  if (typeof XLSX === "undefined") {
+    throw new Error("Excel library not loaded. Please reload the page.");
+  }
+  downloadBase64(filename, XLSX.write(wb, { bookType: "xlsx", type: "base64" }));
 }
 
 /** Generate a timestamped filename, e.g. "Prefix_2026-02-27T14-30-00". */
