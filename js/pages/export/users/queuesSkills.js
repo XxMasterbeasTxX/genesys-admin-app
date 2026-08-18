@@ -545,7 +545,8 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
 
     try {
       const [users, groups, teams, queues, skills, languages] = await Promise.all([
-        gc.fetchAllUsers(api, org.id, { state: "any" }),
+        gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled, state: "any" }),
         gc.fetchAllGroups(api, org.id),
         gc.fetchAllTeams(api, org.id),
         gc.fetchAllQueues(api, org.id),

@@ -289,6 +289,7 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
       setProgress(5);
 
       const allUsers = await gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled,
         expand: ["authorization"],
         onProgress: (n) => setProgress(5 + Math.min((n / 500) * 70, 70)),
       });

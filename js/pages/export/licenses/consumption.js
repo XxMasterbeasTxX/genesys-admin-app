@@ -308,6 +308,7 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
       const [licenseUsers, allUsers] = await Promise.all([
         gc.fetchAllLicenseUsers(api, org.id, {}),
         gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled,
           expand: ["division"],
           onProgress: (n) => setProgress(5 + Math.min((n / 500) * 61, 61)),
         }),

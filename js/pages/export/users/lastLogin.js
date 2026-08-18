@@ -249,6 +249,7 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
       const [licenseUsers, allUsers] = await Promise.all([
         gc.fetchAllLicenseUsers(api, org.id, {}),
         gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled,
           expand: ["division", "dateLastLogin"],
           state: "active",
           onProgress: (n) => setProgress(5 + Math.min((n / 500) * 61, 61)),

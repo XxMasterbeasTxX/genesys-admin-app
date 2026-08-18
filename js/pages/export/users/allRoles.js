@@ -261,6 +261,7 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
       setStatus("Fetching users and role assignments…");
       setProgress(5);
       const allUsers = await gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled,
         expand: ["authorization", "dateLastLogin"],
         state: "any",
         onProgress: (n) => {

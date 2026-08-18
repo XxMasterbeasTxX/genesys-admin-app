@@ -159,8 +159,11 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
     }
   }
 
-  // Refresh when the component is first rendered
+  // The comment above promised this stayed in sync, but it was only ever called
+  // once. Generate reads the live org, so switching in the header used to leave
+  // the label naming a different org than the export would actually produce.
   refreshOrgLabel();
+  const unsubscribeOrg = orgContext?.onChange?.(refreshOrgLabel);
 
   // ── Generate ───────────────────────────────────────────────────────────
   $genBtn.addEventListener("click", async () => {
@@ -266,6 +269,8 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
       setStatus(err.message, "error");
     }
   });
+
+  el.__destroy = () => unsubscribeOrg?.();
 
   return el;
 }

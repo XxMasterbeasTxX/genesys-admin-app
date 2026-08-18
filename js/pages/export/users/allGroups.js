@@ -220,6 +220,7 @@ export default function renderAllGroupsExport({ route, me, api, orgContext }) {
       const [allGroups, allUsers] = await Promise.all([
         gc.fetchAllPages(api, org.id, "/api/v2/groups"),
         gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled,
           expand: ["groups", "team", "dateLastLogin"],
           state: "any",
           onProgress: (n) => setProgress(5 + Math.min((n / 500) * 70, 70)),
