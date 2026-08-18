@@ -58,7 +58,7 @@ const PAGE_STYLES = `
 .pc-copied { color: #4ade80; font-size: 12px; margin-left: 8px; }
 .pc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .pc-table th, .pc-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
-.pc-table th { font-weight: 600; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap; position: sticky; top: 0; background: var(--card, #1a1a1a); }
+.pc-table th { font-weight: 600; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap; position: sticky; top: 0; background: var(--panel); }
 .pc-table th[data-sort]:hover { color: #fff; }
 .pc-table td.pc-perm { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
 .pc-table-wrap { max-height: 62vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }

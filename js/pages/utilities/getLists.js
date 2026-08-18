@@ -375,7 +375,6 @@ export default async function renderGetLists(ctx = {}) {
           to Excel. Read-only — nothing is changed in Genesys.
         </p>
       </div>
-      <div><button class="btn" id="glRefreshBtn">Refresh</button></div>
     </div>
 
     <hr class="hr">
@@ -387,6 +386,7 @@ export default async function renderGetLists(ctx = {}) {
           ${LIST_DEFS.map((d) => `<option value="${escapeHtml(d.key)}">${escapeHtml(d.label)}</option>`).join("")}
         </select>
       </div>
+      <button class="btn" id="glLoadBtn">Load</button>
     </div>
 
     <p class="gl-desc" id="glDesc"></p>
@@ -407,7 +407,7 @@ export default async function renderGetLists(ctx = {}) {
   const $results = el.querySelector("#glResults");
   const $actions = el.querySelector("#glActionsRow");
   const $count   = el.querySelector("#glCount");
-  const $refresh = el.querySelector("#glRefreshBtn");
+  const $load    = el.querySelector("#glLoadBtn");
   const $export  = el.querySelector("#glExportBtn");
 
   // ── State ────────────────────────────────────────────
@@ -517,8 +517,22 @@ export default async function renderGetLists(ctx = {}) {
     applySort();
   }
 
-  async function load() {
+  /**
+   * Idle state for the selected list: its description, nothing fetched.
+   * Changing the picker must not fire an API call, and must not leave the
+   * previous list's rows on screen under a heading that now names another one.
+   */
+  function showIdle() {
+    allRows = [];
+    sortKey = null;
+    sortDir = "asc";
+    clearTable();
+    $actions.style.display = "none";
     $desc.innerHTML = currentDef.desc || "";
+    setStatus(`Click Load to fetch ${currentDef.label.toLowerCase()} for the selected org.`);
+  }
+
+  async function load() {
     sortKey = null;
     sortDir = "asc";
 
@@ -535,7 +549,7 @@ export default async function renderGetLists(ctx = {}) {
     setStatus(`Loading ${what} for ${org.name}…`);
     $actions.style.display = "none";
     clearTable();
-    $refresh.disabled = true;
+    $load.disabled = true;
     $select.disabled = true;
 
     try {
@@ -551,7 +565,7 @@ export default async function renderGetLists(ctx = {}) {
       console.error("[getLists] load failed:", err);
       setStatus(`Failed to load ${what}: ${err?.message || err}`, "error");
     } finally {
-      $refresh.disabled = false;
+      $load.disabled = false;
       $select.disabled = false;
     }
   }
@@ -559,10 +573,11 @@ export default async function renderGetLists(ctx = {}) {
   // ── Wiring ───────────────────────────────────────────
   $select.addEventListener("change", () => {
     currentDef = LIST_DEFS.find((d) => d.key === $select.value) || LIST_DEFS[0];
-    load();
+    showIdle();
   });
 
-  $refresh.addEventListener("click", load);
+  // Load doubles as refresh: clicking it again re-fetches the same list.
+  $load.addEventListener("click", load);
 
   // Exports what is on screen: the filters that are set, in the order sorted.
   $export.addEventListener("click", () => {
@@ -585,8 +600,8 @@ export default async function renderGetLists(ctx = {}) {
     }
   });
 
-  // Initial load
-  load();
+  // Nothing is fetched until Load is clicked.
+  showIdle();
 
   return el;
 }
