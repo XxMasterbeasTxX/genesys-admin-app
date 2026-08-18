@@ -14,11 +14,10 @@
  *      Returns pre-computed counts grouped by dimension — fast at any scale.
  */
 
-import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
-import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
-import { STYLE_HEADER } from "../../../utils/excelStyles.js";
+import { STYLE_HEADER, STYLE_ROW_EVEN, STYLE_ROW_ODD } from "../../../utils/excelStyles.js";
 import { logAction } from "../../../services/activityLogService.js";
 
 // ── Automation ──────────────────────────────────────────
@@ -90,14 +89,6 @@ export default function renderTotals({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  const org = orgContext?.getDetails?.();
-  if (!org) {
-    el.innerHTML = `
-      <h1 class="h1">Export — Interactions — Totals</h1>
-      <hr class="hr">
-      <p class="p">Please select a customer org from the dropdown above.</p>`;
-    return el;
-  }
 
   // ── Build UI ────────────────────────────────────────
   el.innerHTML = `
@@ -171,7 +162,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
       </div>
 
       <div class="it-chart-group">
-        <h3 class="it-chart-title">Voice - By Direction</h3>
+        <h3 class="it-chart-title">By Direction</h3>
         <div id="itChartDir" class="it-bars"></div>
       </div>
 
@@ -222,6 +213,34 @@ export default function renderTotals({ route, me, api, orgContext }) {
           ],
           default: "lastMonth",
         },
+        // api/lib/exports/interactionTotals.js has always read these two; there
+        // was simply no way to set them, so scheduled runs were stuck unfiltered
+        // while the manual form offered both.
+        {
+          key: "mediaType",
+          label: "Media Type",
+          type: "select",
+          options: [
+            { value: "",         label: "All" },
+            { value: "voice",    label: "Voice" },
+            { value: "callback", label: "Callback" },
+            { value: "chat",     label: "Chat" },
+            { value: "email",    label: "Email" },
+            { value: "message",  label: "Message" },
+          ],
+          default: "",
+        },
+        {
+          key: "direction",
+          label: "Direction",
+          type: "select",
+          options: [
+            { value: "",         label: "All" },
+            { value: "inbound",  label: "Inbound" },
+            { value: "outbound", label: "Outbound" },
+          ],
+          default: "",
+        },
       ],
     });
     el.appendChild(schedulePanel);
@@ -247,7 +266,10 @@ export default function renderTotals({ route, me, api, orgContext }) {
   const $emailTo   = el.querySelector("#itEmailTo");
   const $emailBody = el.querySelector("#itEmailBody");
 
-  const orgId = orgContext.get();
+  // Resolved on each Load, never captured at render. Binding it once meant that
+  // switching org in the header left this page querying the previous customer
+  // while labelling the results with the previous customer's name.
+  const currentOrg = () => orgContext?.getDetails?.() || null;
 
   // ── Helpers ─────────────────────────────────────────
   function setStatus(msg, type = "") {
@@ -299,7 +321,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
   }
 
   // ── Aggregates helper ─────────────────────────────
-  async function fetchAggregates(interval, mt, dir) {
+  async function fetchAggregates(orgId, interval, mt, dir) {
     const makeBody = (groupBy, extraPreds = []) => {
       const body = { interval, metrics: ["nConversations"] };
       if (groupBy) body.groupBy = [groupBy];
@@ -434,6 +456,12 @@ export default function renderTotals({ route, me, api, orgContext }) {
       return;
     }
 
+    const org = currentOrg();
+    if (!org) {
+      setStatus("Please select a customer org from the dropdown above.", "error");
+      return;
+    }
+
     $loadBtn.disabled = true;
     $charts.style.display = "none";
     hideStatus();
@@ -446,7 +474,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
       showProgress(30);
 
       const { mediaCounts, dirCounts, routingCounts, grandTotal } =
-        await fetchAggregates(interval, $mediaFilter.value, $dirFilter.value);
+        await fetchAggregates(org.id, interval, $mediaFilter.value, $dirFilter.value);
 
       $totalBanner.textContent = `Total Interactions: ${grandTotal.toLocaleString()}`;
 
@@ -458,7 +486,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
       lastSummaryData = { mediaCounts, dirCounts, routingCounts, grandTotal, from, to };
 
       // Build workbook
-      const wb = buildSummaryWorkbook(lastSummaryData);
+      const wb = buildSummaryWorkbook(lastSummaryData, org);
       const fname = timestampedFilename(
         `InteractionTotals_${org.name.replace(/\s+/g, "_")}`, "xlsx"
       );
@@ -518,7 +546,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
   });
 
   // ── Build summary workbook ──────────────────────────
-  function buildSummaryWorkbook({ mediaCounts, dirCounts, routingCounts, grandTotal, from, to }) {
+  function buildSummaryWorkbook({ mediaCounts, dirCounts, routingCounts, grandTotal, from, to }, org) {
     const mt  = $mediaFilter.value;
     const dir = $dirFilter.value;
     const filterParts = [];
@@ -563,15 +591,40 @@ export default function renderTotals({ route, me, api, orgContext }) {
       rows.push(["Routing", friendlyLabel(key, ROUTING_LABELS), count, pct]);
     }
 
-    // Build workbook, then style title rows over the top
-    const wb = buildStyledWorkbook(rows, "Interaction Totals");
-    const ws = wb.Sheets["Interaction Totals"];
+    // Built directly rather than through buildStyledWorkbook, which derives the
+    // column count and widths from wsData[0]. Here row 0 is the one-cell title
+    // "Interaction Totals", so it sized column A and left Value, Count and
+    // Percentage with no width, borders or banding at all.
     const XLSX = window.XLSX;
+    const ws   = XLSX.utils.aoa_to_sheet(rows);
+    const wb   = XLSX.utils.book_new();
 
-    // Re-style: title rows should be bold, not header-blue
+    // Banded rows across the full four columns, from the first data row down.
+    for (let r = titleRowCount + 1; r < rows.length; r++) {
+      if (!rows[r] || rows[r].length === 0) continue; // spacer row
+      const style = (r - titleRowCount) % 2 === 0 ? STYLE_ROW_EVEN : STYLE_ROW_ODD;
+      for (let c = 0; c < HEADERS.length; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        if (ws[addr]) ws[addr].s = style;
+      }
+    }
+
+    // Widths from the data rows, ignoring the title row that misled the shared
+    // builder. Column A also has to hold "Interaction Totals" and the Org line.
+    ws["!cols"] = HEADERS.map((h, i) => {
+      let maxLen = h.length;
+      for (const row of rows) {
+        if (!row || row.length <= i) continue;
+        const len = String(row[i] ?? "").length;
+        if (len > maxLen) maxLen = len;
+      }
+      return { wch: Math.min(maxLen + 2, 50) };
+    });
+
+    // Title rows: bold, not header-blue
     const titleStyle = { font: { bold: true, sz: 12, name: "Calibri" } };
     for (let r = 0; r < titleRowCount; r++) {
-      for (let c = 0; c < 4; c++) {
+      for (let c = 0; c < HEADERS.length; c++) {
         const addr = XLSX.utils.encode_cell({ r, c });
         if (ws[addr]) ws[addr].s = titleStyle;
       }
@@ -589,6 +642,7 @@ export default function renderTotals({ route, me, api, orgContext }) {
       ref: `${XLSX.utils.encode_cell({ r: titleRowCount, c: 0 })}:${XLSX.utils.encode_cell({ r: lastRow, c: HEADERS.length - 1 })}`,
     };
 
+    XLSX.utils.book_append_sheet(wb, ws, "Interaction Totals");
     return wb;
   }
 
