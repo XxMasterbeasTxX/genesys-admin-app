@@ -22,8 +22,8 @@
  *
  * Per-org failures are tolerated; the status line lists the failing orgs.
  *
- * No scheduled variant — there is no Python equivalent of
- * GUI_Billing_Export_Scheduled_*.py for calendar year.
+ * Scheduling is available: the handler always exports the previous calendar
+ * year (current year − 1). See api/lib/exports/billingCalendarYear.js.
  */
 import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import {

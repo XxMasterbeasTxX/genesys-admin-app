@@ -212,8 +212,7 @@ export function attachColumnFilters(tableWrap, opts = {}) {
     }
 
     if (countEl) {
-      const hasFilter = activeEntries.some(([, s]) => s.size > 0 || s.size === 0);
-      const filtered  = Object.keys(activeFilters).length > 0;
+      const filtered = Object.keys(activeFilters).length > 0;
       countEl.textContent = filtered
         ? `${visible} / ${totalCount} ${totalLabel}`
         : `${totalCount} ${totalLabel}`;

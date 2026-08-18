@@ -27,7 +27,7 @@ export default function renderScheduledExports({ route, me }) {
     <hr class="hr">
     <p class="page-desc">
       Overview of every scheduled export across all export types.
-      You can only edit or delete schedules you created${me?.email ? "" : ""}.
+      You can only edit or delete schedules you created.
     </p>
     <div class="se-status" id="seStatus"></div>
     <div class="se-body" id="seBody">

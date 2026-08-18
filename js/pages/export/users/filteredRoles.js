@@ -71,7 +71,6 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
   let availableRoles = [];
   let selectedRoles  = [];
@@ -276,7 +275,6 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
     selectedRoles = getCheckedRoles();
     if (!selectedRoles.length) { setStatus("Select at least one role.", "error"); return; }
 
-    isRunning = true;
     cancelled = false;
     $exportBtn.style.display = "none";
     $cancelBtn.style.display = "";
@@ -349,7 +347,6 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $exportBtn.style.display = "";
       $cancelBtn.style.display = "none";
     }
@@ -358,7 +355,6 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
   // ── Cancel ────────────────────────────────────────────
   $cancelBtn.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $exportBtn.style.display = "";
     $cancelBtn.style.display = "none";
@@ -382,7 +378,6 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
   // ── Preview table with dropdown column filters ──────────
   function renderPreviewTable(rows, roles) {
     const headers = [...FIXED_HEADERS, ...roles];
-    const FIXED_COUNT = FIXED_HEADERS.length;
 
     let html = `<details class="te-details">`;
     html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${rows.length} users</span></summary>`;

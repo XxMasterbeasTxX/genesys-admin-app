@@ -5,10 +5,10 @@
  * Columns: Name, Description, Members (accurate — active org users only).
  * One row per role, sorted alphabetically by name.
  *
- * Member count method (matches Python GUI_tab_roles.py):
- *   1. Fetch all active users → build a Set of their IDs
- *   2. Per role: fetch assigned users via GET /api/v2/authorization/roles/{id}/users
- *   3. Count only those present in the active user set (excludes deleted/external-org users)
+ * Member counts come from one paginated users call, not one call per role:
+ * GET /api/v2/users?expand=authorization embeds each user's roles, which are
+ * then tallied locally. Only active users are counted, so deleted and
+ * external-org holders are excluded — matching Python GUI_tab_roles.py.
  *
  * Sheet name: "Roles"
  * Filename prefix: Roles_{OrgName}_
@@ -70,7 +70,6 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
   let lastWorkbook = null;
   let lastFilename = null;
@@ -171,7 +170,6 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
 
-    isRunning = true;
     cancelled = false;
     $exportBtn.style.display = "none";
     $cancelBtn.style.display = "";
@@ -246,7 +244,6 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $exportBtn.style.display = "";
       $cancelBtn.style.display = "none";
     }
@@ -255,7 +252,6 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
   // ── Cancel ────────────────────────────────────────────
   $cancelBtn.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $exportBtn.style.display = "";
     $cancelBtn.style.display = "none";

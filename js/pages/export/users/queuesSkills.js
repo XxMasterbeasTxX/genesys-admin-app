@@ -169,7 +169,6 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
 
   let lastWorkbook = null;
@@ -586,7 +585,6 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
       return;
     }
 
-    isRunning = true;
     cancelled = false;
     $runBtn.style.display = "none";
     $cancelBtn.style.display = "";
@@ -677,7 +675,6 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $runBtn.style.display = "";
       $cancelBtn.style.display = "none";
     }
@@ -685,7 +682,6 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
 
   $cancelBtn.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $runBtn.style.display = "";
     $cancelBtn.style.display = "none";

@@ -103,7 +103,6 @@ export default function renderAllGroupsExport({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
 
   el.innerHTML = `
@@ -205,7 +204,6 @@ export default function renderAllGroupsExport({ route, me, api, orgContext }) {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
 
-    isRunning = true;
     cancelled = false;
     $btn.style.display = "none";
     $cancel.style.display = "";
@@ -293,7 +291,6 @@ export default function renderAllGroupsExport({ route, me, api, orgContext }) {
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $btn.style.display = "";
       $cancel.style.display = "none";
     }
@@ -302,7 +299,6 @@ export default function renderAllGroupsExport({ route, me, api, orgContext }) {
   // ── Cancel ────────────────────────────────────────────
   $cancel.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $btn.style.display = "";
     $cancel.style.display = "none";

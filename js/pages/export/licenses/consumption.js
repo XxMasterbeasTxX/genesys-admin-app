@@ -120,7 +120,6 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning  = false;
   let cancelled  = false;
   let licDefs    = [];   // [{id}]
 
@@ -287,7 +286,6 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
 
     const licenseFilter = $licSelect.value || ALL_LICENSES;
 
-    isRunning = true;
     cancelled = false;
     $exportBtn.style.display = "none";
     $cancelBtn.style.display = "";
@@ -374,7 +372,6 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $exportBtn.style.display = "";
       $cancelBtn.style.display = "none";
     }
@@ -383,7 +380,6 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
   // ── Cancel ────────────────────────────────────────────
   $cancelBtn.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $exportBtn.style.display = "";
     $cancelBtn.style.display = "none";
@@ -407,7 +403,6 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
   // ── Preview table ─────────────────────────────────────
   function renderPreviewTable(rows, licenseColumns) {
     const headers    = [...FIXED_HEADERS, ...licenseColumns];
-    const FIXED_COUNT = FIXED_HEADERS.length;
 
     let html = `<details class="te-details">`;
     html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${rows.length} users</span></summary>`;

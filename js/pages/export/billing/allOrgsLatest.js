@@ -2,8 +2,8 @@
  * Export › Billing › All Orgs — Latest Period
  *
  * Exports the latest complete billing period (index=1) for every billable
- * customer org and emits a SINGLE worksheet with all orgs stacked
- * vertically — matching the Python script GUI_Billing_Export_Scheduled_All.py.
+ * customer org into one workbook with a sheet per organisation — matching the
+ * Python script GUI_Billing_Export_Scheduled_All.py.
  *
  * Trustee orgs (e.g. Demo, Test IE) are excluded — they cannot be exported
  * as trustors.
@@ -42,7 +42,7 @@ export default function renderBillingAllOrgsLatestExport({ me, api }) {
     <h1 class="h1">Export — Billing — All Orgs (Latest Period)</h1>
     <hr class="hr">
     <p class="page-desc">
-      Exports the latest complete billing period for every billable customer org
+      Exports the latest complete billing period for every billable customer
       org into a single workbook. The workbook has one sheet per organisation
       (sheet name = org name), each using the same 4-column layout (Name,
       Committed, Actual Usage, On-Demand) with a per-org summary banner, an
