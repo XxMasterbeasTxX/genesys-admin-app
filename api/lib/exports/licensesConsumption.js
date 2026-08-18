@@ -99,11 +99,17 @@ async function execute(context, schedule) {
   try {
     // Step 1+2: fetch licence assignments and users in parallel
     context.log("Fetching licence assignments and users in parallel…");
-    const [licenseUsers, allUsers] = await Promise.all([
+    const [licenseUsers, allUsers, licenseDefs] = await Promise.all([
       genesysGetAllPages(orgId, "/api/v2/license/users", 100),
       genesysGetAllPages(orgId, "/api/v2/users?expand=division", 500),
+      // Flat array, not paginated. Tolerated failing: the report still builds
+      // from observed assignments alone, exactly as it did before.
+      genesysGet(orgId, "/api/v2/license/definitions").catch(() => []),
     ]);
-    context.log(`Fetched ${licenseUsers.length} licence-user records, ${allUsers.length} users`);
+    const definedLicenseIds = (Array.isArray(licenseDefs) ? licenseDefs : licenseDefs?.entities || [])
+      .map((d) => d?.id)
+      .filter(Boolean);
+    context.log(`Fetched ${licenseUsers.length} licence-user records, ${allUsers.length} users, ${definedLicenseIds.length} licence definitions`);
 
     // Build map: userId → Set<licenceId>
     // The API returns { user: { id }, licenses } — entry.user.id is the key
@@ -116,7 +122,10 @@ async function execute(context, schedule) {
     // Step 3: determine licence columns
     let licenseColumns;
     if (licenseFilter === ALL_LICENSES) {
-      const all = new Set();
+      // Every defined licence gets a column, including those nobody holds —
+      // see the note in js/pages/export/licenses/consumption.js. Observed ids
+      // are unioned in so nothing assigned can be dropped.
+      const all = new Set(definedLicenseIds);
       for (const [, set] of licenseMap) for (const l of set) all.add(l);
       licenseColumns = Array.from(all).sort((a, b) =>
         a.localeCompare(b, undefined, { sensitivity: "base" })

@@ -37,7 +37,7 @@ const ALL_LICENSES  = "All Licenses";
  * @param {string}   licenseFilter  – specific licence ID or "All Licenses"
  * @returns {{ rows: object[], licenseColumns: string[] }}
  */
-function buildRows(licenseUsers, allUsers, licenseFilter) {
+function buildRows(licenseUsers, allUsers, licenseFilter, licenseIds = []) {
   // Build lookup map: userId → Set<licenceId>
   const licenseMap = new Map();
   for (const entry of licenseUsers) {
@@ -47,7 +47,13 @@ function buildRows(licenseUsers, allUsers, licenseFilter) {
   // Determine which licence columns to produce
   let licenseColumns;
   if (licenseFilter === ALL_LICENSES) {
-    const all = new Set();
+    // Every licence the org defines, not merely those someone currently holds.
+    // Deriving columns from assignments alone made a licence with no holders
+    // vanish from the report, so "nobody uses this" and "this org does not have
+    // this licence" looked identical — and the column set shifted between runs
+    // as assignments changed. Observed ids are unioned in so an assignment
+    // referencing something outside the definitions list is still shown.
+    const all = new Set(licenseIds);
     for (const [, set] of licenseMap) for (const l of set) all.add(l);
     licenseColumns = Array.from(all).sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })
@@ -310,7 +316,9 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
       setProgress(66);
 
       setStatus("Processing…");
-      const { rows, licenseColumns } = buildRows(licenseUsers, allUsers, licenseFilter);
+      const { rows, licenseColumns } = buildRows(
+        licenseUsers, allUsers, licenseFilter, licDefs.map(d => d.id).filter(Boolean)
+      );
       setProgress(75);
 
       setStatus("Building rows…");

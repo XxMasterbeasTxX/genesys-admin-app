@@ -248,7 +248,11 @@ export default function renderAllGroupsExport({ route, me, api, orgContext }) {
       $table.style.display = "";
 
       // Summary
-      const uniqueUsers = new Set(rows.map(r => r.email)).size;
+      // Counted from the source, not from row emails. This export includes
+      // deleted users (state: any), and Genesys releases a deleted user's email
+      // so it can be reused — so emails are neither always present nor unique
+      // here. buildRows emits at least one row per user, so this is exact.
+      const uniqueUsers = allUsers.length;
       $summary.textContent = `${uniqueUsers} users, ${rows.length} rows (incl. group duplicates)`;
       $summary.style.display = "";
 

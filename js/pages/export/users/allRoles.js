@@ -345,7 +345,11 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
       $table.style.display = "";
 
       // Summary
-      const uniqueUsers = new Set(rows.map(r => r.email)).size;
+      // Counted by the per-user index rather than email: this export includes
+      // deleted users (state: any), whose email Genesys releases for reuse, so
+      // emails are neither always present nor unique. Users holding no roles are
+      // excluded from rows entirely, so the source count would be wrong here.
+      const uniqueUsers = new Set(rows.map(r => r.index)).size;
       $summary.textContent = `${uniqueUsers} users, ${rows.length} rows`;
       $summary.style.display = "";
 

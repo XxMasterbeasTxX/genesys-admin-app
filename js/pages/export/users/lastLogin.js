@@ -285,7 +285,9 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
       $table.style.display = "";
 
       // Summary
-      const uniqueUsers = new Set(rows.map(r => r.email)).size;
+      // The filtered user list is the count; row emails are a display field and
+      // fall back to "N/A", which would collapse distinct users into one.
+      const uniqueUsers = filtered.length;
       $summary.textContent =
         `${uniqueUsers} users, ${rows.length} rows (incl. license duplicates)` +
         (filterMonths > 0 ? ` — filtered: inactive ≥ ${filterMonths} months` : "");
