@@ -19,7 +19,6 @@
  *   fetch      async (api, orgId) => row objects keyed by column.key
  */
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
-import { attachColumnFilters } from "../../utils/columnFilter.js";
 import { orgContext } from "../../services/orgContext.js";
 
 // ── Presence definitions ──────────────────────────────────────────────
@@ -122,17 +121,240 @@ const PAGE_STYLES = `
 
 /* Capped height rather than the shared .te-table-scroll, which only scrolls
    horizontally: one presence definition per language runs to a few hundred
-   rows, and the filter row has to stay reachable while you scroll them.
-   Both header rows stick; the filter row is offset by an explicit header
-   height so the two never overlap. */
+   rows, and the header has to stay reachable while you scroll them.
+   One header row only — the sort label and the filter button share the cell,
+   so there is no second band under it. --panel rather than a literal colour,
+   so the sticky header follows the light/dark theme like everything else. */
 .gl-table-wrap { max-height: 62vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 16px; }
 .gl-table { width: 100%; }
-.gl-table thead th { position: sticky; z-index: 2; background: var(--card, #1a1a1a); }
-.gl-table thead tr:first-child th { top: 0; height: 34px; box-sizing: border-box; }
-.gl-table thead tr.ll-filter-row th { top: 34px; }
-.gl-table th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
-.gl-table th[data-sort]:hover { color: #fff; }
+.gl-table thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.gl-th-inner { display: flex; align-items: center; gap: 6px; }
+.gl-th-label { cursor: pointer; user-select: none; white-space: nowrap; }
+.gl-th-label:hover { color: var(--text); }
+.gl-arrow { font-size: 9px; opacity: 0.7; }
+.gl-filter-btn { margin-left: auto; padding: 1px 5px; }
+
+/* "Only" narrows to a single value in one click. Ticking 24 languages off by
+   hand to see one of them is the thing this exists to avoid. */
+.gl-item { display: flex; align-items: center; gap: 6px; }
+.gl-item .cf-item-label { flex: 1; }
+.gl-only {
+  border: none; background: transparent; color: var(--muted);
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  cursor: pointer; padding: 1px 4px; border-radius: 3px; opacity: 0.45;
+}
+.gl-item:hover .gl-only { opacity: 1; }
+.gl-only:hover { color: #60a5fa; background: rgba(59,130,246,0.12); }
+.gl-filter-empty { padding: 8px 4px; font-size: 12px; color: var(--muted); }
 `;
+
+// ── Per-column dropdown filters ───────────────────────────────────────
+/**
+ * Filters built into the header cells themselves.
+ *
+ * The shared `attachColumnFilters` needs a second `<tr>` to put its buttons in,
+ * which gives every table two header bands. Here the sort label and the filter
+ * button share one cell, so the header stays a single line.
+ *
+ * Rows are hidden with `style.display`, which is what lets sorting reorder the
+ * row nodes without disturbing the filter (see applySort).
+ *
+ * Reuses the app's `cf-*` dropdown styles so it looks like the filters on the
+ * export previews, and adds an "Only" action per value: narrowing to one or two
+ * of twenty-odd languages is the common case, and unticking the other twenty by
+ * hand is not a reasonable way to get there.
+ *
+ * @param {HTMLElement} wrap      element containing the table
+ * @param {Function}    onChange  (visible, total, isFiltered) after every change
+ * @returns {Function}  cleanup — detaches the document listener
+ */
+function attachHeaderFilters(wrap, onChange) {
+  const table = wrap.querySelector("table");
+  const tbody = table?.querySelector("tbody");
+  if (!table || !tbody) return () => {};
+
+  const headerCells = Array.from(table.querySelectorAll("thead th"));
+  const dataRows = Array.from(tbody.querySelectorAll("tr"));
+  const cellText = (tr, i) => (tr.children[i]?.textContent || "").trim();
+
+  // Distinct values per column, collected once from the rendered rows.
+  const colValues = headerCells.map((_, i) => {
+    const vals = new Set();
+    for (const tr of dataRows) vals.add(cellText(tr, i));
+    return [...vals].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+    );
+  });
+
+  // colIdx → Set of kept values. Absent means "no filter on this column",
+  // which is not the same as a full Set: it keeps the button un-highlighted.
+  const active = {};
+  let openPanel = null;
+  let openTh = null;
+
+  function apply() {
+    const entries = Object.entries(active);
+    let visible = 0;
+    for (const tr of dataRows) {
+      let match = true;
+      for (const [idx, kept] of entries) {
+        if (!kept.has(cellText(tr, +idx))) { match = false; break; }
+      }
+      tr.style.display = match ? "" : "none";
+      if (match) visible++;
+    }
+    onChange?.(visible, dataRows.length, entries.length > 0);
+  }
+
+  function closePanel() {
+    if (!openPanel) return;
+    openPanel.classList.remove("open");
+    // Raised while open so the panel is never covered by a later sticky cell.
+    if (openTh) openTh.style.zIndex = "";
+    openPanel = null;
+    openTh = null;
+  }
+
+  headerCells.forEach((th, colIdx) => {
+    th.classList.add("cf-th");
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cf-btn gl-filter-btn";
+    btn.title = "Filter this column";
+    btn.innerHTML = `<span class="cf-caret">▼</span>`;
+
+    const panel = document.createElement("div");
+    panel.className = "cf-dropdown";
+    panel.innerHTML = `
+      <input class="cf-search" type="text" placeholder="Search values…">
+      <div class="cf-actions">
+        <button type="button" class="cf-action-btn cf-all">All</button>
+        <button type="button" class="cf-action-btn cf-none">None</button>
+      </div>
+      <div class="cf-list"></div>`;
+
+    const search = panel.querySelector(".cf-search");
+    const list = panel.querySelector(".cf-list");
+
+    function syncButton() {
+      const on = active[colIdx] != null;
+      btn.classList.toggle("cf-btn--active", on);
+      btn.title = on
+        ? `Filtered to ${active[colIdx].size} of ${colValues[colIdx].length} values`
+        : "Filter this column";
+    }
+
+    /** Set the filter to exactly `set`, collapsing "everything" back to no filter. */
+    function setKept(set) {
+      if (set && set.size === colValues[colIdx].length) delete active[colIdx];
+      else active[colIdx] = set;
+      apply();
+      syncButton();
+    }
+
+    function rebuild() {
+      const term = search.value.trim().toLowerCase();
+      const kept = active[colIdx];
+      const shown = colValues[colIdx].filter((v) => !term || v.toLowerCase().includes(term));
+      list.innerHTML = "";
+
+      if (!shown.length) {
+        list.innerHTML = `<div class="gl-filter-empty">No matching values.</div>`;
+        return;
+      }
+
+      for (const val of shown) {
+        const item = document.createElement("label");
+        item.className = "cf-item gl-item";
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = kept == null || kept.has(val);
+        cb.addEventListener("change", () => {
+          // Materialise from the full value list on the first tick, so
+          // unticking one value keeps the other twenty.
+          const next = new Set(active[colIdx] ?? colValues[colIdx]);
+          if (cb.checked) next.add(val); else next.delete(val);
+          setKept(next);
+        });
+
+        const label = document.createElement("span");
+        label.className = "cf-item-label";
+        label.textContent = val || "(empty)";
+
+        const only = document.createElement("button");
+        only.type = "button";
+        only.className = "gl-only";
+        only.textContent = "only";
+        only.title = `Show only ${val || "(empty)"}`;
+        only.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setKept(new Set([val]));
+          rebuild();
+        });
+
+        item.append(cb, label, only);
+        list.appendChild(item);
+      }
+    }
+
+    panel.querySelector(".cf-all").addEventListener("click", () => {
+      delete active[colIdx];
+      apply();
+      syncButton();
+      rebuild();
+    });
+
+    panel.querySelector(".cf-none").addEventListener("click", () => {
+      active[colIdx] = new Set();
+      apply();
+      syncButton();
+      rebuild();
+    });
+
+    search.addEventListener("input", rebuild);
+
+    // The cell itself sorts, so nothing inside the filter may reach it.
+    panel.addEventListener("click", (e) => e.stopPropagation());
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wasOpen = panel.classList.contains("open");
+      closePanel();
+      if (wasOpen) return;
+      search.value = "";
+      rebuild();
+      panel.classList.add("open");
+      th.style.zIndex = "400";
+      openPanel = panel;
+      openTh = th;
+      search.focus();
+    });
+
+    th.querySelector(".gl-th-inner").append(btn);
+    th.appendChild(panel);
+    syncButton();
+  });
+
+  function onDocClick(e) {
+    if (!openPanel || openPanel.contains(e.target) || e.target.closest(".gl-filter-btn")) return;
+    closePanel();
+  }
+  function onKey(e) { if (e.key === "Escape") closePanel(); }
+  document.addEventListener("click", onDocClick);
+  document.addEventListener("keydown", onKey);
+
+  apply();
+  return () => {
+    document.removeEventListener("click", onDocClick);
+    document.removeEventListener("keydown", onKey);
+  };
+}
 
 // ── Page renderer ─────────────────────────────────────────────────────
 export default async function renderGetLists(ctx = {}) {
@@ -219,7 +441,7 @@ export default async function renderGetLists(ctx = {}) {
 
   /**
    * Sort by reordering the existing <tr> nodes rather than re-rendering.
-   * attachColumnFilters hides rows by setting style.display on the nodes it
+   * attachHeaderFilters hides rows by setting style.display on the nodes it
    * captured at attach time, so moving those same nodes keeps both the active
    * filters and the dropdowns they live in intact.
    */
@@ -251,14 +473,21 @@ export default async function renderGetLists(ctx = {}) {
       return;
     }
 
+    const unit = currentDef.unit || "rows";
+
     $results.innerHTML = `
       <div class="gl-table-wrap">
         <table class="data-table ll-preview-table gl-table">
           <thead>
             <tr>
-              ${cols.map((c) => `<th data-sort="${escapeHtml(c.key)}">${escapeHtml(c.label)}<span class="gl-arrow"></span></th>`).join("")}
+              ${cols.map((c) => `
+                <th data-sort="${escapeHtml(c.key)}">
+                  <span class="gl-th-inner">
+                    <span class="gl-th-label">${escapeHtml(c.label)}<span class="gl-arrow"></span></span>
+                  </span>
+                </th>
+              `).join("")}
             </tr>
-            <tr class="ll-filter-row">${cols.map(() => `<th></th>`).join("")}</tr>
           </thead>
           <tbody>
             ${allRows.map((r, i) => `
@@ -271,16 +500,14 @@ export default async function renderGetLists(ctx = {}) {
       </div>
     `;
 
-    detachFilters = attachColumnFilters($results, {
-      filterCols: cols.map((_, i) => i),
-      countEl: $count,
-      totalLabel: currentDef.unit || "rows",
+    detachFilters = attachHeaderFilters($results, (visible, total, filtered) => {
+      $count.textContent = filtered ? `${visible} / ${total} ${unit}` : `${total} ${unit}`;
     });
-    $count.textContent = `${allRows.length} ${currentDef.unit || "rows"}`;
 
-    $results.querySelectorAll("th[data-sort]").forEach((th) => {
-      th.addEventListener("click", () => {
-        const key = th.dataset.sort;
+    // Only the label sorts — the filter button and its panel stop the click.
+    $results.querySelectorAll("th[data-sort] .gl-th-label").forEach((label) => {
+      label.addEventListener("click", () => {
+        const key = label.closest("th").dataset.sort;
         if (sortKey === key) sortDir = sortDir === "asc" ? "desc" : "asc";
         else { sortKey = key; sortDir = "asc"; }
         applySort();
