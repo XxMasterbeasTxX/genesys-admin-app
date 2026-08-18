@@ -105,6 +105,19 @@ function tsForFilename(d) {
 /**
  * Truncate / sanitise sheet name so it is safe for Excel (max 31 chars).
  */
+/**
+ * Heap checkpoint for the export.
+ *
+ * Managed functions run on Consumption, capped at 1.5 GB. Exceeding it kills the
+ * worker outright — no exception, no response, just a bare 500 from the gateway
+ * and a host restart. These checkpoints are the only way to see it coming.
+ */
+function memMark(context, label) {
+  const m = process.memoryUsage();
+  const mb = (n) => Math.round(n / 1048576);
+  context.log(`[mem] ${label} — heap ${mb(m.heapUsed)}/${mb(m.heapTotal)} MB, rss ${mb(m.rss)} MB`);
+}
+
 function safeSheet(name) {
   return name.replace(/[:\\/?*[\]]/g, "").slice(0, 31);
 }
@@ -1845,7 +1858,7 @@ function uniqueSheetName(rawName, used) {
   return fallback;
 }
 
-async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
+async function buildDataTablesWorkbook(region, token, orgName, tsStr, context) {
   const dtWb = XLSX.utils.book_new();
   const dtInventory = [];
   const usedNames = new Set();
@@ -1856,6 +1869,9 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
     "/api/v2/flows/datatables?expand=schema",
     100
   );
+
+  context?.log(`[dt] ${tables.length} data table(s) to fetch`);
+  memMark(context, "before data table row fetch");
 
   // Fetch all table rows in parallel instead of sequentially
   const tableResults = await Promise.allSettled(
@@ -1873,6 +1889,14 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
       return { table, colHeaders, allRows };
     })
   );
+
+  // Row counts first — if one table is pathological, this line names it before
+  // the cell objects get allocated and the worker dies.
+  const counts = tableResults
+    .filter((r) => r.status === "fulfilled")
+    .map((r) => `${r.value.table.name || r.value.table.id}=${r.value.allRows.length}`);
+  context?.log(`[dt] row counts: ${counts.join(", ")}`);
+  memMark(context, "after data table row fetch");
 
   for (const result of tableResults) {
     if (result.status !== "fulfilled") continue;
@@ -2126,11 +2150,13 @@ async function execute(context, schedule) {
 
   // ── Build DataTables workbook ──
 
+  memMark(context, "main workbook built");
+
   let dtWorkbook = XLSX.utils.book_new();
   let dtError    = null;
   try {
     if (includeDataTables) {
-      dtWorkbook = await buildDataTablesWorkbook(region, token, customer.name, tsStr);
+      dtWorkbook = await buildDataTablesWorkbook(region, token, customer.name, tsStr, context);
     }
   } catch (err) {
     // Swallowing this used to drop the DataTables workbook — and with it the
@@ -2156,6 +2182,8 @@ async function execute(context, schedule) {
   context.log(`Documentation export complete — ${summary}`);
 
   // ── ZIP vs single XLSX ──
+
+  memMark(context, "before workbook serialisation");
 
   const mainBuf = XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
 
