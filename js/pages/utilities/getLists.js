@@ -150,6 +150,11 @@ const PAGE_STYLES = `
 .gl-item:hover .gl-only { opacity: 1; }
 .gl-only:hover { color: #60a5fa; background: rgba(59,130,246,0.12); }
 .gl-filter-empty { padding: 8px 4px; font-size: 12px; color: var(--muted); }
+
+/* Fixed, and parented to the body rather than the cell: the table scrolls
+   inside a capped-height box, which clips an absolutely positioned dropdown at
+   its edge. Position is set inline from the button's rect on open. */
+.gl-filter-panel { position: fixed; top: 0; left: 0; z-index: 1000; }
 `;
 
 // ── Per-column dropdown filters ───────────────────────────────────────
@@ -193,8 +198,9 @@ function attachHeaderFilters(wrap, onChange) {
   // colIdx → Set of kept values. Absent means "no filter on this column",
   // which is not the same as a full Set: it keeps the button un-highlighted.
   const active = {};
+  const panels = [];      // every panel this instance put in the body
   let openPanel = null;
-  let openTh = null;
+  let positionOpen = null;
 
   function apply() {
     const entries = Object.entries(active);
@@ -213,10 +219,29 @@ function attachHeaderFilters(wrap, onChange) {
   function closePanel() {
     if (!openPanel) return;
     openPanel.classList.remove("open");
-    // Raised while open so the panel is never covered by a later sticky cell.
-    if (openTh) openTh.style.zIndex = "";
     openPanel = null;
-    openTh = null;
+    positionOpen = null;
+  }
+
+  /**
+   * Put the panel under its button, in viewport coordinates.
+   *
+   * The panel is fixed and lives in the body rather than in the cell, because
+   * the table scrolls inside a capped-height box: an absolutely positioned
+   * dropdown gets clipped at that box's edge. Hiding every row (the None
+   * button) collapses the box to just the header, which cut all but the first
+   * row or two off the dropdown and left it looking like nothing could be
+   * selected.
+   */
+  function place(btn, panel) {
+    const r = btn.getBoundingClientRect();
+    const w = panel.offsetWidth || 200;
+    const h = panel.offsetHeight || 240;
+    // Flip above the button when there is no room below it.
+    const below = window.innerHeight - r.bottom;
+    const top = below < h + 8 && r.top > h + 8 ? r.top - h - 2 : r.bottom + 2;
+    panel.style.top = `${Math.max(4, top)}px`;
+    panel.style.left = `${Math.max(4, Math.min(r.left, window.innerWidth - w - 4))}px`;
   }
 
   headerCells.forEach((th, colIdx) => {
@@ -229,7 +254,7 @@ function attachHeaderFilters(wrap, onChange) {
     btn.innerHTML = `<span class="cf-caret">▼</span>`;
 
     const panel = document.createElement("div");
-    panel.className = "cf-dropdown";
+    panel.className = "cf-dropdown gl-filter-panel";
     panel.innerHTML = `
       <input class="cf-search" type="text" placeholder="Search values…">
       <div class="cf-actions">
@@ -330,14 +355,15 @@ function attachHeaderFilters(wrap, onChange) {
       search.value = "";
       rebuild();
       panel.classList.add("open");
-      th.style.zIndex = "400";
+      place(btn, panel);
       openPanel = panel;
-      openTh = th;
+      positionOpen = () => place(btn, panel);
       search.focus();
     });
 
     th.querySelector(".gl-th-inner").append(btn);
-    th.appendChild(panel);
+    document.body.appendChild(panel);
+    panels.push(panel);
     syncButton();
   });
 
@@ -346,13 +372,21 @@ function attachHeaderFilters(wrap, onChange) {
     closePanel();
   }
   function onKey(e) { if (e.key === "Escape") closePanel(); }
+  function onReflow() { positionOpen?.(); }
   document.addEventListener("click", onDocClick);
   document.addEventListener("keydown", onKey);
+  // Capture: the table's own scroll box does not bubble its scroll events.
+  window.addEventListener("scroll", onReflow, true);
+  window.addEventListener("resize", onReflow);
 
   apply();
   return () => {
     document.removeEventListener("click", onDocClick);
     document.removeEventListener("keydown", onKey);
+    window.removeEventListener("scroll", onReflow, true);
+    window.removeEventListener("resize", onReflow);
+    // The panels live in the body, so they have to be taken out by hand.
+    for (const p of panels) p.remove();
   };
 }
 
