@@ -238,16 +238,10 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
     loadPeriodsForOrg(org);
   });
 
-  // Clean up the subscription when the page element is removed from the DOM.
-  if (unsubscribe) {
-    const observer = new MutationObserver(() => {
-      if (!document.body.contains(el)) {
-        unsubscribe();
-        observer.disconnect();
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
+  // The router tears the page down before detaching it. This replaced a
+  // MutationObserver watching all of document.body with subtree:true, which woke
+  // on every DOM change anywhere in the app just to notice this one removal.
+  el.__destroy = () => unsubscribe?.();
 
   // ── Reload button ─────────────────────────────────────
   $reloadBtn.addEventListener("click", () => {

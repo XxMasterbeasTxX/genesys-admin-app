@@ -40,6 +40,14 @@ export default function renderRolesAllOrgs({ route, me, api }) {
   let lastWorkbook = null;
   let lastFilename = null;
 
+  // One filter set per org block. Blocks accumulate as the run progresses and
+  // are cleared when a new run starts, so their document listeners go with them.
+  let filterDisposers = [];
+  const releaseFilters = () => {
+    for (const dispose of filterDisposers) dispose();
+    filterDisposers = [];
+  };
+
   el.innerHTML = `
     <h1 class="h1">Export — Roles — All Orgs</h1>
     <hr class="hr">
@@ -123,6 +131,7 @@ export default function renderRolesAllOrgs({ route, me, api }) {
     cancelled = false;
     $exportBtn.style.display = "none";
     $cancelBtn.style.display = "";
+    releaseFilters();
     $tableWrap.innerHTML = "";
     $dlWrap.style.display = "none";
     $summary.style.display = "none";
@@ -283,11 +292,11 @@ export default function renderRolesAllOrgs({ route, me, api }) {
     $tableWrap.appendChild(block);
 
     const countEl = block.querySelector(".te-user-count");
-    attachColumnFilters(block, {
+    filterDisposers.push(attachColumnFilters(block, {
       filterCols: [0, 1, 2],
       countEl,
       totalLabel: "roles",
-    });
+    }));
   }
 
   function appendErrorBlock(org, errMsg) {
@@ -297,6 +306,8 @@ export default function renderRolesAllOrgs({ route, me, api }) {
     block.textContent = `${org.name}: ${errMsg}`;
     $tableWrap.appendChild(block);
   }
+
+  el.__destroy = releaseFilters;
 
   return el;
 }

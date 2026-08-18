@@ -163,6 +163,14 @@ export default function renderTrusteeExport({ route, me, api }) {
   let isRunning = false;
   let cancelled = false;
 
+  // One filter set per trustee-org block, all rebuilt on each export. Each
+  // registers a document listener, so the previous run's are released first.
+  let filterDisposers = [];
+  const releaseFilters = () => {
+    for (const dispose of filterDisposers) dispose();
+    filterDisposers = [];
+  };
+
   // ── Build UI ──────────────────────────────────────────
   el.innerHTML = `
     <h1 class="h1">Export — Users — Trustee</h1>
@@ -440,9 +448,10 @@ export default function renderTrusteeExport({ route, me, api }) {
       $tableWrap.innerHTML = html;
 
       // Attach dropdown filters for Name + Email columns on each trustee-org block
+      releaseFilters();
       $tableWrap.querySelectorAll(".te-details").forEach(detailsEl => {
         const countEl = detailsEl.querySelector(".te-user-count");
-        attachColumnFilters(detailsEl, { countEl, totalLabel: "users" });
+        filterDisposers.push(attachColumnFilters(detailsEl, { countEl, totalLabel: "users" }));
       });
       $tableWrap.style.display = "";
 
@@ -503,6 +512,8 @@ export default function renderTrusteeExport({ route, me, api }) {
     $cancelBtn.style.display = "none";
     setStatus("Cancelling…");
   });
+
+  el.__destroy = releaseFilters;
 
   return el;
 }

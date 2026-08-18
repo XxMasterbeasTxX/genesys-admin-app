@@ -232,6 +232,11 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
   let lastWorkbook = null;
   let lastFilename = null;
 
+  // attachColumnFilters registers a document-level listener and hands back its
+  // disposer. renderPreviewTable runs on every export, so the previous one is
+  // released here before the next is attached, and again on teardown.
+  let disposeFilters = null;
+
   function setStatus(msg, cls) {
     $status.textContent = msg;
     $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
@@ -425,11 +430,14 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
     $tableWrap.innerHTML = html;
 
     // Dropdown filters on all columns (Name, Email, Division + licence booleans)
-    attachColumnFilters($tableWrap, {
+    disposeFilters?.();
+    disposeFilters = attachColumnFilters($tableWrap, {
       countEl:    $tableWrap.querySelector(".te-user-count"),
       totalLabel: "users",
     });
   }
+
+  el.__destroy = () => { disposeFilters?.(); disposeFilters = null; };
 
   return el;
 }

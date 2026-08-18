@@ -704,12 +704,16 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
 
-  document.addEventListener("click", (e) => {
+  // Named so it can be removed on teardown. This page builds its own dropdown
+  // filters rather than using attachColumnFilters, so it owns this listener and
+  // the rows its closure keeps alive.
+  const onDocClick = (e) => {
     if (!openDropdown) return;
     if (openDropdown.contains(e.target)) return;
     if (e.target.closest(".cf-btn")) return;
     closeOpenDropdown();
-  });
+  };
+  document.addEventListener("click", onDocClick);
 
   function renderPage() {
     const visibleRows = getFilteredRows();
@@ -832,6 +836,8 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
 
     renderPage();
   }
+
+  el.__destroy = () => document.removeEventListener("click", onDocClick);
 
   return el;
 }

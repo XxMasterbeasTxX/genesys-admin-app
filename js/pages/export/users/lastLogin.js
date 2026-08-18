@@ -201,6 +201,11 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
   let lastWorkbook = null;
   let lastFilename = null;
 
+  // attachColumnFilters registers a document-level listener and hands back its
+  // disposer. renderPreviewTable runs on every export, so the previous one is
+  // released here before the next is attached, and again on teardown.
+  let disposeFilters = null;
+
   function setStatus(msg, cls) {
     $status.textContent = msg;
     $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
@@ -370,12 +375,15 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
     html += `</tbody></table></div></details>`;
     $table.innerHTML = html;
 
-    attachColumnFilters($table, {
+    disposeFilters?.();
+    disposeFilters = attachColumnFilters($table, {
       skipCols: [0],
       countEl: $table.querySelector(".te-user-count"),
       totalLabel: "rows",
     });
   }
+
+  el.__destroy = () => { disposeFilters?.(); disposeFilters = null; };
 
   return el;
 }

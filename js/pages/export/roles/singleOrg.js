@@ -75,6 +75,11 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
   let lastWorkbook = null;
   let lastFilename = null;
 
+  // attachColumnFilters registers a document-level listener and hands back its
+  // disposer. renderPreviewTable runs on every export, so the previous one is
+  // released here before the next is attached, and again on teardown.
+  let disposeFilters = null;
+
   el.innerHTML = `
     <h1 class="h1">Export — Roles — Single Org</h1>
     <hr class="hr">
@@ -287,12 +292,15 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
     html += `</tbody></table></div></details>`;
     $tableWrap.innerHTML = html;
 
-    attachColumnFilters($tableWrap, {
+    disposeFilters?.();
+    disposeFilters = attachColumnFilters($tableWrap, {
       filterCols: [0, 1, 2],
       countEl: $tableWrap.querySelector(".te-user-count"),
       totalLabel: "roles",
     });
   }
+
+  el.__destroy = () => { disposeFilters?.(); disposeFilters = null; };
 
   return el;
 }
