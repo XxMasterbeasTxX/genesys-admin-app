@@ -1820,9 +1820,36 @@ async function fetchOBSettings(region, token) {
 // Data Tables Contents workbook
 // ─────────────────────────────────────────────────────────
 
+/**
+ * Excel rejects duplicate sheet names, and `safeSheet` truncates to 31 chars,
+ * so two data tables agreeing in their first 31 characters would collide and
+ * make `book_append_sheet` throw. Suffix the later ones, trimming the base so
+ * the result still fits.
+ */
+function uniqueSheetName(rawName, used) {
+  const base = safeSheet(rawName) || "Table";
+  if (!used.has(base)) {
+    used.add(base);
+    return base;
+  }
+  for (let n = 2; n < 1000; n++) {
+    const suffix = `_${n}`;
+    const candidate = base.slice(0, 31 - suffix.length) + suffix;
+    if (!used.has(candidate)) {
+      used.add(candidate);
+      return candidate;
+    }
+  }
+  const fallback = `Table_${used.size + 1}`.slice(0, 31);
+  used.add(fallback);
+  return fallback;
+}
+
 async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
   const dtWb = XLSX.utils.book_new();
   const dtInventory = [];
+  const usedNames = new Set();
+  let sheetsAdded = 0;
 
   const tables = await genesysGetAllPages(
     region, token,
@@ -1850,7 +1877,7 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
   for (const result of tableResults) {
     if (result.status !== "fulfilled") continue;
     const { table, colHeaders, allRows } = result.value;
-    const sheetName = safeSheet(table.name || table.id);
+    const sheetName = uniqueSheetName(table.name || table.id, usedNames);
 
     const wsData = [
       colHeaders,
@@ -1862,9 +1889,20 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
       })),
     ];
 
-    addStyledSheet(dtWb, wsData, sheetName);
-    dtInventory.push({ name: sheetName, status: "data", desc: `${allRows.length} row${allRows.length !== 1 ? "s" : ""}` });
+    // One unwritable table must not cost the whole workbook — record it in the
+    // index and carry on.
+    try {
+      addStyledSheet(dtWb, wsData, sheetName);
+      sheetsAdded++;
+      dtInventory.push({ name: sheetName, status: "data", desc: `${allRows.length} row${allRows.length !== 1 ? "s" : ""}` });
+    } catch (err) {
+      dtInventory.push({ name: sheetName, status: "error", desc: err.message });
+    }
   }
+
+  // No table made it onto a sheet — hand back an empty workbook so the caller
+  // ships a single .xlsx rather than a ZIP whose second file is just an index.
+  if (sheetsAdded === 0) return XLSX.utils.book_new();
 
   // Sort data table sheets alphabetically
   dtWb.SheetNames.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
@@ -2085,16 +2123,27 @@ async function execute(context, schedule) {
   // ── Build DataTables workbook ──
 
   let dtWorkbook = XLSX.utils.book_new();
+  let dtError    = null;
   try {
     dtWorkbook = await buildDataTablesWorkbook(region, token, customer.name, tsStr);
   } catch (err) {
+    // Swallowing this used to drop the DataTables workbook — and with it the
+    // ZIP — with nothing on screen to say so. Report it in the summary.
+    dtError = err.message;
     context.log.warn(`DataTables workbook build failed: ${err.message}`);
   }
 
   const okeCount  = inventory.filter((i) => i.status === "data").length;
   const errCount  = inventory.filter((i) => i.status === "error").length;
   const skipCount = inventory.filter((i) => i.status === "skip").length;
-  const summary   = `${customer.name}: ${okeCount} sheets OK, ${skipCount} empty, ${errCount} errors`;
+  let summary     = `${customer.name}: ${okeCount} sheets OK, ${skipCount} empty, ${errCount} errors`;
+  if (dtError) {
+    summary += ` — DataTables workbook skipped: ${dtError}`;
+  } else if (dtWorkbook.SheetNames.length === 0) {
+    summary += " — no data tables";
+  } else {
+    summary += ` — ${dtWorkbook.SheetNames.length - 1} data table(s)`;
+  }
 
   context.log(`Documentation export complete — ${summary}`);
 
