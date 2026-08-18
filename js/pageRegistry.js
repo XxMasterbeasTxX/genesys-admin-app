@@ -221,6 +221,8 @@ const registry = {
     import("./pages/users/rolesSkills/copyFromUser.js").then((m) => m.default(ctx)),
 
   // ── Utilities ──────────────────────────────────────
+  "/utilities/get-lists": (ctx) =>
+    import("./pages/utilities/getLists.js").then((m) => m.default(ctx)),
   "/utilities/ip-ranges": (ctx) =>
     import("./pages/utilities/ipRanges.js").then((m) => m.default(ctx)),
   "/utilities/permission-catalog": (ctx) =>

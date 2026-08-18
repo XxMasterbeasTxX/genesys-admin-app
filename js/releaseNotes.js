@@ -11,6 +11,18 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "3.5",
+    date: "2026-08-18",
+    title: "Utilities › Get Lists: the reference lists in an org, on screen and in Excel",
+    changes: [
+      "New page Utilities › Get Lists. Pick a list from the dropdown and it is fetched from the selected org, shown here, and exported to Excel. Read-only — nothing is written back to Genesys.",
+      "The first list is Presence Definitions. A presence definition carries a label in every language the org has translated it into, and all of them are shown — one row per language, rather than one row per definition with the translations packed into a cell. That keeps every column something you can filter and sort on, in the app and in Excel alike. Definitions that have been deactivated are included too, with their own column, so nothing is quietly left out.",
+      "Every column has the same dropdown filter used on the export previews: tick the languages you want, or the presences, and the count tells you how many rows of the total are showing. Clicking a column heading sorts by it, and sorting keeps whatever filters you already set rather than resetting them.",
+      "Export to Excel writes what is on screen — the filters you set, in the order you sorted it — not the unfiltered list. Filter down to the four Danish labels you came for and that is the file you get.",
+      "The page is built to grow. Each list is one entry in a registry naming its endpoint, its columns and how to read the response; the fetching, the table, the filters, the sorting and the export are shared. Adding the next list is that entry, not another page.",
+    ],
+  },
+  {
     version: "3.4",
     date: "2026-08-18",
     title: "WebRTC Phones — Create on a schedule, and tighter API access",
