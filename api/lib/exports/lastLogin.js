@@ -121,8 +121,14 @@ async function execute(context, schedule) {
     // Phase 3: Filter by inactivity
     let filtered = allUsers;
     if (filterMonths > 0) {
-      const cutoff = new Date();
-      cutoff.setMonth(cutoff.getMonth() - filterMonths);
+      // Pin to day 1 before shifting the month: setMonth on the 31st overflows
+      // into the following month (31 Mar minus one month lands on 3 Mar), which
+      // moved the cutoff and let recently-active users through the filter.
+      const now    = new Date();
+      const cutoff = new Date(now.getFullYear(), now.getMonth() - filterMonths, 1);
+      const lastDay = new Date(cutoff.getFullYear(), cutoff.getMonth() + 1, 0).getDate();
+      cutoff.setDate(Math.min(now.getDate(), lastDay));
+      cutoff.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
       filtered = allUsers.filter((u) => {
         if (!u.dateLastLogin) return true;
         return new Date(u.dateLastLogin) < cutoff;
@@ -140,7 +146,8 @@ async function execute(context, schedule) {
       const licenses = licenseMap[user.id] || [];
 
       if (licenses.length > 0) {
-        for (const lic of licenses.sort()) {
+        // Copy before sorting — this array belongs to the licence response.
+        for (const lic of [...licenses].sort()) {
           rows.push({ name, email, division, lastLogin, license: lic });
         }
       } else {
@@ -161,7 +168,9 @@ async function execute(context, schedule) {
     const base64 = Buffer.from(buf).toString("base64");
     const filename = timestampedFilename(`LastLogin_${customer.name.replace(/\s+/g, "_")}`, "xlsx");
 
-    const uniqueUsers = new Set(rows.map((r) => r.email)).size;
+    // The filtered user list is the count; row emails are a display field that
+    // falls back to "N/A" and would collapse distinct users into one.
+    const uniqueUsers = filtered.length;
     const summary = `${customer.name}: ${uniqueUsers} users, ${rows.length} rows` +
       (filterMonths > 0 ? ` (inactive ≥ ${filterMonths}mo)` : "");
 

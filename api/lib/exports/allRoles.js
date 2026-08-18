@@ -238,7 +238,11 @@ async function execute(context, schedule) {
     const base64 = Buffer.from(buf).toString("base64");
     const filename = timestampedFilename(`AllRoles_${customer.name.replace(/\s+/g, "_")}`, "xlsx");
 
-    const uniqueUsers = new Set(rows.map((r) => r.email)).size;
+    // Counted by identity, not by email. This export includes deleted users
+    // (state: any) and Genesys releases a deleted user's email for reuse, so
+    // emails are neither always present nor unique; the "N/A" fallback
+    // collapsed them into one. Mirrors the client-side page.
+    const uniqueUsers = new Set(rows.map((r) => r.index)).size;
     const summary = `${customer.name}: ${uniqueUsers} users, ${rows.length} rows`;
 
     return {

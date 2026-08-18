@@ -49,6 +49,37 @@ const TRUSTEE_SHEET_SUFFIX = {
   "Netdesign":    "IE",
 };
 
+/** Orgs walked at once. Each one fans out again internally. */
+const ORG_CONCURRENCY = 6;
+
+/**
+ * Run tasks with a ceiling on how many are in flight.
+ *
+ * The org walk fans out per org, then per trustee, then per group, then per
+ * member — so firing every org at once multiplies into hundreds of concurrent
+ * proxy calls against a rate-limited API. Results keep their input order, and
+ * like Promise.allSettled a rejection is reported rather than thrown.
+ */
+async function runSettledBatched(items, worker, concurrency) {
+  const results = new Array(items.length);
+  let next = 0;
+
+  const run = async () => {
+    for (let i = next++; i < items.length; i = next++) {
+      try {
+        results[i] = { status: "fulfilled", value: await worker(items[i], i) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, run)
+  );
+  return results;
+}
+
 /** Normalise a trustee org name for display. */
 function normaliseTrusteeOrg(name) {
   const lower = (name || "").toLowerCase();
@@ -300,11 +331,10 @@ export default function renderTrusteeExport({ route, me, api }) {
       const totalOrgs = customers.length;
 
       // 2. Process all customer orgs in parallel
-      setStatus(`Processing ${totalOrgs} orgs in parallel…`);
+      setStatus(`Processing ${totalOrgs} orgs, ${ORG_CONCURRENCY} at a time…`);
       showProgress(10);
 
-      const orgResults = await Promise.allSettled(
-        customers.map(async (cust) => {
+      const orgResults = await runSettledBatched(customers, async (cust) => {
           const localMap = new Map();
 
           const trustees = await gc.fetchTrustees(api, cust.id);
@@ -364,8 +394,7 @@ export default function renderTrusteeExport({ route, me, api }) {
           }));
 
           return { custName: cust.name, localMap };
-        })
-      );
+      }, ORG_CONCURRENCY);
 
       if (cancelled) {
         setStatus("Cancelled.", "error");
