@@ -34,12 +34,12 @@ const HEADERS = ["Name", "Description", "Members"];
  * Compute accurate member counts per role.
  * Fetches all active users with expand=authorization (roles embedded) and
  * counts locally — 1 paginated call instead of one call per role.
- * @param {Function} onProgress  called once when users are loaded
+ * @param {Function} onStatus  progress message for the caller to display
  */
-async function computeMemberCounts(api, orgId, roles, onProgress) {
-  onProgress?.(0, 1, "fetching users with roles…");
+async function computeMemberCounts(api, orgId, roles, onStatus) {
+  onStatus?.("Fetching users and their role assignments…");
   const activeUsers = await gc.fetchAllUsers(api, orgId, { expand: ["authorization"] });
-  onProgress?.(1, 1, "");
+  onStatus?.(`Counting members across ${roles.length} role(s)…`);
 
   const counts = {};
   for (const role of roles) counts[role.id] = 0;
@@ -186,12 +186,14 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
       if (cancelled) return;
       setProgress(10);
 
-      // Progress 10% → 90% across all per-role member count calls
-      const counts = await computeMemberCounts(api, org.id, roles, (i, total, roleName) => {
-        if (!cancelled) {
-          setProgress(10 + Math.round((i / total) * 80));
-          setStatus(`Computing members: role ${i} of ${total} — ${roleName}`);
-        }
+      // Counting is local once the users are in, so this is two steps rather
+      // than a per-role walk — the message says which one is running.
+      let step = 0;
+      const counts = await computeMemberCounts(api, org.id, roles, (message) => {
+        if (cancelled) return;
+        step += 1;
+        setProgress(10 + step * 40);
+        setStatus(message);
       });
       if (cancelled) return;
       setProgress(92);

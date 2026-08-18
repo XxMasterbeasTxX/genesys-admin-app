@@ -28,6 +28,12 @@ const AUTOMATION_ENABLED = true;
 const AUTOMATION_EXPORT_TYPE = "skillTemplates";
 const AUTOMATION_EXPORT_LABEL = "Skill/Role/Queue Templates";
 
+/** Matches the ordering schedulePanel.js uses for scheduleDayOfWeek. */
+const DAYS_OF_WEEK = [
+  "Sunday", "Monday", "Tuesday", "Wednesday",
+  "Thursday", "Friday", "Saturday",
+];
+
 // ── Page renderer ───────────────────────────────────────
 
 export default function renderSkillTemplatesExport({ route, me, api, orgContext }) {
@@ -262,9 +268,14 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       const schedulesData = [["Template", "Mode", "Schedule Type", "Time", "Day/Date", "Enabled", "Targets", "Last Run", "Last Run Status", "Created By"]];
       for (const t of templates) {
         for (const s of (schedMap.get(t.id) || [])) {
-          const dayDate = s.scheduleType === "weekly" ? (s.scheduleDayOfWeek || "")
-                        : s.scheduleType === "monthly" ? (s.scheduleDayOfMonth || "")
-                        : s.scheduleType === "once" ? (s.scheduleDate || "")
+          // `|| ""` dropped Sunday, which is 0. Weekly also exported the raw
+          // index where the rest of the app shows a day name.
+          const dayDate = s.scheduleType === "weekly"
+                            ? (DAYS_OF_WEEK[s.scheduleDayOfWeek] ?? "")
+                        : s.scheduleType === "monthly"
+                            ? (s.scheduleDayOfMonth ?? "")
+                        : s.scheduleType === "once"
+                            ? (s.scheduleDate || "")
                         : "";
           const targets = (s.targets || []).map(tgt => tgt.name || tgt.id).join(", ");
           schedulesData.push([

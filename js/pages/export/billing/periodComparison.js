@@ -27,7 +27,7 @@
  *
  * No scheduled / no server variant (Python has none; comparison is interactive).
  */
-import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import {
   fetchBillingOverview,
   fetchBillingPeriods,
@@ -294,7 +294,7 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
       <label class="em-label" for="bpcOrg" style="margin:0">Organization:</label>
       <select id="bpcOrg" class="em-input" style="min-width:280px">
         <option value="">Select a customer org…</option>
-        ${billable.map((c) => `<option value="${c.id}">${c.name}</option>`).join("")}
+        ${billable.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("")}
       </select>
       <button class="btn btn-secondary" id="bpcReloadBtn" type="button" disabled>Reload periods</button>
     </div>
@@ -391,8 +391,8 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
     }
     $list.innerHTML = periods.map((p) => {
       const label = p.error
-        ? `<span style="color:#999">${p.label} (unavailable)</span>`
-        : p.label;
+        ? `<span style="color:#999">${escapeHtml(p.label)} (unavailable)</span>`
+        : escapeHtml(p.label);
       const disabled = p.error ? "disabled" : "";
       return `<label style="display:flex;align-items:center;gap:8px;padding:4px 0">
         <input type="checkbox" class="bpc-period-chk" value="${p.index}" ${disabled}>

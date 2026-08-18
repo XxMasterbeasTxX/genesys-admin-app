@@ -15,7 +15,7 @@
  */
 import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
-import { sendEmail, validateRecipients } from "../../../services/emailService.js";
+import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
@@ -58,7 +58,8 @@ function buildRows(users, licenseMap) {
 
     const licenses = licenseMap.get(user.id);
     if (licenses && licenses.length > 0) {
-      for (const lic of licenses.sort()) {
+      // Copy before sorting — this array belongs to the licence response.
+      for (const lic of [...licenses].sort()) {
         rows.push({ name, email, division, lastLogin, license: lic });
       }
     } else {
@@ -68,6 +69,11 @@ function buildRows(users, licenseMap) {
   return rows;
 }
 
+/** Days in a given month (monthIdx is 0-based). */
+function daysInMonth(year, monthIdx) {
+  return new Date(year, monthIdx + 1, 0).getDate();
+}
+
 /**
  * Optionally filter users by inactivity period.
  * If filterMonths <= 0, returns all users.
@@ -75,8 +81,13 @@ function buildRows(users, licenseMap) {
  */
 function filterByInactivity(users, filterMonths) {
   if (!filterMonths || filterMonths <= 0) return users;
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - filterMonths);
+  // Pin to day 1 before shifting the month: setMonth on the 31st overflows into
+  // the following month (31 Mar minus one month lands on 3 Mar), which quietly
+  // moved the cutoff and let recently-active users through the filter.
+  const now    = new Date();
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - filterMonths, 1);
+  cutoff.setDate(Math.min(now.getDate(), daysInMonth(cutoff.getFullYear(), cutoff.getMonth())));
+  cutoff.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
   return users.filter(u => {
     if (!u.dateLastLogin) return true; // never logged in
     const d = new Date(u.dateLastLogin);

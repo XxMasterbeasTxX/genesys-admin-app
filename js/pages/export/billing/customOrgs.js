@@ -16,7 +16,7 @@
  *
  * No scheduled variant (no Python equivalent; the org list is interactive).
  */
-import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import { fetchBillingOverview } from "../../../services/billingService.js";
 import { filterBillableCustomers } from "../../../utils/billingTrustees.js";
 import { processBillingOverview } from "../../../utils/billingProcessor.js";
@@ -78,8 +78,8 @@ export default function renderBillingCustomOrgsExport({ me, api }) {
           ? `<em>No billable customer orgs available.</em>`
           : billable.map((c) => `
               <label style="display:flex;align-items:center;gap:8px;padding:4px 0">
-                <input type="checkbox" class="bco-org-chk" value="${c.id}">
-                <span>${c.name}</span>
+                <input type="checkbox" class="bco-org-chk" value="${escapeHtml(c.id)}">
+                <span>${escapeHtml(c.name)}</span>
               </label>`).join("")}
       </div>
     </div>
