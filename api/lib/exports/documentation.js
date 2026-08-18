@@ -1921,6 +1921,10 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
 async function execute(context, schedule) {
   const config = schedule?.exportConfig || {};
   const orgId  = config.orgId;
+  // Opt-out, not opt-in: callers that say nothing still get the DataTables
+  // workbook, which is what the scheduled path relies on (it sets no config
+  // beyond the org).
+  const includeDataTables = config.includeDataTables !== false;
 
   if (!orgId) return { success: false, error: "No orgId specified in exportConfig" };
 
@@ -2125,7 +2129,9 @@ async function execute(context, schedule) {
   let dtWorkbook = XLSX.utils.book_new();
   let dtError    = null;
   try {
-    dtWorkbook = await buildDataTablesWorkbook(region, token, customer.name, tsStr);
+    if (includeDataTables) {
+      dtWorkbook = await buildDataTablesWorkbook(region, token, customer.name, tsStr);
+    }
   } catch (err) {
     // Swallowing this used to drop the DataTables workbook — and with it the
     // ZIP — with nothing on screen to say so. Report it in the summary.
@@ -2137,7 +2143,9 @@ async function execute(context, schedule) {
   const errCount  = inventory.filter((i) => i.status === "error").length;
   const skipCount = inventory.filter((i) => i.status === "skip").length;
   let summary     = `${customer.name}: ${okeCount} sheets OK, ${skipCount} empty, ${errCount} errors`;
-  if (dtError) {
+  if (!includeDataTables) {
+    summary += " — data tables not requested";
+  } else if (dtError) {
     summary += ` — DataTables workbook skipped: ${dtError}`;
   } else if (dtWorkbook.SheetNames.length === 0) {
     summary += " — no data tables";
