@@ -142,6 +142,7 @@
  *   users.rolesSkills.copyFromUser         Roles, Queues & Skills — Copy from User
  *
  *   UTILITIES
+ *   utilities.getLists                 Get Lists
  *   utilities.ipRanges                 IP Ranges
  *   utilities.permissionCatalog        Permission Catalog (internal-only)
  *

@@ -11,6 +11,19 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "3.5",
+    date: "2026-08-18",
+    title: "Utilities › Get Lists: the reference lists in an org, on screen and in Excel",
+    changes: [
+      "New page Utilities › Get Lists. Pick a list from the dropdown, click Load, and it is fetched from the selected org, shown here, and exported to Excel. Read-only — nothing is written back to Genesys. Nothing is fetched until you ask for it: opening the page calls nothing, and changing the picker only changes what Load would fetch, so adding more lists later will not mean the first one downloads itself every time the page opens. Load again to refetch.",
+      "The first list is Presence Definitions. A presence definition carries a label in every language the org has translated it into, and all of them are shown — one row per language, rather than one row per definition with the translations packed into a cell. That keeps every column something you can filter and sort on, in the app and in Excel alike. Definitions that have been deactivated are included too, with their own column, so nothing is quietly left out.",
+      "Every column filters, from a dropdown in the column heading itself — one header line, not a heading with a second band of filter buttons under it. Each value in the dropdown has an “only” next to it, so showing just Danish out of twenty-four languages is one click rather than unticking the other twenty-three; tick a second language to add it. There is a search box for finding a value, All and None to start from either end, and a count of how many rows of the total are showing. Clicking a column heading sorts by it, and sorting keeps whatever filters you already set rather than resetting them.",
+      "Export to Excel writes what is on screen — the filters you set, in the order you sorted it — not the unfiltered list. Filter down to the four Danish labels you came for and that is the file you get.",
+      "The page is built to grow. Each list is one entry in a registry naming its endpoint, its columns and how to read the response; the fetching, the table, the filters, the sorting and the export are shared. Adding the next list is that entry, not another page.",
+      "Utilities › Permission Catalog: the table heading was a black band in light mode. It was painted a fixed dark colour rather than a theme one, which only showed for anyone whose system is set to light.",
+    ],
+  },
+  {
     version: "3.4",
     date: "2026-08-18",
     title: "WebRTC Phones — Create on a schedule, and tighter API access",
