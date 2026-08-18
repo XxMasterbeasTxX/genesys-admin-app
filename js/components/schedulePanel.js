@@ -556,6 +556,10 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
             exportLabel,
             userEmail: me.email,
             userName: me.name,
+            // Genesys user id, so a scheduled job that WRITES can re-check at
+            // run time that its creator is still allowed to run it. Read-only
+            // exports ignore it.
+            userId: me.id,
           });
           logAction({
             me,

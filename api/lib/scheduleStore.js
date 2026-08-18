@@ -63,6 +63,10 @@ function entityToSchedule(entity) {
       ? JSON.parse(entity.exportConfig)
       : {},
     createdBy: entity.createdBy,
+    // Genesys user id of the creator. The runner re-checks that this person
+    // is still authorised before an unattended job writes anything, which
+    // an email address cannot be looked up by reliably.
+    createdById: entity.createdById || "",
     createdByName: entity.createdByName || "",
     createdAt: entity.createdAt,
     updatedAt: entity.updatedAt || entity.createdAt,
@@ -88,6 +92,7 @@ function scheduleToEntity(schedule) {
     emailMessage: schedule.emailMessage,
     exportConfig: JSON.stringify(schedule.exportConfig || {}),
     createdBy: schedule.createdBy,
+    createdById: schedule.createdById || "",
     createdByName: schedule.createdByName,
     createdAt: schedule.createdAt,
     updatedAt: schedule.updatedAt,
@@ -144,6 +149,7 @@ async function create(data) {
     emailMessage: data.emailMessage || "",
     exportConfig: data.exportConfig || {},
     createdBy: data.createdBy,
+    createdById: data.createdById || "",
     createdByName: data.createdByName || "",
     createdAt: now,
     updatedAt: now,
@@ -177,6 +183,7 @@ async function update(id, data) {
     // Preserve immutable fields
     id,
     createdBy: existing.createdBy,
+    createdById: existing.createdById || "",
     createdByName: existing.createdByName,
     createdAt: existing.createdAt,
     updatedAt: new Date().toISOString(),

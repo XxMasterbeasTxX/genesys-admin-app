@@ -33,6 +33,10 @@ const handlers = {
   billingSingleOrg:       () => require("./exports/billingSingleOrg"),
   billingAllOrgsLatest:   () => require("./exports/billingAllOrgsLatest"),
   billingCalendarYear:    () => require("./exports/billingCalendarYear"),
+  // Not an export: creates WebRTC phones and returns its run log as the
+  // attachment. Registered here so it rides the existing schedule store,
+  // runner and email path rather than growing a third scheduler.
+  webrtcPhoneCreate:      () => require("./exports/webrtcPhoneCreate"),
 };
 
 /**

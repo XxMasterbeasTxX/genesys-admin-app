@@ -112,6 +112,10 @@ module.exports = async function (context, req) {
         exportConfig: lock.config,
         createdBy: b.userEmail,
         createdByName: b.userName || "",
+        // Recorded so a job that writes can re-check its creator at run
+        // time. Optional: existing schedules predate it and simply
+        // report as unverifiable rather than failing.
+        createdById: b.userId || "",
       });
 
       context.res = json(201, schedule);
