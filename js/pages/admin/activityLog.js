@@ -3,17 +3,13 @@
  *
  * Displays a searchable, filterable table of all logged user actions.
  *
- * Access rules:
- *   - Any authenticated user can view their own entries.
- *   - The admin can view all users' entries.
+ * Access rules: everyone sees their own organisation's activity, all of it.
+ * The endpoint decides which org that is (internal vs the caller's customer
+ * org) and never mixes the two. There is no per-user view and nothing here is
+ * admin-gated — the User column and filter exist precisely because the page
+ * shows other people's actions.
  *
- * Who the admin IS is a server-side fact. This page asks for the full log and
- * lets the endpoint decide: the response carries `isAdmin`, and the admin-only
- * chrome stays hidden until it comes back true. The page used to hold a copy of
- * the admin's address to work that out for itself, which put it in the bundle
- * every browser downloads.
- *
- * API: GET /api/activity-log?userEmail={email}&all=true&limit=500
+ * API: GET /api/activity-log?userEmail={email}&limit=500
  */
 import { escapeHtml, formatDateTime } from "../../utils.js";
 import { withUserToken } from "../../services/apiAuth.js";
@@ -172,16 +168,12 @@ export default async function renderActivityLog({ me }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  // Set from the server's answer on first load; the admin chrome is revealed
-  // then, and renderTable() reads it when building rows.
-  let isAdmin = false;
-
   el.innerHTML = `
     <div class="al-header">
       <div>
         <h2 class="h2">Activity Log</h2>
-        <p class="page-desc" id="alDesc">
-          Your own activity log. Shows actions you have performed in the app.
+        <p class="page-desc">
+          All activity in your organisation. Entries older than 12 months are automatically purged.
         </p>
       </div>
       <button class="btn al-refresh-btn" id="alRefreshBtn">Refresh</button>
@@ -217,13 +209,13 @@ export default async function renderActivityLog({ me }) {
           ).join("")}
         </select>
       </div>
-      <div class="di-control-group" id="alOrgGroup" hidden>
+      <div class="di-control-group">
         <label class="di-label">Org</label>
         <select class="input" id="alOrg">
           <option value="">All orgs</option>
         </select>
       </div>
-      <div class="di-control-group" id="alUserGroup" hidden>
+      <div class="di-control-group">
         <label class="di-label">User</label>
         <select class="input" id="alUser">
           <option value="">All users</option>
@@ -240,7 +232,7 @@ export default async function renderActivityLog({ me }) {
         <thead>
           <tr>
             <th>Date &amp; Time</th>
-            <th id="alUserTh" hidden>User</th>
+            <th>User</th>
             <th>Org</th>
             <th>Action</th>
             <th>Description</th>
@@ -263,20 +255,7 @@ export default async function renderActivityLog({ me }) {
   const $action    = el.querySelector("#alAction");
   const $org       = el.querySelector("#alOrg");
   const $user      = el.querySelector("#alUser");
-  const $orgGroup  = el.querySelector("#alOrgGroup");   // hidden until admin
-  const $userGroup = el.querySelector("#alUserGroup");  // hidden until admin
-  const $userTh    = el.querySelector("#alUserTh");     // hidden until admin
-  const $desc      = el.querySelector("#alDesc");
   const $refresh   = el.querySelector("#alRefreshBtn");
-
-  /** Reveal the admin-only chrome once the server confirms who is asking. */
-  function applyAdminChrome() {
-    $orgGroup.hidden = false;
-    $userGroup.hidden = false;
-    $userTh.hidden = false;
-    $desc.textContent =
-      "All user activity across the app (admin view). Entries older than 12 months are automatically purged.";
-  }
 
   let allEntries = [];
 
@@ -295,9 +274,9 @@ export default async function renderActivityLog({ me }) {
     $refresh.disabled = true;
 
     try {
-      // Always ask for everything; the endpoint narrows it to this user unless
-      // the caller really is the admin, and tells us which happened.
-      const params = new URLSearchParams({ userEmail: me.email, all: "true" });
+      // userEmail identifies the caller; it does not narrow the result. The
+      // endpoint scopes the read to the caller's own organisation.
+      const params = new URLSearchParams({ userEmail: me.email });
 
       const resp  = await fetch(`/api/activity-log?${params}`, { headers: withUserToken() });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -305,13 +284,8 @@ export default async function renderActivityLog({ me }) {
 
       allEntries = data.entries || [];
 
-      if (data.isAdmin === true && !isAdmin) {
-        isAdmin = true;
-        applyAdminChrome();
-      }
-
-      // Populate org filter (admin only)
-      if (isAdmin && allEntries.length) {
+      // Populate org filter
+      if (allEntries.length) {
         const orgs = [...new Map(
           allEntries
             .filter(e => e.orgId)
@@ -323,8 +297,8 @@ export default async function renderActivityLog({ me }) {
         if (currentOrg) $org.value = currentOrg;
       }
 
-      // Populate user filter (admin only)
-      if (isAdmin && allEntries.length) {
+      // Populate user filter
+      if (allEntries.length) {
         const emails = [...new Set(allEntries.map(e => e.userEmail).filter(Boolean))].sort();
         const current = $user.value;
         $user.innerHTML = `<option value="">All users</option>` +
@@ -370,14 +344,14 @@ export default async function renderActivityLog({ me }) {
     $status.style.display   = "none";
     $tableWrap.style.display = "";
 
-    const colSpan = isAdmin ? 6 : 5;
+    const colSpan = 6;
 
     $tbody.innerHTML = filtered.map((e, i) => {
       const hasDetails = !!e.details && typeof e.details === "object";
       return `
       <tr class="al-row${e.result === "failure" ? " al-row--fail" : e.result === "partial" ? " al-row--partial" : ""}">
         <td class="al-cell-time">${escapeHtml(formatDateTime(e.logTimestamp))}</td>
-        ${isAdmin ? `<td class="al-cell-user" title="${escapeHtml(e.userEmail)}">${escapeHtml(e.userName || e.userEmail)}</td>` : ""}
+        <td class="al-cell-user" title="${escapeHtml(e.userEmail)}">${escapeHtml(e.userName || e.userEmail)}</td>
         <td class="al-cell-org">${escapeHtml(e.orgName || e.orgId || "—")}</td>
         <td class="al-cell-action"><span class="al-action-tag">${escapeHtml(actionLabel(e.action))}</span></td>
         <td class="al-cell-desc">
