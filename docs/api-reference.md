@@ -62,6 +62,14 @@ These are the Azure Functions endpoints exposed by the app itself.
 | POST | `/api/scheduled-runner` | Trigger the scheduled export runner (called every 5 min by Azure Timer Trigger) |
 | GET | `/api/activity-log` | Fetch internal activity log entries |
 | POST | `/api/activity-log` | Write a new internal activity log entry |
+| GET | `/api/feature-requests?board=mine` | The caller's own organisation's feature requests, in full. Scoped by `ownerOrgId`. |
+| GET | `/api/feature-requests?board=shared` | Requests promoted to the shared board, as a **server-side redacted projection** — curated title/description, status, vote count, and the submitter as `Thomas V.` or `A customer`. The submitter's own wording, identity, org and page context are never sent. Any authenticated caller. |
+| GET | `/api/feature-requests?board=all` | Every organisation's requests, unredacted — **superuser only** (`SUPERUSER_IDS` app setting, matched against the caller's token-derived user id). The triage queue; also triggers the 12-month retention purge. |
+| GET | `/api/feature-requests/{id}` | One request: in full if it belongs to the caller's org, as a shared card if promoted, otherwise 404 (never 403 — confirming an id exists would leak another tenant's board). |
+| POST | `/api/feature-requests` | Create — body: `{ title, description, type?, route?, pageLabel?, orgId?, orgName?, appVersion?, publishAnonymously? }`. Owner and identity come from the token, never the body; every request starts `private`/`new`. Capped at 120/4000 chars and 20 creates per user per 24h. |
+| PUT | `/api/feature-requests/{id}` | Submitter edits their own `title`/`description`/`type` **while status is `new`** (409 after triage). Superuser sets `status`, `adminNote`, `shippedVersion`, `duplicateOf`, `visibility`, `sharedTitle`, `sharedDescription`. Promoting to `shared` without a `sharedTitle` is refused. |
+| POST | `/api/feature-requests/{id}/vote` | Toggle the caller's vote. Permitted on anything the caller can see, so votes on a promoted request aggregate across every org. Idempotent by construction. |
+| DELETE | `/api/feature-requests/{id}` | Delete a request — superuser only. |
 | GET | `/api/templates?orgId={orgId}&userEmail={email}` | List all skill templates for an org (Azure Table Storage). Each row carries `canEdit` — see `/api/schedules`. |
 | POST | `/api/templates` | Create a new skill template — body: `{ orgId, name, userEmail, roles, skills, languages, queues }` |
 | PUT | `/api/templates/{id}` | Update an existing skill template (owner or admin only) |
