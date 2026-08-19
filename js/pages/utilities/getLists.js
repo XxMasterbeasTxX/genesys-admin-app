@@ -19,6 +19,7 @@
  *   fetch      async (api, orgId) => row objects keyed by column.key
  */
 import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
+import { fetchAllWrapupCodes, fetchAllDivisions } from "../../services/genesysApi.js";
 import { orgContext } from "../../services/orgContext.js";
 
 // ── Presence definitions ──────────────────────────────────────────────
@@ -86,6 +87,42 @@ async function fetchPresenceDefinitions(api, orgId) {
   return rows;
 }
 
+// ── Wrap-up codes ─────────────────────────────────────────────────────
+/**
+ * GET /api/v2/routing/wrapupcodes
+ *
+ * Paginated, so it goes through the shared fetchAllWrapupCodes walker rather
+ * than a single call.
+ *
+ * Each code carries a `division` reference. The schema says that reference has
+ * a name, but Genesys division references routinely come back as id + selfUri
+ * with the name left off, which would give a column of blanks. The divisions
+ * are fetched alongside and used to fill in any name the reference did not
+ * carry — one extra call, in parallel, and the embedded name still wins when
+ * it is there.
+ */
+async function fetchWrapupCodes(api, orgId) {
+  const [codes, divisions] = await Promise.all([
+    fetchAllWrapupCodes(api, orgId),
+    fetchAllDivisions(api, orgId).catch((err) => {
+      console.warn("[getLists] divisions unavailable, falling back to embedded names:", err);
+      return [];
+    }),
+  ]);
+
+  const divisionNames = new Map(divisions.map((d) => [d.id, d.name]));
+
+  const rows = codes.map((c) => ({
+    name: c.name || "",
+    id: c.id || "",
+    description: c.description || "",
+    divisionName: c.division?.name || divisionNames.get(c.division?.id) || "",
+  }));
+
+  rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  return rows;
+}
+
 // ── The registry ──────────────────────────────────────────────────────
 const LIST_DEFS = [
   {
@@ -106,6 +143,22 @@ const LIST_DEFS = [
       { key: "divisionId",     label: "Division ID",     wch: 38 },
     ],
     fetch: fetchPresenceDefinitions,
+  },
+  {
+    key: "wrapup-codes",
+    label: "Wrap-up Codes",
+    desc: `Every wrap-up code in the org with its division.
+           Source: <code>GET /api/v2/routing/wrapupcodes</code>.`,
+    filePrefix: "Wrapup_Codes",
+    sheetName: "Wrap-up Codes",
+    unit: "codes",
+    columns: [
+      { key: "name",         label: "Name",          wch: 40 },
+      { key: "id",           label: "ID",            wch: 38 },
+      { key: "description",  label: "Description",   wch: 60 },
+      { key: "divisionName", label: "Division Name", wch: 28 },
+    ],
+    fetch: fetchWrapupCodes,
   },
 ];
 
