@@ -38,7 +38,11 @@ module.exports = async function (context, req) {
     //
     // `orgId` is passed as the region hint so a cross-region customer token is
     // verified against the right Genesys region (see callerContext).
-    const caller = await getCallerContext(context, req, { hintId: orgId });
+    // `identify: false` — nothing on this path reads caller.userId, and this is
+    // the endpoint with the least room to spare: a documentation export already
+    // runs about 29s of the 45s a Static Web Apps request gets, so it does not
+    // also pay for a users/me round trip on a cold identity cache.
+    const caller = await getCallerContext(context, req, { hintId: orgId, identify: false });
     if (!caller.authorized) {
       context.res = json(caller.status || 401, { error: caller.error || "unauthorized" });
       return;
