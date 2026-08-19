@@ -207,11 +207,19 @@ async function remove(id) {
 
 // ── Permission helpers ──────────────────────────────────
 
+/**
+ * May this caller edit or delete the record?
+ *
+ * `createdBy` is read defensively because this is now called for every row
+ * of a list read, not just for the one record a write targets: it is the only
+ * creator field written without a default, so a row that predates it would
+ * otherwise throw and take the whole listing down with it.
+ */
 function canEdit(schedule, userEmail) {
   if (!userEmail) return false;
   const lower = userEmail.toLowerCase();
   return (
-    lower === schedule.createdBy.toLowerCase() || lower === ADMIN_EMAIL
+    lower === String(schedule?.createdBy || "").toLowerCase() || lower === ADMIN_EMAIL
   );
 }
 

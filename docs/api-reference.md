@@ -55,14 +55,14 @@ These are the Azure Functions endpoints exposed by the app itself.
 | POST | `/api/doc-export` | On-demand Documentation export — body: `{ orgId, includeDataTables? }` — returns base64 workbook (XLSX or ZIP) |
 | POST | `/api/send-email` | Send email with attachment via Mailjet |
 | GET | `/api/scrape-disqualifying-permissions` | Scrape Genesys Cloud help page for Hourly Interacting disqualifying permissions; returns sorted JSON array; 24 h cache |
-| GET | `/api/schedules` | List all saved export schedules (Azure Table Storage) |
+| GET | `/api/schedules?userEmail={email}` | List all saved export schedules (Azure Table Storage). Each row carries `canEdit` — whether that caller may edit or delete it (creator or admin). Decided server-side so the browser never needs the admin's address; omit `userEmail` and `canEdit` is `false` throughout. |
 | POST | `/api/schedules` | Create a new export schedule. For `exportType: "queuesSkills"`, `exportConfig` supports optional arrays: `users`, `groups`, `teams`, `queues`, `skills`, `languages` (plus `*Labels` arrays for display summaries). |
 | PUT | `/api/schedules/{id}` | Update an existing schedule. For `exportType: "queuesSkills"`, the same optional filter arrays are persisted and used by scheduled runs. |
 | DELETE | `/api/schedules/{id}` | Delete a schedule |
 | POST | `/api/scheduled-runner` | Trigger the scheduled export runner (called every 5 min by Azure Timer Trigger) |
 | GET | `/api/activity-log` | Fetch internal activity log entries |
 | POST | `/api/activity-log` | Write a new internal activity log entry |
-| GET | `/api/templates?orgId={orgId}` | List all skill templates for an org (Azure Table Storage) |
+| GET | `/api/templates?orgId={orgId}&userEmail={email}` | List all skill templates for an org (Azure Table Storage). Each row carries `canEdit` — see `/api/schedules`. |
 | POST | `/api/templates` | Create a new skill template — body: `{ orgId, name, userEmail, roles, skills, languages, queues }` |
 | PUT | `/api/templates/{id}` | Update an existing skill template (owner or admin only) |
 | DELETE | `/api/templates/{id}?orgId={orgId}&userEmail={email}` | Delete a skill template (owner or admin only) |
@@ -73,7 +73,7 @@ These are the Azure Functions endpoints exposed by the app itself.
 | DELETE | `/api/template-assignments?orgId={orgId}&userId={userId}&templateId={templateId}` | Delete a template assignment by user+template combo |
 | DELETE | `/api/template-assignments?orgId={orgId}&groupId={groupId}&templateId={templateId}` | Delete a template assignment by group+template combo |
 | DELETE | `/api/template-assignments?orgId={orgId}&workteamId={workteamId}&templateId={templateId}` | Delete a template assignment by work team+template combo |
-| GET | `/api/template-schedules?orgId={orgId}` | List all template schedules for an org (Azure Table Storage) |
+| GET | `/api/template-schedules?orgId={orgId}&userEmail={email}` | List all template schedules for an org (Azure Table Storage). Each row carries `canEdit` — see `/api/schedules`. |
 | GET | `/api/template-schedules/{id}` | Get a single template schedule by ID |
 | POST | `/api/template-schedules` | Create a template schedule — body: `{ templateId, templateName, orgId, mode, scheduleType, scheduleTime, scheduleDayOfWeek?, scheduleDayOfMonth?, scheduleDate?, targets, enabled?, userEmail, userName }` — `mode` is `"reset"` or `"add"`; `scheduleType` is `"once"`, `"daily"`, `"weekly"`, or `"monthly"`; `targets` is an array of `{ type: "user" \| "group" \| "workteam", id, name }` (at least one required) |
 | PUT | `/api/template-schedules/{id}` | Update a template schedule (owner or admin only) — body includes `userEmail` for ownership check; `targets` array can be updated |

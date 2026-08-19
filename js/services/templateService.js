@@ -12,8 +12,11 @@ const BASE = "/api/templates";
  * @param {string} orgId
  * @returns {Promise<Array>}
  */
-export async function fetchTemplates(orgId) {
-  const res = await fetch(`${BASE}?orgId=${encodeURIComponent(orgId)}`, { headers: withUserToken() });
+export async function fetchTemplates(orgId, userEmail = "") {
+  const qs = new URLSearchParams({ orgId });
+  // Lets the backend answer `canEdit` per template — see scheduleService.
+  if (userEmail) qs.set("userEmail", userEmail);
+  const res = await fetch(`${BASE}?${qs.toString()}`, { headers: withUserToken() });
   if (!res.ok) throw new Error(`Failed to fetch templates (${res.status})`);
   return res.json();
 }

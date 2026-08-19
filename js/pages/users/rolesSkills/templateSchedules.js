@@ -12,7 +12,6 @@ import {
 } from "../../../services/templateScheduleService.js";
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const ADMIN_EMAIL = "thva@tdc.dk";
 
 export default function renderTemplateSchedules({ route, me, api, orgContext }) {
   const el = document.createElement("section");
@@ -55,10 +54,12 @@ export default function renderTemplateSchedules({ route, me, api, orgContext }) 
     $status.className = "st-status" + (type ? ` st-status--${type}` : "");
   }
 
+  // Answered by the backend on the schedule itself — see canEditSchedule in
+  // components/schedulePanel.js. Falls back to owner-only.
   function canEditSchedule(s) {
+    if (typeof s?.canEdit === "boolean") return s.canEdit;
     if (!me?.email) return false;
-    const lower = me.email.toLowerCase();
-    return lower === s.createdBy.toLowerCase() || lower === ADMIN_EMAIL;
+    return me.email.toLowerCase() === String(s?.createdBy || "").toLowerCase();
   }
 
   function describeSchedule(s) {
@@ -79,7 +80,7 @@ export default function renderTemplateSchedules({ route, me, api, orgContext }) 
 
   async function load() {
     try {
-      schedules = await fetchTemplateSchedules(orgId);
+      schedules = await fetchTemplateSchedules(orgId, me?.email || "");
       $loading.hidden = true;
       $body.hidden = false;
       render();

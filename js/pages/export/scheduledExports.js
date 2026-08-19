@@ -160,7 +160,7 @@ export default function renderScheduledExports({ route, me }) {
   // ── Load data ─────────────────────────────────────────
   async function loadData() {
     try {
-      schedules = await fetchSchedules();
+      schedules = await fetchSchedules(me?.email || "");
       renderTable();
       setStatus("");
     } catch (err) {
