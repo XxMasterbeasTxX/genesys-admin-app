@@ -68,7 +68,8 @@ export const RELEASE_NOTES = [
   {
     version: "3.3",
     date: "2026-08-17",
-    title: "Deployment › Test › Test Cases: a flow's test document, written for you",
+    title: "Deployment › Test › Test Cases: a flow's test document, written for you (internal)",
+    internalOnly: true,
     changes: [
       "New page Deployment › Test › Test Cases, marked Still Work in Progress while we gather opinions on it. Pick a flow, choose how thoroughly to cover it, and every route a caller can take through it comes out as a test case: what has to be true to send the call down that route, the steps it goes through, and where it ends up. Read-only — nothing is written to Genesys.",
       "Three levels of coverage, because a flow with twenty decisions in it has a million routes through it and nobody tests a million things. Branch coverage is the default and gives you every branch exercised at least once — on that same twenty-decision flow, two test cases cover all forty branches. Happy paths gives one case per distinct ending. All paths gives you everything, capped at 500 per flow, and says so plainly when it stops early rather than handing you a document that quietly stops short.",
@@ -358,7 +359,8 @@ export const RELEASE_NOTES = [
   {
     version: "1.1",
     date: "2026-07-06",
-    title: "Permission Catalog page",
+    title: "Permission Catalog page (internal)",
+    internalOnly: true,
     changes: [
       "Added Utilities > Permission Catalog — an internal, admin-only page that lists the full Genesys Cloud permission catalog (domain:entity:action) for the selected org.",
       "Live filter over the permission string and label, sortable columns, and summary counts of domains, entities, and permissions.",
