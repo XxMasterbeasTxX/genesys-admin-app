@@ -11,6 +11,15 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "3.7",
+    date: "2026-08-19",
+    title: "Get Lists: Wrap-up Codes",
+    changes: [
+      "Utilities › Get Lists has a second list. Wrap-up Codes gives every code in the org with its name, ID, description and the division it belongs to — filtered, sorted and exported to Excel like the first one.",
+      "A wrap-up code names the division it sits in, but Genesys usually returns only that division’s ID and not its name. The divisions are fetched alongside and the name filled in, so the column reads Sales rather than sitting empty. If the division list cannot be read, the codes still come through with whatever names they carried.",
+    ],
+  },
+  {
     version: "3.6",
     date: "2026-08-19",
     title: "Export: the documentation export finishes, and a run of smaller fixes",
