@@ -1,5 +1,5 @@
 import { CONFIG } from "./config.js";
-import { NAV_TREE, getFirstLeafUnder, getRouteAccessMap } from "./navConfig.js";
+import { NAV_TREE, getFirstLeafUnder, getRouteAccessMap, getRouteLabelMap } from "./navConfig.js";
 import { createNav } from "./nav.js";
 import { Router } from "./router.js";
 import { getPageLoader } from "./pageRegistry.js";
@@ -23,6 +23,7 @@ import { GROUP_ACCESS } from "./accessConfig.js";
 import { resolveAccess, resolveCustomerAccess } from "./services/accessService.js";
 import { APP_VERSION } from "./releaseNotes.js";
 import { renderReleaseNotesPage } from "./pages/releaseNotes.js";
+import renderRequests, { CONTEXT_KEY as REQUEST_CONTEXT_KEY } from "./pages/requests.js";
 
 function setHeader({ authText }) {
   document.getElementById("brandTitle").textContent = CONFIG.appName;
@@ -237,6 +238,27 @@ function renderSignInGate() {
   copyrightEl.title = "Proprietary and confidential";
   navEl.append(copyrightEl);
 
+  // --- Requests button: remember the page it was pressed from ---
+  //
+  // The route IS the hash (see router.js), so "#/requests?from=..." would be a
+  // route the registry does not know. Stashing it instead needs no router
+  // change, and it is what lets a request arrive already naming the page it is
+  // about instead of costing a round trip to find out.
+  const routeLabelMap = getRouteLabelMap();
+  document.getElementById("requestsBtn").addEventListener("click", () => {
+    const from = (window.location.hash || "").replace(/^#/, "");
+    const label = routeLabelMap[from];
+    try {
+      if (label) {
+        sessionStorage.setItem(REQUEST_CONTEXT_KEY, JSON.stringify({ route: from, pageLabel: label }));
+      } else {
+        // Pressed from the welcome page, the release notes or the board itself
+        // — there is no page to name, so do not carry a stale one over.
+        sessionStorage.removeItem(REQUEST_CONTEXT_KEY);
+      }
+    } catch (_) { /* storage unavailable — the form simply asks nothing */ }
+  });
+
   // --- Sign-out button ---
   document.getElementById("signOutBtn").addEventListener("click", () => refreshSession());
 
@@ -250,6 +272,13 @@ function renderSignInGate() {
 
       // Release notes (reached from the sidebar version footer) — no access key
       if (route === "/release-notes") return renderReleaseNotesPage(isInternalMode);
+
+      // Requests board — no access key either, and like the release notes it
+      // needs to know whether the viewer is staff, so a shipped request does not
+      // link a customer to an internal-only note.
+      if (route === "/requests") {
+        return renderRequests({ me: res.me, orgContext, isInternal: isInternalMode });
+      }
 
       const loader = getPageLoader(route);
       if (loader) {

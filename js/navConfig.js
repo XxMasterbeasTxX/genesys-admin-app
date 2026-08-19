@@ -383,6 +383,28 @@ export function getFirstLeafUnder(prefix) {
 }
 
 /**
+ * Build a map of { route → "Section › Group › Page" } for every leaf node.
+ *
+ * Used by the Requests page to name the page a request came from. A raw route
+ * is a poor thing to show a person — "/export/users/trustee" is not what they
+ * call it — and this is the only place that already knows the labels.
+ */
+export function getRouteLabelMap(nodes = NAV_TREE, parentPath = "", parentLabel = "") {
+  const map = {};
+  for (const node of nodes) {
+    if (node.enabled === false) continue;
+    const fullPath = `${parentPath}/${node.path}`;
+    const label = parentLabel ? `${parentLabel} › ${node.label}` : node.label;
+    if (node.children?.length) {
+      Object.assign(map, getRouteLabelMap(node.children, fullPath, label));
+    } else {
+      map[fullPath] = label;
+    }
+  }
+  return map;
+}
+
+/**
  * Build a map of { route → accessKey } for every leaf node.
  * Used by the router to guard direct URL navigation.
  */
