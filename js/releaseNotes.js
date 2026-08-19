@@ -13,7 +13,8 @@ export const RELEASE_NOTES = [
   {
     version: "3.7",
     date: "2026-08-19",
-    title: "Get Lists: Wrap-up Codes",
+    title: "Get Lists: Wrap-up Codes (internal)",
+    internalOnly: true,
     changes: [
       "Utilities › Get Lists has a second list. Wrap-up Codes gives every code in the org with its name, ID, description and the division it belongs to — filtered, sorted and exported to Excel like the first one.",
       "A wrap-up code names the division it sits in, but Genesys usually returns only that division’s ID and not its name. The divisions are fetched alongside and the name filled in, so the column reads Sales rather than sitting empty. If the division list cannot be read, the codes still come through with whatever names they carried.",
@@ -40,7 +41,8 @@ export const RELEASE_NOTES = [
   {
     version: "3.5",
     date: "2026-08-18",
-    title: "Utilities › Get Lists: the reference lists in an org, on screen and in Excel",
+    title: "Utilities › Get Lists: the reference lists in an org, on screen and in Excel (internal)",
+    internalOnly: true,
     changes: [
       "New page Utilities › Get Lists. Pick a list from the dropdown, click Load, and it is fetched from the selected org, shown here, and exported to Excel. Read-only — nothing is written back to Genesys. Nothing is fetched until you ask for it: opening the page calls nothing, and changing the picker only changes what Load would fetch, so adding more lists later will not mean the first one downloads itself every time the page opens. Load again to refetch.",
       "The first list is Presence Definitions. A presence definition carries a label in every language the org has translated it into, and all of them are shown — one row per language, rather than one row per definition with the translations packed into a cell. That keeps every column something you can filter and sort on, in the app and in Excel alike. Definitions that have been deactivated are included too, with their own column, so nothing is quietly left out.",
