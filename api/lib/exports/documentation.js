@@ -17,6 +17,10 @@ const XLSX  = require("xlsx-js-style");
 const JSZip = require("jszip");
 const customers          = require("../customers.json");
 const { getGenesysToken } = require("../genesysAuth");
+const {
+  genesysGetWithToken: genesysGet,
+  genesysGetAllPagesWithToken: genesysGetAllPages,
+} = require("../genesysFetch");
 const { addStyledSheet }  = require("../excelStyles");
 
 // ─────────────────────────────────────────────────────────
@@ -135,99 +139,7 @@ function sheetHref(name) {
 /**
  * Perform a single Genesys Cloud API GET using an already-obtained token.
  */
-// Transient statuses worth a second go. Every request this export makes is an
-// idempotent GET, so retrying is free of side effects — 408 (server-side request
-// timeout) and 500 both come back clean on a retry often enough to be worth it,
-// and a single one of them otherwise costs a whole sheet. Anything else — 401,
-// 403, 404 — will not improve by asking again, so it fails immediately.
-const RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
-const MAX_ATTEMPTS   = 3;
 
-/** How many pages of one paged endpoint to fetch at once. See genesysGetAllPages. */
-const PAGE_CONCURRENCY = 5;
-
-async function genesysGet(region, token, path) {
-  const url = `https://api.${region}${path}`;
-
-  for (let attempt = 1; ; attempt++) {
-    const resp = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    });
-    if (resp.ok) return resp.json();
-
-    const body = await resp.text().catch(() => "");
-    const err  = new Error(`Genesys API ${resp.status} for ${path}`);
-    err.status = resp.status;
-    err.detail = body.slice(0, 200);
-
-    if (attempt >= MAX_ATTEMPTS || !RETRY_STATUSES.has(resp.status)) throw err;
-
-    // Callers fetch pages concurrently, so a burst can earn a 429. Without this
-    // the row-fetch catch in buildDataTablesWorkbook would swallow it and emit a
-    // silently empty data table — wrong data, no warning, worse than failing.
-    const retryAfter = Number(resp.headers.get("retry-after"));
-    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
-      ? Math.min(retryAfter * 1000, 5000)
-      : 250 * 2 ** (attempt - 1);
-    await new Promise((r) => setTimeout(r, waitMs));
-  }
-}
-
-/**
- * Fetch all pages of a paged Genesys endpoint.
- * The response must have an `entities` array and `pageCount` field.
- */
-async function genesysGetAllPages(region, token, path, pageSize = 100) {
-  const sep     = path.includes("?") ? "&" : "?";
-  const pageUrl = (n) => `${path}${sep}pageSize=${pageSize}&pageNumber=${n}`;
-
-  const first = await genesysGet(region, token, pageUrl(1));
-  const all   = (first.entities || []).slice();
-
-  // Short page — that was everything.
-  if (all.length < pageSize) return all;
-
-  const pageCount = Number(first.pageCount);
-
-  if (Number.isFinite(pageCount)) {
-    if (pageCount <= 1) return all;
-
-    // Fetch the remaining pages concurrently. Walking them one at a time made
-    // the longest single table the critical path for the whole export: A&Til has
-    // a data table of 7,038 rows, which at 100 per page is 71 back-to-back round
-    // trips, and that chain alone outlasted the 45-second gateway budget.
-    const rest = new Array(pageCount - 1);
-    let next = 2;
-
-    const worker = async () => {
-      for (let n = next++; n <= pageCount; n = next++) {
-        const resp = await genesysGet(region, token, pageUrl(n));
-        rest[n - 2] = resp.entities || [];
-      }
-    };
-
-    await Promise.all(
-      Array.from({ length: Math.min(PAGE_CONCURRENCY, pageCount - 1) }, worker)
-    );
-
-    // Page order preserved. Appended item by item rather than spread, which
-    // throws on very large arrays.
-    for (const items of rest) {
-      if (!items) continue;
-      for (const item of items) all.push(item);
-    }
-    return all;
-  }
-
-  // No pageCount reported — keep walking sequentially until a short page.
-  for (let page = 2; ; page++) {
-    const resp  = await genesysGet(region, token, pageUrl(page));
-    const items = resp.entities || [];
-    for (const item of items) all.push(item);
-    if (items.length < pageSize) break;
-  }
-  return all;
-}
 
 /**
  * Fetch all pages of a cursor-paginated Genesys endpoint (uses nextUri, max pageSize 200).
