@@ -19,6 +19,7 @@
  */
 const store = require("../lib/scheduleStore");
 const { getHandler } = require("../lib/exportHandlers");
+const mailer = require("../lib/mailer");
 
 module.exports = async function (context, req) {
   // ── Verify shared secret ──────────────────────────────
@@ -206,26 +207,23 @@ async function runExport(context, schedule) {
 
 // ── Email via Mailjet ───────────────────────────────────
 
+/**
+ * Mail a finished export.
+ *
+ * @returns {Promise<string|null>} An error message, or null on success. The
+ *   caller records this on the schedule as `lastError`, so the string is what
+ *   an admin reads on the Scheduled Exports page.
+ */
 async function sendResultEmail(context, schedule, result) {
-  const apiKey = process.env.MAILJET_API_KEY;
-  const secretKey = process.env.MAILJET_SECRET_KEY;
-  const fromEmail = process.env.MAILJET_FROM_EMAIL || "noreply@versatech.nu";
-  const fromName = process.env.MAILJET_FROM_NAME || "Genesys Admin App";
-
-  if (!apiKey || !secretKey) {
-    return "Mailjet credentials not configured";
-  }
-
-  const recipientList = (schedule.emailRecipients || "")
-    .split(/[,;]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-
+  const recipientList = mailer.parseRecipients(schedule.emailRecipients);
   if (!recipientList.length) {
+    // Checked before composing: this run has nothing to say and no one to say
+    // it to, and the message differs from the mailer's generic wording because
+    // it points at the schedule's own configuration.
     return "No email recipients configured";
   }
 
-  const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19);
+  const timestamp = mailer.timestamp();
   const defaultBody =
     `Scheduled export: ${schedule.exportLabel}\n` +
     `Summary: ${result.summary || "N/A"}\n\n` +
@@ -238,52 +236,19 @@ async function sendResultEmail(context, schedule, result) {
   const subject = result.subject || `${schedule.exportLabel} — ${timestamp}`;
   const body    = schedule.emailMessage?.trim() || result.body || defaultBody;
 
-  const message = {
-    From: { Email: fromEmail, Name: fromName },
-    To: recipientList.map((email) => ({ Email: email })),
-    Subject: subject,
-    TextPart: body,
-  };
+  const sent = await mailer.sendMail({
+    recipients: recipientList,
+    subject,
+    text: body,
+    attachment: (result.base64 && result.filename)
+      ? { filename: result.filename, base64: result.base64, mimeType: result.mimeType }
+      : null,
+    log: (msg) => context.log.error(msg),
+  });
 
-  if (result.base64 && result.filename) {
-    message.Attachments = [
-      {
-        ContentType: result.mimeType || "application/octet-stream",
-        Filename: result.filename,
-        Base64Content: result.base64,
-      },
-    ];
-  }
-
-  try {
-    const auth = Buffer.from(`${apiKey}:${secretKey}`).toString("base64");
-    const resp = await fetch("https://api.mailjet.com/v3.1/send", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${auth}`,
-      },
-      body: JSON.stringify({ Messages: [message] }),
-    });
-
-    if (!resp.ok) {
-      const body = await resp.json().catch(() => ({}));
-      const errMsg =
-        body.Messages?.[0]?.Errors?.[0]?.ErrorMessage ||
-        body.ErrorMessage ||
-        `Mailjet API error: ${resp.status}`;
-      context.log.error("Mailjet send error:", JSON.stringify(body));
-      return errMsg;
-    }
-
-    const body = await resp.json().catch(() => ({}));
-    const msgStatus = body.Messages?.[0]?.Status;
-    if (msgStatus === "error") {
-      return body.Messages[0].Errors?.[0]?.ErrorMessage || "Mailjet error";
-    }
-
-    return null; // success
-  } catch (err) {
-    return `Email send failed: ${err.message}`;
-  }
+  // Addresses are NOT validated here, matching the behaviour this runner has
+  // always had: a schedule with one malformed recipient still attempts its
+  // send, and Mailjet's own verdict is what gets recorded. Rejecting the batch
+  // ourselves would turn a typo into a silently skipped export.
+  return sent.success ? null : sent.error;
 }
