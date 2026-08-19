@@ -11,6 +11,24 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "3.6",
+    date: "2026-08-19",
+    title: "Export: the documentation export finishes, and a run of smaller fixes",
+    changes: [
+      "The documentation export finished its work but arrived too late for orgs with a large data table, and the page showed only “Server returned 500”. One table of 7,000 rows was fetched a hundred rows at a time, one request after the next, and that single chain outlasted the 45-second limit that applies to any request the app makes. Pages are now fetched several at a time — the org that was failing went from 47 seconds to 13.",
+      "The second workbook holding DataTable contents was silently missing for orgs where two tables’ names matched for their first 31 characters. Excel rejects a duplicate sheet name, and the whole DataTables workbook was dropped without a word, leaving a single file where a ZIP was expected. Names are now made unique, and when the workbook genuinely cannot be built the summary says why rather than quietly handing back less.",
+      "Interaction Totals read the selected org once, when the page opened. Switching org in the header afterwards left it querying the previous customer while labelling the workbook, the email and the activity log with that customer’s name. It now reads the org each time you press Load, and asks you to pick one at that point rather than showing a dead page that never recovered.",
+      "Cancel stops the work. It used to set a flag that was only read once the fetching had already finished, so a large export carried on to the end after you had cancelled it.",
+      "The “inactive for N months” filter on Last Login could be up to three days out at the end of a month, letting recently-active users through.",
+      "Sunday was blank in the schedule sheet of the templates export, and days were written as numbers rather than names.",
+      "Licence Consumption now has a column for every licence the org defines, including those nobody currently holds. Before, a licence with no holders simply vanished from the report, so “nobody uses this” and “this org does not have this” looked the same.",
+      "The user counts in export summaries were counted by email address. Deleted users are included in these exports and Genesys releases their address for reuse, so users without one collapsed into a single entry and the count read lower than the table beneath it.",
+      "Billing workbooks covering many orgs could fail outright when two org names matched for their first 31 characters — after every billing call for every org had already been made. Sheet names are now made unique.",
+      "The trustee export no longer opens every org at once. It walked each org, then each trustee, group and member within it, which could put hundreds of simultaneous calls against a rate-limited API.",
+      "Scheduled exports received the same fixes as the pages. The handlers that run them are separate ports of the same logic and carried the same faults, so the workbooks arriving by email had them too.",
+    ],
+  },
+  {
     version: "3.5",
     date: "2026-08-18",
     title: "Utilities › Get Lists: the reference lists in an org, on screen and in Excel",
