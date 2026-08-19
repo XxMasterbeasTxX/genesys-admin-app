@@ -19,10 +19,10 @@
  *   GET /api/v2/groups/{groupId}/members
  *   GET /api/v2/users/{id}
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { fetchCustomers } from "../../../services/customerService.js";
-import { sendEmail, validateRecipients } from "../../../services/emailService.js";
+import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
 import { STYLE_HEADER, STYLE_ROW_EVEN, STYLE_ROW_ODD } from "../../../utils/excelStyles.js";
@@ -48,6 +48,37 @@ const TRUSTEE_SHEET_SUFFIX = {
   "Netdesign DE": "DE",
   "Netdesign":    "IE",
 };
+
+/** Orgs walked at once. Each one fans out again internally. */
+const ORG_CONCURRENCY = 6;
+
+/**
+ * Run tasks with a ceiling on how many are in flight.
+ *
+ * The org walk fans out per org, then per trustee, then per group, then per
+ * member — so firing every org at once multiplies into hundreds of concurrent
+ * proxy calls against a rate-limited API. Results keep their input order, and
+ * like Promise.allSettled a rejection is reported rather than thrown.
+ */
+async function runSettledBatched(items, worker, concurrency) {
+  const results = new Array(items.length);
+  let next = 0;
+
+  const run = async () => {
+    for (let i = next++; i < items.length; i = next++) {
+      try {
+        results[i] = { status: "fulfilled", value: await worker(items[i], i) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, run)
+  );
+  return results;
+}
 
 /** Normalise a trustee org name for display. */
 function normaliseTrusteeOrg(name) {
@@ -163,6 +194,14 @@ export default function renderTrusteeExport({ route, me, api }) {
   let isRunning = false;
   let cancelled = false;
 
+  // One filter set per trustee-org block, all rebuilt on each export. Each
+  // registers a document listener, so the previous run's are released first.
+  let filterDisposers = [];
+  const releaseFilters = () => {
+    for (const dispose of filterDisposers) dispose();
+    filterDisposers = [];
+  };
+
   // ── Build UI ──────────────────────────────────────────
   el.innerHTML = `
     <h1 class="h1">Export — Users — Trustee</h1>
@@ -253,22 +292,20 @@ export default function renderTrusteeExport({ route, me, api }) {
     $progressBar.style.width = `${pct}%`;
   }
 
-  /** Build and trigger Excel download (styled). */
+  /**
+   * Build and trigger Excel download (styled).
+   *
+   * Runs from a plain click handler, so a blocked pop-up has to be reported
+   * here — an escaping throw would leave the button looking dead.
+   */
   function downloadExcel(byTrusteeOrg, customerNames) {
     const wb = buildTrusteeWorkbook(byTrusteeOrg, customerNames);
     if (!wb.SheetNames.length) return;
 
-    const b64 = XLSX.write(wb, { bookType: "xlsx", type: "base64" });
-    const filename = timestampedFilename("trustee_export", "xlsx");
-    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    window._xlsxDownload = window._xlsxDownload || {};
-    window._xlsxDownload[key] = { filename, b64 };
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = key;
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) {
-      delete window._xlsxDownload[key];
-      throw new Error("Pop-up blocked. Please allow pop-ups for this site and try again.");
+    try {
+      downloadWorkbook(wb, timestampedFilename("trustee_export", "xlsx"));
+    } catch (err) {
+      setStatus(err.message, "error");
     }
   }
 
@@ -294,11 +331,10 @@ export default function renderTrusteeExport({ route, me, api }) {
       const totalOrgs = customers.length;
 
       // 2. Process all customer orgs in parallel
-      setStatus(`Processing ${totalOrgs} orgs in parallel…`);
+      setStatus(`Processing ${totalOrgs} orgs, ${ORG_CONCURRENCY} at a time…`);
       showProgress(10);
 
-      const orgResults = await Promise.allSettled(
-        customers.map(async (cust) => {
+      const orgResults = await runSettledBatched(customers, async (cust) => {
           const localMap = new Map();
 
           const trustees = await gc.fetchTrustees(api, cust.id);
@@ -358,8 +394,7 @@ export default function renderTrusteeExport({ route, me, api }) {
           }));
 
           return { custName: cust.name, localMap };
-        })
-      );
+      }, ORG_CONCURRENCY);
 
       if (cancelled) {
         setStatus("Cancelled.", "error");
@@ -442,9 +477,10 @@ export default function renderTrusteeExport({ route, me, api }) {
       $tableWrap.innerHTML = html;
 
       // Attach dropdown filters for Name + Email columns on each trustee-org block
+      releaseFilters();
       $tableWrap.querySelectorAll(".te-details").forEach(detailsEl => {
         const countEl = detailsEl.querySelector(".te-user-count");
-        attachColumnFilters(detailsEl, { countEl, totalLabel: "users" });
+        filterDisposers.push(attachColumnFilters(detailsEl, { countEl, totalLabel: "users" }));
       });
       $tableWrap.style.display = "";
 
@@ -505,6 +541,8 @@ export default function renderTrusteeExport({ route, me, api }) {
     $cancelBtn.style.display = "none";
     setStatus("Cancelling…");
   });
+
+  el.__destroy = releaseFilters;
 
   return el;
 }

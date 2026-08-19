@@ -5,6 +5,7 @@
  * Only the creator (or admin) can edit/delete a schedule.
  */
 import { escapeHtml } from "../../utils.js";
+import { logAction } from "../../services/activityLogService.js";
 import {
   fetchSchedules,
   updateSchedule,
@@ -27,7 +28,7 @@ export default function renderScheduledExports({ route, me }) {
     <hr class="hr">
     <p class="page-desc">
       Overview of every scheduled export across all export types.
-      You can only edit or delete schedules you created${me?.email ? "" : ""}.
+      You can only edit or delete schedules you created.
     </p>
     <div class="se-status" id="seStatus"></div>
     <div class="se-body" id="seBody">
@@ -118,9 +119,21 @@ export default function renderScheduledExports({ route, me }) {
       existing,
       canDelete: canEditSchedule(existing, me),
       onSave: async (formData) => {
+        // This form renders no org selector and no per-export config fields, so
+        // getFormData returns none. The API treats an absent exportConfig as
+        // "leave unchanged" (api/schedules PUT, scheduleStore.update), which is
+        // what keeps an org-scoped schedule pointed at its org when edited from
+        // here. Sending an empty object instead would blank it, so it is
+        // stripped rather than forwarded.
+        const { exportConfig, ...rest } = formData;
         await updateSchedule(existing.id, {
-          ...formData,
+          ...rest,
           userEmail: me.email,
+        });
+        logAction({
+          me,
+          action:      "schedule_update",
+          description: `Updated schedule for '${existing.exportLabel || existing.exportType}'`,
         });
         hideForm();
         await loadData();
@@ -128,6 +141,11 @@ export default function renderScheduledExports({ route, me }) {
       onCancel: () => hideForm(),
       onDelete: async (id) => {
         await deleteSchedule(id, me.email);
+        logAction({
+          me,
+          action:      "schedule_delete",
+          description: `Deleted schedule for '${existing.exportLabel || existing.exportType}'`,
+        });
         hideForm();
         await loadData();
       },

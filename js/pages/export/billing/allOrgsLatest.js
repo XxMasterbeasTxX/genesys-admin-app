@@ -2,8 +2,8 @@
  * Export › Billing › All Orgs — Latest Period
  *
  * Exports the latest complete billing period (index=1) for every billable
- * customer org and emits a SINGLE worksheet with all orgs stacked
- * vertically — matching the Python script GUI_Billing_Export_Scheduled_All.py.
+ * customer org into one workbook with a sheet per organisation — matching the
+ * Python script GUI_Billing_Export_Scheduled_All.py.
  *
  * Trustee orgs (e.g. Demo, Test IE) are excluded — they cannot be exported
  * as trustors.
@@ -13,7 +13,7 @@
  *
  * Per-org failures are tolerated and reported in the status summary.
  */
-import { timestampedFilename } from "../../../utils.js";
+import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import { fetchBillingOverview } from "../../../services/billingService.js";
 import { filterBillableCustomers } from "../../../utils/billingTrustees.js";
 import { processBillingOverview } from "../../../utils/billingProcessor.js";
@@ -42,7 +42,7 @@ export default function renderBillingAllOrgsLatestExport({ me, api }) {
     <h1 class="h1">Export — Billing — All Orgs (Latest Period)</h1>
     <hr class="hr">
     <p class="page-desc">
-      Exports the latest complete billing period for every billable customer org
+      Exports the latest complete billing period for every billable customer
       org into a single workbook. The workbook has one sheet per organisation
       (sheet name = org name), each using the same 4-column layout (Name,
       Committed, Actual Usage, On-Demand) with a per-org summary banner, an
@@ -263,17 +263,10 @@ export default function renderBillingAllOrgsLatestExport({ me, api }) {
   // ── Download ──────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
     if (!lastWorkbook || !lastFilename) return;
-    const XLSX = window.XLSX;
-    const b64  = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-    const key  = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    window._xlsxDownload = window._xlsxDownload || {};
-    window._xlsxDownload[key] = { filename: lastFilename, b64 };
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = key;
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) {
-      delete window._xlsxDownload[key];
-      setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
     }
   });
 

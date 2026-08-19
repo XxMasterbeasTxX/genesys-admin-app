@@ -22,7 +22,7 @@
  * Inherited rows are shown (matching the Roles › Permissions vs. Users page
  * behaviour).
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
@@ -144,7 +144,6 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
 
   el.innerHTML = `
@@ -228,6 +227,11 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
   let lastWorkbook = null;
   let lastFilename = null;
 
+  // attachColumnFilters registers a document-level listener and hands back its
+  // disposer. renderPreviewTable runs on every export, so the previous one is
+  // released here before the next is attached, and again on teardown.
+  let disposeFilters = null;
+
   function setStatus(msg, cls) {
     $status.textContent = msg;
     $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
@@ -243,7 +247,6 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
 
-    isRunning = true;
     cancelled = false;
     $btn.style.display = "none";
     $cancel.style.display = "";
@@ -258,6 +261,7 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
       setStatus("Fetching users and role assignments…");
       setProgress(5);
       const allUsers = await gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled,
         expand: ["authorization", "dateLastLogin"],
         state: "any",
         onProgress: (n) => {
@@ -342,7 +346,11 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
       $table.style.display = "";
 
       // Summary
-      const uniqueUsers = new Set(rows.map(r => r.email)).size;
+      // Counted by the per-user index rather than email: this export includes
+      // deleted users (state: any), whose email Genesys releases for reuse, so
+      // emails are neither always present nor unique. Users holding no roles are
+      // excluded from rows entirely, so the source count would be wrong here.
+      const uniqueUsers = new Set(rows.map(r => r.index)).size;
       $summary.textContent = `${uniqueUsers} users, ${rows.length} rows`;
       $summary.style.display = "";
 
@@ -385,7 +393,6 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $btn.style.display = "";
       $cancel.style.display = "none";
     }
@@ -394,7 +401,6 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
   // ── Cancel ────────────────────────────────────────────
   $cancel.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $btn.style.display = "";
     $cancel.style.display = "none";
@@ -403,19 +409,10 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
   // ── Download ──────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
     if (!lastWorkbook || !lastFilename) return;
-    const XLSX = window.XLSX;
-    const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    window._xlsxDownload = window._xlsxDownload || {};
-    window._xlsxDownload[key] = { filename: lastFilename, b64 };
-
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = key;
-
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) {
-      delete window._xlsxDownload[key];
-      setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
     }
   });
 
@@ -451,12 +448,15 @@ export default function renderAllRolesExport({ route, me, api, orgContext }) {
     html += `</tbody></table></div></details>`;
     $table.innerHTML = html;
 
-    attachColumnFilters($table, {
+    disposeFilters?.();
+    disposeFilters = attachColumnFilters($table, {
       skipCols: [0],
       countEl: $table.querySelector(".te-user-count"),
       totalLabel: "rows",
     });
   }
+
+  el.__destroy = () => { disposeFilters?.(); disposeFilters = null; };
 
   return el;
 }

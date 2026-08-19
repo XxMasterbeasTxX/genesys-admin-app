@@ -11,7 +11,7 @@
  * Matches the Python script: GUI_Users_Export_Licenses.py
  * Sheet name: "User Licenses"
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
@@ -37,7 +37,7 @@ const ALL_LICENSES  = "All Licenses";
  * @param {string}   licenseFilter  – specific licence ID or "All Licenses"
  * @returns {{ rows: object[], licenseColumns: string[] }}
  */
-function buildRows(licenseUsers, allUsers, licenseFilter) {
+function buildRows(licenseUsers, allUsers, licenseFilter, licenseIds = []) {
   // Build lookup map: userId → Set<licenceId>
   const licenseMap = new Map();
   for (const entry of licenseUsers) {
@@ -47,7 +47,13 @@ function buildRows(licenseUsers, allUsers, licenseFilter) {
   // Determine which licence columns to produce
   let licenseColumns;
   if (licenseFilter === ALL_LICENSES) {
-    const all = new Set();
+    // Every licence the org defines, not merely those someone currently holds.
+    // Deriving columns from assignments alone made a licence with no holders
+    // vanish from the report, so "nobody uses this" and "this org does not have
+    // this licence" looked identical — and the column set shifted between runs
+    // as assignments changed. Observed ids are unioned in so an assignment
+    // referencing something outside the definitions list is still shown.
+    const all = new Set(licenseIds);
     for (const [, set] of licenseMap) for (const l of set) all.add(l);
     licenseColumns = Array.from(all).sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })
@@ -120,7 +126,6 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning  = false;
   let cancelled  = false;
   let licDefs    = [];   // [{id}]
 
@@ -232,6 +237,11 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
   let lastWorkbook = null;
   let lastFilename = null;
 
+  // attachColumnFilters registers a document-level listener and hands back its
+  // disposer. renderPreviewTable runs on every export, so the previous one is
+  // released here before the next is attached, and again on teardown.
+  let disposeFilters = null;
+
   function setStatus(msg, cls) {
     $status.textContent = msg;
     $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
@@ -282,7 +292,6 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
 
     const licenseFilter = $licSelect.value || ALL_LICENSES;
 
-    isRunning = true;
     cancelled = false;
     $exportBtn.style.display = "none";
     $cancelBtn.style.display = "";
@@ -299,6 +308,7 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
       const [licenseUsers, allUsers] = await Promise.all([
         gc.fetchAllLicenseUsers(api, org.id, {}),
         gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled,
           expand: ["division"],
           onProgress: (n) => setProgress(5 + Math.min((n / 500) * 61, 61)),
         }),
@@ -307,7 +317,9 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
       setProgress(66);
 
       setStatus("Processing…");
-      const { rows, licenseColumns } = buildRows(licenseUsers, allUsers, licenseFilter);
+      const { rows, licenseColumns } = buildRows(
+        licenseUsers, allUsers, licenseFilter, licDefs.map(d => d.id).filter(Boolean)
+      );
       setProgress(75);
 
       setStatus("Building rows…");
@@ -369,7 +381,6 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $exportBtn.style.display = "";
       $cancelBtn.style.display = "none";
     }
@@ -378,7 +389,6 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
   // ── Cancel ────────────────────────────────────────────
   $cancelBtn.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $exportBtn.style.display = "";
     $cancelBtn.style.display = "none";
@@ -386,16 +396,12 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
 
   // ── Download ──────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
-  if (!lastWorkbook || !lastFilename) return;
-  const XLSX = window.XLSX;
-  const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-  const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-  window._xlsxDownload = window._xlsxDownload || {};
-  window._xlsxDownload[key] = { filename: lastFilename, b64 };
-  const helperUrl = new URL("download.html", document.baseURI);
-  helperUrl.hash = key;
-  const popup = window.open(helperUrl.href, "_blank");
-  if (!popup) { delete window._xlsxDownload[key]; setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error"); }
+    if (!lastWorkbook || !lastFilename) return;
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
+    }
   });
 
   // ── Email toggle ──────────────────────────────────────
@@ -406,7 +412,6 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
   // ── Preview table ─────────────────────────────────────
   function renderPreviewTable(rows, licenseColumns) {
     const headers    = [...FIXED_HEADERS, ...licenseColumns];
-    const FIXED_COUNT = FIXED_HEADERS.length;
 
     let html = `<details class="te-details">`;
     html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${rows.length} users</span></summary>`;
@@ -429,11 +434,14 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
     $tableWrap.innerHTML = html;
 
     // Dropdown filters on all columns (Name, Email, Division + licence booleans)
-    attachColumnFilters($tableWrap, {
+    disposeFilters?.();
+    disposeFilters = attachColumnFilters($tableWrap, {
       countEl:    $tableWrap.querySelector(".te-user-count"),
       totalLabel: "users",
     });
   }
+
+  el.__destroy = () => { disposeFilters?.(); disposeFilters = null; };
 
   return el;
 }

@@ -16,7 +16,7 @@
  *
  * No preview. Same UX as other exports: Run → status → Download Excel.
  */
-import { timestampedFilename } from "../../../utils.js";
+import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import {
   fetchBillingPeriods,
   clearBillingPeriodsCache,
@@ -238,16 +238,10 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
     loadPeriodsForOrg(org);
   });
 
-  // Clean up the subscription when the page element is removed from the DOM.
-  if (unsubscribe) {
-    const observer = new MutationObserver(() => {
-      if (!document.body.contains(el)) {
-        unsubscribe();
-        observer.disconnect();
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
+  // The router tears the page down before detaching it. This replaced a
+  // MutationObserver watching all of document.body with subtree:true, which woke
+  // on every DOM change anywhere in the app just to notice this one removal.
+  el.__destroy = () => unsubscribe?.();
 
   // ── Reload button ─────────────────────────────────────
   $reloadBtn.addEventListener("click", () => {
@@ -342,20 +336,13 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
     }
   });
 
-  // ── Download (existing helper pattern: download.html + window._xlsxDownload) ──
+  // ── Download ─────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
     if (!lastWorkbook || !lastFilename) return;
-    const XLSX = window.XLSX;
-    const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    window._xlsxDownload = window._xlsxDownload || {};
-    window._xlsxDownload[key] = { filename: lastFilename, b64 };
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = key;
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) {
-      delete window._xlsxDownload[key];
-      setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
     }
   });
 

@@ -8,8 +8,40 @@
  *   { success, filename, base64, mimeType, summary, error? }
  */
 const customers = require("../customers.json");
-const { getGenesysToken } = require("../genesysAuth");
+const { genesysGet, genesysGetAllPages } = require("../genesysFetch");
 const XLSX = require("xlsx-js-style");
+
+/** Orgs walked at once. Each one fans out again internally. */
+const ORG_CONCURRENCY = 6;
+
+/**
+ * Run tasks with a ceiling on how many are in flight.
+ *
+ * The org walk fans out per org, then per trustee, then per group, then per
+ * member — so firing every org at once multiplies into hundreds of concurrent
+ * proxy calls against a rate-limited API. Results keep their input order, and
+ * like Promise.allSettled a rejection is reported rather than thrown.
+ */
+async function runSettledBatched(items, worker, concurrency) {
+  const results = new Array(items.length);
+  let next = 0;
+
+  const run = async () => {
+    for (let i = next++; i < items.length; i = next++) {
+      try {
+        results[i] = { status: "fulfilled", value: await worker(items[i], i) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, run)
+  );
+  return results;
+}
+
 
 // ── Known trustee org name variations → our internal customer id ────
 const TRUSTEE_NAME_MAP = {
@@ -71,55 +103,6 @@ function timestampedFilename(prefix, ext) {
 }
 
 // ── Genesys API wrappers (server-side, using client credentials) ────
-
-async function genesysGet(customerId, path) {
-  const customer = customers.find((c) => c.id === customerId);
-  if (!customer) throw new Error(`Unknown customer: ${customerId}`);
-
-  const envKey = `GENESYS_${customerId.replace(/-/g, "_").toUpperCase()}`;
-  const clientId = process.env[`${envKey}_CLIENT_ID`];
-  const clientSecret = process.env[`${envKey}_CLIENT_SECRET`];
-
-  if (!clientId || !clientSecret) {
-    throw new Error(`Credentials not configured for ${customerId}`);
-  }
-
-  const token = await getGenesysToken(customerId, customer.region, clientId, clientSecret);
-  const url = `https://api.${customer.region}${path}`;
-
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`Genesys API ${resp.status} for ${customerId} ${path}: ${body.slice(0, 200)}`);
-  }
-
-  return resp.json();
-}
-
-/**
- * Paginated GET — fetches all pages of a paginated Genesys endpoint.
- */
-async function genesysGetAllPages(customerId, path, pageSize = 100) {
-  let page = 1;
-  let all = [];
-
-  while (true) {
-    const separator = path.includes("?") ? "&" : "?";
-    const fullPath = `${path}${separator}pageSize=${pageSize}&pageNumber=${page}`;
-    const resp = await genesysGet(customerId, fullPath);
-
-    const items = resp.entities || [];
-    all = all.concat(items);
-
-    if (items.length < pageSize || page >= (resp.pageCount ?? page)) break;
-    page++;
-  }
-
-  return all;
-}
 
 // ── Build Excel workbook ────────────────────────────────
 
@@ -193,8 +176,7 @@ async function execute(context, schedule) {
     const usersMap = new Map();
 
     // Process all customer orgs in parallel
-    const orgResults = await Promise.allSettled(
-      customers.map(async (cust) => {
+    const orgResults = await runSettledBatched(customers, async (cust) => {
         log.info(`Trustee export: processing ${cust.name}`);
         const localMap = new Map();
 
@@ -260,8 +242,7 @@ async function execute(context, schedule) {
         }));
 
         return { custName: cust.name, localMap };
-      })
-    );
+    }, ORG_CONCURRENCY);
 
     // Merge all per-org results into usersMap
     for (const result of orgResults) {

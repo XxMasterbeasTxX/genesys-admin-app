@@ -16,7 +16,7 @@
  *
  * No scheduled variant (no Python equivalent; the org list is interactive).
  */
-import { timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import { fetchBillingOverview } from "../../../services/billingService.js";
 import { filterBillableCustomers } from "../../../utils/billingTrustees.js";
 import { processBillingOverview } from "../../../utils/billingProcessor.js";
@@ -78,8 +78,8 @@ export default function renderBillingCustomOrgsExport({ me, api }) {
           ? `<em>No billable customer orgs available.</em>`
           : billable.map((c) => `
               <label style="display:flex;align-items:center;gap:8px;padding:4px 0">
-                <input type="checkbox" class="bco-org-chk" value="${c.id}">
-                <span>${c.name}</span>
+                <input type="checkbox" class="bco-org-chk" value="${escapeHtml(c.id)}">
+                <span>${escapeHtml(c.name)}</span>
               </label>`).join("")}
       </div>
     </div>
@@ -307,17 +307,10 @@ export default function renderBillingCustomOrgsExport({ me, api }) {
 
   $dlBtn.addEventListener("click", () => {
     if (!lastWorkbook || !lastFilename) return;
-    const XLSX = window.XLSX;
-    const b64  = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-    const key  = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    window._xlsxDownload = window._xlsxDownload || {};
-    window._xlsxDownload[key] = { filename: lastFilename, b64 };
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = key;
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) {
-      delete window._xlsxDownload[key];
-      setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
     }
   });
 

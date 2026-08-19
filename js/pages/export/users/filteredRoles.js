@@ -15,7 +15,7 @@
  * Matches the Python script: GUI_Users_Export_Roles.py
  * Sheet name: "User Roles"
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
@@ -71,7 +71,6 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
   let availableRoles = [];
   let selectedRoles  = [];
@@ -196,6 +195,11 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
   let lastWorkbook = null;
   let lastFilename = null;
 
+  // attachColumnFilters registers a document-level listener and hands back its
+  // disposer. renderPreviewTable runs on every export, so the previous one is
+  // released here before the next is attached, and again on teardown.
+  let disposeFilters = null;
+
   function setStatus(msg, cls) {
     $status.textContent = msg;
     $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
@@ -271,7 +275,6 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
     selectedRoles = getCheckedRoles();
     if (!selectedRoles.length) { setStatus("Select at least one role.", "error"); return; }
 
-    isRunning = true;
     cancelled = false;
     $exportBtn.style.display = "none";
     $cancelBtn.style.display = "";
@@ -286,6 +289,7 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
       setProgress(5);
 
       const allUsers = await gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled,
         expand: ["authorization"],
         onProgress: (n) => setProgress(5 + Math.min((n / 500) * 70, 70)),
       });
@@ -344,7 +348,6 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $exportBtn.style.display = "";
       $cancelBtn.style.display = "none";
     }
@@ -353,7 +356,6 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
   // ── Cancel ────────────────────────────────────────────
   $cancelBtn.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $exportBtn.style.display = "";
     $cancelBtn.style.display = "none";
@@ -361,16 +363,12 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
 
   // ── Download ──────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
-  if (!lastWorkbook || !lastFilename) return;
-  const XLSX = window.XLSX;
-  const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-  const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-  window._xlsxDownload = window._xlsxDownload || {};
-  window._xlsxDownload[key] = { filename: lastFilename, b64 };
-  const helperUrl = new URL("download.html", document.baseURI);
-  helperUrl.hash = key;
-  const popup = window.open(helperUrl.href, "_blank");
-  if (!popup) { delete window._xlsxDownload[key]; setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error"); }
+    if (!lastWorkbook || !lastFilename) return;
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
+    }
   });
 
   // ── Email toggle ──────────────────────────────────────
@@ -381,7 +379,6 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
   // ── Preview table with dropdown column filters ──────────
   function renderPreviewTable(rows, roles) {
     const headers = [...FIXED_HEADERS, ...roles];
-    const FIXED_COUNT = FIXED_HEADERS.length;
 
     let html = `<details class="te-details">`;
     html += `<summary class="te-sheet-title">Preview <span class="te-user-count">${rows.length} users</span></summary>`;
@@ -404,11 +401,14 @@ export default function renderFilteredRolesExport({ route, me, api, orgContext }
     $tableWrap.innerHTML = html;
 
     // Dropdown filters on all columns (Name, Email, Division + role booleans)
-    attachColumnFilters($tableWrap, {
+    disposeFilters?.();
+    disposeFilters = attachColumnFilters($tableWrap, {
       countEl: $tableWrap.querySelector(".te-user-count"),
       totalLabel: "users",
     });
   }
+
+  el.__destroy = () => { disposeFilters?.(); disposeFilters = null; };
 
   return el;
 }

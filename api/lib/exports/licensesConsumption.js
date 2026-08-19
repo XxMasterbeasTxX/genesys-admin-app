@@ -12,7 +12,7 @@
  *   { success, filename, base64, mimeType, summary, error? }
  */
 const customers = require("../customers.json");
-const { getGenesysToken } = require("../genesysAuth");
+const { genesysGet, genesysGetAllPages } = require("../genesysFetch");
 const XLSX = require("xlsx-js-style");
 const { buildStyledWorkbook } = require("../excelStyles");
 
@@ -29,52 +29,6 @@ function timestampedFilename(prefix, ext) {
 }
 
 // ── Genesys API wrappers ─────────────────────────────────
-
-async function genesysGet(customerId, path) {
-  const customer = customers.find((c) => c.id === customerId);
-  if (!customer) throw new Error(`Unknown customer: ${customerId}`);
-
-  const envKey = `GENESYS_${customerId.replace(/-/g, "_").toUpperCase()}`;
-  const clientId     = process.env[`${envKey}_CLIENT_ID`];
-  const clientSecret = process.env[`${envKey}_CLIENT_SECRET`];
-
-  if (!clientId || !clientSecret) {
-    throw new Error(`Credentials not configured for ${customerId}`);
-  }
-
-  const token = await getGenesysToken(customerId, customer.region, clientId, clientSecret);
-  const url   = `https://api.${customer.region}${path}`;
-
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`Genesys API ${resp.status} for ${customerId} ${path}: ${body.slice(0, 200)}`);
-  }
-
-  return resp.json();
-}
-
-async function genesysGetAllPages(customerId, path, pageSize = 100) {
-  let page = 1;
-  let all  = [];
-
-  while (true) {
-    const separator = path.includes("?") ? "&" : "?";
-    const fullPath  = `${path}${separator}pageSize=${pageSize}&pageNumber=${page}`;
-    const resp      = await genesysGet(customerId, fullPath);
-
-    const items = resp.entities || [];
-    all = all.concat(items);
-
-    if (items.length < pageSize || page >= (resp.pageCount ?? page)) break;
-    page++;
-  }
-
-  return all;
-}
 
 // ── Core export logic ────────────────────────────────────
 
@@ -99,11 +53,17 @@ async function execute(context, schedule) {
   try {
     // Step 1+2: fetch licence assignments and users in parallel
     context.log("Fetching licence assignments and users in parallel…");
-    const [licenseUsers, allUsers] = await Promise.all([
+    const [licenseUsers, allUsers, licenseDefs] = await Promise.all([
       genesysGetAllPages(orgId, "/api/v2/license/users", 100),
       genesysGetAllPages(orgId, "/api/v2/users?expand=division", 500),
+      // Flat array, not paginated. Tolerated failing: the report still builds
+      // from observed assignments alone, exactly as it did before.
+      genesysGet(orgId, "/api/v2/license/definitions").catch(() => []),
     ]);
-    context.log(`Fetched ${licenseUsers.length} licence-user records, ${allUsers.length} users`);
+    const definedLicenseIds = (Array.isArray(licenseDefs) ? licenseDefs : licenseDefs?.entities || [])
+      .map((d) => d?.id)
+      .filter(Boolean);
+    context.log(`Fetched ${licenseUsers.length} licence-user records, ${allUsers.length} users, ${definedLicenseIds.length} licence definitions`);
 
     // Build map: userId → Set<licenceId>
     // The API returns { user: { id }, licenses } — entry.user.id is the key
@@ -116,7 +76,10 @@ async function execute(context, schedule) {
     // Step 3: determine licence columns
     let licenseColumns;
     if (licenseFilter === ALL_LICENSES) {
-      const all = new Set();
+      // Every defined licence gets a column, including those nobody holds —
+      // see the note in js/pages/export/licenses/consumption.js. Observed ids
+      // are unioned in so nothing assigned can be dropped.
+      const all = new Set(definedLicenseIds);
       for (const [, set] of licenseMap) for (const l of set) all.add(l);
       licenseColumns = Array.from(all).sort((a, b) =>
         a.localeCompare(b, undefined, { sensitivity: "base" })

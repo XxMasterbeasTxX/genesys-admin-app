@@ -6,15 +6,15 @@
  * Columns: Name, Description, Members (accurate — active org users only).
  * Rows sorted alphabetically per org.
  *
- * Member count method (matches Python GUI_tab_roles.py):
- *   1. Fetch all active users for the org → Set of IDs
- *   2. Per role: fetch assigned users via GET /api/v2/authorization/roles/{id}/users
- *   3. Count only those present in the active user set
+ * Member counts come from one paginated users call per org, not one call per
+ * role: GET /api/v2/users?expand=authorization embeds each user's roles, which
+ * are then tallied locally. Only active users are counted, so deleted and
+ * external-org holders are excluded — matching Python GUI_tab_roles.py.
  *
  * No schedule panel — run on-demand only.
  * Filename prefix: Roles_AllOrgs_
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { addStyledSheet } from "../../../utils/excelStyles.js";
@@ -35,10 +35,17 @@ export default function renderRolesAllOrgs({ route, me, api }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
   let lastWorkbook = null;
   let lastFilename = null;
+
+  // One filter set per org block. Blocks accumulate as the run progresses and
+  // are cleared when a new run starts, so their document listeners go with them.
+  let filterDisposers = [];
+  const releaseFilters = () => {
+    for (const dispose of filterDisposers) dispose();
+    filterDisposers = [];
+  };
 
   el.innerHTML = `
     <h1 class="h1">Export — Roles — All Orgs</h1>
@@ -119,10 +126,10 @@ export default function renderRolesAllOrgs({ route, me, api }) {
     const customers = orgContext.getCustomers();
     if (!customers.length) { setStatus("No customer orgs available.", "error"); return; }
 
-    isRunning = true;
     cancelled = false;
     $exportBtn.style.display = "none";
     $cancelBtn.style.display = "";
+    releaseFilters();
     $tableWrap.innerHTML = "";
     $dlWrap.style.display = "none";
     $summary.style.display = "none";
@@ -224,7 +231,6 @@ export default function renderRolesAllOrgs({ route, me, api }) {
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $exportBtn.style.display = "";
       $cancelBtn.style.display = "none";
     }
@@ -233,7 +239,6 @@ export default function renderRolesAllOrgs({ route, me, api }) {
   // ── Cancel ────────────────────────────────────────────
   $cancelBtn.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelling…", "error");
     $exportBtn.style.display = "";
     $cancelBtn.style.display = "none";
@@ -241,16 +246,12 @@ export default function renderRolesAllOrgs({ route, me, api }) {
 
   // ── Download ──────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
-  if (!lastWorkbook || !lastFilename) return;
-  const XLSX = window.XLSX;
-  const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-  const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-  window._xlsxDownload = window._xlsxDownload || {};
-  window._xlsxDownload[key] = { filename: lastFilename, b64 };
-  const helperUrl = new URL("download.html", document.baseURI);
-  helperUrl.hash = key;
-  const popup = window.open(helperUrl.href, "_blank");
-  if (!popup) { delete window._xlsxDownload[key]; setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error"); }
+    if (!lastWorkbook || !lastFilename) return;
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
+    }
   });
 
   // ── Email toggle ──────────────────────────────────────
@@ -287,11 +288,11 @@ export default function renderRolesAllOrgs({ route, me, api }) {
     $tableWrap.appendChild(block);
 
     const countEl = block.querySelector(".te-user-count");
-    attachColumnFilters(block, {
+    filterDisposers.push(attachColumnFilters(block, {
       filterCols: [0, 1, 2],
       countEl,
       totalLabel: "roles",
-    });
+    }));
   }
 
   function appendErrorBlock(org, errMsg) {
@@ -301,6 +302,8 @@ export default function renderRolesAllOrgs({ route, me, api }) {
     block.textContent = `${org.name}: ${errMsg}`;
     $tableWrap.appendChild(block);
   }
+
+  el.__destroy = releaseFilters;
 
   return el;
 }

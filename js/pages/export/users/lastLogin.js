@@ -13,9 +13,9 @@
  *
  * Matches the Python script: GUI_Users_Export_LastLogin.py
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
-import { sendEmail, validateRecipients } from "../../../services/emailService.js";
+import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook } from "../../../utils/excelStyles.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
@@ -58,7 +58,8 @@ function buildRows(users, licenseMap) {
 
     const licenses = licenseMap.get(user.id);
     if (licenses && licenses.length > 0) {
-      for (const lic of licenses.sort()) {
+      // Copy before sorting — this array belongs to the licence response.
+      for (const lic of [...licenses].sort()) {
         rows.push({ name, email, division, lastLogin, license: lic });
       }
     } else {
@@ -68,6 +69,11 @@ function buildRows(users, licenseMap) {
   return rows;
 }
 
+/** Days in a given month (monthIdx is 0-based). */
+function daysInMonth(year, monthIdx) {
+  return new Date(year, monthIdx + 1, 0).getDate();
+}
+
 /**
  * Optionally filter users by inactivity period.
  * If filterMonths <= 0, returns all users.
@@ -75,8 +81,13 @@ function buildRows(users, licenseMap) {
  */
 function filterByInactivity(users, filterMonths) {
   if (!filterMonths || filterMonths <= 0) return users;
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - filterMonths);
+  // Pin to day 1 before shifting the month: setMonth on the 31st overflows into
+  // the following month (31 Mar minus one month lands on 3 Mar), which quietly
+  // moved the cutoff and let recently-active users through the filter.
+  const now    = new Date();
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - filterMonths, 1);
+  cutoff.setDate(Math.min(now.getDate(), daysInMonth(cutoff.getFullYear(), cutoff.getMonth())));
+  cutoff.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
   return users.filter(u => {
     if (!u.dateLastLogin) return true; // never logged in
     const d = new Date(u.dateLastLogin);
@@ -101,7 +112,6 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
 
   el.innerHTML = `
@@ -201,6 +211,11 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
   let lastWorkbook = null;
   let lastFilename = null;
 
+  // attachColumnFilters registers a document-level listener and hands back its
+  // disposer. renderPreviewTable runs on every export, so the previous one is
+  // released here before the next is attached, and again on teardown.
+  let disposeFilters = null;
+
   function setStatus(msg, cls) {
     $status.textContent = msg;
     $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
@@ -216,7 +231,6 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
 
-    isRunning = true;
     cancelled = false;
     $btn.style.display = "none";
     $cancel.style.display = "";
@@ -235,6 +249,7 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
       const [licenseUsers, allUsers] = await Promise.all([
         gc.fetchAllLicenseUsers(api, org.id, {}),
         gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled,
           expand: ["division", "dateLastLogin"],
           state: "active",
           onProgress: (n) => setProgress(5 + Math.min((n / 500) * 61, 61)),
@@ -271,7 +286,9 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
       $table.style.display = "";
 
       // Summary
-      const uniqueUsers = new Set(rows.map(r => r.email)).size;
+      // The filtered user list is the count; row emails are a display field and
+      // fall back to "N/A", which would collapse distinct users into one.
+      const uniqueUsers = filtered.length;
       $summary.textContent =
         `${uniqueUsers} users, ${rows.length} rows (incl. license duplicates)` +
         (filterMonths > 0 ? ` — filtered: inactive ≥ ${filterMonths} months` : "");
@@ -316,7 +333,6 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $btn.style.display = "";
       $cancel.style.display = "none";
     }
@@ -325,7 +341,6 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
   // ── Cancel ────────────────────────────────────────────
   $cancel.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $btn.style.display = "";
     $cancel.style.display = "none";
@@ -334,17 +349,10 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
   // ── Download ──────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
     if (!lastWorkbook || !lastFilename) return;
-    const XLSX = window.XLSX;
-    const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    window._xlsxDownload = window._xlsxDownload || {};
-    window._xlsxDownload[key] = { filename: lastFilename, b64 };
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = key;
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) {
-      delete window._xlsxDownload[key];
-      setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
     }
   });
 
@@ -377,12 +385,15 @@ export default function renderLastLoginExport({ route, me, api, orgContext }) {
     html += `</tbody></table></div></details>`;
     $table.innerHTML = html;
 
-    attachColumnFilters($table, {
+    disposeFilters?.();
+    disposeFilters = attachColumnFilters($table, {
       skipCols: [0],
       countEl: $table.querySelector(".te-user-count"),
       totalLabel: "rows",
     });
   }
+
+  el.__destroy = () => { disposeFilters?.(); disposeFilters = null; };
 
   return el;
 }

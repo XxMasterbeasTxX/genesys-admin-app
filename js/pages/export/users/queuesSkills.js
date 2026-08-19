@@ -8,7 +8,7 @@
  * - Preview + Excel with columns: Name, Queue, Skill, Language Skill
  * - One row per user assignment combination (blank values when a dimension has no assignments)
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { sendEmail } from "../../../services/emailService.js";
@@ -169,7 +169,6 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
 
   let lastWorkbook = null;
@@ -546,7 +545,8 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
 
     try {
       const [users, groups, teams, queues, skills, languages] = await Promise.all([
-        gc.fetchAllUsers(api, org.id, { state: "any" }),
+        gc.fetchAllUsers(api, org.id, {
+          shouldStop: () => cancelled, state: "any" }),
         gc.fetchAllGroups(api, org.id),
         gc.fetchAllTeams(api, org.id),
         gc.fetchAllQueues(api, org.id),
@@ -586,7 +586,6 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
       return;
     }
 
-    isRunning = true;
     cancelled = false;
     $runBtn.style.display = "none";
     $cancelBtn.style.display = "";
@@ -677,7 +676,6 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $runBtn.style.display = "";
       $cancelBtn.style.display = "none";
     }
@@ -685,7 +683,6 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
 
   $cancelBtn.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $runBtn.style.display = "";
     $cancelBtn.style.display = "none";
@@ -693,17 +690,10 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
 
   $dlBtn.addEventListener("click", () => {
     if (!lastWorkbook || !lastFilename) return;
-    const XLSX = window.XLSX;
-    const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    window._xlsxDownload = window._xlsxDownload || {};
-    window._xlsxDownload[key] = { filename: lastFilename, b64 };
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = key;
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) {
-      delete window._xlsxDownload[key];
-      setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
     }
   });
 
@@ -711,12 +701,16 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
     $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
 
-  document.addEventListener("click", (e) => {
+  // Named so it can be removed on teardown. This page builds its own dropdown
+  // filters rather than using attachColumnFilters, so it owns this listener and
+  // the rows its closure keeps alive.
+  const onDocClick = (e) => {
     if (!openDropdown) return;
     if (openDropdown.contains(e.target)) return;
     if (e.target.closest(".cf-btn")) return;
     closeOpenDropdown();
-  });
+  };
+  document.addEventListener("click", onDocClick);
 
   function renderPage() {
     const visibleRows = getFilteredRows();
@@ -839,6 +833,8 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
 
     renderPage();
   }
+
+  el.__destroy = () => document.removeEventListener("click", onDocClick);
 
   return el;
 }

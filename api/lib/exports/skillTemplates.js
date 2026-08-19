@@ -6,6 +6,13 @@
  */
 
 const XLSX = require("xlsx-js-style");
+
+/** Matches the ordering schedulePanel.js uses for scheduleDayOfWeek. */
+const DAYS_OF_WEEK = [
+  "Sunday", "Monday", "Tuesday", "Wednesday",
+  "Thursday", "Friday", "Saturday",
+];
+
 const { buildStyledWorkbook, addStyledSheet } = require("../excelStyles");
 const templateStore = require("../templateStore");
 const assignmentStore = require("../templateAssignmentStore");
@@ -141,9 +148,14 @@ async function execute(context, schedule) {
     const schedulesData = [["Template", "Mode", "Schedule Type", "Time", "Day/Date", "Enabled", "Targets", "Last Run", "Last Run Status", "Created By"]];
     for (const t of templates) {
       for (const s of (schedMap.get(t.id) || [])) {
-        const dayDate = s.scheduleType === "weekly" ? (s.scheduleDayOfWeek || "")
-                      : s.scheduleType === "monthly" ? (s.scheduleDayOfMonth || "")
-                      : s.scheduleType === "once" ? (s.scheduleDate || "")
+        // `|| ""` dropped Sunday, which is 0. Weekly also exported the raw index
+        // where the rest of the app shows a day name.
+        const dayDate = s.scheduleType === "weekly"
+                          ? (DAYS_OF_WEEK[s.scheduleDayOfWeek] ?? "")
+                      : s.scheduleType === "monthly"
+                          ? (s.scheduleDayOfMonth ?? "")
+                      : s.scheduleType === "once"
+                          ? (s.scheduleDate || "")
                       : "";
         const targets = (s.targets || []).map(tgt => tgt.name || tgt.id).join(", ");
         schedulesData.push([

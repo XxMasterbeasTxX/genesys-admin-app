@@ -22,10 +22,10 @@
  *
  * Per-org failures are tolerated; the status line lists the failing orgs.
  *
- * No scheduled variant — there is no Python equivalent of
- * GUI_Billing_Export_Scheduled_*.py for calendar year.
+ * Scheduling is available: the handler always exports the previous calendar
+ * year (current year − 1). See api/lib/exports/billingCalendarYear.js.
  */
-import { timestampedFilename } from "../../../utils.js";
+import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import {
   fetchBillingPeriodsForCalendarYear,
 } from "../../../services/billingService.js";
@@ -297,17 +297,10 @@ export default function renderBillingCalendarYearExport({ me, api }) {
 
   $dlBtn.addEventListener("click", () => {
     if (!lastWorkbook || !lastFilename) return;
-    const XLSX = window.XLSX;
-    const b64  = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-    const key  = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    window._xlsxDownload = window._xlsxDownload || {};
-    window._xlsxDownload[key] = { filename: lastFilename, b64 };
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = key;
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) {
-      delete window._xlsxDownload[key];
-      setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error");
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
     }
   });
 

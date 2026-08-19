@@ -17,6 +17,10 @@ const XLSX  = require("xlsx-js-style");
 const JSZip = require("jszip");
 const customers          = require("../customers.json");
 const { getGenesysToken } = require("../genesysAuth");
+const {
+  genesysGetWithToken: genesysGet,
+  genesysGetAllPagesWithToken: genesysGetAllPages,
+} = require("../genesysFetch");
 const { addStyledSheet }  = require("../excelStyles");
 
 // ─────────────────────────────────────────────────────────
@@ -105,6 +109,19 @@ function tsForFilename(d) {
 /**
  * Truncate / sanitise sheet name so it is safe for Excel (max 31 chars).
  */
+/**
+ * Heap checkpoint for the export.
+ *
+ * Managed functions run on Consumption, capped at 1.5 GB. Exceeding it kills the
+ * worker outright — no exception, no response, just a bare 500 from the gateway
+ * and a host restart. These checkpoints are the only way to see it coming.
+ */
+function memMark(context, label) {
+  const m = process.memoryUsage();
+  const mb = (n) => Math.round(n / 1048576);
+  context.log(`[mem] ${label} — heap ${mb(m.heapUsed)}/${mb(m.heapTotal)} MB, rss ${mb(m.rss)} MB`);
+}
+
 function safeSheet(name) {
   return name.replace(/[:\\/?*[\]]/g, "").slice(0, 31);
 }
@@ -122,39 +139,7 @@ function sheetHref(name) {
 /**
  * Perform a single Genesys Cloud API GET using an already-obtained token.
  */
-async function genesysGet(region, token, path) {
-  const url  = `https://api.${region}${path}`;
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-  });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    const err  = new Error(`Genesys API ${resp.status} for ${path}`);
-    err.status = resp.status;
-    err.detail = body.slice(0, 200);
-    throw err;
-  }
-  return resp.json();
-}
 
-/**
- * Fetch all pages of a paged Genesys endpoint.
- * The response must have an `entities` array and `pageCount` field.
- */
-async function genesysGetAllPages(region, token, path, pageSize = 100) {
-  let page = 1;
-  let all  = [];
-  while (true) {
-    const sep      = path.includes("?") ? "&" : "?";
-    const fullPath = `${path}${sep}pageSize=${pageSize}&pageNumber=${page}`;
-    const resp     = await genesysGet(region, token, fullPath);
-    const items    = resp.entities || [];
-    all            = all.concat(items);
-    if (items.length < pageSize || page >= (resp.pageCount ?? page)) break;
-    page++;
-  }
-  return all;
-}
 
 /**
  * Fetch all pages of a cursor-paginated Genesys endpoint (uses nextUri, max pageSize 200).
@@ -1820,15 +1805,45 @@ async function fetchOBSettings(region, token) {
 // Data Tables Contents workbook
 // ─────────────────────────────────────────────────────────
 
-async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
+/**
+ * Excel rejects duplicate sheet names, and `safeSheet` truncates to 31 chars,
+ * so two data tables agreeing in their first 31 characters would collide and
+ * make `book_append_sheet` throw. Suffix the later ones, trimming the base so
+ * the result still fits.
+ */
+function uniqueSheetName(rawName, used) {
+  const base = safeSheet(rawName) || "Table";
+  if (!used.has(base)) {
+    used.add(base);
+    return base;
+  }
+  for (let n = 2; n < 1000; n++) {
+    const suffix = `_${n}`;
+    const candidate = base.slice(0, 31 - suffix.length) + suffix;
+    if (!used.has(candidate)) {
+      used.add(candidate);
+      return candidate;
+    }
+  }
+  const fallback = `Table_${used.size + 1}`.slice(0, 31);
+  used.add(fallback);
+  return fallback;
+}
+
+async function buildDataTablesWorkbook(region, token, orgName, tsStr, context) {
   const dtWb = XLSX.utils.book_new();
   const dtInventory = [];
+  const usedNames = new Set();
+  let sheetsAdded = 0;
 
   const tables = await genesysGetAllPages(
     region, token,
     "/api/v2/flows/datatables?expand=schema",
     100
   );
+
+  context?.log(`[dt] ${tables.length} data table(s) to fetch`);
+  memMark(context, "before data table row fetch");
 
   // Fetch all table rows in parallel instead of sequentially
   const tableResults = await Promise.allSettled(
@@ -1847,10 +1862,18 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
     })
   );
 
+  // Row counts first — if one table is pathological, this line names it before
+  // the cell objects get allocated and the worker dies.
+  const counts = tableResults
+    .filter((r) => r.status === "fulfilled")
+    .map((r) => `${r.value.table.name || r.value.table.id}=${r.value.allRows.length}`);
+  context?.log(`[dt] row counts: ${counts.join(", ")}`);
+  memMark(context, "after data table row fetch");
+
   for (const result of tableResults) {
     if (result.status !== "fulfilled") continue;
     const { table, colHeaders, allRows } = result.value;
-    const sheetName = safeSheet(table.name || table.id);
+    const sheetName = uniqueSheetName(table.name || table.id, usedNames);
 
     const wsData = [
       colHeaders,
@@ -1862,9 +1885,20 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
       })),
     ];
 
-    addStyledSheet(dtWb, wsData, sheetName);
-    dtInventory.push({ name: sheetName, status: "data", desc: `${allRows.length} row${allRows.length !== 1 ? "s" : ""}` });
+    // One unwritable table must not cost the whole workbook — record it in the
+    // index and carry on.
+    try {
+      addStyledSheet(dtWb, wsData, sheetName);
+      sheetsAdded++;
+      dtInventory.push({ name: sheetName, status: "data", desc: `${allRows.length} row${allRows.length !== 1 ? "s" : ""}` });
+    } catch (err) {
+      dtInventory.push({ name: sheetName, status: "error", desc: err.message });
+    }
   }
+
+  // No table made it onto a sheet — hand back an empty workbook so the caller
+  // ships a single .xlsx rather than a ZIP whose second file is just an index.
+  if (sheetsAdded === 0) return XLSX.utils.book_new();
 
   // Sort data table sheets alphabetically
   dtWb.SheetNames.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
@@ -1883,6 +1917,10 @@ async function buildDataTablesWorkbook(region, token, orgName, tsStr) {
 async function execute(context, schedule) {
   const config = schedule?.exportConfig || {};
   const orgId  = config.orgId;
+  // Opt-out, not opt-in: callers that say nothing still get the DataTables
+  // workbook, which is what the scheduled path relies on (it sets no config
+  // beyond the org).
+  const includeDataTables = config.includeDataTables !== false;
 
   if (!orgId) return { success: false, error: "No orgId specified in exportConfig" };
 
@@ -1977,6 +2015,10 @@ async function execute(context, schedule) {
       // Error: create a styled error sheet (matching Python's create_error_sheet)
       createErrorSheet(wb, safeSheet(name), data.error, tsStr);
       inventory.push({ name, status: "error" });
+      // Logged as well as written into the sheet: a 403 is a missing OAuth scope
+      // and needs fixing at the client, a 408/500 is transient. Telling them
+      // apart previously meant opening the workbook.
+      context.log(`[sheet] error — ${name}: ${data.error}`);
     } else {
       const { headers, rows } = data;
       if (rows.length === 0) {
@@ -2084,21 +2126,40 @@ async function execute(context, schedule) {
 
   // ── Build DataTables workbook ──
 
+  memMark(context, "main workbook built");
+
   let dtWorkbook = XLSX.utils.book_new();
+  let dtError    = null;
   try {
-    dtWorkbook = await buildDataTablesWorkbook(region, token, customer.name, tsStr);
+    if (includeDataTables) {
+      dtWorkbook = await buildDataTablesWorkbook(region, token, customer.name, tsStr, context);
+    }
   } catch (err) {
+    // Swallowing this used to drop the DataTables workbook — and with it the
+    // ZIP — with nothing on screen to say so. Report it in the summary.
+    dtError = err.message;
     context.log.warn(`DataTables workbook build failed: ${err.message}`);
   }
 
   const okeCount  = inventory.filter((i) => i.status === "data").length;
   const errCount  = inventory.filter((i) => i.status === "error").length;
   const skipCount = inventory.filter((i) => i.status === "skip").length;
-  const summary   = `${customer.name}: ${okeCount} sheets OK, ${skipCount} empty, ${errCount} errors`;
+  let summary     = `${customer.name}: ${okeCount} sheets OK, ${skipCount} empty, ${errCount} errors`;
+  if (!includeDataTables) {
+    summary += " — data tables not requested";
+  } else if (dtError) {
+    summary += ` — DataTables workbook skipped: ${dtError}`;
+  } else if (dtWorkbook.SheetNames.length === 0) {
+    summary += " — no data tables";
+  } else {
+    summary += ` — ${dtWorkbook.SheetNames.length - 1} data table(s)`;
+  }
 
   context.log(`Documentation export complete — ${summary}`);
 
   // ── ZIP vs single XLSX ──
+
+  memMark(context, "before workbook serialisation");
 
   const mainBuf = XLSX.write(wb, { bookType: "xlsx", type: "buffer" });
 

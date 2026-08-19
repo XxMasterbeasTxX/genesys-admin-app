@@ -5,15 +5,15 @@
  * Columns: Name, Description, Members (accurate — active org users only).
  * One row per role, sorted alphabetically by name.
  *
- * Member count method (matches Python GUI_tab_roles.py):
- *   1. Fetch all active users → build a Set of their IDs
- *   2. Per role: fetch assigned users via GET /api/v2/authorization/roles/{id}/users
- *   3. Count only those present in the active user set (excludes deleted/external-org users)
+ * Member counts come from one paginated users call, not one call per role:
+ * GET /api/v2/users?expand=authorization embeds each user's roles, which are
+ * then tallied locally. Only active users are counted, so deleted and
+ * external-org holders are excluded — matching Python GUI_tab_roles.py.
  *
  * Sheet name: "Roles"
  * Filename prefix: Roles_{OrgName}_
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
@@ -34,12 +34,12 @@ const HEADERS = ["Name", "Description", "Members"];
  * Compute accurate member counts per role.
  * Fetches all active users with expand=authorization (roles embedded) and
  * counts locally — 1 paginated call instead of one call per role.
- * @param {Function} onProgress  called once when users are loaded
+ * @param {Function} onStatus  progress message for the caller to display
  */
-async function computeMemberCounts(api, orgId, roles, onProgress) {
-  onProgress?.(0, 1, "fetching users with roles…");
+async function computeMemberCounts(api, orgId, roles, onStatus) {
+  onStatus?.("Fetching users and their role assignments…");
   const activeUsers = await gc.fetchAllUsers(api, orgId, { expand: ["authorization"] });
-  onProgress?.(1, 1, "");
+  onStatus?.(`Counting members across ${roles.length} role(s)…`);
 
   const counts = {};
   for (const role of roles) counts[role.id] = 0;
@@ -70,10 +70,14 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
   let lastWorkbook = null;
   let lastFilename = null;
+
+  // attachColumnFilters registers a document-level listener and hands back its
+  // disposer. renderPreviewTable runs on every export, so the previous one is
+  // released here before the next is attached, and again on teardown.
+  let disposeFilters = null;
 
   el.innerHTML = `
     <h1 class="h1">Export — Roles — Single Org</h1>
@@ -166,7 +170,6 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
 
-    isRunning = true;
     cancelled = false;
     $exportBtn.style.display = "none";
     $cancelBtn.style.display = "";
@@ -181,12 +184,14 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
       if (cancelled) return;
       setProgress(10);
 
-      // Progress 10% → 90% across all per-role member count calls
-      const counts = await computeMemberCounts(api, org.id, roles, (i, total, roleName) => {
-        if (!cancelled) {
-          setProgress(10 + Math.round((i / total) * 80));
-          setStatus(`Computing members: role ${i} of ${total} — ${roleName}`);
-        }
+      // Counting is local once the users are in, so this is two steps rather
+      // than a per-role walk — the message says which one is running.
+      let step = 0;
+      const counts = await computeMemberCounts(api, org.id, roles, (message) => {
+        if (cancelled) return;
+        step += 1;
+        setProgress(10 + step * 40);
+        setStatus(message);
       });
       if (cancelled) return;
       setProgress(92);
@@ -239,7 +244,6 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $exportBtn.style.display = "";
       $cancelBtn.style.display = "none";
     }
@@ -248,7 +252,6 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
   // ── Cancel ────────────────────────────────────────────
   $cancelBtn.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $exportBtn.style.display = "";
     $cancelBtn.style.display = "none";
@@ -256,16 +259,12 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
 
   // ── Download ──────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
-  if (!lastWorkbook || !lastFilename) return;
-  const XLSX = window.XLSX;
-  const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-  const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-  window._xlsxDownload = window._xlsxDownload || {};
-  window._xlsxDownload[key] = { filename: lastFilename, b64 };
-  const helperUrl = new URL("download.html", document.baseURI);
-  helperUrl.hash = key;
-  const popup = window.open(helperUrl.href, "_blank");
-  if (!popup) { delete window._xlsxDownload[key]; setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error"); }
+    if (!lastWorkbook || !lastFilename) return;
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
+    }
   });
 
   // ── Email toggle ──────────────────────────────────────
@@ -291,12 +290,15 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
     html += `</tbody></table></div></details>`;
     $tableWrap.innerHTML = html;
 
-    attachColumnFilters($tableWrap, {
+    disposeFilters?.();
+    disposeFilters = attachColumnFilters($tableWrap, {
       filterCols: [0, 1, 2],
       countEl: $tableWrap.querySelector(".te-user-count"),
       totalLabel: "roles",
     });
   }
+
+  el.__destroy = () => { disposeFilters?.(); disposeFilters = null; };
 
   return el;
 }

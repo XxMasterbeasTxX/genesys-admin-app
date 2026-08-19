@@ -40,6 +40,7 @@ export async function fetchAllPages(api, orgId, path, opts = {}) {
     pageSize = 100,
     entitiesKey = "entities",
     onProgress,
+    shouldStop,
   } = opts;
 
   let page = 1;
@@ -58,6 +59,13 @@ export async function fetchAllPages(api, orgId, path, opts = {}) {
 
     // No more pages?
     if (items.length < pageSize || page >= (resp.pageCount ?? page)) break;
+
+    // Cancelled between pages. Callers that hand in `shouldStop` get a real
+    // stop rather than a cosmetic one: previously Cancel only set a flag that
+    // was read after the whole walk had finished, so a big org kept paging
+    // long after the user had given up on it. Returns what arrived so far.
+    if (shouldStop && shouldStop()) break;
+
     page++;
   }
 
@@ -333,11 +341,11 @@ export async function replaceParticipantQueue(api, orgId, conversationId, partic
  * @returns {Promise<Object[]>}
  */
 export async function fetchAllUsers(api, orgId, opts = {}) {
-  const { expand = [], state, onProgress } = opts;
+  const { expand = [], state, onProgress, shouldStop } = opts;
   const query = {};
   if (expand.length) query.expand = expand.join(",");
   if (state) query.state = state;
-  return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress });
+  return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress, shouldStop });
 }
 
 /** Create a new user. Minimum body: { name, email }. */

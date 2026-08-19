@@ -14,7 +14,7 @@
  *   1. Click Export → fetch all templates + assignments + schedules for the selected org
  *   2. Build 7-sheet workbook, preview, download
  */
-import { escapeHtml, timestampedFilename } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook, addStyledSheet } from "../../../utils/excelStyles.js";
@@ -28,13 +28,18 @@ const AUTOMATION_ENABLED = true;
 const AUTOMATION_EXPORT_TYPE = "skillTemplates";
 const AUTOMATION_EXPORT_LABEL = "Skill/Role/Queue Templates";
 
+/** Matches the ordering schedulePanel.js uses for scheduleDayOfWeek. */
+const DAYS_OF_WEEK = [
+  "Sunday", "Monday", "Tuesday", "Wednesday",
+  "Thursday", "Friday", "Saturday",
+];
+
 // ── Page renderer ───────────────────────────────────────
 
 export default function renderSkillTemplatesExport({ route, me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  let isRunning = false;
   let cancelled = false;
 
   el.innerHTML = `
@@ -131,7 +136,6 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
 
-    isRunning = true;
     cancelled = false;
     $exportBtn.style.display = "none";
     $cancelBtn.style.display = "";
@@ -262,9 +266,14 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
       const schedulesData = [["Template", "Mode", "Schedule Type", "Time", "Day/Date", "Enabled", "Targets", "Last Run", "Last Run Status", "Created By"]];
       for (const t of templates) {
         for (const s of (schedMap.get(t.id) || [])) {
-          const dayDate = s.scheduleType === "weekly" ? (s.scheduleDayOfWeek || "")
-                        : s.scheduleType === "monthly" ? (s.scheduleDayOfMonth || "")
-                        : s.scheduleType === "once" ? (s.scheduleDate || "")
+          // `|| ""` dropped Sunday, which is 0. Weekly also exported the raw
+          // index where the rest of the app shows a day name.
+          const dayDate = s.scheduleType === "weekly"
+                            ? (DAYS_OF_WEEK[s.scheduleDayOfWeek] ?? "")
+                        : s.scheduleType === "monthly"
+                            ? (s.scheduleDayOfMonth ?? "")
+                        : s.scheduleType === "once"
+                            ? (s.scheduleDate || "")
                         : "";
           const targets = (s.targets || []).map(tgt => tgt.name || tgt.id).join(", ");
           schedulesData.push([
@@ -342,7 +351,6 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
     } catch (err) {
       if (!cancelled) setStatus(`Error: ${err.message}`, "error");
     } finally {
-      isRunning = false;
       $exportBtn.style.display = "";
       $cancelBtn.style.display = "none";
     }
@@ -351,7 +359,6 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
   // ── Cancel ────────────────────────────────────────────
   $cancelBtn.addEventListener("click", () => {
     cancelled = true;
-    isRunning = false;
     setStatus("Cancelled.", "error");
     $exportBtn.style.display = "";
     $cancelBtn.style.display = "none";
@@ -360,15 +367,11 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
   // ── Download ──────────────────────────────────────────
   $dlBtn.addEventListener("click", () => {
     if (!lastWorkbook || !lastFilename) return;
-    const XLSX = window.XLSX;
-    const b64 = XLSX.write(lastWorkbook, { bookType: "xlsx", type: "base64" });
-    const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    window._xlsxDownload = window._xlsxDownload || {};
-    window._xlsxDownload[key] = { filename: lastFilename, b64 };
-    const helperUrl = new URL("download.html", document.baseURI);
-    helperUrl.hash = key;
-    const popup = window.open(helperUrl.href, "_blank");
-    if (!popup) { delete window._xlsxDownload[key]; setStatus("Pop-up blocked. Please allow pop-ups for this site.", "error"); }
+    try {
+      downloadWorkbook(lastWorkbook, lastFilename);
+    } catch (err) {
+      setStatus(err.message, "error");
+    }
   });
 
   // ── Email toggle ──────────────────────────────────────
