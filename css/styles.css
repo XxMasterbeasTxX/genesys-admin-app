@@ -4898,3 +4898,33 @@ a.fr-shipped:hover { text-decoration: underline; }
   .fr-badge--status-done    { color: #1a7f45; border-color: rgba(26,127,69,0.3); }
   .fr-link--danger:hover { color: #b42318; }
 }
+
+/* ── Requests: discussion thread ──────────────────────── */
+.fr-thread {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.fr-msg { margin-bottom: 12px; }
+.fr-msg-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fr-msg-who { font-size: 12px; font-weight: 600; color: var(--text); }
+.fr-msg-role {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  text-transform: uppercase;
+}
+.fr-msg-body {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}

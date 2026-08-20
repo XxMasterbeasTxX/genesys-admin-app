@@ -114,3 +114,28 @@ export async function toggleVote(id) {
 export async function deleteRequest(id) {
   return request(`/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
+
+// ── Discussion thread (§3a) ─────────────────────────────
+//
+// Two parties write — the submitter and a superuser — and the whole owning org
+// reads. It never crosses to another organisation: seeing a request's card on
+// the shared board does not entitle you to the conversation behind it, and the
+// endpoint answers 404 rather than serving it.
+
+/** Every message on a request, oldest first. */
+export async function fetchThread(id) {
+  return request(`/${encodeURIComponent(id)}/thread`);
+}
+
+/**
+ * Post a message. Only the submitter or a superuser may; anyone else gets
+ * `code === "not_a_participant"`.
+ */
+export async function postThreadMessage(id, body) {
+  return request(`/${encodeURIComponent(id)}/thread`, { method: "POST", body: { body } });
+}
+
+/** Delete a message — your own, or any if you are a superuser. */
+export async function deleteThreadMessage(id, messageId) {
+  return request(`/${encodeURIComponent(id)}/thread/${encodeURIComponent(messageId)}`, { method: "DELETE" });
+}

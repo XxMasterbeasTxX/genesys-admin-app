@@ -68,4 +68,68 @@ function isSuperuser(caller) {
   return ids.includes(userId.trim().toLowerCase());
 }
 
-module.exports = { isSuperuser, superuserIds, isConfigured, SETTING_NAME };
+// ── Notification addresses ──────────────────────────────
+//
+// `SUPERUSER_IDS` holds ids, which is right for deciding privilege and useless
+// for sending mail. Rather than add a second setting that can drift out of step
+// with the first, the addresses are looked up from the ids in the internal org,
+// using the client credentials creatorAuth already resolves for exactly this
+// purpose. One Genesys call per id, cached for an hour — the list changes when
+// somebody edits an app setting, not by the minute.
+
+const { resolveOrgCredentials, INTERNAL_OWNER } = require("./creatorAuth");
+const { getGenesysToken } = require("./genesysAuth");
+
+const EMAIL_TTL_MS = 60 * 60 * 1000;
+let _emailCache = { at: 0, emails: [] };
+
+/**
+ * Email addresses for the configured superusers.
+ *
+ * Never throws and never partially fails a caller: an id that cannot be
+ * resolved is left out, and an empty result means "nobody to tell", which the
+ * caller should treat as a reason to skip the mail rather than to fail the
+ * write it was reporting.
+ *
+ * @param {Object} [context]  Azure Functions context, for logging.
+ * @returns {Promise<string[]>}
+ */
+async function superuserEmails(context) {
+  const ids = superuserIds();
+  if (!ids.length) return [];
+
+  if (Date.now() - _emailCache.at < EMAIL_TTL_MS) return _emailCache.emails;
+
+  const creds = resolveOrgCredentials(INTERNAL_OWNER);
+  if (!creds.available) {
+    context?.log?.warn?.(
+      "[superusers] no internal org credentials (set INTERNAL_ORG_SLUG) — cannot resolve notification addresses"
+    );
+    return [];
+  }
+
+  const emails = [];
+  try {
+    const token = await getGenesysToken(creds.tokenKey, creds.region, creds.clientId, creds.clientSecret);
+    for (const id of ids) {
+      try {
+        const resp = await fetch(`https://api.${creds.region}/api/v2/users/${encodeURIComponent(id)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!resp.ok) continue;
+        const user = await resp.json();
+        if (user?.email) emails.push(String(user.email));
+      } catch (_) { /* one unresolvable id must not lose the others */ }
+    }
+  } catch (err) {
+    context?.log?.warn?.(`[superusers] could not resolve notification addresses: ${err.message}`);
+    return [];
+  }
+
+  // Only cache a result that found somebody. Caching an empty list would turn a
+  // momentary Genesys outage into an hour of silent notifications.
+  if (emails.length) _emailCache = { at: Date.now(), emails };
+  return emails;
+}
+
+module.exports = { isSuperuser, superuserIds, superuserEmails, isConfigured, SETTING_NAME };

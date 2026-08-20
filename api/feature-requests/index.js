@@ -8,6 +8,9 @@
  * POST   /api/feature-requests               → create
  * PUT    /api/feature-requests/{id}          → edit own (while new), or triage
  * POST   /api/feature-requests/{id}/vote     → toggle the caller's vote
+ * GET    /api/feature-requests/{id}/thread   → the discussion thread (§3a)
+ * POST   /api/feature-requests/{id}/thread   → post a message (submitter or superuser)
+ * DELETE /api/feature-requests/{id}/thread/{messageId} → author, or superuser
  * DELETE /api/feature-requests/{id}          → superuser only
  *
  * Two rules run through all of it, and everything else is detail.
@@ -22,13 +25,16 @@
  * a queue that cannot see the requests it triages is not a queue.
  */
 const store = require("../lib/featureRequestStore");
+const threadStore = require("../lib/featureRequestThreadStore");
 const { getCallerContext } = require("../lib/callerContext");
 const { isSuperuser } = require("../lib/superusers");
+const notify = require("../lib/featureRequestNotify");
 
 module.exports = async function (context, req) {
   const method = req.method.toUpperCase();
   const id = context.bindingData.id || null;
   const action = (context.bindingData.action || "").toLowerCase();
+  const messageId = context.bindingData.messageId || null;
 
   const json = (status, body) => ({
     status,
@@ -63,6 +69,19 @@ module.exports = async function (context, req) {
 
     // ── GET ─────────────────────────────────────────────
     if (method === "GET") {
+      if (id && action === "thread") {
+        const request = await store.getById(id);
+        // The thread never crosses an org boundary, promoted or not: it holds
+        // submitter text nobody curated. Being able to see the shared CARD does
+        // not entitle you to the conversation behind it.
+        if (!request || !ownVisible(request)) {
+          context.res = json(404, { error: "Request not found" });
+          return;
+        }
+        context.res = json(200, { messages: await threadStore.listByRequest(id) });
+        return;
+      }
+
       if (id) {
         const request = await store.getById(id);
         if (!request) { context.res = json(404, { error: "Request not found" }); return; }
@@ -90,9 +109,11 @@ module.exports = async function (context, req) {
         if (!superuser) { context.res = json(403, { error: "forbidden" }); return; }
         // The purge rides along with the triage read — the one read guaranteed
         // to be infrequent and performed by someone who is not waiting on a page.
-        store.purgeOld().catch((err) =>
-          context.log.warn("[feature-requests] purge error (non-critical):", err?.message)
-        );
+        store.purgeOld()
+          .then((ids) => Promise.all(ids.map((rid) => threadStore.removeThread(rid))))
+          .catch((err) =>
+            context.log.warn("[feature-requests] purge error (non-critical):", err?.message)
+          );
         context.res = json(200, {
           requests: all.map((r) => store.toOwnCard(r, caller.userId, { includeEmail: true })),
           isSuperuser: true,
@@ -144,6 +165,50 @@ module.exports = async function (context, req) {
         return;
       }
 
+      if (id && action === "thread") {
+        const request = await store.getById(id);
+        if (!request || !ownVisible(request)) {
+          context.res = json(404, { error: "Request not found" });
+          return;
+        }
+
+        // Two parties, and no others. A colleague who wants the same thing
+        // votes; a colleague who wants something adjacent files their own (§3a).
+        const isAuthor = request.userId === caller.userId;
+        if (!isAuthor && !superuser) {
+          context.res = json(403, {
+            error: "not_a_participant",
+            message: "Only the person who filed this request can reply on it.",
+          });
+          return;
+        }
+
+        const body = String((req.body || {}).body || "").trim();
+        if (!body) { context.res = json(400, { error: "A message is required." }); return; }
+        if (body.length > threadStore.BODY_MAX) {
+          context.res = json(400, { error: `Messages must be ${threadStore.BODY_MAX} characters or fewer.` });
+          return;
+        }
+
+        const message = await threadStore.create({
+          requestId: id,
+          authorId: caller.userId,
+          authorName: caller.userName,
+          // The role is derived, never claimed: a superuser replying on their
+          // own request is still answering it as the superuser.
+          authorRole: superuser ? "superuser" : "submitter",
+          body,
+        });
+
+        // The one notification the design calls load-bearing: an async
+        // conversation between two people who are not looking at the same
+        // screen only works if each turn announces itself (§3a.3).
+        notify.notifyThreadMessage(context, request, message).catch(() => {});
+
+        context.res = json(201, message);
+        return;
+      }
+
       if (id) { context.res = json(404, { error: "Unknown action" }); return; }
 
       const b = req.body || {};
@@ -190,6 +255,10 @@ module.exports = async function (context, req) {
         status: "new",
         votes: [],
       });
+
+      // Not awaited: the request is filed either way, and a slow relay must
+      // not hold the submitter's page open. Failures are logged inside.
+      notify.notifyNewRequest(context, created).catch(() => {});
 
       context.res = json(201, store.toOwnCard(created, caller.userId));
       return;
@@ -281,16 +350,50 @@ module.exports = async function (context, req) {
 
       const updated = await store.update(id, patch);
       if (!updated) { context.res = json(404, { error: "Request not found" }); return; }
+
+      // Only when the status actually moved — an edit to the note or the
+      // published wording is not news for the person who asked.
+      if (patch.status && patch.status !== existing.status) {
+        notify.notifyStatusChange(context, updated, existing.status).catch(() => {});
+      }
+
       context.res = json(200, store.toOwnCard(updated, caller.userId, { includeEmail: superuser }));
       return;
     }
 
     // ── DELETE ──────────────────────────────────────────
     if (method === "DELETE") {
+      if (id && action === "thread" && messageId) {
+        const blocked = requireIdentity();
+        if (blocked) { context.res = blocked; return; }
+
+        const request = await store.getById(id);
+        if (!request || !ownVisible(request)) {
+          context.res = json(404, { error: "Request not found" });
+          return;
+        }
+        const message = await threadStore.getById(id, messageId);
+        if (!message) { context.res = json(404, { error: "Message not found" }); return; }
+
+        // Your own words, or a superuser's tidying. Nobody edits — a thread
+        // whose messages silently change is worse than one with a visible gap.
+        if (message.authorId !== caller.userId && !superuser) {
+          context.res = json(403, { error: "not_your_message" });
+          return;
+        }
+
+        await threadStore.remove(id, messageId);
+        context.res = json(200, { success: true });
+        return;
+      }
+
       if (!superuser) { context.res = json(403, { error: "forbidden" }); return; }
       if (!id) { context.res = json(400, { error: "Request id is required" }); return; }
 
       const removed = await store.remove(id);
+      // The thread goes with its request. Left behind it would be unreachable
+      // and would outlive the record that justified keeping it.
+      if (removed) await threadStore.removeThread(id).catch(() => {});
       context.res = removed
         ? json(200, { success: true })
         : json(404, { error: "Request not found" });

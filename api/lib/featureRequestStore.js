@@ -324,9 +324,14 @@ async function countRecentByUser(userId) {
 }
 
 /**
- * Delete requests past the retention window. Errors per entity are swallowed —
- * a purge is maintenance, and one stuck row must not fail the read that
- * triggered it.
+ * Delete requests past the retention window.
+ *
+ * Returns the ids it removed, so the caller can take their discussion threads
+ * with them: a thread whose request is gone is unreachable, and leaving it
+ * would keep the submitter's words past the window that deleted the request.
+ *
+ * Errors per entity are swallowed — a purge is maintenance, and one stuck row
+ * must not fail the read that triggered it.
  */
 async function purgeOld() {
   await ensureTable();
@@ -343,10 +348,14 @@ async function purgeOld() {
     }
   }
 
+  const deleted = [];
   for (const key of stale) {
-    try { await client.deleteEntity(key.partitionKey, key.rowKey); } catch (_) {}
+    try {
+      await client.deleteEntity(key.partitionKey, key.rowKey);
+      deleted.push(key.rowKey);
+    } catch (_) {}
   }
-  return stale.length;
+  return deleted;
 }
 
 module.exports = {

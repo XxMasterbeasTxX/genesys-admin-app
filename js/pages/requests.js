@@ -29,6 +29,9 @@ import {
   triageRequest,
   toggleVote,
   deleteRequest,
+  fetchThread,
+  postThreadMessage,
+  deleteThreadMessage,
 } from "../services/featureRequestService.js";
 
 /** Where the header button stashes the page you were on (§4). */
@@ -87,6 +90,7 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
   let requests = [];
   let editingId = null;   // request being edited by its submitter
   let triagingId = null;  // request whose triage panel is open
+  const openThreads = new Map(); // request id → messages, for threads on screen
 
   // The page you were on when you pressed the button (§4). Read once and
   // cleared: it describes the trip that brought you here, not every request you
@@ -255,10 +259,13 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
         ${board === "all" && r.visibility === "shared"
           ? `<p class="fr-published">Published to the shared board as “${escapeHtml(r.sharedTitle || "")}”</p>` : ""}
         <div class="fr-card-actions">
+          ${own ? `<button type="button" class="fr-link" data-thread="${escapeHtml(r.id)}">${
+            openThreads.has(r.id) ? "Hide discussion" : "Discussion"}</button>` : ""}
           ${editable ? `<button type="button" class="fr-link" data-edit="${escapeHtml(r.id)}">Edit</button>` : ""}
           ${isSuperuser && own ? `<button type="button" class="fr-link" data-triage="${escapeHtml(r.id)}">Triage</button>` : ""}
           ${isSuperuser && own ? `<button type="button" class="fr-link fr-link--danger" data-delete="${escapeHtml(r.id)}">Delete</button>` : ""}
         </div>
+        ${threadMarkup(r)}
         ${editingId === r.id ? editMarkup(r) : ""}
         ${triagingId === r.id ? triageMarkup(r) : ""}
       </article>`;
@@ -311,6 +318,49 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
           <button type="button" class="btn" data-triage-cancel="1">Cancel</button>
         </div>
       </form>`;
+  }
+
+  /**
+   * The discussion thread on a request.
+   *
+   * Everyone in the org reads it; only the submitter and a superuser write.
+   * That is deliberate — §1's complaint was that people never learn what became
+   * of what they asked for, and a conversation only its two participants can
+   * see recreates exactly that for the colleagues standing behind them.
+   */
+  function threadMarkup(r) {
+    const messages = openThreads.get(r.id);
+    if (!messages) return "";
+
+    const canPost = isSuperuser || r.userId === me?.id;
+    const body = messages.length
+      ? messages.map((m) => `
+          <div class="fr-msg">
+            <div class="fr-msg-head">
+              <span class="fr-msg-who">${escapeHtml(m.authorName || "—")}</span>
+              ${m.authorRole === "superuser" ? `<span class="fr-msg-role">us</span>` : ""}
+              <span class="fr-meta-item">${escapeHtml(formatDateTime(m.createdAt))}</span>
+              ${(m.authorId === me?.id || isSuperuser)
+                ? `<button type="button" class="fr-link" data-msg-delete="${escapeHtml(m.id)}" data-msg-request="${escapeHtml(r.id)}">Delete</button>`
+                : ""}
+            </div>
+            <p class="fr-msg-body">${escapeHtml(m.body || "")}</p>
+          </div>`).join("")
+      : `<p class="fr-hint">No messages yet.</p>`;
+
+    return `
+      <div class="fr-thread">
+        ${body}
+        ${canPost ? `
+          <form class="fr-inline" data-thread-form="${escapeHtml(r.id)}">
+            <textarea class="input fr-textarea" name="body" rows="3" maxlength="4000"
+                      placeholder="Reply…"></textarea>
+            <div class="fr-form-actions">
+              <button type="submit" class="btn">Send</button>
+            </div>
+          </form>`
+          : `<p class="fr-hint">Only ${escapeHtml(r.userName || "the person who filed this")} and we can reply here.</p>`}
+      </div>`;
   }
 
   function renderList() {
@@ -427,6 +477,39 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
       return;
     }
 
+    const threadBtn = e.target.closest("[data-thread]");
+    if (threadBtn) {
+      const rid = threadBtn.dataset.thread;
+      if (openThreads.has(rid)) {
+        openThreads.delete(rid);
+        renderList();
+        return;
+      }
+      try {
+        const data = await fetchThread(rid);
+        openThreads.set(rid, data.messages || []);
+        renderList();
+      } catch (err) {
+        setStatus(`Could not open the discussion: ${err.message}`, "error");
+      }
+      return;
+    }
+
+    const msgDel = e.target.closest("[data-msg-delete]");
+    if (msgDel) {
+      if (!confirm("Delete this message?")) return;
+      const rid = msgDel.dataset.msgRequest;
+      try {
+        await deleteThreadMessage(rid, msgDel.dataset.msgDelete);
+        const data = await fetchThread(rid);
+        openThreads.set(rid, data.messages || []);
+        renderList();
+      } catch (err) {
+        setStatus(`Could not delete the message: ${err.message}`, "error");
+      }
+      return;
+    }
+
     const editBtn = e.target.closest("[data-edit]");
     if (editBtn) { editingId = editBtn.dataset.edit; triagingId = null; renderList(); return; }
 
@@ -464,6 +547,23 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
         setStatus("Saved.", "success");
       } catch (err) {
         setStatus(`Could not save: ${err.message}`, "error");
+      }
+      return;
+    }
+
+    const threadForm = e.target.closest("[data-thread-form]");
+    if (threadForm) {
+      e.preventDefault();
+      const rid = threadForm.dataset.threadForm;
+      const body = threadForm.body.value.trim();
+      if (!body) return;
+      try {
+        await postThreadMessage(rid, body);
+        const data = await fetchThread(rid);
+        openThreads.set(rid, data.messages || []);
+        renderList();
+      } catch (err) {
+        setStatus(`Could not send: ${err.message}`, "error");
       }
       return;
     }

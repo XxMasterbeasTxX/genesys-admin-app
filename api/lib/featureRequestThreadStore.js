@@ -1,0 +1,147 @@
+/**
+ * Feature Request Thread Store — Azure Table Storage.
+ *
+ * Table: "featurerequestthread"
+ * PartitionKey: the request's id  (one partition per thread)
+ * RowKey: inverted-timestamp_uuid (newest first within a partition)
+ *
+ * A thread is append-only, which is why the inverted-timestamp RowKey that was
+ * wrong for the requests themselves is right here: messages are never edited,
+ * so nothing has to be found and rewritten by key.
+ *
+ * Partitioning by request id means reading a thread is a single partition query
+ * rather than a scan, and it is the reason this is a separate table rather than
+ * a JSON array on the request row. Messages accumulate and a single table
+ * property caps at 32 K: a handful of detailed exchanges would eventually need
+ * the progressive-shrinking ladder activityLogStore had to grow. Separate rows
+ * have no such ceiling.
+ *
+ * See docs/feature-requests-design.md §3a.
+ *
+ * Requires app setting:
+ *   AZURE_STORAGE_CONNECTION_STRING
+ */
+const { TableClient } = require("@azure/data-tables");
+const crypto = require("crypto");
+
+const TABLE_NAME = "featurerequestthread";
+const BODY_MAX = 4000;
+const MAX_TS = 9_999_999_999_999; // stays valid until ~year 2286
+
+const ROLES = ["submitter", "superuser"];
+
+let _client = null;
+let _tableEnsured = false;
+
+function getClient() {
+  if (!_client) {
+    const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING;
+    if (!connStr) {
+      throw new Error(
+        "AZURE_STORAGE_CONNECTION_STRING is not configured. " +
+        "Add it to your Azure Static Web App application settings."
+      );
+    }
+    _client = TableClient.fromConnectionString(connStr, TABLE_NAME);
+  }
+  return _client;
+}
+
+async function ensureTable() {
+  if (_tableEnsured) return;
+  try {
+    await getClient().createTable();
+  } catch (err) {
+    if (err.statusCode !== 409) throw err;
+  }
+  _tableEnsured = true;
+}
+
+/** A RowKey that sorts newest first inside the partition. */
+function makeRowKey() {
+  const inverted = String(MAX_TS - Date.now()).padStart(13, "0");
+  return `${inverted}_${crypto.randomUUID()}`;
+}
+
+function entityToMessage(e) {
+  return {
+    id: e.rowKey,
+    requestId: e.partitionKey,
+    authorId: e.authorId || "",
+    authorName: e.authorName || "",
+    authorRole: ROLES.includes(e.authorRole) ? e.authorRole : "submitter",
+    body: e.body || "",
+    createdAt: e.createdAt || "",
+  };
+}
+
+/**
+ * Every message on a request, oldest first.
+ *
+ * Stored newest-first by RowKey but returned in reading order: a conversation
+ * read bottom-up is not a conversation.
+ */
+async function listByRequest(requestId) {
+  await ensureTable();
+  const out = [];
+  const iter = getClient().listEntities({
+    queryOptions: { filter: `PartitionKey eq '${String(requestId).replace(/'/g, "''")}'` },
+  });
+  for await (const entity of iter) out.push(entityToMessage(entity));
+  return out.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+}
+
+/** Append a message. */
+async function create({ requestId, authorId, authorName, authorRole, body }) {
+  await ensureTable();
+  const entity = {
+    partitionKey: String(requestId),
+    rowKey: makeRowKey(),
+    authorId: authorId || "",
+    authorName: authorName || "",
+    authorRole: ROLES.includes(authorRole) ? authorRole : "submitter",
+    body: String(body == null ? "" : body).slice(0, BODY_MAX),
+    createdAt: new Date().toISOString(),
+  };
+  await getClient().createEntity(entity);
+  return entityToMessage(entity);
+}
+
+async function getById(requestId, messageId) {
+  await ensureTable();
+  try {
+    return entityToMessage(await getClient().getEntity(String(requestId), messageId));
+  } catch (err) {
+    if (err.statusCode === 404) return null;
+    throw err;
+  }
+}
+
+async function remove(requestId, messageId) {
+  await ensureTable();
+  try {
+    await getClient().deleteEntity(String(requestId), messageId);
+    return true;
+  } catch (err) {
+    if (err.statusCode === 404) return false;
+    throw err;
+  }
+}
+
+/**
+ * Delete a whole thread. Called when its request is removed or purged — a
+ * thread whose request is gone is unreachable, and leaving it behind would keep
+ * the submitter's words past the retention window that deleted the request.
+ * Errors per message are swallowed; this is cleanup, not the caller's business.
+ */
+async function removeThread(requestId) {
+  await ensureTable();
+  const client = getClient();
+  const messages = await listByRequest(requestId);
+  for (const m of messages) {
+    try { await client.deleteEntity(String(requestId), m.id); } catch (_) {}
+  }
+  return messages.length;
+}
+
+module.exports = { listByRequest, create, getById, remove, removeThread, BODY_MAX };

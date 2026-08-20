@@ -6,7 +6,7 @@
       "direction": "in",
       "name": "req",
       "methods": ["get", "post", "put", "delete"],
-      "route": "feature-requests/{id?}/{action?}"
+      "route": "feature-requests/{id?}/{action?}/{messageId?}"
     },
     {
       "type": "http",
