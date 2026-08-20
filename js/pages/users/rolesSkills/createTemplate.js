@@ -180,10 +180,12 @@ export default function renderCreateTemplate({ route, me, api, orgContext, acces
     );
   }
 
+  // Answered by the backend on the template itself — see canEditSchedule in
+  // components/schedulePanel.js. Falls back to owner-only.
   function canEdit(template) {
+    if (typeof template?.canEdit === "boolean") return template.canEdit;
     if (!me?.email) return false;
-    const lower = me.email.toLowerCase();
-    return lower === template.createdBy.toLowerCase() || lower === "thva@tdc.dk";
+    return me.email.toLowerCase() === String(template?.createdBy || "").toLowerCase();
   }
 
   // ── Delete handler ────────────────────────────────────
@@ -652,8 +654,8 @@ export default function renderCreateTemplate({ route, me, api, orgContext, acces
   async function loadTemplates() {
     try {
       const [tpls, scheds] = await Promise.all([
-        fetchTemplates(orgId),
-        fetchTemplateSchedules(orgId),
+        fetchTemplates(orgId, me?.email || ""),
+        fetchTemplateSchedules(orgId, me?.email || ""),
       ]);
       templates = tpls;
       templateSchedules = scheds;

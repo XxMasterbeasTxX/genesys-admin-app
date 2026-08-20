@@ -3,16 +3,16 @@
  *
  * Displays a searchable, filterable table of all logged user actions.
  *
- * Access rules:
- *   - Any authenticated user can view their own entries.
- *   - Admin (thva@tdc.dk) can view all users' entries.
+ * Access rules: everyone sees their own organisation's activity, all of it.
+ * The endpoint decides which org that is (internal vs the caller's customer
+ * org) and never mixes the two. There is no per-user view and nothing here is
+ * admin-gated — the User column and filter exist precisely because the page
+ * shows other people's actions.
  *
- * API: GET /api/activity-log?userEmail={email}&all=true&limit=500
+ * API: GET /api/activity-log?userEmail={email}&limit=500
  */
 import { escapeHtml, formatDateTime } from "../../utils.js";
 import { withUserToken } from "../../services/apiAuth.js";
-
-const ADMIN_EMAIL = "thva@tdc.dk";
 
 // ── Action labels ────────────────────────────────────────
 const ACTION_LABELS = {
@@ -168,16 +168,12 @@ export default async function renderActivityLog({ me }) {
   const el = document.createElement("section");
   el.className = "card";
 
-  const isAdmin = me?.email?.toLowerCase() === ADMIN_EMAIL;
-
   el.innerHTML = `
     <div class="al-header">
       <div>
         <h2 class="h2">Activity Log</h2>
         <p class="page-desc">
-          ${isAdmin
-            ? "All user activity across the app (admin view). Entries older than 12 months are automatically purged."
-            : "Your own activity log. Shows actions you have performed in the app."}
+          All activity in your organisation. Entries older than 12 months are automatically purged.
         </p>
       </div>
       <button class="btn al-refresh-btn" id="alRefreshBtn">Refresh</button>
@@ -213,7 +209,6 @@ export default async function renderActivityLog({ me }) {
           ).join("")}
         </select>
       </div>
-      ${isAdmin ? `
       <div class="di-control-group">
         <label class="di-label">Org</label>
         <select class="input" id="alOrg">
@@ -225,7 +220,7 @@ export default async function renderActivityLog({ me }) {
         <select class="input" id="alUser">
           <option value="">All users</option>
         </select>
-      </div>` : ""}
+      </div>
     </div>
 
     <!-- Status / loading -->
@@ -237,7 +232,7 @@ export default async function renderActivityLog({ me }) {
         <thead>
           <tr>
             <th>Date &amp; Time</th>
-            ${isAdmin ? "<th>User</th>" : ""}
+            <th>User</th>
             <th>Org</th>
             <th>Action</th>
             <th>Description</th>
@@ -258,8 +253,8 @@ export default async function renderActivityLog({ me }) {
   const $to        = el.querySelector("#alTo");
   const $result    = el.querySelector("#alResult");
   const $action    = el.querySelector("#alAction");
-  const $org       = el.querySelector("#alOrg");    // null for non-admin
-  const $user      = el.querySelector("#alUser");   // null for non-admin
+  const $org       = el.querySelector("#alOrg");
+  const $user      = el.querySelector("#alUser");
   const $refresh   = el.querySelector("#alRefreshBtn");
 
   let allEntries = [];
@@ -279,8 +274,9 @@ export default async function renderActivityLog({ me }) {
     $refresh.disabled = true;
 
     try {
+      // userEmail identifies the caller; it does not narrow the result. The
+      // endpoint scopes the read to the caller's own organisation.
       const params = new URLSearchParams({ userEmail: me.email });
-      if (isAdmin) params.set("all", "true");
 
       const resp  = await fetch(`/api/activity-log?${params}`, { headers: withUserToken() });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -288,8 +284,8 @@ export default async function renderActivityLog({ me }) {
 
       allEntries = data.entries || [];
 
-      // Populate org filter (admin only)
-      if ($org && allEntries.length) {
+      // Populate org filter
+      if (allEntries.length) {
         const orgs = [...new Map(
           allEntries
             .filter(e => e.orgId)
@@ -301,8 +297,8 @@ export default async function renderActivityLog({ me }) {
         if (currentOrg) $org.value = currentOrg;
       }
 
-      // Populate user filter (admin only)
-      if ($user && allEntries.length) {
+      // Populate user filter
+      if (allEntries.length) {
         const emails = [...new Set(allEntries.map(e => e.userEmail).filter(Boolean))].sort();
         const current = $user.value;
         $user.innerHTML = `<option value="">All users</option>` +
@@ -348,14 +344,14 @@ export default async function renderActivityLog({ me }) {
     $status.style.display   = "none";
     $tableWrap.style.display = "";
 
-    const colSpan = isAdmin ? 6 : 5;
+    const colSpan = 6;
 
     $tbody.innerHTML = filtered.map((e, i) => {
       const hasDetails = !!e.details && typeof e.details === "object";
       return `
       <tr class="al-row${e.result === "failure" ? " al-row--fail" : e.result === "partial" ? " al-row--partial" : ""}">
         <td class="al-cell-time">${escapeHtml(formatDateTime(e.logTimestamp))}</td>
-        ${isAdmin ? `<td class="al-cell-user" title="${escapeHtml(e.userEmail)}">${escapeHtml(e.userName || e.userEmail)}</td>` : ""}
+        <td class="al-cell-user" title="${escapeHtml(e.userEmail)}">${escapeHtml(e.userName || e.userEmail)}</td>
         <td class="al-cell-org">${escapeHtml(e.orgName || e.orgId || "—")}</td>
         <td class="al-cell-action"><span class="al-action-tag">${escapeHtml(actionLabel(e.action))}</span></td>
         <td class="al-cell-desc">

@@ -73,20 +73,24 @@ module.exports = async function (context, req) {
 
     // ── GET ─────────────────────────────────────────────
     if (method === "GET") {
+      // See api/schedules/index.js for why `canEdit` is decided server-side.
+      // The flag draws buttons; PUT and DELETE re-check it regardless.
+      const callerEmail = req.query.userEmail || "";
+
       if (id) {
         const schedule = await store.getById(id);
         if (!schedule || !ownerVisibleTo(schedule.ownerOrgId, caller.ownerOrgId)) {
           context.res = json(404, { error: "Template schedule not found" });
           return;
         }
-        context.res = json(200, schedule);
+        context.res = json(200, { ...schedule, canEdit: store.canEdit(schedule, callerEmail) });
       } else {
         const lock = lockOrg(req.query.orgId);
         if (lock.error) { context.res = json(403, { error: lock.error }); return; }
         let schedules = (await store.listAll())
           .filter((s) => ownerVisibleTo(s.ownerOrgId, caller.ownerOrgId));
         if (lock.orgId) schedules = schedules.filter((s) => s.orgId === lock.orgId);
-        context.res = json(200, schedules);
+        context.res = json(200, schedules.map((s) => ({ ...s, canEdit: store.canEdit(s, callerEmail) })));
       }
       return;
     }

@@ -29,6 +29,77 @@ function setCachedClassification(token, value) {
   });
 }
 
+// The caller's own Genesys user, cached per token+region for the same reason
+// and the same lifetime as the classification above: without it, every write
+// that needs to know who is asking would add a users/me round-trip.
+//
+// Keyed by region as well as token because a cross-region customer's token is
+// only valid against their own region — the same token answering from two
+// regions would be two different lookups, not one.
+const identityCache = new Map();
+
+async function fetchUserMe(accessToken, region) {
+  const resp = await fetch(`https://api.${region}/api/v2/users/me`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const detail = json.message || json.error || "unknown";
+    const err = new Error(`users/me failed (${resp.status}): ${detail}`);
+    err.status = resp.status;
+    throw err;
+  }
+
+  return {
+    id: String(json.id || ""),
+    name: String(json.name || ""),
+    email: String(json.email || ""),
+  };
+}
+
+/**
+ * Which Genesys USER is behind this token.
+ *
+ * `classifyCaller` answers which ORG a token belongs to, which is what tenant
+ * isolation needs. It is not enough to decide "may this person do this", and
+ * every ownership check in the app has so far worked from a userEmail in the
+ * request body — a claim the browser makes. This is the verified answer.
+ *
+ * Never throws; returns null when identity cannot be established, so a caller
+ * gating on it fails closed.
+ *
+ * @param {Object} context  Azure Functions context (for logging); optional.
+ * @param {string} token    The caller's Genesys access token.
+ * @param {string} region   The region the token validated against.
+ * @returns {Promise<{id: string, name: string, email: string}|null>}
+ */
+async function identifyCaller(context, token, region) {
+  if (!token || !region) return null;
+
+  const key = `${tokenKey(token)}::${region}`;
+  const cached = identityCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) return cached.value;
+  if (cached) identityCache.delete(key);
+
+  let user;
+  try {
+    user = await fetchUserMe(token, region);
+  } catch (err) {
+    // Deliberately NOT cached. A transient 5xx from Genesys would otherwise
+    // lock the caller out of every privileged action for the whole TTL, and
+    // "we could not check" is a reason to retry, not a verdict to remember.
+    context?.log?.warn?.(`[identity] users/me failed: ${err.message}`);
+    return null;
+  }
+
+  if (!user.id) return null;
+
+  identityCache.set(key, { value: user, expiresAt: Date.now() + CLASSIFY_TTL_MS });
+  return user;
+}
+
 function normalizeOrgId(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -310,6 +381,7 @@ async function resolveOrgConfig(context, req) {
 module.exports = {
   resolveOrgConfig,
   classifyCaller,
+  identifyCaller,
   getBearerToken,
   parseRegistry,
 };

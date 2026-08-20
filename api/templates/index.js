@@ -51,15 +51,20 @@ module.exports = async function (context, req) {
         return;
       }
 
+      // See api/schedules/index.js for why `canEdit` is decided server-side.
+      // The flag draws buttons; PUT and DELETE re-check it regardless.
+      const callerEmail = req.query.userEmail || "";
+
       if (id) {
         const template = await store.getById(orgId, id);
         if (!template) {
           context.res = json(404, { error: "Template not found" });
           return;
         }
-        context.res = json(200, template);
+        context.res = json(200, { ...template, canEdit: store.canEdit(template, callerEmail) });
       } else {
-        const templates = await store.listByOrg(orgId);
+        const templates = (await store.listByOrg(orgId))
+          .map((t) => ({ ...t, canEdit: store.canEdit(t, callerEmail) }));
         context.res = json(200, templates);
       }
       return;

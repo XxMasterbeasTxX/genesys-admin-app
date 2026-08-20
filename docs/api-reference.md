@@ -55,14 +55,25 @@ These are the Azure Functions endpoints exposed by the app itself.
 | POST | `/api/doc-export` | On-demand Documentation export — body: `{ orgId, includeDataTables? }` — returns base64 workbook (XLSX or ZIP) |
 | POST | `/api/send-email` | Send email with attachment via Mailjet |
 | GET | `/api/scrape-disqualifying-permissions` | Scrape Genesys Cloud help page for Hourly Interacting disqualifying permissions; returns sorted JSON array; 24 h cache |
-| GET | `/api/schedules` | List all saved export schedules (Azure Table Storage) |
+| GET | `/api/schedules?userEmail={email}` | List all saved export schedules (Azure Table Storage). Each row carries `canEdit` — whether that caller may edit or delete it (creator or admin). Decided server-side so the browser never needs the admin's address; omit `userEmail` and `canEdit` is `false` throughout. |
 | POST | `/api/schedules` | Create a new export schedule. For `exportType: "queuesSkills"`, `exportConfig` supports optional arrays: `users`, `groups`, `teams`, `queues`, `skills`, `languages` (plus `*Labels` arrays for display summaries). |
 | PUT | `/api/schedules/{id}` | Update an existing schedule. For `exportType: "queuesSkills"`, the same optional filter arrays are persisted and used by scheduled runs. |
 | DELETE | `/api/schedules/{id}` | Delete a schedule |
 | POST | `/api/scheduled-runner` | Trigger the scheduled export runner (called every 5 min by Azure Timer Trigger) |
 | GET | `/api/activity-log` | Fetch internal activity log entries |
 | POST | `/api/activity-log` | Write a new internal activity log entry |
-| GET | `/api/templates?orgId={orgId}` | List all skill templates for an org (Azure Table Storage) |
+| GET | `/api/feature-requests?board=mine` | The caller's own organisation's feature requests, in full. Scoped by `ownerOrgId`. |
+| GET | `/api/feature-requests?board=shared` | Requests promoted to the shared board, as a **server-side redacted projection** — curated title/description, status, vote count, and the submitter as `Thomas V.` or `A customer`. The submitter's own wording, identity, org and page context are never sent. Any authenticated caller. |
+| GET | `/api/feature-requests?board=all` | Every organisation's requests, unredacted — **superuser only** (`SUPERUSER_IDS` app setting, matched against the caller's token-derived user id). The triage queue; also triggers the 12-month retention purge. |
+| GET | `/api/feature-requests/{id}` | One request: in full if it belongs to the caller's org, as a shared card if promoted, otherwise 404 (never 403 — confirming an id exists would leak another tenant's board). |
+| POST | `/api/feature-requests` | Create — body: `{ title, description, type?, route?, pageLabel?, orgId?, orgName?, appVersion?, publishAnonymously? }`. Owner and identity come from the token, never the body; every request starts `private`/`new`. Capped at 120/4000 chars and 20 creates per user per 24h. |
+| PUT | `/api/feature-requests/{id}` | Submitter edits their own `title`/`description`/`type` **while status is `new`** (409 after triage). Superuser sets `status`, `adminNote`, `shippedVersion`, `duplicateOf`, `visibility`, `sharedTitle`, `sharedDescription`. Promoting to `shared` without a `sharedTitle` is refused. |
+| POST | `/api/feature-requests/{id}/vote` | Toggle the caller's vote. Permitted on anything the caller can see, so votes on a promoted request aggregate across every org. Idempotent by construction. |
+| GET | `/api/feature-requests/{id}/thread` | The discussion thread. Readable by the request's own organisation (and superusers) — **never** by another org, even when the request is promoted: seeing the shared card does not entitle you to the conversation behind it. |
+| POST | `/api/feature-requests/{id}/thread` | Post a message — body `{ body }`. Only the request's submitter or a superuser (403 `not_a_participant` otherwise). The author's role is derived from the caller, never claimed. Notifies whichever party did not write it. |
+| DELETE | `/api/feature-requests/{id}/thread/{messageId}` | Delete a message — your own, or any if superuser. Messages are never edited. |
+| DELETE | `/api/feature-requests/{id}` | Delete a request — superuser only. |
+| GET | `/api/templates?orgId={orgId}&userEmail={email}` | List all skill templates for an org (Azure Table Storage). Each row carries `canEdit` — see `/api/schedules`. |
 | POST | `/api/templates` | Create a new skill template — body: `{ orgId, name, userEmail, roles, skills, languages, queues }` |
 | PUT | `/api/templates/{id}` | Update an existing skill template (owner or admin only) |
 | DELETE | `/api/templates/{id}?orgId={orgId}&userEmail={email}` | Delete a skill template (owner or admin only) |
@@ -73,7 +84,7 @@ These are the Azure Functions endpoints exposed by the app itself.
 | DELETE | `/api/template-assignments?orgId={orgId}&userId={userId}&templateId={templateId}` | Delete a template assignment by user+template combo |
 | DELETE | `/api/template-assignments?orgId={orgId}&groupId={groupId}&templateId={templateId}` | Delete a template assignment by group+template combo |
 | DELETE | `/api/template-assignments?orgId={orgId}&workteamId={workteamId}&templateId={templateId}` | Delete a template assignment by work team+template combo |
-| GET | `/api/template-schedules?orgId={orgId}` | List all template schedules for an org (Azure Table Storage) |
+| GET | `/api/template-schedules?orgId={orgId}&userEmail={email}` | List all template schedules for an org (Azure Table Storage). Each row carries `canEdit` — see `/api/schedules`. |
 | GET | `/api/template-schedules/{id}` | Get a single template schedule by ID |
 | POST | `/api/template-schedules` | Create a template schedule — body: `{ templateId, templateName, orgId, mode, scheduleType, scheduleTime, scheduleDayOfWeek?, scheduleDayOfMonth?, scheduleDate?, targets, enabled?, userEmail, userName }` — `mode` is `"reset"` or `"add"`; `scheduleType` is `"once"`, `"daily"`, `"weekly"`, or `"monthly"`; `targets` is an array of `{ type: "user" \| "group" \| "workteam", id, name }` (at least one required) |
 | PUT | `/api/template-schedules/{id}` | Update a template schedule (owner or admin only) — body includes `userEmail` for ownership check; `targets` array can be updated |
@@ -603,4 +614,5 @@ The runner authenticates to each org with client credentials (`GENESYS_<ORG>_CLI
 - **Entity name resolution**: The Audit — Search page resolves entity names for 40+ entity types by calling the appropriate `GET /api/v2/{path}/{id}` endpoint on-demand when a row is expanded.
 - **Server-side endpoints**: Endpoints in sections 2, 4, 5, 7–27, 29 that are also called from `api/lib/exports/` run server-side during scheduled export execution (including Documentation Export and the billing exports) — not from the browser.
 - **Registered export handlers**: The `api/lib/exportHandlers.js` registry maps export type strings to handler modules. Registered types: `allGroups`, `allRoles`, `billingAllOrgsLatest`, `billingCalendarYear`, `billingSingleOrg`, `documentation`, `filteredRoles`, `interactionTotals`, `licensesConsumption`, `rolesSingleOrg`, `lastLogin`, `trustee`, `skillTemplates`.
+- **Outbound email**: every message the app sends goes through `api/lib/mailer.js`, the single Mailjet caller. `POST /api/send-email` is the HTTP front for it (token required, callers choose recipients); the scheduled runner calls the module directly with no HTTP hop. Note that Mailjet fails in two ways — the request can fail, and a `200` can still carry `Messages[0].Status === "error"` — and the module reports both as `{ success: false, error, reason }`. A caller that checks only the HTTP status reports success for mail that was never sent.
 - **Billing trustee resolution**: Billing exports require the call to be authenticated as the **trustee** customer for the target org. The mapping is stored in `api/lib/customers.json::trusteeForOrg`. If the target customer is itself a trustee (no entry), the export is blocked client-side (`isTrusteeOrg(orgId)` in `js/utils/billingTrustees.js`).

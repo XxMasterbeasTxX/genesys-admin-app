@@ -12,8 +12,12 @@ const BASE = "/api/template-schedules";
  * @param {string} [orgId]
  * @returns {Promise<Array>}
  */
-export async function fetchTemplateSchedules(orgId) {
-  const url = orgId ? `${BASE}?orgId=${encodeURIComponent(orgId)}` : BASE;
+export async function fetchTemplateSchedules(orgId, userEmail = "") {
+  const qs = new URLSearchParams();
+  if (orgId) qs.set("orgId", orgId);
+  // Lets the backend answer `canEdit` per schedule — see scheduleService.
+  if (userEmail) qs.set("userEmail", userEmail);
+  const url = qs.toString() ? `${BASE}?${qs.toString()}` : BASE;
   const res = await fetch(url, { headers: withUserToken() });
   if (!res.ok) throw new Error(`Failed to fetch template schedules (${res.status})`);
   return res.json();

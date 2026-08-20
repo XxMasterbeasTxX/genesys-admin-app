@@ -4666,3 +4666,275 @@ body {
   .release-notes__back { background: rgba(0,0,0,0.05); }
   .release-notes__back:hover { background: rgba(0,0,0,0.08); }
 }
+
+/* ══════════════════════════════════════════════════════════
+   Requests — feature request board (js/pages/requests.js)
+   ══════════════════════════════════════════════════════════ */
+
+.fr-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ── Tabs ─────────────────────────────────────────────── */
+.fr-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 12px 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.fr-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+.fr-tab:hover { color: var(--text); }
+.fr-tab--active {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+
+/* ── Compose form ─────────────────────────────────────── */
+.fr-new { margin-bottom: 16px; }
+.fr-form {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--pad);
+  margin-bottom: 20px;
+  background: var(--panel-2);
+}
+.fr-form-row { margin-bottom: 12px; }
+.fr-textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.fr-hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+.fr-consent {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 10px 0 14px;
+}
+.fr-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+.fr-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.fr-context-clear {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 0;
+}
+.fr-context-clear:hover { color: var(--text); }
+.fr-form-actions { display: flex; gap: 8px; margin-top: 4px; }
+
+/* ── Status line ──────────────────────────────────────── */
+.fr-status {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 12px 0;
+}
+.fr-status--error   { color: #ff8a8a; }
+.fr-status--success { color: #7ddda1; }
+
+/* ── Cards ────────────────────────────────────────────── */
+.fr-list { display: flex; flex-direction: column; gap: 12px; }
+.fr-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--pad);
+  background: var(--panel-2);
+}
+.fr-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fr-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+  line-height: 1.4;
+}
+.fr-card-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+}
+.fr-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.fr-meta-item { color: var(--muted); font-size: 12px; }
+.fr-card-actions { display: flex; gap: 12px; margin-top: 10px; }
+
+/* ── Vote ─────────────────────────────────────────────── */
+.fr-vote {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 6px 10px;
+  min-width: 48px;
+  text-align: center;
+  flex: 0 0 auto;
+}
+.fr-vote:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.fr-vote--on {
+  color: var(--text);
+  border-color: rgba(125,221,161,0.5);
+  background: rgba(125,221,161,0.12);
+}
+.fr-vote-count { font-weight: 600; }
+
+/* ── Badges ───────────────────────────────────────────── */
+.fr-badge {
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.fr-badge--type-plain     { color: var(--muted); }
+.fr-badge--status-new     { color: #9ec5ff; border-color: rgba(158,197,255,0.35); }
+.fr-badge--status-open    { color: #ffd28a; border-color: rgba(255,210,138,0.35); }
+.fr-badge--status-waiting { color: #ffb3f0; border-color: rgba(255,179,240,0.35); }
+.fr-badge--status-done    { color: #7ddda1; border-color: rgba(125,221,161,0.35); }
+.fr-badge--status-closed  { color: var(--muted); }
+
+.fr-shipped { font-size: 12px; color: #7ddda1; text-decoration: none; }
+a.fr-shipped:hover { text-decoration: underline; }
+
+/* ── Response from us ─────────────────────────────────── */
+.fr-response {
+  border-left: 2px solid var(--border);
+  margin-top: 12px;
+  padding-left: 12px;
+}
+.fr-response-label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.fr-response-body {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+.fr-published {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 10px 0 0;
+}
+
+/* ── Inline edit / triage forms ───────────────────────── */
+.fr-link {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+  text-decoration: underline;
+}
+.fr-link:hover { color: var(--text); }
+.fr-link--danger:hover { color: #ff8a8a; }
+.fr-inline {
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+@media (prefers-color-scheme: light) {
+  .fr-form, .fr-card { background: rgba(0,0,0,0.02); }
+  .fr-vote:hover { background: rgba(0,0,0,0.05); }
+  .fr-status--error   { color: #b42318; }
+  .fr-status--success { color: #1a7f45; }
+  .fr-shipped { color: #1a7f45; }
+  .fr-badge--status-new     { color: #1c4f9c; border-color: rgba(28,79,156,0.3); }
+  .fr-badge--status-open    { color: #8a5a00; border-color: rgba(138,90,0,0.3); }
+  .fr-badge--status-waiting { color: #933a86; border-color: rgba(147,58,134,0.3); }
+  .fr-badge--status-done    { color: #1a7f45; border-color: rgba(26,127,69,0.3); }
+  .fr-link--danger:hover { color: #b42318; }
+}
+
+/* ── Requests: discussion thread ──────────────────────── */
+.fr-thread {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.fr-msg { margin-bottom: 12px; }
+.fr-msg-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fr-msg-who { font-size: 12px; font-weight: 600; color: var(--text); }
+.fr-msg-role {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  text-transform: uppercase;
+}
+.fr-msg-body {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+.fr-waiting {
+  border: 1px solid rgba(255,210,138,0.4);
+  border-radius: 999px;
+  color: #ffd28a;
+  font-size: 11px;
+  padding: 1px 8px;
+}
+@media (prefers-color-scheme: light) {
+  .fr-waiting { color: #8a5a00; border-color: rgba(138,90,0,0.35); }
+}

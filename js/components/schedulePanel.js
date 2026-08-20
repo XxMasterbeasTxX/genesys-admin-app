@@ -23,8 +23,6 @@ import { orgContext } from "../services/orgContext.js";
 import { logAction } from "../services/activityLogService.js";
 
 // ── Constants ───────────────────────────────────────────
-export const ADMIN_EMAIL = "thva@tdc.dk";
-
 const DAYS_OF_WEEK = [
   "Sunday", "Monday", "Tuesday", "Wednesday",
   "Thursday", "Friday", "Saturday",
@@ -84,13 +82,21 @@ export function formatLastStatus(s) {
   return `<span class="se-fail" title="${escapeHtml(s.lastError || "")}">Failure${s.lastError ? ` — ${escapeHtml(s.lastError)}` : ""}</span>`;
 }
 
-/** Check if the current user can edit/delete a schedule. */
+/**
+ * Check if the current user can edit/delete a schedule.
+ *
+ * The answer comes from the server, on the schedule itself: the rule is "the
+ * creator, or the admin", and evaluating the second half here meant shipping the
+ * admin's address in this file to every browser that loads the app.
+ *
+ * The fallback covers a schedule fetched without a caller email — owner only.
+ * The admin's extra reach is granted by the backend or not at all, and either
+ * way PUT/DELETE re-check it, so this decides buttons rather than permissions.
+ */
 export function canEditSchedule(schedule, me) {
+  if (typeof schedule?.canEdit === "boolean") return schedule.canEdit;
   if (!me?.email) return false;
-  const lower = me.email.toLowerCase();
-  return (
-    lower === schedule.createdBy.toLowerCase() || lower === ADMIN_EMAIL
-  );
+  return me.email.toLowerCase() === String(schedule?.createdBy || "").toLowerCase();
 }
 
 // ── Form builder (shared between panel & overview) ──────
@@ -629,7 +635,7 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
   // ── Load data ─────────────────────────────────────────
   async function loadSchedules() {
     try {
-      schedules = await fetchSchedules();
+      schedules = await fetchSchedules(me?.email || "");
       renderList();
     } catch (err) {
       setStatus(`Failed to load schedules: ${err.message}`, "error");

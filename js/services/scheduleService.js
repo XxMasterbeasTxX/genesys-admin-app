@@ -9,10 +9,17 @@ const BASE = "/api/schedules";
 
 /**
  * Fetch all schedules.
+ *
+ * `userEmail` is passed so the backend can answer `canEdit` per schedule. The
+ * pages used to work that out themselves, which meant each of them carried a
+ * copy of the admin address into the browser bundle.
+ *
+ * @param {string} [userEmail]  Caller's email; omitted → canEdit is owner-only.
  * @returns {Promise<Array>}
  */
-export async function fetchSchedules() {
-  const res = await fetch(BASE, { headers: withUserToken() });
+export async function fetchSchedules(userEmail = "") {
+  const url = userEmail ? `${BASE}?userEmail=${encodeURIComponent(userEmail)}` : BASE;
+  const res = await fetch(url, { headers: withUserToken() });
   if (!res.ok) throw new Error(`Failed to fetch schedules (${res.status})`);
   return res.json();
 }

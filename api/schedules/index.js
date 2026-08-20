@@ -65,16 +65,28 @@ module.exports = async function (context, req) {
 
     // ── GET ─────────────────────────────────────────────
     if (method === "GET") {
+      // `canEdit` is answered here rather than worked out in the browser. The
+      // rule is "the creator, or the admin", and the admin's identity is a
+      // server-side fact — the pages used to carry their own copy of the
+      // address to evaluate it, which put it in every bundle the browser
+      // downloads, customers included.
+      //
+      // The flag decides which buttons get drawn, nothing more: PUT and DELETE
+      // re-run store.canEdit themselves, so a client that sends back a value we
+      // did not give it gains nothing.
+      const callerEmail = req.query.userEmail || "";
+
       if (id) {
         const schedule = await store.getById(id);
         if (!schedule || !ownerVisibleTo(schedule.ownerOrgId, caller.ownerOrgId)) {
           context.res = json(404, { error: "Schedule not found" });
           return;
         }
-        context.res = json(200, schedule);
+        context.res = json(200, { ...schedule, canEdit: store.canEdit(schedule, callerEmail) });
       } else {
         const schedules = (await store.listAll())
-          .filter((s) => ownerVisibleTo(s.ownerOrgId, caller.ownerOrgId));
+          .filter((s) => ownerVisibleTo(s.ownerOrgId, caller.ownerOrgId))
+          .map((s) => ({ ...s, canEdit: store.canEdit(s, callerEmail) }));
         context.res = json(200, schedules);
       }
       return;
