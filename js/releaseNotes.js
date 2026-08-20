@@ -11,6 +11,19 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "3.9",
+    date: "2026-08-20",
+    title: "Requests: your vote keeps you posted",
+    changes: [
+      "Voting for a request now keeps you informed about it. Whenever it moves — looked at, planned, being built, shipped, and equally when it is not going to happen — everyone who voted hears, not only the person who wrote it. A vote is a way of asking for something too, and one that never reports back is one nobody bothers to cast twice.",
+      "That includes the outcomes nobody enjoys sending. A request that is dropped after several people voted for it is told, rather than going quiet: silence reads as having been forgotten, when what actually happened was a decision.",
+      "Removing your vote stops the emails for that request, and every one of them says so. Nothing else about the request changes when you do.",
+      "Filing a request now sends you a copy of it. The page already thanks you, so this is not news — it is a receipt, your own words in your own inbox, so a request is something you can find again or forward rather than something you typed into a box and hoped about.",
+      "The vote control says what it does. It used to be an arrow and a number, which needed explaining; it now reads “Vote (12)”, and “Voted (13)” once you have. The wording carries the state rather than the colour alone, so it no longer depends on being able to see the difference.",
+      "The three boards are named consistently — My company board, Shared board, and Triage board for those who triage. Two of them used to name a place while the third named an activity, which made one of them look like a different kind of thing.",
+    ],
+  },
+  {
     version: "3.8",
     date: "2026-08-20",
     title: "Requests: ask for what the app is missing",

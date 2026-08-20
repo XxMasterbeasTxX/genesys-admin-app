@@ -40,9 +40,15 @@ const STATUSES = [
   "planned",
   "in-progress",
   "shipped",
-  "declined",
+  "not-planned",
   "duplicate",
 ];
+
+// The key used to be "declined" while the label read "Not planned", which is
+// confusing enough that it was asked about. The key now matches the word people
+// see; rows written before the rename are mapped on the way in, so a request
+// declined last month still reads as Not planned rather than falling back to New.
+const LEGACY_STATUS = { declined: "not-planned" };
 const VISIBILITIES = ["private", "shared"];
 
 let _client = null;
@@ -85,13 +91,24 @@ function normalizeType(value) {
 }
 
 function normalizeStatus(value) {
-  const s = String(value || "").trim().toLowerCase();
+  const raw = String(value || "").trim().toLowerCase();
+  const s = LEGACY_STATUS[raw] || raw;
   return STATUSES.includes(s) ? s : null;
 }
 
 function normalizeVisibility(value) {
   const v = String(value || "").trim().toLowerCase();
   return VISIBILITIES.includes(v) ? v : null;
+}
+
+function safeParseObject(str) {
+  if (!str) return {};
+  try {
+    const parsed = JSON.parse(str);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function safeParseArray(str) {
@@ -129,11 +146,16 @@ function entityToRequest(e) {
     userName: e.userName || "",
     createdAt: e.createdAt || "",
     updatedAt: e.updatedAt || "",
-    status: e.status || "new",
+    status: normalizeStatus(e.status) || "new",
     adminNote: e.adminNote || "",
     shippedVersion: e.shippedVersion || "",
     duplicateOf: e.duplicateOf || "",
     votes: safeParseArray(e.votes),
+    // Address per voter id, kept so a status change can reach everyone who
+    // wanted the thing. A voter on a promoted request may be in any
+    // organisation, so there is no single org to look them up against at send
+    // time. NEVER projected onto a card — see toOwnCard and toSharedCard.
+    voterEmails: safeParseObject(e.voterEmails),
     visibility: e.visibility || "private",
     sharedTitle: e.sharedTitle || "",
     sharedDescription: e.sharedDescription || "",
@@ -169,6 +191,9 @@ function requestToEntity(data) {
     shippedVersion: clamp(data.shippedVersion, 20),
     duplicateOf: clamp(data.duplicateOf, 60),
     votes: JSON.stringify(Array.isArray(data.votes) ? data.votes : []),
+    voterEmails: JSON.stringify(
+      data.voterEmails && typeof data.voterEmails === "object" ? data.voterEmails : {}
+    ),
     visibility: normalizeVisibility(data.visibility) || "private",
     sharedTitle: clamp(data.sharedTitle, TITLE_MAX),
     sharedDescription: clamp(data.sharedDescription, DESCRIPTION_MAX),
@@ -235,7 +260,10 @@ function toSharedCard(request, callerUserId) {
  */
 function toOwnCard(request, callerUserId, { includeEmail = false } = {}) {
   const votes = Array.isArray(request.votes) ? request.votes : [];
-  const { votes: _drop, userEmail, ...rest } = request;
+  // `voterEmails` is dropped by name, not left to the spread: this projection
+  // passes unknown fields straight through, so anything added to the record
+  // arrives on the card unless it is taken out here.
+  const { votes: _dropVotes, voterEmails: _dropVoterEmails, userEmail, ...rest } = request;
   return {
     ...rest,
     ...(includeEmail ? { userEmail } : {}),
@@ -309,15 +337,22 @@ async function remove(id) {
  * caller's id being present in a list, so a repeated call toggles rather than
  * accumulating, and no separate de-duplication is needed.
  */
-async function toggleVote(id, userId) {
+async function toggleVote(id, userId, userEmail = "") {
   const existing = await getById(id);
   if (!existing) return null;
 
   const votes = new Set(existing.votes);
-  if (votes.has(userId)) votes.delete(userId);
-  else votes.add(userId);
+  const voterEmails = { ...existing.voterEmails };
 
-  return update(id, { votes: [...votes] });
+  if (votes.has(userId)) {
+    votes.delete(userId);
+    delete voterEmails[userId];
+  } else {
+    votes.add(userId);
+    if (userEmail) voterEmails[userId] = userEmail;
+  }
+
+  return update(id, { votes: [...votes], voterEmails });
 }
 
 /**

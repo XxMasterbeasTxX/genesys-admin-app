@@ -51,7 +51,7 @@ const STATUS_LABELS = {
   "planned":            "Planned",
   "in-progress":        "Being built",
   "shipped":            "Shipped",
-  "declined":           "Not planned",
+  "not-planned":        "Not planned",
   "duplicate":          "Duplicate",
 };
 
@@ -63,7 +63,7 @@ const STATUS_TONE = {
   "planned":            "open",
   "in-progress":        "open",
   "shipped":            "done",
-  "declined":           "closed",
+  "not-planned":        "closed",
   "duplicate":          "closed",
 };
 

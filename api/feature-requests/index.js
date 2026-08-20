@@ -165,7 +165,7 @@ module.exports = async function (context, req) {
         const votable = ownVisible(request) || request.visibility === "shared";
         if (!votable) { context.res = json(404, { error: "Request not found" }); return; }
 
-        const updated = await store.toggleVote(id, caller.userId);
+        const updated = await store.toggleVote(id, caller.userId, caller.userEmail);
         context.res = json(200, ownVisible(updated)
           ? store.toOwnCard(updated, caller.userId, { includeEmail: superuser })
           : store.toSharedCard(updated, caller.userId));
@@ -370,6 +370,10 @@ module.exports = async function (context, req) {
       // published wording is not news for the person who asked.
       if (patch.status && patch.status !== existing.status) {
         notify.notifyStatusChange(context, updated, existing.status).catch(() => {});
+        // Everyone who voted for it hears too. They asked for this thing as
+        // surely as the person who typed it, and a vote that never reports back
+        // is a vote nobody bothers to cast twice.
+        notify.notifyVoters(context, updated).catch(() => {});
       }
 
       context.res = json(200, store.toOwnCard(updated, caller.userId, { includeEmail: superuser }));

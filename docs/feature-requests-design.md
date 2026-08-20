@@ -74,11 +74,12 @@ change, so ordering is done on read.
 | `appVersion` | `APP_VERSION` at submission — which build the complaint is about |
 | `userId`, `userEmail`, `userName` | submitter, taken from the session, never from the body |
 | `createdAt`, `updatedAt` | ISO strings |
-| `status` | `new` → `triaged` → `awaiting-submitter` → `planned` → `in-progress` → `shipped` / `declined` / `duplicate` |
+| `status` | `new` → `triaged` → `awaiting-submitter` → `planned` → `in-progress` → `shipped` / `not-planned` / `duplicate` |  (rows written as `declined` before the rename are mapped forward on read)
 | `adminNote` | the **published** response — curated, superuser-written, the one line that may appear on a shared card (§6.3). Distinct from the thread (§3a). |
 | `shippedVersion` | e.g. `"3.8"` — links to that release-notes entry, subject to §6.4 |
 | `duplicateOf` | id of the surviving request |
 | `votes` | JSON array of Genesys user ids; the count is derived, never stored separately |
+| `voterEmails` | `{ userId: email }`, recorded at vote time so a status change can reach voters. **Never projected onto any card** — a voter on a promoted request may be in any org, so there is no org to look them up against at send time. |
 | `visibility` | `private` (default) or `shared` — see §6.1 |
 | `sharedTitle`, `sharedDescription` | the admin's published wording, used **only** on the shared board |
 | `publishAnonymously` | submitter's choice at submit time; suppresses the name if promoted |
@@ -467,6 +468,16 @@ files.
 - **On status change** → the submitter. This is the notification that decides
   whether the board gets used twice: a request that visibly moves is worth
   filing, and one that vanishes is not.
+- **On a status change** → everyone who voted for it. Voters asked for the
+  thing as surely as the person who typed it, and a vote that never reports back
+  is one nobody casts twice. Every change goes out, not only the good ones: a
+  request dropped after people voted for it needs saying, or the silence reads
+  as neglect rather than as a decision. The submitter is excluded — they have
+  their own message — and the wording is the voter's: "Waiting for you" is
+  addressed at one person we asked a question, so voters are told the request is
+  waiting on the person who raised it instead. A promoted request is named by
+  its curated title, since that is the only version a voter in another
+  organisation ever knew.
 - **On a thread message** → the other party (§3a.3). Submitter posts, the
   superusers hear; a superuser posts, the submitter hears. Never an echo to the
   author of the message.

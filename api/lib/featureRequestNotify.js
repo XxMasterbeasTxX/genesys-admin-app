@@ -3,8 +3,8 @@
  *
  * Three messages, all sent server-side from the endpoint that performed the
  * write:
- *   - a request is submitted   → the superusers
- *   - its status changes       → the submitter
+ *   - a request is submitted   → the superusers, and a receipt to whoever filed it
+ *   - its status changes       → the submitter, and everyone who voted for it
  *   - a thread message is sent → whichever party did not write it
  *
  * Everything here is best-effort. A send failure must never fail the write that
@@ -28,7 +28,7 @@ const STATUS_TEXT = {
   "planned": "Planned",
   "in-progress": "Being built",
   "shipped": "Shipped",
-  "declined": "Not planned",
+  "not-planned": "Not planned",
   "duplicate": "Duplicate",
 };
 
@@ -181,8 +181,68 @@ async function notifyRequestReceived(context, request) {
   });
 }
 
+/**
+ * A status changed → tell everyone who voted for it.
+ *
+ * Voters asked for the thing as surely as the person who typed it, and a vote
+ * that never reports back is one nobody bothers to cast twice. So every change
+ * goes out, not just the good ones: a request that is dropped after people
+ * voted for it needs saying, or the silence reads as neglect rather than as a
+ * decision.
+ *
+ * Two things this is careful about.
+ *
+ * The submitter is excluded — they have their own message, which says "your
+ * request" and carries the response text. Being told twice about your own
+ * request in two different voices is worse than being told once.
+ *
+ * The wording is the VOTER's, not the submitter's. "Waiting for you" is
+ * addressed at one person we have asked a question; sent to a voter it would
+ * simply be untrue, so that transition is described rather than repeated.
+ */
+async function notifyVoters(context, request) {
+  const byId = request.voterEmails && typeof request.voterEmails === "object"
+    ? request.voterEmails
+    : {};
+
+  const submitter = String(request.userEmail || "").toLowerCase();
+  const recipients = [...new Set(
+    Object.values(byId)
+      .map((e) => String(e || "").trim())
+      .filter((e) => e && e.toLowerCase() !== submitter)
+  )];
+
+  if (!recipients.length) return false;
+
+  // The shared board shows the curated wording, and a voter from another
+  // organisation only ever knew the request by that. Fall back to the original
+  // title only for a request that was never published.
+  const title = request.sharedTitle || request.title;
+
+  const headline = request.status === "awaiting-submitter"
+    ? `A request you voted for is waiting on more detail from the person who raised it: "${title}"`
+    : `A request you voted for is now ${STATUS_TEXT[request.status] || request.status}: "${title}"`;
+
+  const lines = [headline];
+  if (request.adminNote) lines.push("", request.adminNote);
+  if (request.status === "shipped" && request.shippedVersion) {
+    lines.push("", `Shipped in version ${request.shippedVersion} — see the release notes in the app.`);
+  }
+  if (request.status === "duplicate") {
+    lines.push("", "It is being tracked as part of another request.");
+  }
+  lines.push("", "You are getting this because you voted for it. Removing your vote stops these.");
+
+  return send(context, {
+    recipients,
+    subject: `[Requests] ${STATUS_TEXT[request.status] || request.status}: ${title}`,
+    text: lines.join("\n"),
+  });
+}
+
 module.exports = {
   notifyNewRequest,
+  notifyVoters,
   notifyRequestReceived,
   notifyStatusChange,
   notifyThreadMessage,
