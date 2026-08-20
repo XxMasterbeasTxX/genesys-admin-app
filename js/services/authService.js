@@ -455,6 +455,35 @@ export function refreshSession() {
   window.location.reload();
 }
 
+/**
+ * Forget the stored org hint.
+ *
+ * `clearAuthSession` deliberately leaves this alone — a customer reloading their
+ * own deep link should keep it. But when a session cannot be matched to an
+ * organisation, a stale hint is one of the things most likely to be the cause,
+ * and re-logging without dropping it just fails the same way a second time.
+ *
+ * A genuine `?org=` deep link re-seeds it from the URL on the next boot, so
+ * clearing it costs a real customer nothing.
+ */
+export function clearOrgHint() {
+  sessionStorage.removeItem(K_ORG_HINT);
+}
+
+/**
+ * Everything this app remembers about who you are, gone — and back to the bare
+ * origin, dropping any `?org=` the URL is carrying.
+ *
+ * The last resort offered to someone whose session cannot be matched to an
+ * organisation. `refreshSession` keeps the current URL, which is right for a
+ * transient failure and wrong when the URL itself is what is stale.
+ */
+export function hardResetSession() {
+  clearAuthSession();
+  clearOrgHint();
+  window.location.replace(window.location.origin);
+}
+
 // --- PROACTIVE SESSION REFRESH ---
 // Warning fires 2 minutes before expiry; auto-redirect fires 1 minute before.
 const WARNING_BEFORE_MS = 2 * 60 * 1000;

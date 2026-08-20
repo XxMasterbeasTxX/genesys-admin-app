@@ -12,6 +12,8 @@ import {
   getValidAccessToken,
   scheduleTokenRefresh,
   refreshSession,
+  clearOrgHint,
+  hardResetSession,
   isAuthPopup,
   runAuthPopup,
   loginViaPopup,
@@ -53,6 +55,52 @@ function printSecurityNotice() {
       "color:#666;font-size:12px;",
     );
   } catch (_) { /* console not available — ignore */ }
+}
+
+/** Guard so the automatic re-login below fires once, not in a loop. */
+const ORGCFG_RETRY_KEY = "gc_orgcfg_retry";
+
+/**
+ * Shown when a session authenticates but cannot be matched to an organisation,
+ * and the one automatic retry has already been spent.
+ *
+ * Before this, that state left a disabled "Failed to resolve org context"
+ * dropdown, an empty menu, and nothing else — unrecoverable from inside the app,
+ * with the only real fix being to clear browser storage, which nobody would
+ * guess. It earns a screen of its own because the app genuinely cannot be used
+ * until it is resolved.
+ */
+function renderOrgRecovery() {
+  setHeader({ authText: "Auth: organisation not matched" });
+  const orgSelectEl = document.getElementById("orgSelect");
+  orgSelectEl.innerHTML = `<option value="">Not signed in to an organisation</option>`;
+  orgSelectEl.disabled = true;
+
+  document.getElementById("appMain").innerHTML = `
+    <section class="card">
+      <h1 class="h1">We could not match your sign-in to an organisation</h1>
+      <p class="p">
+        You signed in successfully, but this environment did not recognise the
+        organisation the sign-in belongs to. That is almost always a session left
+        over from an earlier sign-in — signing in again clears it.
+      </p>
+      <button type="button" class="btn" id="orgResetBtn">Sign in again</button>
+      <p class="p" style="margin-top:12px;opacity:0.8;">
+        If it happens again straight away, your account may not belong to an
+        organisation this environment is set up for — worth sending to an
+        administrator rather than retrying.
+      </p>
+    </section>
+  `;
+
+  document.getElementById("orgResetBtn").addEventListener("click", () => {
+    // Everything stale goes at once: the token, the org hint, the selected
+    // customer and the retry guard — leaving the guard set would disarm the
+    // next boot before it starts.
+    sessionStorage.removeItem(ORGCFG_RETRY_KEY);
+    try { orgContext.clear(); } catch (_) { /* storage unavailable */ }
+    hardResetSession();
+  });
 }
 
 function renderFatalError(message) {
@@ -144,7 +192,6 @@ function renderSignInGate() {
   const orgSelectEl = document.getElementById("orgSelect");
   let access;
   let isInternalMode = true; // staff vs customer — gates internal-only release notes
-  const ORGCFG_RETRY_KEY = "gc_orgcfg_retry";
   try {
     const orgCfg = await fetchOrgConfig(res.accessToken, res.orgHint);
     // Org context resolved — clear any prior self-heal guard.
@@ -178,16 +225,31 @@ function renderSignInGate() {
   } catch (err) {
     console.error("Failed to resolve org config:", err);
 
-    // Self-heal a stale/invalid INTERNAL token (e.g. a leftover session whose org
-    // is no longer recognized → 401/403). Clear the session and re-login ONCE
-    // (guarded to avoid a redirect loop). Customer deep links (`?org=`) stay
-    // fail-closed — never auto-loop them.
+    // Self-heal a stale/invalid session — a leftover token, or an org hint that
+    // no longer resolves (401/403). Clear it and re-login ONCE, guarded against
+    // a loop.
+    //
+    // A customer deep link no longer skips this. It used to, to avoid looping,
+    // but the guard already prevents that — and a stale hint is among the most
+    // likely causes, so exempting it meant the one case that needed clearing was
+    // the one case never cleared. The STORED hint is dropped with the session; a
+    // genuine `?org=` deep link re-seeds it from the URL on the way back, so a
+    // real customer loses nothing.
     const status = err && err.status;
     const authish = status === 401 || status === 403;
-    if (!res.orgHint && authish && !sessionStorage.getItem(ORGCFG_RETRY_KEY)) {
+    if (authish && !sessionStorage.getItem(ORGCFG_RETRY_KEY)) {
       sessionStorage.setItem(ORGCFG_RETRY_KEY, "1");
       setHeader({ authText: "Auth: refreshing session\u2026" });
-      await refreshSession(); // clears session + redirects to login
+      clearOrgHint();
+      await refreshSession(); // clears session + reloads into login
+      return;
+    }
+
+    // The retry is spent and it still fails. Rather than leave a dead dropdown
+    // and an empty menu with no way out, say what happened and offer the one
+    // action that fixes it.
+    if (authish) {
+      renderOrgRecovery();
       return;
     }
 
