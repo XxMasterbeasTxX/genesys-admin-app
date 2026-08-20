@@ -7,7 +7,7 @@
  * cannot itself be something you have to be granted.
  *
  * Two boards:
- *   My organisation — your own org's requests, in full. Everyone in an org sees
+ *   My company board — your own org's requests, in full. Everyone in an org sees
  *                     that org's requests, the same contract schedules and the
  *                     activity log already have.
  *   Shared          — requests a superuser has promoted, visible to every org as
@@ -115,9 +115,9 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
     </div>
 
     <div class="fr-tabs" id="frTabs">
-      <button type="button" class="fr-tab fr-tab--active" data-board="mine">My organisation</button>
+      <button type="button" class="fr-tab fr-tab--active" data-board="mine">My company board</button>
       <button type="button" class="fr-tab" data-board="shared">Shared board</button>
-      <button type="button" class="fr-tab" data-board="all" id="frTabAll" hidden>Triage</button>
+      <button type="button" class="fr-tab" data-board="all" id="frTabAll" hidden>Triage board</button>
     </div>
 
     <div id="frComposeWrap">
@@ -254,7 +254,7 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
           <h3 class="fr-card-title">${escapeHtml(r.title || "(no title)")}</h3>
           <button type="button" class="fr-vote${r.hasVoted ? " fr-vote--on" : ""}" data-vote="${escapeHtml(r.id)}"
                   title="${r.hasVoted ? "Remove your vote" : "I want this too"}">
-            ▲ <span class="fr-vote-count">${r.voteCount ?? 0}</span>
+            ${r.hasVoted ? "Voted" : "Vote"}${r.voteCount ? ` <span class="fr-vote-count">(${r.voteCount})</span>` : ""}
           </button>
         </div>
         <div class="fr-card-meta">
