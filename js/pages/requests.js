@@ -51,7 +51,7 @@ const STATUS_LABELS = {
   "planned":            "Planned",
   "in-progress":        "Being built",
   "shipped":            "Shipped",
-  "declined":           "Not planned",
+  "not-planned":        "Not planned",
   "duplicate":          "Duplicate",
 };
 
@@ -63,17 +63,18 @@ const STATUS_TONE = {
   "planned":            "open",
   "in-progress":        "open",
   "shipped":            "done",
-  "declined":           "closed",
+  "not-planned":        "closed",
   "duplicate":          "closed",
 };
 
 /**
- * Is a release note for this version visible to this viewer?
+ * Is a release note for this version worth linking this viewer to?
  *
- * A shipped request links to its release note, but internal-only entries are
- * filtered out of customer sessions — so linking one would send a customer to
- * an entry they cannot see (§6.4). When the entry is hidden, the version is
- * shown as plain text instead.
+ * Deliberately NOT the same question as "does it appear in their list". A
+ * customer now sees every version, but an internal-only one reads "Internal
+ * improvements" — so linking a shipped request there would land them on a page
+ * that teaches nothing and draws attention to the very gap the placeholder
+ * closes (§6.4). The version is shown as plain text instead.
  */
 function releaseNoteVisible(version, isInternal) {
   const entry = RELEASE_NOTES.find((e) => e.version === version);
@@ -302,6 +303,39 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
       </form>`;
   }
 
+  /**
+   * Options for "Shipped in version" — the releases that actually exist.
+   *
+   * A free-text box let a typo through silently: the card builds its link by
+   * matching the string against RELEASE_NOTES, so "v3.8" or a trailing space
+   * simply produced no link and fell back to plain text, looking almost right.
+   * Choosing from the real list removes the failure rather than guarding it.
+   *
+   * Internal-only releases are flagged, because a customer's request linked to
+   * one degrades to plain text for them (§6.4) — and it is far better to see
+   * that at the moment of choosing than to wonder later why the link is missing.
+   *
+   * A stored value that is not a known release is kept as an option rather than
+   * dropped. Otherwise opening triage on such a request would show nothing
+   * selected and the next save would quietly blank it.
+   */
+  function versionOptions(current) {
+    const known = RELEASE_NOTES.map((e) => e.version);
+    const opts = RELEASE_NOTES.map((e) => {
+      // Several internal titles already end in "(internal)", so only add the
+      // marker when the title has not said it already.
+      const saysItself = /\(internal\)\s*$/i.test(e.title);
+      const label = `${e.version} — ${e.title}${e.internalOnly && !saysItself ? "  (internal only)" : ""}`;
+      return `<option value="${escapeHtml(e.version)}"${e.version === current ? " selected" : ""}>${escapeHtml(label)}</option>`;
+    });
+    if (current && !known.includes(current)) {
+      opts.unshift(
+        `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} — not a known release</option>`
+      );
+    }
+    return opts.join("");
+  }
+
   function triageMarkup(r) {
     return `
       <form class="fr-inline" data-triage-form="${escapeHtml(r.id)}">
@@ -314,8 +348,13 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
         <label class="di-label">Response — the submitter reads this</label>
         <textarea class="input fr-textarea" name="adminNote" rows="3">${escapeHtml(r.adminNote || "")}</textarea>
 
-        <label class="di-label">Shipped in version</label>
-        <input type="text" class="input" name="shippedVersion" value="${escapeHtml(r.shippedVersion || "")}" placeholder="e.g. 3.8">
+        <div data-shipped-row${r.status === "shipped" ? "" : " hidden"}>
+          <label class="di-label">Shipped in version</label>
+          <select class="input" name="shippedVersion">
+            <option value="">Choose a release…</option>
+            ${versionOptions(r.shippedVersion || "")}
+          </select>
+        </div>
 
         <hr class="hr">
         <p class="fr-hint">
@@ -557,6 +596,16 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
     }
   });
 
+  // The version only means anything for a shipped request, so the field appears
+  // when that is chosen rather than sitting there inviting a value that would be
+  // stored and never shown.
+  $list.addEventListener("change", (e) => {
+    const sel = e.target.closest("[data-triage-form] select[name='status']");
+    if (!sel) return;
+    const row = sel.closest("form").querySelector("[data-shipped-row]");
+    if (row) row.hidden = sel.value !== "shipped";
+  });
+
   $list.addEventListener("submit", async (e) => {
     const editForm = e.target.closest("[data-edit-form]");
     if (editForm) {
@@ -597,6 +646,14 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
     if (triageForm) {
       e.preventDefault();
       const id = triageForm.dataset.triageForm;
+
+      // Shipped without a release is a dead end for the person who asked: the
+      // card says "Shipped" and gives them nowhere to read what shipped.
+      if (triageForm.status.value === "shipped" && !triageForm.shippedVersion.value) {
+        setStatus("Choose the release this shipped in before marking it Shipped.", "error");
+        return;
+      }
+
       try {
         await triageRequest(id, {
           status: triageForm.status.value,

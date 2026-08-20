@@ -559,6 +559,33 @@ ENFORCE_ENTITLEMENT_ALLOWLIST  (default off; when "true", customer requests must
                                 map to a purchased module — fail-closed)
 ```
 
+### Requests board — who may triage
+
+```text
+SUPERUSER_IDS   (comma-separated Genesys USER ids, e.g. 519fd42d-…,7c1b90aa-…)
+```
+
+Decides who can set a request's status, reply on it, publish it to the shared
+board and delete it — matched against the caller's **token-derived** user id, not
+against anything the browser sends. It is also how the board finds an address to
+notify: the ids are resolved to email in the internal org using the credentials
+`INTERNAL_ORG_SLUG` already points at, so there is no second setting holding the
+same people's addresses to drift out of step.
+
+Genesys **user ids**, not email addresses — Genesys releases a deleted user's
+address for reuse, so an email-keyed privilege check silently transfers to
+whoever inherits it. Find an id at `GET /api/v2/users/me` while signed in as
+that person.
+
+**Unset or empty means nobody is a superuser**, never everybody: a missing app
+setting in a fresh environment must not be an open one. Nothing else about the
+board changes — everyone can still submit, read their own organisation's board
+and vote — but no one can triage until this is set.
+
+There is a client-side `SUPERUSER_IDS` in [js/accessConfig.js](../js/accessConfig.js)
+as well. That one only decides what the sidebar shows and is **not** the
+authority for anything; the API has never trusted it.
+
 If `INTERNAL_COMPANY_ORG_ID` and `CUSTOMER_REGISTRY_JSON` are both omitted, the app runs in
 internal compatibility mode (existing behavior) until these settings are configured.
 
