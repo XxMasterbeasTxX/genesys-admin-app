@@ -35,7 +35,7 @@ const CREATES_PER_DAY = 20;
 const TYPES = ["feature", "change", "bug", "question"];
 const STATUSES = [
   "new",
-  "triaged",
+  "considering",
   "awaiting-submitter",
   "planned",
   "in-progress",
@@ -44,11 +44,15 @@ const STATUSES = [
   "duplicate",
 ];
 
-// The key used to be "declined" while the label read "Not planned", which is
-// confusing enough that it was asked about. The key now matches the word people
-// see; rows written before the rename are mapped on the way in, so a request
-// declined last month still reads as Not planned rather than falling back to New.
-const LEGACY_STATUS = { declined: "not-planned" };
+// Keys match the words people actually see. Both of these once did not:
+// "declined" was labelled "Not planned", and "triaged" was labelled "Looked at"
+// then renamed to "Considering". A mismatch is confusing enough that the first
+// one was asked about, so the second was not left to become the same question.
+//
+// Rows written before either rename are mapped on the way in, so a request
+// triaged last month still reads as Considering rather than falling back to New
+// -- which is what an unrecognised status silently does.
+const LEGACY_STATUS = { declined: "not-planned", triaged: "considering" };
 const VISIBILITIES = ["private", "shared"];
 
 let _client = null;

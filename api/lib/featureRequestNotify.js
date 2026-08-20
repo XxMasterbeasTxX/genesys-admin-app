@@ -23,7 +23,7 @@ const { superuserEmails } = require("./superusers");
 
 const STATUS_TEXT = {
   "new": "New",
-  "triaged": "Looked at",
+  "considering": "Considering",
   "awaiting-submitter": "Waiting for you",
   "planned": "Planned",
   "in-progress": "Being built",

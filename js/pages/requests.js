@@ -46,7 +46,7 @@ const TYPE_LABELS = {
 
 const STATUS_LABELS = {
   "new":                "New",
-  "triaged":            "Looked at",
+  "considering":        "Considering",
   "awaiting-submitter": "Waiting for you",
   "planned":            "Planned",
   "in-progress":        "Being built",
@@ -58,7 +58,7 @@ const STATUS_LABELS = {
 /** Status → modifier class, so the badge colour carries the same meaning. */
 const STATUS_TONE = {
   "new":                "new",
-  "triaged":            "open",
+  "considering":        "open",
   "awaiting-submitter": "waiting",
   "planned":            "open",
   "in-progress":        "open",
