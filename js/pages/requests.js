@@ -254,7 +254,7 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
           <h3 class="fr-card-title">${escapeHtml(r.title || "(no title)")}</h3>
           <button type="button" class="fr-vote${r.hasVoted ? " fr-vote--on" : ""}" data-vote="${escapeHtml(r.id)}"
                   title="${r.hasVoted ? "Remove your vote" : "I want this too"}">
-            ▲ <span class="fr-vote-count">${r.voteCount ?? 0}</span>
+            ${r.hasVoted ? "Voted" : "Vote"}${r.voteCount ? ` <span class="fr-vote-count">(${r.voteCount})</span>` : ""}
           </button>
         </div>
         <div class="fr-card-meta">

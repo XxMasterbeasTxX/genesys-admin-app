@@ -4811,9 +4811,12 @@ body {
   font-size: 12px;
   line-height: 1.2;
   padding: 6px 10px;
-  min-width: 48px;
+  /* Wide enough that "Vote" and "Voted (12)" occupy the same box: without it
+     the card's title reflows every time somebody votes. */
+  min-width: 92px;
   text-align: center;
   flex: 0 0 auto;
+  white-space: nowrap;
 }
 .fr-vote:hover { color: var(--text); background: rgba(255,255,255,0.06); }
 .fr-vote--on {
