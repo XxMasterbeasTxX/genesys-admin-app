@@ -302,6 +302,27 @@ module.exports = async function (context, req) {
           if (!status) { context.res = json(400, { error: "Unknown status" }); return; }
           patch.status = status;
         }
+        // Shipped has to say what it shipped in. Checked on the patch that SETS
+        // shipped rather than on the record, so an already-shipped request can
+        // still have its note edited without the version being resupplied.
+        //
+        // The value itself is not validated against the release list: that list
+        // lives in the browser bundle, and a second copy here would be one more
+        // thing to keep in step for a field only a superuser can set, where a
+        // wrong value degrades to plain text rather than breaking. The picker is
+        // the guard; this only insists the field is not empty.
+        if (patch.status === "shipped") {
+          const version = b.shippedVersion !== undefined
+            ? String(b.shippedVersion).trim()
+            : String(existing.shippedVersion || "").trim();
+          if (!version) {
+            context.res = json(400, {
+              error: "shipped_version_required",
+              message: "Choose the release this shipped in before marking it Shipped.",
+            });
+            return;
+          }
+        }
         if (b.adminNote !== undefined) patch.adminNote = String(b.adminNote);
         if (b.shippedVersion !== undefined) patch.shippedVersion = String(b.shippedVersion);
         if (b.duplicateOf !== undefined) patch.duplicateOf = String(b.duplicateOf);

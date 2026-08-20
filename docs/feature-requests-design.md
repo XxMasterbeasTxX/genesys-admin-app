@@ -97,7 +97,7 @@ change, so ordering is done on read.
 | `createdAt`, `updatedAt` | ISO strings |
 | `status` | `new` → `triaged` → `awaiting-submitter` → `planned` → `in-progress` → `shipped` / `not-planned` / `duplicate` |  (rows written as `declined` before the rename are mapped forward on read)
 | `adminNote` | the **published** response — curated, superuser-written, the one line that may appear on a shared card (§6.3). Distinct from the thread (§3a). |
-| `shippedVersion` | e.g. `"3.8"` — links to that release-notes entry, subject to §6.4 |
+| `shippedVersion` | e.g. `"3.8"` — links to that release-notes entry, subject to §6.4. Chosen from a picker of releases that exist, and **required** when a request is set to `shipped`: a card that says Shipped with nowhere to read what shipped is a dead end for the person who asked. Free text let a typo produce no link at all, silently. |
 | `duplicateOf` | id of the surviving request |
 | `votes` | JSON array of Genesys user ids; the count is derived, never stored separately |
 | `voterEmails` | `{ userId: email }`, recorded at vote time so a status change can reach voters. **Never projected onto any card** — a voter on a promoted request may be in any org, so there is no org to look them up against at send time. |
