@@ -22,7 +22,7 @@
  *   POST /api/v2/integrations/actions             — create published action
  *   POST /api/v2/integrations/actions/drafts      — create action as draft
  */
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
@@ -175,19 +175,20 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
   let srcIntegrations = [];  // source integrations (to resolve names/types)
 
   // ── Helpers ──────────────────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = typeof msg === "function" ? msg() : msg;
-    $status.className = `dt-status${type ? ` dt-status--${type}` : ""}`;
-  }
+  const setStatus = makeStatus($status, "dt-status");
 
   function setProgress(pct) {
     $progress.hidden = false;
     $progressBar.style.width = `${pct}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
 
   function hideProgress() {
     $progress.hidden = true;
     $progressBar.style.width = "0%";
+    $progressBar.classList.remove("progress-bar--indeterminate");
   }
 
   /** Extract properties from a JSON schema, handling nested structures. */

@@ -9,7 +9,7 @@
  *   GET /api/ipranges?region=<aws-region-code>   (Genesys, client-credentials auth)
  *   GET /api/aws-ipranges                        (Amazon, anonymous, server-side cached)
  */
-import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
+import { escapeHtml, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import { getValidAccessToken } from "../../services/authService.js";
 import { orgContext } from "../../services/orgContext.js";
 import { createMultiSelect } from "../../components/multiSelect.js";
@@ -224,6 +224,7 @@ export default async function renderIpRanges() {
   });
   $services.append(servicesMs.el);
   const $status      = el.querySelector("#iprStatus");
+  const setStatus    = makeStatus($status, "ipr-status");
   const $results     = el.querySelector("#iprResults");
   const $summary     = el.querySelector("#iprSummary");
   const $actions     = el.querySelector("#iprActionsRow");
@@ -281,8 +282,7 @@ export default async function renderIpRanges() {
       } else {
         allEntries = [];
         $meta.textContent = "No data loaded.";
-        $status.textContent = "No customers configured — add a customer org to enable IP range lookups.";
-        $status.className = "ipr-status ipr-status--error";
+        setStatus("No customers configured — add a customer org to enable IP range lookups.", "error");
         $status.style.display = "block";
         servicesMs.setItems([]);
         $results.innerHTML = "";
@@ -310,8 +310,7 @@ export default async function renderIpRanges() {
 
   // ── Data fetch: Genesys ──────────────────────────────
   async function loadGenesys(region) {
-    $status.textContent = `Loading IP ranges for ${region}…`;
-    $status.className = "ipr-status";
+    setStatus(`Loading IP ranges for ${region}…`);
     $status.style.display = "block";
     $results.innerHTML = "";
     $summary.style.display = "none";
@@ -353,8 +352,7 @@ export default async function renderIpRanges() {
       render();
     } catch (err) {
       allEntries = [];
-      $status.textContent = `Failed to load IP ranges: ${err.message}`;
-      $status.className = "ipr-status ipr-status--error";
+      setStatus(`Failed to load IP ranges: ${err.message}`, "error");
       $status.style.display = "block";
       $meta.textContent = "No data loaded.";
     }
@@ -362,8 +360,7 @@ export default async function renderIpRanges() {
 
   // ── Data fetch: AWS ──────────────────────────────────
   async function loadAws({ force }) {
-    $status.textContent = "Loading AWS IP ranges…";
-    $status.className = "ipr-status";
+    setStatus("Loading AWS IP ranges…");
     $status.style.display = "block";
     $results.innerHTML = "";
     $summary.style.display = "none";
@@ -424,8 +421,7 @@ export default async function renderIpRanges() {
       render();
     } catch (err) {
       allEntries = [];
-      $status.textContent = `Failed to load AWS IP ranges: ${err.message}`;
-      $status.className = "ipr-status ipr-status--error";
+      setStatus(`Failed to load AWS IP ranges: ${err.message}`, "error");
       $status.style.display = "block";
       $meta.textContent = "No data loaded.";
     }
@@ -626,8 +622,7 @@ export default async function renderIpRanges() {
     try {
       exportXlsx([{ name: "IP Ranges", rows, columns }], filename);
     } catch (err) {
-      $status.textContent = `Export failed: ${err.message}`;
-      $status.className = "ipr-status ipr-status--error";
+      setStatus(`Export failed: ${err.message}`, "error");
       $status.style.display = "block";
     }
   }

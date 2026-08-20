@@ -13,7 +13,7 @@
  * Sheet name: "Roles"
  * Filename prefix: Roles_{OrgName}_
  */
-import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
@@ -155,14 +155,14 @@ export default function renderRolesSingleOrg({ route, me, api, orgContext }) {
   const $emailTo   = el.querySelector("#rsEmailTo");
   const $emailBody = el.querySelector("#rsEmailBody");
 
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
 
   function setProgress(pct) {
     $progWrap.style.display = "";
     $progBar.style.width = `${pct}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
 
   // ── Export ────────────────────────────────────────────

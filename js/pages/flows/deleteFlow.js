@@ -22,7 +22,7 @@
  * the review, the typed confirmation, the re-check before each delete, and the
  * Activity Log record. There is no rollback.
  */
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import {
   keyOf, hardBlockers, softBlockers, isDeletable, settleSelection, defaultSelection,
@@ -259,9 +259,6 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
 
   el.innerHTML = `
     <style>
-      @keyframes df-spin { to { transform: rotate(360deg); } }
-      .df-spin { display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.25);
-                 border-top-color:#fff;border-radius:50%;animation:df-spin .8s linear infinite; }
       .df-combo { position:relative; width:320px; }
       .df-menu { position:absolute;z-index:40;top:100%;left:0;right:0;margin-top:2px;max-height:300px;
                  overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:8px;display:none; }
@@ -376,9 +373,11 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     busy: false,
   };
 
+  // Every busy state here already says so outright, so the ellipsis inference
+  // is deliberately not used — `spinner` stays explicit and defaults to false.
+  const applyStatus = makeStatus($status, "dt-status");
   function setStatus(msg, type = "", spinner = false) {
-    $status.className = "dt-status" + (type ? ` dt-status--${type}` : "");
-    $status.innerHTML = (spinner ? `<span class="df-spin"></span> ` : "") + escapeHtml(msg);
+    applyStatus(msg, type, spinner);
   }
 
   // ── Graph rules ───────────────────────────────────────

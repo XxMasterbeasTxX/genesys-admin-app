@@ -17,7 +17,7 @@
  *   GET /api/v2/routing/languages        — list available language skills
  *   GET /api/v2/routing/queues           — list available queues
  */
-import { escapeHtml } from "../../../utils.js";
+import { escapeHtml, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect, createSingleSelect } from "../../../components/multiSelect.js";
 import {
@@ -85,10 +85,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext, acces
   let selectedRoles = [];  // [{ roleId, roleName, divisions: [{ divisionId, divisionName }] }]
 
   // ── Status helper ─────────────────────────────────────
-  function setStatus(msg, type) {
-    $status.textContent = msg;
-    $status.className = "st-status" + (type ? ` st-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "st-status");
 
   // ── Load Genesys data ─────────────────────────────────
   let genesysDataLoaded = false;

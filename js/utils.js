@@ -53,6 +53,159 @@ export function daysAgoStr(n) {
   return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 }
 
+// ── Busy state (throbbers) ──────────────────────────────────────────
+//
+// See docs/throbber-design.md. Every asynchronous operation must show a
+// running throbber next to the text describing it: a status line that has
+// stopped updating because the request is slow and one that stopped because
+// the request died look identical, and only motion tells them apart.
+
+/**
+ * Build a status line that carries a throbber.
+ *
+ * Returns the same `setStatus(msg, type)` the pages already call, so a page
+ * adopts this by deleting its local copy — no call site changes:
+ *
+ *   const setStatus = makeStatus($status, "te-status");
+ *
+ * A message containing `…` is taken to be a busy message and gets a throbber.
+ * That is not a guess: every one of the app's busy messages already ends its
+ * clause with an ellipsis, which is what the character means. Pass `busy`
+ * explicitly for the rare message that needs the opposite.
+ *
+ * The test is `includes`, not `endsWith`, because the longest-running
+ * operations append a counter after the ellipsis — `Resolving group role
+ * grants… 340 / 1200`.
+ *
+ * @param {HTMLElement} $el       The status element.
+ * @param {string}      [baseClass] Its class, e.g. "te-status". A `type`
+ *                                argument appends `${baseClass}--${type}` as
+ *                                before. Omit it for a status element that is
+ *                                styled inline and carries no class of its own;
+ *                                the element's `class` is then left untouched.
+ */
+export function makeStatus($el, baseClass) {
+  // Created once and only re-parented. Rewriting innerHTML on every call —
+  // which is what the hand-rolled versions did — destroys and recreates the
+  // element, restarting the animation from 0°. On a status line that updates
+  // per item the throbber then never advances past a few degrees and reads as
+  // frozen, which is the exact failure this is here to prevent.
+  const spin = document.createElement("span");
+  spin.className = "spin";
+  spin.setAttribute("aria-hidden", "true");   // redundant to a screen reader
+
+  // Twenty pages seed their opening message straight into the markup
+  // (`<div class="cs-status">Loading sites…</div>`). Taking it over blindly
+  // would wipe that message; it is instead replayed through the setter below,
+  // so a seeded "…" message gets its throbber from the first paint.
+  const seeded = ($el.textContent || "").trim();
+
+  const text = document.createTextNode("");
+  $el.replaceChildren(text);
+  $el.setAttribute("role", "status");         // implicit aria-live="polite"
+
+  function setStatus(msg, type = "", busy = null) {
+    const s = String(typeof msg === "function" ? msg() : (msg ?? ""));
+    // Three dots as well as the character: the app writes "…" everywhere bar
+    // one page, and a stray "..." must not silently lose its throbber.
+    const isBusy = busy === null ? (s.includes("…") || s.includes("...")) : !!busy;
+
+    text.nodeValue = isBusy ? ` ${s}` : s;
+
+    // parentNode, not isConnected: a page builds its DOM detached and the router
+    // attaches it afterwards, so isConnected is false for the whole of render
+    // and the throbber would never be taken down again.
+    const shown = spin.parentNode === $el;
+    if (isBusy && !shown) $el.insertBefore(spin, text);
+    else if (!isBusy && shown) spin.remove();
+
+    if (baseClass) $el.className = baseClass + (type ? ` ${baseClass}--${type}` : "");
+  }
+
+  if (seeded) setStatus(seeded);
+  return setStatus;
+}
+
+/**
+ * A centred throbber block for a panel, an outlet or a table that has nothing
+ * to show yet. Returns the element; the caller decides where it goes.
+ */
+export function spinPanel(message = "Loading…") {
+  const wrap = document.createElement("div");
+  wrap.className = "spin-panel";
+
+  const spin = document.createElement("div");
+  spin.className = "spin spin--block";
+  spin.setAttribute("aria-hidden", "true");
+
+  const p = document.createElement("p");
+  p.className = "muted";
+  p.textContent = message;
+
+  wrap.append(spin, p);
+  wrap.setAttribute("role", "status");
+  return wrap;
+}
+
+/**
+ * A throbber for a control that fills itself asynchronously — a `<select>` whose
+ * options arrive from Genesys, or a combobox input disabled until its list
+ * loads.
+ *
+ * The throbber goes on the control's **label**, not the control: a `<select>`
+ * cannot hold one, and wrapping it risks the grid the control sits in. The
+ * label is the nearest thing to the `Loading …` placeholder that can show
+ * motion, and it needs no layout change.
+ *
+ * @param {HTMLElement} $label The label (or any inline host) beside the control.
+ * @returns {(busy: boolean) => void}
+ */
+export function makeControlBusy($label) {
+  if (!$label) return () => {};
+  const spin = document.createElement("span");
+  spin.className = "spin spin--sm spin--label";
+  spin.setAttribute("aria-hidden", "true");
+  return function setControlBusy(busy) {
+    const shown = spin.parentNode === $label;
+    if (busy && !shown) $label.append(spin);
+    else if (!busy && shown) spin.remove();
+  };
+}
+
+/**
+ * Run `fn` with a throbber inside `$btn`, disabled for the duration.
+ *
+ * For an action whose feedback would otherwise land in a page-level status
+ * line somewhere else on the screen — a row's delete, a modal's save, a vote.
+ * The throbber belongs where the click was.
+ *
+ * The button is always restored, including when `fn` throws, so a failure
+ * cannot leave a throbber spinning for ever. The caller still handles the
+ * error; this only owns the button.
+ */
+export async function withBusy($btn, fn) {
+  if (!$btn) return fn();
+  if ($btn.dataset.busy === "1") return;       // ignore a double click
+
+  const spin = document.createElement("span");
+  spin.className = "spin spin--btn";
+  spin.setAttribute("aria-hidden", "true");
+
+  $btn.dataset.busy = "1";
+  $btn.disabled = true;
+  $btn.setAttribute("aria-busy", "true");
+  $btn.prepend(spin);
+
+  try {
+    return await fn();
+  } finally {
+    spin.remove();
+    $btn.disabled = false;
+    $btn.removeAttribute("aria-busy");
+    delete $btn.dataset.busy;
+  }
+}
+
 // ── Async ───────────────────────────────────────────────────────────
 
 /** Promise-based delay. */

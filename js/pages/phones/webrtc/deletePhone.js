@@ -43,7 +43,7 @@
  * the page is for is worse than no filter. Site is the one that still means
  * something, because it describes the phone rather than a person.
  */
-import { escapeHtml, sleep, timestampedFilename, exportLogXlsx } from "../../../utils.js";
+import { escapeHtml, sleep, timestampedFilename, exportLogXlsx, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { resolvePhoneHolders, phoneHolder } from "../../../lib/phoneHolders.js";
@@ -305,17 +305,18 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
   const $download     = $("#wdDownload");
   const $downloadBtn  = $("#wdDownloadBtn");
 
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "wc-status" + (type ? ` wc-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "wc-status");
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width = `${Math.min(pct, 100)}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
   function hideProgress() {
     $progressWrap.style.display = "none";
     $progressBar.style.width = "0%";
+    $progressBar.classList.remove("progress-bar--indeterminate");
   }
   function setBusy(busy) {
     state.running = busy;

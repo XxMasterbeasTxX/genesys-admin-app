@@ -19,7 +19,7 @@
  *   DELETE /api/v2/routing/users/{id}/directroutingbackup/settings — remove backup
  *   GET    /api/v2/routing/queues                                  — queue list (backup picker)
  */
-import { escapeHtml, sleep } from "../../../utils.js";
+import { escapeHtml, sleep, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { logAction } from "../../../services/activityLogService.js";
@@ -168,17 +168,18 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   // ── Helpers ─────────────────────────────────────────
   const orgId = orgContext.get();
 
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "cs-status" + (type ? ` cs-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "cs-status");
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width = `${Math.min(pct, 100)}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
   function hideProgress() {
     $progressWrap.style.display = "none";
     $progressBar.style.width = "0%";
+    $progressBar.classList.remove("progress-bar--indeterminate");
   }
   function setRunning(running) {
     isRunning = running;
@@ -575,6 +576,12 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       select.innerHTML = `<option value="">Loading queues…</option>`;
       container.append(select);
 
+      // No label on this row, so the throbber sits beside the select itself.
+      const spin = document.createElement("span");
+      spin.className = "spin spin--sm spin--label";
+      spin.setAttribute("aria-hidden", "true");
+      container.append(spin);
+
       loadQueues().then(queues => {
         select.innerHTML = `<option value="">— Select a queue —</option>` +
           queues.map(q =>
@@ -582,7 +589,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
           ).join("");
       }).catch(() => {
         select.innerHTML = `<option value="">Failed to load queues</option>`;
-      });
+      }).finally(() => spin.remove());
     }
   }
 

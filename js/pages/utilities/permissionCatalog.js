@@ -11,7 +11,7 @@
  *   { entityName: [ { action, label, ... }, ... ] }
  * which we flatten to one row per `domain:entity:action`.
  */
-import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
+import { escapeHtml, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import { orgContext } from "../../services/orgContext.js";
 
 // ── Fetch & flatten the permission catalog ────────────────────────────
@@ -128,9 +128,9 @@ export default async function renderPermissionCatalog(ctx = {}) {
   let sortKey = "permission";
   let sortDir = "asc";
 
+  const applyStatus = makeStatus($status, "pc-status");
   function setStatus(msg, kind) {
-    $status.textContent = msg;
-    $status.className = "pc-status" + (kind === "error" ? " pc-status--error" : "");
+    applyStatus(msg, kind === "error" ? "error" : "");
     $status.style.display = msg ? "block" : "none";
   }
 

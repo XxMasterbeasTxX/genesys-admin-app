@@ -14,7 +14,7 @@
  *   History. View previously submitted GDPR requests for the org
  */
 import * as gc from "../../services/genesysApi.js";
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus } from "../../utils.js";
 import { logAction } from "../../services/activityLogService.js";
 
 // ── Request type definitions ──────────────────────────────────────────
@@ -184,9 +184,11 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
   let isRunning     = false;
 
   // ── Utility ────────────────────────────────────────────────────────
+  // This page defaults the level to "info" rather than to no modifier at all;
+  // te-status--info is unstyled today, so the wrapper only keeps that intent.
+  const applyStatus = makeStatus($status, "te-status");
   function setStatus(msg, level = "info") {
-    $status.textContent = msg;
-    $status.className = `te-status te-status--${level}`;
+    applyStatus(msg, level);
   }
   function setProgress(pct) { $progressBar.style.width = `${pct}%`; }
   function showProgress() { $progressWrap.hidden = false; }

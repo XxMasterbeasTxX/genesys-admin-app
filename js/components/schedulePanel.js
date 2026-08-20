@@ -12,7 +12,7 @@
  *
  * Also exports helpers used by the Scheduled Exports overview page.
  */
-import { escapeHtml } from "../utils.js";
+import { escapeHtml, makeStatus } from "../utils.js";
 import {
   fetchSchedules,
   createSchedule,
@@ -273,7 +273,7 @@ export function buildScheduleForm(opts) {
   async function loadDynamicFields(orgId, existingValues = {}) {
     if (!dynamicOrgFields || !orgId || !$dofSlot) return;
     $dofSlot.style.display = "";
-    $dofSlot.innerHTML = `<span class="sp-form-hint">Loading options…</span>`;
+    $dofSlot.innerHTML = `<span class="sp-form-hint"><span class="spin spin--sm" aria-hidden="true"></span> Loading options…</span>`;
     dynamicLoading = true;
     dynamicLoaded = false;
     try {
@@ -345,10 +345,7 @@ export function buildScheduleForm(opts) {
 
   // ── Status helper ─────────────────────────────────────
   const $status = form.querySelector("#spFormStatus");
-  function setFormStatus(msg, type) {
-    $status.textContent = msg;
-    $status.className = "sp-form-status" + (type ? ` sp-form-status--${type}` : "");
-  }
+  const setFormStatus = makeStatus($status, "sp-form-status");
 
   // ── Collect form data ─────────────────────────────────
   function getFormData() {
@@ -499,7 +496,7 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
     </div>
     <div class="sp-status" id="spStatus"></div>
     <div class="sp-body" id="spBody">
-      <p class="sp-empty">Loading schedules…</p>
+      <div class="spin-panel"><div class="spin spin--block" aria-hidden="true"></div><p class="muted">Loading schedules…</p></div>
     </div>
     <div class="sp-form-container" id="spFormContainer"></div>
   `;
@@ -510,10 +507,7 @@ export function createSchedulePanel({ exportType, exportLabel, me, requiresOrg, 
 
   let schedules = [];
 
-  function setStatus(msg, type) {
-    $status.textContent = msg;
-    $status.className = "sp-status" + (type ? ` sp-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "sp-status");
 
   // ── Render schedule list ──────────────────────────────
   function renderList() {

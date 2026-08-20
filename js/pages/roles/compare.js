@@ -25,7 +25,7 @@
  * Column alignment: every domain table uses table-layout:fixed with an
  * identical <colgroup> so columns line up across all domain groups.
  */
-import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
+import { escapeHtml, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import { createMultiSelect } from "../../components/multiSelect.js";
 import { fetchAllAuthorizationRoles } from "../../services/genesysApi.js";
 import {
@@ -418,10 +418,7 @@ export default function renderRolesCompare({ me, api, orgContext }) {
   const $hourlyProgressFill   = el.querySelector("#rcHourlyProgressFill");
   const $hourlyProgressDetail = el.querySelector("#rcHourlyProgressDetail");
 
-  function setStatus(msg, cls = "") {
-    $status.textContent = msg;
-    $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
 
   function resetResults() {
     comparedCols    = [];

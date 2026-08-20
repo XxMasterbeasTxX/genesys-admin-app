@@ -27,7 +27,7 @@
  *
  * No scheduled / no server variant (Python has none; comparison is interactive).
  */
-import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import {
   fetchBillingOverview,
   fetchBillingPeriods,
@@ -363,17 +363,18 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
     $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
 
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
   function setProgress(pct) {
     $progWrap.style.display = "";
     $progBar.style.width = `${pct}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
   function resetProgress() {
     $progWrap.style.display = "none";
     $progBar.style.width = "0%";
+    $progBar.classList.remove("progress-bar--indeterminate");
   }
 
   function updateRunButton() {
@@ -434,7 +435,7 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
     }
 
     $box.style.display = "";
-    $list.innerHTML = `<em>Loading billing periods…</em>`;
+    $list.innerHTML = `<em><span class="spin spin--sm" aria-hidden="true"></span> Loading billing periods…</em>`;
     $reload.disabled = true;
     $runBtn.disabled = true;
     setStatus(`Loading billing periods for ${org.name}…`);

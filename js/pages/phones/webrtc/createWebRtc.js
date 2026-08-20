@@ -29,7 +29,7 @@
  *   GET  /api/v2/license/users
  *   POST /api/v2/telephony/providers/edges/phones
  */
-import { escapeHtml, sleep, timestampedFilename, exportLogXlsx } from "../../../utils.js";
+import { escapeHtml, sleep, timestampedFilename, exportLogXlsx, makeStatus, makeControlBusy } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { resolvePhoneHolders } from "../../../lib/phoneHolders.js";
@@ -286,11 +286,11 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
     <!-- Filters: narrow which users are considered. Both optional. -->
     <div class="wc-controls">
       <div class="wc-control-group">
-        <label class="wc-label">Groups</label>
+        <label class="wc-label" id="wcGroupsLabel">Groups</label>
         <div id="wcGroupSlot"></div>
       </div>
       <div class="wc-control-group">
-        <label class="wc-label">Division</label>
+        <label class="wc-label" id="wcDivLabel">Division</label>
         <div id="wcDivisionSlot"></div>
       </div>
     </div>
@@ -298,7 +298,7 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
     <!-- Site selector -->
     <div class="wc-controls">
       <div class="wc-control-group">
-        <label class="wc-label" for="wcSite">Destination Site</label>
+        <label class="wc-label" for="wcSite" id="wcSiteLabel">Destination Site</label>
         <select class="input wc-site-select" id="wcSite" disabled>
           <option value="">Loading sites…</option>
         </select>
@@ -352,6 +352,9 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
   // ── DOM refs ────────────────────────────────────────
   const $ = (sel) => el.querySelector(sel);
   const $site         = $("#wcSite");
+  const bootBusy      = ["#wcSiteLabel", "#wcGroupsLabel", "#wcDivLabel"]
+    .map((sel) => makeControlBusy($(sel)));
+  const setBootBusy   = (b) => bootBusy.forEach((f) => f(b));
   const $analyseBtn   = $("#wcAnalyseBtn");
   const $runBtn       = $("#wcRunBtn");
   const $cancelBtn    = $("#wcCancelBtn");
@@ -364,17 +367,18 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
   const $downloadBtn  = $("#wcDownloadBtn");
 
   // ── Helpers ─────────────────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "wc-status" + (type ? ` wc-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "wc-status");
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width = `${Math.min(pct, 100)}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
   function hideProgress() {
     $progressWrap.style.display = "none";
     $progressBar.style.width = "0%";
+    $progressBar.classList.remove("progress-bar--indeterminate");
   }
   function setBusy(busy) {
     state.running = busy;
@@ -969,11 +973,13 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
     // Sites gate the page; the filters do not. A failure to load groups or
     // divisions leaves those pickers empty and the page still usable, rather
     // than blocking a create over an optional filter.
+    setBootBusy(true);
     const [sitesRes, groupsRes, divisionsRes] = await Promise.allSettled([
       gc.fetchAllSites(api, orgContext.get()),
       gc.fetchAllGroups(api, orgContext.get()),
       gc.fetchAllDivisions(api, orgContext.get()),
     ]);
+    setBootBusy(false);
 
     if (sitesRes.status === "rejected") {
       setStatus(`Failed to load sites: ${sitesRes.reason?.message || sitesRes.reason}`, "error");

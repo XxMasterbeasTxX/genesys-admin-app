@@ -272,6 +272,70 @@ body {
 .btn--danger:hover { background: rgba(239, 68, 68, 0.25); }
 .btn-sm { font-size: 12px; padding: 4px 8px; }
 
+/* ── Throbber ─────────────────────────────────────────────
+   The shared busy indicator. See docs/throbber-design.md.
+
+   Its job is to be the one thing on the page whose motion proves the work is
+   still running — a status line and a progress bar both stand still while a
+   slow request is outstanding, and a stalled one looks identical to a dead
+   one. Geometry and colour come from custom properties so the variants below
+   are the only places that need to know a size.
+   ──────────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.spin {
+  display: inline-block;
+  flex: none;
+  width:  var(--spin-size, 14px);
+  height: var(--spin-size, 14px);
+  border: var(--spin-weight, 2px) solid var(--border);
+  border-top-color: var(--spin-color, var(--text));
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: -2px;
+}
+
+.spin--sm    { --spin-size: 11px; }
+/* Sits at the end of a control's label while the control fills itself. */
+.spin--label { margin-left: 6px; vertical-align: -1px; }
+.spin--block { --spin-size: 36px; --spin-weight: 3px;
+               --spin-color: var(--accent, #3b82f6); }
+/* currentColor so one variant works on both the accent-filled primary buttons
+   and the plain secondary ones. */
+.spin--btn   { --spin-size: 12px; --spin-color: currentColor; margin-right: 6px; }
+
+/* Centred block for a panel or table that has nothing to show yet. */
+.spin-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 0;
+}
+.spin-panel[hidden] { display: none; }
+
+/* A bar that cannot honestly report a percentage yet. Pair it with a throbber
+   rather than using it alone — a travelling highlight reads as "working", but
+   it says nothing about how much is left. */
+@keyframes spin-bar-travel {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(400%); }
+}
+.progress-bar--indeterminate {
+  width: 25% !important;
+  transition: none !important;
+  animation: spin-bar-travel 1.4s ease-in-out infinite;
+}
+
+/* A user who asked for less motion still needs to know the app is alive, so
+   the rotation is softened to a pulse rather than dropped. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes spin-pulse { 50% { opacity: 0.25; } }
+  .spin { animation: spin-pulse 1.4s ease-in-out infinite; }
+  .progress-bar--indeterminate { animation: spin-pulse 1.4s ease-in-out infinite; }
+}
+
 /* ── Tables (generic) ─────────────────────────────────── */
 .data-table {
   width: 100%;
@@ -2610,6 +2674,10 @@ body {
 .cu-status--success { color: #34d399; }
 .cu-status--error   { color: #f87171; }
 
+/* Aliases of the shared .spin-panel / .spin--block primitive. Four pages carry
+   this markup already; keeping the names means they need no edit, and the
+   throbber they show is now the same one as everywhere else — including the
+   reduced-motion handling their own @keyframes never had. */
 .cu-loading {
   display: flex;
   flex-direction: column;
@@ -2620,15 +2688,17 @@ body {
 }
 .cu-loading[hidden] { display: none; }
 .cu-loading-spinner {
-  width: 36px;
+  display: inline-block;
+  flex: none;
+  width:  36px;
   height: 36px;
   border: 3px solid var(--border);
   border-top-color: var(--accent, #3b82f6);
   border-radius: 50%;
-  animation: cu-spin 0.7s linear infinite;
+  animation: spin 0.8s linear infinite;
 }
-@keyframes cu-spin {
-  to { transform: rotate(360deg); }
+@media (prefers-reduced-motion: reduce) {
+  .cu-loading-spinner { animation: spin-pulse 1.4s ease-in-out infinite; }
 }
 
 .cu-layout {

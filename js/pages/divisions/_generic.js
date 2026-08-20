@@ -27,7 +27,7 @@
  * }} cfg
  */
 import * as gc from "../../services/genesysApi.js";
-import { escapeHtml, sleep } from "../../utils.js";
+import { escapeHtml, sleep, makeStatus } from "../../utils.js";
 import { logAction } from "../../services/activityLogService.js";
 
 export default function renderDivisionPage(ctx, cfg) {
@@ -177,19 +177,20 @@ export default function renderDivisionPage(ctx, cfg) {
     $toggleBtn.querySelector(".dv-toggle-icon").textContent = expanded ? "▼" : "►";
   }
 
-  function setStatus(msg, type = "") {
-    $statusMsg.textContent = msg;
-    $statusMsg.className = "di-status" + (type ? ` di-status--${type}` : "");
-  }
+  const setStatus = makeStatus($statusMsg, "di-status");
 
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width = `${Math.min(pct, 100)}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
 
   function hideProgress() {
     $progressWrap.style.display = "none";
     $progressBar.style.width = "0%";
+    $progressBar.classList.remove("progress-bar--indeterminate");
   }
 
   function divName(item) {

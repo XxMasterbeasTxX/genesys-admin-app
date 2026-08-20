@@ -7,7 +7,7 @@
  * items are removed first, then the source user's items are applied
  * — producing an identical copy for that category only.
  */
-import { escapeHtml } from "../../../utils.js";
+import { escapeHtml, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 
 export default function renderCopyFromUser({ route, me, api, orgContext }) {
@@ -126,14 +126,14 @@ export default function renderCopyFromUser({ route, me, api, orgContext }) {
   let cancelled   = false;
 
   // ── Helpers ───────────────────────────────────────────
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className = "cfu-status" + (cls ? ` cfu-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "cfu-status");
 
   function setProgress(pct) {
     $progWrap.hidden = false;
     $progBar.style.width = `${pct}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
 
   async function searchUsers(term) {
@@ -198,7 +198,7 @@ export default function renderCopyFromUser({ route, me, api, orgContext }) {
     sourceUser = user;
     sourceData = null;
     $srcCard.hidden = false;
-    $srcCard.innerHTML = `<div class="cfu-card-loading"><strong>${escapeHtml(user.name)}</strong> <span class="muted">${escapeHtml(user.email)}</span><br><span class="muted">Loading roles, skills, languages, queues…</span></div>`;
+    $srcCard.innerHTML = `<div class="cfu-card-loading"><strong>${escapeHtml(user.name)}</strong> <span class="muted">${escapeHtml(user.email)}</span><br><span class="muted"><span class="spin spin--sm" aria-hidden="true"></span> Loading roles, skills, languages, queues…</span></div>`;
     $step2.hidden = true;
     $step3.hidden = true;
     $preview.hidden = true;

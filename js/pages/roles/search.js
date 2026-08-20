@@ -24,7 +24,7 @@
  *  5. Action-filter checkboxes can narrow the visible rows client-side after
  *     results have loaded.
  */
-import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
+import { escapeHtml, exportXlsx, timestampedFilename, makeStatus, makeControlBusy } from "../../utils.js";
 import { fetchAllAuthorizationRoles, fetchAllUsers } from "../../services/genesysApi.js";
 
 // ── Permission catalog ────────────────────────────────────────────────────────
@@ -192,7 +192,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     <div id="rsSearchSection">
     <div class="rs-controls" id="rsControls">
       <div class="rs-control-group">
-        <span class="rs-label">Domain</span>
+        <span class="rs-label" id="rsDomainLabel">Domain</span>
         <div class="rs-combo">
           <input class="rs-combo-input" id="rsDomainInput" placeholder="Loading…" autocomplete="off" disabled>
           <div class="rs-combo-list" id="rsDomainList"></div>
@@ -250,10 +250,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
   let selectedEntity = "";
 
   // ── Status helper ─────────────────────────────────────────
-  function setStatus(msg, cls = "") {
-    $status.textContent = msg;
-    $status.className = "rs-status" + (cls ? ` rs-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "rs-status");
 
   function showProgress(fetched, total) {
     $progressWrap.style.display = "";
@@ -362,16 +359,21 @@ export default function renderRolesSearch({ me, api, orgContext }) {
   });
 
   // ── Catalog loading ───────────────────────────────────────
+  const domainBusy = makeControlBusy(el.querySelector("#rsDomainLabel"));
+
   async function loadCatalog() {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
     setStatus("Loading permission catalog…");
+    domainBusy(true);
     try {
       catalog = await fetchPermissionCatalog(api, org.id);
       domainCombo.setItems(Object.keys(catalog).sort());
       setStatus("");
     } catch (err) {
       setStatus(`Failed to load catalog: ${err.message}`, "error");
+    } finally {
+      domainBusy(false);
     }
   }
 

@@ -21,8 +21,7 @@
  *   POST /api/v2/analytics/conversations/details/query  — synchronous search
  *   GET  /api/v2/conversations/{id}                     — real-time participant data
  */
-import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr,
-         exportXlsx, timestampedFilename } from "../../utils.js";
+import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 
@@ -310,17 +309,18 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   ssDivision.setEnabled(false);
 
   // ── Status / progress helpers ─────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "is-status" + (type ? ` is-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "is-status");
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width = `${Math.min(pct, 100)}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
   function hideProgress() {
     $progressWrap.style.display = "none";
     $progressBar.style.width = "0%";
+    $progressBar.classList.remove("progress-bar--indeterminate");
   }
   function copyFallback(text) {
     const ta = document.createElement("textarea");
@@ -355,7 +355,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
         if (!cached) {
           html += `<tr class="is-expand-row" data-expand-idx="${i}">
             <td colspan="${COLUMNS.length}">
-              <div class="is-expand-panel"><span style="opacity:0.5;font-size:12px">Loading…</span></div>
+              <div class="is-expand-panel"><span style="opacity:0.5;font-size:12px"><span class="spin spin--sm" aria-hidden="true"></span> Loading…</span></div>
             </td></tr>`;
         } else {
           const filters = [...pdFilters];

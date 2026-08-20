@@ -14,7 +14,7 @@
  *      Returns pre-computed counts grouped by dimension — fast at any scale.
  */
 
-import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { STYLE_HEADER, STYLE_ROW_EVEN, STYLE_ROW_ODD } from "../../../utils/excelStyles.js";
@@ -272,19 +272,23 @@ export default function renderTotals({ route, me, api, orgContext }) {
   const currentOrg = () => orgContext?.getDetails?.() || null;
 
   // ── Helpers ─────────────────────────────────────────
+  const applyStatus = makeStatus($status, "cs-status");
   function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "cs-status" + (type ? ` cs-status--${type}` : "");
+    applyStatus(msg, type);
     $status.style.display = "";
   }
   function hideStatus() { $status.style.display = "none"; }
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width = `${Math.min(pct, 100)}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
   function hideProgress() {
     $progressWrap.style.display = "none";
     $progressBar.style.width = "0%";
+    $progressBar.classList.remove("progress-bar--indeterminate");
   }
 
   /** Apply preset dates. */

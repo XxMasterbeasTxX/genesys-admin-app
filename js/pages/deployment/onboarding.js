@@ -12,7 +12,7 @@
  * POST /api/onboarding-deploy and polled via GET /api/onboarding-deploy?jobId=…
  * (see docs/onboarding-deployment-design.md).
  */
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 
 // Architect flow types the operator can pick as roots (dependencies are resolved
@@ -120,8 +120,6 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
 
   el.innerHTML = `
     <style>
-      @keyframes ob-spin { to { transform: rotate(360deg); } }
-      .ob-spin { animation: ob-spin .8s linear infinite; }
     </style>
     <h2>Deployment — Onboarding</h2>
     <p class="page-desc">
@@ -179,7 +177,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       </div>
 
       <div class="dt-control-group">
-        <label class="dt-label">Target Division</label>
+        <label class="dt-label" id="obDivisionLabel">Target Division</label>
         <div style="display:flex;align-items:center;gap:10px">
           <select class="dt-select" id="obDivision" disabled>
             <option value="">Select target org first…</option>
@@ -233,6 +231,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   const $otherOrgs = el.querySelector("#obOtherOrgs");
   const $destOrg  = el.querySelector("#obDestOrg");
   const $division = el.querySelector("#obDivision");
+  const divisionBusy = makeControlBusy(el.querySelector("#obDivisionLabel"));
   const $newDivBtn = el.querySelector("#obNewDivBtn");
   const $loadBtn  = el.querySelector("#obLoadBtn");
   const $flowsWrap = el.querySelector("#obFlowsWrap");
@@ -254,10 +253,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   const selected = new Set();     // selected flow ids
 
   // ── Helpers ───────────────────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "dt-status" + (type ? ` dt-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "dt-status");
 
   function orgName(id) {
     const c = customers.find(c => c.id === id);
@@ -328,6 +324,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   async function loadDivisions(orgId) {
     $division.disabled = true;
     $division.innerHTML = `<option value="">Loading divisions…</option>`;
+    divisionBusy(true);
     try {
       const divisions = await gc.fetchAllDivisions(api, orgId);
       const opts = (divisions || [])
@@ -339,6 +336,8 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     } catch (err) {
       $division.innerHTML = `<option value="">Failed to load divisions</option>`;
       setStatus(`Could not load divisions: ${err.message}`, "error");
+    } finally {
+      divisionBusy(false);
     }
   }
 
@@ -686,7 +685,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       const dim = (st === "skipped" || st === "pending") ? "opacity:.5;" : "";
       const bd = st === "running" ? "border-color:var(--accent,#60a5fa);" : "";
       const icon = st === "running"
-        ? `<span class="ob-spin" style="width:11px;height:11px;border:2px solid var(--accent,#60a5fa);border-top-color:transparent;border-radius:50%;display:inline-block"></span>`
+        ? `<span class="spin" style="--spin-size:11px;--spin-color:var(--accent,#60a5fa)"></span>`
         : `<span style="color:${color[st]};font-weight:700">${glyph[st]}</span>`;
       return `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border:1px solid var(--border);border-radius:999px;font-size:.8rem;${bd}${dim}">${icon}<span>${escapeHtml(ph.short)}</span></span>`;
     }).join("");

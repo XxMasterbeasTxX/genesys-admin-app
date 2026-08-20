@@ -20,7 +20,7 @@
  * Read-only: nothing is written to Genesys.
  */
 
-import { escapeHtml, exportXlsx } from "../../utils.js";
+import { escapeHtml, exportXlsx, makeStatus } from "../../utils.js";
 import {
   FLOW_TYPE_LABELS,
   flowTypeOrder,
@@ -71,10 +71,6 @@ export default function renderTestCases({ route, me, api, orgContext }) {
         .tc-page { --tc-high:#15803d; --tc-med:#b45309; --tc-hover:rgba(0,0,0,.05); }
       }
 
-      @keyframes tc-spin { to { transform: rotate(360deg); } }
-      .tc-spin { display:inline-block; width:14px; height:14px; border:2px solid var(--border);
-                 border-top-color:var(--text); border-radius:50%; animation:tc-spin .8s linear infinite;
-                 vertical-align:-2px; }
       .tc-wip { display:inline-block; margin-left:10px; padding:2px 9px; border-radius:999px;
                 font-size:11.5px; font-weight:600; letter-spacing:.02em; vertical-align:middle;
                 color:var(--tc-med); border:1px solid var(--tc-med); background:rgba(251,191,36,.10); }
@@ -296,8 +292,11 @@ export default function renderTestCases({ route, me, api, orgContext }) {
     if (flowMenu.classList.contains("open")) { comboActive = -1; renderMenu(); }
   });
 
+  // This page states `busy` outright rather than leaving it to the ellipsis, so
+  // it keeps its own (busy, msg) order and maps onto the shared helper.
+  const applyStatus = makeStatus(statusEl);
   function setStatus(busy, msg) {
-    statusEl.innerHTML = busy ? `<span class="tc-spin"></span> ${escapeHtml(msg || "")}` : escapeHtml(msg || "");
+    applyStatus(msg || "", "", busy);
   }
 
   // ── Load + generate ─────────────────────────────────────────────────────────

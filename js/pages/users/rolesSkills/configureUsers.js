@@ -10,7 +10,7 @@
  *          In Add mode — adds items. In Remove mode — removes items.
  *          Removing a template cascade-removes all its properties with confirmation.
  */
-import { escapeHtml } from "../../../utils.js";
+import { escapeHtml, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { createSingleSelect } from "../../../components/multiSelect.js";
@@ -217,10 +217,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext, acces
   });
 
   // ── Status helper ─────────────────────────────────────
-  function setStatus(msg, type) {
-    $status.textContent = msg;
-    $status.className = "cu-status" + (type ? ` cu-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "cu-status");
 
   // ── Genesys data loading ──────────────────────────────
   let genesysDataLoaded = false;

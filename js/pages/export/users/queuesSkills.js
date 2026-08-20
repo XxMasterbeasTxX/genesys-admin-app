@@ -8,7 +8,7 @@
  * - Preview + Excel with columns: Name, Queue, Skill, Language Skill
  * - One row per user assignment combination (blank values when a dimension has no assignments)
  */
-import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { sendEmail } from "../../../services/emailService.js";
@@ -359,14 +359,14 @@ export default function renderQueuesSkillsExport({ route, me, api, orgContext })
   el.querySelector("#qsSkillFilter").append(skillFilter.el);
   el.querySelector("#qsLanguageFilter").append(languageFilter.el);
 
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
 
   function setProgress(pct) {
     $progWrap.style.display = "";
     $progBar.style.width = `${pct}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
 
   function getSelection() {

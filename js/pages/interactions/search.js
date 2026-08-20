@@ -17,8 +17,7 @@
  *   GET  /api/v2/analytics/conversations/details/jobs/{id}     — poll job status
  *   GET  /api/v2/analytics/conversations/details/jobs/{id}/results — fetch results
  */
-import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr,
-         exportXlsx, timestampedFilename } from "../../utils.js";
+import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 
@@ -462,17 +461,18 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   });
 
   // ── Status / progress helpers ───────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "is-status" + (type ? ` is-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "is-status");
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width = `${Math.min(pct, 100)}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
   function hideProgress() {
     $progressWrap.style.display = "none";
     $progressBar.style.width = "0%";
+    $progressBar.classList.remove("progress-bar--indeterminate");
   }
 
   // ── Clipboard fallback (works in iframes / no clipboard-write permission) ──

@@ -21,10 +21,7 @@
  *   GET  /api/v2/speechandtextanalytics/conversations/{id}/communications/{commId}/transcripturl
  *   GET  {s3PreSignedUrl}                                    — fetch transcript JSON
  */
-import {
-  escapeHtml, formatDateTime, buildInterval, todayStr,
-  exportXlsx, timestampedFilename, sleep,
-} from "../../../utils.js";
+import { escapeHtml, formatDateTime, buildInterval, todayStr, exportXlsx, timestampedFilename, sleep, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createSingleSelect } from "../../../components/multiSelect.js";
 
@@ -463,17 +460,18 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
   ]);
 
   // ── Status / progress ────────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "is-status" + (type ? ` is-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "is-status");
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width = `${Math.min(pct, 100)}%`;
+    // 0 % means "started, nothing measurable yet" — an empty bar reads as
+    // stalled, so it travels instead until a real figure arrives.
+    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
   function hideProgress() {
     $progressWrap.style.display = "none";
     $progressBar.style.width = "0%";
+    $progressBar.classList.remove("progress-bar--indeterminate");
   }
 
   // ── Stacked bar chart ─────────────────────────────────
@@ -618,7 +616,7 @@ export default function renderTranscriptSearch({ route, me, api, orgContext }) {
     }
 
     // Fetch content on demand
-    $detailContent.innerHTML = `<span class="ts-expand-none">Loading transcript…</span>`;
+    $detailContent.innerHTML = `<span class="ts-expand-none"><span class="spin spin--sm" aria-hidden="true"></span> Loading transcript…</span>`;
     fetchTranscriptContent(idx)
       .then(() => {
         if (expandedIdx === idx) {
