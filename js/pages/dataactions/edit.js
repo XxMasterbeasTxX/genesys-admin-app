@@ -23,7 +23,7 @@
  *   POST  /api/v2/integrations/actions/{id}/test              — test published action
  *   POST  /api/v2/integrations/actions/{id}/draft/test        — test draft action
  */
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 
@@ -283,10 +283,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   let hasDraft = false;       // whether selected action has a draft
 
   // ── Helpers ───────────────────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = typeof msg === "function" ? msg() : msg;
-    $status.className = `dt-status${type ? ` dt-status--${type}` : ""}`;
-  }
+  const setStatus = makeStatus($status, "dt-status");
 
   function setProgress(pct) {
     $progress.hidden = false;

@@ -23,7 +23,7 @@
  *   GET /api/v2/groups, /api/v2/groups/{id}/members        — group filter
  *   GET /api/v2/authorization/divisions, /api/v2/users     — division filter
  */
-import { escapeHtml, sleep, timestampedFilename, exportLogXlsx } from "../../../utils.js";
+import { escapeHtml, sleep, timestampedFilename, exportLogXlsx, makeStatus, makeControlBusy } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { resolvePhoneHolders } from "../../../lib/phoneHolders.js";
@@ -151,11 +151,11 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
     <!-- Filters: narrow which phones are offered. Both optional. -->
     <div class="cs-controls">
       <div class="cs-control-group">
-        <label class="cs-label">Groups</label>
+        <label class="cs-label" id="csGroupsLabel">Groups</label>
         <div id="csGroupSlot"></div>
       </div>
       <div class="cs-control-group">
-        <label class="cs-label">Division</label>
+        <label class="cs-label" id="csDivLabel">Division</label>
         <div id="csDivisionSlot"></div>
       </div>
     </div>
@@ -163,13 +163,13 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
     <!-- Site selectors -->
     <div class="cs-controls">
       <div class="cs-control-group">
-        <label class="cs-label" for="csFromSite">From Site</label>
+        <label class="cs-label" for="csFromSite" id="csFromLabel">From Site</label>
         <select class="input cs-site-select" id="csFromSite" disabled>
           <option value="">Loading sites…</option>
         </select>
       </div>
       <div class="cs-control-group">
-        <label class="cs-label" for="csToSite">To Site</label>
+        <label class="cs-label" for="csToSite" id="csToLabel">To Site</label>
         <select class="input cs-site-select" id="csToSite" disabled>
           <option value="">Loading sites…</option>
         </select>
@@ -220,6 +220,9 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
   const $ = (sel) => el.querySelector(sel);
   const $fromSite     = $("#csFromSite");
   const $toSite       = $("#csToSite");
+  const bootBusy      = ["#csFromLabel", "#csToLabel", "#csGroupsLabel", "#csDivLabel"]
+    .map((sel) => makeControlBusy($(sel)));
+  const setBootBusy   = (b) => bootBusy.forEach((f) => f(b));
   const $loadBtn      = $("#csLoadBtn");
   const $phoneWrap    = $("#csPhoneWrap");
   const $moveWrap     = $("#csMoveWrap");
@@ -233,10 +236,7 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
   const $downloadBtn  = $("#csDownloadBtn");
 
   // ── Helpers ─────────────────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "cs-status" + (type ? ` cs-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "cs-status");
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width = `${Math.min(pct, 100)}%`;
@@ -618,11 +618,13 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
   (async () => {
     // Sites gate the page; the filters do not. A failure to load groups or
     // divisions leaves those pickers disabled and the page still usable.
+    setBootBusy(true);
     const [sitesRes, groupsRes, divisionsRes] = await Promise.allSettled([
       gc.fetchAllSites(api, orgContext.get()),
       gc.fetchAllGroups(api, orgContext.get()),
       gc.fetchAllDivisions(api, orgContext.get()),
     ]);
+    setBootBusy(false);
 
     if (sitesRes.status === "rejected") {
       setStatus(`Failed to load sites: ${sitesRes.reason?.message || sitesRes.reason}`, "error");

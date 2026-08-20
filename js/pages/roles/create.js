@@ -25,7 +25,7 @@
  *     Operator: INCLUDES (any of) or EQUALS (each separately)
  */
 
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus, makeControlBusy } from "../../utils.js";
 import {
   fetchAllAuthorizationRoles,
   getAuthorizationRole,
@@ -285,7 +285,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
 
       ${(isEdit || isCopy) ? `
       <div class="rc-section">
-        <span class="rc-label">${isCopy ? "Source Role" : "Select Role to Edit"}</span>
+        <span class="rc-label" id="rcRoleLabel">${isCopy ? "Source Role" : "Select Role to Edit"}</span>
         <div class="rc-role-pick">
           <div class="rc-combo" id="rcRoleCombo" style="flex:1;min-width:260px">
             <input class="rc-combo-input" id="rcRoleInput" placeholder="Loading roles…" autocomplete="off" disabled>
@@ -320,7 +320,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         <span class="rc-label">Add Permission</span>
         <div class="rc-picker">
           <div class="rc-picker-group rc-picker-group--domain">
-            <span class="rc-label">Domain</span>
+            <span class="rc-label" id="rcDomainLabel">Domain</span>
             <div class="rc-combo" id="rcDomainCombo">
               <input class="rc-combo-input" id="rcDomainInput" placeholder="Loading…" autocomplete="off" disabled>
               <div class="rc-combo-list" id="rcDomainList"></div>
@@ -405,10 +405,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   let divisionsCache = null;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  function setStatus(msg, cls = "") {
-    $status.textContent = msg;
-    $status.className = "rc-status" + (cls ? ` rc-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "rc-status");
 
   function updateSaveBtn() {
     const hasName = $name.value.trim().length > 0;
@@ -674,7 +671,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   // ── Condition panel builder ───────────────────────────────────────────────
   async function buildCondPanel($panel, pol, $toggle) {
     $panel.dataset.built = "1";
-    $panel.innerHTML = `<span style="font-size:12px;color:var(--muted)">Loading…</span>`;
+    $panel.innerHTML = `<span style="font-size:12px;color:var(--muted)"><span class="spin spin--sm" aria-hidden="true"></span> Loading…</span>`;
 
     const condVarOptions = detectCondVars(pol);
 
@@ -773,7 +770,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     }
 
     // Resource multi-select (queues / skills / divisions)
-    $container.innerHTML = `<span style="font-size:12px;color:var(--muted)">Loading…</span>`;
+    $container.innerHTML = `<span style="font-size:12px;color:var(--muted)"><span class="spin spin--sm" aria-hidden="true"></span> Loading…</span>`;
     let allItems = [];
     try {
       if (variable === "QUEUE_ID") {
@@ -1125,6 +1122,9 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   }
 
   // ── Initialise: load catalog + (edit) roles ───────────────────────────────
+  const domainBusy = makeControlBusy(el.querySelector("#rcDomainLabel"));
+  const roleBusy   = makeControlBusy(el.querySelector("#rcRoleLabel"));
+
   async function init() {
     const org = orgContext?.getDetails?.();
     if (!org) {
@@ -1132,6 +1132,8 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       return;
     }
     setStatus("Loading permission catalog…");
+    domainBusy(true);
+    if (isEdit || isCopy) roleBusy(true);
     try {
       const requests = [loadCatalog(api, org.id)];
       if (isEdit || isCopy) requests.push(fetchAllAuthorizationRoles(api, org.id));
@@ -1152,6 +1154,9 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       setStatus("");
     } catch (err) {
       setStatus(`Failed to load catalog: ${err.message}`, "error");
+    } finally {
+      domainBusy(false);
+      roleBusy(false);
     }
   }
 

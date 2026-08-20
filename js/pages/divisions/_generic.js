@@ -27,7 +27,7 @@
  * }} cfg
  */
 import * as gc from "../../services/genesysApi.js";
-import { escapeHtml, sleep } from "../../utils.js";
+import { escapeHtml, sleep, makeStatus } from "../../utils.js";
 import { logAction } from "../../services/activityLogService.js";
 
 export default function renderDivisionPage(ctx, cfg) {
@@ -177,10 +177,7 @@ export default function renderDivisionPage(ctx, cfg) {
     $toggleBtn.querySelector(".dv-toggle-icon").textContent = expanded ? "▼" : "►";
   }
 
-  function setStatus(msg, type = "") {
-    $statusMsg.textContent = msg;
-    $statusMsg.className = "di-status" + (type ? ` di-status--${type}` : "");
-  }
+  const setStatus = makeStatus($statusMsg, "di-status");
 
   function showProgress(pct) {
     $progressWrap.style.display = "";

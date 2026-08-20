@@ -11,7 +11,7 @@
  *
  * API: GET /api/activity-log?userEmail={email}&limit=500
  */
-import { escapeHtml, formatDateTime } from "../../utils.js";
+import { escapeHtml, formatDateTime, makeStatus } from "../../utils.js";
 import { withUserToken } from "../../services/apiAuth.js";
 
 // ── Action labels ────────────────────────────────────────
@@ -256,6 +256,7 @@ export default async function renderActivityLog({ me }) {
   const $org       = el.querySelector("#alOrg");
   const $user      = el.querySelector("#alUser");
   const $refresh   = el.querySelector("#alRefreshBtn");
+  const setStatus  = makeStatus($status, "al-status");
 
   let allEntries = [];
 
@@ -268,7 +269,7 @@ export default async function renderActivityLog({ me }) {
 
   // ── Fetch entries ────────────────────────────────────
   async function loadEntries() {
-    $status.textContent  = "Loading…";
+    setStatus("Loading…");
     $status.style.display = "";
     $tableWrap.style.display = "none";
     $refresh.disabled = true;
@@ -309,7 +310,7 @@ export default async function renderActivityLog({ me }) {
       $status.style.display = "none";
       renderTable();
     } catch (err) {
-      $status.textContent = `Failed to load activity log: ${err.message}`;
+      setStatus(`Failed to load activity log: ${err.message}`);
     } finally {
       $refresh.disabled = false;
     }
@@ -335,7 +336,7 @@ export default async function renderActivityLog({ me }) {
     });
 
     if (!filtered.length) {
-      $status.textContent   = "No log entries match the selected filters.";
+      setStatus("No log entries match the selected filters.");
       $status.style.display = "";
       $tableWrap.style.display = "none";
       return;

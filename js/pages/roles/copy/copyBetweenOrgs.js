@@ -23,7 +23,7 @@
  *   POST /api/v2/authorization/roles               — create role in target org
  */
 
-import { escapeHtml } from "../../../utils.js";
+import { escapeHtml, makeStatus } from "../../../utils.js";
 import {
   fetchAllAuthorizationRoles,
   getAuthorizationRole,
@@ -383,10 +383,7 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
   let skillsCache   = null;
   let divisionsCache = null;
 
-  function setStatus(msg, cls = "") {
-    $status.textContent = msg;
-    $status.className = "rcb-status" + (cls ? ` rcb-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "rcb-status");
 
   function updateSaveBtn() {
     $saveBtn.disabled = !$name.value.trim() || policies.length === 0;
@@ -812,7 +809,7 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
       return;
     }
 
-    $container.innerHTML = `<span style="font-size:12px;color:var(--muted)">Loading…</span>`;
+    $container.innerHTML = `<span style="font-size:12px;color:var(--muted)"><span class="spin spin--sm" aria-hidden="true"></span> Loading…</span>`;
     const tgtId = $tgtOrg.value;
     let allItems = [];
     try {

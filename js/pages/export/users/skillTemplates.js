@@ -14,7 +14,7 @@
  *   1. Click Export → fetch all templates + assignments + schedules for the selected org
  *   2. Build 7-sheet workbook, preview, download
  */
-import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { buildStyledWorkbook, addStyledSheet } from "../../../utils/excelStyles.js";
@@ -121,10 +121,7 @@ export default function renderSkillTemplatesExport({ route, me, api, orgContext 
   let lastWorkbook = null;
   let lastFilename = null;
 
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
 
   function setProgress(pct) {
     $progWrap.style.display = "";

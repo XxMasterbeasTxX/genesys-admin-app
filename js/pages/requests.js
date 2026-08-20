@@ -20,7 +20,7 @@
  *
  * See docs/feature-requests-design.md.
  */
-import { escapeHtml, formatDateTime } from "../utils.js";
+import { escapeHtml, formatDateTime, makeStatus, withBusy } from "../utils.js";
 import { APP_VERSION, RELEASE_NOTES } from "../releaseNotes.js";
 import {
   fetchRequests,
@@ -188,9 +188,9 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
   const $list        = el.querySelector("#frList");
   const $refresh     = el.querySelector("#frRefresh");
 
+  const applyStatus = makeStatus($status, "fr-status");
   function setStatus(msg, tone) {
-    $status.textContent = msg || "";
-    $status.className = "fr-status" + (tone ? ` fr-status--${tone}` : "");
+    applyStatus(msg || "", tone);
     $status.style.display = msg ? "" : "none";
   }
 
@@ -528,15 +528,15 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
   $list.addEventListener("click", async (e) => {
     const voteBtn = e.target.closest("[data-vote]");
     if (voteBtn) {
-      voteBtn.disabled = true;
       try {
-        const updated = await toggleVote(voteBtn.dataset.vote);
-        const i = requests.findIndex((r) => r.id === updated.id);
-        if (i >= 0) requests[i] = { ...requests[i], ...updated };
-        renderList();
+        await withBusy(voteBtn, async () => {
+          const updated = await toggleVote(voteBtn.dataset.vote);
+          const i = requests.findIndex((r) => r.id === updated.id);
+          if (i >= 0) requests[i] = { ...requests[i], ...updated };
+          renderList();
+        });
       } catch (err) {
         setStatus(`Could not register your vote: ${err.message}`, "error");
-        voteBtn.disabled = false;
       }
       return;
     }
@@ -550,9 +550,11 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
         return;
       }
       try {
-        const data = await fetchThread(rid);
-        openThreads.set(rid, data.messages || []);
-        renderList();
+        await withBusy(threadBtn, async () => {
+          const data = await fetchThread(rid);
+          openThreads.set(rid, data.messages || []);
+          renderList();
+        });
       } catch (err) {
         setStatus(`Could not open the discussion: ${err.message}`, "error");
       }
@@ -564,10 +566,12 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
       if (!confirm("Delete this message?")) return;
       const rid = msgDel.dataset.msgRequest;
       try {
-        await deleteThreadMessage(rid, msgDel.dataset.msgDelete);
-        const data = await fetchThread(rid);
-        openThreads.set(rid, data.messages || []);
-        renderList();
+        await withBusy(msgDel, async () => {
+          await deleteThreadMessage(rid, msgDel.dataset.msgDelete);
+          const data = await fetchThread(rid);
+          openThreads.set(rid, data.messages || []);
+          renderList();
+        });
       } catch (err) {
         setStatus(`Could not delete the message: ${err.message}`, "error");
       }
@@ -587,8 +591,10 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
     if (delBtn) {
       if (!confirm("Delete this request? This cannot be undone.")) return;
       try {
-        await deleteRequest(delBtn.dataset.delete);
-        await load();
+        await withBusy(delBtn, async () => {
+          await deleteRequest(delBtn.dataset.delete);
+          await load();
+        });
         setStatus("Request deleted.", "success");
       } catch (err) {
         setStatus(`Could not delete: ${err.message}`, "error");
@@ -612,12 +618,14 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
       e.preventDefault();
       const id = editForm.dataset.editForm;
       try {
-        await updateOwnRequest(id, {
-          title: editForm.title.value.trim(),
-          description: editForm.description.value.trim(),
+        await withBusy(editForm.querySelector('[type="submit"]'), async () => {
+          await updateOwnRequest(id, {
+            title: editForm.title.value.trim(),
+            description: editForm.description.value.trim(),
+          });
+          editingId = null;
+          await load();
         });
-        editingId = null;
-        await load();
         setStatus("Saved.", "success");
       } catch (err) {
         setStatus(`Could not save: ${err.message}`, "error");
@@ -632,10 +640,12 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
       const body = threadForm.body.value.trim();
       if (!body) return;
       try {
-        await postThreadMessage(rid, body);
-        const data = await fetchThread(rid);
-        openThreads.set(rid, data.messages || []);
-        renderList();
+        await withBusy(threadForm.querySelector('[type="submit"]'), async () => {
+          await postThreadMessage(rid, body);
+          const data = await fetchThread(rid);
+          openThreads.set(rid, data.messages || []);
+          renderList();
+        });
       } catch (err) {
         setStatus(`Could not send: ${err.message}`, "error");
       }
@@ -655,16 +665,18 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
       }
 
       try {
-        await triageRequest(id, {
-          status: triageForm.status.value,
-          adminNote: triageForm.adminNote.value,
-          shippedVersion: triageForm.shippedVersion.value.trim(),
-          sharedTitle: triageForm.sharedTitle.value.trim(),
-          sharedDescription: triageForm.sharedDescription.value.trim(),
-          visibility: triageForm.shared.checked ? "shared" : "private",
+        await withBusy(triageForm.querySelector('[type="submit"]'), async () => {
+          await triageRequest(id, {
+            status: triageForm.status.value,
+            adminNote: triageForm.adminNote.value,
+            shippedVersion: triageForm.shippedVersion.value.trim(),
+            sharedTitle: triageForm.sharedTitle.value.trim(),
+            sharedDescription: triageForm.sharedDescription.value.trim(),
+            visibility: triageForm.shared.checked ? "shared" : "private",
+          });
+          triagingId = null;
+          await load();
         });
-        triagingId = null;
-        await load();
         setStatus("Saved.", "success");
       } catch (err) {
         setStatus(`Could not save: ${err.message}`, "error");

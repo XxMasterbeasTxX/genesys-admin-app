@@ -13,7 +13,7 @@
  *
  * Per-org failures are tolerated and reported in the status summary.
  */
-import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import { fetchBillingOverview } from "../../../services/billingService.js";
 import { filterBillableCustomers } from "../../../utils/billingTrustees.js";
 import { processBillingOverview } from "../../../utils/billingProcessor.js";
@@ -114,10 +114,7 @@ export default function renderBillingAllOrgsLatestExport({ me, api }) {
     $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
 
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
   function setProgress(pct) {
     $progWrap.style.display = "";
     $progBar.style.width = `${pct}%`;

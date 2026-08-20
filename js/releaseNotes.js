@@ -21,6 +21,19 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.0",
+    date: "2026-08-21",
+    title: "You can tell when the app is working",
+    changes: [
+      "Everywhere the app is waiting on something, a small spinning ring now sits beside the message that describes it. It is there for one reason: a line that has stopped changing because the work is slow and a line that has stopped changing because the work died look exactly the same. The ring is the difference. While it turns, something is still happening.",
+      "The pages with a progress bar have one too. A bar tells you how much is left, which is worth knowing, but it stands perfectly still for as long as any single step takes — and a bar stuck at 40% because one request is slow looks identical to a bar stuck at 40% because the connection dropped. The bar answers how far; the ring answers whether. They are different questions.",
+      "Dropdowns that fill themselves from Genesys — sites, queues, divisions, billing periods, roles — show the ring on their label while they load. Until now they said “Loading…” and then sat there, which is also what a dropdown that has failed to load says.",
+      "Anywhere a panel or a table was showing the bare word “Loading”, it now shows a ring instead, so an empty page reads as one that is filling rather than one that is empty.",
+      "Buttons that go away and do something — voting on a request, saving a change, deleting, sending a message — show the ring inside the button you actually pressed. The confirmation used to appear in a status line somewhere else on the page, which is not where you were looking.",
+      "Opening the app, and moving between pages, no longer sits on a blank screen while it works. Pages you have already visited still appear instantly; only the ones that genuinely take a moment say so.",
+    ],
+  },
+  {
     version: "3.9",
     date: "2026-08-20",
     title: "Requests: your vote keeps you posted",

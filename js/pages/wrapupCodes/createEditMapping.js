@@ -1,4 +1,4 @@
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 
@@ -222,7 +222,7 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       </div>
     </div>
 
-    <div class="wcm-status" id="wcmStatus">Loading wrapup codes...</div>
+    <div class="wcm-status" id="wcmStatus">Loading wrapup codes…</div>
 
     <div class="wcm-table-wrap">
       <table class="wcm-table">
@@ -238,7 +238,7 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
           </tr>
         </thead>
         <tbody id="wcmTbody">
-          <tr><td class="wcm-empty" colspan="7">Loading...</td></tr>
+          <tr><td class="wcm-empty" colspan="7"><span class="spin spin--sm" aria-hidden="true"></span> Loading…</td></tr>
         </tbody>
       </table>
     </div>
@@ -300,18 +300,19 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
     $createBtn.title = "Requires Genesys permission: routing:wrapupCode:add";
   }
 
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "wcm-status" + (type ? ` wcm-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "wcm-status");
 
+  // These two use a bare type class rather than the BEM modifier the helper
+  // writes, so it is given no base class and the className stays here.
+  const applyModalMsg = makeStatus($modalMsg);
   function setModalMsg(msg, type = "") {
-    $modalMsg.textContent = msg || "";
+    applyModalMsg(msg || "");
     $modalMsg.className = "wcm-editor-msg" + (type ? ` ${type}` : "");
   }
 
+  const applyDefaultMsg = makeStatus($defaultMsg);
   function setDefaultMsg(msg, type = "") {
-    $defaultMsg.textContent = msg || "";
+    applyDefaultMsg(msg || "");
     $defaultMsg.className = "wcm-default-msg" + (type ? ` ${type}` : "");
   }
 
@@ -770,7 +771,7 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
         <div class="wcm-editor-actions">
           <button class="btn btn-secondary" data-action="use-default" data-wrapup-id="${escapeHtml(wrapupId)}" ${readOnly || draft.saving ? "disabled" : ""}>Use Default</button>
           <button class="btn btn-secondary" data-action="cancel-row" data-wrapup-id="${escapeHtml(wrapupId)}" ${draft.saving ? "disabled" : ""}>Cancel</button>
-          <button class="btn" data-action="save-row" data-wrapup-id="${escapeHtml(wrapupId)}" ${readOnly || draft.saving || !draft.dirty || draft.errors.length > 0 ? "disabled" : ""}>${draft.saving ? "Saving..." : "Save Mapping"}</button>
+          <button class="btn" data-action="save-row" data-wrapup-id="${escapeHtml(wrapupId)}" ${readOnly || draft.saving || !draft.dirty || draft.errors.length > 0 ? "disabled" : ""}>${draft.saving ? `<span class="spin spin--btn" aria-hidden="true"></span> Saving…` : "Save Mapping"}</button>
         </div>
       </div>
     `;
@@ -873,7 +874,7 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
   async function loadInitial() {
     if (loading) return;
     loading = true;
-    setStatus("Loading wrapup codes and mappings...");
+    setStatus("Loading wrapup codes and mappings…");
 
     try {
       await Promise.all([

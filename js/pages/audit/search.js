@@ -17,7 +17,7 @@
  *   GET  /api/v2/audits/query/{transactionId}
  *   GET  /api/v2/audits/query/{transactionId}/results
  */
-import { escapeHtml, formatDateTime, todayStr, daysAgoStr, exportXlsx, timestampedFilename } from "../../utils.js";
+import { escapeHtml, formatDateTime, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 
@@ -125,7 +125,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       <div class="di-control-group aq-service-group">
         <label class="di-label">Service</label>
         <div id="aqServiceDropdown" class="aq-service-dropdown">
-          <span class="di-status">Loading services…</span>
+          <span class="di-status"><span class="spin spin--sm" aria-hidden="true"></span> Loading services…</span>
         </div>
         <p class="aq-service-hint" id="aqServiceHint"></p>
       </div>
@@ -252,10 +252,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   ssChangedBy.setEnabled(false);
 
   // ── Status / progress helpers ────────────────────────────────────
-  function setStatus(msg, cls = "") {
-    $status.textContent = msg;
-    $status.className   = "di-status" + (cls ? ` di-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "di-status");
 
   function showProgress(pct) {
     $progressWrap.style.display = "";

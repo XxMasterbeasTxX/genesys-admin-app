@@ -5,7 +5,7 @@
  *  - Schema: edit table metadata and schema columns
  *  - Rows: edit multiple row values in a paged grid with full-table search
  */
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
@@ -244,7 +244,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
             <input class="dt-input" id="dteName" type="text" placeholder="e.g. AgentSkillMatrix" autocomplete="off" />
           </div>
           <div class="dt-control-group">
-            <label class="dt-label" for="dteDivision">Division <span style="color:#f87171">*</span></label>
+            <label class="dt-label" for="dteDivision" id="dteDivisionLabel">Division <span style="color:#f87171">*</span></label>
             <select class="dt-select" id="dteDivision">
               <option value="">Loading divisions…</option>
             </select>
@@ -343,6 +343,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
 
   const $name = el.querySelector("#dteName");
   const $division = el.querySelector("#dteDivision");
+  const divisionBusy = makeControlBusy(el.querySelector("#dteDivisionLabel"));
   const $description = el.querySelector("#dteDescription");
   const $key = el.querySelector("#dteKey");
   const $schemaRowsContainer = el.querySelector("#dteSchemaRows");
@@ -391,10 +392,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   let _selectedRowIds = new Set();
   let _keyMeasureCtx = null;
 
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "dt-status" + (type ? ` dt-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "dt-status");
 
   function setMode(nextMode) {
     _mode = nextMode === "rows" ? "rows" : "schema";
@@ -895,6 +893,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       return false;
     }
 
+    divisionBusy(true);
     try {
       const divs = await gc.fetchAllDivisions(api, orgId);
       const sorted = (divs || []).sort((a, b) =>
@@ -906,6 +905,8 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     } catch (err) {
       setStatus(`Failed to load divisions: ${err.message}`, "error");
       return false;
+    } finally {
+      divisionBusy(false);
     }
   }
 

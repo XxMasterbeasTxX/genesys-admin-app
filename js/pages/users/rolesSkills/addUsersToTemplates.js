@@ -7,7 +7,7 @@
  *   Right: Shows assigned users (with remove) and a user search (with add).
  *          Confirmation modal + granular progress bar for both operations.
  */
-import { escapeHtml } from "../../../utils.js";
+import { escapeHtml, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { createSingleSelect } from "../../../components/multiSelect.js";
 import { fetchTemplates } from "../../../services/templateService.js";
@@ -81,10 +81,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext, 
   let allTeams = [];
 
   // ── Status helper ─────────────────────────────────────
-  function setStatus(msg, type) {
-    $status.textContent = msg;
-    $status.className = "cu-status" + (type ? ` cu-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "cu-status");
 
   // ── Confirm modal ─────────────────────────────────────
   function showConfirmModal({ title, bodyHTML, confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false }) {

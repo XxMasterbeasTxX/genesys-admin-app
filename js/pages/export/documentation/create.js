@@ -13,9 +13,12 @@
  *   - Optional second workbook with DataTable contents (bundled as ZIP when present)
  *
  * Note: This export can take up to 5–10 minutes for large organisations.
- *       A loading spinner is shown while the request is in progress.
+ *       A throbber runs beside the status line for the whole request, because
+ *       the server reports nothing until it is finished — the status text does
+ *       not change once, and without the throbber a long run is
+ *       indistinguishable from a dead one. See docs/throbber-design.md.
  */
-import { downloadBase64 } from "../../../utils.js";
+import { downloadBase64, makeStatus } from "../../../utils.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { withUserToken } from "../../../services/apiAuth.js";
 import { logAction } from "../../../services/activityLogService.js";
@@ -132,10 +135,7 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className   = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
 
   function showSpinner(visible) {
     $spinner.style.display = visible ? "" : "none";

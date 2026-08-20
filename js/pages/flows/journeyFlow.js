@@ -12,7 +12,7 @@
  *  5. Nodes are draggable; "Reset Layout" restores computed positions.
  */
 
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus } from "../../utils.js";
 
 // ── Node type → display label helper ────────────────────────────────────────
 
@@ -290,10 +290,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
   let categoryCache = {};
   let lastLoadedFlowId = null;
 
-  function setStatus(msg, cls = "") {
-    $status.textContent = msg;
-    $status.className = "jf-status" + (cls ? ` jf-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "jf-status");
 
   // ── Combobox ───────────────────────────────────────────────────────────────
   {
@@ -421,7 +418,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
 
     $loadBtn.disabled = true;
     $resetBtn.disabled = true;
-    $canvas.innerHTML = `<div class="jf-empty">Loading…</div>`;
+    $canvas.innerHTML = `<div class="jf-empty"><div class="spin-panel"><div class="spin spin--block" aria-hidden="true"></div><p class="muted">Loading…</p></div></div>`;
     $meta.textContent = "";
 
     try {

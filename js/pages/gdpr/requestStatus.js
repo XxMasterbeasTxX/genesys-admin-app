@@ -67,7 +67,8 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
     currentOrg = org;
 
     $loadBtn.disabled = true;
-    $statusWrap.innerHTML = `<p class="gdpr-loading">Loading\u2026</p>`;
+    $statusWrap.innerHTML = `<div class="spin-panel"><div class="spin spin--block" aria-hidden="true"></div>`
+      + `<p class="muted gdpr-loading">Loading\u2026</p></div>`;
 
     try {
       const requests = await gc.gdprGetRequests(api, org.id);

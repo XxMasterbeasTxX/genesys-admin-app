@@ -15,7 +15,7 @@
  *   GET  /api/v2/authorization/divisions  — list divisions for dropdown
  *   POST /api/v2/flows/datatables         — create data table
  */
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 
@@ -75,7 +75,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
           <input class="dt-input" id="dtcName" type="text" placeholder="e.g. AgentSkillMatrix" autocomplete="off" />
         </div>
         <div class="dt-control-group">
-          <label class="dt-label" for="dtcDivision">Division <span style="color:#f87171">*</span></label>
+          <label class="dt-label" for="dtcDivision" id="dtcDivisionLabel">Division <span style="color:#f87171">*</span></label>
           <select class="dt-select" id="dtcDivision">
             <option value="">Loading divisions…</option>
           </select>
@@ -133,10 +133,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
   let _importWorkbook = null;
 
   // ── Helpers ────────────────────────────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "dt-status" + (type ? ` dt-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "dt-status");
 
   function validateSave() {
     const ok = $name.value.trim() !== ""
@@ -293,12 +290,15 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
   }
 
   // ── Load divisions ─────────────────────────────────────────────
+  const divisionBusy = makeControlBusy(el.querySelector("#dtcDivisionLabel"));
+
   async function loadDivisions() {
     const orgId = orgContext.get();
     if (!orgId) {
       setStatus("Please select a customer org first.", "error");
       return false;
     }
+    divisionBusy(true);
     try {
       const divs = await gc.fetchAllDivisions(api, orgId);
       const sorted = (divs || []).sort((a, b) =>
@@ -312,6 +312,8 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
     } catch (err) {
       setStatus(`Failed to load divisions: ${err.message}`, "error");
       return false;
+    } finally {
+      divisionBusy(false);
     }
   }
 

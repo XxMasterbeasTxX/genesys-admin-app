@@ -20,7 +20,7 @@
  *   Low  — the flow + its direct dependencies.
  */
 
-import { escapeHtml, exportXlsx } from "../../utils.js";
+import { escapeHtml, exportXlsx, makeStatus } from "../../utils.js";
 import { buildModel, ACTION_KINDS } from "../../lib/flowYaml.js";
 import {
   FLOW_TYPE_LABELS,
@@ -140,9 +140,6 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
 
   el.innerHTML = `
     <style>
-      @keyframes fo-spin { to { transform: rotate(360deg); } }
-      .fo-spin { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.25);
-                 border-top-color:#fff; border-radius:50%; animation:fo-spin .8s linear infinite; }
       .fo-layout { display:flex; gap:12px; align-items:stretch; height:78vh; min-height:460px; }
       .fo-layout:fullscreen { height:100vh; min-height:0; background:#0d1117; padding:10px; box-sizing:border-box; }
       .fo-layout.fo-max { position:fixed; inset:0; z-index:9999; height:auto; background:#0d1117; padding:10px; box-sizing:border-box; }
@@ -550,7 +547,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
         const active = t.id === state.activeId ? " is-active" : "";
         const main = t.isMain ? " is-main" : "";
         const badge = t.isMain ? "Main" : (FLOW_TYPE_LABELS[t.type] || t.type || "flow");
-        const spin = t.loading ? `<span class="fo-spin" style="width:10px;height:10px"></span>` : "";
+        const spin = t.loading ? `<span class="spin" style="--spin-size:10px"></span>` : "";
         const dis = t.available === false ? " disabled" : "";
         return `<div class="fo-tab${active}${main}" data-id="${escapeHtml(t.id)}"${dis} title="${escapeHtml(t.name)}">${spin}<span>${escapeHtml(truncate(t.name, 28))}</span><span class="fo-tab-badge">${escapeHtml(badge)}</span></div>`;
       })
@@ -612,12 +609,15 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     return safe ? safe + "_" : "";
   }
 
+  // This page states `busy` outright rather than leaving it to the ellipsis, so
+  // it keeps its own (busy, msg) order and maps onto the shared helper.
+  const applyStatus = makeStatus(statusEl);
   function setBusy(busy, msg) {
-    statusEl.innerHTML = busy ? `<span class="fo-spin"></span> ${escapeHtml(msg || "")}` : escapeHtml(msg || "");
+    applyStatus(msg || "", "", busy);
   }
 
   async function rebuild() {
-    statusEl.innerHTML = `<span class="fo-spin"></span> Laying out (${state.level})…`;
+    setBusy(true, `Laying out (${state.level})…`);
     try {
       state.model = buildModel(state.data, { level: state.level });
       state.laid = await layoutModel(state.model);

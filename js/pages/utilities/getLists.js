@@ -18,7 +18,7 @@
  *   columns    [{ key, label, wch }] — drives the table AND the workbook
  *   fetch      async (api, orgId) => row objects keyed by column.key
  */
-import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
+import { escapeHtml, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import { fetchAllWrapupCodes, fetchAllDivisions } from "../../services/genesysApi.js";
 import { orgContext } from "../../services/orgContext.js";
 
@@ -504,9 +504,9 @@ export default async function renderGetLists(ctx = {}) {
   let sortDir = "asc";
   let detachFilters = null;
 
+  const applyStatus = makeStatus($status, "gl-status");
   function setStatus(msg, kind) {
-    $status.textContent = msg;
-    $status.className = "gl-status" + (kind === "error" ? " gl-status--error" : "");
+    applyStatus(msg, kind === "error" ? "error" : "");
     $status.style.display = msg ? "block" : "none";
   }
 

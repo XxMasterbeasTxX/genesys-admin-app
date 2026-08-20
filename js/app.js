@@ -6,7 +6,7 @@ import { getPageLoader } from "./pageRegistry.js";
 import { renderNotFoundPage } from "./pages/notfound.js";
 import { renderWelcomePage } from "./pages/welcome.js";
 import { renderAccessDeniedPage } from "./pages/accessdenied.js";
-import { escapeHtml } from "./utils.js";
+import { escapeHtml, spinPanel } from "./utils.js";
 import {
   ensureAuthenticatedWithMe,
   getValidAccessToken,
@@ -164,6 +164,12 @@ function renderSignInGate() {
   printSecurityNotice();
   setHeader({ authText: "Auth: starting…" });
 
+  // Boot runs authentication and then /api/org-config before the nav or any
+  // page exists. That used to be a blank screen with only the header pill
+  // moving; a throbber says the app is working rather than broken.
+  const $main = document.getElementById("appMain");
+  $main.replaceChildren(spinPanel("Signing you in…"));
+
   // --- Authenticate ---
   setHeader({ authText: "Auth: checking token / login…" });
   const res = await ensureAuthenticatedWithMe();
@@ -180,6 +186,8 @@ function renderSignInGate() {
 
   const userName = res.me?.name || "user";
   setHeader({ authText: `Auth: ok \u00B7 ${userName}` });
+
+  $main.replaceChildren(spinPanel("Loading your organisations…"));
 
   const routeAccessMap = getRouteAccessMap();
 
@@ -325,7 +333,7 @@ function renderSignInGate() {
   document.getElementById("signOutBtn").addEventListener("click", () => refreshSession());
 
   // --- Start router ---
-  const outletEl = document.getElementById("appMain");
+  const outletEl = $main;
   const router = new Router({
     outletEl,
     resolve: async (route) => {

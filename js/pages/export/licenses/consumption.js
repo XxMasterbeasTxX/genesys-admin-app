@@ -11,7 +11,7 @@
  * Matches the Python script: GUI_Users_Export_Licenses.py
  * Sheet name: "User Licenses"
  */
-import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
@@ -242,10 +242,7 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
   // released here before the next is attached, and again on teardown.
   let disposeFilters = null;
 
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
 
   function setProgress(pct) {
     $progWrap.style.display = "";

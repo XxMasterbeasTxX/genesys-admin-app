@@ -4,6 +4,11 @@
  * The `resolve` callback receives a route string and must return
  * a Promise<HTMLElement> that will be placed in the outlet.
  */
+import { spinPanel } from "./utils.js";
+
+/** How long a navigation may take before it earns a throbber. */
+const PENDING_DELAY_MS = 150;
+
 function getRouteFromHash() {
   const hash = window.location.hash || "";
   const route = hash.startsWith("#") ? hash.slice(1) : hash;
@@ -57,9 +62,33 @@ export class Router {
     }
   }
 
+  /**
+   * Resolving a route means a dynamic `import()` of the page module (87 of them
+   * in pageRegistry) and, for a few pages, a fetch before the element exists.
+   * Until this landed the outgoing page simply sat there, inert, for however
+   * long that took.
+   *
+   * The throbber waits {@link PENDING_DELAY_MS} first. A cached module resolves
+   * in a couple of milliseconds, and a throbber that blinks on every navigation
+   * is noise that teaches people to stop looking at throbbers — which would
+   * cost the ones that matter their meaning.
+   */
   async render() {
     const route = getRouteFromHash();
-    const viewEl = await this.resolve(route);
+
+    let settled = false;
+    const pending = setTimeout(() => {
+      if (!settled) this.outletEl.replaceChildren(spinPanel("Loading…"));
+    }, PENDING_DELAY_MS);
+
+    let viewEl;
+    try {
+      viewEl = await this.resolve(route);
+    } finally {
+      settled = true;
+      clearTimeout(pending);
+    }
+
     this._destroyCurrent();
     this.outletEl.replaceChildren(viewEl);
     this._current = viewEl;

@@ -25,7 +25,7 @@
  * Scheduling is available: the handler always exports the previous calendar
  * year (current year − 1). See api/lib/exports/billingCalendarYear.js.
  */
-import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import {
   fetchBillingPeriodsForCalendarYear,
 } from "../../../services/billingService.js";
@@ -148,10 +148,7 @@ export default function renderBillingCalendarYearExport({ me, api }) {
     $emailFld.style.display = $emailChk.checked ? "" : "none";
   });
 
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
   function setProgress(pct) {
     $progWrap.style.display = "";
     $progBar.style.width = `${pct}%`;

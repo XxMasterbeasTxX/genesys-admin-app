@@ -14,7 +14,7 @@
  *      Returns pre-computed counts grouped by dimension — fast at any scale.
  */
 
-import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { createSchedulePanel } from "../../../components/schedulePanel.js";
 import { STYLE_HEADER, STYLE_ROW_EVEN, STYLE_ROW_ODD } from "../../../utils/excelStyles.js";
@@ -272,9 +272,9 @@ export default function renderTotals({ route, me, api, orgContext }) {
   const currentOrg = () => orgContext?.getDetails?.() || null;
 
   // ── Helpers ─────────────────────────────────────────
+  const applyStatus = makeStatus($status, "cs-status");
   function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "cs-status" + (type ? ` cs-status--${type}` : "");
+    applyStatus(msg, type);
     $status.style.display = "";
   }
   function hideStatus() { $status.style.display = "none"; }

@@ -14,7 +14,7 @@
  * No schedule panel — run on-demand only.
  * Filename prefix: Roles_AllOrgs_
  */
-import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { sendEmail } from "../../../services/emailService.js";
 import { addStyledSheet } from "../../../utils/excelStyles.js";
@@ -111,10 +111,7 @@ export default function renderRolesAllOrgs({ route, me, api }) {
   const $emailTo   = el.querySelector("#raEmailTo");
   const $emailBody = el.querySelector("#raEmailBody");
 
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
 
   function setProgress(pct) {
     $progWrap.style.display = "";

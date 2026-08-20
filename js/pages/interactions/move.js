@@ -15,7 +15,7 @@
  *   POST /api/v2/conversations/{id}/participants/{participantId}/replace       — transfer to dest queue
  *   GET  /api/v2/routing/queues                                               — list queues
  */
-import { escapeHtml, formatDateTime, sleep } from "../../utils.js";
+import { escapeHtml, formatDateTime, sleep, makeStatus, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 
@@ -130,14 +130,14 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     <!-- Queue selectors -->
     <div class="mi-controls">
       <div class="mi-control-group mi-queue-group">
-        <label class="mi-label">Source Queue</label>
+        <label class="mi-label" id="miSrcLabel">Source Queue</label>
         <input type="text" class="input mi-queue-search" id="miSrcSearch" placeholder="Search queues…" disabled>
         <select class="input mi-queue-select" id="miSrcQueue" disabled>
           <option value="">Loading queues…</option>
         </select>
       </div>
       <div class="mi-control-group mi-queue-group">
-        <label class="mi-label">Destination Queue</label>
+        <label class="mi-label" id="miDstLabel">Destination Queue</label>
         <input type="text" class="input mi-queue-search" id="miDstSearch" placeholder="Search queues…" disabled>
         <select class="input mi-queue-select" id="miDstQueue" disabled>
           <option value="">Loading queues…</option>
@@ -217,6 +217,8 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
   const $srcQueue     = el.querySelector("#miSrcQueue");
   const $dstSearch    = el.querySelector("#miDstSearch");
   const $dstQueue     = el.querySelector("#miDstQueue");
+  const srcBusy       = makeControlBusy(el.querySelector("#miSrcLabel"));
+  const dstBusy       = makeControlBusy(el.querySelector("#miDstLabel"));
   const $mediaAll     = el.querySelector("#miMediaAll");
   const $mediaCbs     = el.querySelectorAll(".mi-media-cb");
   const $olderEnable  = el.querySelector("#miOlderEnable");
@@ -273,10 +275,7 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
   $newerEnable.addEventListener("change", () => { $newerDate.disabled = !$newerEnable.checked; });
 
   // ── Status / progress ───────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "mi-status" + (type ? ` mi-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "mi-status");
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width = `${Math.min(pct, 100)}%`;
@@ -596,6 +595,7 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
 
   // ── Load queues on mount ────────────────────────────
   (async () => {
+    srcBusy(true); dstBusy(true);
     try {
       queues = await gc.fetchAllQueues(api, orgContext.get());
       queues.sort((a, b) => a.name.localeCompare(b.name));
@@ -614,6 +614,8 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     } catch (err) {
       setStatus(STATUS.error(`Failed to load queues: ${err.message}`), "error");
       console.error("Queue load error:", err);
+    } finally {
+      srcBusy(false); dstBusy(false);
     }
   })();
 

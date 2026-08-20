@@ -13,7 +13,7 @@
  * exported to the configured storage integration. Check the Jobs page
  * for status.
  */
-import { escapeHtml, formatDateTime, todayStr, daysAgoStr } from "../../../utils.js";
+import { escapeHtml, formatDateTime, todayStr, daysAgoStr, makeStatus } from "../../../utils.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { fetchAllPages } from "../../../services/genesysApi.js";
 
@@ -81,7 +81,7 @@ export default function renderCreateRecordingJob({ route, me, api, orgContext })
       <div class="rj-field">
         <label class="rj-label">Storage Integration <span class="rj-required">*</span></label>
         <div id="rjIntegrationWrap">
-          <p class="sp-empty" style="margin:0">Loading integrations…</p>
+          <p class="sp-empty" style="margin:0"><span class="spin spin--sm" aria-hidden="true"></span> Loading integrations…</p>
         </div>
       </div>
 
@@ -89,7 +89,7 @@ export default function renderCreateRecordingJob({ route, me, api, orgContext })
       <div class="rj-field">
         <label class="rj-label">Queues <span class="rj-hint">(optional — leave blank for all)</span></label>
         <div id="rjQueueWrap">
-          <p class="sp-empty" style="margin:0">Loading queues…</p>
+          <p class="sp-empty" style="margin:0"><span class="spin spin--sm" aria-hidden="true"></span> Loading queues…</p>
         </div>
       </div>
 
@@ -97,7 +97,7 @@ export default function renderCreateRecordingJob({ route, me, api, orgContext })
       <div class="rj-field">
         <label class="rj-label">Users <span class="rj-hint">(optional — leave blank for all)</span></label>
         <div id="rjUserWrap">
-          <p class="sp-empty" style="margin:0">Loading users…</p>
+          <p class="sp-empty" style="margin:0"><span class="spin spin--sm" aria-hidden="true"></span> Loading users…</p>
         </div>
       </div>
 
@@ -165,10 +165,7 @@ export default function renderCreateRecordingJob({ route, me, api, orgContext })
   let loadError         = false;
 
   // ── Status helper ────────────────────────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "rj-status" + (type ? ` rj-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "rj-status");
   function clearStatus() {
     $status.textContent = "";
     $status.className = "rj-status";

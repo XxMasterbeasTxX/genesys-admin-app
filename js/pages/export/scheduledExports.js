@@ -4,7 +4,7 @@
  * Shows a table listing every schedule, regardless of export type.
  * Only the creator (or admin) can edit/delete a schedule.
  */
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus } from "../../utils.js";
 import { logAction } from "../../services/activityLogService.js";
 import {
   fetchSchedules,
@@ -32,7 +32,7 @@ export default function renderScheduledExports({ route, me }) {
     </p>
     <div class="se-status" id="seStatus"></div>
     <div class="se-body" id="seBody">
-      <p class="sp-empty">Loading…</p>
+      <div class="spin-panel"><div class="spin spin--block" aria-hidden="true"></div><p class="muted">Loading…</p></div>
     </div>
     <div class="se-form-container" id="seFormContainer"></div>
   `;
@@ -43,10 +43,7 @@ export default function renderScheduledExports({ route, me }) {
 
   let schedules = [];
 
-  function setStatus(msg, type) {
-    $status.textContent = msg;
-    $status.className = "se-status" + (type ? ` se-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "se-status");
 
   // ── Render table ──────────────────────────────────────
   function renderTable() {

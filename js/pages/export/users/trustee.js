@@ -19,7 +19,7 @@
  *   GET /api/v2/groups/{groupId}/members
  *   GET /api/v2/users/{id}
  */
-import { escapeHtml, timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { escapeHtml, timestampedFilename, downloadWorkbook, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
 import { fetchCustomers } from "../../../services/customerService.js";
 import { sendEmail } from "../../../services/emailService.js";
@@ -283,10 +283,7 @@ export default function renderTrusteeExport({ route, me, api }) {
   }
 
   // ── Helpers ───────────────────────────────────────────
-  function setStatus(msg, type) {
-    $status.textContent = msg;
-    $status.className = "te-status" + (type ? ` te-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
   function showProgress(pct) {
     $progressW.style.display = "";
     $progressBar.style.width = `${pct}%`;

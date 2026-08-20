@@ -18,7 +18,7 @@
  *   GET  /api/v2/flows/datatables/{id}/rows       — fetch rows
  *   POST /api/v2/flows/datatables/{id}/rows       — insert row
  */
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 import { createSchemaColumnEditor } from "../../components/schemaColumnEditor.js";
@@ -53,7 +53,7 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
     <div class="dt-controls">
       <!-- Step 1: Source table -->
       <div class="dt-control-group">
-        <label class="dt-label">Source Table</label>
+        <label class="dt-label" id="dtSourceLabel">Source Table</label>
         <select class="dt-select" id="dtSourceSelect" disabled>
           <option value="">Loading…</option>
         </select>
@@ -77,7 +77,7 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
 
       <!-- Division -->
       <div class="dt-control-group">
-        <label class="dt-label">Division</label>
+        <label class="dt-label" id="dtDivisionLabel">Division</label>
         <select class="dt-select" id="dtDivision" disabled>
           <option value="">Loading…</option>
         </select>
@@ -115,6 +115,8 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
   const $infoRows     = el.querySelector("#dtInfoRows");
   const $newName      = el.querySelector("#dtNewName");
   const $division     = el.querySelector("#dtDivision");
+  const sourceBusy    = makeControlBusy(el.querySelector("#dtSourceLabel"));
+  const divisionBusy  = makeControlBusy(el.querySelector("#dtDivisionLabel"));
   const $copyData     = el.querySelector("#dtCopyData");
   const $copyBtn      = el.querySelector("#dtCopyBtn");
   const $progress     = el.querySelector("#dtProgress");
@@ -130,10 +132,7 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
   let divisions = [];  // { id, name }
 
   // ── Helpers ──────────────────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = typeof msg === "function" ? msg() : msg;
-    $status.className = `dt-status${type ? ` dt-status--${type}` : ""}`;
-  }
+  const setStatus = makeStatus($status, "dt-status");
 
   function setProgress(pct) {
     $progress.hidden = false;
@@ -160,6 +159,8 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
     try {
       setStatus(STATUS.loading);
       $sourceSelect.disabled = true;
+      sourceBusy(true);
+      divisionBusy(true);
 
       // Fetch tables and divisions in parallel
       const [raw, divs] = await Promise.all([
@@ -173,6 +174,7 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
         `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`
       ).join("");
       $division.disabled = false;
+      divisionBusy(false);
 
       // Enrich with row counts (quick HEAD-style fetch, 1 row per table)
       tables = [];
@@ -212,6 +214,9 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
       setStatus(STATUS.ready);
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
+    } finally {
+      sourceBusy(false);
+      divisionBusy(false);
     }
   }
 

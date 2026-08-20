@@ -17,7 +17,7 @@
  * when the user toggles to the "Hourly Interacting" mode.
  */
 
-import { escapeHtml, exportXlsx, timestampedFilename } from "../../utils.js";
+import { escapeHtml, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import {
   fetchAllAuthorizationRoles,
   fetchAllUsers,
@@ -243,10 +243,7 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
   let activeFilter = "all"; // "all" | "hourly" | "fullcx"
 
   // ── Helpers ───────────────────────────────────────────────
-  function setStatus(msg, cls = "") {
-    $status.textContent = msg;
-    $status.className = "rs-status" + (cls ? ` rs-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "rs-status");
 
   function showProgress(fetched, total) {
     $progressWrap.style.display = "";

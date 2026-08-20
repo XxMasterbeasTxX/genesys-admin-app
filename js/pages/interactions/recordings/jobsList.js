@@ -14,7 +14,7 @@
  *   GET    /api/v2/routing/queues/{id}        — resolve queue names
  *   GET    /api/v2/users/{id}                 — resolve user names
  */
-import { escapeHtml, formatDateTime } from "../../../utils.js";
+import { escapeHtml, formatDateTime, makeStatus } from "../../../utils.js";
 
 // ── State badge colours ──────────────────────────────────────────────
 const STATE_BADGE = {
@@ -74,7 +74,7 @@ export default function renderRecordingJobsList({ route, me, api, orgContext }) 
     <div class="rj-status" id="rjlStatus"></div>
 
     <div id="rjlBody">
-      <p class="sp-empty">Loading…</p>
+      <div class="spin-panel"><div class="spin spin--block" aria-hidden="true"></div><p class="muted">Loading…</p></div>
     </div>
   `;
 
@@ -89,10 +89,7 @@ export default function renderRecordingJobsList({ route, me, api, orgContext }) 
   const nameCache    = {}; // integrationId/userId/queueId → name
 
   // ── Status helper ─────────────────────────────────────────────────
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "rj-status" + (type ? ` rj-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "rj-status");
 
   // ── Resolve a single entity name via the proxy ────────────────────
   async function resolveName(path) {
@@ -223,7 +220,7 @@ export default function renderRecordingJobsList({ route, me, api, orgContext }) 
       const tdDetail = document.createElement("td");
       tdDetail.colSpan = 7;
       tdDetail.className = "rjl-detail-cell";
-      tdDetail.innerHTML = `<p class="sp-empty">Loading filters…</p>`;
+      tdDetail.innerHTML = `<p class="sp-empty"><span class="spin spin--sm" aria-hidden="true"></span> Loading filters…</p>`;
       trDetail.append(tdDetail);
       tbody.append(trDetail);
 
@@ -282,7 +279,7 @@ export default function renderRecordingJobsList({ route, me, api, orgContext }) 
 
   // ── Load detail cell content ─────────────────────────────────────
   async function loadDetailCell(job, cell) {
-    cell.innerHTML = `<p class="sp-empty">Loading filters…</p>`;
+    cell.innerHTML = `<p class="sp-empty"><span class="spin spin--sm" aria-hidden="true"></span> Loading filters…</p>`;
     try {
       const s = await buildFilterSummary(job);
 

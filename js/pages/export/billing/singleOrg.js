@@ -16,7 +16,7 @@
  *
  * No preview. Same UX as other exports: Run → status → Download Excel.
  */
-import { timestampedFilename, downloadWorkbook } from "../../../utils.js";
+import { timestampedFilename, downloadWorkbook, makeStatus, makeControlBusy } from "../../../utils.js";
 import {
   fetchBillingPeriods,
   clearBillingPeriodsCache,
@@ -49,7 +49,7 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
     </p>
 
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-      <label class="em-label" for="bsoPeriod" style="margin:0">Billing period:</label>
+      <label class="em-label" for="bsoPeriod" id="bsoPeriodLabel" style="margin:0">Billing period:</label>
       <select id="bsoPeriod" class="em-input" style="min-width:320px" disabled>
         <option value="">Select a customer org…</option>
       </select>
@@ -108,6 +108,7 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
   }
 
   const $period    = el.querySelector("#bsoPeriod");
+  const periodBusy = makeControlBusy(el.querySelector("#bsoPeriodLabel"));
   const $reloadBtn = el.querySelector("#bsoReloadBtn");
   const $runBtn    = el.querySelector("#bsoRunBtn");
   const $status    = el.querySelector("#bsoStatus");
@@ -128,10 +129,7 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
   let lastWorkbook   = null;
   let lastFilename   = null;
 
-  function setStatus(msg, cls) {
-    $status.textContent = msg;
-    $status.className = "te-status" + (cls ? ` te-status--${cls}` : "");
-  }
+  const setStatus = makeStatus($status, "te-status");
   function setProgress(pct) {
     $progWrap.style.display = "";
     $progBar.style.width = `${pct}%`;
@@ -205,6 +203,7 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
     $reloadBtn.disabled = true;
     setStatus(`Loading billing periods for ${org.name}…`);
     setProgress(20);
+    periodBusy(true);
 
     try {
       if (force) clearBillingPeriodsCache(org.id);
@@ -226,6 +225,8 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
       $period.innerHTML = `<option value="">Failed to load periods</option>`;
       $reloadBtn.disabled = false;
       setStatus(`Error loading billing periods: ${err.message || err}`, "error");
+    } finally {
+      periodBusy(false);
     }
   }
 

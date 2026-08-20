@@ -20,7 +20,7 @@
  */
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
-import { escapeHtml } from "../../utils.js";
+import { escapeHtml, makeStatus } from "../../utils.js";
 
 // ── Tab handlers ──────────────────────────────────────────────────────────────
 // Each handler receives ({ rows, api, orgId, me }) where rows excludes the header.
@@ -1603,10 +1603,7 @@ export default function renderDeploymentBasic({ route, me, api, orgContext }) {
   const $status    = el.querySelector("#dbStatus");
   const $results   = el.querySelector("#dbResults");
 
-  function setStatus(msg, type = "") {
-    $status.textContent = msg;
-    $status.className = "dt-status" + (type ? ` dt-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "dt-status");
 
   function addResult(label, ok, detail) {
     const li = document.createElement("li");

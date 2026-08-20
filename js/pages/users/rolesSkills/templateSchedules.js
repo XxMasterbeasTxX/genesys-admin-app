@@ -4,7 +4,7 @@
  * Overview page showing all template schedules across all templates
  * for the selected org. Allows viewing, enabling/disabling, and deleting.
  */
-import { escapeHtml } from "../../../utils.js";
+import { escapeHtml, makeStatus } from "../../../utils.js";
 import {
   fetchTemplateSchedules,
   updateTemplateSchedule,
@@ -49,10 +49,7 @@ export default function renderTemplateSchedules({ route, me, api, orgContext }) 
 
   let schedules = [];
 
-  function setStatus(msg, type) {
-    $status.textContent = msg;
-    $status.className = "st-status" + (type ? ` st-status--${type}` : "");
-  }
+  const setStatus = makeStatus($status, "st-status");
 
   // Answered by the backend on the schedule itself — see canEditSchedule in
   // components/schedulePanel.js. Falls back to owner-only.
