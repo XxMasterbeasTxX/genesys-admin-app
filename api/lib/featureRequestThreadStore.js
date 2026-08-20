@@ -144,4 +144,42 @@ async function removeThread(requestId) {
   return messages.length;
 }
 
-module.exports = { listByRequest, create, getById, remove, removeThread, BODY_MAX };
+/** What a customer sees instead of the name of whoever answered them. */
+const SUPPORT_LABEL = "Support";
+
+/**
+ * Hide who answered, for readers outside our own organisation.
+ *
+ * §6.6 decided that replies carry no personal name: a named individual invites
+ * follow-up outside the board and quietly turns one person into the support
+ * SLA. That reasoning applies harder to a back-and-forth than to the one-line
+ * response it was written about, so superuser messages on a CUSTOMER'S request
+ * are attributed to "Support" rather than to a person.
+ *
+ * Internal threads keep real names — the demo org knows who is answering, and
+ * anonymising a conversation between colleagues would be strange. Superusers
+ * always see real names too, including when reading a customer's thread, so
+ * triage never loses track of who said what.
+ *
+ * Done here rather than in the page for the same reason as the shared card: a
+ * name the browser was sent and chose not to draw has still been sent.
+ */
+function projectMessages(messages, { anonymiseSuperuser = false } = {}) {
+  if (!anonymiseSuperuser) return messages;
+  return messages.map((m) =>
+    m.authorRole === "superuser"
+      ? { ...m, authorName: SUPPORT_LABEL, authorId: "" }
+      : m
+  );
+}
+
+module.exports = {
+  listByRequest,
+  create,
+  getById,
+  remove,
+  removeThread,
+  projectMessages,
+  BODY_MAX,
+  SUPPORT_LABEL,
+};

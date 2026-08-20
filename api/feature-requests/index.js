@@ -78,7 +78,14 @@ module.exports = async function (context, req) {
           context.res = json(404, { error: "Request not found" });
           return;
         }
-        context.res = json(200, { messages: await threadStore.listByRequest(id) });
+        // Who answered is hidden from a customer's own org, and only there:
+        // internal threads keep real names, and a superuser reading a
+        // customer's thread still sees them (§3a.2).
+        const anonymiseSuperuser = request.ownerOrgId !== "internal" && !superuser;
+        const messages = await threadStore.listByRequest(id);
+        context.res = json(200, {
+          messages: threadStore.projectMessages(messages, { anonymiseSuperuser }),
+        });
         return;
       }
 

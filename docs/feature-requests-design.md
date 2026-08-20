@@ -136,7 +136,7 @@ and cost one extra query.
 |---|---|
 | `requestId` | PartitionKey |
 | `authorId`, `authorName` | from the token, never the body |
-| `authorRole` | `submitter` or `superuser` — drives how the message is labelled |
+| `authorRole` | `submitter` or `superuser` — drives how the message is labelled, and which messages get anonymised for a customer (§3a.2) |
 | `body` | capped at 4000 chars |
 | `createdAt` | ISO string |
 
@@ -147,6 +147,17 @@ and cost one extra query.
 - **Delete:** the author deletes their own; a superuser deletes any.
 - **No editing.** A thread whose messages silently change afterwards is worse
   than one with a visible gap.
+- **Who answered is hidden from customers.** §6.6 decided that replies carry no
+  personal name, and that reasoning — a named individual invites follow-up
+  outside the board and quietly turns one person into the support SLA — applies
+  harder to a back-and-forth than to the one-line response it was written about.
+  So on a **customer-owned** request, superuser messages are attributed to
+  "Support". Internal threads keep real names, because the demo org knows who is
+  answering and anonymising a conversation between colleagues would be strange;
+  and a superuser always sees real names, including when reading a customer's
+  thread, so triage never loses track of who said what. Applied as a server-side
+  projection, not a page rule: a name the browser was sent and chose not to draw
+  has still been sent.
 - **Never on the shared board.** The thread contains submitter text that no one
   curated, so it is absent from the §6.7 projection entirely. What crosses to
   other tenants is `adminNote` — the one curated, published response — and
@@ -391,7 +402,9 @@ votes a request has and whether *you* voted, so the button can toggle. A voter
 list is exposure with no upside.
 
 **Replies are unattributed.** `adminNote` carries no author field, and renders
-under a neutral "Response" heading. Status-change mail is sent from the Mailjet
+under a neutral "Response" heading. Thread messages follow the same rule where
+it matters — see §3a.2, which anonymises superuser messages on a customer's
+request while leaving internal threads named. Status-change mail is sent from the Mailjet
 identity (`MAILJET_FROM_EMAIL` / `MAILJET_FROM_NAME`), not from a personal
 address. For customers this matters more than it looks: a named individual on a
 reply invites follow-up outside the board and quietly turns one person into the
