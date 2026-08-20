@@ -312,9 +312,19 @@ An internal, admin-only page that dumps the **full live permission catalog** for
 
 In **Customer mode**, every store operation must derive `orgId` from the **authenticated session**,
 never from a request field:
-- **Activity Log** ([`api/lib/activityLogStore.js`](../api/lib/activityLogStore.js)) — currently a
-  single partition `"log"`; admin filters can see all orgs. Customers **see their own** activity log
-  (agreed), filtered to the session org; cross-org filters hidden.
+- **Activity Log** ([`api/lib/activityLogStore.js`](../api/lib/activityLogStore.js)) — a single
+  partition `"log"`, scoped on read by `ownerOrgId`. **Settled:** every session sees its own
+  organisation's activity in full and never another's — internal sessions the internal-owned
+  entries, a customer session its own org's. There is no cross-org read here at all, not even for
+  the admin, whose only remaining privilege on this store is triggering the retention purge.
+- **Feature Requests** ([`api/lib/featureRequestStore.js`](../api/lib/featureRequestStore.js),
+  [`featureRequestThreadStore.js`](../api/lib/featureRequestThreadStore.js)) — scoped by
+  `ownerOrgId` like the rest, with **one deliberate exception**: a superuser's triage read spans
+  every org. A queue that cannot see the requests it triages is not a queue, and it is the read
+  that feeds promotion. The exception is narrow — one admin-gated read path, no new cross-org
+  write — and everything crossing a tenant boundary is a server-side projection carrying only
+  curated wording (see [feature-requests-design.md](feature-requests-design.md) §6.2 and §6.7). The
+  discussion thread never crosses at all, promoted or not.
 - **Schedules / Templates / Assignments** — partitioned by org, but org currently comes from the
   client; force the partition to the session-derived org and reject mismatches.
 

@@ -1,8 +1,21 @@
 # Feature Requests — Design
 
-Status: **Built and shipped in v3.8**
+Status: **Built and shipped** — the board in v3.8, the refinements below in v3.9
 Author: Genesys Admin App
 Last updated: 2026-08-20
+
+Every section describes what was built. Where a decision was contested or later
+overturned, the reasoning for the version that shipped is kept rather than
+tidied away — the point of this document is that the next person to ask "why is
+it like that?" finds an answer instead of re-deciding it.
+
+Changed after the first release, in v3.9:
+- voting subscribes you to that request's status changes (§7)
+- filing a request sends the filer a receipt (§7)
+- superuser messages read as "Support" to a customer audience (§3a.2)
+- the `declined` status key became `not-planned`, matching the label people
+  always saw (§3)
+- the three boards are named My company board, Shared board, Triage board
 
 ## 1. Purpose
 
@@ -30,8 +43,16 @@ writes to the app's own store.
   a priority signal that no amount of triage produces on its own.
 - **Header button**, next to Activity Log — not a nav leaf. The point is §4:
   the button is reachable from the page being complained about, and captures it.
-- **Email in both directions** (§7): on submission, on every status change, and
-  on every thread message to whichever party did not write it.
+- **Email in every direction** (§7): a receipt to whoever filed it and a
+  notification to the superusers on submission; on every status change one to
+  the submitter and one to each voter; and on every thread message, one to
+  whichever party did not write it.
+- **A vote subscribes you** (§7). Voters hear about every status change,
+  including the ones nobody enjoys sending — a request dropped after people
+  voted for it going quiet reads as neglect rather than as a decision. Removing
+  the vote stops it, which makes the unsubscribe route the same lever as the
+  priority signal: worth watching, and the reason to narrow which transitions
+  send mail if people start un-voting to quieten their inbox.
 - **Customers from day one** (§6). This is the decision with the widest reach,
   and §6 is where its consequences are stated rather than assumed.
 - **Not a sellable module.** No entitlement, no package, no access key. Asking
@@ -549,6 +570,11 @@ watch.
 - **Anything written back to Genesys.**
 
 ## 11. Build order
+
+*Kept as written. Every step below shipped; the notifications of §7 were the one
+thing this order failed to give a step of its own, and had to be added
+afterwards — which is exactly the kind of omission a build order exists to
+prevent, so it stays visible rather than being retrofitted.*
 
 0. **Prerequisite, shipped on its own:** remove the admin email address from the
    client bundle. It is currently a literal string in four files the browser
