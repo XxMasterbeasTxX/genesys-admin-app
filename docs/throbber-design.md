@@ -2,7 +2,7 @@
 
 Status: **Implemented** — all eight steps of §11 are done
 Author: Genesys Admin App
-Last updated: 2026-08-20
+Last updated: 2026-08-21
 
 ## 1. Purpose
 
@@ -43,8 +43,10 @@ Today 67 modules do asynchronous work and 9 of them show a throbber.
 - **The shared helper keeps the existing `setStatus(msg, type)` signature**, so
   the 929 existing call sites do not change. Each page loses its local copy of
   the function and gains throbbers everywhere for free.
-- **`prefers-reduced-motion` softens the animation, it does not remove it**
-  (§10). Removing it would delete the one signal this design exists to provide.
+- **The throbber always spins** — no `prefers-reduced-motion` variant (§10). A
+  pulse instead of a rotation reads as a fault light, not as work in progress.
+- **Existing progress bars are left exactly as they are** (§8). Throbbers were
+  the ask; changing how a bar behaves is separate work.
 - **The router throbber waits ~150 ms before appearing** (§9); status-line
   throbbers appear immediately. A throbber that blinks on every navigation
   teaches the user to stop looking at throbbers, which costs the signal this
@@ -330,15 +332,14 @@ the export pages is most of the run: `setProgress(0)` is followed by the first
 and largest fetch, and every subsequent step holds the bar still while its
 request is outstanding. Only the throbber distinguishes that from a hung proxy.
 
-Additionally, `.progress-bar--indeterminate` gives the bar a travelling
-highlight during the lead-in before the first real percentage arrives, so the
-0% state is not mistaken for 0% progress. This is a secondary improvement; the
-throbber is the requirement.
-
-The seven duplicated bar families are consolidated into one `.progress-wrap` /
-`.progress-bar` pair at the same time, since they are byte-identical apart from
-the prefix. This is bundled here rather than deferred because touching all
-thirty-six of these pages twice is worse than touching them once.
+**The bars themselves are not touched.** An earlier version of this design also
+gave them a travelling "indeterminate" state for the lead-in before the first
+real percentage, and consolidated the seven duplicated bar families. Both were
+built and then reverted: the ask was throbbers, and changing how existing
+progress bars behave is a different piece of work that should be decided on its
+own merits rather than arriving as a side effect. A progress bar that behaves
+today exactly as it did yesterday, now with a throbber beside it, is the whole
+of what this document delivers.
 
 ## 9. The app shell
 
@@ -358,19 +359,18 @@ thirty-six of these pages twice is worse than touching them once.
   the message is announced. The throbber is `aria-hidden="true"` — it is
   redundant to a screen reader, which has the text.
 - Buttons showing an in-button throbber get `aria-busy="true"`.
-- Under `prefers-reduced-motion: reduce` the rotation is replaced by a slow
-  opacity pulse rather than removed:
+- **There is no `prefers-reduced-motion` override.** One was built — it swapped
+  the rotation for a slow opacity pulse — and it was wrong in practice. Windows
+  11 with animation effects turned off reports `reduce`, which is common on the
+  desktops this app runs on, so most people got a *blinking* ring rather than a
+  spinning one. A blinking ring does not read as "working"; it reads as a fault
+  light. It defeated the entire purpose of the element on the machines that
+  matter most here.
 
-  ```css
-  @media (prefers-reduced-motion: reduce) {
-    .spin { animation: spin-pulse 1.4s ease-in-out infinite; }
-    @keyframes spin-pulse { 50% { opacity: 0.25; } }
-  }
-  ```
-
-  A user who has asked for less motion still needs to know the app is alive.
-  Deleting the indicator would answer their preference by removing the
-  information, which is not the trade they asked for.
+  The judgement behind the original override was also wrong on its own terms. A
+  14px rotating ring is not the large-area movement `prefers-reduced-motion`
+  exists to suppress, and a throbber whose only job is to turn has nothing left
+  once it stops turning. It turns for everyone.
 
 ## 11. Rollout
 
@@ -385,7 +385,7 @@ after the mechanical part.
 | 4 | Async selects and comboboxes → `makeControlBusy` | 13 files | **done** |
 | 5 | Panels and tables → `.spin-panel` / inline | 14 files | **done** |
 | 6 | Button and row actions → `withBusy` | 4 files | **done** |
-| 7 | Indeterminate lead-in on every progress bar | 33 files | **done** |
+| 7 | Indeterminate lead-in on every progress bar | 33 files | **reverted** |
 | 8 | Shell: boot and router | 3 files | **done** |
 
 Four helpers ended up in [`js/utils.js`](../js/utils.js) rather than the three
@@ -408,22 +408,18 @@ are not called `setStatus`: `setFormStatus` in
 two write a bare type class rather than a BEM modifier, so they pass no base
 class and keep managing `className` themselves.
 
-**Step 7 did not consolidate the seven progress-bar families.** The rename would
-have touched thirty-six files' markup for no user-visible change, and
-`.progress-bar--indeterminate` composes with any of the seven as it stands. What
-shipped is the part that matters: `setProgress(0)` now marks the bar
-indeterminate and it travels until a real figure arrives, across 33 helpers, with
-all 22 reset paths clearing the class again.
-[`roles/search.js`](../js/pages/roles/search.js) and
-[`hourlyInteracting.js`](../js/pages/roles/hourlyInteracting.js) already had
-their own indeterminate state and were left alone — the second renders inside the
-first, so it inherits that page's style block.
+**Step 7 was built and then reverted in full**, along with the change it had
+brought forward to
+[`documentation/create.js`](../js/pages/export/documentation/create.js). Every
+progress bar in the app now behaves exactly as it did before this work; the only
+difference on those pages is the throbber beside the status text.
 
-The indeterminate state was brought forward to
-[`documentation/create.js`](../js/pages/export/documentation/create.js) in step 1,
-where the bar crawled to 80 % over eight seconds and then held for the rest of a
-~29 s run. Next to a working throbber that is actively misleading, so the invented
-percentage went at the same time as the page gained its throbber.
+The reasoning for reverting: the ask was throbbers. Marking a bar indeterminate
+changes what an existing control communicates, and on the documentation page it
+also removed a bar the page had always had. That is a legitimate question — the
+80 % crawl there does invent a number the server never reports — but it is a
+separate question, and it should be answered deliberately rather than ride along
+inside a throbber change. The code is in the history if it is ever wanted.
 
 Step 3 carries the whole §4.1 win and is the one to verify carefully. Of the 60
 status lines, 52 took the one-line swap unchanged. The other eight, as built:

@@ -315,26 +315,13 @@ body {
 }
 .spin-panel[hidden] { display: none; }
 
-/* A bar that cannot honestly report a percentage yet. Pair it with a throbber
-   rather than using it alone — a travelling highlight reads as "working", but
-   it says nothing about how much is left. */
-@keyframes spin-bar-travel {
-  from { transform: translateX(-100%); }
-  to   { transform: translateX(400%); }
-}
-.progress-bar--indeterminate {
-  width: 25% !important;
-  transition: none !important;
-  animation: spin-bar-travel 1.4s ease-in-out infinite;
-}
-
-/* A user who asked for less motion still needs to know the app is alive, so
-   the rotation is softened to a pulse rather than dropped. */
-@media (prefers-reduced-motion: reduce) {
-  @keyframes spin-pulse { 50% { opacity: 0.25; } }
-  .spin { animation: spin-pulse 1.4s ease-in-out infinite; }
-  .progress-bar--indeterminate { animation: spin-pulse 1.4s ease-in-out infinite; }
-}
+/* No prefers-reduced-motion override.
+   There was one — it swapped the rotation for an opacity pulse. Windows 11
+   with animation effects turned off reports reduce, which is a common desktop
+   default here, so in practice most people saw a blinking ring rather than a
+   spinning one and the throbber read as broken. A 14px rotating ring is not
+   the kind of large-area motion the preference exists to suppress, and the
+   whole point of the element is that it turns. It turns for everyone. */
 
 /* ── Tables (generic) ─────────────────────────────────── */
 .data-table {
@@ -2676,8 +2663,8 @@ body {
 
 /* Aliases of the shared .spin-panel / .spin--block primitive. Four pages carry
    this markup already; keeping the names means they need no edit, and the
-   throbber they show is now the same one as everywhere else — including the
-   reduced-motion handling their own @keyframes never had. */
+   throbber they show is the same one, on the same keyframes, as everywhere
+   else. */
 .cu-loading {
   display: flex;
   flex-direction: column;
@@ -2696,9 +2683,6 @@ body {
   border-top-color: var(--accent, #3b82f6);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .cu-loading-spinner { animation: spin-pulse 1.4s ease-in-out infinite; }
 }
 
 .cu-layout {

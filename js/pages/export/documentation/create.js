@@ -65,7 +65,7 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
 
     <div class="te-status" id="docStatus"></div>
 
-    <div id="docProgressWrap" style="display:none">
+    <div id="docSpinnerWrap" style="display:none">
       <div class="te-progress-wrap">
         <div class="te-progress-bar" id="docProgressBar"></div>
       </div>
@@ -118,7 +118,7 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
   const $orgLabel    = el.querySelector("#docOrgLabel");
   const $genBtn      = el.querySelector("#docGenBtn");
   const $status      = el.querySelector("#docStatus");
-  const $progWrap    = el.querySelector("#docProgressWrap");
+  const $spinner     = el.querySelector("#docSpinnerWrap");
   const $progBar     = el.querySelector("#docProgressBar");
   const $summary     = el.querySelector("#docSummary");
   const $dlWrap      = el.querySelector("#docDownload");
@@ -137,17 +137,16 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
   // ── Helpers ────────────────────────────────────────────────────────────
   const setStatus = makeStatus($status, "te-status");
 
-  /**
-   * The bar used to crawl to 80 % over eight seconds and hold there, which
-   * invented a number the server never reported: on a run of half a minute or
-   * more it sat motionless at 80 % for most of it, looking hung. `/api/doc-export`
-   * is a single request that returns only when the whole workbook is built, so
-   * there is no honest percentage to show — the bar is now marked indeterminate
-   * and the throbber on the status line carries the "still working" signal.
-   */
-  function setBusy(busy) {
-    $progWrap.style.display = busy ? "" : "none";
-    $progBar.classList.toggle("progress-bar--indeterminate", busy);
+  function showSpinner(visible) {
+    $spinner.style.display = visible ? "" : "none";
+    if (visible) {
+      // Animated "running" look: fill to ~80 % then hold
+      $progBar.style.transition = "width 8s ease-out";
+      $progBar.style.width = "80%";
+    } else {
+      $progBar.style.transition = "width 0.3s ease";
+      $progBar.style.width = "0%";
+    }
   }
 
   // Keep the org label in sync with whatever is selected in the header
@@ -183,7 +182,7 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
     $dlWrap.style.display      = "none";
     $summary.style.display     = "none";
     setStatus(`Starting documentation export for ${org.name}…`);
-    setBusy(true);
+    showSpinner(true);
 
     const startTs = Date.now();
 
@@ -254,7 +253,7 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
     } finally {
       isRunning        = false;
       $genBtn.disabled = false;
-      setBusy(false);
+      showSpinner(false);
     }
   });
 

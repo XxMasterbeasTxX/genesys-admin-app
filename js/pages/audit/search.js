@@ -257,15 +257,11 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   function showProgress(pct) {
     $progressWrap.style.display = "";
     $progressBar.style.width    = `${Math.min(100, pct)}%`;
-    // 0 % means "started, nothing measurable yet" — an empty bar reads as
-    // stalled, so it travels instead until a real figure arrives.
-    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
 
   function hideProgress() {
     $progressWrap.style.display = "none";
     $progressBar.style.width    = "0%";
-    $progressBar.classList.remove("progress-bar--indeterminate");
   }
 
   // ── Load service mappings on mount (both async + realtime in parallel) ──

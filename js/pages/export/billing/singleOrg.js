@@ -133,14 +133,10 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
   function setProgress(pct) {
     $progWrap.style.display = "";
     $progBar.style.width = `${pct}%`;
-    // 0 % means "started, nothing measurable yet" — an empty bar reads as
-    // stalled, so it travels instead until a real figure arrives.
-    $progBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
   function resetProgress() {
     $progWrap.style.display = "none";
     $progBar.style.width = "0%";
-    $progBar.classList.remove("progress-bar--indeterminate");
   }
   function clearDownload() {
     lastWorkbook = null;

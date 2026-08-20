@@ -287,9 +287,6 @@ export default function renderTrusteeExport({ route, me, api }) {
   function showProgress(pct) {
     $progressW.style.display = "";
     $progressBar.style.width = `${pct}%`;
-    // 0 % means "started, nothing measurable yet" — an empty bar reads as
-    // stalled, so it travels instead until a real figure arrives.
-    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
 
   /**

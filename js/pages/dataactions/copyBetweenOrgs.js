@@ -180,15 +180,11 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
   function setProgress(pct) {
     $progress.hidden = false;
     $progressBar.style.width = `${pct}%`;
-    // 0 % means "started, nothing measurable yet" — an empty bar reads as
-    // stalled, so it travels instead until a real figure arrives.
-    $progressBar.classList.toggle("progress-bar--indeterminate", !(pct > 0));
   }
 
   function hideProgress() {
     $progress.hidden = true;
     $progressBar.style.width = "0%";
-    $progressBar.classList.remove("progress-bar--indeterminate");
   }
 
   /** Extract properties from a JSON schema, handling nested structures. */
