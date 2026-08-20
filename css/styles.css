@@ -4928,3 +4928,13 @@ a.fr-shipped:hover { text-decoration: underline; }
   margin: 4px 0 0;
   white-space: pre-wrap;
 }
+.fr-waiting {
+  border: 1px solid rgba(255,210,138,0.4);
+  border-radius: 999px;
+  color: #ffd28a;
+  font-size: 11px;
+  padding: 1px 8px;
+}
+@media (prefers-color-scheme: light) {
+  .fr-waiting { color: #8a5a00; border-color: rgba(138,90,0,0.35); }
+}

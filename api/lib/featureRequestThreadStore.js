@@ -144,6 +144,25 @@ async function removeThread(requestId) {
   return messages.length;
 }
 
+/**
+ * Reduce a thread to what a board needs to show about it: how many messages,
+ * when the last one landed, and who wrote it.
+ *
+ * The role of the last author is what lets a card say "waiting on you" without
+ * any per-person read state: if the newest message came from the other side of
+ * the conversation, the ball is in yours.
+ */
+function summarize(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  if (!list.length) return { threadCount: 0, threadLastAt: "", threadLastRole: "" };
+  const last = list[list.length - 1]; // listByRequest returns reading order
+  return {
+    threadCount: list.length,
+    threadLastAt: last.createdAt || "",
+    threadLastRole: last.authorRole || "",
+  };
+}
+
 /** What a customer sees instead of the name of whoever answered them. */
 const SUPPORT_LABEL = "Support";
 
@@ -180,6 +199,7 @@ module.exports = {
   remove,
   removeThread,
   projectMessages,
+  summarize,
   BODY_MAX,
   SUPPORT_LABEL,
 };

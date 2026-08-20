@@ -158,6 +158,13 @@ and cost one extra query.
   thread, so triage never loses track of who said what. Applied as a server-side
   projection, not a page rule: a name the browser was sent and chose not to draw
   has still been sent.
+- **A count and a waiting marker on the board.** A card shows "Discussion (3)"
+  and, for the two people who can reply, a marker when the newest message came
+  from the other side. Derived from three denormalised fields on the request
+  (count, last message time, last author role), recomputed from the messages
+  that exist rather than incremented, so the count cannot drift. This means
+  neither party has to open a request to find out whether it is waiting on them,
+  which was the gap the first live test found.
 - **Never on the shared board.** The thread contains submitter text that no one
   curated, so it is absent from the §6.7 projection entirely. What crosses to
   other tenants is `adminNote` — the one curated, published response — and

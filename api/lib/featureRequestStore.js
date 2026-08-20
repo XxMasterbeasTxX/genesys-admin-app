@@ -138,6 +138,11 @@ function entityToRequest(e) {
     sharedTitle: e.sharedTitle || "",
     sharedDescription: e.sharedDescription || "",
     publishAnonymously: e.publishAnonymously === true,
+    // Denormalised thread summary, so a board can show "Discussion (3)" and
+    // whether a reply is waiting without reading every thread it lists.
+    threadCount: Number(e.threadCount) || 0,
+    threadLastAt: e.threadLastAt || "",
+    threadLastRole: e.threadLastRole || "",
   };
 }
 
@@ -168,6 +173,9 @@ function requestToEntity(data) {
     sharedTitle: clamp(data.sharedTitle, TITLE_MAX),
     sharedDescription: clamp(data.sharedDescription, DESCRIPTION_MAX),
     publishAnonymously: data.publishAnonymously === true,
+    threadCount: Number(data.threadCount) || 0,
+    threadLastAt: clamp(data.threadLastAt, 40),
+    threadLastRole: clamp(data.threadLastRole, 20),
   };
 }
 

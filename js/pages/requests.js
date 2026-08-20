@@ -204,6 +204,22 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
 
   // ── Cards ─────────────────────────────────────────────
 
+  /**
+   * Is the newest message on this request from the other side of the
+   * conversation?
+   *
+   * Compared against the role the viewer would post as, rather than against an
+   * author id, so a superuser's own request — where every message is theirs —
+   * never marks itself as waiting. Only the two people who can actually reply
+   * see it: a colleague reading along has nothing to answer.
+   */
+  function waitingOnMe(r) {
+    const participant = isSuperuser || r.userId === me?.id;
+    if (!participant || !r.threadCount) return false;
+    const myRole = isSuperuser ? "superuser" : "submitter";
+    return r.threadLastRole && r.threadLastRole !== myRole;
+  }
+
   function badge(kind, tone, text) {
     return `<span class="fr-badge fr-badge--${kind}-${tone}">${escapeHtml(text)}</span>`;
   }
@@ -260,12 +276,15 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
           ? `<p class="fr-published">Published to the shared board as “${escapeHtml(r.sharedTitle || "")}”</p>` : ""}
         <div class="fr-card-actions">
           ${own ? `<button type="button" class="fr-link" data-thread="${escapeHtml(r.id)}">${
-            openThreads.has(r.id) ? "Hide discussion" : "Discussion"}</button>` : ""}
+            openThreads.has(r.id)
+              ? "Hide discussion"
+              : `Discussion${r.threadCount ? ` (${r.threadCount})` : ""}`
+          }</button>${waitingOnMe(r) ? `<span class="fr-waiting" title="The last message was not yours">reply waiting</span>` : ""}` : ""}
           ${editable ? `<button type="button" class="fr-link" data-edit="${escapeHtml(r.id)}">Edit</button>` : ""}
           ${isSuperuser && own ? `<button type="button" class="fr-link" data-triage="${escapeHtml(r.id)}">Triage</button>` : ""}
           ${isSuperuser && own ? `<button type="button" class="fr-link fr-link--danger" data-delete="${escapeHtml(r.id)}">Delete</button>` : ""}
         </div>
-        ${threadMarkup(r)}
+        ${own ? threadMarkup(r) : ""}
         ${editingId === r.id ? editMarkup(r) : ""}
         ${triagingId === r.id ? triageMarkup(r) : ""}
       </article>`;
@@ -402,6 +421,12 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
     board = btn.dataset.board;
     editingId = null;
     triagingId = null;
+    // Open threads are cleared along with the panels. Without this they
+    // survived the switch and redrew under the shared board's redacted cards —
+    // which is not a leak (the messages were already fetched by someone
+    // entitled to them) but makes the shared board look like it carries
+    // discussions, which is the one thing it must never do.
+    openThreads.clear();
     $tabs.querySelectorAll(".fr-tab").forEach((t) =>
       t.classList.toggle("fr-tab--active", t.dataset.board === board));
     // The compose form belongs to your own board; you cannot file a request

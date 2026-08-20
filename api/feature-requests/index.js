@@ -207,6 +207,13 @@ module.exports = async function (context, req) {
           body,
         });
 
+        // Keep the board's summary current, recomputed from the messages that
+        // actually exist rather than incremented. A count that is derived is a
+        // count that cannot drift; if this write fails, the next message
+        // corrects it.
+        await store.update(id, threadStore.summarize(await threadStore.listByRequest(id)))
+          .catch((err) => context.log.warn("[feature-requests] thread summary:", err?.message));
+
         // The one notification the design calls load-bearing: an async
         // conversation between two people who are not looking at the same
         // screen only works if each turn announces itself (§3a.3).
@@ -390,6 +397,8 @@ module.exports = async function (context, req) {
         }
 
         await threadStore.remove(id, messageId);
+        await store.update(id, threadStore.summarize(await threadStore.listByRequest(id)))
+          .catch((err) => context.log.warn("[feature-requests] thread summary:", err?.message));
         context.res = json(200, { success: true });
         return;
       }
