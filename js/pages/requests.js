@@ -68,12 +68,13 @@ const STATUS_TONE = {
 };
 
 /**
- * Is a release note for this version visible to this viewer?
+ * Is a release note for this version worth linking this viewer to?
  *
- * A shipped request links to its release note, but internal-only entries are
- * filtered out of customer sessions — so linking one would send a customer to
- * an entry they cannot see (§6.4). When the entry is hidden, the version is
- * shown as plain text instead.
+ * Deliberately NOT the same question as "does it appear in their list". A
+ * customer now sees every version, but an internal-only one reads "Internal
+ * improvements" — so linking a shipped request there would land them on a page
+ * that teaches nothing and draws attention to the very gap the placeholder
+ * closes (§6.4). The version is shown as plain text instead.
  */
 function releaseNoteVisible(version, isInternal) {
   const entry = RELEASE_NOTES.find((e) => e.version === version);

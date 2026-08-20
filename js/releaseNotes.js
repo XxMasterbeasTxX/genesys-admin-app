@@ -8,6 +8,16 @@
  *
  * To cut a release: add a new object at the TOP with the next version
  * number and that release's changes.
+ *
+ * `internalOnly: true` marks a release whose changes are all internal-only
+ * features. Customers still SEE the version and its date — a hole in a numbered
+ * sequence invites more curiosity than a bland line does — but read "Internal
+ * improvements" and a single line instead of the changes.
+ *
+ * `customerSummary` (optional, only meaningful alongside internalOnly) replaces
+ * that single line. Use it when a mostly-internal release does contain one thing
+ * customers should know, so the choice is not between exposing everything and
+ * exposing nothing.
  */
 export const RELEASE_NOTES = [
   {
