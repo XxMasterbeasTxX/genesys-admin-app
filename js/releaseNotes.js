@@ -11,6 +11,21 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "3.8",
+    date: "2026-08-20",
+    title: "Requests: ask for what the app is missing",
+    changes: [
+      "New Requests button in the header, next to Activity Log. Ask for something new, a change to something that exists, or tell us when something is not working. It needs no permission and is not part of any package — a channel for telling us what the product is missing cannot itself be something you have to be granted, so everyone signed in has it.",
+      "Press it from the page you are complaining about and it remembers which one that was. A request that arrives already saying “Export › Users › Trustee”, with the organisation you had selected and the version you were running, is one we can act on instead of writing back to ask where you were. If the request is not about that page, one click clears it.",
+      "Everyone in your organisation sees the same board, so a request is visible to your colleagues rather than disappearing into a mailbox. If somebody has already asked for what you were about to ask for, vote for theirs instead — the count is what tells us which of two good ideas to build first, and it is something a queue of near-identical requests can never say.",
+      "We answer on the request itself, and you get an email whenever its status moves — looked at, planned, being built, shipped, or not planned. A request that visibly moves is worth filing; one that vanishes is not, which is the whole reason this is a board and not a suggestion box.",
+      "Each request has a discussion between you and us, for the times when what was asked for and what is actually needed are not quite the same thing. Your colleagues can read it, so nobody has to ask the same question twice, but only you and we can write in it. Both of us are emailed when the other replies.",
+      "A shared board carries the requests we have published, and every organisation sees the same one. Nothing reaches it automatically: we choose what goes there and write the wording ourselves, so your own words and your organisation's name never travel to anyone else. Published requests show a first name and last initial — “Thomas V.” — and there is a box on the form to publish without your name at all.",
+      "Once something you asked for ships, its request says so and links to the release note. You can see where your own words ended up.",
+      "Activity Log now shows your whole organisation's activity rather than only your own. Customers already worked this way; internal staff were narrowed to their own entries, which left the people running the app as the only ones who could not see what their own organisation had done. The User column and the Org and User filters come with it, because a log of other people's actions needs them. Nothing crosses between organisations: you see your own, and never anybody else's.",
+    ],
+  },
+  {
     version: "3.7",
     date: "2026-08-19",
     title: "Get Lists: Wrap-up Codes (internal)",

@@ -1,8 +1,8 @@
 # Feature Requests — Design
 
-Status: **Proposed — awaiting sign-off**
+Status: **Built and shipped in v3.8**
 Author: Genesys Admin App
-Last updated: 2026-08-19
+Last updated: 2026-08-20
 
 ## 1. Purpose
 
