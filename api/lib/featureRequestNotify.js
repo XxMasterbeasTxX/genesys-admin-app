@@ -68,7 +68,11 @@ function contextLines(request) {
  * open the app to know whether something is worth opening the app for.
  */
 async function notifyNewRequest(context, request) {
-  const recipients = await superuserEmails(context);
+  const all = await superuserEmails(context);
+  // A superuser filing their own request already gets the confirmation below;
+  // telling them about it a second time as a triager is noise.
+  const own = String(request.userEmail || "").toLowerCase();
+  const recipients = all.filter((e) => String(e).toLowerCase() !== own);
   const text = [
     `${request.userName || request.userEmail} filed a ${request.type} request.`,
     "",
@@ -145,4 +149,41 @@ async function notifyThreadMessage(context, request, message) {
   });
 }
 
-module.exports = { notifyNewRequest, notifyStatusChange, notifyThreadMessage };
+/**
+ * A request was filed → confirm it to the person who filed it.
+ *
+ * The page already said "thank you", so this is not news. It is a receipt: the
+ * words they wrote, in their own inbox, so a request is something they can find
+ * again and forward rather than something they typed into a box and hoped about.
+ * It also proves the address we hold for them works, before the first status
+ * change depends on it.
+ */
+async function notifyRequestReceived(context, request) {
+  if (!request.userEmail) return false;
+
+  const text = [
+    "Thank you — your request has been filed. Here is what we have:",
+    "",
+    request.title,
+    "",
+    request.description,
+    "",
+    ...contextLines(request),
+    "",
+    "You will get an email whenever its status changes, and if we need to ask",
+    "you anything we will reply on the request itself in the app.",
+  ].join("\n");
+
+  return send(context, {
+    recipients: request.userEmail,
+    subject: `[Requests] Received: ${request.title}`,
+    text,
+  });
+}
+
+module.exports = {
+  notifyNewRequest,
+  notifyRequestReceived,
+  notifyStatusChange,
+  notifyThreadMessage,
+};

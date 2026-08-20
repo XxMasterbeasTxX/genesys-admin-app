@@ -7,7 +7,7 @@
  * cannot itself be something you have to be granted.
  *
  * Two boards:
- *   My organisation — your own org's requests, in full. Everyone in an org sees
+ *   My company board — your own org's requests, in full. Everyone in an org sees
  *                     that org's requests, the same contract schedules and the
  *                     activity log already have.
  *   Shared          — requests a superuser has promoted, visible to every org as
@@ -115,9 +115,9 @@ export default function renderRequests({ me, orgContext, isInternal = true }) {
     </div>
 
     <div class="fr-tabs" id="frTabs">
-      <button type="button" class="fr-tab fr-tab--active" data-board="mine">My organisation</button>
+      <button type="button" class="fr-tab fr-tab--active" data-board="mine">My company board</button>
       <button type="button" class="fr-tab" data-board="shared">Shared board</button>
-      <button type="button" class="fr-tab" data-board="all" id="frTabAll" hidden>Triage</button>
+      <button type="button" class="fr-tab" data-board="all" id="frTabAll" hidden>Triage board</button>
     </div>
 
     <div id="frComposeWrap">

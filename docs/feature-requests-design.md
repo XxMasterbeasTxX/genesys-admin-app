@@ -455,8 +455,15 @@ the wrong answer, so this feature starts by factoring the Mailjet call into
 small, and it is the only reason this feature touches code outside its own
 files.
 
-- **On submission** → the admin address. Subject carries type and title; body
-  carries the captured context, so triage rarely needs to open the app.
+- **On submission** → the superusers. Subject carries type and title; body
+  carries the captured context, so triage rarely needs to open the app. A
+  superuser filing their own request is left off this one — they already get
+  the receipt below.
+- **On submission** → the person who filed it, as a receipt. The page already
+  said thank you, so this is not news; it is their own words in their own
+  inbox, so a request is something they can find again and forward rather than
+  something they typed into a box and hoped about. It also proves the address
+  we hold for them works, before the first status change depends on it.
 - **On status change** → the submitter. This is the notification that decides
   whether the board gets used twice: a request that visibly moves is worth
   filing, and one that vanishes is not.

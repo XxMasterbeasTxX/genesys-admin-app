@@ -273,6 +273,7 @@ module.exports = async function (context, req) {
       // Not awaited: the request is filed either way, and a slow relay must
       // not hold the submitter's page open. Failures are logged inside.
       notify.notifyNewRequest(context, created).catch(() => {});
+      notify.notifyRequestReceived(context, created).catch(() => {});
 
       context.res = json(201, store.toOwnCard(created, caller.userId));
       return;
