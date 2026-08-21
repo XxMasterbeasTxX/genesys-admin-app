@@ -1,6 +1,7 @@
 # Disconnect — Sender / Recipient Email Filters — Design
 
-Status: **Proposed** — awaiting go-ahead
+Status: **Built** — steps 1–6 and 8 shipped to dev (release 4.1); step 7 held,
+see §6
 Author: Genesys Admin App
 Last updated: 2026-08-21
 
@@ -301,17 +302,41 @@ retained because §8.2 restores its use.
 
 Each step is a separate commit and push, with a pause to test on dev.
 
-1. **Cleanup** — §8.4, §8.5. No behaviour change.
-2. **Candidate invalidation** — §8.1, covering today's filters.
-3. **Preview reporting** — §8.2: ID-mode table, queue-mode reason counts.
-4. **ID-mode alignment** — §8.3, now visible through step 3.
-5. **Address filter UI** — §3 and §7: stacked rows, validation, email-only
-   narrowing and its note. No filtering behaviour yet.
-6. **Client-side filtering** — §5: the shared matcher across all three paths,
-   plus `gc.getConversationAnalytics`. Feature complete here.
-7. **Server-side predicates** — §6, only after the dev test in that section.
-8. **Release notes** — one entry, folded into the existing 4.0 entry per the
-   repo's convention.
+1. ~~**Cleanup** — §8.4, §8.5. No behaviour change.~~ `696b62b`
+2. ~~**Candidate invalidation** — §8.1, covering today's filters.~~ `8b72c91`
+3. ~~**Preview reporting** — §8.2: ID-mode table, queue-mode reason counts.~~ `6092501`
+4. ~~**ID-mode alignment** — §8.3, now visible through step 3.~~ `d4bf8c9`
+5. ~~**Address filter UI** — §3 and §7: stacked rows, validation, email-only
+   narrowing and its note.~~ `9622100`
+6. ~~**Client-side filtering** — §5: the shared matcher across all three paths,
+   plus `gc.getConversationAnalytics`.~~ `d1e79ae` — feature complete here.
+7. **Server-side predicates** — §6. **Held.** Ships only after the two
+   `matches` questions in that section are answered against dev.
+8. ~~**Release notes** — one entry covering the whole feature.~~ `b03ba86`,
+   release 4.1, `internalOnly` because `interactions.*` reaches no customer.
 
-Steps 1–4 stand on their own and carry no new API surface, which makes them the
-right place for the design to meet dev.
+Steps 1–4 stood on their own and carried no new API surface, which made them the
+right place for the design to meet dev; they were tested there before 5 began.
+
+### 11.1 What step 6 was verified against
+
+Steps 5 and 6 were driven in a browser against stubbed API shapes before being
+committed — the UI behaviours (row add/remove, last-row-emptied, invalid and
+comma rows, the note, the struck-through ticks, Preview refusing a bad row) and
+then the matcher end to end:
+
+| Case | Result |
+|---|---|
+| `NoReply@Customer.com` vs `noreply@customer.com` | match — case folded |
+| `support@acme.com` vs `Support <SUPPORT@Acme.com>` | match — display name stripped |
+| Wrong sender / wrong recipient / no address | three distinct reasons |
+| Analytics 403 / 404 | "needs the analytics permission" / "not yet available" |
+| No address filter set | **zero** analytics calls |
+| Queue scan of 4 with a sender filter | 2 matched, **2** `getConversation` calls |
+
+The last row is the §5.1 claim holding: the filter runs before the
+per-conversation call, so the two that failed it never cost a request.
+
+What the stubs cannot answer is whether real Genesys analytics returns these
+addresses bare or decorated, and how fast ingestion is in practice for §5.3.
+Both need the dev org.
