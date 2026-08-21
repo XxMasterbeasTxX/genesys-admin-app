@@ -196,21 +196,22 @@ function isWaitingInQueue(conversation, queueId) {
 }
 
 /**
- * TEMPORARY (2026-08-21): whether the open ACD segment actually named this
- * queue, or was accepted because it named no queue at all. Part of accounting
- * for 173 matched against a depth of 169.
+ * TEMPORARY (2026-08-21): the type of the open ACD segment for this queue.
+ * Accounting for 173 matched against a depth of 169, with media type, agent
+ * involvement and a missing queueId already ruled out.
  */
-function acdSegmentNamesQueue(conversation, queueId) {
+function openAcdSegmentType(conversation, queueId) {
   for (const p of (conversation.participants || [])) {
     if (p.purpose !== "acd") continue;
     for (const session of (p.sessions || [])) {
       for (const seg of (session.segments || [])) {
         if (seg.segmentEnd) continue;
-        if (seg.queueId === queueId) return true;
+        if (queueId && seg.queueId && seg.queueId !== queueId) continue;
+        return seg.segmentType || "(blank)";
       }
     }
   }
-  return false;
+  return null;
 }
 
 /** Participant purposes that mean a person is on the interaction. */
@@ -922,7 +923,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const matched = [];
     const skips   = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
-    const probe = { total: 0, byMedia: {}, withAgent: 0, acdSegmentHadNoQueueId: 0 };  // TEMPORARY
+    const probe = { total: 0, byAcdSegment: {}, oddballs: [] };   // TEMPORARY
 
     // Read first: `interacting` decides whether the live-agent guard applies at
     // all. Failure is not fatal — nulls fall through to "assume nothing live",
@@ -981,9 +982,12 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       // the queue counting it as waiting, rather than guessing which. Remove
       // once the four are accounted for.
       probe.total++;
-      probe.byMedia[mediaType] = (probe.byMedia[mediaType] || 0) + 1;
-      if (hasAgentEngaged(c)) probe.withAgent++;
-      if (!acdSegmentNamesQueue(c, queueId)) probe.acdSegmentHadNoQueueId++;
+      // The open ACD segment's type. All three sampled earlier read "interact",
+      // but three is not 173 — email can be parked, and `parked`/`scheduled`
+      // both leave the queue leg open without the interaction waiting.
+      const acdType = openAcdSegmentType(c, queueId) || "(none)";
+      probe.byAcdSegment[acdType] = (probe.byAcdSegment[acdType] || 0) + 1;
+      if (acdType !== "interact") probe.oddballs.push(`${c.conversationId}:${acdType}`);
 
       matched.push({
         convId:    c.conversationId,
@@ -1078,6 +1082,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       }
     }
 
+    probe.oddballs = probe.oddballs.slice(0, 10);           // TEMPORARY
     console.log("[match-probe]", JSON.stringify(probe));   // TEMPORARY
 
     return { matched, waiting, interacting, oldestMs, skips };
