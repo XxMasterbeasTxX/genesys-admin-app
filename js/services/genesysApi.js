@@ -365,6 +365,19 @@ export async function getQueueStats(api, orgId, queueId, mediaTypes = []) {
 }
 
 /**
+ * Get a single conversation's full details (participants, media, state).
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {string} conversationId
+ * @returns {Promise<Object>}  Full conversation object.
+ */
+export async function getConversation(api, orgId, conversationId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/conversations/${conversationId}`);
+}
+
+/**
  * Get one conversation in the *analytics* shape — participants with sessions
  * and segments.
  *
