@@ -76,7 +76,7 @@ const STATUS = {
    * "0 match · 2,847 waiting in queue" is plainly a filter that is too tight,
    * where a bare "no conversations found" reads as an empty queue.
    */
-  previewedQueue(match, waiting, oldestMs, truncated, shown, skips) {
+  previewedQueue(match, waiting, oldestMs, truncated, returned, skips) {
     if (!match && !waiting) return this.noResults;
     const parts = [`${match.toLocaleString()} match`];
     if (waiting != null) parts.push(`${waiting.toLocaleString()} waiting in queue`);
@@ -90,10 +90,17 @@ const STATUS = {
 
     // Genesys caps the observation list, and a capped list is not the first N —
     // it is the oldest half plus the newest half, with the middle missing. The
-    // count above stays exact, so the two figures together say plainly that the
-    // queue is bigger than what was examined. Running again reaches the rest,
-    // because each pass takes from both ends.
-    if (truncated) parts.push(`${shown.toLocaleString()} shown — list truncated, run again for the rest`);
+    // depth above stays exact, so the two figures together say plainly that the
+    // queue is bigger than what came back.
+    //
+    // "returned", not "shown": queue mode has no results table, so nothing is
+    // displayed either way. And previewing again returns the same rows — it is
+    // disconnecting them that lets the next pass reach further, since the cap
+    // takes from both ends of a queue that is now shorter.
+    if (truncated) {
+      parts.push(`only ${returned.toLocaleString()} returned — Genesys caps the list; `
+                 + "disconnect these, then preview again for the rest");
+    }
     for (const [reason, n] of [...skips].sort((a, b) => b[1] - a[1])) {
       parts.push(`${n.toLocaleString()} ${reason}`);
     }
@@ -893,7 +900,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const oldestMs = oldest ? Date.now() - new Date(oldest).getTime() : null;
 
     showProgress(100);
-    return { matched, waiting, oldestMs, truncated, shown: observations.length, skips };
+    return { matched, waiting, oldestMs, truncated, returned: observations.length, skips };
   }
 
   // ── Scan: single / multiple IDs ────────────────────
@@ -1016,11 +1023,11 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         const queueId = ssQueue.getValue();
         if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
 
-        const { matched, waiting, oldestMs, truncated, shown, skips } =
+        const { matched, waiting, oldestMs, truncated, returned, skips } =
           await scanQueue(queueId, filters);
         setCandidates(matched);
         summary = STATUS.previewedQueue(
-          matched.length, waiting, oldestMs, truncated, shown, skips);
+          matched.length, waiting, oldestMs, truncated, returned, skips);
       } else {
         const ids = parseConvIds();
         if (!ids.length) {

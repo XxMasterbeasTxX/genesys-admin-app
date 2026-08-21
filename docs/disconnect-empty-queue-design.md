@@ -128,13 +128,17 @@ Handling:
 
 - The **depth is always exact.** It comes from `metrics`, which truncation does
   not affect. `3.091 waiting in queue` stays true however few rows come back.
-- When truncated, the status says so — `3.091 waiting in queue · 1.000 shown` —
-  and the confirmation names the same figure. The operator never believes they
-  are acting on the whole queue when they are not.
-- **Re-running drains it.** Each pass removes interactions from both ends, so
-  the hidden middle shrinks and a second pass reaches it. Emptying a large queue
-  becomes a small number of passes rather than one long scan. This is worth
-  saying out loud in the status rather than leaving to be discovered.
+- When truncated, the status says so: `only 1.000 returned — Genesys caps the
+  list; disconnect these, then preview again for the rest`. The operator never
+  believes they are acting on the whole queue when they are not.
+- **"returned", not "shown".** Queue mode has no results table, so nothing is
+  displayed either way — a count of what is on screen would be a count of
+  nothing.
+- **Disconnecting is what drains it, not re-previewing.** Previewing again
+  returns the same rows. It is removing them that lets the next pass reach
+  further, because the cap takes from both ends of a queue that is now shorter.
+  The wording has to say that, or it sends the operator round a loop that never
+  terminates.
 
 ## 7. What this gives up
 
