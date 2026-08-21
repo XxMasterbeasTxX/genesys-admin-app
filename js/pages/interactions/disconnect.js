@@ -265,7 +265,11 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   const $queueInput   = el.querySelector("#diQueueInput");
   const $convId       = el.querySelector("#diConvId");
   const $convIds      = el.querySelector("#diConvIds");
-  const ssQueue = createSingleSelect({ placeholder: "— Select queue —", searchable: true });
+  const ssQueue = createSingleSelect({
+    placeholder: "— Select queue —",
+    searchable: true,
+    onChange: () => invalidateCandidates(),
+  });
   el.querySelector("#diQueueDropdown").append(ssQueue.el);
   ssQueue.setEnabled(false);
   const $mediaAll     = el.querySelector("#diMediaAll");
@@ -282,6 +286,19 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   const $progressWrap = el.querySelector("#diProgressWrap");
   const $progressBar  = el.querySelector("#diProgressBar");
 
+  // ── Candidate invalidation ─────────────────────────
+  //
+  // Preview caches its result in `candidates`, and Disconnect reuses that cache
+  // rather than rescanning. Anything that changes what a scan would return has
+  // to throw the cache away, or the operator edits a filter, presses Disconnect
+  // and gets the set the *previous* filter produced. Every control that feeds
+  // validateFilters() or the ID inputs is wired to this.
+  function invalidateCandidates() {
+    if (!candidates.length || isRunning) return;
+    candidates = [];
+    setStatus(STATUS.ready);
+  }
+
   // ── Mode switching ──────────────────────────────────
   $modeRadios.forEach(r => r.addEventListener("change", () => {
     currentMode = r.value;
@@ -295,6 +312,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   // ── Media type wiring ──────────────────────────────
   $mediaAll.addEventListener("change", () => {
     $mediaCbs.forEach(cb => { cb.checked = $mediaAll.checked; });
+    invalidateCandidates();
   });
   $mediaCbs.forEach(cb => {
     cb.addEventListener("change", () => {
@@ -302,12 +320,25 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       const noneChecked = [...$mediaCbs].every(c => !c.checked);
       $mediaAll.checked       = allChecked;
       $mediaAll.indeterminate = !allChecked && !noneChecked;
+      invalidateCandidates();
     });
   });
 
   // ── Date filter wiring ─────────────────────────────
-  $olderEnable.addEventListener("change", () => { $olderDate.disabled = !$olderEnable.checked; });
-  $newerEnable.addEventListener("change", () => { $newerDate.disabled = !$newerEnable.checked; });
+  $olderEnable.addEventListener("change", () => {
+    $olderDate.disabled = !$olderEnable.checked;
+    invalidateCandidates();
+  });
+  $newerEnable.addEventListener("change", () => {
+    $newerDate.disabled = !$newerEnable.checked;
+    invalidateCandidates();
+  });
+  $olderDate.addEventListener("change", invalidateCandidates);
+  $newerDate.addEventListener("change", invalidateCandidates);
+
+  // ── ID input wiring ────────────────────────────────
+  $convId.addEventListener("input", invalidateCandidates);
+  $convIds.addEventListener("input", invalidateCandidates);
 
   // ── Status / progress helpers ──────────────────────
   const setStatus = makeStatus($status, "di-status");
