@@ -31,6 +31,15 @@ const MEDIA_TYPES = [
   { id: "message",  label: "Message" },
 ];
 
+/**
+ * Concurrent requests per batch, for both inspecting and disconnecting.
+ *
+ * Ten at a time with a short pause between batches is what the disconnect loop
+ * has run at; the same figure is used for inspection so there is one number to
+ * reason about if rate limiting ever needs tuning.
+ */
+const REQUEST_BATCH = 10;
+
 /** Number of 31-day intervals to scan backwards (≈ 6 months). */
 const SCAN_INTERVALS = 6;
 const INTERVAL_DAYS  = 31;
@@ -41,8 +50,10 @@ const STATUS = {
   ready:          "Ready. Select a mode, provide input, then Preview.",
   loading:        "Loading queues…",
   scanning:       (i, n) => `Scanning interval ${i} of ${n}…`,
-  inspecting:     (i, n) => `Inspecting conversation ${i} of ${n}…`,
-  disconnecting:  (i, n) => `Disconnecting ${i}–${Math.min(i + 9, n)} of ${n}…`,
+  inspecting:     (i, n) =>
+    `Inspecting ${i}–${Math.min(i + REQUEST_BATCH - 1, n)} of ${n}…`,
+  disconnecting:  (i, n) =>
+    `Disconnecting ${i}–${Math.min(i + REQUEST_BATCH - 1, n)} of ${n}…`,
   noResults:      "No conversations found matching the criteria.",
 
   /** ID modes: the table carries the detail, the line carries the split. */
@@ -1036,37 +1047,34 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const orgId = orgContext.get();
     const rows  = [];
 
-    for (let i = 0; i < convIds.length; i++) {
-      if (cancelled) break;
-
-      setStatus(STATUS.inspecting(i + 1, convIds.length));
-      showProgress((i / convIds.length) * 90);
-
+    // One ID's verdict, self-contained and never rejecting, so a batch can be
+    // run through Promise.all without one bad ID taking the others with it.
+    async function inspectId(convId) {
       try {
-        const conv = await gc.getConversation(api, orgId, convIds[i]);
+        const conv = await gc.getConversation(api, orgId, convId);
         // findAcdParticipant is kept for the media type it reports on a live
         // ACD leg; detectMediaType covers the orphans, where that leg is gone.
         const acd = findAcdParticipant(conv);
         const mediaType = acd ? acd.mediaType : detectMediaType(conv.participants);
 
         const row = {
-          convId: convIds[i],
+          convId,
           mediaType,
           startTime: formatDateTime(conv.startTime),
         };
 
-        const filtered = (reason) => rows.push({ ...row, status: "Filtered", error: reason });
+        const filtered = (reason) => ({ ...row, status: "Filtered", error: reason });
 
-        if (conv.endTime) { filtered("Already ended"); continue; }
+        if (conv.endTime) return filtered("Already ended");
         if (!filters.mediaTypes.includes(mediaType)) {
-          filtered(`Media type "${mediaType}" not selected`); continue;
+          return filtered(`Media type "${mediaType}" not selected`);
         }
         const st = conv.startTime ? new Date(conv.startTime) : null;
         if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) {
-          filtered("Started after 'Older than' date"); continue;
+          return filtered("Started after 'Older than' date");
         }
         if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
-          filtered("Started before 'Newer than' date"); continue;
+          return filtered("Started before 'Newer than' date");
         }
 
         // Address filters need the analytics shape, which the live conversation
@@ -1075,29 +1083,42 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         if (filters.senders.length || filters.recipients.length) {
           let analytics;
           try {
-            analytics = await gc.getConversationAnalytics(api, orgId, convIds[i]);
+            analytics = await gc.getConversationAnalytics(api, orgId, convId);
           } catch (err) {
             const msg = err.message || "";
-            filtered(
+            return filtered(
               msg.includes("403") ? "Needs the analytics permission to read sender/recipient"
               : msg.includes("404") ? "Sender/recipient not yet available in analytics"
               : `Could not read sender/recipient — ${friendlyError(err)}`);
-            continue;
           }
           const addr = matchesAddressFilters(analytics, filters);
-          if (!addr.pass) { filtered(addr.reason); continue; }
+          if (!addr.pass) return filtered(addr.reason);
         }
 
-        rows.push({ ...row, status: "Match", error: "" });
+        return { ...row, status: "Match", error: "" };
       } catch (err) {
-        rows.push({
-          convId: convIds[i],
+        return {
+          convId,
           mediaType: "—",
           startTime: "—",
           status: "Failed",
           error: friendlyError(err),
-        });
+        };
       }
+    }
+
+    // Batched rather than one at a time: 3,000 IDs inspected serially is 3,000
+    // round-trips end to end. Batches are awaited in order and their results
+    // appended in order, so the table still reads in the order they were typed.
+    for (let i = 0; i < convIds.length && !cancelled; i += REQUEST_BATCH) {
+      const chunk = convIds.slice(i, i + REQUEST_BATCH);
+
+      setStatus(STATUS.inspecting(i + 1, convIds.length));
+      showProgress((i / convIds.length) * 90);
+
+      rows.push(...await Promise.all(chunk.map(inspectId)));
+
+      if (i + REQUEST_BATCH < convIds.length) await sleep(50);
     }
 
     return rows;
@@ -1202,10 +1223,8 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
     let okCount   = 0;
     let failCount = 0;
-    const BATCH   = 10; // concurrent requests per batch
-
-    for (let i = 0; i < candidates.length && !cancelled; i += BATCH) {
-      const chunk = candidates.slice(i, i + BATCH);
+    for (let i = 0; i < candidates.length && !cancelled; i += REQUEST_BATCH) {
+      const chunk = candidates.slice(i, i + REQUEST_BATCH);
 
       setStatus(STATUS.disconnecting(i + 1, candidates.length));
       showProgress((i / candidates.length) * 100);
@@ -1219,7 +1238,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         else failCount++;
       }
 
-      if (i + BATCH < candidates.length) await sleep(50);
+      if (i + REQUEST_BATCH < candidates.length) await sleep(50);
     }
 
     showProgress(100);
