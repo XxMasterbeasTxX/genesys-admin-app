@@ -427,8 +427,32 @@ interaction was **23 hours old** — inside the 48-hour recent window — so all
 historical async jobs covering six months were scanning for something that could
 not be there. Sized to the age, that queue needs none of them.
 
-Still unbuilt, and still owed an explicit **"Full 6-month scan"** override so
-that nothing is inferred in the case where the inference could be wrong.
+**Built.** The historical phase is sized to the queue: nothing in it is older
+than `oldestMs`, so intervals reaching further back are submitting, polling and
+fetching an async job for a guaranteed empty result.
+
+```
+intervals = clamp(ceil((oldestMs − 48h) / 31 days), 0, 6)
+```
+
+| Oldest in queue | Async jobs |
+|---|---|
+| 23h — the live queue | **0** of 6 |
+| 4 days | 1 |
+| 45 days | 2 |
+| 4 months | 4 |
+| Older than ~6 months | 6 |
+
+`oldestMs` is the older of `oLongestWaiting` **and `oLongestInteracting`**.
+Waiting alone describes only the unassigned interactions, so one sitting at an
+agent for months would not be represented by it and a scan sized on waiting
+alone would stop short of it.
+
+Three ways it declines to guess: the age being unreadable falls through to the
+full six months, the status line says how far it actually looked
+(`searched back 33d`), and a **"Full 6-month scan"** checkbox forces the old
+behaviour for the case where the observed queue does not reflect what the
+operator is chasing.
 
 ## 9. Not in scope
 

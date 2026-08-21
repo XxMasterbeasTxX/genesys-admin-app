@@ -65,15 +65,20 @@ const STATUS = {
    * "0 match · 2,847 waiting in queue" is plainly a filter that is too tight,
    * where a bare "no conversations found" reads as an empty queue.
    */
-  previewedQueue(match, waiting, longestWaitMs, skips) {
+  previewedQueue(match, waiting, oldestMs, historicalIntervals, skips) {
     if (!match && !waiting) return this.noResults;
     const parts = [`${match.toLocaleString()} match`];
-    if (waiting != null) {
-      // The oldest wait says how far back the queue actually reaches, which is
-      // the number that decides whether a six-month historical scan was ever
-      // needed for this queue.
-      const age = waiting > 0 ? formatWait(longestWaitMs) : null;
-      parts.push(`${waiting.toLocaleString()} waiting in queue${age ? ` (oldest ${age})` : ""}`);
+    if (waiting != null) parts.push(`${waiting.toLocaleString()} waiting in queue`);
+
+    // The oldest interaction says how far back the queue actually reaches,
+    // which is what sized the scan. Both are shown: a result that came back
+    // fast because the scan was shortened should say so, rather than leaving
+    // the operator to wonder whether it looked properly.
+    const age = formatWait(oldestMs);
+    if (age) parts.push(`oldest ${age}`);
+    if (historicalIntervals < SCAN_INTERVALS) {
+      const days = Math.ceil(RECENT_LOOKBACK_HOURS / 24) + historicalIntervals * INTERVAL_DAYS;
+      parts.push(`searched back ${days}d`);
     }
     for (const [reason, n] of [...skips].sort((a, b) => b[1] - a[1])) {
       parts.push(`${n.toLocaleString()} ${reason}`);
@@ -389,6 +394,14 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
             <label class="di-label">Queue</label>
             <div id="diQueueDropdown"></div>
           </div>
+          <div class="di-control-group">
+            <label class="di-label">
+              <input type="checkbox" id="diFullScan"> Full 6-month scan
+            </label>
+            <div class="di-hint">
+              Off: looks back only as far as the queue's oldest interaction.
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -491,6 +504,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   });
   el.querySelector("#diQueueDropdown").append(ssQueue.el);
   ssQueue.setEnabled(false);
+  const $fullScan     = el.querySelector("#diFullScan");
   const $mediaAll     = el.querySelector("#diMediaAll");
   const $mediaCbs     = el.querySelectorAll(".di-media-cb");
   const $olderEnable  = el.querySelector("#diOlderEnable");
@@ -679,6 +693,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     $newerDate.disabled = !$newerEnable.checked;
     invalidateCandidates();
   });
+  $fullScan.addEventListener("change", invalidateCandidates);
   $olderDate.addEventListener("change", invalidateCandidates);
   $newerDate.addEventListener("change", invalidateCandidates);
 
@@ -813,10 +828,11 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   // model here. An earlier hasActiveAgentSegment() guard was removed (549dbc3)
   // because it also excluded the orphans above.
   //
-  // Returns { matched, waiting, longestWaitMs, skips } — `skips` is a reason →
-  // count tally, `waiting` is the live queue depth and `longestWaitMs` the age
-  // of the oldest thing in it, so the status line can account for the
-  // difference between what is in the queue and what matched.
+  // Returns { matched, waiting, oldestMs, skips, historicalIntervals } — `skips`
+  // is a reason → count tally, `waiting` is the live queue depth, `oldestMs` the
+  // age of the oldest thing in it, and `historicalIntervals` how many 31-day
+  // intervals were actually walked, so the status line can account both for what
+  // did not match and for how far back it looked.
   async function scanQueue(queueId, filters) {
     const orgId  = orgContext.get();
     const now    = new Date();
@@ -825,15 +841,17 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const matched = [];
     const skips  = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
-    // Started here and awaited at the end: it is one small request and has no
-    // bearing on the scan, so it costs nothing to have it in flight throughout.
-    // A failure resolves to null rather than rejecting — the queue depth is
-    // context, and losing it must never fail a scan that otherwise worked.
-    const waitingPromise = gc
+    // Read first, because it decides how much of the historical phase to run.
+    // One small request in front of a scan that takes seconds at best. A failure
+    // resolves to nulls rather than rejecting: losing this must never fail a
+    // scan that would otherwise have worked, and nulls fall through to the full
+    // six-month scan below.
+    setStatus("Reading queue depth…");
+    const { waiting, oldestMs } = await gc
       .getQueueWaitingStats(api, orgId, queueId, filters.mediaTypes)
       .catch((err) => {
         console.warn("Could not read queue observations:", err.message);
-        return { waiting: null, longestWaitMs: null };
+        return { waiting: null, oldestMs: null };
       });
 
     // Phase 1: scan the most recent 48 hours with synchronous analytics +
@@ -846,7 +864,24 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       recentIntervals.push({ start, end });
     }
 
-    const totalIntervals = recentIntervals.length + SCAN_INTERVALS;
+    // Phase 2 is sized to the queue rather than fixed at six months. Nothing in
+    // the queue is older than `oldestMs`, so intervals reaching further back
+    // than that are scanning for something that cannot be there — six async
+    // jobs, submitted, polled and fetched, for a guaranteed empty result.
+    //
+    // Falls back to the full scan whenever the age cannot be read, and the
+    // operator can force it with "Full 6-month scan" for the case where the
+    // observed queue does not reflect what they are actually chasing.
+    let historicalIntervals = SCAN_INTERVALS;
+    if (!$fullScan.checked && oldestMs !== null) {
+      const beyondRecentMs = oldestMs - RECENT_LOOKBACK_HOURS * 3_600_000;
+      historicalIntervals = beyondRecentMs <= 0
+        ? 0
+        : Math.min(SCAN_INTERVALS,
+                   Math.ceil(beyondRecentMs / (INTERVAL_DAYS * 86_400_000)));
+    }
+
+    const totalIntervals = recentIntervals.length + historicalIntervals;
     let intervalNo = 0;
 
     for (const r of recentIntervals) {
@@ -924,7 +959,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       }
     }
 
-    for (let i = 0; i < SCAN_INTERVALS; i++) {
+    for (let i = 0; i < historicalIntervals; i++) {
       if (cancelled) break;
 
       const end      = new Date(recentCutoff.getTime() - i * INTERVAL_DAYS * 86_400_000);
@@ -996,8 +1031,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       }
     }
 
-    const { waiting, longestWaitMs } = await waitingPromise;
-    return { matched, waiting, longestWaitMs, skips };
+    return { matched, waiting, oldestMs, skips, historicalIntervals };
   }
 
   // ── Scan: single / multiple IDs ────────────────────
@@ -1110,9 +1144,11 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         const queueId = ssQueue.getValue();
         if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
 
-        const { matched, waiting, longestWaitMs, skips } = await scanQueue(queueId, filters);
+        const { matched, waiting, oldestMs, skips, historicalIntervals } =
+          await scanQueue(queueId, filters);
         setCandidates(matched);
-        summary = STATUS.previewedQueue(matched.length, waiting, longestWaitMs, skips);
+        summary = STATUS.previewedQueue(
+          matched.length, waiting, oldestMs, historicalIntervals, skips);
       } else {
         const ids = parseConvIds();
         if (!ids.length) {

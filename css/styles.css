@@ -1181,6 +1181,12 @@ body {
   width: 160px;
 }
 
+.di-hint {
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 260px;
+}
+
 /* Address filters — one address per row, stacked vertically */
 .di-email-filters {
   align-items: flex-start;
