@@ -145,6 +145,11 @@ Consequences:
 
 - `Intervare` reports **0 match**, because its two have closed segments. What
   the operator sees agrees with what the queue holds.
+- **Not-waiting conversations are dropped silently, not counted as skips.** They
+  were never candidates, so reporting them as exclusions would claim they were
+  in scope and got filtered — a different statement, and a false one. If
+  nothing is waiting, nothing is waiting. Genuine exclusions — media type,
+  date range, address, agent connected — are still counted and named.
 - The two figures become directly comparable. On an unfiltered preview,
   `3.091 match · 3.091 waiting in queue` should agree, and a divergence becomes
   a signal worth noticing rather than noise. Small differences are expected —

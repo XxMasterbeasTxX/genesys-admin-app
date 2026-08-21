@@ -77,11 +77,7 @@ const STATUS = {
    * where a bare "no conversations found" reads as an empty queue.
    */
   previewedQueue(match, waiting, interacting, oldestMs, skips) {
-    // Only when there is genuinely nothing to say. An empty queue that still
-    // excluded something — Intervare's two unended-but-not-waiting
-    // conversations — should say so rather than report a bare "nothing found",
-    // which is what sent this design looking for them in the first place.
-    if (!match && !waiting && !skips.size) return this.noResults;
+    if (!match && !waiting) return this.noResults;
     const parts = [`${match.toLocaleString()} match`];
     if (waiting != null) parts.push(`${waiting.toLocaleString()} waiting in queue`);
 
@@ -919,10 +915,12 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
       if (c.conversationEnd) { skip("already ended"); return; }
 
-      // The population, not a filter: Empty Queue means what the queue is
-      // holding. A conversation that never ended but is no longer queued is
-      // Multiple ID work.
-      if (!isWaitingInQueue(c, queueId)) { skip("not waiting in queue"); return; }
+      // Not a skip — the population, silently. Empty Queue means what the queue
+      // is holding, so a conversation that never ended but is no longer queued
+      // was never a candidate. Counting it as an exclusion would imply it was in
+      // scope and got filtered out, which is a different claim and a wrong one.
+      // If nothing is waiting, nothing is waiting.
+      if (!isWaitingInQueue(c, queueId)) return;
 
       if (guardLiveAgents && hasActiveAgentSegment(c)) {
         skip("excluded, agent connected"); return;
