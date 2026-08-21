@@ -156,36 +156,69 @@ function findAcdParticipant(conversation, queueId = null) {
 }
 
 /**
- * True when the conversation is still waiting in this queue: an open `wait`
- * segment, meaning `segmentEnd` has not been written.
+ * Segment types that mean an agent has the interaction, so it is no longer
+ * waiting in the queue.
  *
- * This is what makes the match count and the queue depth describe the same
- * population. Without it the two are not comparable and a line can read
- * "2 match · 0 waiting in queue", which looks like a fault but is really two
- * different questions answered side by side.
+ * A denylist rather than a list of queue states, because the enum
+ * (`AnalyticsConversationSegment.segmentType`) offers twenty-two values with no
+ * prose saying which of them mean "sitting in a queue" — `delay`, `scheduled`
+ * and `parked` are all candidates. Naming the agent-side states is the half of
+ * the question that is unambiguous.
+ */
+const AGENT_SEGMENT_TYPES = new Set(["interact", "alert", "wrapup", "hold"]);
+
+/**
+ * True when the conversation is still waiting in this queue: a segment for this
+ * queue that is still open, and is not an agent handling it.
  *
- * A segment naming a different queue is skipped; one naming no queue at all is
- * accepted, since the conversation reached this scan through a queueId segment
- * filter in the first place.
+ * Deliberately not keyed on a specific segment type. The first attempt looked
+ * for `segmentType === "wait"`, copied from `getQueueWaitInfo` without checking
+ * it — and there is no such value in the enum, so it matched nothing at all: a
+ * queue of 169 waiting interactions reported 0. It probably also explains
+ * `be600f7` removing that gate as "match all active convos" better than the
+ * orphan reasoning did. The gate was not too strict; it was broken.
  *
- * This is `getQueueWaitInfo`, removed in `be600f7` when the remit was finding
- * orphans. It is right under the current remit, which is emptying a queue. One
- * difference matters: the original deliberately did **not** test `segmentEnd`,
- * so it would still match a conversation whose segment Genesys had closed.
- * Here that test is the entire point.
+ * `segmentEnd` absent is the part that carries the meaning: the segment has not
+ * finished. A conversation that left the queue has closed segments, which is
+ * what keeps `Intervare`'s two out.
+ *
+ * A segment naming a different queue is skipped; one naming no queue is
+ * accepted, since the conversation reached this scan through a queueId filter.
  */
 function isWaitingInQueue(conversation, queueId) {
   for (const p of (conversation.participants || [])) {
     for (const session of (p.sessions || [])) {
       for (const seg of (session.segments || [])) {
-        if (seg.segmentType !== "wait") continue;
-        if (seg.segmentEnd) continue;                       // the wait is over
+        if (seg.segmentEnd) continue;                        // finished
+        if (AGENT_SEGMENT_TYPES.has(seg.segmentType)) continue;  // an agent has it
         if (queueId && seg.queueId && seg.queueId !== queueId) continue;
         return true;
       }
     }
   }
   return false;
+}
+
+/**
+ * TEMPORARY (2026-08-21): print the segments actually present on the first few
+ * conversations of a queue scan, so the denylist above can be replaced with the
+ * exact set of queue-side types. Remove once the answer is in.
+ */
+let segProbeBudget = 0;
+function probeSegments(c) {
+  if (segProbeBudget <= 0) return;
+  segProbeBudget--;
+  const rows = [];
+  for (const p of (c.participants || [])) {
+    for (const sess of (p.sessions || [])) {
+      for (const seg of (sess.segments || [])) {
+        rows.push({ purpose: p.purpose, mediaType: sess.mediaType,
+                    segmentType: seg.segmentType, queueId: seg.queueId,
+                    open: !seg.segmentEnd });
+      }
+    }
+  }
+  console.log("[seg-probe]", c.conversationId, JSON.stringify(rows));
 }
 
 /**
@@ -889,6 +922,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const matched = [];
     const skips   = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
+    segProbeBudget = 3;   // TEMPORARY
 
     // Read first: `interacting` decides whether the live-agent guard applies at
     // all. Failure is not fatal — nulls fall through to "assume nothing live",
@@ -912,6 +946,8 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     function evaluate(c) {
       if (seen.has(c.conversationId)) return;
       seen.add(c.conversationId);
+
+      probeSegments(c);   // TEMPORARY
 
       if (c.conversationEnd) { skip("already ended"); return; }
 

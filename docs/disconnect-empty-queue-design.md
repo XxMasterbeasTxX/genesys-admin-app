@@ -166,9 +166,31 @@ the original deliberately did **not** check `segmentEnd`, precisely so it would
 still catch conversations whose segment Genesys had closed. Here that check is
 the whole point.
 
-**Unknown:** whether analytics reliably leaves `segmentEnd` absent on a segment
-that is genuinely still waiting. The cross-check above is how that gets
-verified — if match and depth agree on a large queue, it holds.
+**There is no `wait` segment type.** The first implementation looked for
+`segmentType === "wait"`, taken from `getQueueWaitInfo` without checking it
+against the spec. `AnalyticsConversationSegment.segmentType` offers
+`alert | barging | callback | coaching | contacting | converting | delay |
+dialing | hold | interact | ivr | monitoring | parked | scheduled |
+screenmonitoring | sharing | system | transmitting | unknown | uploading |
+voicemail | wrapup` — and no `wait`. So it matched nothing: a queue of 169
+waiting interactions reported `0 match · 169 waiting in queue`. The cross-check
+in this section is what caught it, on its first run against a real queue.
+
+It probably also explains `be600f7` better than the orphan reasoning did. That
+commit removed the gate as "match all active convos"; the gate was not too
+strict, it was broken in exactly this way.
+
+**The test is therefore not keyed on a segment type at all.** A conversation is
+waiting when it has a segment for this queue that is **still open**
+(`segmentEnd` absent) and is **not an agent handling it** — `interact`,
+`alert`, `wrapup`, `hold`. The enum has no prose saying which of `delay`,
+`scheduled` or `parked` mean "sitting in a queue", so the agent-side half, which
+is unambiguous, is the half named. `segmentEnd` carries the meaning; the type
+only rules out the agent states.
+
+**Unknown, being probed:** which segment types actually appear on a queued
+interaction. A temporary `[seg-probe]` log prints them for the first few
+conversations of a scan, so the denylist can be narrowed to an exact set.
 
 ## 7. Sizing the scan by probing
 
