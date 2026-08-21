@@ -1,6 +1,6 @@
 # Disconnect — Empty Queue — Design
 
-Status: **Revised (2) — §§6-7 awaiting build**
+Status: **Built** — all steps shipped to dev (release 4.1)
 Author: Genesys Admin App
 Last updated: 2026-08-21
 
@@ -277,27 +277,23 @@ It 502s past ~8,000 conversations (`b52b0be`), which is about response size;
 `pageSize: 1` should avoid that, but `totalHits` is still computed server-side.
 The fallback above covers it either way.
 
-**Also worth checking, separately:** the recent 48 hours is cut into eight
-six-hour buckets, but `queryConversationDetails` already pages internally, so
-those eight requests may be doing one request's work. Introduced in `38adad9`
-without a stated reason — to be understood before being changed, not assumed
-redundant.
+**The eight recent buckets stay.** They were worth checking and the answer is
+no: `queryConversationDetails` breaks its paging loop on the first short page,
+so an **empty bucket already costs exactly one request**. Probing them would
+spend a request to save a request, and collapsing 48 hours into a single query
+would trade eight shallow requests for one that may have to page deeply — which
+is the shape that 502s past ~8,000 conversations (`b52b0be`) and drove the async
+path in the first place. Left alone, deliberately.
 
 ## 8. Build order
 
 1. ~~**Observations back to stats only**~~ — done, `e06ccab`.
 2. ~~**Analytics enumerates again**~~ — done, `e06ccab`.
 3. ~~**Live-agent handling**~~ — done, `e06ccab`.
-4. **Restrict to what is waiting** (§6). A behaviour change: `Intervare` goes to
-   0, and match becomes comparable to depth. Test on both queues — the
-   unfiltered Nemlig figures agreeing is the verification.
-5. **Probe the intervals** (§7), with the scan-on-probe-failure fallback.
-6. **Investigate the eight recent buckets** (§7), and collapse them only if the
-   reason they exist turns out not to apply.
-7. **Cleanup** — whatever is unreachable, deleted rather than left.
-8. **Release note** — folded into 4.1, and the page description reviewed: it
-   still says "stuck or orphaned conversations", which after §6 describes the
-   ID modes rather than this one.
-
-Step 4 is a behaviour change and worth its own test round. Step 5 is pure speed
-and cannot change what is found, as long as the fallback holds.
+4. ~~**Restrict to what is waiting** (§6)~~ — done, `051713b` / `bcfb185`.
+5. ~~**Probe the intervals** (§7)~~ — done, `d69782c`.
+6. ~~**Investigate the eight recent buckets**~~ — done: they stay, see §7.
+7. ~~**Cleanup**~~ — nothing was unreachable. The audit did find that `e06ccab`
+   had deleted `getConversation` from the service by accident, breaking the ID
+   modes, Move and Search Recent; restored in `bb73a24`.
+8. ~~**Release note and page description**~~ — folded into 4.1.

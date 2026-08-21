@@ -1,10 +1,16 @@
 /**
  * Interactions › Disconnect
  *
- * Force-disconnect stuck/orphaned conversations. Three modes:
- *   1. Single ID   — disconnect one conversation
+ * Force-disconnect interactions that cannot be ended normally. Three modes:
+ *   1. Single ID    — disconnect one conversation
  *   2. Multiple IDs — disconnect several conversations by ID
- *   3. Empty Queue  — find all active conversations in a queue and disconnect
+ *   3. Empty Queue  — disconnect what is waiting in a queue now
+ *
+ * The modes target different populations, deliberately. Empty Queue means what
+ * the queue is holding: analytics enumerates it, and a conversation counts when
+ * the ACD participant still has an open segment for the queue. A conversation
+ * that never ended but has left the queue is not in that set — it is reachable
+ * by ID. See docs/disconnect-empty-queue-design.md.
  *
  * Includes media type, date range and — for email — sender/recipient address
  * filters. See docs/disconnect-email-filter-design.md.
@@ -434,9 +440,12 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     <hr class="hr">
 
     <p class="page-desc">
-      Force-disconnect stuck or orphaned conversations. Choose between
-      disconnecting a single conversation, multiple IDs, or emptying an
-      entire queue. Supports media type and date range filters.
+      Force-disconnect interactions that cannot be ended normally.
+      <strong>Empty Queue</strong> acts on what is waiting in the queue now;
+      <strong>Single</strong> and <strong>Multiple IDs</strong> reach a
+      conversation by ID, including one that never ended but has left the queue.
+      Filters: media type, date range, and — for email — sender and recipient
+      address.
     </p>
 
     <!-- Warning banner -->
