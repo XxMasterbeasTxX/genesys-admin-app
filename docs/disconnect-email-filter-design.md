@@ -5,6 +5,11 @@ including the server-side predicates, verified against live data (§6.1).
 Author: Genesys Admin App
 Last updated: 2026-08-21
 
+> **Note:** Empty Queue's remit is being reconsidered in
+> [disconnect-empty-queue-design.md](disconnect-empty-queue-design.md) — sourcing
+> queue-mode candidates from live queue state rather than an analytics scan.
+> The address filters described here survive that change; §5.1 and §5.2 do not.
+
 ## 1. Purpose
 
 Add two optional address filters to **Interactions › Disconnect**, shown when
