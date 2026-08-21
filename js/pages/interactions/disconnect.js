@@ -133,6 +133,37 @@ function getSessionMediaType(conversation) {
   return null;
 }
 
+/**
+ * Reduce an address to the form the Genesys analytics fields carry.
+ *
+ * Operators paste from mail clients, so `Support <SUPPORT@Acme.com>` and
+ * `mailto:support@acme.com` both turn up. Both are the same filter as
+ * `support@acme.com`, and matching is case-insensitive, so everything is
+ * folded to one shape once here rather than at each comparison.
+ */
+function normaliseAddress(raw) {
+  let v = String(raw || "").trim();
+  const angled = v.match(/<([^>]*)>/);       // "Display Name <a@b.com>"
+  if (angled) v = angled[1].trim();
+  v = v.replace(/^mailto:/i, "").trim();
+  return v.toLowerCase();
+}
+
+/**
+ * Why an address row is unusable, or null if it is fine.
+ *
+ * A malformed row is never silently dropped: dropping it would widen the run
+ * the operator thought they were narrowing.
+ */
+function addressRowError(raw) {
+  const v = String(raw || "").trim();
+  if (!v) return null;                        // blank rows are simply ignored
+  if (/[,;]/.test(v)) return "One address per row.";
+  const norm = normaliseAddress(v);
+  if (!/^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(norm)) return "Not a valid email address.";
+  return null;
+}
+
 /** Map common HTTP error codes to user-friendly messages. */
 function friendlyError(err) {
   const msg = err.message || String(err);
@@ -240,6 +271,23 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
             </label>
           `).join("")}
         </div>
+      </div>
+    </div>
+
+    <!-- Address filters (email only) -->
+    <div class="di-controls di-email-filters" id="diEmailFilters" style="display:none">
+      <div class="di-control-group">
+        <label class="di-label">Sender Email</label>
+        <div class="di-email-stack" id="diSenderStack"></div>
+        <button class="btn btn-sm di-email-add" id="diSenderAdd" type="button">+ Add</button>
+      </div>
+      <div class="di-control-group">
+        <label class="di-label">Recipient Email</label>
+        <div class="di-email-stack" id="diRecipientStack"></div>
+        <button class="btn btn-sm di-email-add" id="diRecipientAdd" type="button">+ Add</button>
+      </div>
+      <div class="di-email-note" id="diEmailNote" style="display:none">
+        Address filters are set — only Email interactions will be matched.
       </div>
     </div>
 
@@ -351,6 +399,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   $mediaAll.addEventListener("change", () => {
     $mediaCbs.forEach(cb => { cb.checked = $mediaAll.checked; });
     invalidateCandidates();
+    syncEmailFilterUi();
   });
   $mediaCbs.forEach(cb => {
     cb.addEventListener("change", () => {
@@ -359,8 +408,110 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       $mediaAll.checked       = allChecked;
       $mediaAll.indeterminate = !allChecked && !noneChecked;
       invalidateCandidates();
+      syncEmailFilterUi();
     });
   });
+
+  // ── Address filters (email only) ───────────────────
+  //
+  // Each field is a stack of one-address rows rather than one comma-separated
+  // box, so a single bad address can be marked where it was typed instead of
+  // failing — or worse, being quietly dropped from — the whole field.
+  const $emailFilters = el.querySelector("#diEmailFilters");
+  const $emailNote    = el.querySelector("#diEmailNote");
+  const STACKS = {
+    sender:    { $stack: el.querySelector("#diSenderStack"),
+                 $add:   el.querySelector("#diSenderAdd"),
+                 placeholder: "sender@example.com" },
+    recipient: { $stack: el.querySelector("#diRecipientStack"),
+                 $add:   el.querySelector("#diRecipientAdd"),
+                 placeholder: "support@yourorg.com" },
+  };
+
+  function addAddressRow(which, value = "", focus = false) {
+    const { $stack, placeholder } = STACKS[which];
+    const $row = document.createElement("div");
+    $row.className = "di-email-row";
+    $row.innerHTML = `
+      <div class="di-email-line">
+        <input type="text" class="input di-email-input" placeholder="${placeholder}">
+        <button class="btn btn-sm di-email-remove" type="button" title="Remove">&times;</button>
+      </div>
+      <div class="di-email-error" style="display:none"></div>`;
+
+    const $input = $row.querySelector(".di-email-input");
+    const $error = $row.querySelector(".di-email-error");
+    $input.value = value;
+
+    const showError = (msg) => {
+      $row.classList.toggle("is-invalid", !!msg);
+      $error.textContent = msg || "";
+      $error.style.display = msg ? "" : "none";
+    };
+
+    $input.addEventListener("input", () => {
+      showError(null);            // stop shouting while they are still typing
+      invalidateCandidates();
+      syncEmailFilterUi();
+    });
+    $input.addEventListener("blur", () => showError(addressRowError($input.value)));
+
+    $row.querySelector(".di-email-remove").addEventListener("click", () => {
+      // The last row is emptied rather than removed: a field with no rows at
+      // all offers nowhere to type.
+      if ($stack.children.length > 1) $row.remove();
+      else { $input.value = ""; showError(null); }
+      invalidateCandidates();
+      syncEmailFilterUi();
+    });
+
+    $stack.append($row);
+    if (focus) $input.focus();
+  }
+
+  for (const which of Object.keys(STACKS)) {
+    addAddressRow(which);
+    STACKS[which].$add.addEventListener("click", () => addAddressRow(which, "", true));
+  }
+
+  /** Normalised, deduped, blank-free addresses from one stack. */
+  function readAddresses(which) {
+    const seen = new Set();
+    for (const $input of STACKS[which].$stack.querySelectorAll(".di-email-input")) {
+      const v = normaliseAddress($input.value);
+      if (v) seen.add(v);
+    }
+    return [...seen];
+  }
+
+  /** True while the Email media type is ticked — the only time these apply. */
+  function emailSelected() {
+    return getSelectedMediaTypes().includes("email");
+  }
+
+  /** Any address typed into either stack, valid or not. */
+  function hasAnyAddress() {
+    return Object.keys(STACKS).some(which =>
+      [...STACKS[which].$stack.querySelectorAll(".di-email-input")]
+        .some($i => $i.value.trim() !== ""));
+  }
+
+  /**
+   * Show the block only while Email is ticked, and say out loud that an address
+   * narrows the run to email. Silently reinterpreting the media ticks would be
+   * this feature's worst surprise, so the other types are struck through.
+   */
+  function syncEmailFilterUi() {
+    const on = emailSelected();
+    $emailFilters.style.display = on ? "" : "none";
+
+    const narrowing = on && hasAnyAddress();
+    $emailNote.style.display = narrowing ? "" : "none";
+    for (const $cb of [$mediaAll, ...$mediaCbs]) {
+      const isEmail = $cb.dataset.type === "email";
+      $cb.closest(".di-checkbox")?.classList.toggle("di-media-muted", narrowing && !isEmail);
+    }
+  }
 
   // ── Date filter wiring ─────────────────────────────
   $olderEnable.addEventListener("change", () => {
@@ -448,15 +599,42 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
   // ── Validate filters ──────────────────────────────
   function validateFilters() {
-    const mediaTypes = getSelectedMediaTypes();
+    let mediaTypes = getSelectedMediaTypes();
     if (!mediaTypes.length) { setStatus("Please select at least one media type.", "error"); return null; }
+
+    // Addresses only exist for email, and only apply while Email is ticked.
+    const on = mediaTypes.includes("email");
+    const senders    = on ? readAddresses("sender")    : [];
+    const recipients = on ? readAddresses("recipient") : [];
+
+    if (on) {
+      // A malformed row blocks the run. Ignoring it would widen the very thing
+      // the operator was narrowing, on an action that cannot be undone.
+      for (const which of Object.keys(STACKS)) {
+        for (const $input of STACKS[which].$stack.querySelectorAll(".di-email-input")) {
+          const err = addressRowError($input.value);
+          if (err) {
+            $input.closest(".di-email-row").classList.add("is-invalid");
+            const label = which === "sender" ? "Sender Email" : "Recipient Email";
+            setStatus(`${label}: ${err} (“${$input.value.trim()}”)`, "error");
+            $input.focus();
+            return null;
+          }
+        }
+      }
+    }
+
+    // An address narrows the run to email whatever else is ticked — §2 of
+    // docs/disconnect-email-filter-design.md. syncEmailFilterUi() has already
+    // said so on screen; this is where it takes effect.
+    if (senders.length || recipients.length) mediaTypes = ["email"];
 
     const olderThan = $olderEnable.checked ? $olderDate.value : null;
     const newerThan = $newerEnable.checked ? $newerDate.value : null;
     if ($olderEnable.checked && !olderThan) { setStatus("Please set the 'Older than' date.", "error"); return null; }
     if ($newerEnable.checked && !newerThan) { setStatus("Please set the 'Newer than' date.", "error"); return null; }
 
-    return { mediaTypes, olderThan, newerThan };
+    return { mediaTypes, olderThan, newerThan, senders, recipients };
   }
 
   // ── Scan: queue mode (async analytics jobs) ────────
@@ -897,6 +1075,9 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     hideProgress();
     setStatus(STATUS.ready);
   });
+
+  // ── Initial paint ──────────────────────────────────
+  syncEmailFilterUi();
 
   // ── Load queues on mount ───────────────────────────
   (async () => {
