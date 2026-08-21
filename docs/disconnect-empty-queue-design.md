@@ -221,7 +221,14 @@ the ACD segment, so analytics reports them identically to a genuine wait. Live
 queue state knows they are not there; analytics cannot. Repeated identical
 results rule out arrivals during the scan — timing would vary the gap.
 
-Two consequences:
+Three consequences:
+
+- **Unfiltered, the status line shows only the queue's own count.** "match" is
+  a word that needs something to match against; with no filter set the whole
+  queue is being taken and nothing was matched. `169 waiting in queue`. The
+  figure that will actually be disconnected is named in the confirmation, which
+  is the point where it matters. With a filter the line reads
+  `4 match · 169 waiting in queue`, where the comparison is the point.
 
 - **A small excess of matches over depth is expected**, and means orphans. They
   are dead interactions worth disconnecting, so the excess is desirable rather

@@ -76,9 +76,16 @@ const STATUS = {
    * "0 match · 2,847 waiting in queue" is plainly a filter that is too tight,
    * where a bare "no conversations found" reads as an empty queue.
    */
-  previewedQueue(match, waiting, interacting, oldestMs, skips) {
+  previewedQueue(match, waiting, interacting, oldestMs, filtersActive, skips) {
     if (!match && !waiting) return this.noResults;
-    const parts = [`${match.toLocaleString()} match`];
+
+    // "match" only when something is actually narrowing the run. Unfiltered the
+    // whole queue is taken, nothing was matched against anything, and the
+    // queue's own count is the number that means something. The figure that
+    // will actually be disconnected is named in the confirmation, which is the
+    // point where it matters.
+    const parts = [];
+    if (filtersActive) parts.push(`${match.toLocaleString()} match`);
     if (waiting != null) parts.push(`${waiting.toLocaleString()} waiting in queue`);
 
     // Only when something is live, because that is when it changes what the
@@ -877,7 +884,14 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     if ($olderEnable.checked && !olderThan) { setStatus("Please set the 'Older than' date.", "error"); return null; }
     if ($newerEnable.checked && !newerThan) { setStatus("Please set the 'Newer than' date.", "error"); return null; }
 
-    return { mediaTypes, olderThan, newerThan, senders, recipients };
+    // Whether anything is actually narrowing the run. "match" is only a
+    // meaningful word when there is something to match against; with no filter
+    // set, everything in the queue is taken and nothing was matched.
+    const active = Boolean(
+      senders.length || recipients.length || olderThan || newerThan
+      || mediaTypes.length < MEDIA_TYPES.length);
+
+    return { mediaTypes, olderThan, newerThan, senders, recipients, active };
   }
 
   // ── Scan: queue mode ───────────────────────────────
@@ -1195,7 +1209,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
           await scanQueue(queueId, filters);
         setCandidates(matched);
         summary = STATUS.previewedQueue(
-          matched.length, waiting, interacting, oldestMs, skips);
+          matched.length, waiting, interacting, oldestMs, filters.active, skips);
       } else {
         const ids = parseConvIds();
         if (!ids.length) {
