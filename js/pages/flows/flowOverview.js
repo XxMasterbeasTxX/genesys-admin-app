@@ -564,8 +564,8 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const tab = state.tabs.find((t) => t.id === id);
     if (tab) tab.loading = true;
     renderTabs();
-    setBusy(true, `Loading “${tab ? tab.name : id}”…`);
     try {
+      setBusy(true, `Loading “${tab ? tab.name : id}”…`);
       const entry = await ensureFlowLoaded(id);
       state.data = entry.data;
       state.varIndex = entry.varIndex;
@@ -628,9 +628,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       renderLegend();
       exportBtns.forEach((b) => (b.disabled = false));
       const w = state.model.warnings || [];
-      statusEl.textContent = `“${state.data.meta.name}” · ${state.level} · ${state.model.nodes.length} nodes, ${state.model.edges.length} edges${w.length ? " · " + w.join(" ") : ""}`;
+      setBusy(false, `“${state.data.meta.name}” · ${state.level} · ${state.model.nodes.length} nodes, ${state.model.edges.length} edges${w.length ? " · " + w.join(" ") : ""}`);
     } catch (err) {
-      statusEl.textContent = `Layout error: ${err.message || err}`;
+      setBusy(false, `Layout error: ${err.message || err}`);
     }
   }
 
@@ -1310,7 +1310,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   $("#foZoomOut").addEventListener("click", () => zoomBy(1 / 1.25));
 
   $("#foSavePdf").addEventListener("click", async () => {
-    if (!window.jspdf || !window.jspdf.jsPDF) { statusEl.textContent = "PDF library not loaded."; return; }
+    if (!window.jspdf || !window.jspdf.jsPDF) { setBusy(false, "PDF library not loaded."); return; }
     try {
       // Rasterise the diagram then place it on a single PDF page sized to the
       // diagram (poster-style, prints/zooms cleanly). JPEG bytes are embedded
@@ -1321,9 +1321,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       const doc = new jsPDF({ orientation: w >= h ? "landscape" : "portrait", unit: "px", format: [w, h], compress: true });
       doc.addImage(jpeg, "JPEG", 0, 0, w, h);
       const b64 = doc.output("datauristring").split(",")[1];
-      download(`${slug(state.data.meta.name)}-${state.level}.pdf`, b64, (m) => (statusEl.textContent = m));
+      download(`${slug(state.data.meta.name)}-${state.level}.pdf`, b64, (m) => setBusy(false, m));
     } catch (err) {
-      statusEl.textContent = "PDF export failed: " + (err.message || err);
+      setBusy(false, "PDF export failed: " + (err.message || err));
     }
   });
 
@@ -1337,7 +1337,7 @@ header{padding:12px 16px;border-bottom:1px solid ${th.nodeStroke}}h1{font-size:1
 .meta{color:${th.subText};font-size:12px;margin-top:4px}.wrap{padding:16px;overflow:auto}</style></head>
 <body><header><h1>${escapeHtml(state.data.meta.name)}</h1><div class="meta">${escapeHtml(state.model.meta.type)} · ${state.level} detail · ${state.model.nodes.length} nodes · exported ${new Date().toISOString()}</div></header>
 <div class="wrap">${str}</div></body></html>`;
-    download(`${slug(state.data.meta.name)}-${state.level}.html`, textToB64(html), (m) => (statusEl.textContent = m));
+    download(`${slug(state.data.meta.name)}-${state.level}.html`, textToB64(html), (m) => setBusy(false, m));
   });
 
   $("#foSaveJson").addEventListener("click", () => {
@@ -1351,7 +1351,7 @@ header{padding:12px 16px;border-bottom:1px solid ${th.nodeStroke}}h1{font-size:1
       variables: [...state.varIndex.values()].map((v) => ({ ...v.variable, usages: v.usages })),
       dependencies: [...state.depIndex.values()],
     };
-    download(`${slug(state.data.meta.name)}-${state.level}.json`, textToB64(JSON.stringify(payload, null, 2)), (m) => (statusEl.textContent = m));
+    download(`${slug(state.data.meta.name)}-${state.level}.json`, textToB64(JSON.stringify(payload, null, 2)), (m) => setBusy(false, m));
   });
 
   // ── Save all (root + full transitive dependency closure) ─────────────────────
@@ -1373,7 +1373,7 @@ header{padding:12px 16px;border-bottom:1px solid ${th.nodeStroke}}h1{font-size:1
   }
 
   $("#foSaveAllPdf").addEventListener("click", () => withExportGuard(async () => {
-    if (!window.jspdf || !window.jspdf.jsPDF) { statusEl.textContent = "PDF library not loaded."; return; }
+    if (!window.jspdf || !window.jspdf.jsPDF) { setBusy(false, "PDF library not loaded."); return; }
     const rootName = state.data.meta.name;
     const flows = await loadAllFlows((name) => setBusy(true, `Loading “${name}”…`));
     const { jsPDF } = window.jspdf;
@@ -1391,7 +1391,7 @@ header{padding:12px 16px;border-bottom:1px solid ${th.nodeStroke}}h1{font-size:1
     }
     if (!doc) { setBusy(false, "Nothing to export."); return; }
     const b64 = doc.output("datauristring").split(",")[1];
-    download(`${slug(rootName)}-all-${state.level}.pdf`, b64, (m) => (statusEl.textContent = m));
+    download(`${slug(rootName)}-all-${state.level}.pdf`, b64, (m) => setBusy(false, m));
     setBusy(false, `Exported ${flows.length} flow(s) to PDF.`);
   }));
 
@@ -1426,7 +1426,7 @@ header{padding:12px 16px;border-bottom:1px solid ${th.nodeStroke}}h1{font-size:1
 var tabs=document.querySelectorAll('.ftab'),secs=document.querySelectorAll('.fsec');
 for(var i=0;i<tabs.length;i++){tabs[i].addEventListener('click',function(){var k=this.getAttribute('data-i');for(var j=0;j<tabs.length;j++){tabs[j].classList.toggle('active',tabs[j].getAttribute('data-i')===k);secs[j].classList.toggle('active',secs[j].getAttribute('data-i')===k);}});}
 <\/script></body></html>`;
-    download(`${slug(rootName)}-all-${state.level}.html`, textToB64(html), (m) => (statusEl.textContent = m));
+    download(`${slug(rootName)}-all-${state.level}.html`, textToB64(html), (m) => setBusy(false, m));
     setBusy(false, `Exported ${flows.length} flow(s) to HTML.`);
   }));
 
@@ -1529,7 +1529,7 @@ for(var i=0;i<tabs.length;i++){tabs[i].addEventListener('click',function(){var k
         dependencies: [...entry.depIndex.values()],
       });
     }
-    download(`${slug(rootName)}-all-${state.level}.json`, textToB64(JSON.stringify(out, null, 2)), (m) => (statusEl.textContent = m));
+    download(`${slug(rootName)}-all-${state.level}.json`, textToB64(JSON.stringify(out, null, 2)), (m) => setBusy(false, m));
     setBusy(false, `Exported ${flows.length} flow(s) to JSON.`);
   }));
 
