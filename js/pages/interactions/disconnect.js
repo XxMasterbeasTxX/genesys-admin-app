@@ -195,6 +195,24 @@ function isWaitingInQueue(conversation, queueId) {
   return false;
 }
 
+/**
+ * TEMPORARY (2026-08-21): whether the open ACD segment actually named this
+ * queue, or was accepted because it named no queue at all. Part of accounting
+ * for 173 matched against a depth of 169.
+ */
+function acdSegmentNamesQueue(conversation, queueId) {
+  for (const p of (conversation.participants || [])) {
+    if (p.purpose !== "acd") continue;
+    for (const session of (p.sessions || [])) {
+      for (const seg of (session.segments || [])) {
+        if (seg.segmentEnd) continue;
+        if (seg.queueId === queueId) return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Participant purposes that mean a person is on the interaction. */
 const AGENT_PURPOSES = new Set(["agent", "user"]);
 
@@ -904,6 +922,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const matched = [];
     const skips   = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
+    const probe = { total: 0, byMedia: {}, withAgent: 0, acdSegmentHadNoQueueId: 0 };  // TEMPORARY
 
     // Read first: `interacting` decides whether the live-agent guard applies at
     // all. Failure is not fatal — nulls fall through to "assume nothing live",
@@ -956,6 +975,15 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
         skip("outside date range"); return;
       }
+
+      // TEMPORARY (2026-08-21): 173 matched against a depth of 169. Tally the
+      // three things that could put a conversation in the matched set without
+      // the queue counting it as waiting, rather than guessing which. Remove
+      // once the four are accounted for.
+      probe.total++;
+      probe.byMedia[mediaType] = (probe.byMedia[mediaType] || 0) + 1;
+      if (hasAgentEngaged(c)) probe.withAgent++;
+      if (!acdSegmentNamesQueue(c, queueId)) probe.acdSegmentHadNoQueueId++;
 
       matched.push({
         convId:    c.conversationId,
@@ -1049,6 +1077,8 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         console.warn(`Interval ${intervalNo} scan failed — skipping:`, err.message);
       }
     }
+
+    console.log("[match-probe]", JSON.stringify(probe));   // TEMPORARY
 
     return { matched, waiting, interacting, oldestMs, skips };
   }
