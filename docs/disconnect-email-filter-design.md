@@ -1,7 +1,7 @@
 # Disconnect — Sender / Recipient Email Filters — Design
 
-Status: **Built** — steps 1–6 and 8 shipped to dev (release 4.1); step 7 held,
-see §6
+Status: **Built** — all eight steps shipped to dev (release 4.1). Step 7 is on
+dev awaiting the one comparison in §6.1.
 Author: Genesys Admin App
 Last updated: 2026-08-21
 
@@ -174,15 +174,40 @@ across the conversation and may each be satisfied by a different segment, where
 predicates inside one clause must be satisfied together. `queueId` lives on the
 ACD segment; the addresses come from the session.
 
-This is not shipped with the first cut. Two things must be confirmed on dev
-first, both of which fail silently as "no results" if guessed wrong:
-
-1. Whether `matches` is case-sensitive on an address value.
-2. Whether email addresses are stored bare (`a@b.com`) or prefixed.
-
 The client-side filter of §5 stays in place permanently regardless. The
 predicates are an optimisation for the historical scan's volume, never the
 correctness boundary.
+
+### 6.1 How this gets confirmed
+
+Two things about the `matches` operator were unknown when this was written, both
+of which fail silently as "no results" if guessed wrong: whether it is
+case-sensitive on an address value, and whether addresses are stored bare or
+decorated. Both are platform behaviour, not per-org, so one observation settles
+them for good.
+
+Shipping the client-side filter first is what made that observation cheap. A
+real sender filter on dev returned the correct number of interactions, which
+established a baseline; **the match count is the invariant**. Re-running that
+same scan with the predicates in place must produce the same match count. The
+`scanned` count should fall sharply — that is the whole benefit — but a match
+count that drops, and especially one that drops to zero, means the predicates
+are excluding rows the client filter never gets to see, and the commit comes
+back out.
+
+The emitted body was verified in a browser first:
+
+```json
+"segmentFilters": [
+  { "type": "and", "predicates": [{ "dimension": "queueId",    "value": "q1" }] },
+  { "type": "or",  "predicates": [{ "dimension": "addressFrom", "value": "thva@tdc.nuuway.dk" },
+                                  { "dimension": "addressFrom", "value": "billing@customer.com" }] },
+  { "type": "or",  "predicates": [{ "dimension": "addressTo",   "value": "support@acme.com" }] }
+]
+```
+
+Values go out normalised — lowercased, display name stripped — identically in
+the sync query and the async job body.
 
 ## 7. Validation
 
@@ -310,8 +335,8 @@ Each step is a separate commit and push, with a pause to test on dev.
    narrowing and its note.~~ `9622100`
 6. ~~**Client-side filtering** — §5: the shared matcher across all three paths,
    plus `gc.getConversationAnalytics`.~~ `d1e79ae` — feature complete here.
-7. **Server-side predicates** — §6. **Held.** Ships only after the two
-   `matches` questions in that section are answered against dev.
+7. ~~**Server-side predicates** — §6.~~ **pending** — on dev, awaiting the match
+   count comparison in §6.1.
 8. ~~**Release notes** — one entry covering the whole feature.~~ `b03ba86`,
    release 4.1, `internalOnly` because `interactions.*` reaches no customer.
 

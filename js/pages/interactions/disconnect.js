@@ -209,6 +209,36 @@ function matchesAddressFilters(conv, { senders, recipients }) {
   return { pass: true, reason: null };
 }
 
+/**
+ * Address filters expressed as Genesys `segmentFilters` entries.
+ *
+ * `addressFrom` and `addressTo` are both segment dimensions, so the filter can
+ * be pushed to the server instead of pulling six months of a queue back to
+ * filter here. Several addresses in one field become an `or` clause; the two
+ * fields become separate entries.
+ *
+ * Separate entries deliberately: entries are ANDed across the conversation and
+ * may each be satisfied by a *different* segment, while predicates inside one
+ * clause must be satisfied together. `queueId` lives on the ACD segment and the
+ * addresses come from the session, so folding them into one clause could match
+ * nothing.
+ *
+ * This is an optimisation, never the correctness boundary —
+ * matchesAddressFilters() still runs on everything that comes back. The only
+ * operator available is `matches`, which is exact, which is why the filter was
+ * defined as exact-match in the first place.
+ */
+function addressSegmentFilters({ senders, recipients }) {
+  const out = [];
+  if (senders.length) {
+    out.push({ type: "or", predicates: senders.map(v => ({ dimension: "addressFrom", value: v })) });
+  }
+  if (recipients.length) {
+    out.push({ type: "or", predicates: recipients.map(v => ({ dimension: "addressTo", value: v })) });
+  }
+  return out;
+}
+
 /** Map common HTTP error codes to user-friendly messages. */
 function friendlyError(err) {
   const msg = err.message || String(err);
@@ -741,10 +771,10 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         interval: `${r.start.toISOString()}/${r.end.toISOString()}`,
         order: "desc",
         orderBy: "conversationStart",
-        segmentFilters: [{
-          type: "and",
-          predicates: [{ dimension: "queueId", value: queueId }],
-        }],
+        segmentFilters: [
+          { type: "and", predicates: [{ dimension: "queueId", value: queueId }] },
+          ...addressSegmentFilters(filters),
+        ],
         conversationFilters: [{
           type: "and",
           predicates: [{ dimension: "conversationEnd", operator: "notExists" }],
@@ -817,10 +847,10 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       const jobBody = {
         order: "desc",
         orderBy: "conversationStart",
-        segmentFilters: [{
-          type: "and",
-          predicates: [{ dimension: "queueId", value: queueId }],
-        }],
+        segmentFilters: [
+          { type: "and", predicates: [{ dimension: "queueId", value: queueId }] },
+          ...addressSegmentFilters(filters),
+        ],
         conversationFilters: [{
           type: "and",
           predicates: [{ dimension: "conversationEnd", operator: "notExists" }],
