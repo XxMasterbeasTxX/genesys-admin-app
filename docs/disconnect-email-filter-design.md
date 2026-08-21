@@ -384,10 +384,22 @@ The two numbers answer different questions and both are worth having:
 ### 8a.1 The oldest wait, and the fast path it might open
 
 The same request also asks for `oLongestWaiting`, so the line reads
-`4 match · 5 waiting in queue (oldest 3h)`. Taken as milliseconds, the Genesys
-convention for observation duration metrics — not yet read against a queue
-holding a genuinely old interaction, though a wrong unit would be visibly
-wrong rather than subtly so.
+`4 match · 5 waiting in queue (oldest 3h)`.
+
+**`oLongestWaiting` is not a duration.** Against a live queue it comes back as
+
+```json
+{ "metric": "oLongestWaiting", "stats": { "count": 1,
+  "calculatedMetricValue": 1787230858678 } }
+```
+
+with neither `max` nor `current` present at all. That value is the epoch
+milliseconds at which the longest-waiting interaction *began* waiting — read as
+an elapsed time it works out to 56 years, which is what gave it away. The age is
+therefore `Date.now() - calculatedMetricValue`, guarded by a threshold at 1e12
+so a genuine duration would still be read correctly if the shape ever changes:
+1e12 ms is either a timestamp in 2001 or a wait of 31 years, and only one of
+those is plausible.
 
 It is there to answer a question worth more than the display: **how far back
 does this queue actually reach?** The historical phase is six async jobs, each
@@ -404,16 +416,19 @@ Two shortcuts follow, neither built:
    request. `ObservationMetricData.truncated` flags when the result is capped,
    so falling back to the full scan can be automatic rather than guessed.
 
-**Both rest on one untested assumption:** that an orphaned interaction — ACD
+**Both rested on one untested assumption:** that an orphaned interaction — ACD
 segment closed internally, `conversationEnd` never written — still registers as
-waiting. If it does not, either shortcut skips exactly the conversations this
-page exists to find. The failure is silent and in the "finds nothing" direction:
-safe in blast radius, useless in purpose.
+waiting. **Answered on 2026-08-21:** a real queue holding a backlog of ~3,400
+stuck email-to-case interactions reported all of them through `oWaiting`. They
+are not invisible to observations, and the fast path is viable.
 
-The test is a queue known to hold a large orphan backlog: compare `match`
-against `waiting`. Agreement means observations see orphans and the fast path is
-real. `3,000 match · 12 waiting` means they do not, and neither shortcut is safe
-to key on. Until that is known, the age is displayed and nothing is skipped.
+The same queue also showed why it is worth having. Its oldest waiting
+interaction was **23 hours old** — inside the 48-hour recent window — so all six
+historical async jobs covering six months were scanning for something that could
+not be there. Sized to the age, that queue needs none of them.
+
+Still unbuilt, and still owed an explicit **"Full 6-month scan"** override so
+that nothing is inferred in the case where the inference could be wrong.
 
 ## 9. Not in scope
 

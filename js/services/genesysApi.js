@@ -307,10 +307,9 @@ export async function queryConversationDetails(api, orgId, body, opts = {}) {
  * tell "none waiting" apart from "could not tell". A count that silently reads
  * 0 beside a non-zero result reads as a bug.
  *
- * `longestWaitMs` is taken to be milliseconds, the Genesys convention for
- * observation duration metrics. It has not been read against a queue with a
- * genuinely old interaction in it yet; if the unit is wrong the age will be
- * obviously, visibly wrong rather than subtly so.
+ * `longestWaitMs` is a duration derived from `oLongestWaiting`, which Genesys
+ * reports as an epoch timestamp rather than an elapsed time — see the note at
+ * the read below.
  *
  * @param {Object}   api
  * @param {string}   orgId
@@ -334,11 +333,6 @@ export async function getQueueWaitingStats(api, orgId, queueId, mediaTypes = [])
   const results = resp?.results;
   if (!Array.isArray(results)) return { waiting: null, longestWaitMs: null };
 
-  // TEMPORARY (2026-08-21): oLongestWaiting came back unreadable against a real
-  // queue — neither stats.max nor stats.current was present, while oWaiting's
-  // count was fine. Print the shape once rather than guess at a third field and
-  // risk displaying a number that means something else. Remove once fixed.
-  console.log("[obs-probe]", JSON.stringify(results, null, 2));
 
   // One group per media type, so counts are summed and the longest wait is the
   // longest across all of them.
@@ -349,10 +343,22 @@ export async function getQueueWaitingStats(api, orgId, queueId, mediaTypes = [])
       if (d.metric === "oWaiting") {
         total += typeof d.stats?.count === "number" ? d.stats.count : (d.observations?.length || 0);
       } else if (d.metric === "oLongestWaiting") {
-        const v = typeof d.stats?.max === "number" ? d.stats.max
-                : typeof d.stats?.current === "number" ? d.stats.current
-                : null;
-        if (v !== null) longest = longest === null ? v : Math.max(longest, v);
+        // Observed against a live queue (2026-08-21):
+        //   { metric: "oLongestWaiting", stats: { count: 1,
+        //     calculatedMetricValue: 1787230858678 } }
+        // That value is the epoch milliseconds at which the longest-waiting
+        // interaction began waiting — NOT a duration. Read as a duration it
+        // came to 56 years, which is what gave it away. Neither `max` nor
+        // `current` is present at all.
+        //
+        // The threshold distinguishes the two rather than trusting one reading
+        // for ever: 1e12 ms is either a timestamp in 2001 or a duration of 31
+        // years, and only one of those is plausible.
+        const v = d.stats?.calculatedMetricValue;
+        if (typeof v === "number" && v > 0) {
+          const ms = v > 1e12 ? Date.now() - v : v;
+          if (ms >= 0) longest = longest === null ? ms : Math.max(longest, ms);
+        }
       }
     }
   }
