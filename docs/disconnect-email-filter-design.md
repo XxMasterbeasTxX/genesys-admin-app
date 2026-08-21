@@ -359,6 +359,40 @@ scan that otherwise worked.
 The two numbers answer different questions and both are worth having:
 `0 match · 2,847 waiting in queue` is plainly a filter that is too tight.
 
+### 8a.1 The oldest wait, and the fast path it might open
+
+The same request also asks for `oLongestWaiting`, so the line reads
+`4 match · 5 waiting in queue (oldest 3h)`. Taken as milliseconds, the Genesys
+convention for observation duration metrics — not yet read against a queue
+holding a genuinely old interaction, though a wrong unit would be visibly
+wrong rather than subtly so.
+
+It is there to answer a question worth more than the display: **how far back
+does this queue actually reach?** The historical phase is six async jobs, each
+submitted, polled and fetched, and it is the bulk of a scan's runtime. A queue
+whose oldest waiting interaction is three hours old never needed it.
+
+Two shortcuts follow, neither built:
+
+1. **Skip the historical phase** when the queue's oldest wait falls inside the
+   48-hour recent window, saying so in the status line rather than silently.
+2. **Replace the scan outright.** `detailMetrics: ["oWaiting"]` returns
+   `ObservationValue` objects carrying `conversationId`, `addressFrom`,
+   `addressTo` and `observationDate` — everything the scan reconstructs, in one
+   request. `ObservationMetricData.truncated` flags when the result is capped,
+   so falling back to the full scan can be automatic rather than guessed.
+
+**Both rest on one untested assumption:** that an orphaned interaction — ACD
+segment closed internally, `conversationEnd` never written — still registers as
+waiting. If it does not, either shortcut skips exactly the conversations this
+page exists to find. The failure is silent and in the "finds nothing" direction:
+safe in blast radius, useless in purpose.
+
+The test is a queue known to hold a large orphan backlog: compare `match`
+against `waiting`. Agreement means observations see orphans and the fast path is
+real. `3,000 match · 12 waiting` means they do not, and neither shortcut is safe
+to key on. Until that is known, the age is displayed and nothing is skipped.
+
 ## 9. Not in scope
 
 - **`cc` / `bcc` matching.** Recipient means `addressTo`. The analytics fields

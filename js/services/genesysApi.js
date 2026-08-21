@@ -294,24 +294,31 @@ export async function queryConversationDetails(api, orgId, body, opts = {}) {
 }
 
 /**
- * How many interactions are waiting in a queue right now.
+ * What is waiting in a queue right now, and for how long.
  *
  * Real-time queue observations, not an analytics reconstruction: one request
  * answers "what is actually in the queue", filtered to the media types asked
- * for. `oWaiting` counts interactions sitting in the queue unassigned.
+ * for. `oWaiting` counts interactions sitting in the queue unassigned, and
+ * `oLongestWaiting` gives the age of the oldest of them — which is how far back
+ * a historical scan would need to reach to cover the queue.
  *
- * Returns `null` when the count cannot be read — a missing
+ * Either field is `null` when it cannot be read — a missing
  * `analytics:queueObservation:view` being the likely reason — so a caller can
  * tell "none waiting" apart from "could not tell". A count that silently reads
  * 0 beside a non-zero result reads as a bug.
+ *
+ * `longestWaitMs` is taken to be milliseconds, the Genesys convention for
+ * observation duration metrics. It has not been read against a queue with a
+ * genuinely old interaction in it yet; if the unit is wrong the age will be
+ * obviously, visibly wrong rather than subtly so.
  *
  * @param {Object}   api
  * @param {string}   orgId
  * @param {string}   queueId
  * @param {string[]} mediaTypes  Lowercase analytics media types (voice, email…).
- * @returns {Promise<number|null>}
+ * @returns {Promise<{waiting: number|null, longestWaitMs: number|null}>}
  */
-export async function getQueueWaitingCount(api, orgId, queueId, mediaTypes = []) {
+export async function getQueueWaitingStats(api, orgId, queueId, mediaTypes = []) {
   const clauses = [{ type: "or", predicates: [{ dimension: "queueId", value: queueId }] }];
   if (mediaTypes.length) {
     clauses.push({
@@ -322,20 +329,28 @@ export async function getQueueWaitingCount(api, orgId, queueId, mediaTypes = [])
 
   const resp = await api.proxyGenesys(orgId, "POST",
     "/api/v2/analytics/queues/observations/query",
-    { body: { filter: { type: "and", clauses }, metrics: ["oWaiting"] } });
+    { body: { filter: { type: "and", clauses }, metrics: ["oWaiting", "oLongestWaiting"] } });
 
   const results = resp?.results;
-  if (!Array.isArray(results)) return null;
+  if (!Array.isArray(results)) return { waiting: null, longestWaitMs: null };
 
-  // One group per media type, so the counts are summed.
+  // One group per media type, so counts are summed and the longest wait is the
+  // longest across all of them.
   let total = 0;
+  let longest = null;
   for (const r of results) {
     for (const d of (r.data || [])) {
-      if (d.metric !== "oWaiting") continue;
-      total += typeof d.stats?.count === "number" ? d.stats.count : (d.observations?.length || 0);
+      if (d.metric === "oWaiting") {
+        total += typeof d.stats?.count === "number" ? d.stats.count : (d.observations?.length || 0);
+      } else if (d.metric === "oLongestWaiting") {
+        const v = typeof d.stats?.max === "number" ? d.stats.max
+                : typeof d.stats?.current === "number" ? d.stats.current
+                : null;
+        if (v !== null) longest = longest === null ? v : Math.max(longest, v);
+      }
     }
   }
-  return total;
+  return { waiting: total, longestWaitMs: longest };
 }
 
 /**

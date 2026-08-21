@@ -65,10 +65,16 @@ const STATUS = {
    * "0 match · 2,847 waiting in queue" is plainly a filter that is too tight,
    * where a bare "no conversations found" reads as an empty queue.
    */
-  previewedQueue(match, waiting, skips) {
+  previewedQueue(match, waiting, longestWaitMs, skips) {
     if (!match && !waiting) return this.noResults;
     const parts = [`${match.toLocaleString()} match`];
-    if (waiting != null) parts.push(`${waiting.toLocaleString()} waiting in queue`);
+    if (waiting != null) {
+      // The oldest wait says how far back the queue actually reaches, which is
+      // the number that decides whether a six-month historical scan was ever
+      // needed for this queue.
+      const age = waiting > 0 ? formatWait(longestWaitMs) : null;
+      parts.push(`${waiting.toLocaleString()} waiting in queue${age ? ` (oldest ${age})` : ""}`);
+    }
     for (const [reason, n] of [...skips].sort((a, b) => b[1] - a[1])) {
       parts.push(`${n.toLocaleString()} ${reason}`);
     }
@@ -259,6 +265,24 @@ function addressSegmentFilters({ senders, recipients }) {
     out.push({ type: "or", predicates: recipients.map(v => ({ dimension: "addressTo", value: v })) });
   }
   return out;
+}
+
+/**
+ * A wait duration, compact enough to sit inside a status line: 45s, 12m, 3h,
+ * 6d, 4mo. Precision past the leading unit is noise here — the question this
+ * answers is "how far back does this queue reach", not "exactly how long".
+ */
+function formatWait(ms) {
+  if (typeof ms !== "number" || ms < 0) return null;
+  const s = Math.round(ms / 1000);
+  if (s < 60)      return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60)      return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 48)      return `${h}h`;
+  const d = Math.round(h / 24);
+  if (d < 60)      return `${d}d`;
+  return `${Math.round(d / 30)}mo`;
 }
 
 /** Map common HTTP error codes to user-friendly messages. */
@@ -756,8 +780,9 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   // model here. An earlier hasActiveAgentSegment() guard was removed (549dbc3)
   // because it also excluded the orphans above.
   //
-  // Returns { matched, waiting, skips } — `skips` is a reason → count tally and
-  // `waiting` is the live queue depth, so the status line can account for the
+  // Returns { matched, waiting, longestWaitMs, skips } — `skips` is a reason →
+  // count tally, `waiting` is the live queue depth and `longestWaitMs` the age
+  // of the oldest thing in it, so the status line can account for the
   // difference between what is in the queue and what matched.
   async function scanQueue(queueId, filters) {
     const orgId  = orgContext.get();
@@ -772,10 +797,10 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     // A failure resolves to null rather than rejecting — the queue depth is
     // context, and losing it must never fail a scan that otherwise worked.
     const waitingPromise = gc
-      .getQueueWaitingCount(api, orgId, queueId, filters.mediaTypes)
+      .getQueueWaitingStats(api, orgId, queueId, filters.mediaTypes)
       .catch((err) => {
-        console.warn("Could not read queue waiting count:", err.message);
-        return null;
+        console.warn("Could not read queue observations:", err.message);
+        return { waiting: null, longestWaitMs: null };
       });
 
     // Phase 1: scan the most recent 48 hours with synchronous analytics +
@@ -938,7 +963,8 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       }
     }
 
-    return { matched, waiting: await waitingPromise, skips };
+    const { waiting, longestWaitMs } = await waitingPromise;
+    return { matched, waiting, longestWaitMs, skips };
   }
 
   // ── Scan: single / multiple IDs ────────────────────
@@ -1051,9 +1077,9 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         const queueId = ssQueue.getValue();
         if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
 
-        const { matched, waiting, skips } = await scanQueue(queueId, filters);
+        const { matched, waiting, longestWaitMs, skips } = await scanQueue(queueId, filters);
         candidates = matched;
-        summary = STATUS.previewedQueue(matched.length, waiting, skips);
+        summary = STATUS.previewedQueue(matched.length, waiting, longestWaitMs, skips);
       } else {
         const ids = parseConvIds();
         if (!ids.length) {
@@ -1100,9 +1126,9 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         if (currentMode === "queue") {
           const queueId = ssQueue.getValue();
           if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
-          const { matched, waiting, skips } = await scanQueue(queueId, filters);
+          const { matched, waiting, longestWaitMs, skips } = await scanQueue(queueId, filters);
           candidates = matched;
-          summary = STATUS.previewedQueue(matched.length, waiting, skips);
+          summary = STATUS.previewedQueue(matched.length, waiting, longestWaitMs, skips);
         } else {
           const ids = parseConvIds();
           if (!ids.length) {
