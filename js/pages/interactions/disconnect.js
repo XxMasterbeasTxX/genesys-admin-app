@@ -14,6 +14,7 @@
  *   POST /api/v2/conversations/{id}/disconnect              — force-disconnect
  *   POST /api/v2/analytics/conversations/details/query      — queue scan (active convos)
  *   GET  /api/v2/analytics/conversations/{id}/details       — sender/recipient for one ID
+ *   POST /api/v2/analytics/queues/observations/query        — live queue depth
  *   GET  /api/v2/routing/queues                             — list queues
  */
 import { escapeHtml, formatDateTime, sleep, makeStatus } from "../../utils.js";
@@ -51,13 +52,23 @@ const STATUS = {
   },
 
   /**
-   * Queue mode: no per-row table, so the counts have to say where everything
-   * went. "0 match" on its own reads as an empty queue; "1,204 scanned · 0
-   * match · 1,204 media type not selected" reads as a filter that is too tight.
+   * Queue mode: no per-row table, so the line has to say where everything went.
+   *
+   * `waiting` is what is actually in the queue right now, read from real-time
+   * observations rather than counted from the scan. Once the address filters
+   * are pushed to Genesys the scan never sees the conversations it excluded, so
+   * a count derived from the scan would report the size of the filtered result
+   * and nothing else — "4 match" beside a queue holding 5. The two numbers
+   * answer different questions and both are worth knowing.
+   *
+   * It also restores the diagnostic the server-side filtering took away:
+   * "0 match · 2,847 waiting in queue" is plainly a filter that is too tight,
+   * where a bare "no conversations found" reads as an empty queue.
    */
-  previewedQueue(match, scanned, skips) {
-    if (!scanned) return this.noResults;
-    const parts = [`${scanned.toLocaleString()} scanned`, `${match.toLocaleString()} match`];
+  previewedQueue(match, waiting, skips) {
+    if (!match && !waiting) return this.noResults;
+    const parts = [`${match.toLocaleString()} match`];
+    if (waiting != null) parts.push(`${waiting.toLocaleString()} waiting in queue`);
     for (const [reason, n] of [...skips].sort((a, b) => b[1] - a[1])) {
       parts.push(`${n.toLocaleString()} ${reason}`);
     }
@@ -767,10 +778,9 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   // model here. An earlier hasActiveAgentSegment() guard was removed (549dbc3)
   // because it also excluded the orphans above.
   //
-  // Returns { matched, scanned, skips } — `skips` is a reason → count tally, so
-  // the status line can account for the difference between what was scanned and
-  // what matched. Without it a filter that excludes everything is
-  // indistinguishable from a queue that is already empty.
+  // Returns { matched, waiting, skips } — `skips` is a reason → count tally and
+  // `waiting` is the live queue depth, so the status line can account for the
+  // difference between what is in the queue and what matched.
   async function scanQueue(queueId, filters) {
     const orgId  = orgContext.get();
     const now    = new Date();
@@ -780,6 +790,17 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const skips  = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
     addrProbeBudget = 3;   // TEMPORARY — see probeAddresses()
+
+    // Started here and awaited at the end: it is one small request and has no
+    // bearing on the scan, so it costs nothing to have it in flight throughout.
+    // A failure resolves to null rather than rejecting — the queue depth is
+    // context, and losing it must never fail a scan that otherwise worked.
+    const waitingPromise = gc
+      .getQueueWaitingCount(api, orgId, queueId, filters.mediaTypes)
+      .catch((err) => {
+        console.warn("Could not read queue waiting count:", err.message);
+        return null;
+      });
 
     // Phase 1: scan the most recent 48 hours with synchronous analytics +
     // conversation details. This avoids async analytics ingestion lag for
@@ -941,7 +962,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       }
     }
 
-    return { matched, scanned: seen.size, skips };
+    return { matched, waiting: await waitingPromise, skips };
   }
 
   // ── Scan: single / multiple IDs ────────────────────
@@ -1055,9 +1076,9 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         const queueId = ssQueue.getValue();
         if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
 
-        const { matched, scanned, skips } = await scanQueue(queueId, filters);
+        const { matched, waiting, skips } = await scanQueue(queueId, filters);
         candidates = matched;
-        summary = STATUS.previewedQueue(matched.length, scanned, skips);
+        summary = STATUS.previewedQueue(matched.length, waiting, skips);
       } else {
         const ids = parseConvIds();
         if (!ids.length) {
@@ -1104,9 +1125,9 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         if (currentMode === "queue") {
           const queueId = ssQueue.getValue();
           if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
-          const { matched, scanned, skips } = await scanQueue(queueId, filters);
+          const { matched, waiting, skips } = await scanQueue(queueId, filters);
           candidates = matched;
-          summary = STATUS.previewedQueue(matched.length, scanned, skips);
+          summary = STATUS.previewedQueue(matched.length, waiting, skips);
         } else {
           const ids = parseConvIds();
           if (!ids.length) {

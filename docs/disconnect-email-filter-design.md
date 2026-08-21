@@ -291,6 +291,46 @@ Removed: `passesFilters`, `getQueueWaitInfo`, `hasActiveAgentSegment` — all
 defined, none called — and the unused `route` parameter. `escapeHtml` is
 retained because §8.2 restores its use.
 
+## 8a. Queue depth beside the match count
+
+Pushing the address filters to Genesys (§6) took something away: the scan never
+sees the conversations the server excluded, so a count derived from the scan
+reports the size of the filtered result and nothing else. A mistyped address
+came back as "no conversations found", which is what an empty queue says too —
+the exact ambiguity §8.2 existed to remove, reintroduced one section later.
+
+The queue mode status line therefore reads **`4 match · 5 waiting in queue`**.
+The second number is not counted from the scan. It comes from real-time queue
+observations:
+
+```
+POST /api/v2/analytics/queues/observations/query
+{ "filter": { "type": "and", "clauses": [
+    { "type": "or", "predicates": [{ "dimension": "queueId",   "value": "…" }] },
+    { "type": "or", "predicates": [{ "dimension": "mediaType", "value": "email" }] }
+  ] },
+  "metrics": ["oWaiting"] }
+```
+
+One request, answered from live queue state rather than reconstructed from
+analytics, and filtered to the media types in play — so when an address narrows
+the run to email, the depth is the email depth. `oWaiting` counts interactions
+sitting in the queue unassigned.
+
+An analytics reconstruction was built first and abandoned: `totalHits` on the
+sync query would have needed one request per interval across the whole scan
+window, cut on UTC midnight to stop a conversation on a boundary day being
+counted twice, and it would still only have described a six-month window rather
+than the queue as it stands.
+
+Requires `analytics:queueObservation:view`. A failure resolves to `null`, not 0,
+and the phrase is left off the line entirely — a depth that silently reads 0
+beside a non-zero match count reads as a fault. Losing the number never fails a
+scan that otherwise worked.
+
+The two numbers answer different questions and both are worth having:
+`0 match · 2,847 waiting in queue` is plainly a filter that is too tight.
+
 ## 9. Not in scope
 
 - **`cc` / `bcc` matching.** Recipient means `addressTo`. The analytics fields

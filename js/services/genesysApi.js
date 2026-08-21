@@ -294,6 +294,51 @@ export async function queryConversationDetails(api, orgId, body, opts = {}) {
 }
 
 /**
+ * How many interactions are waiting in a queue right now.
+ *
+ * Real-time queue observations, not an analytics reconstruction: one request
+ * answers "what is actually in the queue", filtered to the media types asked
+ * for. `oWaiting` counts interactions sitting in the queue unassigned.
+ *
+ * Returns `null` when the count cannot be read — a missing
+ * `analytics:queueObservation:view` being the likely reason — so a caller can
+ * tell "none waiting" apart from "could not tell". A count that silently reads
+ * 0 beside a non-zero result reads as a bug.
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {string}   queueId
+ * @param {string[]} mediaTypes  Lowercase analytics media types (voice, email…).
+ * @returns {Promise<number|null>}
+ */
+export async function getQueueWaitingCount(api, orgId, queueId, mediaTypes = []) {
+  const clauses = [{ type: "or", predicates: [{ dimension: "queueId", value: queueId }] }];
+  if (mediaTypes.length) {
+    clauses.push({
+      type: "or",
+      predicates: mediaTypes.map(t => ({ dimension: "mediaType", value: t })),
+    });
+  }
+
+  const resp = await api.proxyGenesys(orgId, "POST",
+    "/api/v2/analytics/queues/observations/query",
+    { body: { filter: { type: "and", clauses }, metrics: ["oWaiting"] } });
+
+  const results = resp?.results;
+  if (!Array.isArray(results)) return null;
+
+  // One group per media type, so the counts are summed.
+  let total = 0;
+  for (const r of results) {
+    for (const d of (r.data || [])) {
+      if (d.metric !== "oWaiting") continue;
+      total += typeof d.stats?.count === "number" ? d.stats.count : (d.observations?.length || 0);
+    }
+  }
+  return total;
+}
+
+/**
  * Get a single conversation's full details (participants, media, state).
  *
  * @param {Object} api
