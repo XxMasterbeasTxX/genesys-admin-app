@@ -193,7 +193,40 @@ function collectSessionAddresses(conv) {
  * as a match: this filter only ever narrows, so a conversation the page cannot
  * account for stays out of the run.
  */
+/**
+ * TEMPORARY (2026-08-21): print every address field the analytics response
+ * actually carries, for the first few conversations of a scan that has an
+ * address filter set.
+ *
+ * A recipient filter on a queue whose interactions plainly show that address as
+ * "To" in Genesys reports "recipient does not match" — so addressTo is
+ * populated and holds something else. Remove once the right field is known.
+ */
+let addrProbeBudget = 0;
+function probeAddresses(conv) {
+  if (addrProbeBudget <= 0) return;
+  addrProbeBudget--;
+  const sessions = [];
+  for (const p of (conv?.participants || [])) {
+    for (const sess of (p.sessions || [])) {
+      sessions.push({
+        purpose:      p.purpose,
+        mediaType:    sess.mediaType,
+        direction:    sess.direction,
+        addressFrom:  sess.addressFrom,
+        addressTo:    sess.addressTo,
+        addressSelf:  sess.addressSelf,
+        addressOther: sess.addressOther,
+        dnis:         sess.dnis,
+        ani:          sess.ani,
+      });
+    }
+  }
+  console.log("[addr-probe]", conv?.conversationId, JSON.stringify(sessions, null, 2));
+}
+
 function matchesAddressFilters(conv, { senders, recipients }) {
+  probeAddresses(conv);
   if (!senders.length && !recipients.length) return { pass: true, reason: null };
 
   const { from, to } = collectSessionAddresses(conv);
@@ -746,6 +779,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const matched = [];
     const skips  = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
+    addrProbeBudget = 3;   // TEMPORARY — see probeAddresses()
 
     // Phase 1: scan the most recent 48 hours with synchronous analytics +
     // conversation details. This avoids async analytics ingestion lag for
@@ -930,6 +964,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   async function scanIds(convIds, filters) {
     const orgId = orgContext.get();
     const rows  = [];
+    addrProbeBudget = 3;   // TEMPORARY — see probeAddresses()
 
     for (let i = 0; i < convIds.length; i++) {
       if (cancelled) break;
