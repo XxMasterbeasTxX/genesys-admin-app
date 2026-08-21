@@ -1,6 +1,6 @@
 # Disconnect — Empty Queue — Design
 
-Status: **Revised — awaiting go-ahead on §2**
+Status: **Revised (2) — §§6-7 awaiting build**
 Author: Genesys Admin App
 Last updated: 2026-08-21
 
@@ -32,10 +32,11 @@ live right now.
 
 ## 1. Confirmed decisions
 
-- **Analytics enumerates the candidates.** Conversations in the queue with no
-  `conversationEnd` — the original population. Conversations that are unended
-  but no longer queued are therefore in scope again, including the two on
-  `Intervare - Email - Fejl`.
+- **Analytics enumerates the candidates**, and the candidates are the ones
+  **actually waiting**: no `conversationEnd`, *and* an open `wait` segment for
+  this queue (§6). Enumeration and population are separate choices, and
+  conflating them is what sent this design round twice.
+- **The scan window is probed, not assumed** (§7).
 - **Observations supply context, not candidates.** `oWaiting` for the depth,
   `oLongestWaiting` for the age, `oInteracting` for whether anything is live.
   No `detailMetrics`, so the 100-row cap stops mattering at all.
@@ -45,15 +46,15 @@ live right now.
   `addressTo`. On 3,091 rows that is 3,091 round-trips that never needed to
   happen. The historical phase dropped them in `b52b0be`; the recent phase
   never followed.
-- **The scan window stays the full six months.** Sizing it by the queue's oldest
-  wait was tried and reverted (§4 of the companion design): the age describes
-  the waiting population and this scan's population is the unended one, which
-  `Intervare` proved are different sets.
+- **The scan window is no longer a fixed six months** — see §7. The earlier
+  attempt keyed on the queue's oldest wait and was reverted because it measured
+  a different population from the one being scanned; probing measures the same
+  one.
 - **Preview reports complete counts.** `47 match · 3.091 waiting in queue ·
   3.044 sender does not match` — every figure describing the whole queue, not a
   sample of it.
 
-## 2. The live-agent question, reopened
+## 2. The live-agent guard — decided, built (`e06ccab`)
 
 Sourcing from `oWaiting` had excluded live interactions by construction: an
 interaction an agent is handling is `oInteracting` and simply was not in the
@@ -82,8 +83,6 @@ is not recoverable.
 It does not cover an interaction going live between preview and Disconnect.
 Closing that means re-checking at execution time, which is a larger change;
 recorded here as a known gap rather than assumed away.
-
-**This is the one item needing a decision before build.**
 
 ## 3. Where each number comes from
 
@@ -129,16 +128,98 @@ would remove the submit-poll-fetch cycle entirely. It 502s past ~8,000
 conversations (`b52b0be`), which a filtered query will not approach — so it
 could be used when filters are set and the async path kept when they are not.
 
-## 6. Build order
+## 6. Restricting to what is actually waiting
 
-1. **Observations back to stats only** — add `oInteracting`, drop
-   `detailMetrics`. Truncation handling goes with it.
-2. **Analytics enumerates again** — restore the two-phase scan, *without* the
-   per-conversation `getConversation` calls, with the address predicates.
-   Date filters and labels revert with it.
-3. **Live-agent handling** — per §2, once decided.
-4. **Cleanup** — whatever is unreachable after 1–3, deleted rather than left.
-5. **Release note** — folded into 4.1, and the page description reviewed.
+`2 match · 0 waiting in queue` on `Intervare - Email - Fejl` is not a rounding
+error. It is two different populations printed side by side: the match count
+comes from analytics — conversations with no `conversationEnd` — and the depth
+comes from observations — what is waiting. The two figures are not comparable,
+which is why the line reads as broken even though both numbers are correct.
 
-Steps 1 and 2 are the functional change and can be tested on `Nemlig`
-immediately; the filtered count is the thing to check.
+**A conversation is waiting in this queue when it has no `conversationEnd` *and*
+an open `wait` segment for this queue.** Open meaning `segmentEnd` absent: the
+wait has not finished. That is the definition analytics can express, and it is
+the one `oWaiting` counts.
+
+Consequences:
+
+- `Intervare` reports **0 match**, because its two have closed segments. What
+  the operator sees agrees with what the queue holds.
+- The two figures become directly comparable. On an unfiltered preview,
+  `3.091 match · 3.091 waiting in queue` should agree, and a divergence becomes
+  a signal worth noticing rather than noise. Small differences are expected —
+  the two calls are made moments apart against a live queue.
+- Unended-but-not-waiting conversations leave Empty Queue's scope again, and are
+  reachable through Multiple IDs. This is the remit as originally asked for,
+  "I only want to disconnect what's on the queue", reached through analytics
+  rather than observations so the counts stay complete and uncapped.
+
+This is `getQueueWaitInfo`, removed in `be600f7` as *"remove getQueueWaitInfo
+gate, match all active convos"*. It was wrong then, when the remit was finding
+orphans; it is right now, when the remit is emptying a queue. One difference:
+the original deliberately did **not** check `segmentEnd`, precisely so it would
+still catch conversations whose segment Genesys had closed. Here that check is
+the whole point.
+
+**Unknown:** whether analytics reliably leaves `segmentEnd` absent on a segment
+that is genuinely still waiting. The cross-check above is how that gets
+verified — if match and depth agree on a large queue, it holds.
+
+## 7. Sizing the scan by probing
+
+The window is six months because an earlier attempt to size it was reverted.
+That attempt keyed on `oLongestWaiting`, which describes the waiting population
+while the scan enumerated the unended one — a different set, so the age could
+silently cut the scan short of real orphans.
+
+Probing does not have that flaw, because it asks about **the same population,
+with the same filters**. The synchronous query returns `totalHits`, so one
+request per interval with `pageSize: 1` gives the exact number of matching
+conversations in that interval:
+
+```json
+{ "interval": "…/…", "paging": { "pageSize": 1, "pageNumber": 1 },
+  "segmentFilters": [ queueId, "…address predicates" ],
+  "conversationFilters": [ { "conversationEnd": "notExists" } ] }
+```
+
+An interval whose probe returns 0 needs no async job. On both queues seen so far
+that collapses six submit-poll-fetch cycles to one or two, and on a filtered
+preview very likely to none — the address predicates narrow the probe exactly
+as they narrow the scan.
+
+Six small probes can run concurrently, so the cost is roughly one round-trip.
+
+**A failed probe must scan, never skip.** If the probe errors or returns no
+usable `totalHits`, that interval is scanned as it is today. The failure mode is
+"slower than it needed to be", never "quietly searched less".
+
+**Unknown:** whether the synchronous query will answer a 31-day interval at all.
+It 502s past ~8,000 conversations (`b52b0be`), which is about response size;
+`pageSize: 1` should avoid that, but `totalHits` is still computed server-side.
+The fallback above covers it either way.
+
+**Also worth checking, separately:** the recent 48 hours is cut into eight
+six-hour buckets, but `queryConversationDetails` already pages internally, so
+those eight requests may be doing one request's work. Introduced in `38adad9`
+without a stated reason — to be understood before being changed, not assumed
+redundant.
+
+## 8. Build order
+
+1. ~~**Observations back to stats only**~~ — done, `e06ccab`.
+2. ~~**Analytics enumerates again**~~ — done, `e06ccab`.
+3. ~~**Live-agent handling**~~ — done, `e06ccab`.
+4. **Restrict to what is waiting** (§6). A behaviour change: `Intervare` goes to
+   0, and match becomes comparable to depth. Test on both queues — the
+   unfiltered Nemlig figures agreeing is the verification.
+5. **Probe the intervals** (§7), with the scan-on-probe-failure fallback.
+6. **Investigate the eight recent buckets** (§7), and collapse them only if the
+   reason they exist turns out not to apply.
+7. **Cleanup** — whatever is unreachable, deleted rather than left.
+8. **Release note** — folded into 4.1, and the page description reviewed: it
+   still says "stuck or orphaned conversations", which after §6 describes the
+   ID modes rather than this one.
+
+Step 4 is a behaviour change and worth its own test round. Step 5 is pure speed
+and cannot change what is found, as long as the fallback holds.
