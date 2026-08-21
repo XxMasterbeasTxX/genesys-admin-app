@@ -427,32 +427,46 @@ interaction was **23 hours old** — inside the 48-hour recent window — so all
 historical async jobs covering six months were scanning for something that could
 not be there. Sized to the age, that queue needs none of them.
 
-**Built.** The historical phase is sized to the queue: nothing in it is older
-than `oldestMs`, so intervals reaching further back are submitting, polling and
-fetching an async job for a guaranteed empty result.
+**Built, then reverted — the premise was wrong.**
+
+The sizing keyed on `oLongestWaiting` / `oLongestInteracting`, which describe
+what is **waiting or interacting right now**. This scan's population is
+conversations with **no `conversationEnd`**. Those are not the same set, and a
+real queue settled it on 2026-08-21:
 
 ```
-intervals = clamp(ceil((oldestMs − 48h) / 31 days), 0, 6)
+2 match · 0 waiting in queue
 ```
 
-| Oldest in queue | Async jobs |
-|---|---|
-| 23h — the live queue | **0** of 6 |
-| 4 days | 1 |
-| 45 days | 2 |
-| 4 months | 4 |
-| Older than ~6 months | 6 |
+Two unended conversations; none of them waiting. That queue survived only
+because a depth of 0 meant no age could be read, which fell through to the full
+scan. A queue holding *both* — a few fresh waiting emails and some older orphans
+that are not waiting — would have reported an age in hours, run zero historical
+intervals, and skipped the orphans in silence. Orphans are the whole reason this
+page exists, so that is the one failure it cannot have.
 
-`oldestMs` is the older of `oLongestWaiting` **and `oLongestInteracting`**.
-Waiting alone describes only the unassigned interactions, so one sitting at an
-agent for months would not be represented by it and a scan sized on waiting
-alone would stop short of it.
+The earlier reasoning had looked sound: the Nemlig queue reported 3,091 through
+`oWaiting`, which seemed to show that orphans do register as waiting. It showed
+only that *those* orphans did. One queue agreeing is not the population being
+the same.
 
-Three ways it declines to guess: the age being unreadable falls through to the
-full six months, the status line says how far it actually looked
-(`searched back 33d`), and a **"Full 6-month scan"** checkbox forces the old
-behaviour for the case where the observed queue does not reflect what the
-operator is chasing.
+No cheap sound signal was found to replace it. `ConversationAggregateQueryPredicate`
+has 84 dimensions and `conversationEnd` is not among them, so the aggregates API
+cannot be asked which months hold unended conversations either.
+
+`oldestMs` is still read and shown as context — `oldest waiting 23h` — because
+it says something true about the queue. It is not allowed to decide what gets
+searched. The **"Full 6-month scan"** checkbox went with the sizing: an escape
+hatch is only worth having when there is a hazard to escape, and removing the
+hazard is better than shipping the hatch.
+
+**If the scan's runtime becomes the problem again**, the promising direction is
+not to search less but to search cheaper. The six historical passes use the
+async jobs API because the synchronous endpoint times out past roughly 8,000
+conversations (`b52b0be`). With the address predicates of §6 now pushing the
+filtering server-side, a filtered historical query returns far less — possibly
+little enough for the sync endpoint, which needs no submit-poll-fetch cycle.
+That would cut the same time without narrowing what is searched. Untested.
 
 ## 9. Not in scope
 
