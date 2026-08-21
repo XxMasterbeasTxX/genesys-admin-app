@@ -23,8 +23,7 @@ export const RELEASE_NOTES = [
   {
     version: "4.1",
     date: "2026-08-21",
-    title: "Disconnect: filter stuck emails by who sent them (internal)",
-    internalOnly: true,
+    title: "Disconnect: filter stuck emails by who sent them",
     changes: [
       "Interactions › Disconnect can now narrow a run to particular email addresses. Tick Email and two fields appear — Sender Email and Recipient Email — each taking as many addresses as you like, one per row. When a single mailbox has produced a batch of stuck interactions and the rest of the queue must be left alone, that is now a filter rather than an afternoon of copying conversation IDs out of a preview and pasting them back in.",
       "An address means email and nothing else. Whatever else is ticked under Media Types is struck through and a line says so, because a filter that quietly reinterprets the boxes above it on a page that force-disconnects things is not a filter anyone should have to guess at.",
