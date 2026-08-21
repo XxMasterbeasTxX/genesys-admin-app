@@ -154,6 +154,10 @@ function getSessionMediaType(conversation) {
  * `support@acme.com`, and matching is case-insensitive, so everything is
  * folded to one shape once here rather than at each comparison.
  */
+// Confirmed against live Genesys data (2026-08-21): `addressFrom` keeps the
+// sender's original casing — THVA@tdc.nuuway.dk — while `addressTo` came back
+// lowercase. The fold below is therefore load-bearing, not tidying: without it
+// a sender filter typed in lowercase matches nothing.
 function normaliseAddress(raw) {
   let v = String(raw || "").trim();
   const angled = v.match(/<([^>]*)>/);       // "Display Name <a@b.com>"
@@ -183,6 +187,10 @@ function addressRowError(raw) {
  * `addressFrom` / `addressTo` live on the session, and the same pair repeats on
  * each side of the conversation, so both are gathered into sets.
  */
+// Live data (2026-08-21) shows `addressFrom` / `addressTo` identical across all
+// three sessions of an inbound email — external, workflow and acd — while
+// `addressSelf` / `addressOther` swap sides per participant. That is why this
+// pair is the source of truth and the other is not.
 function collectSessionAddresses(conv) {
   const from = new Set();
   const to   = new Set();
@@ -204,40 +212,7 @@ function collectSessionAddresses(conv) {
  * as a match: this filter only ever narrows, so a conversation the page cannot
  * account for stays out of the run.
  */
-/**
- * TEMPORARY (2026-08-21): print every address field the analytics response
- * actually carries, for the first few conversations of a scan that has an
- * address filter set.
- *
- * A recipient filter on a queue whose interactions plainly show that address as
- * "To" in Genesys reports "recipient does not match" — so addressTo is
- * populated and holds something else. Remove once the right field is known.
- */
-let addrProbeBudget = 0;
-function probeAddresses(conv) {
-  if (addrProbeBudget <= 0) return;
-  addrProbeBudget--;
-  const sessions = [];
-  for (const p of (conv?.participants || [])) {
-    for (const sess of (p.sessions || [])) {
-      sessions.push({
-        purpose:      p.purpose,
-        mediaType:    sess.mediaType,
-        direction:    sess.direction,
-        addressFrom:  sess.addressFrom,
-        addressTo:    sess.addressTo,
-        addressSelf:  sess.addressSelf,
-        addressOther: sess.addressOther,
-        dnis:         sess.dnis,
-        ani:          sess.ani,
-      });
-    }
-  }
-  console.log("[addr-probe]", conv?.conversationId, JSON.stringify(sessions, null, 2));
-}
-
 function matchesAddressFilters(conv, { senders, recipients }) {
-  probeAddresses(conv);
   if (!senders.length && !recipients.length) return { pass: true, reason: null };
 
   const { from, to } = collectSessionAddresses(conv);
@@ -271,6 +246,9 @@ function matchesAddressFilters(conv, { senders, recipients }) {
  * matchesAddressFilters() still runs on everything that comes back. The only
  * operator available is `matches`, which is exact, which is why the filter was
  * defined as exact-match in the first place.
+ *
+ * `matches` is case-insensitive: values go out lowercased and were confirmed
+ * on 2026-08-21 to match a stored `THVA@tdc.nuuway.dk`.
  */
 function addressSegmentFilters({ senders, recipients }) {
   const out = [];
@@ -789,8 +767,6 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const matched = [];
     const skips  = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
-    addrProbeBudget = 3;   // TEMPORARY — see probeAddresses()
-
     // Started here and awaited at the end: it is one small request and has no
     // bearing on the scan, so it costs nothing to have it in flight throughout.
     // A failure resolves to null rather than rejecting — the queue depth is
@@ -985,7 +961,6 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   async function scanIds(convIds, filters) {
     const orgId = orgContext.get();
     const rows  = [];
-    addrProbeBudget = 3;   // TEMPORARY — see probeAddresses()
 
     for (let i = 0; i < convIds.length; i++) {
       if (cancelled) break;

@@ -1,7 +1,7 @@
 # Disconnect — Sender / Recipient Email Filters — Design
 
-Status: **Built** — all eight steps shipped to dev (release 4.1). Step 7 is on
-dev awaiting the one comparison in §6.1.
+Status: **Built and confirmed** — all eight steps shipped to dev (release 4.1),
+including the server-side predicates, verified against live data (§6.1).
 Author: Genesys Admin App
 Last updated: 2026-08-21
 
@@ -178,13 +178,41 @@ The client-side filter of §5 stays in place permanently regardless. The
 predicates are an optimisation for the historical scan's volume, never the
 correctness boundary.
 
-### 6.1 How this gets confirmed
+### 6.1 Confirmed (2026-08-21)
 
 Two things about the `matches` operator were unknown when this was written, both
 of which fail silently as "no results" if guessed wrong: whether it is
 case-sensitive on an address value, and whether addresses are stored bare or
 decorated. Both are platform behaviour, not per-org, so one observation settles
-them for good.
+them for good. **Both are now answered against the dev org.**
+
+**`matches` is case-insensitive.** Genesys stores `addressFrom` with the
+sender's own casing — the live value was `THVA@tdc.nuuway.dk` — while the
+predicate goes out normalised to `thva@tdc.nuuway.dk`. The server filtered
+correctly regardless: with the sender filter set the scan saw 4 conversations
+where the unfiltered queue returned 5.
+
+**Addresses are stored bare.** No display name, no `mailto:` prefix:
+`demo_support@netdesignde.mypurecloud.de` exactly.
+
+That first finding makes the lowercase fold in `normaliseAddress` load-bearing
+rather than cosmetic. A sender filter typed in lowercase — which is how anyone
+would type it — matches nothing on the client side without it, because the
+stored value is not lowercase.
+
+The same probe settled §4 with evidence rather than the spec's wording:
+`addressFrom` and `addressTo` are **identical across all three sessions** of an
+inbound email (`external`, `workflow`, `acd`), while `addressSelf` and
+`addressOther` swap sides per participant. The pair this design chose is the
+stable one; the pair it rejected is the one that depends on which participant
+you happen to read.
+
+One thing stayed unexplained. An earlier run of the recipient filter reported
+"5 recipient does not match" against the very address the probe later showed in
+`addressTo`. The field holds the right value and the same code matches it now,
+so there is no field-selection fault; the likely cause is that the input on that
+run differed, the input being visually truncated at that width. Recorded rather
+than resolved.
 
 Shipping the client-side filter first is what made that observation cheap. A
 real sender filter on dev returned the correct number of interactions, which
@@ -356,8 +384,8 @@ The two numbers answer different questions and both are worth having:
   `EmailMessage` objects carrying live `from` / `to` / `cc` / `bcc` and does not
   depend on analytics ingestion. Not built now — one unverified endpoint per
   feature is enough.
-- **Server-side `matches` semantics** (§6) — unverified, and its failure mode is
-  an empty result set that looks legitimate. This is why it ships second.
+- ~~**Server-side `matches` semantics** (§6)~~ — **closed**, see §6.1:
+  case-insensitive, addresses stored bare, verified against live data.
 - **Widened ID mode** (§8.3) — a deliberate, stated trade.
 - **Silent narrowing to email** — mitigated by the inline note and the struck
   through media ticks. Without that note it would be the feature's worst
@@ -375,8 +403,7 @@ Each step is a separate commit and push, with a pause to test on dev.
    narrowing and its note.~~ `9622100`
 6. ~~**Client-side filtering** — §5: the shared matcher across all three paths,
    plus `gc.getConversationAnalytics`.~~ `d1e79ae` — feature complete here.
-7. ~~**Server-side predicates** — §6.~~ **pending** — on dev, awaiting the match
-   count comparison in §6.1.
+7. ~~**Server-side predicates** — §6.~~ `5e75391` — confirmed live, §6.1.
 8. ~~**Release notes** — one entry covering the whole feature.~~ `b03ba86`,
    release 4.1, `internalOnly` because `interactions.*` reaches no customer.
 
