@@ -294,38 +294,37 @@ export async function queryConversationDetails(api, orgId, body, opts = {}) {
 }
 
 /**
- * What is waiting in a queue right now — the count, and each interaction.
+ * A queue's live state: how deep it is, whether anything is being handled, and
+ * how long the oldest has waited.
  *
- * Real-time queue observations, not an analytics reconstruction. `metrics`
- * gives the exact depth and `detailMetrics` gives one ObservationValue per
- * waiting interaction, carrying `conversationId`, `addressFrom`, `addressTo`,
- * `observationDate` and `direction`.
+ * Stats only — no `detailMetrics`. The detail list is capped at 100 and cannot
+ * be paged or sliced (the query takes only `queueId` and `mediaType`), so it
+ * can never enumerate a large queue. Enumeration is analytics' job; this call
+ * supplies the numbers analytics cannot give: what the queue holds *right now*.
  *
- * `oWaiting` is interactions sitting in the queue **unassigned**. Anything an
- * agent is handling is `oInteracting` and is deliberately not included: this is
- * what keeps a live interaction out of a force-disconnect set by construction,
- * rather than by filtering one out afterwards.
+ * `interacting` is the signal that decides whether the live-agent guard applies
+ * at all. When it is 0, nothing in the queue is live, so an unclosed `interact`
+ * segment on a candidate is stale rather than active — which is the case that
+ * made a blanket guard skip orphans (`549dbc3`).
  *
- * Observations come back sorted by timestamp ascending, so `observations[0]` is
- * the oldest — which is where the queue's age comes from, with no duration
- * metric to misread.
+ * `oldestMs` is derived from `oLongestWaiting`, which Genesys reports as an
+ * epoch timestamp rather than an elapsed time — read as a duration the live
+ * value came to 56 years, which is what gave it away. The threshold at 1e12
+ * distinguishes the two rather than trusting one reading for ever: that is
+ * either a timestamp in 2001 or a wait of 31 years, and only one is plausible.
  *
- * **Truncation.** The detail list is capped at an undocumented size. When it
- * trips, the result is not the first N: per the spec, "the first half of the
- * list of observations will contain the oldest observations and the second half
- * the newest", so the middle is missing. `truncated` is returned so a caller can
- * say so rather than act on a partial queue believing it is whole. `waiting` is
- * unaffected by truncation and always exact.
- *
- * Requires `analytics:queueObservation:view`.
+ * Each field is `null` when it cannot be read — a missing
+ * `analytics:queueObservation:view` being the likely reason — so a caller can
+ * tell "none" from "could not tell". A count silently reading 0 beside a
+ * non-zero result reads as a fault.
  *
  * @param {Object}   api
  * @param {string}   orgId
  * @param {string}   queueId
  * @param {string[]} mediaTypes  Lowercase analytics media types (voice, email…).
- * @returns {Promise<{waiting: number|null, truncated: boolean, observations: Object[]}>}
+ * @returns {Promise<{waiting: number|null, interacting: number|null, oldestMs: number|null}>}
  */
-export async function getQueueWaitingDetails(api, orgId, queueId, mediaTypes = []) {
+export async function getQueueStats(api, orgId, queueId, mediaTypes = []) {
   const clauses = [{ type: "or", predicates: [{ dimension: "queueId", value: queueId }] }];
   if (mediaTypes.length) {
     clauses.push({
@@ -337,130 +336,32 @@ export async function getQueueWaitingDetails(api, orgId, queueId, mediaTypes = [
   const resp = await api.proxyGenesys(orgId, "POST",
     "/api/v2/analytics/queues/observations/query",
     { body: { filter: { type: "and", clauses },
-              metrics:       ["oWaiting"],
-              detailMetrics: ["oWaiting"] } });
+              metrics: ["oWaiting", "oInteracting", "oLongestWaiting"] } });
 
   const results = resp?.results;
-  // null, not 0: a caller has to be able to tell "nothing waiting" from "could
-  // not tell", because a depth silently reading 0 beside a non-zero result
-  // reads as a fault.
-  if (!Array.isArray(results)) return { waiting: null, truncated: false, observations: [] };
+  if (!Array.isArray(results)) return { waiting: null, interacting: null, oldestMs: null };
 
   let waiting = 0;
-  let truncated = false;
-  const observations = [];
+  let interacting = 0;
+  let oldestMs = null;
 
-  // One group per media type, so counts sum and observations concatenate.
+  // One group per media type, so counts sum and the oldest is the oldest of them.
   for (const r of results) {
     for (const d of (r.data || [])) {
-      if (d.metric !== "oWaiting") continue;
-      if (typeof d.stats?.count === "number") waiting += d.stats.count;
-      if (d.truncated) truncated = true;
-      // Stamp the group's media type on each row: the observation itself does
-      // not carry one, and flattening the groups would otherwise lose it.
-      if (Array.isArray(d.observations)) {
-        for (const o of d.observations) {
-          observations.push({ ...o, mediaType: r.group?.mediaType || "" });
-        }
-      }
-    }
-  }
-
-  // Concatenating groups breaks the per-group ordering, so sort once here and
-  // callers can rely on observations[0] being the oldest.
-  observations.sort((a, b) =>
-    String(a.observationDate || "").localeCompare(String(b.observationDate || "")));
-
-  return { waiting, truncated, observations };
-}
-
-/**
- * What is waiting in a queue right now, and for how long.
- *
- * Real-time queue observations, not an analytics reconstruction: one request
- * answers "what is actually in the queue", filtered to the media types asked
- * for. `oWaiting` counts interactions sitting in the queue unassigned.
- *
- * `oldestMs` is how far back a scan would have to reach to cover the queue, and
- * is the older of `oLongestWaiting` and `oLongestInteracting`. Both are needed:
- * waiting alone describes only the unassigned ones, so an interaction that has
- * been sitting at an agent for months would not be represented by it, and a
- * scan sized on waiting alone would stop short of it.
- *
- * Either field is `null` when it cannot be read — a missing
- * `analytics:queueObservation:view` being the likely reason — so a caller can
- * tell "none waiting" apart from "could not tell". A count that silently reads
- * 0 beside a non-zero result reads as a bug.
- *
- * Both "longest" metrics are durations derived from an epoch timestamp rather
- * than an elapsed time — see the note at the read below.
- *
- * @param {Object}   api
- * @param {string}   orgId
- * @param {string}   queueId
- * @param {string[]} mediaTypes  Lowercase analytics media types (voice, email…).
- * @returns {Promise<{waiting: number|null, oldestMs: number|null}>}
- */
-export async function getQueueWaitingStats(api, orgId, queueId, mediaTypes = []) {
-  const clauses = [{ type: "or", predicates: [{ dimension: "queueId", value: queueId }] }];
-  if (mediaTypes.length) {
-    clauses.push({
-      type: "or",
-      predicates: mediaTypes.map(t => ({ dimension: "mediaType", value: t })),
-    });
-  }
-
-  const resp = await api.proxyGenesys(orgId, "POST",
-    "/api/v2/analytics/queues/observations/query",
-    { body: { filter: { type: "and", clauses },
-              metrics: ["oWaiting", "oLongestWaiting", "oLongestInteracting"] } });
-
-  const results = resp?.results;
-  if (!Array.isArray(results)) return { waiting: null, oldestMs: null };
-
-
-  // One group per media type, so counts are summed and the oldest is the oldest
-  // across all of them.
-  let total = 0;
-  let longest = null;
-  for (const r of results) {
-    for (const d of (r.data || [])) {
-      if (d.metric === "oWaiting") {
-        total += typeof d.stats?.count === "number" ? d.stats.count : (d.observations?.length || 0);
-      } else if (d.metric === "oLongestWaiting" || d.metric === "oLongestInteracting") {
-        // Observed against a live queue (2026-08-21):
-        //   { metric: "oLongestWaiting", stats: { count: 1,
-        //     calculatedMetricValue: 1787230858678 } }
-        // That value is the epoch milliseconds at which the longest-waiting
-        // interaction began waiting — NOT a duration. Read as a duration it
-        // came to 56 years, which is what gave it away. Neither `max` nor
-        // `current` is present at all.
-        //
-        // The threshold distinguishes the two rather than trusting one reading
-        // for ever: 1e12 ms is either a timestamp in 2001 or a duration of 31
-        // years, and only one of those is plausible.
+      const count = typeof d.stats?.count === "number" ? d.stats.count : 0;
+      if (d.metric === "oWaiting")          waiting += count;
+      else if (d.metric === "oInteracting") interacting += count;
+      else if (d.metric === "oLongestWaiting") {
         const v = d.stats?.calculatedMetricValue;
         if (typeof v === "number" && v > 0) {
           const ms = v > 1e12 ? Date.now() - v : v;
-          if (ms >= 0) longest = longest === null ? ms : Math.max(longest, ms);
+          if (ms >= 0) oldestMs = oldestMs === null ? ms : Math.max(oldestMs, ms);
         }
       }
     }
   }
-  return { waiting: total, oldestMs: longest };
-}
 
-/**
- * Get a single conversation's full details (participants, media, state).
- *
- * @param {Object} api
- * @param {string} orgId
- * @param {string} conversationId
- * @returns {Promise<Object>}  Full conversation object.
- */
-export async function getConversation(api, orgId, conversationId) {
-  return api.proxyGenesys(orgId, "GET",
-    `/api/v2/conversations/${conversationId}`);
+  return { waiting, interacting, oldestMs };
 }
 
 /**
