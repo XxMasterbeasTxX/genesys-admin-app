@@ -207,6 +207,35 @@ queue, so it is a second line rather than the only one.
 a real queue. Before match and depth described the same population, a test that
 matched nothing was indistinguishable from a queue with nothing in it.
 
+### 6.1 Exact parity is not achievable, and was wrong to promise
+
+The cross-check was introduced with the claim that match and depth agreeing
+would verify the definition. That is too strong, and the same queue disproved
+it: 173 matched against a depth of 169, stable across several runs.
+
+All 173 are email, none has an agent engaged, every open ACD segment names the
+queue, and every one of those segments reads `interact`. **Nothing in the
+analytics data distinguishes the four.** They are orphans of a second shape:
+Genesys abandoned them without writing `conversationEnd` *and* without closing
+the ACD segment, so analytics reports them identically to a genuine wait. Live
+queue state knows they are not there; analytics cannot. Repeated identical
+results rule out arrivals during the scan — timing would vary the gap.
+
+Two consequences:
+
+- **A small excess of matches over depth is expected**, and means orphans. They
+  are dead interactions worth disconnecting, so the excess is desirable rather
+  than a defect. A *large* or growing divergence would still be worth
+  investigating.
+- **The depth is read after the scan, not before.** A depth measured before a
+  scan that takes seconds is describing an earlier queue. This does not explain
+  the four, but comparing across a time gap was never sound.
+
+`Intervare`'s two are the first orphan shape — ACD segment *closed* — and are
+correctly excluded. These four are the second — ACD segment left *open* — and
+cannot be. Both are things the page exists to remove; only one of them is
+visible to the queue.
+
 ## 7. Sizing the scan by probing
 
 The window is six months because an earlier attempt to size it was reverted.

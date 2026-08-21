@@ -85,9 +85,13 @@ const STATUS = {
     // scan did: it is the condition that turns the agent guard on.
     if (interacting) parts.push(`${interacting.toLocaleString()} being handled`);
 
-    // Context about the queue, not about the search. `oLongestWaiting` describes
-    // the waiting population; this scan's population is the unended one, and
-    // Intervare proved those differ. It is shown, never acted on.
+    // Context, and deliberately not a target to match. The depth comes from live
+    // queue state; the matches come from analytics, which cannot see that a
+    // conversation has left the queue when Genesys left its ACD segment open.
+    // A small excess of matches over depth is therefore expected and means
+    // orphans — dead interactions worth disconnecting, which analytics reports
+    // identically to genuine waits. Exact parity is not achievable and was
+    // never a sound thing to promise.
     const age = formatWait(oldestMs);
     if (age) parts.push(`oldest waiting ${age}`);
 
@@ -193,25 +197,6 @@ function isWaitingInQueue(conversation, queueId) {
     }
   }
   return false;
-}
-
-/**
- * TEMPORARY (2026-08-21): the type of the open ACD segment for this queue.
- * Accounting for 173 matched against a depth of 169, with media type, agent
- * involvement and a missing queueId already ruled out.
- */
-function openAcdSegmentType(conversation, queueId) {
-  for (const p of (conversation.participants || [])) {
-    if (p.purpose !== "acd") continue;
-    for (const session of (p.sessions || [])) {
-      for (const seg of (session.segments || [])) {
-        if (seg.segmentEnd) continue;
-        if (queueId && seg.queueId && seg.queueId !== queueId) continue;
-        return seg.segmentType || "(blank)";
-      }
-    }
-  }
-  return null;
 }
 
 /** Participant purposes that mean a person is on the interaction. */
@@ -923,7 +908,6 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const matched = [];
     const skips   = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
-    const probe = { byAcdSegment: {} };   // TEMPORARY
 
     // Read first: `interacting` decides whether the live-agent guard applies at
     // all. Failure is not fatal — nulls fall through to "assume nothing live",
@@ -976,16 +960,6 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
         skip("outside date range"); return;
       }
-
-      // TEMPORARY (2026-08-21): 173 matched against a depth of 169. Tally the
-      // three things that could put a conversation in the matched set without
-      // the queue counting it as waiting, rather than guessing which. Remove
-      // once the four are accounted for.
-      // The open ACD segment's type. All three sampled earlier read "interact",
-      // but three is not 173 — email can be parked, and `parked`/`scheduled`
-      // both leave the queue leg open without the interaction waiting.
-      const acdType = openAcdSegmentType(c, queueId) || "(none)";
-      probe.byAcdSegment[acdType] = (probe.byAcdSegment[acdType] || 0) + 1;
 
       matched.push({
         convId:    c.conversationId,
@@ -1087,15 +1061,6 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const after = await gc
       .getQueueStats(api, orgId, queueId, filters.mediaTypes)
       .catch(() => ({ waiting: null, interacting: null, oldestMs: null }));
-
-    // TEMPORARY (2026-08-21): 173 matched against a depth of 169, with nothing
-    // in the analytics data distinguishing the four. If `after` is 173 they
-    // arrived mid-scan; if it is still 169 they are orphans whose ACD segment
-    // Genesys left open, which analytics cannot tell from a genuine wait.
-    console.log("[match-probe]", JSON.stringify({
-      matched: matched.length, waitingBefore: waiting, waitingAfter: after.waiting,
-      acdSegments: probe.byAcdSegment,
-    }));
 
     return {
       matched,
