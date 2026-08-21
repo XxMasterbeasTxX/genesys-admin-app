@@ -40,8 +40,27 @@ const STATUS = {
   scanning:       (i, n) => `Scanning interval ${i} of ${n}…`,
   inspecting:     (i, n) => `Inspecting conversation ${i} of ${n}…`,
   disconnecting:  (i, n) => `Disconnecting ${i}–${Math.min(i + 9, n)} of ${n}…`,
-  previewed:      (n) => `Preview: ${n} conversation${n !== 1 ? "s" : ""} matching criteria.`,
   noResults:      "No conversations found matching the criteria.",
+
+  /** ID modes: the table carries the detail, the line carries the split. */
+  previewedIds(match, total) {
+    if (match === total) return `Preview: all ${total} ID${total !== 1 ? "s" : ""} match.`;
+    return `Preview: ${match} of ${total} ID${total !== 1 ? "s" : ""} match — see the table for the rest.`;
+  },
+
+  /**
+   * Queue mode: no per-row table, so the counts have to say where everything
+   * went. "0 match" on its own reads as an empty queue; "1,204 scanned · 0
+   * match · 1,204 media type not selected" reads as a filter that is too tight.
+   */
+  previewedQueue(match, scanned, skips) {
+    if (!scanned) return this.noResults;
+    const parts = [`${scanned.toLocaleString()} scanned`, `${match.toLocaleString()} match`];
+    for (const [reason, n] of [...skips].sort((a, b) => b[1] - a[1])) {
+      parts.push(`${n.toLocaleString()} ${reason}`);
+    }
+    return parts.join(" · ");
+  },
   done(ok, fail, skip) {
     const p = [`Disconnected: ${ok}`];
     if (fail) p.push(`Failed: ${fail}`);
@@ -256,6 +275,22 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       <div class="di-progress-bar" id="diProgressBar"></div>
     </div>
 
+    <!-- Preview results (ID modes only — queue mode reports counts in the status) -->
+    <div class="di-table-wrap" id="diTableWrap" style="display:none">
+      <table class="data-table di-table">
+        <thead>
+          <tr>
+            <th style="width:60px">#</th>
+            <th style="width:300px">Conversation ID</th>
+            <th style="width:100px">Media Type</th>
+            <th style="width:160px">Start Time</th>
+            <th style="width:100px">Status</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody id="diTbody"></tbody>
+      </table>
+    </div>
   `;
 
   // ── DOM refs ────────────────────────────────────────
@@ -285,6 +320,8 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   const $status       = el.querySelector("#diStatus");
   const $progressWrap = el.querySelector("#diProgressWrap");
   const $progressBar  = el.querySelector("#diProgressBar");
+  const $tableWrap    = el.querySelector("#diTableWrap");
+  const $tbody        = el.querySelector("#diTbody");
 
   // ── Candidate invalidation ─────────────────────────
   //
@@ -296,6 +333,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   function invalidateCandidates() {
     if (!candidates.length || isRunning) return;
     candidates = [];
+    renderResults([]);
     setStatus(STATUS.ready);
   }
 
@@ -350,6 +388,38 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     $progressWrap.style.display = "none";
     $progressBar.style.width = "0%";
   }
+
+  // ── Preview results ────────────────────────────────
+  //
+  // ID modes only. The operator typed the list, so the row count is bounded and
+  // every ID can account for itself — which is the point: a filtered ID used to
+  // vanish from the count with no reason given. Queue mode stays out of here;
+  // its result set is unbounded, and rendering it per row is what made the
+  // original table a performance problem (e382ca3). It reports counts by reason
+  // in the status line instead.
+  function renderResults(rows) {
+    if (!rows.length) {
+      $tableWrap.style.display = "none";
+      $tbody.innerHTML = "";
+      return;
+    }
+    $tableWrap.style.display = "";
+    $tbody.innerHTML = rows.map((r, i) => {
+      const statusClass = r.status === "Match" ? "di-ok"
+        : r.status === "Failed" ? "di-fail"
+        : r.status === "Filtered" ? "di-skip"
+        : "";
+      return `<tr>
+        <td>${i + 1}</td>
+        <td class="di-mono">${escapeHtml(r.convId)}</td>
+        <td>${escapeHtml(r.mediaType || "")}</td>
+        <td>${escapeHtml(r.startTime || "")}</td>
+        <td class="${statusClass}">${escapeHtml(r.status)}</td>
+        <td>${escapeHtml(r.error || "")}</td>
+      </tr>`;
+    }).join("");
+  }
+
   function setButtonsRunning(running) {
     isRunning = running;
     $previewBtn.disabled    = running;
@@ -410,12 +480,19 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   // confirms. The preview and the confirm dialog are the whole of the safety
   // model here. An earlier hasActiveAgentSegment() guard was removed (549dbc3)
   // because it also excluded the orphans above.
+  //
+  // Returns { matched, scanned, skips } — `skips` is a reason → count tally, so
+  // the status line can account for the difference between what was scanned and
+  // what matched. Without it a filter that excludes everything is
+  // indistinguishable from a queue that is already empty.
   async function scanQueue(queueId, filters) {
     const orgId  = orgContext.get();
     const now    = new Date();
     const recentCutoff = new Date(now.getTime() - RECENT_LOOKBACK_HOURS * 3_600_000);
     const seen   = new Set();
     const matched = [];
+    const skips  = new Map();
+    const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
 
     // Phase 1: scan the most recent 48 hours with synchronous analytics +
     // conversation details. This avoids async analytics ingestion lag for
@@ -469,17 +546,23 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         if (cancelled) break;
         if (seen.has(c.conversationId)) continue;
         seen.add(c.conversationId);
-        if (c.conversationEnd) continue;
+        if (c.conversationEnd) { skip("already ended"); continue; }
 
         try {
           const conv = await gc.getConversation(api, orgId, c.conversationId);
           const mediaType = detectMediaType(conv.participants);
 
-          if (mediaType !== "unknown" && !filters.mediaTypes.includes(mediaType)) continue;
+          if (mediaType !== "unknown" && !filters.mediaTypes.includes(mediaType)) {
+            skip("media type not selected"); continue;
+          }
 
           const st = conv.startTime ? new Date(conv.startTime) : null;
-          if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) continue;
-          if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) continue;
+          if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) {
+            skip("outside date range"); continue;
+          }
+          if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
+            skip("outside date range"); continue;
+          }
 
           matched.push({
             convId:    c.conversationId,
@@ -487,6 +570,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
             startTime: formatDateTime(conv.startTime),
           });
         } catch (err) {
+          skip("could not be inspected");
           console.warn(`Could not inspect recent conversation ${c.conversationId}:`, err.message);
         }
       }
@@ -533,18 +617,24 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         if (cancelled) break;
         if (seen.has(c.conversationId)) continue;
         seen.add(c.conversationId);
-        if (c.conversationEnd) continue; // already ended
+        if (c.conversationEnd) { skip("already ended"); continue; }
 
         // Detect media type from sessions (analytics shape)
         const mediaType = getSessionMediaType(c) || "unknown";
 
         // Media type filter (pass through if type can't be determined)
-        if (mediaType !== "unknown" && !filters.mediaTypes.includes(mediaType)) continue;
+        if (mediaType !== "unknown" && !filters.mediaTypes.includes(mediaType)) {
+          skip("media type not selected"); continue;
+        }
 
         // Date range filters
         const st = c.conversationStart ? new Date(c.conversationStart) : null;
-        if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) continue;
-        if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) continue;
+        if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) {
+          skip("outside date range"); continue;
+        }
+        if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
+          skip("outside date range"); continue;
+        }
 
         matched.push({
           convId:    c.conversationId,
@@ -554,14 +644,18 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       }
     }
 
-    return matched;
+    return { matched, scanned: seen.size, skips };
   }
 
   // ── Scan: single / multiple IDs ────────────────────
+  //
+  // Returns one row per ID, in the order they were entered, each carrying its
+  // own verdict. Callers take the matches with `rowsToCandidates`; the rest are
+  // rendered so a filtered or failed ID says why rather than silently thinning
+  // the count.
   async function scanIds(convIds, filters) {
-    const orgId  = orgContext.get();
-    const matched = [];
-    const skipped = [];
+    const orgId = orgContext.get();
+    const rows  = [];
 
     for (let i = 0; i < convIds.length; i++) {
       if (cancelled) break;
@@ -580,26 +674,22 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
           startTime: formatDateTime(conv.startTime),
         };
 
-        if (!acd) {
-          skipped.push({ ...row, status: "Filtered", error: "Not waiting in queue (already at agent or ended)" });
-          continue;
-        }
+        const filtered = (reason) => rows.push({ ...row, status: "Filtered", error: reason });
+
+        if (!acd) { filtered("Not waiting in queue (already at agent or ended)"); continue; }
         if (!filters.mediaTypes.includes(acd.mediaType)) {
-          skipped.push({ ...row, status: "Filtered", error: `Media type "${acd.mediaType}" not selected` });
-          continue;
+          filtered(`Media type "${acd.mediaType}" not selected`); continue;
         }
         const st = conv.startTime ? new Date(conv.startTime) : null;
         if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) {
-          skipped.push({ ...row, status: "Filtered", error: "Started after 'Older than' date" });
-          continue;
+          filtered("Started after 'Older than' date"); continue;
         }
         if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
-          skipped.push({ ...row, status: "Filtered", error: "Started before 'Newer than' date" });
-          continue;
+          filtered("Started before 'Newer than' date"); continue;
         }
-        matched.push(row);
+        rows.push({ ...row, status: "Match", error: "" });
       } catch (err) {
-        skipped.push({
+        rows.push({
           convId: convIds[i],
           mediaType: "—",
           startTime: "—",
@@ -609,7 +699,13 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       }
     }
 
-    return { matched, skipped };
+    return rows;
+  }
+
+  /** The rows a disconnect run would act on, stripped of their preview verdict. */
+  function rowsToCandidates(rows) {
+    return rows.filter(r => r.status === "Match")
+               .map(({ convId, mediaType, startTime }) => ({ convId, mediaType, startTime }));
   }
 
   // ── Preview button ─────────────────────────────────
@@ -620,13 +716,17 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     cancelled = false;
     setButtonsRunning(true);
     candidates = [];
+    renderResults([]);
+    let summary = null;
 
     try {
       if (currentMode === "queue") {
         const queueId = ssQueue.getValue();
         if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
 
-        candidates = await scanQueue(queueId, filters);
+        const { matched, scanned, skips } = await scanQueue(queueId, filters);
+        candidates = matched;
+        summary = STATUS.previewedQueue(matched.length, scanned, skips);
       } else {
         const ids = parseConvIds();
         if (!ids.length) {
@@ -635,16 +735,18 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
           return;
         }
 
-        const { matched } = await scanIds(ids, filters);
-        candidates = matched;
+        const rows = await scanIds(ids, filters);
+        candidates = rowsToCandidates(rows);
+        renderResults(rows);
+        summary = STATUS.previewedIds(candidates.length, rows.length);
       }
 
       if (cancelled) {
         setStatus("Preview cancelled.");
-      } else if (candidates.length === 0) {
-        setStatus(STATUS.noResults);
       } else {
-        setStatus(STATUS.previewed(candidates.length), "success");
+        // Always the summary, match or no match: the reason breakdown is the
+        // whole point when nothing matched.
+        setStatus(summary, candidates.length ? "success" : "");
       }
     } catch (err) {
       setStatus(`Error: ${err.message}`, "error");
@@ -662,6 +764,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     if (!filters) return;
 
     // If no candidates yet, scan first
+    let summary = null;
     if (!candidates.length) {
       cancelled = false;
       setButtonsRunning(true);
@@ -670,7 +773,9 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         if (currentMode === "queue") {
           const queueId = ssQueue.getValue();
           if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
-          candidates = await scanQueue(queueId, filters);
+          const { matched, scanned, skips } = await scanQueue(queueId, filters);
+          candidates = matched;
+          summary = STATUS.previewedQueue(matched.length, scanned, skips);
         } else {
           const ids = parseConvIds();
           if (!ids.length) {
@@ -678,12 +783,14 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
             setButtonsRunning(false);
             return;
           }
-          const { matched } = await scanIds(ids, filters);
-          candidates = matched;
+          const rows = await scanIds(ids, filters);
+          candidates = rowsToCandidates(rows);
+          renderResults(rows);
+          summary = STATUS.previewedIds(candidates.length, rows.length);
         }
 
         if (!candidates.length) {
-          setStatus(STATUS.noResults);
+          setStatus(summary);
           setButtonsRunning(false);
           hideProgress();
           return;
@@ -714,9 +821,12 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     );
     if (!ok) { setButtonsRunning(false); hideProgress(); return; }
 
-    // Execute disconnects
+    // Execute disconnects. Deliberately summary-only — rendering per-row
+    // outcomes across an unbounded queue set is what e382ca3 removed. The
+    // preview table's verdicts are about to go stale, so it is taken down.
     cancelled = false;
     setButtonsRunning(true);
+    renderResults([]);
     const orgId = orgContext.get();
 
     let okCount   = 0;
@@ -770,6 +880,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
   $clearBtn.addEventListener("click", () => {
     candidates = [];
+    renderResults([]);
     hideProgress();
     setStatus(STATUS.ready);
   });
