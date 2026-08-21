@@ -1,188 +1,144 @@
-# Disconnect — Empty Queue from live queue state — Design
+# Disconnect — Empty Queue — Design
 
-Status: **Proposed** — awaiting go-ahead
+Status: **Revised — awaiting go-ahead on §2**
 Author: Genesys Admin App
 Last updated: 2026-08-21
 
 Companion to [disconnect-email-filter-design.md](disconnect-email-filter-design.md),
-which covers the address filters and the defects fixed alongside them. This one
-changes what **Empty Queue** means.
+which covers the address filters and the defects fixed alongside them.
 
-## 1. Purpose
+## 0. What changed, and why
 
-Empty Queue currently reconstructs the queue's contents from analytics history:
-a synchronous scan of the last 48 hours with a `getConversation` per result,
-then six async jobs covering six months, matching every conversation with no
-`conversationEnd`. On a queue of 3,000 that is minutes of submitting, polling
-and fetching.
+An earlier revision of this document had Empty Queue source its candidates from
+real-time queue observations: one request, no analytics, and the queue's live
+contents by definition. It was built and is currently deployed.
 
-It should instead ask the queue what it is holding. One request to real-time
-queue observations returns every waiting interaction with the identifiers and
-addresses this page needs.
+It fails on the only thing that matters in a preview. **The observation detail
+list is capped at 100** — and a capped list is not the first 100, it is the
+oldest half plus the newest half with the middle missing. There is no way round
+it: `QueueObservationQuery` has no paging, its filter accepts only `queueId` and
+`mediaType`, so a queue cannot be sliced into under-cap chunks, and it cannot
+filter on address at all. Re-querying returns the same rows.
 
-The change is not primarily about speed. It is that **the page has been
-answering a different question from the one the operator is asking.** "Empty
-this queue" means the interactions sitting in it now. "Every conversation in
-this queue that never got an end written" is a different set, and the gap
-between them is where this session's problems have lived: whether orphans are
-visible to observations, how far back to scan, whether a live interaction might
-be swept up. Asking the queue directly dissolves all three rather than solving
-them.
+So on a queue of 3,091 the preview could only ever say "4 of the 100 we happened
+to receive match your filter", which answers nothing. Emptying such a queue
+meant thirty-odd manual passes.
 
-## 2. Confirmed decisions
+Complete counts have to come from analytics, which pages properly, has no cap,
+and takes the address predicates server-side. This revision goes back to
+analytics for enumeration and keeps observations for what they are genuinely
+good at: the exact depth, the age of the oldest wait, and whether anything is
+live right now.
 
-- **Empty Queue targets what is on the queue now**, not every unended
-  conversation. A conversation that is unended but no longer queued is out of
-  scope for this mode — and out of scope explicitly, rather than by an
-  assumption about what `oWaiting` happens to see.
-- **Waiting only, not interacting.** `oWaiting` counts interactions sitting
-  unassigned. Anything an agent is handling is `oInteracting` and is therefore
-  not in the set at all. This is what makes the live-agent guard discussed at
-  length unnecessary: the dangerous population is excluded by the query rather
-  than filtered out afterwards.
-- **The date filters become "waiting since"** (§5). The observation knows when
-  an interaction started waiting, not when the conversation began. Relabelled
-  rather than quietly repurposed.
-- **Truncation is reported, never hidden** (§6).
-- **Single and Multiple ID modes are untouched.** They keep `getConversation`
-  plus the analytics detail lookup, and remain the way to reach a conversation
-  that is not on the queue.
+## 1. Confirmed decisions
 
-## 3. What the operator sees
+- **Analytics enumerates the candidates.** Conversations in the queue with no
+  `conversationEnd` — the original population. Conversations that are unended
+  but no longer queued are therefore in scope again, including the two on
+  `Intervare - Email - Fejl`.
+- **Observations supply context, not candidates.** `oWaiting` for the depth,
+  `oLongestWaiting` for the age, `oInteracting` for whether anything is live.
+  No `detailMetrics`, so the 100-row cap stops mattering at all.
+- **The recent phase stops calling `getConversation` per result.** It fetches
+  one conversation per row purely to read the media type, which the analytics
+  response already carries on its sessions along with `addressFrom` and
+  `addressTo`. On 3,091 rows that is 3,091 round-trips that never needed to
+  happen. The historical phase dropped them in `b52b0be`; the recent phase
+  never followed.
+- **The scan window stays the full six months.** Sizing it by the queue's oldest
+  wait was tried and reverted (§4 of the companion design): the age describes
+  the waiting population and this scan's population is the unended one, which
+  `Intervare` proved are different sets.
+- **Preview reports complete counts.** `47 match · 3.091 waiting in queue ·
+  3.044 sender does not match` — every figure describing the whole queue, not a
+  sample of it.
 
-Queue mode gains nothing new on screen and loses nothing, except that the two
-date fields read **Waiting longer than** / **Waiting less than**.
+## 2. The live-agent question, reopened
 
-The status line keeps its present shape:
+Sourcing from `oWaiting` had excluded live interactions by construction: an
+interaction an agent is handling is `oInteracting` and simply was not in the
+set. Enumerating from analytics loses that, and the guard becomes a real
+decision again — the one left unresolved earlier in the session.
 
-```
-4 match · 3.091 waiting in queue · oldest 23h
-```
+Recall the shape of it: `hasActiveAgentSegment` was removed in `549dbc3`
+because an orphan's segments are often left unclosed for the same reason
+`conversationEnd` was never written, so the guard skipped exactly the
+interactions the page exists for.
 
-`oldest` now comes from the data itself — observations are returned sorted by
-timestamp ascending, so the first is the oldest — replacing the
-`oLongestWaiting` metric and its epoch-versus-duration ambiguity.
+**Proposal, using the count we now fetch anyway:**
 
-A preview that returns quickly is the point, so nothing needs to explain itself
-the way the sized scan did.
+- **`oInteracting` is 0** — nothing in the queue is live, so any unclosed
+  `interact` segment is stale. Nothing is excluded, and orphans are all found.
+  This is the normal case: it was true of `Intervare`, and of `Nemlig`.
+- **`oInteracting` is greater than 0** — exclude candidates carrying an open
+  `interact` or `alert` segment, and say so: `3.087 match · 4 excluded, agent
+  connected`.
 
-## 4. Where the data comes from
+The error then only ever falls one way. When live interactions exist we may
+over-exclude and skip a few orphans, which is recoverable by re-running once the
+agents are done. We never disconnect something a customer is talking to, which
+is not recoverable.
 
-```
-POST /api/v2/analytics/queues/observations/query
-{
-  "filter": { "type": "and", "clauses": [
-      { "type": "or", "predicates": [{ "dimension": "queueId",   "value": "…" }] },
-      { "type": "or", "predicates": [{ "dimension": "mediaType", "value": "email" }] } ] },
-  "metrics":       ["oWaiting"],
-  "detailMetrics": ["oWaiting"]
-}
-```
+It does not cover an interaction going live between preview and Disconnect.
+Closing that means re-checking at execution time, which is a larger change;
+recorded here as a known gap rather than assumed away.
 
-`metrics` gives the exact depth; `detailMetrics` gives one `ObservationValue`
-per waiting interaction, carrying `conversationId`, `addressFrom`, `addressTo`,
-`observationDate`, `direction`, `ani`, `dnis` and `participantName`.
+**This is the one item needing a decision before build.**
 
-Requires `analytics:queueObservation:view` — already needed for the queue depth
-shipped in the companion design, so no new permission.
+## 3. Where each number comes from
 
-Neither of the reasons the two-phase scan exists carries over. The async phase
-exists because the synchronous analytics query *"502s at 8000+ conversations via
-Azure SWA proxy timeout"* (`b52b0be`); the recent phase exists because of
-*"async analytics ingestion lag for today's interactions"* (`38adad9`). Both are
-properties of querying analytics history. An observation is live queue state:
-nothing to ingest, no window to page through.
-
-## 5. Filters
-
-| Filter | Today | After |
-|---|---|---|
-| Media Types | client-side on session `mediaType` | server-side predicate on the query |
-| Sender / Recipient | `session.addressFrom` / `addressTo` | `ObservationValue.addressFrom` / `addressTo` |
-| Older / Newer than | `conversationStart` | `observationDate` — **relabelled "waiting longer/less than"** |
-
-All four keep working. The address filters arguably improve: the values come off
-live queue state, so the analytics ingestion lag that makes an ID-mode lookup
-report "not yet available" cannot apply.
-
-The date change is the only real shift. For an email that arrived and sat, time
-waiting and time since the conversation started are the same. They diverge only
-when an interaction was requeued after an agent had it — and for emptying a
-queue, "waiting more than 7 days" is the more apt question anyway.
-
-`conversationStart` is lost, but costs nothing visible: Start Time is only shown
-in the ID-mode results table, which is not changing.
-
-## 6. Truncation
-
-`ObservationMetricData.truncated` flags a capped list, and the cap's value is
-not documented. The behaviour when it trips is documented and matters:
-
-> If truncated, the first half of the list of observations will contain the
-> oldest observations and the second half the newest observations.
-
-So a capped result is **not** the first N — it is the oldest half plus the
-newest half, with the middle missing.
-
-Handling:
-
-- The **depth is always exact.** It comes from `metrics`, which truncation does
-  not affect. `3.091 waiting in queue` stays true however few rows come back.
-- When truncated, the status says so: `only 1.000 returned — Genesys caps the
-  list; disconnect these, then preview again for the rest`. The operator never
-  believes they are acting on the whole queue when they are not.
-- **"returned", not "shown".** Queue mode has no results table, so nothing is
-  displayed either way — a count of what is on screen would be a count of
-  nothing.
-- **Disconnecting is what drains it, not re-previewing.** Previewing again
-  returns the same rows. It is removing them that lets the next pass reach
-  further, because the cap takes from both ends of a queue that is now shorter.
-  The wording has to say that, or it sends the operator round a loop that never
-  terminates.
-
-## 7. What this gives up
-
-**Conversations that are unended but no longer on the queue.** Concretely, the
-two found on `Intervare - Email - Fejl` against a depth of 0 waiting. Under this
-design Empty Queue would report that queue as empty and offer nothing.
-
-That is the intended remit change, not a regression — but it is the one thing to
-be sure about, because the page's own description still says "stuck or orphaned
-conversations" and that wording will need to change with it. Those conversations
-remain reachable through Single and Multiple ID mode, which is where a
-conversation identified by other means has always belonged.
-
-## 8. What stays
-
-The preview gate, the confirmation naming the address filters, the Activity Log
-entry, the batching at ten concurrent, Cancel between batches, and both ID
-modes. This changes where queue-mode candidates come from, and nothing else.
-
-## 9. Unknowns
-
-| Unknown | Handling |
+| | Source |
 |---|---|
-| The truncation cap | Reported when it trips (§6); never silently absorbed |
-| Whether `observationDate` is queue-entry time or sample time | Verify against a queue with a known-age interaction before the relabel is trusted |
-| Whether email-to-case interactions carry `addressFrom` here | Expected empty, as in analytics. The sender filter will not help for those either way — this design does not change that, and does not pretend to |
+| Candidates, and every match/skip count | Analytics — sync for the recent 48h, async jobs beyond |
+| Queue depth (`3.091 waiting in queue`) | `oWaiting` |
+| Age (`oldest waiting 23h`) | `oLongestWaiting` — an epoch timestamp, not a duration (§6.1 companion) |
+| Live interactions | `oInteracting` |
 
-## 10. Build order
+One observations request, stats only:
 
-Each step a separate commit, with a pause to test on dev.
+```json
+{ "filter": { "type": "and", "clauses": [ … ] },
+  "metrics": ["oWaiting", "oInteracting", "oLongestWaiting"] }
+```
 
-1. **`getQueueWaitingDetails`** in `genesysApi.js` — the observation call with
-   both metric kinds, returning `{ waiting, truncated, observations }`. No
-   caller yet.
-2. **Queue mode reads it** instead of `scanQueue`, with the existing address and
-   media filters applied to the returned observations. Date filters left alone
-   for the moment.
-3. **Date filters relabelled** and repointed at `observationDate`.
-4. **Truncation reporting** in the status and confirmation.
-5. **Remove what is now dead** — `scanQueue`, and any of `queryConversationDetails`
-   / `searchConversations` / the interval constants no longer reachable from this
-   page. Per §8.5 of the companion design: deleted, not left unreachable.
-6. **Page description and release note** — the "stuck or orphaned" wording, and
-   one entry folded into 4.1.
+## 4. Filters
 
-Step 1 and 2 together are the whole functional change and can be tested on the
-Nemlig queue immediately; 3 through 6 are refinement.
+All four filters return to their original meanings, since analytics carries
+`conversationStart` again:
+
+| Filter | Source |
+|---|---|
+| Media Types | `session.mediaType` |
+| Sender / Recipient | `session.addressFrom` / `addressTo`, **plus server-side predicates** |
+| Older / Newer than | `conversationStart` — labels revert to "Older than" / "Newer than" |
+
+The mode-aware date labels added for the observation source come back out. The
+address predicates stay: they are confirmed working, and on a filtered preview
+they are the difference between Genesys returning 4 rows and returning 3,091.
+
+## 5. Speed
+
+A filtered preview is a handful of requests, because the predicates do the
+narrowing server-side. An unfiltered one on 3,091 is about 31 pages of 100 in
+the recent phase plus the historical jobs.
+
+The six async jobs remain the floor on an unfiltered scan. One idea, untested
+and not part of this change: with predicates cutting the result size, the
+**synchronous** query may now suffice for the historical intervals too, which
+would remove the submit-poll-fetch cycle entirely. It 502s past ~8,000
+conversations (`b52b0be`), which a filtered query will not approach — so it
+could be used when filters are set and the async path kept when they are not.
+
+## 6. Build order
+
+1. **Observations back to stats only** — add `oInteracting`, drop
+   `detailMetrics`. Truncation handling goes with it.
+2. **Analytics enumerates again** — restore the two-phase scan, *without* the
+   per-conversation `getConversation` calls, with the address predicates.
+   Date filters and labels revert with it.
+3. **Live-agent handling** — per §2, once decided.
+4. **Cleanup** — whatever is unreachable after 1–3, deleted rather than left.
+5. **Release note** — folded into 4.1, and the page description reviewed.
+
+Steps 1 and 2 are the functional change and can be tested on `Nemlig`
+immediately; the filtered count is the thing to check.
