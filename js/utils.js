@@ -112,6 +112,13 @@ export function makeStatus($el, baseClass) {
 
     text.nodeValue = isBusy ? ` ${s}` : s;
 
+    // A caller that also writes $el.textContent directly replaces every child,
+    // detaching the two nodes held above. insertBefore would then throw
+    // NotFoundError on the next busy message and take the caller down with it,
+    // which is exactly what happened to Flow Overview. Re-seat instead: this
+    // setter is the authority on what the status line says.
+    if (text.parentNode !== $el) $el.replaceChildren(text);
+
     // parentNode, not isConnected: a page builds its DOM detached and the router
     // attaches it afterwards, so isConnected is false for the whole of render
     // and the throbber would never be taken down again.
