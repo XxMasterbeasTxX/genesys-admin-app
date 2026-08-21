@@ -6,12 +6,14 @@
  *   2. Multiple IDs — disconnect several conversations by ID
  *   3. Empty Queue  — find all active conversations in a queue and disconnect
  *
- * Includes media type and date range filters.
+ * Includes media type, date range and — for email — sender/recipient address
+ * filters. See docs/disconnect-email-filter-design.md.
  *
  * API endpoints:
  *   GET  /api/v2/conversations/{id}                        — fetch conversation details
  *   POST /api/v2/conversations/{id}/disconnect              — force-disconnect
  *   POST /api/v2/analytics/conversations/details/query      — queue scan (active convos)
+ *   GET  /api/v2/analytics/conversations/{id}/details       — sender/recipient for one ID
  *   GET  /api/v2/routing/queues                             — list queues
  */
 import { escapeHtml, formatDateTime, sleep, makeStatus } from "../../utils.js";
@@ -162,6 +164,49 @@ function addressRowError(raw) {
   const norm = normaliseAddress(v);
   if (!/^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(norm)) return "Not a valid email address.";
   return null;
+}
+
+/**
+ * Every sender and recipient address an analytics conversation carries.
+ *
+ * `addressFrom` / `addressTo` live on the session, and the same pair repeats on
+ * each side of the conversation, so both are gathered into sets.
+ */
+function collectSessionAddresses(conv) {
+  const from = new Set();
+  const to   = new Set();
+  for (const p of (conv?.participants || [])) {
+    for (const sess of (p.sessions || [])) {
+      if (sess.addressFrom) from.add(normaliseAddress(sess.addressFrom));
+      if (sess.addressTo)   to.add(normaliseAddress(sess.addressTo));
+    }
+  }
+  return { from, to };
+}
+
+/**
+ * Check one analytics conversation against the address filters.
+ * Returns { pass, reason } — `reason` is what the operator is shown.
+ *
+ * Several addresses in one field are OR'd, the two fields are AND'd, and an
+ * empty field imposes nothing. An address that cannot be read is never treated
+ * as a match: this filter only ever narrows, so a conversation the page cannot
+ * account for stays out of the run.
+ */
+function matchesAddressFilters(conv, { senders, recipients }) {
+  if (!senders.length && !recipients.length) return { pass: true, reason: null };
+
+  const { from, to } = collectSessionAddresses(conv);
+
+  if (senders.length) {
+    if (!from.size) return { pass: false, reason: "no sender address on record" };
+    if (!senders.some(a => from.has(a))) return { pass: false, reason: "sender does not match" };
+  }
+  if (recipients.length) {
+    if (!to.size) return { pass: false, reason: "no recipient address on record" };
+    if (!recipients.some(a => to.has(a))) return { pass: false, reason: "recipient does not match" };
+  }
+  return { pass: true, reason: null };
 }
 
 /** Map common HTTP error codes to user-friendly messages. */
@@ -726,6 +771,12 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         seen.add(c.conversationId);
         if (c.conversationEnd) { skip("already ended"); continue; }
 
+        // Before the per-conversation call, not after: the sync analytics
+        // response already carries the sessions this needs, so an address
+        // filter makes this path issue fewer requests, not more.
+        const addr = matchesAddressFilters(c, filters);
+        if (!addr.pass) { skip(addr.reason); continue; }
+
         try {
           const conv = await gc.getConversation(api, orgId, c.conversationId);
           const mediaType = detectMediaType(conv.participants);
@@ -814,6 +865,10 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
           skip("outside date range"); continue;
         }
 
+        // Address filters (email only — an address narrows mediaTypes to email)
+        const addr = matchesAddressFilters(c, filters);
+        if (!addr.pass) { skip(addr.reason); continue; }
+
         matched.push({
           convId:    c.conversationId,
           mediaType,
@@ -878,6 +933,26 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
           filtered("Started before 'Newer than' date"); continue;
         }
+
+        // Address filters need the analytics shape, which the live conversation
+        // object does not have. Ordered last so the extra call is only made for
+        // an ID that has already survived everything cheaper.
+        if (filters.senders.length || filters.recipients.length) {
+          let analytics;
+          try {
+            analytics = await gc.getConversationAnalytics(api, orgId, convIds[i]);
+          } catch (err) {
+            const msg = err.message || "";
+            filtered(
+              msg.includes("403") ? "Needs the analytics permission to read sender/recipient"
+              : msg.includes("404") ? "Sender/recipient not yet available in analytics"
+              : `Could not read sender/recipient — ${friendlyError(err)}`);
+            continue;
+          }
+          const addr = matchesAddressFilters(analytics, filters);
+          if (!addr.pass) { filtered(addr.reason); continue; }
+        }
+
         rows.push({ ...row, status: "Match", error: "" });
       } catch (err) {
         rows.push({

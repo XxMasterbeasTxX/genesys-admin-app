@@ -307,6 +307,30 @@ export async function getConversation(api, orgId, conversationId) {
 }
 
 /**
+ * Get one conversation in the *analytics* shape — participants with sessions
+ * and segments.
+ *
+ * Use this when a page needs a field the live conversation object does not
+ * carry. The email sender and recipient are the case that brought it in:
+ * `AnalyticsSession.addressFrom` / `addressTo` exist only here, while
+ * `GET /conversations/{id}` offers `Participant.address`, which is documented
+ * as the ANI for a phone call and carries no from/to pair for email.
+ *
+ * Requires `analytics:conversationDetail:view` (or the agent-scoped variant),
+ * which is a wider permission than `conversation:communication:view`. Recently
+ * created conversations may 404 until analytics has ingested them.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {string} conversationId
+ * @returns {Promise<Object>}  AnalyticsConversationWithoutAttributes.
+ */
+export async function getConversationAnalytics(api, orgId, conversationId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/analytics/conversations/${conversationId}/details`);
+}
+
+/**
  * Blind-transfer (replace) a participant to a different queue.
  *
  * Uses POST /api/v2/conversations/{id}/participants/{pid}/replace
