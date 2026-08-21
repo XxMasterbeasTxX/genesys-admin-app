@@ -334,6 +334,12 @@ export async function getQueueWaitingStats(api, orgId, queueId, mediaTypes = [])
   const results = resp?.results;
   if (!Array.isArray(results)) return { waiting: null, longestWaitMs: null };
 
+  // TEMPORARY (2026-08-21): oLongestWaiting came back unreadable against a real
+  // queue — neither stats.max nor stats.current was present, while oWaiting's
+  // count was fine. Print the shape once rather than guess at a third field and
+  // risk displaying a number that means something else. Remove once fixed.
+  console.log("[obs-probe]", JSON.stringify(results, null, 2));
+
   // One group per media type, so counts are summed and the longest wait is the
   // longest across all of them.
   let total = 0;
