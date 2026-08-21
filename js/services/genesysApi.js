@@ -294,6 +294,100 @@ export async function queryConversationDetails(api, orgId, body, opts = {}) {
 }
 
 /**
+ * A queue's live state: how deep it is, whether anything is being handled, and
+ * how long the oldest has waited.
+ *
+ * Stats only — no `detailMetrics`. The detail list is capped at 100 and cannot
+ * be paged or sliced (the query takes only `queueId` and `mediaType`), so it
+ * can never enumerate a large queue. Enumeration is analytics' job; this call
+ * supplies the numbers analytics cannot give: what the queue holds *right now*.
+ *
+ * `interacting` is the signal that decides whether the live-agent guard applies
+ * at all. When it is 0, nothing in the queue is live, so an unclosed `interact`
+ * segment on a candidate is stale rather than active — which is the case that
+ * made a blanket guard skip orphans (`549dbc3`).
+ *
+ * `oldestMs` is derived from `oLongestWaiting`, which Genesys reports as an
+ * epoch timestamp rather than an elapsed time — read as a duration the live
+ * value came to 56 years, which is what gave it away. The threshold at 1e12
+ * distinguishes the two rather than trusting one reading for ever: that is
+ * either a timestamp in 2001 or a wait of 31 years, and only one is plausible.
+ *
+ * Each field is `null` when it cannot be read — a missing
+ * `analytics:queueObservation:view` being the likely reason — so a caller can
+ * tell "none" from "could not tell". A count silently reading 0 beside a
+ * non-zero result reads as a fault.
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {string}   queueId
+ * @param {string[]} mediaTypes  Lowercase analytics media types (voice, email…).
+ * @returns {Promise<{waiting: number|null, interacting: number|null, oldestMs: number|null}>}
+ */
+export async function getQueueStats(api, orgId, queueId, mediaTypes = []) {
+  const clauses = [{ type: "or", predicates: [{ dimension: "queueId", value: queueId }] }];
+  if (mediaTypes.length) {
+    clauses.push({
+      type: "or",
+      predicates: mediaTypes.map(t => ({ dimension: "mediaType", value: t })),
+    });
+  }
+
+  const resp = await api.proxyGenesys(orgId, "POST",
+    "/api/v2/analytics/queues/observations/query",
+    { body: { filter: { type: "and", clauses },
+              metrics: ["oWaiting", "oInteracting", "oLongestWaiting"] } });
+
+  const results = resp?.results;
+  if (!Array.isArray(results)) return { waiting: null, interacting: null, oldestMs: null };
+
+  let waiting = 0;
+  let interacting = 0;
+  let oldestMs = null;
+
+  // One group per media type, so counts sum and the oldest is the oldest of them.
+  for (const r of results) {
+    for (const d of (r.data || [])) {
+      const count = typeof d.stats?.count === "number" ? d.stats.count : 0;
+      if (d.metric === "oWaiting")          waiting += count;
+      else if (d.metric === "oInteracting") interacting += count;
+      else if (d.metric === "oLongestWaiting") {
+        const v = d.stats?.calculatedMetricValue;
+        if (typeof v === "number" && v > 0) {
+          const ms = v > 1e12 ? Date.now() - v : v;
+          if (ms >= 0) oldestMs = oldestMs === null ? ms : Math.max(oldestMs, ms);
+        }
+      }
+    }
+  }
+
+  return { waiting, interacting, oldestMs };
+}
+
+/**
+ * How many conversations a query would return, without returning them.
+ *
+ * The details/query response carries `totalHits`, so one request with a page
+ * size of 1 answers "is there anything here" for the price of a single row.
+ * Used to decide whether an interval is worth the submit-poll-fetch cycle of an
+ * async job: an empty month then costs one small request instead of a job.
+ *
+ * Returns `null` when the response carries no usable `totalHits`, so a caller
+ * can tell "none" from "could not tell" and scan rather than skip.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {Object} body   Query body; `paging` is supplied here.
+ * @returns {Promise<number|null>}
+ */
+export async function countConversationDetails(api, orgId, body) {
+  const resp = await api.proxyGenesys(orgId, "POST",
+    "/api/v2/analytics/conversations/details/query",
+    { body: { ...body, paging: { pageSize: 1, pageNumber: 1 } } });
+  return typeof resp?.totalHits === "number" ? resp.totalHits : null;
+}
+
+/**
  * Get a single conversation's full details (participants, media, state).
  *
  * @param {Object} api
@@ -304,6 +398,30 @@ export async function queryConversationDetails(api, orgId, body, opts = {}) {
 export async function getConversation(api, orgId, conversationId) {
   return api.proxyGenesys(orgId, "GET",
     `/api/v2/conversations/${conversationId}`);
+}
+
+/**
+ * Get one conversation in the *analytics* shape — participants with sessions
+ * and segments.
+ *
+ * Use this when a page needs a field the live conversation object does not
+ * carry. The email sender and recipient are the case that brought it in:
+ * `AnalyticsSession.addressFrom` / `addressTo` exist only here, while
+ * `GET /conversations/{id}` offers `Participant.address`, which is documented
+ * as the ANI for a phone call and carries no from/to pair for email.
+ *
+ * Requires `analytics:conversationDetail:view` (or the agent-scoped variant),
+ * which is a wider permission than `conversation:communication:view`. Recently
+ * created conversations may 404 until analytics has ingested them.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {string} conversationId
+ * @returns {Promise<Object>}  AnalyticsConversationWithoutAttributes.
+ */
+export async function getConversationAnalytics(api, orgId, conversationId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/analytics/conversations/${conversationId}/details`);
 }
 
 /**

@@ -1180,6 +1180,56 @@ body {
 .di-date {
   width: 160px;
 }
+
+/* Address filters — one address per row, stacked vertically */
+.di-email-filters {
+  align-items: flex-start;
+}
+.di-email-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.di-email-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.di-email-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.di-email-input {
+  width: 260px;
+}
+.di-email-row.is-invalid .di-email-input {
+  border-color: rgba(239,68,68,0.55);
+}
+.di-email-error {
+  font-size: 11px;
+  color: #f87171;
+}
+.di-email-remove {
+  line-height: 1;
+  padding: 4px 8px;
+  color: var(--muted);
+}
+.di-email-add {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+.di-email-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #f59e0b;
+}
+/* Struck through while an address narrows the run to email, so the ticks that
+   no longer apply are visibly out of play rather than silently ignored. */
+.di-media-muted {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
 .aq-time {
   width: 120px;
   margin-top: 4px;
@@ -1601,6 +1651,8 @@ body {
   .di-btn-disconnect { background: rgba(239,68,68,0.08); color: #dc2626; border-color: rgba(239,68,68,0.2); }
   .di-btn-disconnect:hover { background: rgba(239,68,68,0.15); }
   .di-warning { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.2); color: #b45309; }
+  .di-email-note { color: #b45309; }
+  .di-email-error { color: #dc2626; }
 
   /* Data Tables - light overrides */
   .dt-progress-wrap { background: rgba(0,0,0,0.06); }

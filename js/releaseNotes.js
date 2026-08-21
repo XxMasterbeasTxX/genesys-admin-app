@@ -21,6 +21,23 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.1",
+    date: "2026-08-21",
+    title: "Disconnect: filter stuck emails by who sent them",
+    changes: [
+      "Interactions › Disconnect can now narrow a run to particular email addresses. Tick Email and two fields appear — Sender Email and Recipient Email — each taking as many addresses as you like, one per row. When a single mailbox has produced a batch of stuck interactions and the rest of the queue must be left alone, that is now a filter rather than an afternoon of copying conversation IDs out of a preview and pasting them back in.",
+      "An address means email and nothing else. Whatever else is ticked under Media Types is struck through and a line says so, because a filter that quietly reinterprets the boxes above it on a page that force-disconnects things is not a filter anyone should have to guess at.",
+      "Addresses match exactly, and case does not matter: support@acme.com and Support@Acme.com are the same filter, and an address pasted from a mail client as “Support <SUPPORT@Acme.com>” is read the same way. An address that is not an address stops the run and says which row it was, rather than being dropped — a dropped row would widen the very thing you were narrowing.",
+      "Preview now accounts for everything it looked at. Paste ten IDs and the seven that do not qualify are listed with the reason each one was set aside, instead of the page reporting three and saying nothing about the rest. A queue scan reports the same thing as counts — “1,204 scanned · 0 match · 1,204 media type not selected” — so a filter that is too tight no longer looks like a queue that is already empty.",
+      "Changing any filter after a preview now clears it. Previously the previewed set survived the change and Disconnect acted on it, so editing an address or a date and pressing the button could disconnect what the previous filter had found.",
+      "Emptying a queue is quicker, and now means what it says. It asks the queue what it is holding rather than reconstructing six months of history, and skips the months that hold nothing at all — a scan that took minutes returns in seconds. It also acts on what is actually waiting: an interaction that never ended but has left the queue is no longer swept up with the rest, and is reached by its ID instead.",
+      "Pasting a long list of IDs is roughly eight times faster. They were being looked up one at a time; ten now go at once. A list of three thousand was a coffee break.",
+      "When you filter, the queue’s own depth sits beside the result — “4 match · 3.091 waiting in queue · oldest waiting 23h” — so a filter that matched nothing no longer looks exactly like a queue that was already empty. With no filter there is nothing to match against, so the line simply says how many are waiting.",
+      "Disconnect stays greyed out until a preview has run. It used to search on its own when pressed, meaning the whole set could be disconnected without ever having been shown — on the one action in the app that cannot be undone. The confirmation also names the addresses that chose the set, and so does the Activity Log entry afterwards.",
+      "Pasting the ID of an orphaned interaction works. Single and Multiple ID mode used to refuse exactly the conversations this page exists for — the ones Genesys has half-closed internally — while Empty Queue found them. Both modes now agree on what can be disconnected.",
+    ],
+  },
+  {
     version: "4.0",
     date: "2026-08-21",
     title: "You can tell when the app is working",
