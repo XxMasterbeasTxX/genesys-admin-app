@@ -294,6 +294,81 @@ export async function queryConversationDetails(api, orgId, body, opts = {}) {
 }
 
 /**
+ * What is waiting in a queue right now — the count, and each interaction.
+ *
+ * Real-time queue observations, not an analytics reconstruction. `metrics`
+ * gives the exact depth and `detailMetrics` gives one ObservationValue per
+ * waiting interaction, carrying `conversationId`, `addressFrom`, `addressTo`,
+ * `observationDate` and `direction`.
+ *
+ * `oWaiting` is interactions sitting in the queue **unassigned**. Anything an
+ * agent is handling is `oInteracting` and is deliberately not included: this is
+ * what keeps a live interaction out of a force-disconnect set by construction,
+ * rather than by filtering one out afterwards.
+ *
+ * Observations come back sorted by timestamp ascending, so `observations[0]` is
+ * the oldest — which is where the queue's age comes from, with no duration
+ * metric to misread.
+ *
+ * **Truncation.** The detail list is capped at an undocumented size. When it
+ * trips, the result is not the first N: per the spec, "the first half of the
+ * list of observations will contain the oldest observations and the second half
+ * the newest", so the middle is missing. `truncated` is returned so a caller can
+ * say so rather than act on a partial queue believing it is whole. `waiting` is
+ * unaffected by truncation and always exact.
+ *
+ * Requires `analytics:queueObservation:view`.
+ *
+ * @param {Object}   api
+ * @param {string}   orgId
+ * @param {string}   queueId
+ * @param {string[]} mediaTypes  Lowercase analytics media types (voice, email…).
+ * @returns {Promise<{waiting: number|null, truncated: boolean, observations: Object[]}>}
+ */
+export async function getQueueWaitingDetails(api, orgId, queueId, mediaTypes = []) {
+  const clauses = [{ type: "or", predicates: [{ dimension: "queueId", value: queueId }] }];
+  if (mediaTypes.length) {
+    clauses.push({
+      type: "or",
+      predicates: mediaTypes.map(t => ({ dimension: "mediaType", value: t })),
+    });
+  }
+
+  const resp = await api.proxyGenesys(orgId, "POST",
+    "/api/v2/analytics/queues/observations/query",
+    { body: { filter: { type: "and", clauses },
+              metrics:       ["oWaiting"],
+              detailMetrics: ["oWaiting"] } });
+
+  const results = resp?.results;
+  // null, not 0: a caller has to be able to tell "nothing waiting" from "could
+  // not tell", because a depth silently reading 0 beside a non-zero result
+  // reads as a fault.
+  if (!Array.isArray(results)) return { waiting: null, truncated: false, observations: [] };
+
+  let waiting = 0;
+  let truncated = false;
+  const observations = [];
+
+  // One group per media type, so counts sum and observations concatenate.
+  for (const r of results) {
+    for (const d of (r.data || [])) {
+      if (d.metric !== "oWaiting") continue;
+      if (typeof d.stats?.count === "number") waiting += d.stats.count;
+      if (d.truncated) truncated = true;
+      if (Array.isArray(d.observations)) observations.push(...d.observations);
+    }
+  }
+
+  // Concatenating groups breaks the per-group ordering, so sort once here and
+  // callers can rely on observations[0] being the oldest.
+  observations.sort((a, b) =>
+    String(a.observationDate || "").localeCompare(String(b.observationDate || "")));
+
+  return { waiting, truncated, observations };
+}
+
+/**
  * What is waiting in a queue right now, and for how long.
  *
  * Real-time queue observations, not an analytics reconstruction: one request
