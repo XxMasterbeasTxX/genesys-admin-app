@@ -102,47 +102,6 @@ function findAcdParticipant(conversation, queueId = null) {
 }
 
 /**
- * From an analytics conversation detail object, check if the ACD participant
- * in the given queue has an active "wait" segment (sitting in queue, no agent).
- * Returns { mediaType } or null.
- */
-function getQueueWaitInfo(conversation, queueId) {
-  for (const p of (conversation.participants || [])) {
-    if (p.purpose !== "acd") continue;
-    for (const session of (p.sessions || [])) {
-      for (const seg of (session.segments || [])) {
-        // Note: segmentEnd is intentionally NOT checked here.
-        // Dead/orphaned conversations have their ACD segment closed by
-        // Genesys internally (segmentEnd is set) but conversationEnd is
-        // never written — those are exactly the interactions we want to
-        // catch. Live-agent protection is handled by hasActiveAgentSegment.
-        if (seg.segmentType !== "wait") continue; // not waiting
-        if (queueId && seg.queueId && seg.queueId !== queueId) continue;
-        return { mediaType: (session.mediaType || "unknown").toLowerCase() };
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Returns true if any participant has an ongoing "interact" or "alert" segment,
- * meaning an agent is currently connected to or ringing for this conversation.
- * These conversations must NOT be force-disconnected.
- */
-function hasActiveAgentSegment(conversation) {
-  for (const p of (conversation.participants || [])) {
-    for (const session of (p.sessions || [])) {
-      for (const seg of (session.segments || [])) {
-        if (seg.segmentEnd) continue;
-        if (seg.segmentType === "interact" || seg.segmentType === "alert") return true;
-      }
-    }
-  }
-  return false;
-}
-
-/**
  * Detect media type from an analytics conversation's participant sessions.
  * Returns the first mediaType found (lowercased), or null.
  */
@@ -167,7 +126,7 @@ function friendlyError(err) {
 
 // ── Page renderer ───────────────────────────────────────────────────
 
-export default function renderDisconnectInteractions({ route, me, api, orgContext }) {
+export default function renderDisconnectInteractions({ me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -399,20 +358,6 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
     return { mediaTypes, olderThan, newerThan };
   }
 
-  // ── Check a conversation against active filters ────
-  function passesFilters(conv, { mediaTypes, olderThan, newerThan }) {
-    const mt = detectMediaType(conv.participants);
-    if (!mediaTypes.includes(mt)) return { pass: false, mediaType: mt, reason: `Media type "${mt}" not selected` };
-
-    const st = conv.startTime ? new Date(conv.startTime) : null;
-    if (olderThan && st && st >= new Date(olderThan + "T00:00:00Z"))
-      return { pass: false, mediaType: mt, reason: "Started after 'Older than' date" };
-    if (newerThan && st && st <= new Date(newerThan + "T23:59:59Z"))
-      return { pass: false, mediaType: mt, reason: "Started before 'Newer than' date" };
-
-    return { pass: true, mediaType: mt, reason: null };
-  }
-
   // ── Scan: queue mode (async analytics jobs) ────────
   //
   // Uses the async jobs API (/analytics/conversations/details/jobs) instead of
@@ -422,6 +367,18 @@ export default function renderDisconnectInteractions({ route, me, api, orgContex
   // Phase 2 (individual getConversation calls) is eliminated: the analytics
   // response already includes participant sessions and segments, which is
   // enough to determine waiting state without extra API calls.
+  //
+  // What this matches, stated plainly: every conversation in the queue whose
+  // conversationEnd has not been written. The ACD segment is deliberately NOT
+  // required to be open — Genesys closes it internally on dead/orphaned
+  // interactions while never writing conversationEnd, and those are exactly
+  // the ones this page exists to catch.
+  //
+  // There is no live-agent guard. A conversation an agent is currently handling
+  // is matched like any other, and will be disconnected if the operator
+  // confirms. The preview and the confirm dialog are the whole of the safety
+  // model here. An earlier hasActiveAgentSegment() guard was removed (549dbc3)
+  // because it also excluded the orphans above.
   async function scanQueue(queueId, filters) {
     const orgId  = orgContext.get();
     const now    = new Date();
