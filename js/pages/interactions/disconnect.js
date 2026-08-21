@@ -38,7 +38,7 @@ const RECENT_LOOKBACK_HOURS = 48;
 const RECENT_BUCKET_HOURS   = 6;
 
 const STATUS = {
-  ready:          "Ready. Select a mode and provide input.",
+  ready:          "Ready. Select a mode, provide input, then Preview.",
   loading:        "Loading queues…",
   scanning:       (i, n) => `Scanning interval ${i} of ${n}…`,
   inspecting:     (i, n) => `Inspecting conversation ${i} of ${n}…`,
@@ -514,9 +514,29 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   // to throw the cache away, or the operator edits a filter, presses Disconnect
   // and gets the set the *previous* filter produced. Every control that feeds
   // validateFilters() or the ID inputs is wired to this.
+  // Disconnect is gated on a preview. Force-disconnect cannot be undone, so
+  // the set being acted on has to have been seen first — the button is dead
+  // until a preview produces candidates, and dies again the moment anything
+  // that would change the result is touched.
+  function syncActionButtons() {
+    $previewBtn.disabled     = isRunning;
+    $disconnectBtn.disabled  = isRunning || candidates.length === 0;
+    $disconnectBtn.title     = $disconnectBtn.disabled && !isRunning
+      ? "Run Preview first — Disconnect acts only on a previewed set"
+      : "";
+    $cancelBtn.style.display = isRunning ? "" : "none";
+    ssQueue.setEnabled(!isRunning);
+  }
+
+  /** The only place `candidates` is assigned, so the buttons cannot drift. */
+  function setCandidates(next) {
+    candidates = next;
+    syncActionButtons();
+  }
+
   function invalidateCandidates() {
     if (!candidates.length || isRunning) return;
-    candidates = [];
+    setCandidates([]);
     renderResults([]);
     setStatus(STATUS.ready);
   }
@@ -527,7 +547,8 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     $singleInput.style.display = currentMode === "single" ? "" : "none";
     $multiInput.style.display  = currentMode === "multiple" ? "" : "none";
     $queueInput.style.display  = currentMode === "queue" ? "" : "none";
-    candidates = [];
+    setCandidates([]);
+    renderResults([]);
     setStatus(STATUS.ready);
   }));
 
@@ -709,10 +730,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
   function setButtonsRunning(running) {
     isRunning = running;
-    $previewBtn.disabled    = running;
-    $disconnectBtn.disabled = running;
-    $cancelBtn.style.display = running ? "" : "none";
-    ssQueue.setEnabled(!running);
+    syncActionButtons();
   }
 
   // ── Get selected media types ───────────────────────
@@ -1083,7 +1101,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
     cancelled = false;
     setButtonsRunning(true);
-    candidates = [];
+    setCandidates([]);
     renderResults([]);
     let summary = null;
 
@@ -1093,7 +1111,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
 
         const { matched, waiting, longestWaitMs, skips } = await scanQueue(queueId, filters);
-        candidates = matched;
+        setCandidates(matched);
         summary = STATUS.previewedQueue(matched.length, waiting, longestWaitMs, skips);
       } else {
         const ids = parseConvIds();
@@ -1104,7 +1122,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         }
 
         const rows = await scanIds(ids, filters);
-        candidates = rowsToCandidates(rows);
+        setCandidates(rowsToCandidates(rows));
         renderResults(rows);
         summary = STATUS.previewedIds(candidates.length, rows.length);
       }
@@ -1128,48 +1146,15 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
   // ── Disconnect button ──────────────────────────────
   $disconnectBtn.addEventListener("click", async () => {
+    // Unreachable without a preview: the button is disabled until one produces
+    // candidates (syncActionButtons), and re-disabled by any change that would
+    // alter the result. The scan-on-demand branch that used to live here is
+    // gone with it — Disconnect no longer has a path that acts on a set the
+    // operator has not seen.
+    if (!candidates.length || isRunning) return;
+
     const filters = validateFilters();
     if (!filters) return;
-
-    // If no candidates yet, scan first
-    let summary = null;
-    if (!candidates.length) {
-      cancelled = false;
-      setButtonsRunning(true);
-
-      try {
-        if (currentMode === "queue") {
-          const queueId = ssQueue.getValue();
-          if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
-          const { matched, waiting, longestWaitMs, skips } = await scanQueue(queueId, filters);
-          candidates = matched;
-          summary = STATUS.previewedQueue(matched.length, waiting, longestWaitMs, skips);
-        } else {
-          const ids = parseConvIds();
-          if (!ids.length) {
-            setStatus("Please enter at least one conversation ID.", "error");
-            setButtonsRunning(false);
-            return;
-          }
-          const rows = await scanIds(ids, filters);
-          candidates = rowsToCandidates(rows);
-          renderResults(rows);
-          summary = STATUS.previewedIds(candidates.length, rows.length);
-        }
-
-        if (!candidates.length) {
-          setStatus(summary);
-          setButtonsRunning(false);
-          hideProgress();
-          return;
-        }
-      } catch (err) {
-        setStatus(`Error: ${err.message}`, "error");
-        setButtonsRunning(false);
-        hideProgress();
-        return;
-      }
-    }
 
     // Confirmation dialog
     const count = candidates.length;
@@ -1244,14 +1229,17 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
     setTimeout(hideProgress, 800);
     setButtonsRunning(false);
-    candidates = [];
+    // After the setter, not before: setButtonsRunning re-enables Disconnect
+    // against the set it just acted on. Clearing it through setCandidates is
+    // what takes the button back down, so a second run needs a fresh preview.
+    setCandidates([]);
   });
 
   // ── Cancel / Clear ─────────────────────────────────
   $cancelBtn.addEventListener("click", () => { cancelled = true; });
 
   $clearBtn.addEventListener("click", () => {
-    candidates = [];
+    setCandidates([]);
     renderResults([]);
     hideProgress();
     setStatus(STATUS.ready);
@@ -1259,6 +1247,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
   // ── Initial paint ──────────────────────────────────
   syncEmailFilterUi();
+  syncActionButtons();   // Disconnect starts dead — nothing has been previewed
 
   // ── Load queues on mount ───────────────────────────
   (async () => {

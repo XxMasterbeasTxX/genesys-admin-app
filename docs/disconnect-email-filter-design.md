@@ -305,6 +305,28 @@ is unwanted, the alternative is to align the other way — reinstate a live-agen
 guard on **both** modes — which reverses `549dbc3` and would stop queue mode
 catching some orphans.
 
+### 8.3a Disconnect is gated on a preview
+
+Disconnect used to scan on demand: pressed with no candidates, it ran the scan
+itself and went straight to the confirmation. So the whole set could be acted on
+without ever having been seen — on an action with no undo, and now with filters
+that decide *which* interactions are in it.
+
+The button is disabled until a preview produces candidates, and disabled again
+by anything that would change the result: a filter edit, a mode change, Clear
+Results, and the completion of a disconnect run. Its tooltip says why, since a
+greyed control with no explanation is its own kind of failure.
+
+`candidates` is assigned in exactly one place, `setCandidates()`, which
+re-syncs the buttons. Two states that must agree, updated from one site, cannot
+drift — and the ordering bug found while building this proves the point: the old
+code called `setButtonsRunning(false)` and *then* cleared `candidates`, which
+would have left Disconnect live over an empty set.
+
+The scan-on-demand branch is deleted rather than left unreachable (§8.5's rule).
+Disconnect no longer has a code path that acts on a set the operator has not
+seen.
+
 ### 8.4 A comment promises a safety guard that no longer runs
 
 `disconnect.js:114-119` states *"Live-agent protection is handled by
