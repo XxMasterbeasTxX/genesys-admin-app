@@ -923,7 +923,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const matched = [];
     const skips   = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
-    const probe = { total: 0, byAcdSegment: {}, oddballs: [] };   // TEMPORARY
+    const probe = { byAcdSegment: {} };   // TEMPORARY
 
     // Read first: `interacting` decides whether the live-agent guard applies at
     // all. Failure is not fatal — nulls fall through to "assume nothing live",
@@ -981,13 +981,11 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       // three things that could put a conversation in the matched set without
       // the queue counting it as waiting, rather than guessing which. Remove
       // once the four are accounted for.
-      probe.total++;
       // The open ACD segment's type. All three sampled earlier read "interact",
       // but three is not 173 — email can be parked, and `parked`/`scheduled`
       // both leave the queue leg open without the interaction waiting.
       const acdType = openAcdSegmentType(c, queueId) || "(none)";
       probe.byAcdSegment[acdType] = (probe.byAcdSegment[acdType] || 0) + 1;
-      if (acdType !== "interact") probe.oddballs.push(`${c.conversationId}:${acdType}`);
 
       matched.push({
         convId:    c.conversationId,
@@ -1082,10 +1080,30 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       }
     }
 
-    probe.oddballs = probe.oddballs.slice(0, 10);           // TEMPORARY
-    console.log("[match-probe]", JSON.stringify(probe));   // TEMPORARY
+    // The depth was read before the scan, and the scan takes seconds. Reading it
+    // again afterwards makes the comparison like-for-like: anything that
+    // arrived while the scan was running is in the matched set, so a depth from
+    // before the scan is measuring an earlier queue.
+    const after = await gc
+      .getQueueStats(api, orgId, queueId, filters.mediaTypes)
+      .catch(() => ({ waiting: null, interacting: null, oldestMs: null }));
 
-    return { matched, waiting, interacting, oldestMs, skips };
+    // TEMPORARY (2026-08-21): 173 matched against a depth of 169, with nothing
+    // in the analytics data distinguishing the four. If `after` is 173 they
+    // arrived mid-scan; if it is still 169 they are orphans whose ACD segment
+    // Genesys left open, which analytics cannot tell from a genuine wait.
+    console.log("[match-probe]", JSON.stringify({
+      matched: matched.length, waitingBefore: waiting, waitingAfter: after.waiting,
+      acdSegments: probe.byAcdSegment,
+    }));
+
+    return {
+      matched,
+      waiting:     after.waiting ?? waiting,
+      interacting: after.interacting ?? interacting,
+      oldestMs:    after.oldestMs ?? oldestMs,
+      skips,
+    };
   }
 
   // ── Scan: single / multiple IDs ────────────────────
