@@ -285,6 +285,21 @@ function formatWait(ms) {
   return `${Math.round(d / 30)}mo`;
 }
 
+/**
+ * A plain account of the address filters in force, or "" when there are none.
+ *
+ * Used at the two points where what was acted on has to be legible after the
+ * fact: the confirmation, and the Activity Log entry. "4 conversations in queue
+ * Support" reads as a queue holding four; it may hold five, with one belonging
+ * to someone else entirely.
+ */
+function describeAddressFilters({ senders, recipients }) {
+  const parts = [];
+  if (senders.length)    parts.push(`sender ${senders.join(", ")}`);
+  if (recipients.length) parts.push(`recipient ${recipients.join(", ")}`);
+  return parts.join("; ");
+}
+
 /** Map common HTTP error codes to user-friendly messages. */
 function friendlyError(err) {
   const msg = err.message || String(err);
@@ -1164,8 +1179,11 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       target += ` in queue "${qName}"`;
     }
 
+    const filterNote = describeAddressFilters(filters);
+
     const ok = confirm(
       `You are about to force-disconnect ${target}.\n\n`
+      + (filterNote ? `Matching ${filterNote}.\n\n` : "")
       + "This will:\n"
       + "  • Disconnect all media\n"
       + "  • Apply system wrap-up codes\n"
@@ -1217,7 +1235,8 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       me,
       orgId:       orgContext.get() || "",
       action:      "interaction_disconnect",
-      description: `Disconnected ${okCount} interaction${okCount !== 1 ? "s" : ""}${failCount ? ` (${failCount} failed)` : ""}${
+      description: `Disconnected ${okCount} interaction${okCount !== 1 ? "s" : ""}${
+        filterNote ? ` matching ${filterNote}` : ""}${failCount ? ` (${failCount} failed)` : ""}${
         cancelled ? " [cancelled]" : ""}`,
       result:      okCount === 0 && failCount > 0 ? "failure" : failCount > 0 || cancelled ? "partial" : "success",
       count:       okCount + failCount,
