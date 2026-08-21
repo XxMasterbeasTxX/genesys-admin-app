@@ -77,7 +77,11 @@ const STATUS = {
    * where a bare "no conversations found" reads as an empty queue.
    */
   previewedQueue(match, waiting, interacting, oldestMs, skips) {
-    if (!match && !waiting) return this.noResults;
+    // Only when there is genuinely nothing to say. An empty queue that still
+    // excluded something — Intervare's two unended-but-not-waiting
+    // conversations — should say so rather than report a bare "nothing found",
+    // which is what sent this design looking for them in the first place.
+    if (!match && !waiting && !skips.size) return this.noResults;
     const parts = [`${match.toLocaleString()} match`];
     if (waiting != null) parts.push(`${waiting.toLocaleString()} waiting in queue`);
 
@@ -153,6 +157,39 @@ function findAcdParticipant(conversation, queueId = null) {
   }
 
   return null;
+}
+
+/**
+ * True when the conversation is still waiting in this queue: an open `wait`
+ * segment, meaning `segmentEnd` has not been written.
+ *
+ * This is what makes the match count and the queue depth describe the same
+ * population. Without it the two are not comparable and a line can read
+ * "2 match · 0 waiting in queue", which looks like a fault but is really two
+ * different questions answered side by side.
+ *
+ * A segment naming a different queue is skipped; one naming no queue at all is
+ * accepted, since the conversation reached this scan through a queueId segment
+ * filter in the first place.
+ *
+ * This is `getQueueWaitInfo`, removed in `be600f7` when the remit was finding
+ * orphans. It is right under the current remit, which is emptying a queue. One
+ * difference matters: the original deliberately did **not** test `segmentEnd`,
+ * so it would still match a conversation whose segment Genesys had closed.
+ * Here that test is the entire point.
+ */
+function isWaitingInQueue(conversation, queueId) {
+  for (const p of (conversation.participants || [])) {
+    for (const session of (p.sessions || [])) {
+      for (const seg of (session.segments || [])) {
+        if (seg.segmentType !== "wait") continue;
+        if (seg.segmentEnd) continue;                       // the wait is over
+        if (queueId && seg.queueId && seg.queueId !== queueId) continue;
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -881,6 +918,11 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       seen.add(c.conversationId);
 
       if (c.conversationEnd) { skip("already ended"); return; }
+
+      // The population, not a filter: Empty Queue means what the queue is
+      // holding. A conversation that never ended but is no longer queued is
+      // Multiple ID work.
+      if (!isWaitingInQueue(c, queueId)) { skip("not waiting in queue"); return; }
 
       if (guardLiveAgents && hasActiveAgentSegment(c)) {
         skip("excluded, agent connected"); return;
