@@ -989,9 +989,6 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       recentIntervals.push({ start, end });
     }
 
-    const totalIntervals = recentIntervals.length + SCAN_INTERVALS;
-    let intervalNo = 0;
-
     const queueAndAddressFilters = [
       { type: "and", predicates: [{ dimension: "queueId", value: queueId }] },
       ...addressSegmentFilters(filters),
@@ -1000,6 +997,43 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       type: "and",
       predicates: [{ dimension: "conversationEnd", operator: "notExists" }],
     }];
+
+    // Which of the six historical months hold anything at all.
+    //
+    // An async job is a submit, a poll loop and a fetch, and six of them are the
+    // bulk of a scan's runtime. `totalHits` from the synchronous query answers
+    // "is there anything here" for one small request, with the same filters and
+    // the same population, so a month that holds nothing costs one request
+    // instead of a whole job.
+    //
+    // Sound where sizing by the queue's oldest wait was not: that measured the
+    // waiting population while the scan enumerated a different one. This asks
+    // exactly what the scan would ask.
+    //
+    // A probe that fails or returns no usable count scans anyway. The failure
+    // mode is "slower than it needed to be", never "quietly searched less".
+    const historical = [];
+    for (let i = 0; i < SCAN_INTERVALS; i++) {
+      const end   = new Date(recentCutoff.getTime() - i * INTERVAL_DAYS * 86_400_000);
+      const start = new Date(end.getTime() - INTERVAL_DAYS * 86_400_000);
+      historical.push(`${start.toISOString()}/${end.toISOString()}`);
+    }
+
+    setStatus("Checking which months hold anything…");
+    const counts = await Promise.all(historical.map(interval =>
+      gc.countConversationDetails(api, orgId, {
+        interval,
+        segmentFilters: queueAndAddressFilters,
+        conversationFilters: unendedOnly,
+      }).catch((err) => {
+        console.warn(`Interval probe failed, scanning it anyway:`, err.message);
+        return null;
+      })));
+
+    const toScan = historical.filter((_, i) => counts[i] === null || counts[i] > 0);
+
+    const totalIntervals = recentIntervals.length + toScan.length;
+    let intervalNo = 0;
 
     // Phase 1 — the last 48 hours, synchronously.
     //
@@ -1037,17 +1071,15 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       }
     }
 
-    // Phase 2 — the six months before that, as async jobs.
-    for (let i = 0; i < SCAN_INTERVALS; i++) {
+    // Phase 2 — the months before that, as async jobs, skipping the empty ones.
+    for (const interval of toScan) {
       if (cancelled) break;
 
-      const end   = new Date(recentCutoff.getTime() - i * INTERVAL_DAYS * 86_400_000);
-      const start = new Date(end.getTime() - INTERVAL_DAYS * 86_400_000);
       intervalNo++;
 
       try {
         const convs = await gc.searchConversations(api, orgId, {
-          interval: `${start.toISOString()}/${end.toISOString()}`,
+          interval,
           jobBody: {
             order: "desc",
             orderBy: "conversationStart",

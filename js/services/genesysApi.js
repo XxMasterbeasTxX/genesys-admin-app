@@ -365,6 +365,29 @@ export async function getQueueStats(api, orgId, queueId, mediaTypes = []) {
 }
 
 /**
+ * How many conversations a query would return, without returning them.
+ *
+ * The details/query response carries `totalHits`, so one request with a page
+ * size of 1 answers "is there anything here" for the price of a single row.
+ * Used to decide whether an interval is worth the submit-poll-fetch cycle of an
+ * async job: an empty month then costs one small request instead of a job.
+ *
+ * Returns `null` when the response carries no usable `totalHits`, so a caller
+ * can tell "none" from "could not tell" and scan rather than skip.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {Object} body   Query body; `paging` is supplied here.
+ * @returns {Promise<number|null>}
+ */
+export async function countConversationDetails(api, orgId, body) {
+  const resp = await api.proxyGenesys(orgId, "POST",
+    "/api/v2/analytics/conversations/details/query",
+    { body: { ...body, paging: { pageSize: 1, pageNumber: 1 } } });
+  return typeof resp?.totalHits === "number" ? resp.totalHits : null;
+}
+
+/**
  * Get a single conversation's full details (participants, media, state).
  *
  * @param {Object} api
