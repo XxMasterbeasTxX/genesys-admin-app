@@ -166,31 +166,46 @@ the original deliberately did **not** check `segmentEnd`, precisely so it would
 still catch conversations whose segment Genesys had closed. Here that check is
 the whole point.
 
-**There is no `wait` segment type.** The first implementation looked for
-`segmentType === "wait"`, taken from `getQueueWaitInfo` without checking it
-against the spec. `AnalyticsConversationSegment.segmentType` offers
-`alert | barging | callback | coaching | contacting | converting | delay |
-dialing | hold | interact | ivr | monitoring | parked | scheduled |
-screenmonitoring | sharing | system | transmitting | unknown | uploading |
-voicemail | wrapup` — and no `wait`. So it matched nothing: a queue of 169
-waiting interactions reported `0 match · 169 waiting in queue`. The cross-check
-in this section is what caught it, on its first run against a real queue.
+**The discriminator is `purpose`, not `segmentType`.** This took two wrong
+attempts and a probe against a live queue to establish, so the observed shape is
+recorded here rather than left to be rediscovered. Every one of 169 waiting
+emails looked like this:
 
-It probably also explains `be600f7` better than the orphan reasoning did. That
-commit removed the gate as "match all active convos"; the gate was not too
-strict, it was broken in exactly this way.
+```
+{ purpose: "external", segmentType: "interact", open: true  }
+{ purpose: "workflow", segmentType: "interact", open: false }
+{ purpose: "acd",      segmentType: "interact", open: true, queueId: "1d59140c…" }
+```
 
-**The test is therefore not keyed on a segment type at all.** A conversation is
-waiting when it has a segment for this queue that is **still open**
-(`segmentEnd` absent) and is **not an agent handling it** — `interact`,
-`alert`, `wrapup`, `hold`. The enum has no prose saying which of `delay`,
-`scheduled` or `parked` mean "sitting in a queue", so the agent-side half, which
-is unambiguous, is the half named. `segmentEnd` carries the meaning; the type
-only rules out the agent states.
+For email there is **no `delay` segment and nothing called `wait`**. The ACD
+leg's segment reads `interact` for the entire time the email sits in the queue.
 
-**Unknown, being probed:** which segment types actually appear on a queued
-interaction. A temporary `[seg-probe]` log prints them for the first few
-conversations of a scan, so the denylist can be narrowed to an exact set.
+The two failed attempts both keyed on `segmentType`:
+
+1. `segmentType === "wait"`, copied from `getQueueWaitInfo` without checking it.
+   `AnalyticsConversationSegment.segmentType` has twenty-two values and no
+   `wait` among them, so it matched nothing: `0 match · 169 waiting in queue`.
+   This very likely explains `be600f7` removing that gate as "match all active
+   convos" — it was broken, not too strict.
+2. Treating `interact`/`alert` as agent-held. True of *every queued email*, so
+   it would have excluded whole queues. This very likely explains `549dbc3`
+   removing `hasActiveAgentSegment` for the same reason.
+
+**The rule, then:** a conversation is waiting in this queue when the participant
+with `purpose === "acd"` has a segment for this queue with `segmentEnd` absent.
+The queue leg is still open, so the interaction has not left the queue. One that
+moved on, or died, has that segment closed — which is what keeps `Intervare`'s
+two out.
+
+The live-agent guard moves to `purpose` as well: an open segment on an `agent`
+or `user` participant. **Inferred, not observed** — the probe ran against a
+queue with nothing live in it. It is consulted only when `oInteracting` is
+non-zero, and the ACD-leg test already excludes anything that has left the
+queue, so it is a second line rather than the only one.
+
+**What caught this:** the cross-check in this section, on its first run against
+a real queue. Before match and depth described the same population, a test that
+matched nothing was indistinguishable from a queue with nothing in it.
 
 ## 7. Sizing the scan by probing
 

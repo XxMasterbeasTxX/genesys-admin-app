@@ -156,41 +156,37 @@ function findAcdParticipant(conversation, queueId = null) {
 }
 
 /**
- * Segment types that mean an agent has the interaction, so it is no longer
- * waiting in the queue.
+ * True when the conversation is still sitting in this queue: the **ACD**
+ * participant has an open segment for this queue.
  *
- * A denylist rather than a list of queue states, because the enum
- * (`AnalyticsConversationSegment.segmentType`) offers twenty-two values with no
- * prose saying which of them mean "sitting in a queue" — `delay`, `scheduled`
- * and `parked` are all candidates. Naming the agent-side states is the half of
- * the question that is unambiguous.
- */
-const AGENT_SEGMENT_TYPES = new Set(["interact", "alert", "wrapup", "hold"]);
-
-/**
- * True when the conversation is still waiting in this queue: a segment for this
- * queue that is still open, and is not an agent handling it.
+ * Keyed on `purpose`, not on `segmentType`. Observed on a live queue of 169
+ * waiting emails (2026-08-21), every one of them shaped like this:
  *
- * Deliberately not keyed on a specific segment type. The first attempt looked
- * for `segmentType === "wait"`, copied from `getQueueWaitInfo` without checking
- * it — and there is no such value in the enum, so it matched nothing at all: a
- * queue of 169 waiting interactions reported 0. It probably also explains
- * `be600f7` removing that gate as "match all active convos" better than the
- * orphan reasoning did. The gate was not too strict; it was broken.
+ *   { purpose: "external", segmentType: "interact", open: true  }
+ *   { purpose: "workflow", segmentType: "interact", open: false }
+ *   { purpose: "acd",      segmentType: "interact", open: true, queueId: "…" }
  *
- * `segmentEnd` absent is the part that carries the meaning: the segment has not
- * finished. A conversation that left the queue has closed segments, which is
- * what keeps `Intervare`'s two out.
+ * So for email there is no `delay` segment and nothing called `wait`: the ACD
+ * leg's segment reads `interact` for the whole time the email is queued.
+ * `segmentType` therefore says nothing about whether an agent has it, and two
+ * earlier attempts here failed on exactly that — one looking for a `wait` type
+ * that does not exist in the enum, one treating `interact` as agent-held and so
+ * excluding the entire queue.
+ *
+ * What carries the meaning is the ACD participant having an unfinished segment:
+ * the queue leg is still open, so the interaction has not left the queue. A
+ * conversation that moved on, or died, has that segment closed — which is what
+ * keeps `Intervare`'s two out.
  *
  * A segment naming a different queue is skipped; one naming no queue is
  * accepted, since the conversation reached this scan through a queueId filter.
  */
 function isWaitingInQueue(conversation, queueId) {
   for (const p of (conversation.participants || [])) {
+    if (p.purpose !== "acd") continue;
     for (const session of (p.sessions || [])) {
       for (const seg of (session.segments || [])) {
-        if (seg.segmentEnd) continue;                        // finished
-        if (AGENT_SEGMENT_TYPES.has(seg.segmentType)) continue;  // an agent has it
+        if (seg.segmentEnd) continue;                        // the queue leg closed
         if (queueId && seg.queueId && seg.queueId !== queueId) continue;
         return true;
       }
@@ -199,45 +195,31 @@ function isWaitingInQueue(conversation, queueId) {
   return false;
 }
 
-/**
- * TEMPORARY (2026-08-21): print the segments actually present on the first few
- * conversations of a queue scan, so the denylist above can be replaced with the
- * exact set of queue-side types. Remove once the answer is in.
- */
-let segProbeBudget = 0;
-function probeSegments(c) {
-  if (segProbeBudget <= 0) return;
-  segProbeBudget--;
-  const rows = [];
-  for (const p of (c.participants || [])) {
-    for (const sess of (p.sessions || [])) {
-      for (const seg of (sess.segments || [])) {
-        rows.push({ purpose: p.purpose, mediaType: sess.mediaType,
-                    segmentType: seg.segmentType, queueId: seg.queueId,
-                    open: !seg.segmentEnd });
-      }
-    }
-  }
-  console.log("[seg-probe]", c.conversationId, JSON.stringify(rows));
-}
+/** Participant purposes that mean a person is on the interaction. */
+const AGENT_PURPOSES = new Set(["agent", "user"]);
 
 /**
- * True when a participant has an ongoing `interact` or `alert` segment — an
- * agent connected, or ringing.
+ * True when an agent has the interaction — connected, or ringing.
  *
- * Only meaningful when the queue reports live interactions. On an orphan the
- * segments are frequently left unclosed for the same reason `conversationEnd`
- * was never written, so this returns true for exactly the conversations the
- * page exists to find. That is why `549dbc3` removed the unconditional call,
- * and why the caller gates it on `oInteracting` rather than restoring it
- * outright.
+ * Also keyed on `purpose`. An agent joins as its own participant, so an open
+ * segment on an `agent` or `user` participant is what "an agent has it" looks
+ * like. The previous version tested `segmentType` for `interact`/`alert` on any
+ * participant, which the shape above shows is true of every *queued* email — it
+ * would have excluded a whole queue the moment `oInteracting` went non-zero.
+ * That is very likely why `549dbc3` removed it.
+ *
+ * Inferred from the participant model rather than observed: the probe ran
+ * against a queue with nothing live in it, so no agent-held conversation was
+ * seen. It is consulted only when the queue reports live interactions, and
+ * `isWaitingInQueue` already excludes anything whose ACD leg has closed, so this
+ * is a second line rather than the only one.
  */
-function hasActiveAgentSegment(conversation) {
+function hasAgentEngaged(conversation) {
   for (const p of (conversation.participants || [])) {
+    if (!AGENT_PURPOSES.has(p.purpose)) continue;
     for (const session of (p.sessions || [])) {
       for (const seg of (session.segments || [])) {
-        if (seg.segmentEnd) continue;
-        if (seg.segmentType === "interact" || seg.segmentType === "alert") return true;
+        if (!seg.segmentEnd) return true;
       }
     }
   }
@@ -922,7 +904,6 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     const matched = [];
     const skips   = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
-    segProbeBudget = 3;   // TEMPORARY
 
     // Read first: `interacting` decides whether the live-agent guard applies at
     // all. Failure is not fatal — nulls fall through to "assume nothing live",
@@ -947,8 +928,6 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       if (seen.has(c.conversationId)) return;
       seen.add(c.conversationId);
 
-      probeSegments(c);   // TEMPORARY
-
       if (c.conversationEnd) { skip("already ended"); return; }
 
       // Not a skip — the population, silently. Empty Queue means what the queue
@@ -958,7 +937,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       // If nothing is waiting, nothing is waiting.
       if (!isWaitingInQueue(c, queueId)) return;
 
-      if (guardLiveAgents && hasActiveAgentSegment(c)) {
+      if (guardLiveAgents && hasAgentEngaged(c)) {
         skip("excluded, agent connected"); return;
       }
 
