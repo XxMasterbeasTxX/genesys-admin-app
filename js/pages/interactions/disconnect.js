@@ -653,6 +653,17 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   // own verdict. Callers take the matches with `rowsToCandidates`; the rest are
   // rendered so a filtered or failed ID says why rather than silently thinning
   // the count.
+  //
+  // Eligibility is the same rule queue mode uses: a conversation with no
+  // endTime written is disconnectable. It used to be stricter here — an ACD
+  // participant had to be connected or alerting — which refused exactly the
+  // orphans whose ACD segment Genesys had already closed, the interactions this
+  // page exists for. The same conversation was found by queue mode and turned
+  // away by ID mode.
+  //
+  // The consequence is the one queue mode already carries: a conversation an
+  // agent is actively handling is eligible too. The preview table and the
+  // confirm dialog are the guard.
   async function scanIds(convIds, filters) {
     const orgId = orgContext.get();
     const rows  = [];
@@ -665,6 +676,8 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
       try {
         const conv = await gc.getConversation(api, orgId, convIds[i]);
+        // findAcdParticipant is kept for the media type it reports on a live
+        // ACD leg; detectMediaType covers the orphans, where that leg is gone.
         const acd = findAcdParticipant(conv);
         const mediaType = acd ? acd.mediaType : detectMediaType(conv.participants);
 
@@ -676,9 +689,9 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
         const filtered = (reason) => rows.push({ ...row, status: "Filtered", error: reason });
 
-        if (!acd) { filtered("Not waiting in queue (already at agent or ended)"); continue; }
-        if (!filters.mediaTypes.includes(acd.mediaType)) {
-          filtered(`Media type "${acd.mediaType}" not selected`); continue;
+        if (conv.endTime) { filtered("Already ended"); continue; }
+        if (!filters.mediaTypes.includes(mediaType)) {
+          filtered(`Media type "${mediaType}" not selected`); continue;
         }
         const st = conv.startTime ? new Date(conv.startTime) : null;
         if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) {
