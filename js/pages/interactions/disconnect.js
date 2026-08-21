@@ -76,7 +76,7 @@ const STATUS = {
    * "0 match · 2,847 waiting in queue" is plainly a filter that is too tight,
    * where a bare "no conversations found" reads as an empty queue.
    */
-  previewedQueue(match, waiting, oldestMs, skips) {
+  previewedQueue(match, waiting, oldestMs, truncated, shown, skips) {
     if (!match && !waiting) return this.noResults;
     const parts = [`${match.toLocaleString()} match`];
     if (waiting != null) parts.push(`${waiting.toLocaleString()} waiting in queue`);
@@ -87,6 +87,13 @@ const STATUS = {
     // far the search reached.
     const age = formatWait(oldestMs);
     if (age) parts.push(`oldest waiting ${age}`);
+
+    // Genesys caps the observation list, and a capped list is not the first N —
+    // it is the oldest half plus the newest half, with the middle missing. The
+    // count above stays exact, so the two figures together say plainly that the
+    // queue is bigger than what was examined. Running again reaches the rest,
+    // because each pass takes from both ends.
+    if (truncated) parts.push(`${shown.toLocaleString()} shown — list truncated, run again for the rest`);
     for (const [reason, n] of [...skips].sort((a, b) => b[1] - a[1])) {
       parts.push(`${n.toLocaleString()} ${reason}`);
     }
@@ -221,8 +228,17 @@ function collectSessionAddresses(conv) {
   return { from, to };
 }
 
+/** The addresses a queue observation carries, in the same shape. */
+function observationAddresses(obs) {
+  const set = (v) => {
+    const n = normaliseAddress(v);
+    return n ? new Set([n]) : new Set();
+  };
+  return { from: set(obs.addressFrom), to: set(obs.addressTo) };
+}
+
 /**
- * Check one analytics conversation against the address filters.
+ * Check a conversation's addresses against the address filters.
  * Returns { pass, reason } — `reason` is what the operator is shown.
  *
  * Several addresses in one field are OR'd, the two fields are AND'd, and an
@@ -230,10 +246,8 @@ function collectSessionAddresses(conv) {
  * as a match: this filter only ever narrows, so a conversation the page cannot
  * account for stays out of the run.
  */
-function matchesAddressFilters(conv, { senders, recipients }) {
+function matchesAddressFilters({ from, to }, { senders, recipients }) {
   if (!senders.length && !recipients.length) return { pass: true, reason: null };
-
-  const { from, to } = collectSessionAddresses(conv);
 
   if (senders.length) {
     if (!from.size) return { pass: false, reason: "no sender address on record" };
@@ -443,13 +457,13 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     <div class="di-controls">
       <div class="di-control-group">
         <label class="di-label">
-          <input type="checkbox" id="diOlderEnable"> Older than
+          <input type="checkbox" id="diOlderEnable"> <span id="diOlderLabel">Older than</span>
         </label>
         <input type="date" class="input di-date" id="diOlderDate" disabled>
       </div>
       <div class="di-control-group">
         <label class="di-label">
-          <input type="checkbox" id="diNewerEnable"> Newer than
+          <input type="checkbox" id="diNewerEnable"> <span id="diNewerLabel">Newer than</span>
         </label>
         <input type="date" class="input di-date" id="diNewerDate" disabled>
       </div>
@@ -505,6 +519,8 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
   ssQueue.setEnabled(false);
   const $mediaAll     = el.querySelector("#diMediaAll");
   const $mediaCbs     = el.querySelectorAll(".di-media-cb");
+  const $olderLabel   = el.querySelector("#diOlderLabel");
+  const $newerLabel   = el.querySelector("#diNewerLabel");
   const $olderEnable  = el.querySelector("#diOlderEnable");
   const $olderDate    = el.querySelector("#diOlderDate");
   const $newerEnable  = el.querySelector("#diNewerEnable");
@@ -553,12 +569,23 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     setStatus(STATUS.ready);
   }
 
+  // Queue mode filters on when an interaction started waiting; the ID modes
+  // filter on when the conversation started. Different measurements, so they do
+  // not share a label — a field that quietly means something else in one mode
+  // is worse than two wordings.
+  function syncDateLabels() {
+    const queue = currentMode === "queue";
+    $olderLabel.textContent = queue ? "In queue before" : "Older than";
+    $newerLabel.textContent = queue ? "In queue after"  : "Newer than";
+  }
+
   // ── Mode switching ──────────────────────────────────
   $modeRadios.forEach(r => r.addEventListener("change", () => {
     currentMode = r.value;
     $singleInput.style.display = currentMode === "single" ? "" : "none";
     $multiInput.style.display  = currentMode === "multiple" ? "" : "none";
     $queueInput.style.display  = currentMode === "queue" ? "" : "none";
+    syncDateLabels();
     setCandidates([]);
     renderResults([]);
     setStatus(STATUS.ready);
@@ -803,227 +830,70 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     return { mediaTypes, olderThan, newerThan, senders, recipients };
   }
 
-  // ── Scan: queue mode (async analytics jobs) ────────
+  // ── Scan: queue mode (live queue state) ────────────
   //
-  // Uses the async jobs API (/analytics/conversations/details/jobs) instead of
-  // the synchronous query endpoint, which times out via the proxy at ~8000+
-  // conversations. The async path has no per-request timeout constraint.
+  // Asks the queue what it is holding rather than reconstructing it from
+  // analytics history. One request; no 48-hour synchronous pass, no six async
+  // jobs over six months.
   //
-  // Phase 2 (individual getConversation calls) is eliminated: the analytics
-  // response already includes participant sessions and segments, which is
-  // enough to determine waiting state without extra API calls.
+  // The population is `oWaiting` — interactions sitting in the queue
+  // unassigned. Two consequences worth being explicit about:
   //
-  // What this matches, stated plainly: every conversation in the queue whose
-  // conversationEnd has not been written. The ACD segment is deliberately NOT
-  // required to be open — Genesys closes it internally on dead/orphaned
-  // interactions while never writing conversationEnd, and those are exactly
-  // the ones this page exists to catch.
+  //   * Anything an agent is handling is `oInteracting`, so it is not in the
+  //     set at all. A live interaction cannot be swept into a force-disconnect
+  //     by construction rather than by a guard applied afterwards.
+  //   * A conversation that is unended but no longer queued is out of scope for
+  //     this mode. That is the deliberate remit: "empty this queue" means what
+  //     is sitting in it. Single and Multiple ID mode reach the rest.
   //
-  // There is no live-agent guard. A conversation an agent is currently handling
-  // is matched like any other, and will be disconnected if the operator
-  // confirms. The preview and the confirm dialog are the whole of the safety
-  // model here. An earlier hasActiveAgentSegment() guard was removed (549dbc3)
-  // because it also excluded the orphans above.
-  //
-  // Returns { matched, waiting, oldestMs, skips } — `skips` is a reason → count
-  // tally, `waiting` is the live queue depth and `oldestMs` the age of the
-  // oldest waiting or interacting item, so the status line can account for the
-  // difference between what is in the queue and what matched.
+  // See docs/disconnect-empty-queue-design.md.
   async function scanQueue(queueId, filters) {
-    const orgId  = orgContext.get();
-    const now    = new Date();
-    const recentCutoff = new Date(now.getTime() - RECENT_LOOKBACK_HOURS * 3_600_000);
-    const seen   = new Set();
-    const matched = [];
-    const skips  = new Map();
+    const orgId = orgContext.get();
+    const skips = new Map();
     const skip = (reason) => { skips.set(reason, (skips.get(reason) || 0) + 1); };
-    // Read first, because it decides how much of the historical phase to run.
-    // One small request in front of a scan that takes seconds at best. A failure
-    // resolves to nulls rather than rejecting: losing this must never fail a
-    // scan that would otherwise have worked, and nulls fall through to the full
-    // six-month scan below.
-    setStatus("Reading queue depth…");
-    const { waiting, oldestMs } = await gc
-      .getQueueWaitingStats(api, orgId, queueId, filters.mediaTypes)
-      .catch((err) => {
-        console.warn("Could not read queue observations:", err.message);
-        return { waiting: null, oldestMs: null };
+
+    setStatus("Reading the queue…");
+    showProgress(20);
+
+    // Deliberately not caught: the observation *is* the scan now, so failing to
+    // read it has to surface as an error. Swallowing it would report an empty
+    // queue, which is the one answer that must never be guessed.
+    const { waiting, truncated, observations } =
+      await gc.getQueueWaitingDetails(api, orgId, queueId, filters.mediaTypes);
+
+    showProgress(60);
+
+    const matched = [];
+    for (const obs of observations) {
+      if (cancelled) break;
+
+      const addr = matchesAddressFilters(observationAddresses(obs), filters);
+      if (!addr.pass) { skip(addr.reason); continue; }
+
+      // Date filters run on observationDate — when the interaction started
+      // waiting, not when the conversation began. The labels say so in this
+      // mode; see syncDateLabels().
+      const st = obs.observationDate ? new Date(obs.observationDate) : null;
+      if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) {
+        skip("outside date range"); continue;
+      }
+      if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
+        skip("outside date range"); continue;
+      }
+
+      matched.push({
+        convId:    obs.conversationId,
+        mediaType: obs.mediaType || "",
+        startTime: formatDateTime(obs.observationDate),
       });
-
-    // Phase 1: scan the most recent 48 hours with synchronous analytics +
-    // conversation details. This avoids async analytics ingestion lag for
-    // today's interactions.
-    const recentIntervals = [];
-    for (let endMs = now.getTime(); endMs > recentCutoff.getTime(); endMs -= RECENT_BUCKET_HOURS * 3_600_000) {
-      const end = new Date(endMs);
-      const start = new Date(Math.max(recentCutoff.getTime(), endMs - RECENT_BUCKET_HOURS * 3_600_000));
-      recentIntervals.push({ start, end });
     }
 
-    // Phase 2 always walks the full window.
-    //
-    // It was briefly sized to the queue's oldest *waiting* interaction, which
-    // is wrong: this scan's population is conversations with no
-    // `conversationEnd`, and queue observations describe what is waiting or
-    // interacting right now. Those are different sets. A real queue proved it —
-    // 2 unended conversations, 0 waiting — and on a queue holding both a few
-    // fresh waiting emails and some old orphans that are not waiting, the age
-    // would have read hours and the orphans would have been skipped in silence.
-    // They are the whole reason this page exists.
-    //
-    // `oldestMs` is still read and displayed, because it is useful context. It
-    // is not allowed to decide what gets searched.
-    const totalIntervals = recentIntervals.length + SCAN_INTERVALS;
-    let intervalNo = 0;
+    // Sorted ascending by the service, so the first is the oldest.
+    const oldest = observations[0]?.observationDate;
+    const oldestMs = oldest ? Date.now() - new Date(oldest).getTime() : null;
 
-    for (const r of recentIntervals) {
-      if (cancelled) break;
-
-      intervalNo++;
-      setStatus(`[Recent sync] ${STATUS.scanning(intervalNo, totalIntervals)}`);
-      showProgress(((intervalNo - 1) / totalIntervals) * 100);
-
-      const analyticsBody = {
-        interval: `${r.start.toISOString()}/${r.end.toISOString()}`,
-        order: "desc",
-        orderBy: "conversationStart",
-        segmentFilters: [
-          { type: "and", predicates: [{ dimension: "queueId", value: queueId }] },
-          ...addressSegmentFilters(filters),
-        ],
-        conversationFilters: [{
-          type: "and",
-          predicates: [{ dimension: "conversationEnd", operator: "notExists" }],
-        }],
-      };
-
-      let convs = [];
-      try {
-        convs = await gc.queryConversationDetails(api, orgId, analyticsBody, {
-          maxPages: 200,
-          onProgress: (n) => {
-            const within = Math.min(n / 500, 1);
-            showProgress((((intervalNo - 1) + within) / totalIntervals) * 100);
-          },
-        });
-      } catch (err) {
-        console.warn(`Recent interval ${intervalNo} scan failed — skipping:`, err.message);
-        continue;
-      }
-
-      for (const c of convs) {
-        if (cancelled) break;
-        if (seen.has(c.conversationId)) continue;
-        seen.add(c.conversationId);
-        if (c.conversationEnd) { skip("already ended"); continue; }
-
-        // Before the per-conversation call, not after: the sync analytics
-        // response already carries the sessions this needs, so an address
-        // filter makes this path issue fewer requests, not more.
-        const addr = matchesAddressFilters(c, filters);
-        if (!addr.pass) { skip(addr.reason); continue; }
-
-        try {
-          const conv = await gc.getConversation(api, orgId, c.conversationId);
-          const mediaType = detectMediaType(conv.participants);
-
-          if (mediaType !== "unknown" && !filters.mediaTypes.includes(mediaType)) {
-            skip("media type not selected"); continue;
-          }
-
-          const st = conv.startTime ? new Date(conv.startTime) : null;
-          if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) {
-            skip("outside date range"); continue;
-          }
-          if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
-            skip("outside date range"); continue;
-          }
-
-          matched.push({
-            convId:    c.conversationId,
-            mediaType,
-            startTime: formatDateTime(conv.startTime),
-          });
-        } catch (err) {
-          skip("could not be inspected");
-          console.warn(`Could not inspect recent conversation ${c.conversationId}:`, err.message);
-        }
-      }
-    }
-
-    for (let i = 0; i < SCAN_INTERVALS; i++) {
-      if (cancelled) break;
-
-      const end      = new Date(recentCutoff.getTime() - i * INTERVAL_DAYS * 86_400_000);
-      const start    = new Date(end.getTime()  - INTERVAL_DAYS * 86_400_000);
-      const interval = `${start.toISOString()}/${end.toISOString()}`;
-
-      intervalNo++;
-
-      const jobBody = {
-        order: "desc",
-        orderBy: "conversationStart",
-        segmentFilters: [
-          { type: "and", predicates: [{ dimension: "queueId", value: queueId }] },
-          ...addressSegmentFilters(filters),
-        ],
-        conversationFilters: [{
-          type: "and",
-          predicates: [{ dimension: "conversationEnd", operator: "notExists" }],
-        }],
-      };
-
-      let convs;
-      try {
-        convs = await gc.searchConversations(api, orgId, {
-          interval,
-          jobBody,
-          onStatus: (msg) =>
-            setStatus(`[Historical async] Interval ${intervalNo} of ${totalIntervals}: ${msg}`),
-          onProgress: (pct) =>
-            showProgress((((intervalNo - 1) + pct / 100) / totalIntervals) * 100),
-        });
-      } catch (err) {
-        console.warn(`Interval ${intervalNo} scan failed — skipping:`, err.message);
-        continue;
-      }
-
-      for (const c of convs) {
-        if (cancelled) break;
-        if (seen.has(c.conversationId)) continue;
-        seen.add(c.conversationId);
-        if (c.conversationEnd) { skip("already ended"); continue; }
-
-        // Detect media type from sessions (analytics shape)
-        const mediaType = getSessionMediaType(c) || "unknown";
-
-        // Media type filter (pass through if type can't be determined)
-        if (mediaType !== "unknown" && !filters.mediaTypes.includes(mediaType)) {
-          skip("media type not selected"); continue;
-        }
-
-        // Date range filters
-        const st = c.conversationStart ? new Date(c.conversationStart) : null;
-        if (filters.olderThan && st && st >= new Date(filters.olderThan + "T00:00:00Z")) {
-          skip("outside date range"); continue;
-        }
-        if (filters.newerThan && st && st <= new Date(filters.newerThan + "T23:59:59Z")) {
-          skip("outside date range"); continue;
-        }
-
-        // Address filters (email only — an address narrows mediaTypes to email)
-        const addr = matchesAddressFilters(c, filters);
-        if (!addr.pass) { skip(addr.reason); continue; }
-
-        matched.push({
-          convId:    c.conversationId,
-          mediaType,
-          startTime: formatDateTime(c.conversationStart),
-        });
-      }
-    }
-
-    return { matched, waiting, oldestMs, skips };
+    showProgress(100);
+    return { matched, waiting, oldestMs, truncated, shown: observations.length, skips };
   }
 
   // ── Scan: single / multiple IDs ────────────────────
@@ -1091,7 +961,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
               : msg.includes("404") ? "Sender/recipient not yet available in analytics"
               : `Could not read sender/recipient — ${friendlyError(err)}`);
           }
-          const addr = matchesAddressFilters(analytics, filters);
+          const addr = matchesAddressFilters(collectSessionAddresses(analytics), filters);
           if (!addr.pass) return filtered(addr.reason);
         }
 
@@ -1146,9 +1016,11 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
         const queueId = ssQueue.getValue();
         if (!queueId) { setStatus("Please select a queue.", "error"); setButtonsRunning(false); return; }
 
-        const { matched, waiting, oldestMs, skips } = await scanQueue(queueId, filters);
+        const { matched, waiting, oldestMs, truncated, shown, skips } =
+          await scanQueue(queueId, filters);
         setCandidates(matched);
-        summary = STATUS.previewedQueue(matched.length, waiting, oldestMs, skips);
+        summary = STATUS.previewedQueue(
+          matched.length, waiting, oldestMs, truncated, shown, skips);
       } else {
         const ids = parseConvIds();
         if (!ids.length) {
@@ -1281,6 +1153,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
   // ── Initial paint ──────────────────────────────────
   syncEmailFilterUi();
+  syncDateLabels();
   syncActionButtons();   // Disconnect starts dead — nothing has been previewed
 
   // ── Load queues on mount ───────────────────────────

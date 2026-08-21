@@ -356,7 +356,13 @@ export async function getQueueWaitingDetails(api, orgId, queueId, mediaTypes = [
       if (d.metric !== "oWaiting") continue;
       if (typeof d.stats?.count === "number") waiting += d.stats.count;
       if (d.truncated) truncated = true;
-      if (Array.isArray(d.observations)) observations.push(...d.observations);
+      // Stamp the group's media type on each row: the observation itself does
+      // not carry one, and flattening the groups would otherwise lose it.
+      if (Array.isArray(d.observations)) {
+        for (const o of d.observations) {
+          observations.push({ ...o, mediaType: r.group?.mediaType || "" });
+        }
+      }
     }
   }
 
