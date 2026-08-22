@@ -92,55 +92,6 @@ function toRow(conv) {
 }
 
 /**
- * Participant-data filters as Genesys `segmentFilters` entries.
- *
- * Participant attributes are reachable as **property** predicates — the third
- * kind `SegmentDetailQueryPredicate` accepts, alongside `dimension` and
- * `metric`. An earlier reading of this concluded server-side filtering was
- * impossible because `ConversationDetailQueryPredicate` has no attribute
- * dimension; true, but it is the segment predicate that carries `property`, and
- * the conversation predicate does not even have the field.
- *
- * **One entry per filter, never one clause holding several.** Predicates inside
- * a clause must all be satisfied by the *same* segment; separate entries are
- * ANDed across the conversation and may each be satisfied by a different one.
- * That matters twice over here: `queueId` lives on the ACD segment while an
- * attribute lives wherever it was set, and — more importantly — a single clause
- * would make the server **stricter** than `filterByPD`, which would drop rows
- * the client would have kept. Separate entries make the server a superset, and
- * the client narrows it. The server must never be the stricter of the two.
- *
- * **Only equality is expressible.** A property predicate takes no operator but
- * the default `matches` — Genesys answers `operator: "exists"` with "invalid
- * operator for property predicate", tested 2026-08-22. The enum on
- * `SegmentDetailQueryPredicate` lists `matches | exists | notExists`, but that
- * enum spans all three predicate kinds and the spec does not say which apply to
- * which.
- *
- * Two cases therefore send nothing and stay entirely client-side:
- *
- *   * **A key-only filter** — "this attribute is present, any value" needs
- *     `exists`, which is refused.
- *   * **Exclude mode** — "present but different" cannot be said with `matches`
- *     alone, and `notExists` would mean "absent", which is a different question.
- *
- * Both then behave exactly as they did before any of this: everything is
- * fetched and `filterByPD` does the work. Only a key *and* value filter, in
- * include mode, is narrowed by the server.
- */
-function pdSegmentFilters(filters, exclude) {
-  if (exclude) return [];
-  return filters
-    .filter((f) => f.value !== "")
-    .map((f) => ({
-      type: "and",
-      predicates: [
-        { type: "property", propertyType: "string", property: f.key, value: f.value },
-      ],
-    }));
-}
-
-/**
  * Client-side participant-data filter.
  * A conversation matches if ANY participant has attributes matching
  * ALL filter key/value pairs. If a filter has no value, only the key
@@ -946,15 +897,17 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       if (queueId)      segmentPredicates.push({ dimension: "queueId",   value: queueId });
       if (directionVal) segmentPredicates.push({ dimension: "direction", value: directionVal });
       if (mediaVal)     segmentPredicates.push({ dimension: "mediaType", value: mediaVal });
-      // Scope predicates share one clause: queue, direction and media all
-      // describe the same segment. Participant data gets an entry each — see
-      // pdSegmentFilters.
-      const segmentFilters = [];
+      // Participant data is deliberately NOT pushed to the server.
+      //
+      // It was tried (b4a066e) and reverted: a property predicate on a real
+      // attribute made the server return nothing at all, where the client-side
+      // filter on the same attribute finds six. Why is unresolved — see
+      // docs/interactions-search-notes.md §1. Whatever the cause, the server was
+      // the stricter of the two and dropped rows filterByPD would have kept,
+      // which is the one outcome this must never have.
       if (segmentPredicates.length) {
-        segmentFilters.push({ type: "and", predicates: segmentPredicates });
+        jobBody.segmentFilters = [{ type: "and", predicates: segmentPredicates }];
       }
-      segmentFilters.push(...pdSegmentFilters(currentFilters, currentExclude));
-      if (segmentFilters.length) jobBody.segmentFilters = segmentFilters;
       if (divisionId) {
         jobBody.conversationFilters = [{ type: "and", predicates: [{ dimension: "divisionId", value: divisionId }] }];
       }
