@@ -126,7 +126,11 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       Participant Data filters apply when clicking a row, not during search.
     </div>
 
-    <!-- Controls row -->
+    <!-- Controls: one container per group of related fields, not one wrapping
+         row for all six. In a single container the browser decides the grouping
+         and it changes with window width. Same split as Historical Search. -->
+
+    <!-- When -->
     <div class="is-controls">
       <div class="is-control-group">
         <label class="is-label">Period</label>
@@ -136,6 +140,10 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
           <button class="btn btn-sm is-period-btn" data-period="yesterday">Yesterday</button>
         </div>
       </div>
+    </div>
+
+    <!-- Where -->
+    <div class="is-controls">
       <div class="is-control-group">
         <label class="is-label">Queue</label>
         <div id="rsQueueDropdown"></div>
@@ -152,6 +160,12 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
         <label class="is-label">Division</label>
         <div id="rsDivisionDropdown"></div>
       </div>
+    </div>
+
+    <!-- Participant data. The hint stays: unlike Historical Search, these do
+         not narrow the search at all, they choose what a row shows when it is
+         expanded. -->
+    <div class="is-controls">
       <div class="is-control-group is-pd-group">
         <label class="is-label">Participant Data Filter</label>
         <div class="is-pd-inputs">
@@ -170,20 +184,22 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
 
     <!-- Action buttons -->
     <div class="is-actions">
-      <button class="btn" id="rsSearchBtn">Search</button>
+      <button class="btn btn--primary" id="rsSearchBtn">Search</button>
       <button class="btn" id="rsClearBtn">Clear Results</button>
       <div style="margin-left:auto;display:flex;gap:8px">
         <button class="btn" id="rsExportBtn" disabled>Export Excel</button>
       </div>
     </div>
 
-    <div class="is-hint">Tip: Right-click a row to copy the Conversation ID to clipboard.</div>
-
     <div class="is-status" id="rsStatus">${STATUS.ready}</div>
 
     <div class="is-progress-wrap" id="rsProgressWrap" style="display:none">
       <div class="is-progress-bar" id="rsProgressBar"></div>
     </div>
+
+    <!-- Outside .is-results, which is a two-column grid: a child here would be
+         placed as a grid item and push the table into the detail column. -->
+    <div class="is-hint">Tip: Right-click a row to copy the Conversation ID to clipboard.</div>
 
     <!-- Results area: table + detail pane -->
     <div class="is-results">
