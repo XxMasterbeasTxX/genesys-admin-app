@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Interactions › Search — filter bar redesign (mockup)</title>
+<link rel="stylesheet" href="../../css/styles.css">
+<style>
+/* ══════════════════════════════════════════════════════════════
+   Mockup-only scaffolding. Not proposed CSS.
+   ══════════════════════════════════════════════════════════════ */
+body { background: var(--bg); color: var(--text); padding: 24px; }
+.mk-note {
+  font-size: 12px; color: var(--muted); margin: 0 0 8px;
+  border-left: 2px solid rgba(59,130,246,0.4); padding-left: 8px;
+}
+.mk-section { margin-bottom: 34px; }
+.mk-h { font-size: 13px; font-weight: 700; letter-spacing: .04em;
+        text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+
+/* ══════════════════════════════════════════════════════════════
+   PROPOSED — filter bar. `fb-` prefix so it can become shared.
+   ══════════════════════════════════════════════════════════════ */
+
+/* A band is one row of related controls with a caption on the left.
+   The caption is what stops the page reading as undifferentiated soup:
+   it names the question each row answers. */
+.fb-band {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+}
+.fb-band + .fb-band { border-top: 1px solid var(--border); }
+
+.fb-band-caption {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 20px;              /* aligns with the field, not its label */
+}
+
+.fb-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-end;
+}
+
+.fb-field { display: flex; flex-direction: column; gap: 4px; }
+.fb-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+
+/* Two widths only, so controls line up into columns instead of each
+   choosing its own size. */
+.fb-w-sm { width: 160px; }
+.fb-w-md { width: 200px; }
+
+/* Quick ranges: a segmented control beside the dates they act on, not a
+   detached button row above them under a blank label. */
+.fb-segmented { display: inline-flex; }
+.fb-segmented .btn {
+  border-radius: 0;
+  margin-left: -1px;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.fb-segmented .btn:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.fb-segmented .btn:last-child  { border-radius: 0 8px 8px 0; }
+.fb-segmented .btn.is-active {
+  background: rgba(59,130,246,0.18);
+  color: #60a5fa;
+  border-color: rgba(59,130,246,0.35);
+}
+
+/* Options that belong together are one element, so wrapping cannot
+   separate them. This is the bug that shows worst at ~1100px today. */
+.fb-options {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  white-space: nowrap;
+  padding-bottom: 7px;
+}
+.fb-check {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 13px; color: var(--text); cursor: pointer;
+}
+.fb-check input { accent-color: #3b82f6; }
+
+.fb-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; min-height: 24px; }
+.fb-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 6px; font-size: 12px;
+  background: rgba(59,130,246,0.15); color: #60a5fa;
+  border: 1px solid rgba(59,130,246,0.25); cursor: pointer;
+}
+.fb-tag-x { background: none; border: none; color: inherit; cursor: pointer; line-height: 1; }
+.fb-empty { font-size: 12px; color: var(--muted); font-style: italic; }
+
+/* Actions: the primary action leads, exports collapse into one menu. */
+.fb-actions {
+  display: flex; align-items: center; gap: 8px;
+  padding-top: 14px; margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.fb-actions .fb-spacer { margin-left: auto; }
+.btn--primary {
+  background: rgba(59,130,246,0.16);
+  color: #60a5fa;
+  border-color: rgba(59,130,246,0.35);
+  font-weight: 600;
+}
+.fb-menu { position: relative; display: inline-block; }
+.fb-menu > summary { list-style: none; cursor: pointer; }
+.fb-menu > summary::-webkit-details-marker { display: none; }
+.fb-menu-panel {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 20;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow); padding: 4px; min-width: 240px;
+}
+.fb-menu-item {
+  display: block; width: 100%; text-align: left; background: none;
+  border: none; color: var(--text); font: inherit; padding: 7px 10px;
+  border-radius: 7px; cursor: pointer;
+}
+.fb-menu-item:hover { background: rgba(255,255,255,0.06); }
+.fb-menu-item[disabled] { opacity: .4; cursor: not-allowed; }
+
+/* The status line stands alone; the tip is not competing with it. */
+.fb-status { font-size: 13px; color: var(--muted); margin-top: 12px; }
+</style>
+</head>
+<body>
+
+<p class="mk-note">
+  Mockup for <code>docs/interactions-search-redesign.md</code>. Static — nothing
+  here is wired up. Uses the app's real <code>styles.css</code>, so colours,
+  buttons and inputs are the genuine ones. Resize the window to about 1100px to
+  see the behaviour that motivated this.
+</p>
+
+<div class="mk-section">
+  <div class="mk-h">Proposed — filter bar</div>
+
+  <section class="card">
+    <h1 class="h1">Historical Interaction Search</h1>
+    <hr class="hr">
+
+    <p class="page-desc">
+      Search conversation records by date range, with optional participant data
+      filters. Results are filtered by conversation <strong>start date</strong>.
+    </p>
+
+    <div class="is-info-banner">
+      &#9432; For conversations from the last 48 hours, use
+      <a href="#" class="is-link">Recent Search</a>.
+      Historical data may take up to 48 hours to appear here.
+    </div>
+
+    <!-- ── WHEN ─────────────────────────────────────────────── -->
+    <div class="fb-band">
+      <div class="fb-band-caption">When</div>
+      <div class="fb-fields">
+        <div class="fb-field">
+          <label class="fb-label">Date from</label>
+          <input type="date" class="input fb-w-sm" value="2026-08-14">
+        </div>
+        <div class="fb-field">
+          <label class="fb-label">Date to</label>
+          <input type="date" class="input fb-w-sm" value="2026-08-19">
+        </div>
+        <div class="fb-field">
+          <label class="fb-label">Quick range</label>
+          <div class="fb-segmented">
+            <button class="btn is-active">Last week</button>
+            <button class="btn">Last month</button>
+            <button class="btn">Prev 7 days</button>
+            <button class="btn">Prev 30 days</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── WHERE ────────────────────────────────────────────── -->
+    <div class="fb-band">
+      <div class="fb-band-caption">Where</div>
+      <div class="fb-fields">
+        <div class="fb-field">
+          <label class="fb-label">Queue</label>
+          <select class="input fb-w-md"><option>All queues</option></select>
+        </div>
+        <div class="fb-field">
+          <label class="fb-label">Direction</label>
+          <select class="input fb-w-sm"><option>All</option></select>
+        </div>
+        <div class="fb-field">
+          <label class="fb-label">Media type</label>
+          <select class="input fb-w-sm"><option>All</option></select>
+        </div>
+        <div class="fb-field">
+          <label class="fb-label">Division</label>
+          <select class="input fb-w-md"><option>All divisions</option></select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── WHAT ─────────────────────────────────────────────── -->
+    <div class="fb-band">
+      <div class="fb-band-caption">Participant<br>data</div>
+      <div>
+        <div class="fb-fields">
+          <div class="fb-field">
+            <label class="fb-label">Key</label>
+            <input type="text" class="input fb-w-md" placeholder="e.g. CaseNumber">
+          </div>
+          <div class="fb-field">
+            <label class="fb-label">Value</label>
+            <input type="text" class="input fb-w-md" placeholder="leave blank to match any value">
+          </div>
+          <div class="fb-field">
+            <label class="fb-label">&#8203;</label>
+            <button class="btn">Add filter</button>
+          </div>
+          <div class="fb-options">
+            <label class="fb-check"><input type="checkbox"> Exclude matches</label>
+            <label class="fb-check"><input type="checkbox"> Multi-value</label>
+          </div>
+        </div>
+
+        <div class="fb-tags">
+          <span class="fb-tag">CaseNumber = 4417 <button class="fb-tag-x">&times;</button></span>
+          <span class="fb-tag">Origin = Salesforce <button class="fb-tag-x">&times;</button></span>
+          <button class="btn btn-sm">Clear all</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ACTIONS ──────────────────────────────────────────── -->
+    <div class="fb-actions">
+      <button class="btn btn--primary">Search</button>
+      <button class="btn">Clear results</button>
+
+      <details class="fb-menu fb-spacer">
+        <summary class="btn">Export &#9662;</summary>
+        <div class="fb-menu-panel">
+          <button class="fb-menu-item">Interactions</button>
+          <button class="fb-menu-item">Selected participant data</button>
+          <button class="fb-menu-item">All participant data</button>
+        </div>
+      </details>
+    </div>
+
+    <div class="fb-status">Ready. Select a date range and click Search.</div>
+  </section>
+</div>
+
+<p class="mk-note">
+  What changed, and why each one: see §3 of the design doc. In short — the bands
+  fix grouping that currently depends on window width; the segmented control
+  removes a blank <code>&amp;nbsp;</code> label used to force alignment; the two
+  checkboxes are one element so wrapping cannot split them; two field widths give
+  the rows a grid; the exports collapse into one menu so Search reads as the
+  primary action; and the implementation-detail hint about server-side versus
+  client-side filtering is gone.
+</p>
+
+</body>
+</html>
