@@ -284,19 +284,22 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       </div>
     </div>
 
-    <!-- Action buttons -->
+    <!-- Actions. Three long export labels used to outweigh everything else here
+         and pushed Search to the far left; they are one menu now. -->
     <div class="is-actions">
-      <button class="btn" id="isSearchBtn">Search</button>
+      <button class="btn btn--primary" id="isSearchBtn">Search</button>
       <button class="btn" id="isClearBtn">Clear Results</button>
-      <div style="margin-left:auto;display:flex;gap:8px">
-        <button class="btn" id="isExportBtn" disabled>Export Interactions</button>
-        <button class="btn" id="isExportPdSelectedBtn" disabled>Export Selected Participant Data</button>
-        <button class="btn" id="isExportPdBtn" disabled>Export All Participant Data</button>
+      <div class="is-export" id="isExportMenu">
+        <button class="btn" id="isExportToggle" aria-haspopup="true" aria-expanded="false" disabled>
+          Export &#9662;
+        </button>
+        <div class="is-export-panel" id="isExportPanel" hidden>
+          <button class="is-export-item" id="isExportBtn" disabled>Interactions</button>
+          <button class="is-export-item" id="isExportPdSelectedBtn" disabled>Selected participant data</button>
+          <button class="is-export-item" id="isExportPdBtn" disabled>All participant data</button>
+        </div>
       </div>
     </div>
-
-    <!-- Hint -->
-    <div class="is-hint">Tip: Right-click a row to copy the Conversation ID to clipboard.</div>
 
     <!-- Status -->
     <div class="is-status" id="isStatus">${STATUS.ready}</div>
@@ -311,6 +314,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
 
     <!-- Results area: table + detail pane -->
     <div class="is-results-section" id="isResultsSection">
+      <div class="is-hint">Tip: Right-click a row to copy the Conversation ID to clipboard.</div>
       <div class="is-results-toggle" id="isResultsToggle" style="display:none">
         <span class="is-results-toggle-arrow" id="isResultsArrow">&#9660;</span>
         <span id="isResultsToggleLabel">Results</span>
@@ -343,6 +347,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $pdMultiVal   = el.querySelector("#isPdMultiVal");
   const $filterTags   = el.querySelector("#isFilterTags");
   const $searchBtn    = el.querySelector("#isSearchBtn");
+  const $exportMenu          = el.querySelector("#isExportMenu");
+  const $exportToggle        = el.querySelector("#isExportToggle");
+  const $exportPanel         = el.querySelector("#isExportPanel");
   const $exportBtn           = el.querySelector("#isExportBtn");
   const $exportPdSelectedBtn = el.querySelector("#isExportPdSelectedBtn");
   const $exportPdBtn         = el.querySelector("#isExportPdBtn");
@@ -491,6 +498,30 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $dateTo.value   = daysAgoStr(2);
   });
 
+  // ── Export menu ─────────────────────────────────────
+  //
+  // The three items keep their own ids, handlers and disabled state; only the
+  // presentation changed. The trigger is disabled when all three are, so the
+  // menu never opens onto nothing.
+  function setExportOpen(open) {
+    $exportPanel.hidden = !open;
+    $exportToggle.setAttribute("aria-expanded", String(open));
+  }
+  function syncExportToggle() {
+    const anyEnabled = [$exportBtn, $exportPdSelectedBtn, $exportPdBtn]
+      .some(b => !b.disabled);
+    $exportToggle.disabled = !anyEnabled;
+    if (!anyEnabled) setExportOpen(false);
+  }
+  $exportToggle.addEventListener("click", () => setExportOpen($exportPanel.hidden));
+  $exportPanel.addEventListener("click", () => setExportOpen(false));
+  document.addEventListener("click", (e) => {
+    if (!$exportMenu.contains(e.target)) setExportOpen(false);
+  });
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setExportOpen(false);
+  });
+
   // ── Status / progress helpers ───────────────────────
   const setStatus = makeStatus($status, "is-status");
   function showProgress(pct) {
@@ -627,6 +658,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $exportBtn.disabled = !rows.length;
     $exportPdSelectedBtn.disabled = !conversations.length || !pdFilters.length;
     $exportPdBtn.disabled = !conversations.length;
+    syncExportToggle();
   }
 
   // ── Detail pane ─────────────────────────────────────
@@ -774,6 +806,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $exportBtn.disabled = true;
     $exportPdSelectedBtn.disabled = true;
     $exportPdBtn.disabled = true;
+    syncExportToggle();
     $distChart.style.display = "none";
     $resultsToggle.style.display = "none";
     setResultsCollapsed(false);

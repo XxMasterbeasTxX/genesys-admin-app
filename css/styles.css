@@ -270,6 +270,10 @@ body {
 .btn--secondary:hover { opacity: 1; }
 .btn--danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
 .btn--danger:hover { background: rgba(239, 68, 68, 0.25); }
+/* The action a page is for, so the eye lands on it first. Same shape as
+   --danger, in the accent blue already used for selection and active states. */
+.btn--primary { background: rgba(59, 130, 246, 0.16); color: #60a5fa; border-color: rgba(59, 130, 246, 0.35); font-weight: 600; }
+.btn--primary:hover { background: rgba(59, 130, 246, 0.26); }
 .btn-sm { font-size: 12px; padding: 4px 8px; }
 
 /* ── Throbber ─────────────────────────────────────────────
@@ -523,6 +527,36 @@ body {
   font-style: italic;
   margin-bottom: 4px;
 }
+
+/* Export: one trigger and a panel, rather than three long buttons that
+   outweighed Search and pushed it to the far edge of the row. */
+.is-export { position: relative; margin-left: auto; }
+.is-export-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 230px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.is-export-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.is-export-item:hover:not([disabled]) { background: rgba(255,255,255,0.06); }
+.is-export-item[disabled] { opacity: 0.4; cursor: not-allowed; }
 .is-filter-tag-remove {
   background: none;
   border: none;
@@ -1653,6 +1687,8 @@ body {
   .btn:hover {
     background: rgba(0,0,0,0.08);
   }
+  .btn--primary { background: rgba(59,130,246,0.10); color: #2563eb; border-color: rgba(59,130,246,0.3); }
+  .btn--primary:hover { background: rgba(59,130,246,0.18); }
 
   /* Multi-select */
   .ms-dropdown__item:hover {
@@ -1667,6 +1703,7 @@ body {
   .is-row-selected { background: rgba(59,130,246,0.1) !important; }
   .is-filter-tag { background: rgba(59,130,246,0.1); color: #2563eb; border-color: rgba(59,130,246,0.2); }
   .is-quick .btn.is-active { background: rgba(59,130,246,0.1); color: #2563eb; border-color: rgba(59,130,246,0.3); }
+  .is-export-item:hover:not([disabled]) { background: rgba(0,0,0,0.05); }
 
   /* Move Interactions - light overrides */
   .mi-progress-wrap { background: rgba(0,0,0,0.06); }

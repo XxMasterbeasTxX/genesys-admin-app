@@ -1,6 +1,8 @@
 # Interactions › Search — filter bar redesign — Design
 
-Status: **Proposed** — awaiting go-ahead. See §6.4 for the recommendation.
+Status: **Partly built.** §3.1 (as a container split, per §6.4), §3.2, §3.3,
+§3.5, §3.6 and §3.7 are shipped. §3.4 was dropped — rendered, the fields
+already line up closely enough that a width scale was not worth the churn.
 Author: Genesys Admin App
 Last updated: 2026-08-22
 
