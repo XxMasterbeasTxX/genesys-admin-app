@@ -270,6 +270,10 @@ body {
 .btn--secondary:hover { opacity: 1; }
 .btn--danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
 .btn--danger:hover { background: rgba(239, 68, 68, 0.25); }
+/* The action a page is for, so the eye lands on it first. Same shape as
+   --danger, in the accent blue already used for selection and active states. */
+.btn--primary { background: rgba(59, 130, 246, 0.16); color: #60a5fa; border-color: rgba(59, 130, 246, 0.35); font-weight: 600; }
+.btn--primary:hover { background: rgba(59, 130, 246, 0.26); }
 .btn-sm { font-size: 12px; padding: 4px 8px; }
 
 /* ── Throbber ─────────────────────────────────────────────
@@ -436,6 +440,22 @@ body {
 .is-date {
   width: 160px;
 }
+
+/* Quick range: one segmented control rather than four loose buttons, so it
+   reads as a single choice and can show which choice is in force. */
+.is-quick { display: inline-flex; }
+.is-quick .btn {
+  border-radius: 0;
+  margin-left: -1px;          /* collapse the shared borders */
+}
+.is-quick .btn:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.is-quick .btn:last-child  { border-radius: 0 8px 8px 0; }
+.is-quick .btn.is-active {
+  background: rgba(59,130,246,0.18);
+  color: #60a5fa;
+  border-color: rgba(59,130,246,0.35);
+  z-index: 1;                 /* its border wins over the neighbours' */
+}
 .ms-dropdown__item--selected {
   background: rgba(59,130,246,0.15);
   color: #60a5fa;
@@ -453,10 +473,20 @@ body {
 .is-pd-key, .is-pd-value {
   width: 140px;
 }
+/* Still used by Interactions > Search Recent, which has its own hint. */
 .is-pd-hint {
   font-size: 11px;
   color: var(--muted);
   margin-top: 2px;
+}
+
+/* Exclude and Multi-value travel together: a wrap between two options that
+   read as a pair is the artefact this split was made to remove. */
+.is-pd-options {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
 }
 .is-pd-exclude-label {
   display: flex;
@@ -497,6 +527,36 @@ body {
   font-style: italic;
   margin-bottom: 4px;
 }
+
+/* Export: one trigger and a panel, rather than three long buttons that
+   outweighed Search and pushed it to the far edge of the row. */
+.is-export { position: relative; margin-left: auto; }
+.is-export-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 230px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.is-export-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.is-export-item:hover:not([disabled]) { background: rgba(255,255,255,0.06); }
+.is-export-item[disabled] { opacity: 0.4; cursor: not-allowed; }
 .is-filter-tag-remove {
   background: none;
   border: none;
@@ -1627,6 +1687,8 @@ body {
   .btn:hover {
     background: rgba(0,0,0,0.08);
   }
+  .btn--primary { background: rgba(59,130,246,0.10); color: #2563eb; border-color: rgba(59,130,246,0.3); }
+  .btn--primary:hover { background: rgba(59,130,246,0.18); }
 
   /* Multi-select */
   .ms-dropdown__item:hover {
@@ -1640,6 +1702,8 @@ body {
   .is-row-alt:hover { background: rgba(0,0,0,0.06); }
   .is-row-selected { background: rgba(59,130,246,0.1) !important; }
   .is-filter-tag { background: rgba(59,130,246,0.1); color: #2563eb; border-color: rgba(59,130,246,0.2); }
+  .is-quick .btn.is-active { background: rgba(59,130,246,0.1); color: #2563eb; border-color: rgba(59,130,246,0.3); }
+  .is-export-item:hover:not([disabled]) { background: rgba(0,0,0,0.05); }
 
   /* Move Interactions - light overrides */
   .mi-progress-wrap { background: rgba(0,0,0,0.06); }

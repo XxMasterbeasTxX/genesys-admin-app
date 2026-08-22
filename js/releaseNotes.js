@@ -21,6 +21,24 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.2",
+    date: "2026-08-22",
+    title: "Interaction Search: filters that find what you know is there",
+    changes: [
+      "Searching on two pieces of participant data now finds interactions that have both. Genesys routinely writes attributes onto different legs of the same conversation — one set by the flow, another by the agent — and the search insisted on finding them all on a single leg. It could not, so it found nothing, and nothing looks exactly like no such interaction exists. If you have ever been certain an interaction had both values and the search disagreed, this was why. One filter behaved correctly, which is what kept it hidden.",
+      "The expanded row had been showing those same attributes side by side all along, gathered from every participant. The page was displaying a merged view and filtering against an unmerged one.",
+      "An attribute stored with no value no longer breaks the whole search. One such attribute anywhere in the results turned the search into an error message rather than a result, and the interaction that carried it was not necessarily one you were looking for.",
+      "Recent Search’s Participant Data filters now actually filter. They used to choose which attributes an expanded row displayed, and the Value box did nothing at all: typing UD_Language = DK gave you a filter that said so and rows with SE in them. The data is not in the search results — Genesys does not return it for the last 48 hours — so the page fetches it for each result after the search and filters on it, which is slower than Historical Search and the only route to interactions this recent.",
+      "Because that costs a request per result, above 250 results it asks first, with an estimate of how long, and there is a Cancel that stops between batches. Declining or cancelling shows every result unfiltered and says so, rather than showing a partly filtered set that looks complete.",
+      "Multi-value now draws the Value Distribution chart on Recent Search too. It breaks comma-separated attributes into their individual values and counts them across the results, so a rare language pair or a stray origin is visible without opening a single row. Recent Search also has the Exclude checkbox, so both search pages work the same way.",
+      "Ticking Multi-value without a participant data filter no longer hides the results. There is no chart to draw without one, and the table folded away regardless, leaving a heading with nothing underneath it.",
+      "Recent Search’s Conversation Detail pane shows participant data. It had listed purpose, name and disconnect type only, on a page whose whole purpose is participant data.",
+      "Editing a filter after a search no longer makes the rest of the page describe a search you did not run. The value chart, the expanded rows and the participant data export all read whatever was in the form at that moment, so changing a key without pressing Search left them describing the new filter over the old results.",
+      "Exported participant data from an excluded search is now named as excluded. The file held the right thing — the values carried by the interactions you kept — under a name that read months later as the ones you had searched for.",
+      "Historical Search’s filters are laid out by question rather than in one long row: when, where, and what participant data. The row used to rearrange itself as the window changed width, so nothing on the page told you which controls belonged together — at some widths Exclude and Multi-value landed on separate lines. The quick ranges sit beside the dates they are shortcuts for and show which one is active, the three export buttons are one Export menu, and Search now looks like the button you came to press.",
+    ],
+  },
+  {
     version: "4.1",
     date: "2026-08-21",
     title: "Disconnect: filter stuck emails by who sent them",

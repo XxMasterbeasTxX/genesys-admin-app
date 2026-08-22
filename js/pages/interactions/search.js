@@ -20,6 +20,7 @@
 import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
+import { attrValue, filterByPD } from "../../lib/participantData.js";
 
 // ── Column definitions (page-specific) ──────────────────────────────
 const COLUMNS = [
@@ -91,31 +92,6 @@ function toRow(conv) {
   };
 }
 
-/**
- * Client-side participant-data filter.
- * A conversation matches if ANY participant has attributes matching
- * ALL filter key/value pairs. If a filter has no value, only the key
- * presence is checked (case-insensitive value match when value provided).
- * When exclude=true, returns conversations that do NOT match.
- */
-function filterByPD(conversations, filters, exclude = false) {
-  if (!filters.length) return conversations;
-  return conversations.filter((conv) => {
-    if (!conv.participants) return exclude ? true : false;
-    const matches = conv.participants.some((p) => {
-      const attrs = p.attributes || {};
-      return filters.every((f) => {
-        const fKeyLower = f.key.toLowerCase();
-        const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-        if (matchedKey == null) return false;
-        if (f.value === "") return true;
-        return attrs[matchedKey].toLowerCase() === f.value.toLowerCase();
-      });
-    });
-    return exclude ? !matches : matches;
-  });
-}
-
 /** Flatten conversations to selected-filter participant-data rows.
  *  If multiVal=true, CSV-valued attributes are split into individual rows.
  */
@@ -126,9 +102,8 @@ function toSelectedParticipantDataRows(convs, filters, multiVal) {
       const fKeyLower = f.key.toLowerCase();
       const values = new Set();
       for (const p of conv.participants || []) {
-        const attrs = p.attributes || {};
-        const mk = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-        if (mk != null) values.add(attrs[mk]);
+        const v = attrValue(p.attributes, fKeyLower);
+        if (v != null) values.add(v);
       }
       if (!values.size) continue;
       for (const rawVal of values) {
@@ -184,6 +159,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   // ── State ───────────────────────────────────────────
   let pdFilters = [];      // [{key, value}, ...]
   let conversations = [];  // raw API results (after filtering)
+  // The filters and mode that produced `conversations`. Not the same as
+  // pdFilters and the Exclude checkbox, which the operator can change after a
+  // search without re-running it — exporting "selected participant data" for
+  // filters that did not produce the results is a quiet mismatch of the same
+  // family as the one Disconnect had with its previewed candidate set.
+  let resultsFilters = [];
+  let resultsExclude = false;
   let rows = [];           // flattened rows for display
   let selectedIdx = -1;
   let expandedIdx = -1;
@@ -211,17 +193,15 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       Historical data may take up to 48 hours to appear here.
     </div>
 
-    <!-- Controls row -->
+    <!-- Controls: one container per group of related fields.
+         Not one wrapping row for all eight — that leaves the grouping to the
+         browser, and it changes with window width: at ~1100px the two
+         participant-data checkboxes end up on different lines. Disconnect
+         already works this way, with seven containers. -->
+
+    <!-- When. The shortcuts follow the dates they set, rather than preceding
+         them under a blank label used as a spacer. -->
     <div class="is-controls">
-      <div class="is-control-group">
-        <label class="is-label">&nbsp;</label>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-sm" id="isQuickLastWeek">Last Week</button>
-          <button class="btn btn-sm" id="isQuickLastMonth">Last Month</button>
-          <button class="btn btn-sm" id="isQuickPrev7">Previous 7 Days</button>
-          <button class="btn btn-sm" id="isQuickPrev30">Previous 30 Days</button>
-        </div>
-      </div>
       <div class="is-control-group">
         <label class="is-label">Date From</label>
         <input type="date" class="input is-date" id="isDateFrom" value="${weekAgo}">
@@ -230,6 +210,19 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <label class="is-label">Date To</label>
         <input type="date" class="input is-date" id="isDateTo" max="${twoDaysAgo}" value="${twoDaysAgo}">
       </div>
+      <div class="is-control-group">
+        <label class="is-label">Quick range</label>
+        <div class="is-quick" role="group" aria-label="Quick range">
+          <button class="btn btn-sm" id="isQuickLastWeek">Last Week</button>
+          <button class="btn btn-sm" id="isQuickLastMonth">Last Month</button>
+          <button class="btn btn-sm" id="isQuickPrev7">Previous 7 Days</button>
+          <button class="btn btn-sm" id="isQuickPrev30">Previous 30 Days</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Where -->
+    <div class="is-controls">
       <div class="is-control-group">
         <label class="is-label">Queue</label>
         <div id="isQueueDropdown"></div>
@@ -246,6 +239,10 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <label class="is-label">Division</label>
         <div id="isDivisionDropdown"></div>
       </div>
+    </div>
+
+    <!-- Participant data -->
+    <div class="is-controls">
       <div class="is-control-group is-pd-group">
         <label class="is-label">Participant Data Filter</label>
         <div class="is-pd-inputs">
@@ -253,31 +250,38 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
           <input type="text" class="input is-pd-value" id="isPdValue" placeholder="Value">
           <button class="btn btn-sm" id="isPdAdd">Add</button>
           <button class="btn btn-sm" id="isPdClear">Clear All</button>
-          <label class="is-pd-exclude-label" title="When checked, shows conversations that do NOT match the filters">
-            <input type="checkbox" id="isPdExclude"> Exclude
-          </label>
-          <label class="is-pd-exclude-label" title="When checked, attribute values are treated as comma-separated lists and displayed as pills">
-            <input type="checkbox" id="isPdMultiVal"> Multi-value
-          </label>
+          <!-- The two options are wrapped together so a line break cannot land
+               between them. Unwrapped, at ~1100px Exclude stayed on one line
+               and Multi-value dropped to the next. -->
+          <div class="is-pd-options">
+            <label class="is-pd-exclude-label" title="When checked, shows conversations that do NOT match the filters">
+              <input type="checkbox" id="isPdExclude"> Exclude
+            </label>
+            <label class="is-pd-exclude-label" title="When checked, attribute values are treated as comma-separated lists and displayed as pills">
+              <input type="checkbox" id="isPdMultiVal"> Multi-value
+            </label>
+          </div>
         </div>
-        <div class="is-pd-hint">Queue, Media, and Division filters are server-side. Participant Data is client-side.</div>
         <div class="is-filter-tags" id="isFilterTags"></div>
       </div>
     </div>
 
-    <!-- Action buttons -->
+    <!-- Actions. Three long export labels used to outweigh everything else here
+         and pushed Search to the far left; they are one menu now. -->
     <div class="is-actions">
-      <button class="btn" id="isSearchBtn">Search</button>
+      <button class="btn btn--primary" id="isSearchBtn">Search</button>
       <button class="btn" id="isClearBtn">Clear Results</button>
-      <div style="margin-left:auto;display:flex;gap:8px">
-        <button class="btn" id="isExportBtn" disabled>Export Interactions</button>
-        <button class="btn" id="isExportPdSelectedBtn" disabled>Export Selected Participant Data</button>
-        <button class="btn" id="isExportPdBtn" disabled>Export All Participant Data</button>
+      <div class="is-export" id="isExportMenu">
+        <button class="btn" id="isExportToggle" aria-haspopup="true" aria-expanded="false" disabled>
+          Export &#9662;
+        </button>
+        <div class="is-export-panel" id="isExportPanel" hidden>
+          <button class="is-export-item" id="isExportBtn" disabled>Interactions</button>
+          <button class="is-export-item" id="isExportPdSelectedBtn" disabled>Selected participant data</button>
+          <button class="is-export-item" id="isExportPdBtn" disabled>All participant data</button>
+        </div>
       </div>
     </div>
-
-    <!-- Hint -->
-    <div class="is-hint">Tip: Right-click a row to copy the Conversation ID to clipboard.</div>
 
     <!-- Status -->
     <div class="is-status" id="isStatus">${STATUS.ready}</div>
@@ -292,6 +296,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
 
     <!-- Results area: table + detail pane -->
     <div class="is-results-section" id="isResultsSection">
+      <div class="is-hint">Tip: Right-click a row to copy the Conversation ID to clipboard.</div>
       <div class="is-results-toggle" id="isResultsToggle" style="display:none">
         <span class="is-results-toggle-arrow" id="isResultsArrow">&#9660;</span>
         <span id="isResultsToggleLabel">Results</span>
@@ -324,6 +329,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   const $pdMultiVal   = el.querySelector("#isPdMultiVal");
   const $filterTags   = el.querySelector("#isFilterTags");
   const $searchBtn    = el.querySelector("#isSearchBtn");
+  const $exportMenu          = el.querySelector("#isExportMenu");
+  const $exportToggle        = el.querySelector("#isExportToggle");
+  const $exportPanel         = el.querySelector("#isExportPanel");
   const $exportBtn           = el.querySelector("#isExportBtn");
   const $exportPdSelectedBtn = el.querySelector("#isExportPdSelectedBtn");
   const $exportPdBtn         = el.querySelector("#isExportPdBtn");
@@ -442,6 +450,18 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $dateTo.value   = dateStr(lastSun);
   });
 
+  // Which shortcut produced the dates currently in the fields. Without it there
+  // is no feedback at all: pressing a shortcut changes two dates and nothing
+  // says which one is in force. Editing a date by hand clears it, because the
+  // range is then no longer the preset's.
+  const $quickBtns = [$quickLastWeek, $quickLastMonth, $quickPrev7, $quickPrev30];
+  function markQuickActive($btn) {
+    for (const b of $quickBtns) b.classList.toggle("is-active", b === $btn);
+  }
+  for (const b of $quickBtns) b.addEventListener("click", () => markQuickActive(b));
+  $dateFrom.addEventListener("input", () => markQuickActive(null));
+  $dateTo.addEventListener("input", () => markQuickActive(null));
+
   $quickLastMonth.addEventListener("click", () => {
     const now = new Date();
     const lastDay  = new Date(now.getFullYear(), now.getMonth(), 0);
@@ -458,6 +478,30 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   $quickPrev30.addEventListener("click", () => {
     $dateFrom.value = daysAgoStr(31);
     $dateTo.value   = daysAgoStr(2);
+  });
+
+  // ── Export menu ─────────────────────────────────────
+  //
+  // The three items keep their own ids, handlers and disabled state; only the
+  // presentation changed. The trigger is disabled when all three are, so the
+  // menu never opens onto nothing.
+  function setExportOpen(open) {
+    $exportPanel.hidden = !open;
+    $exportToggle.setAttribute("aria-expanded", String(open));
+  }
+  function syncExportToggle() {
+    const anyEnabled = [$exportBtn, $exportPdSelectedBtn, $exportPdBtn]
+      .some(b => !b.disabled);
+    $exportToggle.disabled = !anyEnabled;
+    if (!anyEnabled) setExportOpen(false);
+  }
+  $exportToggle.addEventListener("click", () => setExportOpen($exportPanel.hidden));
+  $exportPanel.addEventListener("click", () => setExportOpen(false));
+  document.addEventListener("click", (e) => {
+    if (!$exportMenu.contains(e.target)) setExportOpen(false);
+  });
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setExportOpen(false);
   });
 
   // ── Status / progress helpers ───────────────────────
@@ -505,15 +549,15 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       if (isExpanded) {
         const conv = r._raw;
         const sections = [];
-        if (pdFilters.length) {
-          // Show matched participant attributes for active filters
-          for (const f of pdFilters) {
+        if (resultsFilters.length) {
+          // The filters that produced these rows, not whatever is in the form
+          // now — the form can be edited without re-searching.
+          for (const f of resultsFilters) {
             const fKeyLower = f.key.toLowerCase();
             const values = new Set();
             for (const p of conv.participants || []) {
-              const attrs = p.attributes || {};
-              const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-              if (matchedKey != null) values.add(attrs[matchedKey]);
+              const v = attrValue(p.attributes, fKeyLower);
+              if (v != null) values.add(v);
             }
             if (values.size === 0) continue;
             const rawVal = [...values].join(", ");
@@ -594,8 +638,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     });
 
     $exportBtn.disabled = !rows.length;
-    $exportPdSelectedBtn.disabled = !conversations.length || !pdFilters.length;
+    $exportPdSelectedBtn.disabled = !conversations.length || !resultsFilters.length;
     $exportPdBtn.disabled = !conversations.length;
+    syncExportToggle();
   }
 
   // ── Detail pane ─────────────────────────────────────
@@ -620,7 +665,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         const attrKeys = Object.keys(attrs).sort();
         if (attrKeys.length) {
           lines.push("  Participant Data:");
-          for (const k of attrKeys) lines.push(`    ${k} = ${attrs[k]}`);
+          // `?? ""` for the same reason attrValue coerces: a null would render
+          // as the word "null", which reads as a value rather than an absence.
+          for (const k of attrKeys) lines.push(`    ${k} = ${attrs[k] ?? ""}`);
         } else {
           lines.push("  (no participant data)");
         }
@@ -644,23 +691,26 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   }
 
   // ── Value Distribution chart ───────────────────────
+  /** @returns {boolean} whether the panel is now showing. The results table
+   *  folds away only when there is a chart to fold it away for — collapsing on
+   *  the checkbox alone hid the results behind a toggle with nothing in their
+   *  place whenever Multi-value was set without a participant-data filter. */
   function renderDistChart() {
     const multiVal = $pdMultiVal.checked;
-    if (!multiVal || !pdFilters.length || !conversations.length) {
+    if (!multiVal || !resultsFilters.length || !conversations.length) {
       $distChart.style.display = "none";
-      return;
+      return false;
     }
 
     const charts = [];
-    for (const f of pdFilters) {
+    for (const f of resultsFilters) {
       const fKeyLower = f.key.toLowerCase();
       const freq = new Map();
       for (const conv of conversations) {
         for (const p of conv.participants || []) {
-          const attrs = p.attributes || {};
-          const mk = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-          if (mk == null) continue;
-          for (const val of attrs[mk].split(",").map(v => v.trim()).filter(Boolean)) {
+          const raw = attrValue(p.attributes, fKeyLower);
+          if (raw == null) continue;
+          for (const val of raw.split(",").map(v => v.trim()).filter(Boolean)) {
             freq.set(val, (freq.get(val) || 0) + 1);
           }
         }
@@ -670,7 +720,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
 
     if (!charts.length) {
       $distChart.style.display = "none";
-      return;
+      return false;
     }
 
     let html = `<div class="is-dist-header">
@@ -702,15 +752,12 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     el.querySelector("#isDistClose")?.addEventListener("click", () => {
       $distChart.style.display = "none";
     });
+    return true;
   }
 
   $pdMultiVal.addEventListener("change", () => {
-    renderDistChart();
-    if ($pdMultiVal.checked && rows.length) {
-      setResultsCollapsed(true);
-    } else {
-      setResultsCollapsed(false);
-    }
+    const shown = renderDistChart();
+    setResultsCollapsed(shown && rows.length > 0);
   });
 
   function setResultsCollapsed(collapsed) {
@@ -735,6 +782,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   // ── Clear results ───────────────────────────────────
   function clearResults() {
     conversations = [];
+    resultsFilters = [];
+    resultsExclude = false;
     rows = [];
     selectedIdx = -1;
     expandedIdx = -1;
@@ -743,6 +792,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $exportBtn.disabled = true;
     $exportPdSelectedBtn.disabled = true;
     $exportPdBtn.disabled = true;
+    syncExportToggle();
     $distChart.style.display = "none";
     $resultsToggle.style.display = "none";
     setResultsCollapsed(false);
@@ -766,14 +816,18 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   });
 
   $exportPdSelectedBtn.addEventListener("click", () => {
-    if (!conversations.length || !pdFilters.length) return;
+    if (!conversations.length || !resultsFilters.length) return;
     try {
       const multiVal = $pdMultiVal.checked;
-      const pdRows = toSelectedParticipantDataRows(conversations, pdFilters, multiVal);
+      const pdRows = toSelectedParticipantDataRows(conversations, resultsFilters, multiVal);
       if (!pdRows.length) { setStatus("No matching participant data found for active filters.", "error"); return; }
+      // In exclude mode these are the values the *kept* conversations carry for
+      // the filtered key — SE and NO, where DK was excluded. Coherent, and
+      // useful, but a file called "Selected" would read months later as the
+      // matched set. The name says which it is.
       exportXlsx(
         [{ name: "Participant Data", rows: pdRows, columns: PD_COLUMNS }],
-        timestampedFilename("ParticipantDataSelected", "xlsx"),
+        timestampedFilename(resultsExclude ? "ParticipantDataExcluded" : "ParticipantDataSelected", "xlsx"),
       );
       setStatus(STATUS.exported(pdRows.length), "success");
     } catch (err) {
@@ -833,6 +887,14 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       if (queueId)      segmentPredicates.push({ dimension: "queueId",   value: queueId });
       if (directionVal) segmentPredicates.push({ dimension: "direction", value: directionVal });
       if (mediaVal)     segmentPredicates.push({ dimension: "mediaType", value: mediaVal });
+      // Participant data is deliberately NOT pushed to the server.
+      //
+      // It was tried (b4a066e) and reverted: a property predicate on a real
+      // attribute made the server return nothing at all, where the client-side
+      // filter on the same attribute finds six. Why is unresolved — see
+      // docs/interactions-search-notes.md §1. Whatever the cause, the server was
+      // the stricter of the two and dropped rows filterByPD would have kept,
+      // which is the one outcome this must never have.
       if (segmentPredicates.length) {
         jobBody.segmentFilters = [{ type: "and", predicates: segmentPredicates }];
       }
@@ -874,8 +936,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         allConvs.push(...chunkConvs);
       }
 
-      // Client-side: keep only conversations that STARTED within the selected range
-      // (The analytics API interval matches on end time, not start time)
+      // Keep only conversations that STARTED within the selected range.
+      //
+      // Load-bearing, and not for the reason this comment used to give. The
+      // async query's interval is documented as "all conversations that had
+      // activity during the interval" — not start time, not end time — so one
+      // that began months earlier and merely saw activity in the window comes
+      // back, and the page is defined as filtering on start date.
       const rangeStart = new Date(`${dateFrom}T00:00:00.000Z`);
       const rangeEnd   = new Date(`${dateTo}T23:59:59.999Z`);
       const startFiltered = allConvs.filter((c) => {
@@ -892,11 +959,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       }
 
       conversations = filtered;
+      resultsFilters = currentFilters;
+      resultsExclude = currentExclude;
       rows = conversations.map(toRow);
       renderRows();
-      renderDistChart();
+      const chartShown = renderDistChart();
       updateResultsToggle();
-      if ($pdMultiVal.checked && rows.length) setResultsCollapsed(true);
+      setResultsCollapsed(chartShown && rows.length > 0);
       showProgress(100);
 
       // Status message
