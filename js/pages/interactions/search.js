@@ -110,23 +110,34 @@ function toRow(conv) {
  * the client would have kept. Separate entries make the server a superset, and
  * the client narrows it. The server must never be the stricter of the two.
  *
- * A filter with no value asks only that the key exists, which is what
- * `operator: "exists"` says and what `filterByPD` does with an empty value.
+ * **Only equality is expressible.** A property predicate takes no operator but
+ * the default `matches` — Genesys answers `operator: "exists"` with "invalid
+ * operator for property predicate", tested 2026-08-22. The enum on
+ * `SegmentDetailQueryPredicate` lists `matches | exists | notExists`, but that
+ * enum spans all three predicate kinds and the spec does not say which apply to
+ * which.
  *
- * Returns [] for exclude mode: the operators are `matches`, `exists` and
- * `notExists`, so "present but different" cannot be expressed. Exclude stays
- * entirely client-side.
+ * Two cases therefore send nothing and stay entirely client-side:
+ *
+ *   * **A key-only filter** — "this attribute is present, any value" needs
+ *     `exists`, which is refused.
+ *   * **Exclude mode** — "present but different" cannot be said with `matches`
+ *     alone, and `notExists` would mean "absent", which is a different question.
+ *
+ * Both then behave exactly as they did before any of this: everything is
+ * fetched and `filterByPD` does the work. Only a key *and* value filter, in
+ * include mode, is narrowed by the server.
  */
 function pdSegmentFilters(filters, exclude) {
   if (exclude) return [];
-  return filters.map((f) => ({
-    type: "and",
-    predicates: [
-      f.value === ""
-        ? { type: "property", propertyType: "string", property: f.key, operator: "exists" }
-        : { type: "property", propertyType: "string", property: f.key, value: f.value },
-    ],
-  }));
+  return filters
+    .filter((f) => f.value !== "")
+    .map((f) => ({
+      type: "and",
+      predicates: [
+        { type: "property", propertyType: "string", property: f.key, value: f.value },
+      ],
+    }));
 }
 
 /**

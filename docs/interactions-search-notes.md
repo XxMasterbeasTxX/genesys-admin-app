@@ -22,8 +22,17 @@ almost all of them locally.
 ```
 
 The page already builds `jobBody.segmentFilters` for queue, direction and media.
-Property predicates go in beside them. A key-only filter maps cleanly too:
-`operator: "exists"`, which is what `if (f.value === "") return true` does today.
+Property predicates go in beside them.
+
+**Only equality is expressible.** Tested 2026-08-22: Genesys answers
+`operator: "exists"` on a property predicate with *"invalid operator for
+property predicate"*. The enum on `SegmentDetailQueryPredicate` lists
+`matches | exists | notExists`, but that enum spans all three predicate kinds
+and the spec never says which operator applies to which. Property predicates
+take the default `matches` and nothing else.
+
+So a key-only filter — "this attribute is present, any value" — cannot be pushed
+server-side either, and joins exclude mode in staying entirely client-side.
 
 **Note the correction:** an earlier read of this said participant data could not
 be pushed server-side, on the grounds that `ConversationDetailQueryPredicate`
@@ -43,10 +52,19 @@ results". This is the shape that cost several rounds on Disconnect.
 
 ### 1.2 Exclude mode cannot go server-side
 
-Operators are `matches`, `exists`, `notExists`. There is no "does not match".
-`notExists` covers "key absent" but not "key present with a different value",
-which is what exclude means today. Exclude stays client-side, and the two paths
-have to behave identically or the mode quietly changes meaning.
+There is no "does not match". `notExists` would mean "key absent", which is a
+different question from "present with a different value" — and per the finding
+above it is not available on a property predicate anyway. Exclude stays
+client-side, and the two paths have to behave identically or the mode quietly
+changes meaning.
+
+### 1.3 What is actually narrowed, then
+
+Only a filter with **both a key and a value**, in **include mode**. Everything
+else — key-only filters, exclude mode — falls back to fetching the range and
+letting `filterByPD` do the work, exactly as before. The client pass runs on
+everything that returns either way, so nothing about what a search *finds*
+depends on any of this.
 
 ## 2. `filterByPD` requires every filter on one participant
 
