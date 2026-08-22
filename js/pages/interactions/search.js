@@ -211,7 +211,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       Historical data may take up to 48 hours to appear here.
     </div>
 
-    <!-- Controls row -->
+    <!-- Controls: one container per group of related fields.
+         Not one wrapping row for all eight — that leaves the grouping to the
+         browser, and it changes with window width: at ~1100px the two
+         participant-data checkboxes end up on different lines. Disconnect
+         already works this way, with seven containers. -->
+
+    <!-- When -->
     <div class="is-controls">
       <div class="is-control-group">
         <label class="is-label">&nbsp;</label>
@@ -230,6 +236,10 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <label class="is-label">Date To</label>
         <input type="date" class="input is-date" id="isDateTo" max="${twoDaysAgo}" value="${twoDaysAgo}">
       </div>
+    </div>
+
+    <!-- Where -->
+    <div class="is-controls">
       <div class="is-control-group">
         <label class="is-label">Queue</label>
         <div id="isQueueDropdown"></div>
@@ -246,6 +256,10 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <label class="is-label">Division</label>
         <div id="isDivisionDropdown"></div>
       </div>
+    </div>
+
+    <!-- Participant data -->
+    <div class="is-controls">
       <div class="is-control-group is-pd-group">
         <label class="is-label">Participant Data Filter</label>
         <div class="is-pd-inputs">
@@ -253,14 +267,18 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
           <input type="text" class="input is-pd-value" id="isPdValue" placeholder="Value">
           <button class="btn btn-sm" id="isPdAdd">Add</button>
           <button class="btn btn-sm" id="isPdClear">Clear All</button>
-          <label class="is-pd-exclude-label" title="When checked, shows conversations that do NOT match the filters">
-            <input type="checkbox" id="isPdExclude"> Exclude
-          </label>
-          <label class="is-pd-exclude-label" title="When checked, attribute values are treated as comma-separated lists and displayed as pills">
-            <input type="checkbox" id="isPdMultiVal"> Multi-value
-          </label>
+          <!-- The two options are wrapped together so a line break cannot land
+               between them. Unwrapped, at ~1100px Exclude stayed on one line
+               and Multi-value dropped to the next. -->
+          <div class="is-pd-options">
+            <label class="is-pd-exclude-label" title="When checked, shows conversations that do NOT match the filters">
+              <input type="checkbox" id="isPdExclude"> Exclude
+            </label>
+            <label class="is-pd-exclude-label" title="When checked, attribute values are treated as comma-separated lists and displayed as pills">
+              <input type="checkbox" id="isPdMultiVal"> Multi-value
+            </label>
+          </div>
         </div>
-        <div class="is-pd-hint">Queue, Media, and Division filters are server-side. Participant Data is client-side.</div>
         <div class="is-filter-tags" id="isFilterTags"></div>
       </div>
     </div>

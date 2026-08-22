@@ -453,10 +453,20 @@ body {
 .is-pd-key, .is-pd-value {
   width: 140px;
 }
+/* Still used by Interactions > Search Recent, which has its own hint. */
 .is-pd-hint {
   font-size: 11px;
   color: var(--muted);
   margin-top: 2px;
+}
+
+/* Exclude and Multi-value travel together: a wrap between two options that
+   read as a pair is the artefact this split was made to remove. */
+.is-pd-options {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
 }
 .is-pd-exclude-label {
   display: flex;
