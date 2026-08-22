@@ -1,83 +1,80 @@
 # Interactions › Search — findings, for discussion
 
-Status: **Notes only** — nothing built, nothing decided
+Status: **§1 resolved — negative result.** Server-side participant-data
+filtering was built, tested and reverted; see §1. The rest is still notes.
 Author: Genesys Admin App
-Last updated: 2026-08-21
+Last updated: 2026-08-22
 
 Recorded after the Disconnect work of 2026-08-21, several of whose lessons apply
 directly here. See [disconnect-email-filter-design.md](disconnect-email-filter-design.md)
 and [disconnect-empty-queue-design.md](disconnect-empty-queue-design.md).
 
-## 1. Participant data can be filtered server-side
+## 1. Participant data CANNOT be filtered server-side — tried, wrong
 
-`filterByPD` runs in the browser, after every conversation in the range has been
-fetched. The page chunks the range into **7-day async jobs**, so a six-month
-search is ~26 submit-poll-fetch cycles pulling *every* conversation, to discard
-almost all of them locally.
+This section originally claimed the opposite. It was built (`b4a066e`), tested
+against a real attribute, and reverted (`4074bff`). Recorded in full because the
+wrong answer looked well-evidenced at every step.
 
-`SegmentDetailQueryPredicate` supports a `property` predicate — participant data:
+### 1.1 What happened
+
+A `property` predicate on `segmentFilters`:
 
 ```json
-{ "type": "property", "propertyType": "string", "property": "<key>", "value": "<value>" }
+{ "type": "property", "propertyType": "string", "property": "UD_Language", "value": "DK" }
 ```
 
-The page already builds `jobBody.segmentFilters` for queue, direction and media.
-Property predicates go in beside them.
+Genesys returned **nothing at all** — "No conversations found for the selected
+date range", meaning zero *fetched*, not zero matched — where the client-side
+filter on the same attribute finds six of seven. The server was the stricter of
+the two, dropping rows `filterByPD` would have kept. That is the one outcome
+this could not have, so it came straight back out.
 
-**Only equality is expressible.** Tested 2026-08-22: Genesys answers
-`operator: "exists"` on a property predicate with *"invalid operator for
-property predicate"*. The enum on `SegmentDetailQueryPredicate` lists
-`matches | exists | notExists`, but that enum spans all three predicate kinds
-and the spec never says which operator applies to which. Property predicates
-take the default `matches` and nothing else.
+### 1.2 Why: attributes are not on a segment
 
-So a key-only filter — "this attribute is present, any value" — cannot be pushed
-server-side either, and joins exclude mode in staying entirely client-side.
+`AnalyticsParticipant.attributes` exists. `AnalyticsSession.attributes` and
+`AnalyticsConversationSegment.attributes` do **not**. And the query offers
+`conversationFilters`, `segmentFilters`, `evaluationFilters`, `surveyFilters`
+and `resolutionFilters` — **there is no participant-level filter at all**.
 
-**Note the correction:** an earlier read of this said participant data could not
-be pushed server-side, on the grounds that `ConversationDetailQueryPredicate`
-has no attribute dimension. That is true but irrelevant — it is the *segment*
-predicate that carries `property`, and `ConversationDetailQueryPredicate` does
-not even have the field. Conversation-level property predicates are not
-available; segment-level ones are.
+So participant attributes sit on the one object the query cannot filter on. A
+`property` predicate under `segmentFilters` addresses some segment property,
+whatever that is; it does not reach participant data. The whole premise of this
+section was wrong, and it explains why `search.js` has always filtered
+client-side and why the forum carries threads asking how to do this.
 
-### 1.1 They must go in separate `segmentFilters` entries
+### 1.3 Three wrong answers, and what each was based on
 
-Predicates inside one clause must be satisfied by the **same segment**; separate
-entries are ANDed across the conversation and may each be satisfied by a
-different one. `queueId` is on the ACD segment; a participant attribute is
-wherever it was set. Folding them into the existing single `and` clause would
-likely match nothing — and would fail silently, looking exactly like "no
-results". This is the shape that cost several rounds on Disconnect.
+Worth listing, because each looked sound:
 
-### 1.2 Exclude mode cannot go server-side
+1. **"It can't be done server-side"** — right conclusion, wrong reason. Argued
+   from `ConversationDetailQueryPredicate` having no attribute dimension, having
+   not noticed the `property` kind at all.
+2. **"It can, via a property predicate"** — the `property` predicate is real, and
+   the reasoning about separate `segmentFilters` entries was sound. The premise
+   that it addresses participant attributes was not, and nothing in the spec
+   says otherwise either way.
+3. **"It's case sensitivity"** — from reading `UD_LANGUAGE` off the results
+   table. But `.is-expand-key` carries `text-transform: uppercase`, so that
+   display says nothing about the stored casing. The Genesys UI shows the real
+   key is `UD_Language`, which had already been tried exactly. Casing was never
+   involved.
 
-There is no "does not match". `notExists` would mean "key absent", which is a
-different question from "present with a different value" — and per the finding
-above it is not available on a property predicate anyway. Exclude stays
-client-side, and the two paths have to behave identically or the mode quietly
-changes meaning.
+The documentation could not settle any of it (§1.4), so each step needed a live
+test, and two of the three tests only ruled something out rather than pointing
+at the answer.
 
-### 1.3 The documentation cannot be consulted on this
+### 1.4 The documentation cannot be consulted on this
 
-Checked properly on 2026-08-22, not assumed from a previous session. Every
-Genesys developer surface returns an SPA shell to any fetch —
-`developer.genesys.cloud` (docs and forum, including the `/raw/` and `.json`
-Discourse routes), and `developer.dev-genesys.cloud`. `help.genesys.cloud` does
-render, but it is the end-user Resource Center and says nothing about query
-predicates; its only relevant fact is that **participant data has a 60-day TTL,
-after which it is reachable only via export**. No public GitHub repository
-carries the developer-center content.
+Checked on 2026-08-22, not assumed. Every Genesys developer surface returns an
+SPA shell to a fetch — `developer.genesys.cloud` (docs and forum, including the
+Discourse `/raw/` and `.json` routes) and `developer.dev-genesys.cloud`.
+`help.genesys.cloud` renders, but it is the end-user Resource Center and says
+nothing about predicates; its one useful fact is that **participant data has a
+60-day TTL**, after which it is reachable only via export — relevant to a page
+offering a six-month range. No public GitHub repository carries the
+developer-center content.
 
-So the swagger and live testing are the only sources for which operator applies
-to which predicate kind, and the swagger does not say — its enum spans all three
-kinds. That is not a gap that can be closed by reading; it can only be closed by
-trying, one operator at a time.
-
-### 1.4 There is a dedicated endpoint for this question
-
-Surfaced while searching for the above, and worth recording because it is a
-different design rather than a variation on this one:
+### 1.5 The one server-side route that exists
 
 ```
 POST /api/v2/conversations/participants/attributes/search
@@ -85,26 +82,25 @@ POST /api/v2/conversations/participants/attributes/search
 
 Permission `conversation:participant:attributesview`. Takes a `query` array of
 criteria with `fields`, `value`/`values`, `type: EXACT | DATE_RANGE` and
-`operator: AND | OR | NOT`, and returns a cursor-paged response.
+`operator: AND | OR | NOT`, cursor-paged.
 
-Two caveats before anyone gets excited. Genesys's own documentation states that
-for this endpoint **only AND is supported — OR and NOT are not**, so exclude
-mode is no better served here. And `type` offers only `EXACT` or `DATE_RANGE`,
-so "key present, any value" is no more expressible than it is with a property
-predicate.
+Genesys documents that for this endpoint **only AND is supported — OR and NOT
+are not**, and `type` is `EXACT` or `DATE_RANGE`, so neither exclude mode nor
+"key present, any value" is any better served than by the client filter. Being a
+search rather than an analytics endpoint, it does not compose with the interval,
+queue, direction, media and division filters this page already sends: it would
+be a second query whose conversation ids had to be intersected with the
+analytics results.
 
-It is a search endpoint rather than an analytics one, so it would not compose
-with the interval, queue, direction, media and division filters this page
-already sends — it would be a second query whose results had to be intersected.
-Recorded as an option, not a recommendation.
+That is a different feature, not an optimisation of this one. Recorded as an
+option; not recommended without a concrete need.
 
-### 1.5 What is actually narrowed, then
+### 1.6 Where that leaves the page
 
-Only a filter with **both a key and a value**, in **include mode**. Everything
-else — key-only filters, exclude mode — falls back to fetching the range and
-letting `filterByPD` do the work, exactly as before. The client pass runs on
-everything that returns either way, so nothing about what a search *finds*
-depends on any of this.
+Exactly where it started, and the client-side filter is no longer a stopgap but
+the answer. A six-month search still fetches the range and filters in the
+browser, and the ~26 async job cycles stay. If that becomes the problem, the
+lever is the **chunk size** (§5) rather than the filtering.
 
 ## 2. `filterByPD` requires every filter on one participant
 
