@@ -115,7 +115,10 @@ worth building.
 ### 1.6 Where that leaves the page
 
 Exactly where it started, and the client-side filter is no longer a stopgap but
-the answer — it is the only thing that satisfies §1.5a. A six-month search still fetches the range and filters in the
+the answer — it is the only thing that satisfies §1.5a.
+
+If the ~26 job cycles on a long range become the complaint, see §5 before
+assuming the chunk size is the lever — it is load-bearing, for a reason. A six-month search still fetches the range and filters in the
 browser, and the ~26 async job cycles stay. If that becomes the problem, the
 lever is the **chunk size** (§5) rather than the filtering.
 
@@ -157,10 +160,24 @@ on Disconnect, and a confidently wrong comment is how that happens.
 
 ## 5. Smaller
 
-- **Chunk size is 7 days here, 31 on Disconnect**, both against the same async
-  API. The comment cites SWA proxy timeouts, but async jobs are the path without
-  a per-request timeout. If 31 is safe there, 7 here is ~4× the job cycles — and
-  server-side filtering would allow wider still.
+- **Chunk size is 7 days here, 31 on Disconnect — and that comparison was
+  wrong.** Corrected 2026-08-22. The reason is real and recorded in `c11aa90`:
+  *"Reduce analytics job result pageSize from 10000 to 2000 to stay within Azure
+  SWA 45s proxy timeout per request; split date ranges into 7-day chunks."* The
+  45-second cap applies to anything through `/api`, async job or not — it is the
+  proxy, not the API.
+
+  Disconnect gets away with 31 days because its queries are **always** filtered,
+  by `queueId` and `conversationEnd notExists`, so its result sets are small by
+  construction. Search can run unfiltered across every queue, where one week
+  alone can be tens of thousands of conversations. Same API, entirely different
+  volume risk.
+
+  Note also that `c11aa90` changed two things at once — the page size and the
+  chunking — so which of them actually fixed the timeout is not known. Widening
+  the chunks is therefore **not** a free lever: it would need testing against an
+  org with a genuinely large unfiltered week, and the honest first step would be
+  to establish which of the two mitigations is load-bearing.
 - **"Export selected participant data" in exclude mode** — the conversations kept
   are the ones that did *not* match, and the export then collects values for
   those same keys. Worth checking what it produces: possibly empty, possibly a
