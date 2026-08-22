@@ -1,6 +1,6 @@
 # Interactions › Search — filter bar redesign — Design
 
-Status: **Proposed** — awaiting go-ahead, and a decision on §6
+Status: **Proposed** — awaiting go-ahead, and a decision on §6.3
 Author: Genesys Admin App
 Last updated: 2026-08-22
 
@@ -121,22 +121,76 @@ measurements say the structure holds, not that the result is attractive.
 
 **One-page tidy, or a shared component?**
 
-`.is-controls` and `.di-controls` are the same pattern with different prefixes,
-and other pages follow suit. So this is either:
+Counted rather than assumed. Eight prefixes across roughly thirty pages:
 
-1. **Restyle Search only.** Smallest change, quickest to review, and no risk to
-   pages nobody asked about. But the next page inherits the same wrap-soup, and
-   there are now two filter idioms instead of one.
-2. **Build `fb-*` as a shared filter bar** and adopt it on Search first, then on
-   other pages as they are touched. The mockup is already written with an `fb-`
-   prefix for this reason. More work, and it means agreeing a pattern rather
-   than a page.
+| Prefix | Pages | Layout |
+|---|---|---|
+| `dt-` | 11 | **`flex-direction: column`** — stacked, no wrapping |
+| `di-` | 10 | `flex-wrap` |
+| `is-` | 3 | `flex-wrap` |
+| `cs-` | 3 | `flex-wrap` |
+| `wc-` | 2 | `flex-wrap` |
+| `mi-` | 1 | `flex-wrap` |
+| `rc-`, `rs-` | 2 | **no CSS at all** |
 
-I would suggest **2, adopted incrementally** — build it as shared, use it on
-Search, and leave every other page alone until there is a reason to touch it.
-That gets the tidy without a big-bang restyle, and without inventing a
-second idiom. But it is a call about where the app is going, not about this
-page, so it is yours.
+Five of them — `is-`, `di-`, `cs-`, `wc-`, `mi-` — are **byte-identical**:
+
+```css
+display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px;
+```
+
+Nineteen pages, one rule, copied five times under different names. The
+`-control-group` half is likewise identical across all six that have CSS.
+
+### 6.1 Two corrections to the argument above
+
+**`dt-` already solves this.** Eleven pages — the largest family — stack their
+controls in a column and never wrap, so they do not have the problem this
+document is about. The band layout in §3.1 is therefore not a new invention; it
+is close to what most of the app already does. That is a stronger argument for a
+shared component than the one first written here, and it reframes the question:
+not "invent a pattern" but "**which of the two existing patterns wins**".
+
+**`rc-` and `rs-` have no CSS whatsoever.** `roles/compare.js` (8 control
+groups) and `roles/search.js` (5) use classes that appear nowhere in
+`styles.css`, so those pages fall back to default block flow. Unrelated to this
+redesign and worth its own look.
+
+### 6.2 Where it would actually pay
+
+Density is what makes wrapping bite — two controls wrap harmlessly. The wrapping
+pages with enough controls to look disordered:
+
+| Page | Control groups |
+|---|---|
+| `interactions/disconnect.js` | 9 |
+| `interactions/search.js` | 8 |
+| `audit/search.js` | 8 |
+| `interactions/transcripts/search.js` | 7 |
+| `interactions/searchRecent.js` | 6 |
+| `admin/activityLog.js` | 6 |
+
+**Six pages, not thirty** — and three of them (`is-`) are near-identical search
+forms that would convert almost mechanically. The dense `dt-` pages
+(`dataactions/edit.js` at 16 groups, `datatables/edit.js` at 12) need nothing;
+they already stack.
+
+### 6.3 The options
+
+1. **Restyle Search only.** Smallest change, quickest to review, no risk to pages
+   nobody asked about. But it makes a *ninth* prefix, and the next dense page
+   inherits the same wrap.
+2. **Build `fb-*` as a shared filter bar**, adopt it on Search first, then on the
+   other five as they are touched. The mockup already uses the `fb-` prefix for
+   this reason.
+
+Still suggesting **2, adopted incrementally**. The counting strengthens it: the
+alternative is not "one idiom versus two" but "one idiom versus nine", and the
+band layout is closer to the app's majority pattern than to a novelty. Six
+candidate pages is a bounded amount of work, and nothing forces any of them to
+be done at once.
+
+It remains a call about where the app is going rather than about this page.
 
 ## 7. Build order
 
