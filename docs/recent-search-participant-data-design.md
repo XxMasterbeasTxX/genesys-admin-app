@@ -1,6 +1,8 @@
 # Recent Search — participant data that actually filters — Design
 
-Status: **Proposed** — awaiting go-ahead, and a decision on §7
+Status: **Building.** §7 decided: Recent gets an Exclude checkbox, so the two
+pages behave alike. The speed trade in §5 is accepted — it is the only route to
+the last 48 hours.
 Author: Genesys Admin App
 Last updated: 2026-08-22
 
@@ -119,19 +121,11 @@ in that folder, and both pages import them. `REQUEST_BATCH` moves there too, or
 somewhere similar: it is currently a constant private to `disconnect.js` that a
 second page now wants.
 
-## 7. The decision this needs
+## 7. Exclude — decided: yes
 
-**Does Recent get an Exclude checkbox?**
-
-Historical has Exclude and Multi-value; Recent has only Multi-value. Once Recent
-filters for real, Exclude becomes meaningful there — and the shared filter
-already supports it, so the cost is one checkbox and one argument.
-
-Against: it is more UI on a page that was just tidied, and nobody has asked for
-it. For: the two pages otherwise behave identically, and a filter that can only
-include is a surprise once you have used the sibling page.
-
-No recommendation — this is about what the page is for, and you use it.
+Recent gets an Exclude checkbox, so the page is familiar to anyone who has used
+Historical. The shared filter already supports it, so the cost is one checkbox
+and one argument.
 
 ## 8. Build order
 
