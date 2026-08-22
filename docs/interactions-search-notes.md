@@ -95,10 +95,27 @@ analytics results.
 That is a different feature, not an optimisation of this one. Recorded as an
 option; not recommended without a concrete need.
 
+### 1.5a The two capabilities that must survive any attempt
+
+Stated as a requirement on 2026-08-22, and it disqualifies the endpoint above:
+
+1. **The scope filters** — date range, queue, direction, media type, division —
+   applied together with the participant-data filter, in one search.
+2. **Key-only search** — "this attribute is present, whatever its value".
+
+`/conversations/participants/attributes/search` fails both: `type` is `EXACT` or
+`DATE_RANGE` so it cannot express key-only, and being a search rather than an
+analytics endpoint it does not carry the scope filters, so results would have to
+be intersected with a second query.
+
+The current client-side filter is the only approach that does both, which
+settles it: it stays, and any future attempt has to clear this bar before being
+worth building.
+
 ### 1.6 Where that leaves the page
 
 Exactly where it started, and the client-side filter is no longer a stopgap but
-the answer. A six-month search still fetches the range and filters in the
+the answer — it is the only thing that satisfies §1.5a. A six-month search still fetches the range and filters in the
 browser, and the ~26 async job cycles stay. If that becomes the problem, the
 lever is the **chunk size** (§5) rather than the filtering.
 
