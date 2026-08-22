@@ -436,6 +436,22 @@ body {
 .is-date {
   width: 160px;
 }
+
+/* Quick range: one segmented control rather than four loose buttons, so it
+   reads as a single choice and can show which choice is in force. */
+.is-quick { display: inline-flex; }
+.is-quick .btn {
+  border-radius: 0;
+  margin-left: -1px;          /* collapse the shared borders */
+}
+.is-quick .btn:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.is-quick .btn:last-child  { border-radius: 0 8px 8px 0; }
+.is-quick .btn.is-active {
+  background: rgba(59,130,246,0.18);
+  color: #60a5fa;
+  border-color: rgba(59,130,246,0.35);
+  z-index: 1;                 /* its border wins over the neighbours' */
+}
 .ms-dropdown__item--selected {
   background: rgba(59,130,246,0.15);
   color: #60a5fa;
@@ -1650,6 +1666,7 @@ body {
   .is-row-alt:hover { background: rgba(0,0,0,0.06); }
   .is-row-selected { background: rgba(59,130,246,0.1) !important; }
   .is-filter-tag { background: rgba(59,130,246,0.1); color: #2563eb; border-color: rgba(59,130,246,0.2); }
+  .is-quick .btn.is-active { background: rgba(59,130,246,0.1); color: #2563eb; border-color: rgba(59,130,246,0.3); }
 
   /* Move Interactions - light overrides */
   .mi-progress-wrap { background: rgba(0,0,0,0.06); }

@@ -217,17 +217,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
          participant-data checkboxes end up on different lines. Disconnect
          already works this way, with seven containers. -->
 
-    <!-- When -->
+    <!-- When. The shortcuts follow the dates they set, rather than preceding
+         them under a blank label used as a spacer. -->
     <div class="is-controls">
-      <div class="is-control-group">
-        <label class="is-label">&nbsp;</label>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-sm" id="isQuickLastWeek">Last Week</button>
-          <button class="btn btn-sm" id="isQuickLastMonth">Last Month</button>
-          <button class="btn btn-sm" id="isQuickPrev7">Previous 7 Days</button>
-          <button class="btn btn-sm" id="isQuickPrev30">Previous 30 Days</button>
-        </div>
-      </div>
       <div class="is-control-group">
         <label class="is-label">Date From</label>
         <input type="date" class="input is-date" id="isDateFrom" value="${weekAgo}">
@@ -235,6 +227,15 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       <div class="is-control-group">
         <label class="is-label">Date To</label>
         <input type="date" class="input is-date" id="isDateTo" max="${twoDaysAgo}" value="${twoDaysAgo}">
+      </div>
+      <div class="is-control-group">
+        <label class="is-label">Quick range</label>
+        <div class="is-quick" role="group" aria-label="Quick range">
+          <button class="btn btn-sm" id="isQuickLastWeek">Last Week</button>
+          <button class="btn btn-sm" id="isQuickLastMonth">Last Month</button>
+          <button class="btn btn-sm" id="isQuickPrev7">Previous 7 Days</button>
+          <button class="btn btn-sm" id="isQuickPrev30">Previous 30 Days</button>
+        </div>
       </div>
     </div>
 
@@ -459,6 +460,18 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     $dateFrom.value = dateStr(lastMon);
     $dateTo.value   = dateStr(lastSun);
   });
+
+  // Which shortcut produced the dates currently in the fields. Without it there
+  // is no feedback at all: pressing a shortcut changes two dates and nothing
+  // says which one is in force. Editing a date by hand clears it, because the
+  // range is then no longer the preset's.
+  const $quickBtns = [$quickLastWeek, $quickLastMonth, $quickPrev7, $quickPrev30];
+  function markQuickActive($btn) {
+    for (const b of $quickBtns) b.classList.toggle("is-active", b === $btn);
+  }
+  for (const b of $quickBtns) b.addEventListener("click", () => markQuickActive(b));
+  $dateFrom.addEventListener("input", () => markQuickActive(null));
+  $dateTo.addEventListener("input", () => markQuickActive(null));
 
   $quickLastMonth.addEventListener("click", () => {
     const now = new Date();
