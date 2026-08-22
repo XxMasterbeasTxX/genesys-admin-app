@@ -491,7 +491,14 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     }
   }
 
-  /** Show basic conversation info in the right-hand detail pane. */
+  /**
+   * Show conversation info in the right-hand detail pane.
+   *
+   * Includes participant data, in the same shape as Historical Search's pane.
+   * It was omitted here — the pane printed purpose, name and disconnect type
+   * only — although `conv` comes from `getConversation` and has carried
+   * `attributes` all along.
+   */
   function showDetailPane(conv) {
     const lines = [];
     lines.push(`Conversation ID: ${conv.id || ""}`);
@@ -504,6 +511,18 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
         if (p.purpose)        lines.push(`  Purpose: ${p.purpose}`);
         if (p.name)           lines.push(`  Name: ${p.name}`);
         if (p.disconnectType) lines.push(`  Disconnect: ${p.disconnectType}`);
+
+        const attrs = p.attributes || {};
+        const attrKeys = Object.keys(attrs).sort();
+        if (attrKeys.length) {
+          lines.push("  Participant Data:");
+          // `?? ""` for the same reason attrValue coerces: a null would render
+          // as the word "null", which reads as a value rather than an absence.
+          for (const k of attrKeys) lines.push(`    ${k} = ${attrs[k] ?? ""}`);
+        } else {
+          lines.push("  (no participant data)");
+        }
+
         lines.push("");
       });
     }

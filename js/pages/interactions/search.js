@@ -665,7 +665,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         const attrKeys = Object.keys(attrs).sort();
         if (attrKeys.length) {
           lines.push("  Participant Data:");
-          for (const k of attrKeys) lines.push(`    ${k} = ${attrs[k]}`);
+          // `?? ""` for the same reason attrValue coerces: a null would render
+          // as the word "null", which reads as a value rather than an absence.
+          for (const k of attrKeys) lines.push(`    ${k} = ${attrs[k] ?? ""}`);
         } else {
           lines.push("  (no participant data)");
         }
