@@ -92,6 +92,29 @@ function toRow(conv) {
 }
 
 /**
+ * One participant's value for an attribute, matched case-insensitively, as a
+ * string. `null` when the participant does not carry the attribute at all.
+ *
+ * The lookup was written out four times and three of those went straight on to
+ * call `.toLowerCase()` or `.split(",")` on the raw value. The spec types
+ * attributes as `additionalProperties: {type: string}`, so a `null` should not
+ * arrive — but if one ever did it would throw, and in `filterByPD` it would
+ * throw for the whole result set rather than one row, turning a search into an
+ * error. Coercing once here costs nothing and removes that whole class.
+ *
+ * A present-but-null attribute reads as an empty string: the key still counts
+ * as present, which is what a key-only filter asks about.
+ *
+ * @param {Object} attrs     A participant's `attributes` map.
+ * @param {string} keyLower  The wanted key, already lowercased.
+ * @returns {string|null}
+ */
+function attrValue(attrs, keyLower) {
+  const key = Object.keys(attrs || {}).find((k) => k.toLowerCase() === keyLower);
+  return key == null ? null : String(attrs[key] ?? "");
+}
+
+/**
  * Client-side participant-data filter.
  *
  * A conversation matches when **every filter is satisfied by some participant**
@@ -119,11 +142,10 @@ function filterByPD(conversations, filters, exclude = false) {
     const matches = filters.every((f) => {
       const fKeyLower = f.key.toLowerCase();
       return participants.some((p) => {
-        const attrs = p.attributes || {};
-        const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-        if (matchedKey == null) return false;
-        if (f.value === "") return true;
-        return attrs[matchedKey].toLowerCase() === f.value.toLowerCase();
+        const v = attrValue(p.attributes, fKeyLower);
+        if (v == null) return false;      // attribute not on this participant
+        if (f.value === "") return true;  // key-only filter: presence is enough
+        return v.toLowerCase() === f.value.toLowerCase();
       });
     });
     return exclude ? !matches : matches;
@@ -140,9 +162,8 @@ function toSelectedParticipantDataRows(convs, filters, multiVal) {
       const fKeyLower = f.key.toLowerCase();
       const values = new Set();
       for (const p of conv.participants || []) {
-        const attrs = p.attributes || {};
-        const mk = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-        if (mk != null) values.add(attrs[mk]);
+        const v = attrValue(p.attributes, fKeyLower);
+        if (v != null) values.add(v);
       }
       if (!values.size) continue;
       for (const rawVal of values) {
@@ -587,9 +608,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
             const fKeyLower = f.key.toLowerCase();
             const values = new Set();
             for (const p of conv.participants || []) {
-              const attrs = p.attributes || {};
-              const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-              if (matchedKey != null) values.add(attrs[matchedKey]);
+              const v = attrValue(p.attributes, fKeyLower);
+              if (v != null) values.add(v);
             }
             if (values.size === 0) continue;
             const rawVal = [...values].join(", ");
@@ -734,10 +754,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       const freq = new Map();
       for (const conv of conversations) {
         for (const p of conv.participants || []) {
-          const attrs = p.attributes || {};
-          const mk = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-          if (mk == null) continue;
-          for (const val of attrs[mk].split(",").map(v => v.trim()).filter(Boolean)) {
+          const raw = attrValue(p.attributes, fKeyLower);
+          if (raw == null) continue;
+          for (const val of raw.split(",").map(v => v.trim()).filter(Boolean)) {
             freq.set(val, (freq.get(val) || 0) + 1);
           }
         }

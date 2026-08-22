@@ -150,15 +150,23 @@ guard is gone. Judged the lesser problem: failing to find an interaction that
 exists happens in practice, and a slightly over-broad match on a conference does
 not.
 
-## 3. A null attribute value kills the whole search
+## 3. A null attribute value killed the whole search — fixed
 
-```js
-return attrs[matchedKey].toLowerCase() === f.value.toLowerCase();
-```
+The case-insensitive lookup was written out **four times**, and three of those
+went straight on to call `.toLowerCase()` or `.split(",")` on the raw value:
+`filterByPD`, the selected-participant-data export, and the value distribution
+chart. The expanded row was safe only by accident, because `join()` coerces.
 
-The spec types attributes as `additionalProperties: {type: string}`, so this is
-spec-safe, but a `null` in real data throws — and it throws inside the filter for
-the entire result set, not for one row.
+The spec types attributes as `additionalProperties: {type: string}`, so a `null`
+should never arrive — but if one did, `filterByPD` would throw for the **entire
+result set** rather than one row, turning a search into an error.
+
+All four now go through one `attrValue(attrs, keyLower)` helper that returns a
+string, or `null` when the participant does not carry the attribute. A
+present-but-null attribute reads as an empty string, so the key still counts as
+present, which is what a key-only filter asks about. Non-string values coerce
+too — a numeric attribute like `IVR.PRIORITY` is now filterable, where before it
+would have thrown.
 
 ## 4. A comment that is wrong in the expensive way
 
