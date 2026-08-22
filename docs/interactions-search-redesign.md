@@ -1,6 +1,6 @@
 # Interactions › Search — filter bar redesign — Design
 
-Status: **Proposed** — awaiting go-ahead, and a decision on §6.3
+Status: **Proposed** — awaiting go-ahead. See §6.4 for the recommendation.
 Author: Genesys Admin App
 Last updated: 2026-08-22
 
@@ -15,10 +15,10 @@ Findings on the same page's *behaviour* are separate:
 The page looks disordered, and it is worth being precise about why rather than
 restyling by taste.
 
-**Every control lives in one `flex-wrap` row.** `.is-controls` holds the date
-range, four scope dropdowns and the whole participant-data block in a single
-flex container, so the browser decides the grouping — and the grouping changes
-with window width:
+**Every control lives in one container.** `.is-controls` holds the date range,
+four scope dropdowns and the whole participant-data block in a single flex
+container, so the browser decides the grouping — and the grouping changes with
+window width:
 
 | Width | What happens |
 |---|---|
@@ -29,6 +29,10 @@ with window width:
 Nothing on the page says which controls belong together, because at any given
 width they do not. That is the whole of the problem; the rest below are smaller
 things visible once it is fixed.
+
+The `flex-wrap` itself is **not** the fault — other pages use the identical rule
+without trouble by splitting their controls across several containers. See
+§6.3, which is where the recommendation comes from.
 
 ## 2. Confirmed decisions
 
@@ -175,20 +179,51 @@ forms that would convert almost mechanically. The dense `dt-` pages
 (`dataactions/edit.js` at 16 groups, `datatables/edit.js` at 12) need nothing;
 they already stack.
 
-### 6.3 The options
+### 6.3 The class was never the problem — the usage was
 
-1. **Restyle Search only.** Smallest change, quickest to review, no risk to pages
-   nobody asked about. But it makes a *ninth* prefix, and the next dense page
-   inherits the same wrap.
-2. **Build `fb-*` as a shared filter bar**, adopt it on Search first, then on the
-   other five as they are touched. The mockup already uses the `fb-` prefix for
-   this reason.
+Disconnect was rendered before settling this, and it is **already tidy** despite
+being the densest wrapping page. The reason changes the recommendation:
 
-Still suggesting **2, adopted incrementally**. The counting strengthens it: the
-alternative is not "one idiom versus two" but "one idiom versus nine", and the
-band layout is closer to the app's majority pattern than to a novelty. Six
-candidate pages is a bounded amount of work, and nothing forces any of them to
-be done at once.
+| Page | Control groups | Containers |
+|---|---|---|
+| `interactions/disconnect.js` | 9 | **7** |
+| `audit/search.js` | 8 | 2 |
+| `interactions/search.js` | 8 | **1** |
+| `interactions/transcripts/search.js` | 7 | **1** |
+| `interactions/searchRecent.js` | 6 | **1** |
+| `admin/activityLog.js` | 6 | **0** |
+
+Disconnect splits its controls across **seven** `.di-controls` containers — Mode,
+the mode-specific input, Media Types, the address block, the dates, the actions.
+It already has de-facto bands; it simply does not caption them. Search puts all
+eight groups in **one** container and leaves the grouping to the browser.
+
+**Same CSS rule, opposite outcome, depending on whether a page splits its rows.**
+Which means §1's diagnosis was right about the symptom and wrong about the cause:
+`flex-wrap` is not at fault, one container holding everything is.
+
+Worth noting Disconnect landed in that shape by accident rather than judgement —
+the address block added on 2026-08-21 went in as its own container because that
+was the convenient place to put it, not because anyone chose bands.
+
+### 6.4 Recommendation
+
+**Search first, as a container split rather than a component.** Three
+containers — When, Where, Participant data — fixes the wrap-soup and the
+Exclude/Multi-value split, and needs no new prefix, no new CSS, and no decision
+about the other five pages.
+
+Then look at the refinements — band captions, the two-width scale, the segmented
+quick-ranges, the Export menu — with a working page in front of you instead of a
+mockup, and extract `fb-*` only if they prove worth generalising.
+
+This supersedes the earlier recommendation in this section, which was to build
+`fb-*` as a shared component up front. That was argued from a CSS-prefix count
+without checking how the pages actually used the class. The count was real; the
+conclusion drawn from it was not.
+
+§3's individual changes all still stand — they are just no longer bundled with
+a decision about the app's component strategy.
 
 It remains a call about where the app is going rather than about this page.
 
@@ -196,11 +231,11 @@ It remains a call about where the app is going rather than about this page.
 
 Once §6 is settled:
 
-1. **CSS for the filter bar** — `fb-band`, `fb-fields`, `fb-field`, `fb-label`,
-   width scale, `fb-segmented`, `fb-options`, `fb-tags`, `fb-actions`,
-   `fb-menu`. No markup changes yet.
-2. **Search page markup** moved onto it, band by band: When, Where, Participant
-   data. Behaviour untouched — same ids, same handlers.
+1. **Split `.is-controls` into three containers** — When, Where, Participant
+   data. Markup only; no new CSS, no new prefix. This is the fix for §1 and
+   §3.3 on its own, and is worth reviewing before anything else is added.
+2. **The refinements, judged on the split page**: band captions, the two-width
+   scale, the segmented quick-ranges. Each is optional and separable.
 3. **Actions row** — primary Search, Export menu, tip relocated.
 4. **Delete the server-side/client-side hint** (§3.7).
 5. **Check the other breakpoints** at 1600/1440/1280/1100/980, and in light mode
