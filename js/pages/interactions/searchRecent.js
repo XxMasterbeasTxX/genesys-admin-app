@@ -127,11 +127,13 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   // without re-searching, and everything describing the results must keep
   // describing the search that made them.
   let resultsFilters = [];
+  let resultsExclude = false;
   let cancelled = false;
   let rows = [];
   let selectedIdx  = -1;
   let expandedIdx  = -1;
   let realtimeCache = {};   // conversationId → realtime conv object
+  let resultsCollapsed = false;
   let pdFilters = [];       // [{key, value}] — form state; see resultsFilters
 
   let selectedPeriod = 'last48';  // 'last48' | 'today' | 'yesterday'
@@ -199,9 +201,16 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
           <input type="text" class="input is-pd-value" id="rsPdValue" placeholder="Value">
           <button class="btn btn-sm" id="rsPdAdd">Add</button>
           <button class="btn btn-sm" id="rsPdClear">Clear All</button>
-          <label class="is-pd-exclude-label" title="When checked, attribute values are treated as comma-separated lists and displayed as pills">
-            <input type="checkbox" id="rsPdMultiVal"> Multi-value
-          </label>
+          <!-- Wrapped together so a line break cannot land between them, and
+               in the same order as Historical Search. -->
+          <div class="is-pd-options">
+            <label class="is-pd-exclude-label" title="When checked, shows conversations that do NOT match the filters">
+              <input type="checkbox" id="rsPdExclude"> Exclude
+            </label>
+            <label class="is-pd-exclude-label" title="When checked, attribute values are treated as comma-separated lists and displayed as pills">
+              <input type="checkbox" id="rsPdMultiVal"> Multi-value
+            </label>
+          </div>
         </div>
         <div class="is-pd-hint">Applied after the search, by loading participant data for each result.</div>
         <div class="is-filter-tags" id="rsFilterTags"></div>
@@ -224,23 +233,31 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       <div class="is-progress-bar" id="rsProgressBar"></div>
     </div>
 
-    <!-- Outside .is-results, which is a two-column grid: a child here would be
-         placed as a grid item and push the table into the detail column. -->
-    <div class="is-hint">Tip: Right-click a row to copy the Conversation ID to clipboard.</div>
+    <!-- Value Distribution panel -->
+    <div class="is-dist-panel" id="rsDistChart" style="display:none"></div>
 
     <!-- Results area: table + detail pane -->
-    <div class="is-results">
-      <div class="is-table-wrap">
-        <table class="data-table is-table" id="rsTable">
-          <thead>
-            <tr>${COLUMNS.map((c) => `<th style="width:${c.width}">${c.label}</th>`).join("")}</tr>
-          </thead>
-          <tbody id="rsTbody"></tbody>
-        </table>
+    <div class="is-results-section">
+      <!-- Outside .is-results, which is a two-column grid: a child there would
+           be placed as a grid item and push the table into the detail column. -->
+      <div class="is-hint">Tip: Right-click a row to copy the Conversation ID to clipboard.</div>
+      <div class="is-results-toggle" id="rsResultsToggle" style="display:none">
+        <span class="is-results-toggle-arrow" id="rsResultsArrow">&#9660;</span>
+        <span id="rsResultsToggleLabel">Results</span>
       </div>
-      <div class="is-detail" id="rsDetail">
-        <div class="is-detail-title">Conversation Detail</div>
-        <pre class="is-detail-content" id="rsDetailContent">Select a row to load participant data.</pre>
+      <div class="is-results" id="rsResultsBody">
+        <div class="is-table-wrap">
+          <table class="data-table is-table" id="rsTable">
+            <thead>
+              <tr>${COLUMNS.map((c) => `<th style="width:${c.width}">${c.label}</th>`).join("")}</tr>
+            </thead>
+            <tbody id="rsTbody"></tbody>
+          </table>
+        </div>
+        <div class="is-detail" id="rsDetail">
+          <div class="is-detail-title">Conversation Detail</div>
+          <pre class="is-detail-content" id="rsDetailContent">Select a row to load participant data.</pre>
+        </div>
       </div>
     </div>
   `;
@@ -251,6 +268,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   const $pdValue       = el.querySelector("#rsPdValue");
   const $pdAdd         = el.querySelector("#rsPdAdd");
   const $pdClear       = el.querySelector("#rsPdClear");
+  const $pdExclude     = el.querySelector("#rsPdExclude");
   const $pdMultiVal    = el.querySelector("#rsPdMultiVal");
   const $filterTags    = el.querySelector("#rsFilterTags");
   const $searchBtn     = el.querySelector("#rsSearchBtn");
@@ -262,6 +280,11 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   const $progressBar   = el.querySelector("#rsProgressBar");
   const $tbody         = el.querySelector("#rsTbody");
   const $detail        = el.querySelector("#rsDetailContent");
+  const $distChart     = el.querySelector("#rsDistChart");
+  const $resultsToggle = el.querySelector("#rsResultsToggle");
+  const $resultsArrow  = el.querySelector("#rsResultsArrow");
+  const $resultsLabel  = el.querySelector("#rsResultsToggleLabel");
+  const $resultsBody   = el.querySelector("#rsResultsBody");
 
   // ── PD filter tag management ──────────────────────────
   function renderFilterTags() {
@@ -558,10 +581,126 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     $detail.textContent = lines.join("\n");
   }
 
+  // ── Value Distribution chart ──────────────────────────
+  /**
+   * The same panel Historical Search draws, and the half of Multi-value that
+   * was missing here: without it the checkbox only changed how an expanded row
+   * rendered, which is invisible unless a row happens to be expanded.
+   *
+   * Historical reads attributes straight off its results. The synchronous query
+   * this page uses does not return them, so the source is `realtimeCache` —
+   * filled by the prefetch that a participant-data filter triggers. That makes
+   * the guard below identical in effect to Historical's rather than merely
+   * copied from it: no filters means no prefetch, so there would be nothing to
+   * count even if the panel were shown.
+   *
+   * Counts are per participant, as on Historical: an attribute set on two legs
+   * of one conversation counts twice. The panel measures values seen, not
+   * conversations, which is what makes it useful for spotting a rare value.
+   *
+   * @returns {boolean} whether the panel is now showing. The results table
+   *   folds away only when there is a chart to fold it away *for* — see
+   *   `setResultsCollapsed`.
+   */
+  function renderDistChart() {
+    const multiVal = $pdMultiVal.checked;
+    if (!multiVal || !resultsFilters.length || !conversations.length) {
+      $distChart.style.display = "none";
+      return false;
+    }
+
+    const charts = [];
+    for (const f of resultsFilters) {
+      const fKeyLower = f.key.toLowerCase();
+      const freq = new Map();
+      for (const c of conversations) {
+        const cached = realtimeCache[c.conversationId];
+        if (!cached) continue;   // fetch failed; already reported in the status
+        for (const p of cached.participants || []) {
+          const raw = attrValue(p.attributes, fKeyLower);
+          if (raw == null) continue;
+          for (const val of raw.split(",").map(v => v.trim()).filter(Boolean)) {
+            freq.set(val, (freq.get(val) || 0) + 1);
+          }
+        }
+      }
+      if (freq.size) charts.push({ key: f.key, freq });
+    }
+
+    if (!charts.length) {
+      $distChart.style.display = "none";
+      return false;
+    }
+
+    let html = `<div class="is-dist-header">
+      <span class="is-dist-title">Value Distribution</span>
+      <button class="is-dist-close" id="rsDistClose">&times;</button>
+    </div>`;
+
+    for (const { key, freq } of charts) {
+      const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]);
+      const maxCount = sorted[0]?.[1] || 1;
+      const total = [...freq.values()].reduce((a, b) => a + b, 0);
+      html += `<div class="is-dist-chart">
+        <div class="is-dist-key">${escapeHtml(key)}</div>
+        <div class="is-dist-bars">`;
+      for (const [val, count] of sorted) {
+        const barPct  = Math.round((count / maxCount) * 100);
+        const ofTotal = Math.round((count / total) * 100);
+        html += `<div class="is-dist-row">
+          <div class="is-dist-val-label" title="${escapeHtml(val)}">${escapeHtml(val)}</div>
+          <div class="is-dist-bar-wrap"><div class="is-dist-bar" style="width:${barPct}%"></div></div>
+          <div class="is-dist-count">${count} <span class="is-dist-pct">${ofTotal}%</span></div>
+        </div>`;
+      }
+      html += `</div></div>`;
+    }
+
+    $distChart.innerHTML = html;
+    $distChart.style.display = "";
+    el.querySelector("#rsDistClose")?.addEventListener("click", () => {
+      $distChart.style.display = "none";
+    });
+    return true;
+  }
+
+  // ── Results collapse ──────────────────────────────────
+  // With the chart open the table is the second thing you want, so it folds
+  // away. Keyed on the chart being *shown*, not on the checkbox: Multi-value
+  // with no participant-data filter draws no chart, and collapsing there hid
+  // the results behind a toggle with nothing in their place.
+  function setResultsCollapsed(collapsed) {
+    resultsCollapsed = collapsed;
+    $resultsBody.style.display = collapsed ? "none" : "";
+    $resultsArrow.innerHTML = collapsed ? "&#9654;" : "&#9660;";
+  }
+
+  function updateResultsToggle() {
+    if (rows.length) {
+      $resultsToggle.style.display = "";
+      $resultsLabel.textContent = `Results (${rows.length})`;
+    } else {
+      $resultsToggle.style.display = "none";
+    }
+  }
+
+  $resultsToggle.addEventListener("click", () => {
+    setResultsCollapsed(!resultsCollapsed);
+  });
+
+  // Re-render the expanded row too, which Historical does not: there the toggle
+  // collapses the table, so a stale expansion is hidden anyway. Here it is not.
+  $pdMultiVal.addEventListener("change", () => {
+    const shown = renderDistChart();
+    renderRows();
+    setResultsCollapsed(shown && rows.length > 0);
+  });
+
   // ── Clear results ─────────────────────────────────────
   function clearResults() {
     conversations = [];
     resultsFilters = [];
+    resultsExclude = false;
     cancelled = false;
     rows = [];
     selectedIdx  = -1;
@@ -570,6 +709,9 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     $tbody.innerHTML = "";
     $detail.textContent = "Select a row to load participant data.";
     $exportBtn.disabled = true;
+    $distChart.style.display = "none";
+    $resultsToggle.style.display = "none";
+    setResultsCollapsed(false);
     hideProgress();
     setStatus(STATUS.ready);
   }
@@ -683,6 +825,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       resultsFilters = [];
 
       const filters = [...pdFilters];
+      const exclude = $pdExclude.checked;
       const total = conversations.length;
 
       if (filters.length && total) {
@@ -712,10 +855,15 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
             setStatus(STATUS.pdCancelled);
           } else {
             resultsFilters = filters;
+            resultsExclude = exclude;
             const cached = conversations
               .map((c) => realtimeCache[c.conversationId])
               .filter(Boolean);
-            const keep = new Set(filterByPD(cached, filters).map((c) => c.id));
+            // Built from `cached`, so a conversation whose fetch failed is
+            // absent from the set and dropped in *either* direction. A filter
+            // that could not be evaluated excludes rather than guesses; the
+            // count is reported below either way.
+            const keep = new Set(filterByPD(cached, filters, exclude).map((c) => c.id));
             conversations = conversations.filter((c) => keep.has(c.conversationId));
 
             const note = failed
@@ -734,6 +882,9 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
 
       rows = conversations.map(toRow);
       renderRows();
+      const chartShown = renderDistChart();
+      updateResultsToggle();
+      setResultsCollapsed(chartShown && rows.length > 0);
       showProgress(100);
 
       if (!filters.length || !total) {

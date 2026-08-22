@@ -691,11 +691,15 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   }
 
   // ── Value Distribution chart ───────────────────────
+  /** @returns {boolean} whether the panel is now showing. The results table
+   *  folds away only when there is a chart to fold it away for — collapsing on
+   *  the checkbox alone hid the results behind a toggle with nothing in their
+   *  place whenever Multi-value was set without a participant-data filter. */
   function renderDistChart() {
     const multiVal = $pdMultiVal.checked;
     if (!multiVal || !resultsFilters.length || !conversations.length) {
       $distChart.style.display = "none";
-      return;
+      return false;
     }
 
     const charts = [];
@@ -716,7 +720,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
 
     if (!charts.length) {
       $distChart.style.display = "none";
-      return;
+      return false;
     }
 
     let html = `<div class="is-dist-header">
@@ -748,15 +752,12 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     el.querySelector("#isDistClose")?.addEventListener("click", () => {
       $distChart.style.display = "none";
     });
+    return true;
   }
 
   $pdMultiVal.addEventListener("change", () => {
-    renderDistChart();
-    if ($pdMultiVal.checked && rows.length) {
-      setResultsCollapsed(true);
-    } else {
-      setResultsCollapsed(false);
-    }
+    const shown = renderDistChart();
+    setResultsCollapsed(shown && rows.length > 0);
   });
 
   function setResultsCollapsed(collapsed) {
@@ -962,9 +963,9 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       resultsExclude = currentExclude;
       rows = conversations.map(toRow);
       renderRows();
-      renderDistChart();
+      const chartShown = renderDistChart();
       updateResultsToggle();
-      if ($pdMultiVal.checked && rows.length) setResultsCollapsed(true);
+      setResultsCollapsed(chartShown && rows.length > 0);
       showProgress(100);
 
       // Status message

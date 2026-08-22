@@ -1,8 +1,9 @@
 # Recent Search — participant data that actually filters — Design
 
-Status: **Building.** §7 decided: Recent gets an Exclude checkbox, so the two
-pages behave alike. The speed trade in §5 is accepted — it is the only route to
-the last 48 hours.
+Status: **Built, awaiting a test on dev.** All eight build-order steps are in,
+plus §8 — the Value Distribution chart, which turned out to be the half of
+Multi-value that made the checkbox look dead. The speed trade in §5 is accepted:
+it is the only route to the last 48 hours.
 Author: Genesys Admin App
 Last updated: 2026-08-22
 
@@ -127,7 +128,83 @@ Recent gets an Exclude checkbox, so the page is familiar to anyone who has used
 Historical. The shared filter already supports it, so the cost is one checkbox
 and one argument.
 
-## 8. Build order
+Built. It sits beside Multi-value inside `.is-pd-options`, in Historical's order
+and with Historical's tooltip, and the mode that produced the results is
+captured as `resultsExclude` beside `resultsFilters` — the form can be edited
+without re-searching, and nothing describing the results may drift from the
+search that made them.
+
+One property worth stating, because it is the same in both directions: the kept
+set is built from the conversations whose participant data actually loaded, so a
+conversation whose fetch failed is dropped whether Exclude is on or off. A
+filter that could not be evaluated excludes rather than guesses. The count is
+reported in the status line either way.
+
+## 8. Multi-value looked dead — the chart was the missing half
+
+Reported after step 3 shipped: *"I see it filters, but the multi value does
+nothing."*
+
+It was doing exactly one thing here — splitting a value into pills in an
+expanded row — which is invisible unless a row happens to be expanded. On
+Historical the same checkbox does three:
+
+| Effect | Historical | Recent, before |
+|---|---|---|
+| Expanded row splits the value into pills | ✅ | ✅ — the only one |
+| "Export selected participant data" splits CSV into a row per token | ✅ | ✗ (Recent exports interaction columns only) |
+| **Value Distribution chart** | ✅ | ✗ — never built |
+
+The chart is the visible half, and the decision was to match Historical.
+
+### 8.1 What it required
+
+The panel, the collapsible `Results (n)` toggle beside it, and the `Multi-value`
+change handler that redraws both without re-searching. The rendering is
+Historical's, unchanged.
+
+**One thing could not be copied.** Historical reads attributes straight off its
+results; the synchronous query this page uses does not return them. The source
+here is `realtimeCache`, filled by the prefetch in §4. That makes the guard
+`!multiVal || !resultsFilters.length || !conversations.length` identical *in
+effect* rather than merely copied: no filters means no prefetch, so there would
+be nothing to count even if the panel were shown.
+
+Counts are per participant, as on Historical — an attribute set on two legs of
+one conversation counts twice. The panel measures values seen, not
+conversations, which is what makes it useful for spotting a rare value.
+
+### 8.2 A defect the port surfaced, fixed in both pages
+
+The collapse was keyed on the checkbox: `if ($pdMultiVal.checked && rows.length)
+setResultsCollapsed(true)`. With Multi-value ticked and **no** participant-data
+filter there is no chart, so the results folded away behind a toggle with
+nothing in their place.
+
+Historical has always done this. It bites harder here, because searching without
+a participant-data filter is Recent's ordinary case, and Recent has no reason to
+inherit the fault just because it inherited the feature. `renderDistChart` now
+returns whether it drew anything and the collapse follows that, on both pages.
+
+The visible change to Historical: with Multi-value ticked and no filter, the
+results table stays open instead of collapsing to nothing. No result, count or
+filter behaviour moves.
+
+### 8.3 What was not done
+
+**Multi-value still does not affect matching, on either page.** `filterByPD`
+compares the whole stored string, so `languagepairs = en-US:de` does not match a
+conversation storing `en-US:en,en-US:de` — checkbox or not. Proposed as an
+alternative reading of "multi-value working on top of the filter" and not taken:
+the chart was what was actually wanted. Recorded because the tooltip says values
+are *"treated as comma-separated lists"*, which is true of the display and not
+of the filter sitting beside it, and someone will notice that again.
+
+**Recent still has no participant-data export.** Its Export Excel writes the
+interaction columns only, so the second Historical effect above has nothing to
+attach to. Separate feature.
+
+## 9. Build order
 
 1. **Extract the shared helpers** to `js/lib/participantData.js`, with
    `search.js` importing them. No behaviour change; the existing tests of that
@@ -138,9 +215,14 @@ and one argument.
    testable on a narrow search where the count is small.
 4. **The confirmation** (§5), once the timings above have been seen against real
    data rather than estimated.
-5. **Exclude**, if §7 says so.
+5. **Exclude**, if §7 says so. ✅
 6. **The hint text** — *"PD filters apply when clicking a row, not during
-   search"* — becomes false at step 3 and must change with it, not after.
+   search"* — becomes false at step 3 and must change with it, not after. ✅
+7. **The Value Distribution chart** (§8), added after step 3 shipped and
+   Multi-value was reported as doing nothing. ✅
+8. **The collapse defect** (§8.2), in both pages. ✅
 
 Step 6 is called out because it is the kind of thing that gets left behind: the
 page would otherwise ship telling the operator the opposite of what it does.
+
+Steps 1–4 shipped as `64a7ec1`, `e6f6022` and `dbd2c24`; steps 5–8 together.
