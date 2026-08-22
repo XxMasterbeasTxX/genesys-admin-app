@@ -93,19 +93,33 @@ function toRow(conv) {
 
 /**
  * Client-side participant-data filter.
- * A conversation matches if ANY participant has attributes matching
- * ALL filter key/value pairs. If a filter has no value, only the key
- * presence is checked (case-insensitive value match when value provided).
- * When exclude=true, returns conversations that do NOT match.
+ *
+ * A conversation matches when **every filter is satisfied by some participant**
+ * — not necessarily the same one. Keys and values are matched
+ * case-insensitively; a filter with no value asks only that the key is present.
+ * With `exclude`, the conversations that do *not* match are returned.
+ *
+ * This used to require one participant to satisfy *all* the filters, which made
+ * a second filter silently unfindable whenever Genesys had set the two
+ * attributes on different legs — a real and recurring "I know this interaction
+ * has both" failure. The row would even show both attributes, because the
+ * expanded view merges them across participants: the page displayed a merged
+ * view and filtered against an unmerged one.
+ *
+ * What that strictness bought was a guard on transferred and conferenced
+ * interactions, where two external participants may be different people, so
+ * `CPR` from one would no longer combine with `UD_Language` from another.
+ * Deliberately given up: not finding an interaction that exists is the worse
+ * failure, and it is the one that happens in practice.
  */
 function filterByPD(conversations, filters, exclude = false) {
   if (!filters.length) return conversations;
   return conversations.filter((conv) => {
-    if (!conv.participants) return exclude ? true : false;
-    const matches = conv.participants.some((p) => {
-      const attrs = p.attributes || {};
-      return filters.every((f) => {
-        const fKeyLower = f.key.toLowerCase();
+    const participants = conv.participants || [];
+    const matches = filters.every((f) => {
+      const fKeyLower = f.key.toLowerCase();
+      return participants.some((p) => {
+        const attrs = p.attributes || {};
         const matchedKey = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
         if (matchedKey == null) return false;
         if (f.value === "") return true;

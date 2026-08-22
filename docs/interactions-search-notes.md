@@ -122,16 +122,33 @@ assuming the chunk size is the lever — it is load-bearing, for a reason. A six
 browser, and the ~26 async job cycles stay. If that becomes the problem, the
 lever is the **chunk size** (§5) rather than the filtering.
 
-## 2. `filterByPD` requires every filter on one participant
+## 2. `filterByPD` required every filter on one participant — fixed
+
+The loops were the wrong way round:
 
 ```js
-conv.participants.some((p) => filters.every((f) => …))
+conv.participants.some((p) => filters.every((f) => …))   // was
+filters.every((f) => participants.some((p) => …))         // now
 ```
 
-Deliberate — the docstring says so — but sharp: attributes are commonly split
-across legs, so filtering on a flow-set attribute *and* an agent-set attribute
-can never match. Also likely to differ from server-side behaviour, which is a
-reason to keep the client pass authoritative rather than assume parity.
+With one filter the two are identical, so this only bit when a second was
+added — and then silently. Attributes are routinely split across legs, so a
+flow-set attribute plus an agent-set one could never match, and the result was
+indistinguishable from "nothing found". Reported as a recurring "I know this
+interaction has both" failure, which is what settled it.
+
+The clinching argument was that the page **displays** attributes merged across
+participants — `attrMap` in the expanded row gathers every participant's
+attributes into one set — so the row could show both attributes while the filter
+insisted the conversation did not have them. A merged view filtered against an
+unmerged one.
+
+**What was given up.** On transferred or conferenced interactions there can be
+several external participants who are genuinely different people, and the strict
+form stopped `CPR` from one combining with `UD_Language` from another. That
+guard is gone. Judged the lesser problem: failing to find an interaction that
+exists happens in practice, and a slightly over-broad match on a conference does
+not.
 
 ## 3. A null attribute value kills the whole search
 
