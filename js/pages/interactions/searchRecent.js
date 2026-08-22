@@ -21,9 +21,10 @@
  *   POST /api/v2/analytics/conversations/details/query  — synchronous search
  *   GET  /api/v2/conversations/{id}                     — real-time participant data
  */
-import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
+import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus, sleep } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
+import { attrValue, filterByPD } from "../../lib/participantData.js";
 
 // ── Column definitions ───────────────────────────────────────────────
 const COLUMNS = [
@@ -38,9 +39,29 @@ const COLUMNS = [
 ];
 
 // ── Status messages ──────────────────────────────────────────────────
+/**
+ * Concurrent participant-data fetches. The same figure Disconnect paces at;
+ * kept local because it is a pacing choice per page, not shared logic.
+ */
+const REQUEST_BATCH = 10;
+
+/**
+ * Above this many results, ask before loading participant data.
+ *
+ * The cost is one API call per result, so it scales with the search. 250 is
+ * about five seconds' work and a search narrowed by queue or media is usually
+ * well under it, so the question rarely gets asked.
+ */
+const PD_CONFIRM_OVER = 250;
+
 const STATUS = {
   ready:     "Ready. Select a period and click Search.",
   found:     (n) => `Found ${n} conversation${n !== 1 ? "s" : ""}. Click a row to load participant data.`,
+  loadingPd: (done, total) => `Loading participant data… ${done} of ${total}`,
+  foundFiltered: (n, total) => `Found ${n} of ${total} conversation${total !== 1 ? "s" : ""} matching filters.`,
+  noFilterMatch: (total) => `${total} conversations loaded, but none matched the filters.`,
+  pdSkipped: (n) => `Found ${n} conversation${n !== 1 ? "s" : ""}. Participant data not loaded, so the filters were not applied.`,
+  pdCancelled: "Cancelled. Participant data was only partly loaded, so the filters were not applied.",
   noResults: "No conversations found for the selected date range.",
   exported:  (n) => `Exported ${n} rows to Excel.`,
   error:     (msg) => `Error: ${msg}`,
@@ -102,11 +123,16 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
 
   // ── State ────────────────────────────────────────────
   let conversations = [];
+  // The filters that produced the current results. The form can be edited
+  // without re-searching, and everything describing the results must keep
+  // describing the search that made them.
+  let resultsFilters = [];
+  let cancelled = false;
   let rows = [];
   let selectedIdx  = -1;
   let expandedIdx  = -1;
   let realtimeCache = {};   // conversationId → realtime conv object
-  let pdFilters = [];       // [{key, value}] — applied when a row is clicked
+  let pdFilters = [];       // [{key, value}] — form state; see resultsFilters
 
   let selectedPeriod = 'last48';  // 'last48' | 'today' | 'yesterday'
 
@@ -123,7 +149,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     <div class="is-info-banner">
       &#9432; For conversations older than ~48 hours use
       <a href="#/interactions/search/participant-data/historical" class="is-link">Historical Search</a>.
-      Participant Data filters apply when clicking a row, not during search.
+      Participant Data filters are applied after the search, by loading participant data for every result.
     </div>
 
     <!-- Controls: one container per group of related fields, not one wrapping
@@ -177,7 +203,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
             <input type="checkbox" id="rsPdMultiVal"> Multi-value
           </label>
         </div>
-        <div class="is-pd-hint">PD filters apply when clicking a row — not during search.</div>
+        <div class="is-pd-hint">Applied after the search, by loading participant data for each result.</div>
         <div class="is-filter-tags" id="rsFilterTags"></div>
       </div>
     </div>
@@ -186,6 +212,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     <div class="is-actions">
       <button class="btn btn--primary" id="rsSearchBtn">Search</button>
       <button class="btn" id="rsClearBtn">Clear Results</button>
+      <button class="btn" id="rsCancelBtn" style="display:none">Cancel</button>
       <div style="margin-left:auto;display:flex;gap:8px">
         <button class="btn" id="rsExportBtn" disabled>Export Excel</button>
       </div>
@@ -228,6 +255,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   const $filterTags    = el.querySelector("#rsFilterTags");
   const $searchBtn     = el.querySelector("#rsSearchBtn");
   const $exportBtn     = el.querySelector("#rsExportBtn");
+  const $cancelBtn    = el.querySelector("#rsCancelBtn");
   const $clearBtn      = el.querySelector("#rsClearBtn");
   const $status        = el.querySelector("#rsStatus");
   const $progressWrap  = el.querySelector("#rsProgressWrap");
@@ -370,16 +398,17 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
               <div class="is-expand-panel"><span style="opacity:0.5;font-size:12px"><span class="spin spin--sm" aria-hidden="true"></span> Loading…</span></div>
             </td></tr>`;
         } else {
-          const filters = [...pdFilters];
+          // The filters that produced these rows, not whatever is in the form
+          // now: the form can be edited without re-searching.
+          const filters = resultsFilters;
           const sections = [];
           if (filters.length) {
             for (const f of filters) {
               const fKeyLower = f.key.toLowerCase();
               const values = new Set();
               for (const p of cached.participants || []) {
-                const attrs = p.attributes || {};
-                const mk = Object.keys(attrs).find(k => k.toLowerCase() === fKeyLower);
-                if (mk != null) values.add(attrs[mk]);
+                const v = attrValue(p.attributes, fKeyLower);
+                if (v != null) values.add(v);
               }
               const rawVal = values.size ? [...values].join(", ") : null;
               let valsHtml;
@@ -532,6 +561,8 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   // ── Clear results ─────────────────────────────────────
   function clearResults() {
     conversations = [];
+    resultsFilters = [];
+    cancelled = false;
     rows = [];
     selectedIdx  = -1;
     expandedIdx  = -1;
@@ -557,6 +588,52 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       setStatus(STATUS.error(err.message), "error");
     }
   });
+
+  /**
+   * Load participant data for every result, ten at a time.
+   *
+   * The synchronous analytics query this page uses returns
+   * `AnalyticsConversationWithoutAttributes` — participant data is simply not
+   * in the results — so filtering on it means fetching each conversation. The
+   * async job path would carry attributes for free, but ingestion lag on the
+   * last 48 hours is the entire reason this page exists.
+   *
+   * Everything lands in `realtimeCache`, which the row expansion and the detail
+   * pane already read, so both become instant afterwards.
+   *
+   * A conversation whose fetch fails is left out of the cache. It then matches
+   * nothing and is dropped from the results, in either filter direction — the
+   * same rule Disconnect uses: a filter that cannot be evaluated excludes rather
+   * than guesses. The count is reported so it is never silent.
+   *
+   * @returns {Promise<{loaded: number, failed: number}>}
+   */
+  async function loadParticipantData(convs) {
+    const orgId = orgContext.get();
+    let loaded = 0;
+    let failed = 0;
+
+    for (let i = 0; i < convs.length && !cancelled; i += REQUEST_BATCH) {
+      const chunk = convs.slice(i, i + REQUEST_BATCH);
+      setStatus(STATUS.loadingPd(i, convs.length));
+      showProgress((i / convs.length) * 100);
+
+      await Promise.all(chunk.map(async (c) => {
+        const id = c.conversationId;
+        if (realtimeCache[id]) { loaded++; return; }
+        try {
+          realtimeCache[id] = await gc.getConversation(api, orgId, id);
+          loaded++;
+        } catch (err) {
+          failed++;
+          console.warn(`Could not load participant data for ${id}:`, err.message);
+        }
+      }));
+
+      if (i + REQUEST_BATCH < convs.length) await sleep(50);
+    }
+    return { loaded, failed };
+  }
 
   // ── Search ────────────────────────────────────────────
   $searchBtn.addEventListener("click", async () => {
@@ -603,23 +680,77 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       });
 
       conversations = allConvs;
+      resultsFilters = [];
+
+      const filters = [...pdFilters];
+      const total = conversations.length;
+
+      if (filters.length && total) {
+        // The cost is one call per result, so say so before spending it rather
+        // than during. Roughly a quarter-second per batch of ten.
+        const estimate = Math.max(1, Math.round(total / REQUEST_BATCH * 0.25));
+        const proceed = total <= PD_CONFIRM_OVER || confirm(
+          `${total.toLocaleString()} interactions matched your search.
+
+`
+          + `Participant data is not part of the search results, so applying the `
+          + `filters means loading it for each one — about ${estimate} seconds.
+
+`
+          + "Continue?");
+
+        if (proceed) {
+          cancelled = false;
+          $cancelBtn.style.display = "";
+          const { failed } = await loadParticipantData(conversations);
+          $cancelBtn.style.display = "none";
+
+          if (cancelled) {
+            // A partial load would filter against data that is only partly
+            // there, quietly dropping whatever had not arrived. Show everything
+            // instead and say the filters did not run.
+            setStatus(STATUS.pdCancelled);
+          } else {
+            resultsFilters = filters;
+            const cached = conversations
+              .map((c) => realtimeCache[c.conversationId])
+              .filter(Boolean);
+            const keep = new Set(filterByPD(cached, filters).map((c) => c.id));
+            conversations = conversations.filter((c) => keep.has(c.conversationId));
+
+            const note = failed
+              ? ` ${failed} could not be loaded and ${failed === 1 ? "was" : "were"} left out.`
+              : "";
+            setStatus(
+              conversations.length
+                ? STATUS.foundFiltered(conversations.length, total) + note
+                : STATUS.noFilterMatch(total) + note,
+              conversations.length ? "success" : "");
+          }
+        } else {
+          setStatus(STATUS.pdSkipped(total));
+        }
+      }
+
       rows = conversations.map(toRow);
       renderRows();
       showProgress(100);
 
-      if (rows.length > 0) {
-        setStatus(STATUS.found(rows.length), "success");
-      } else {
-        setStatus(STATUS.noResults);
+      if (!filters.length || !total) {
+        setStatus(rows.length ? STATUS.found(rows.length) : STATUS.noResults,
+                  rows.length ? "success" : "");
       }
     } catch (err) {
       setStatus(STATUS.error(err.message || String(err)), "error");
       console.error("Recent search error:", err);
     } finally {
       $searchBtn.disabled = false;
+      $cancelBtn.style.display = "none";
       setTimeout(hideProgress, 800);
     }
   });
+
+  $cancelBtn.addEventListener("click", () => { cancelled = true; });
 
   // ── Load queues + divisions on mount ──────────────────
   (async () => {
