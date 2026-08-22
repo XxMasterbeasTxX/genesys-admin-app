@@ -58,7 +58,47 @@ above it is not available on a property predicate anyway. Exclude stays
 client-side, and the two paths have to behave identically or the mode quietly
 changes meaning.
 
-### 1.3 What is actually narrowed, then
+### 1.3 The documentation cannot be consulted on this
+
+Checked properly on 2026-08-22, not assumed from a previous session. Every
+Genesys developer surface returns an SPA shell to any fetch —
+`developer.genesys.cloud` (docs and forum, including the `/raw/` and `.json`
+Discourse routes), and `developer.dev-genesys.cloud`. `help.genesys.cloud` does
+render, but it is the end-user Resource Center and says nothing about query
+predicates; its only relevant fact is that **participant data has a 60-day TTL,
+after which it is reachable only via export**. No public GitHub repository
+carries the developer-center content.
+
+So the swagger and live testing are the only sources for which operator applies
+to which predicate kind, and the swagger does not say — its enum spans all three
+kinds. That is not a gap that can be closed by reading; it can only be closed by
+trying, one operator at a time.
+
+### 1.4 There is a dedicated endpoint for this question
+
+Surfaced while searching for the above, and worth recording because it is a
+different design rather than a variation on this one:
+
+```
+POST /api/v2/conversations/participants/attributes/search
+```
+
+Permission `conversation:participant:attributesview`. Takes a `query` array of
+criteria with `fields`, `value`/`values`, `type: EXACT | DATE_RANGE` and
+`operator: AND | OR | NOT`, and returns a cursor-paged response.
+
+Two caveats before anyone gets excited. Genesys's own documentation states that
+for this endpoint **only AND is supported — OR and NOT are not**, so exclude
+mode is no better served here. And `type` offers only `EXACT` or `DATE_RANGE`,
+so "key present, any value" is no more expressible than it is with a property
+predicate.
+
+It is a search endpoint rather than an analytics one, so it would not compose
+with the interval, queue, direction, media and division filters this page
+already sends — it would be a second query whose results had to be intersected.
+Recorded as an option, not a recommendation.
+
+### 1.5 What is actually narrowed, then
 
 Only a filter with **both a key and a value**, in **include mode**. Everything
 else — key-only filters, exclude mode — falls back to fetching the range and
