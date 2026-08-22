@@ -164,11 +164,12 @@ result set** rather than one row, turning a search into an error.
 All four now go through one `attrValue(attrs, keyLower)` helper that returns a
 string, or `null` when the participant does not carry the attribute. A
 present-but-null attribute reads as an empty string, so the key still counts as
-present, which is what a key-only filter asks about. Non-string values coerce
-too — a numeric attribute like `IVR.PRIORITY` is now filterable, where before it
-would have thrown.
+present, which is what a key-only filter asks about. Non-string values coerce too, though that is pure
+defence rather than a new capability: participant data in Genesys is always
+strings, which the spec agrees with, so `IVR.PRIORITY` is `"50"` and never `50`.
+An earlier version of this note claimed otherwise.
 
-## 4. A comment that is wrong in the expensive way
+## 4. A comment that was wrong in the expensive way — fixed
 
 ```js
 // (The analytics API interval matches on end time, not start time)
@@ -177,11 +178,13 @@ would have thrown.
 `AsyncConversationQuery.interval`: *"Results will include all conversations that
 had **activity** during the interval."* Not end time, not start time.
 
-The code is right — the client-side re-filter on `conversationStart` is
-load-bearing, since a conversation that started months earlier but had activity
-in the window really is returned. Only the stated reason is wrong. Recorded
-because `getQueueWaitInfo`'s non-existent `"wait"` segment type cost four rounds
-on Disconnect, and a confidently wrong comment is how that happens.
+The code was right — the client-side re-filter on `conversationStart` is
+load-bearing, since a conversation that began months earlier and merely saw
+activity in the window really is returned, and this page is defined as filtering
+on start date. Only the stated reason was wrong. Rewritten to say what is
+actually true, because `getQueueWaitInfo`'s non-existent `"wait"` segment type
+cost four rounds on Disconnect and a confidently wrong comment is how that
+happens.
 
 ## 5. Smaller
 
@@ -203,10 +206,23 @@ on Disconnect, and a confidently wrong comment is how that happens.
   the chunks is therefore **not** a free lever: it would need testing against an
   org with a genuinely large unfiltered week, and the honest first step would be
   to establish which of the two mitigations is load-bearing.
-- **"Export selected participant data" in exclude mode** — the conversations kept
-  are the ones that did *not* match, and the export then collects values for
-  those same keys. Worth checking what it produces: possibly empty, possibly a
-  list of non-matching values presented as if selected.
+- **"Export selected participant data" in exclude mode** — checked, and the
+  behaviour is sound. With `UD_Language = DK` excluded it exports, for each kept
+  conversation, the value it actually carries for that key: `SE`, `NO`, and
+  nothing at all for conversations lacking the key. That is coherent and useful.
+  The only problem was the artefact: a file named `ParticipantDataSelected` reads
+  months later as the matched set. It is now named `ParticipantDataExcluded` when
+  the search excluded.
+
+  Checking it turned up something larger. The export, the row expansion, the
+  distribution chart and the export-enable rule all read `pdFilters` **live**,
+  so editing the form after a search without re-running it made them describe
+  filters that did not produce the results — the same shape of bug as
+  Disconnect's previewed candidate set surviving a filter change. The chart even
+  re-renders on the Multi-value toggle, so it could go stale on screen. The
+  filters and mode that produced the current results are now captured as
+  `resultsFilters` / `resultsExclude`, and everything describing the results
+  reads those. `pdFilters` is now form state only.
 
 ## 6. How to approach it, if it is taken on
 

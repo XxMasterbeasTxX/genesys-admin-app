@@ -219,6 +219,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   // ── State ───────────────────────────────────────────
   let pdFilters = [];      // [{key, value}, ...]
   let conversations = [];  // raw API results (after filtering)
+  // The filters and mode that produced `conversations`. Not the same as
+  // pdFilters and the Exclude checkbox, which the operator can change after a
+  // search without re-running it — exporting "selected participant data" for
+  // filters that did not produce the results is a quiet mismatch of the same
+  // family as the one Disconnect had with its previewed candidate set.
+  let resultsFilters = [];
+  let resultsExclude = false;
   let rows = [];           // flattened rows for display
   let selectedIdx = -1;
   let expandedIdx = -1;
@@ -602,9 +609,10 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       if (isExpanded) {
         const conv = r._raw;
         const sections = [];
-        if (pdFilters.length) {
-          // Show matched participant attributes for active filters
-          for (const f of pdFilters) {
+        if (resultsFilters.length) {
+          // The filters that produced these rows, not whatever is in the form
+          // now — the form can be edited without re-searching.
+          for (const f of resultsFilters) {
             const fKeyLower = f.key.toLowerCase();
             const values = new Set();
             for (const p of conv.participants || []) {
@@ -690,7 +698,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     });
 
     $exportBtn.disabled = !rows.length;
-    $exportPdSelectedBtn.disabled = !conversations.length || !pdFilters.length;
+    $exportPdSelectedBtn.disabled = !conversations.length || !resultsFilters.length;
     $exportPdBtn.disabled = !conversations.length;
     syncExportToggle();
   }
@@ -743,13 +751,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   // ── Value Distribution chart ───────────────────────
   function renderDistChart() {
     const multiVal = $pdMultiVal.checked;
-    if (!multiVal || !pdFilters.length || !conversations.length) {
+    if (!multiVal || !resultsFilters.length || !conversations.length) {
       $distChart.style.display = "none";
       return;
     }
 
     const charts = [];
-    for (const f of pdFilters) {
+    for (const f of resultsFilters) {
       const fKeyLower = f.key.toLowerCase();
       const freq = new Map();
       for (const conv of conversations) {
@@ -831,6 +839,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   // ── Clear results ───────────────────────────────────
   function clearResults() {
     conversations = [];
+    resultsFilters = [];
+    resultsExclude = false;
     rows = [];
     selectedIdx = -1;
     expandedIdx = -1;
@@ -863,14 +873,18 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   });
 
   $exportPdSelectedBtn.addEventListener("click", () => {
-    if (!conversations.length || !pdFilters.length) return;
+    if (!conversations.length || !resultsFilters.length) return;
     try {
       const multiVal = $pdMultiVal.checked;
-      const pdRows = toSelectedParticipantDataRows(conversations, pdFilters, multiVal);
+      const pdRows = toSelectedParticipantDataRows(conversations, resultsFilters, multiVal);
       if (!pdRows.length) { setStatus("No matching participant data found for active filters.", "error"); return; }
+      // In exclude mode these are the values the *kept* conversations carry for
+      // the filtered key — SE and NO, where DK was excluded. Coherent, and
+      // useful, but a file called "Selected" would read months later as the
+      // matched set. The name says which it is.
       exportXlsx(
         [{ name: "Participant Data", rows: pdRows, columns: PD_COLUMNS }],
-        timestampedFilename("ParticipantDataSelected", "xlsx"),
+        timestampedFilename(resultsExclude ? "ParticipantDataExcluded" : "ParticipantDataSelected", "xlsx"),
       );
       setStatus(STATUS.exported(pdRows.length), "success");
     } catch (err) {
@@ -979,8 +993,13 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         allConvs.push(...chunkConvs);
       }
 
-      // Client-side: keep only conversations that STARTED within the selected range
-      // (The analytics API interval matches on end time, not start time)
+      // Keep only conversations that STARTED within the selected range.
+      //
+      // Load-bearing, and not for the reason this comment used to give. The
+      // async query's interval is documented as "all conversations that had
+      // activity during the interval" — not start time, not end time — so one
+      // that began months earlier and merely saw activity in the window comes
+      // back, and the page is defined as filtering on start date.
       const rangeStart = new Date(`${dateFrom}T00:00:00.000Z`);
       const rangeEnd   = new Date(`${dateTo}T23:59:59.999Z`);
       const startFiltered = allConvs.filter((c) => {
@@ -997,6 +1016,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       }
 
       conversations = filtered;
+      resultsFilters = currentFilters;
+      resultsExclude = currentExclude;
       rows = conversations.map(toRow);
       renderRows();
       renderDistChart();
