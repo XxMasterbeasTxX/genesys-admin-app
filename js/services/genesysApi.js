@@ -688,18 +688,6 @@ export async function deleteDirectRoutingBackup(api, orgId, userId) {
 }
 
 /**
- * Fetch all DID pools.
- *
- * Each pool is a *range* — `startPhoneNumber` to `endPhoneNumber`, both E.164 —
- * so membership is a numeric comparison against a handful of pools rather than
- * a lookup per number. Requires `telephony:plugin:all`; callers must treat a
- * failure as "could not check", never as "the number is absent".
- */
-export async function fetchAllDidPools(api, orgId, opts = {}) {
-  return fetchAllPages(api, orgId, "/api/v2/telephony/providers/edges/didpools", opts);
-}
-
-/**
  * Fetch all inbound email domains.
  *
  * Paged, deliberately: the endpoint defaults to pageSize 25, and the caller
@@ -1110,7 +1098,14 @@ export async function updateSiteOutboundRoute(api, orgId, siteId, routeId, body)
     `/api/v2/telephony/providers/edges/sites/${siteId}/outboundroutes/${routeId}`, { body });
 }
 
-/** Fetch all DID pools. */
+/**
+ * Fetch all DID pools.
+ *
+ * Each pool is a *range* — `startPhoneNumber` to `endPhoneNumber`, both E.164 —
+ * so membership is a numeric comparison against a handful of pools rather than
+ * a lookup per number. Requires `telephony:plugin:all`; callers must treat a
+ * failure as "could not check", never as "the number is absent".
+ */
 export async function fetchAllDidPools(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId,
     "/api/v2/telephony/providers/edges/didpools", opts);
