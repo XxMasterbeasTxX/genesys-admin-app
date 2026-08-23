@@ -1,9 +1,9 @@
 # Interactions › Move — layout and safety — Design
 
-Status: **Steps 1–4 of §10 built.** The probe ran twice (§6.3, §6.4) and has
-now been removed, replaced by the accounting it existed to specify. Remaining:
-§7 cost, then the release note. The orphan case is still unseen in a sample —
-the page now reports it in production if it turns up.
+Status: **Steps 1–5 of §10 built.** Everything but the release note. The probe
+ran twice (§6.3, §6.4) and has been removed, replaced by the accounting it
+existed to specify. The orphan case is still unseen in a sample — the page now
+reports it in production if it turns up.
 Author: Genesys Admin App
 Last updated: 2026-08-23
 
@@ -426,18 +426,59 @@ for a verdict — and those it has.
 
 ## 7. Cost — after §6, not before
 
-Recorded now, deliberately not scheduled: how much of this is worth doing
-depends on what the probe says about how many conversations reach step 2 at all.
+Recorded after §6 rather than guessed before it. Two of the three were built;
+the third was declined, and the reason is worth keeping.
 
-- **Step 2 is serial** — one `getConversation` per conversation. Disconnect's
-  `REQUEST_BATCH = 10` gave roughly an eight-fold speedup on this exact loop.
-- **Media type is decided after the fetch.** Filter for Email only and every
-  voice call in the queue is still fetched, one at a time. Both search pages
-  push `mediaType` into the analytics query; Disconnect reads it from the
-  analytics sessions. Either avoids the call entirely.
-- **Always six 31-day windows**, never sized to need — the thing release 4.1
-  fixed for Empty Queue. And `maxPages: 200` truncates at 20,000 per window
-  without saying so.
+### 7.1 Built: the inspection is batched
+
+**Was:** one `getConversation` at a time, so a queue of three thousand meant
+three thousand round-trips end to end. **Now:** ten at a time, `REQUEST_BATCH`,
+the pacing Disconnect already runs at — the change behind release 4.1's *"A list
+of three thousand was a coffee break."*
+
+Batches are awaited in order and their verdicts appended in order, so the table
+still reads in scan order and `rowIdx` still points where it should. Verified
+across batch boundaries with interleaved verdicts: 23 conversations, 14 movable,
+every Pending row became Moved and no other row was touched.
+
+### 7.2 Built: only the windows that hold something are paged
+
+**Was:** six 31-day windows, always, each paged in full. **Now:** each window is
+asked whether it holds anything first — one request with a page size of 1, since
+the response carries `totalHits` — and only the non-empty ones are paged. This
+is what release 4.1 did for Empty Queue.
+
+A queue's unended interactions are usually recent, so most windows are empty.
+Measured 2026-08-23: a queue of 34 had every one of them in the newest window,
+and the other five were paged for nothing.
+
+**A failed count scans that window anyway.** Reading an error as "empty" would
+silently narrow the run, which is the one outcome this page has just been
+cleaned of.
+
+### 7.3 Declined: deciding media type before the fetch
+
+Filter for Email only and every voice call in the queue is still fetched, one at
+a time, to be thrown away. Both search pages push `mediaType` into the analytics
+query; Disconnect reads it from the analytics sessions.
+
+Not taken. The saving needs `getSessionMediaType` on the analytics shape to
+agree with `detectMediaType` on the live conversation object, and those read
+different structures — a disagreement drops movable interactions silently, which
+is the exact failure this page has just spent four commits removing. The gain
+only materialises when someone filters by media on a mixed queue, and neither
+probe sample was one. §7.1 already removes most of the cost that made it look
+attractive.
+
+Worth revisiting only with a measurement showing the fetches actually hurt, and
+then behind a check that the two media readings agree.
+
+### 7.4 Not addressed
+
+`maxPages: 200` still truncates at 20,000 conversations per window without
+saying so. Left alone: no sample has come close, and a fix means deciding what
+the page should *do* about a truncated scan, which is a design question rather
+than a tuning one.
 
 ## 8. Smaller
 
@@ -475,8 +516,7 @@ until Move is finished, so there is no case for landing the safety fixes early.
 4. **The accounting** (§6.1), designed on what the probe returned. ✅ The probe
    comes out in the same commit: it existed to name these categories, and the
    page reports them properly now.
-5. **Cost** (§7), only if the probe says enough conversations reach step 2 for
-   it to matter.
+5. **Cost** (§7). ✅ 7.1 and 7.2 built; 7.3 declined with the reason recorded.
 6. **Release note** — one entry; `interactions.move` is not on
    `CUSTOMER_EXCLUDED_KEYS`, so this is customer-visible.
 

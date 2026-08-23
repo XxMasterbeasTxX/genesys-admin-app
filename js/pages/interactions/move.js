@@ -33,11 +33,22 @@ const MEDIA_TYPES = [
 const SCAN_INTERVALS = 6;
 const INTERVAL_DAYS  = 31;
 
+/**
+ * Conversations inspected at once.
+ *
+ * The same figure Disconnect paces at, and for the same reason: the inspection
+ * was serial, so a queue of three thousand meant three thousand round-trips end
+ * to end. Kept local because it is a pacing choice per page, not shared logic.
+ */
+const REQUEST_BATCH = 10;
+
 const STATUS = {
   ready:      "Ready. Select source and destination queues.",
   loading:    "Loading queues…",
+  counting:   "Checking which months hold anything…",
   scanning:   (i, n) => `Scanning interval ${i} of ${n}…`,
-  inspecting: (n, total) => `Inspecting conversation ${n} of ${total}…`,
+  inspecting: (i, n) =>
+    `Inspecting ${i}–${Math.min(i + REQUEST_BATCH - 1, n)} of ${n}…`,
   moving:     (n, total) => `Moving ${n} of ${total}…`,
   noResults:  "Nothing found in this queue for the selected period.",
   error:      (msg) => `Error: ${msg}`,
@@ -525,39 +536,63 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     const { srcId, mediaTypes } = params;   // the rest is read by classifyConversation
     const orgId = orgContext.get();
 
-    // Step 1: Analytics query — active convs in source queue (6 × 31-day windows)
+    // Step 1: analytics — unended conversations in the source queue, over six
+    // 31-day windows.
     const now = new Date();
     const seen = new Set();
     const rawConvIds = [];
 
-    for (let i = 0; i < SCAN_INTERVALS; i++) {
-      if (cancelled) break;
+    const segmentFilters = [{
+      type: "and",
+      predicates: [{ dimension: "queueId", value: srcId }],
+    }];
+    const conversationFilters = [{
+      type: "and",
+      predicates: [{ dimension: "conversationEnd", operator: "notExists" }],
+    }];
 
+    const allIntervals = [];
+    for (let i = 0; i < SCAN_INTERVALS; i++) {
       const end   = new Date(now.getTime() - i * INTERVAL_DAYS * 86_400_000);
       const start = new Date(end.getTime()  - INTERVAL_DAYS * 86_400_000);
-      const interval = `${start.toISOString()}/${end.toISOString()}`;
+      allIntervals.push(`${start.toISOString()}/${end.toISOString()}`);
+    }
 
-      setStatus(STATUS.scanning(i + 1, SCAN_INTERVALS));
-      showProgress((i / SCAN_INTERVALS) * 20);
+    // Ask each window whether it holds anything before paging through it. The
+    // response carries `totalHits`, so one request with a page size of 1
+    // answers it — and a queue's unended interactions are usually recent, so
+    // most windows are empty. Measured 2026-08-23: a queue of 34 had every one
+    // of them in the newest window, and the other five were paged for nothing.
+    //
+    // A failed count scans that window anyway. Guessing "empty" from an error
+    // would silently narrow the run, which is the one outcome this page has
+    // just been cleaned of.
+    setStatus(STATUS.counting);
+    const counts = await Promise.all(allIntervals.map(interval =>
+      gc.countConversationDetails(api, orgId, {
+        interval, segmentFilters, conversationFilters,
+      }).catch((err) => {
+        console.warn("Interval count failed, scanning it anyway:", err.message);
+        return null;
+      })));
+    const intervals = allIntervals.filter((_, i) => counts[i] === null || counts[i] > 0);
 
-      const analyticsBody = {
-        interval,
+    for (let i = 0; i < intervals.length; i++) {
+      if (cancelled) break;
+
+      setStatus(STATUS.scanning(i + 1, intervals.length));
+      showProgress((i / intervals.length) * 20);
+
+      const page = await gc.queryConversationDetails(api, orgId, {
+        interval: intervals[i],
         order: "desc",
         orderBy: "conversationStart",
-        segmentFilters: [{
-          type: "and",
-          predicates: [{ dimension: "queueId", value: srcId }],
-        }],
-        conversationFilters: [{
-          type: "and",
-          predicates: [{ dimension: "conversationEnd", operator: "notExists" }],
-        }],
-      };
-
-      const page = await gc.queryConversationDetails(api, orgId, analyticsBody, {
+        segmentFilters,
+        conversationFilters,
+      }, {
         maxPages: 200,
         onProgress: (n) => showProgress(
-          (i / SCAN_INTERVALS) * 20 + Math.min(n / 500, 1) * (20 / SCAN_INTERVALS)
+          (i / intervals.length) * 20 + Math.min(n / 500, 1) * (20 / intervals.length)
         ),
       });
 
@@ -594,38 +629,50 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     const skips   = new Map();
     const note = (short) => skips.set(short, (skips.get(short) || 0) + 1);
 
-    for (let i = 0; i < rawConvIds.length; i++) {
-      if (cancelled) break;
+    // One conversation's verdict, self-contained and never rejecting, so a
+    // batch can go through Promise.all without one bad id taking the rest with
+    // it.
+    async function inspect(convId) {
+      try {
+        const conv = await gc.getConversation(api, orgId, convId);
+        return { convId, ...classifyConversation(conv, srcId, params) };
+      } catch (err) {
+        return { convId, failed: err.message || String(err) };
+      }
+    }
 
-      const convId = rawConvIds[i];
+    // Batched, not serial: ten at a time rather than one, the pacing Disconnect
+    // already runs at. Batches are awaited in order and their verdicts appended
+    // in order, so the table still reads in scan order and `rowIdx` still
+    // points where it should.
+    for (let i = 0; i < rawConvIds.length && !cancelled; i += REQUEST_BATCH) {
+      const chunk = rawConvIds.slice(i, i + REQUEST_BATCH);
       setStatus(STATUS.inspecting(i + 1, rawConvIds.length));
       showProgress(20 + (i / rawConvIds.length) * 70);
 
-      try {
-        const conv = await gc.getConversation(api, orgId, convId);
-        const v = classifyConversation(conv, srcId, params);
-
-        if (v.skip) {
+      for (const v of await Promise.all(chunk.map(inspect))) {
+        if (v.failed) {
+          note("could not be inspected");
+          rows.push({ convId: v.convId, mediaType: "—", startTime: "—",
+                      status: "Failed", error: v.failed });
+        } else if (v.skip) {
           note(v.skip.short);
-          rows.push({ convId, mediaType: v.mediaType, startTime: v.startTime,
+          rows.push({ convId: v.convId, mediaType: v.mediaType, startTime: v.startTime,
                       status: v.skip.status, error: v.detail || v.skip.detail });
-          continue;
+        } else {
+          movable.push({
+            convId: v.convId,
+            participantId: v.participantId,
+            mediaType: v.mediaType,
+            startTime: v.startTime,
+            rowIdx: rows.length,
+          });
+          rows.push({ convId: v.convId, mediaType: v.mediaType, startTime: v.startTime,
+                      status: "Pending", error: "" });
         }
-
-        movable.push({
-          convId,
-          participantId: v.participantId,
-          mediaType: v.mediaType,
-          startTime: v.startTime,
-          rowIdx: rows.length,
-        });
-        rows.push({ convId, mediaType: v.mediaType, startTime: v.startTime,
-                    status: "Pending", error: "" });
-      } catch (err) {
-        note("could not be inspected");
-        rows.push({ convId, mediaType: "—", startTime: "—",
-                    status: "Failed", error: err.message || String(err) });
       }
+
+      if (i + REQUEST_BATCH < rawConvIds.length) await sleep(50);
     }
 
     return { movable, rows, scanned: rows.length, skips, stats };
