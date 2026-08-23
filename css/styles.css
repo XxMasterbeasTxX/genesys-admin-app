@@ -1946,6 +1946,10 @@ body {
   flex-direction: column;
   gap: 4px;
 }
+/* `display: flex` above beats the hidden attribute's UA rule, so a control
+   group that hides itself (an optional filter that failed to load) needs this
+   to actually disappear. */
+.cs-control-group[hidden] { display: none; }
 .cs-label {
   font-size: 12px;
   color: var(--muted);
@@ -4393,6 +4397,13 @@ body {
   padding: 4px 6px;
   font-size: 13px;
 }
+.dr-filter-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+  max-width: 260px;
+}
+.dr-filter-note:empty { display: none; }
 .dr-bulk-wrap {
   display: flex;
   align-items: center;

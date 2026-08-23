@@ -615,18 +615,68 @@ export async function getUserQueues(api, orgId, userId) {
 // Direct Routing — Backup settings
 // ─────────────────────────────────────────────────────────────────────
 
-/** Get agent-level direct routing backup settings. Returns null on 404. */
+/**
+ * Get agent-level direct routing backup settings.
+ *
+ * Returns a tagged result rather than a bare value, because "there is no
+ * backup" and "you are not allowed to look" are different answers and the
+ * caller has to render them differently. The previous version swallowed every
+ * failure into `null`, so an admin missing `routing:directRoutingBackup:view`
+ * was shown an empty form that would then overwrite whatever was really set.
+ *
+ *   { state: "ok",     settings }  — a backup is configured
+ *   { state: "none",   settings: null }  — confirmed: none configured
+ *   { state: "denied", settings: null }  — Genesys refused the read
+ *
+ * Anything else throws. A swallowed 500 is how the original defect started.
+ *
+ * @returns {Promise<{ state: "ok"|"none"|"denied", settings: Object|null }>}
+ */
 export async function getDirectRoutingBackup(api, orgId, userId) {
   try {
-    return await api.proxyGenesys(orgId, "GET",
+    const settings = await api.proxyGenesys(orgId, "GET",
       `/api/v2/routing/users/${userId}/directroutingbackup/settings`);
-  } catch {
-    return null;
+    return { state: "ok", settings };
+  } catch (err) {
+    // Verified against a live org: a missing backup is 404 + resource.not.found.
+    if (err.status === 404 && err.body?.code === "resource.not.found") {
+      return { state: "none", settings: null };
+    }
+    // `code` is the discriminator, not the status. The proxy raises 403s of its
+    // own for app-level gates (org_locked, entitlement guards) and those carry
+    // `error`, not `code` — they are real failures and must not be reported to
+    // the user as "you lack a Genesys permission".
+    if (err.status === 403 && err.body?.code) {
+      return { state: "denied", settings: null };
+    }
+    throw err;
   }
 }
 
-/** Set agent-level direct routing backup settings. */
-export async function putDirectRoutingBackup(api, orgId, userId, body) {
+/**
+ * Set agent-level direct routing backup settings.
+ *
+ * The body is built here from the four writable fields, never spread from the
+ * object that was read: `backedUpUsers` comes back on the GET and is readOnly.
+ * `userId` and `queueId` are omitted when empty rather than sent as null —
+ * the API has no null sentinel, and a PUT *replaces*, so omitting is how a
+ * side is cleared. Setting both is legal: user is the primary backup, queue
+ * the secondary.
+ *
+ * @param {Object} settings
+ * @param {string} [settings.userId]            Backup user (primary).
+ * @param {string} [settings.queueId]           Backup queue (secondary).
+ * @param {boolean} settings.waitForAgent
+ * @param {number} settings.agentWaitSeconds    Genesys accepts [60, 864000].
+ */
+export async function putDirectRoutingBackup(api, orgId, userId, settings = {}) {
+  const body = {
+    waitForAgent: !!settings.waitForAgent,
+    agentWaitSeconds: settings.agentWaitSeconds,
+  };
+  if (settings.userId)  body.userId  = settings.userId;
+  if (settings.queueId) body.queueId = settings.queueId;
+
   return api.proxyGenesys(orgId, "PUT",
     `/api/v2/routing/users/${userId}/directroutingbackup/settings`, { body });
 }
@@ -635,6 +685,21 @@ export async function putDirectRoutingBackup(api, orgId, userId, body) {
 export async function deleteDirectRoutingBackup(api, orgId, userId) {
   return api.proxyGenesys(orgId, "DELETE",
     `/api/v2/routing/users/${userId}/directroutingbackup/settings`);
+}
+
+/**
+ * Fetch all inbound email domains.
+ *
+ * Paged, deliberately: the endpoint defaults to pageSize 25, and the caller
+ * that used to hit it directly took only that first page — so an org with more
+ * domains than that reported the rest as "not configured".
+ *
+ * Requires `routing:email:manage`, which is not implied by the permissions the
+ * pages using this hold. Callers must treat a failure as "could not check",
+ * never as "the domain is absent".
+ */
+export async function fetchAllEmailDomains(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/routing/email/domains", opts);
 }
 
 // ─────────────────────────────────────────────────────────────────────

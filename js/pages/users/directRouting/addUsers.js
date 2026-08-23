@@ -35,6 +35,34 @@ function phoneLabel(type) {
   return PHONE_TYPES.find(t => t.type === type)?.label || type;
 }
 
+/**
+ * Narrow the user picker's options to the selected groups.
+ *
+ * Pure — no API, no DOM — so the rule can be read and tested on its own. It
+ * mirrors `applyUserFilters` in createWebRtc, with one addition that page does
+ * not need: **a filter narrows what is offered, never what is already held.**
+ * An already-selected user survives a filter that excludes them, labelled so
+ * the reason is legible. Dropping them instead would silently untick people the
+ * operator picked before reaching for the filter, and they would find out after
+ * Apply.
+ *
+ * @param {{id: string, name: string}[]} users  Active users, already loaded.
+ * @param {Set<string>|null} groupMemberIds     Union of the selected groups'
+ *   members, or null when no group filter is set.
+ * @param {Set<string>} selectedIds             Currently ticked user ids.
+ * @returns {{id: string, label: string}[]}
+ */
+export function filterUserOptions(users, groupMemberIds, selectedIds) {
+  return users
+    .filter((u) => !groupMemberIds || groupMemberIds.has(u.id) || selectedIds.has(u.id))
+    .map((u) => ({
+      id: u.id,
+      label: groupMemberIds && !groupMemberIds.has(u.id)
+        ? `${u.name} (not in filter)`
+        : u.name,
+    }));
+}
+
 /** Build a snapshot of the current DR / primary / backup state for change detection. */
 function takeSnapshot(user, backup) {
   const addrs = user.addresses || [];
@@ -49,9 +77,9 @@ function takeSnapshot(user, backup) {
     drPhoneType: drPhone?.type || "NONE",
     drEmails,
     primaryPhoneType: primaryPhone?.type || null,
-    backupType: backup?.type || "NONE",
-    backupUserId: backup?.user?.id || null,
-    backupQueueId: backup?.queue?.id || null,
+    backupType: backup?.userId ? "USER" : backup?.queueId ? "QUEUE" : "NONE",
+    backupUserId: backup?.userId || null,
+    backupQueueId: backup?.queueId || null,
     waitForAgent: backup?.waitForAgent || false,
     agentWaitSeconds: backup?.agentWaitSeconds ?? 70,
   };
@@ -78,6 +106,10 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   const loaded = new Map(); // userId → { user, backup, orig }
   let queuesCache = null;
   let emailDomainsCache = null; // Set<string> of inbound email domains
+  let emailDomainsAvailable = false; // false = the lookup failed, not "none exist"
+  let allUsers = [];                 // [{ id, name }] — active users, loaded once
+  const groupMembers = new Map();    // groupId → Set<userId>, memoised for the page
+  let filterToken = 0;               // guards against a slow fetch landing late
 
   // ── User multi-select ───────────────────────────────
   const userSelect = createMultiSelect({
@@ -86,6 +118,17 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     onChange: (sel) => {
       $loadBtn.disabled = sel.size === 0 || isRunning;
     },
+  });
+
+  // ── Group filter ────────────────────────────────────
+  // Narrows the user picker. Optional: "All groups" means no filter, and a
+  // failure to load groups hides the filter rather than taking the page with
+  // it — the same rule createWebRtc states, where sites gate the page and the
+  // filters do not.
+  const groupSelect = createMultiSelect({
+    placeholder: "All groups",
+    searchable: true,
+    onChange: () => { applyGroupFilter(); },
   });
 
   // ── Build UI ────────────────────────────────────────
@@ -99,8 +142,14 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       agent-level backup routing.
     </p>
 
-    <!-- User picker -->
+    <!-- Filter + user picker. The group filter is optional and narrows the
+         picker beside it; leaving it empty considers every active user. -->
     <div class="cs-controls">
+      <div class="cs-control-group" id="drGroupWrap" hidden>
+        <label class="cs-label">Filter by Group</label>
+        <div id="drGroupSlot"></div>
+        <div class="dr-filter-note" id="drGroupNote"></div>
+      </div>
       <div class="cs-control-group">
         <label class="cs-label">Select Users</label>
         <div id="drUserSlot"></div>
@@ -144,11 +193,14 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     <div class="wc-summary" id="drSummary" style="display:none"></div>
   `;
 
-  // Inject multi-select
+  // Inject multi-selects
   el.querySelector("#drUserSlot").append(userSelect.el);
+  el.querySelector("#drGroupSlot").append(groupSelect.el);
 
   // ── DOM refs ────────────────────────────────────────
   const $loadBtn      = el.querySelector("#drLoadBtn");
+  const $groupWrap    = el.querySelector("#drGroupWrap");
+  const $groupNote    = el.querySelector("#drGroupNote");
   const $bulkWrap     = el.querySelector("#drBulkWrap");
   const $bulkSelect   = el.querySelector("#drBulkSelect");
   const $cards        = el.querySelector("#drCards");
@@ -182,8 +234,67 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     $loadBtn.disabled = running;
     $applyBtn.disabled = running;
     userSelect.setEnabled(!running);
+    groupSelect.setEnabled(!running);
     $cancelBtn.style.display = running ? "" : "none";
     if ($bulkSelect) $bulkSelect.disabled = running;
+  }
+
+  /**
+   * Re-offer the user picker for the current group selection.
+   *
+   * Membership costs one call per group, so results are memoised for the life
+   * of the page and only groups not seen before are fetched. A group whose
+   * members cannot be read contributes nothing rather than failing the filter.
+   */
+  async function applyGroupFilter() {
+    const groupIds = [...groupSelect.getSelected()];
+    const token = ++filterToken;
+
+    if (!groupIds.length) {
+      $groupNote.textContent = "";
+      userSelect.setItemsKeepSelection(
+        filterUserOptions(allUsers, null, userSelect.getSelected())
+      );
+      return;
+    }
+
+    const missing = groupIds.filter((id) => !groupMembers.has(id));
+    const announced = missing.length > 0;
+    if (missing.length) {
+      setStatus(`Reading members of ${missing.length} group${missing.length === 1 ? "" : "s"}…`);
+      const lists = await Promise.all(
+        missing.map((id) =>
+          gc.fetchGroupMembers(api, orgId, id)
+            .then((ms) => ms.map((m) => m.id))
+            .catch(() => [])
+        )
+      );
+      missing.forEach((id, i) => groupMembers.set(id, new Set(lists[i])));
+      // A newer selection landed while this was in flight — that one owns the
+      // picker now. The members just fetched stay cached and are not wasted.
+      if (token !== filterToken) return;
+    }
+
+    const memberIds = new Set();
+    for (const id of groupIds) {
+      for (const uid of groupMembers.get(id) || []) memberIds.add(uid);
+    }
+
+    // Group membership ignores user state; the picker holds active users only.
+    // Say so rather than offering a group of 14 that quietly yields 12.
+    const activeIds = new Set(allUsers.map((u) => u.id));
+    const inactive = [...memberIds].filter((id) => !activeIds.has(id)).length;
+    $groupNote.textContent = inactive
+      ? `${inactive} member${inactive === 1 ? " is" : "s are"} not an active user and cannot be configured here.`
+      : "";
+
+    userSelect.setItemsKeepSelection(
+      filterUserOptions(allUsers, memberIds, userSelect.getSelected())
+    );
+    // Only take the status line back if this call borrowed it. Filtering after
+    // a load would otherwise wipe the "Loaded N users" message while the cards
+    // it describes are still on screen.
+    if (announced) setStatus("Ready. Select users and click Load Details.");
   }
 
   async function loadQueues() {
@@ -196,11 +307,16 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   async function loadEmailDomains() {
     if (emailDomainsCache) return emailDomainsCache;
     try {
-      const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/routing/email/domains");
-      const domains = resp.entities || [];
+      const domains = await gc.fetchAllEmailDomains(api, orgId);
       emailDomainsCache = new Set(domains.map(d => (d.id || d.name || "").toLowerCase()));
+      emailDomainsAvailable = true;
     } catch {
+      // Could not check — most often a missing `routing:email:manage`, which is
+      // not implied by the permission this page is gated on. An empty set here
+      // must not be read as "no domains are configured": see the render, which
+      // keys on `emailDomainsAvailable` rather than on the set being empty.
       emailDomainsCache = new Set();
+      emailDomainsAvailable = false;
     }
     return emailDomainsCache;
   }
@@ -389,7 +505,13 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     card.append(addrToggle, addrSection);
 
     // ── Backup section ──
-    const backupType = backup?.type || "NONE";
+    // Derived from the flat model the API actually returns. `type` never
+    // existed, so this used to be "NONE" for every user with a backup set —
+    // which then read back as a deliberate "no backup" and cleared it on Apply.
+    // §2.2 replaces the radio group with two independent pickers, at which
+    // point a user and a queue can be set at once; until then the user backup
+    // wins the display, matching its precedence as the primary.
+    const backupType = backup?.userId ? "USER" : backup?.queueId ? "QUEUE" : "NONE";
 
     const toggle = document.createElement("div");
     toggle.className = "dr-backup-toggle";
@@ -513,9 +635,12 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       hidden.type = "hidden";
       hidden.id = `bk_user_id_${userId}`;
 
-      if (currentBackup?.user) {
-        input.value = currentBackup.user.name || "";
-        hidden.value = currentBackup.user.id || "";
+      // The API returns only `userId` — no name. Holding the id in the hidden
+      // field is what stops an existing backup being cleared by an Apply that
+      // never touched it; resolving the id to a display name is §2.2's job.
+      if (currentBackup?.userId) {
+        hidden.value = currentBackup.userId;
+        input.placeholder = "Current backup user — search to change";
       }
 
       const results = document.createElement("div");
@@ -581,7 +706,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       loadQueues().then(queues => {
         select.innerHTML = `<option value="">— Select a queue —</option>` +
           queues.map(q =>
-            `<option value="${escapeHtml(q.id)}"${currentBackup?.queue?.id === q.id ? " selected" : ""}>${escapeHtml(q.name)}</option>`
+            `<option value="${escapeHtml(q.id)}"${currentBackup?.queueId === q.id ? " selected" : ""}>${escapeHtml(q.name)}</option>`
           ).join("");
       }).catch(() => {
         select.innerHTML = `<option value="">Failed to load queues</option>`;
@@ -663,8 +788,19 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
             const hasEmail = userAddrs.some(a => a.mediaType === "EMAIL");
             // Skip users with no phone and no email addresses
             if (hasPhone || hasEmail) {
-              const backup = bkResult.status === "fulfilled" ? bkResult.value : null;
-              loaded.set(uid, { user, backup, orig: takeSnapshot(user, backup) });
+              // getDirectRoutingBackup now reports which of "none" / "denied" /
+              // "ok" it got. The tagged result is kept whole — the backup
+              // section needs the distinction — and `settings` is what the
+              // existing render and snapshot read.
+              // A rejection is not a refusal: it may be a 500 or a dropped
+              // connection. Only the helper can say "denied", so anything that
+              // reaches here as a rejection is tagged "error" and rendered as a
+              // failure to read rather than as a missing permission.
+              const backupResult = bkResult.status === "fulfilled"
+                ? bkResult.value
+                : { state: "error", settings: null };
+              const backup = backupResult.settings;
+              loaded.set(uid, { user, backup, backupResult, orig: takeSnapshot(user, backup) });
             }
           }
 
@@ -821,17 +957,15 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
                 await gc.deleteDirectRoutingBackup(api, orgId, uid);
               }
             } else {
-              const bkBody = {
-                type: curr.backupType,
+              // Flat userId / queueId — the shape the API actually reads. The
+              // radio group still allows only one at a time; §2.2 replaces it
+              // with two independent pickers, at which point both can be set.
+              await gc.putDirectRoutingBackup(api, orgId, uid, {
+                userId:  curr.backupType === "USER"  ? curr.backupUserId  : null,
+                queueId: curr.backupType === "QUEUE" ? curr.backupQueueId : null,
                 waitForAgent: curr.waitForAgent,
                 agentWaitSeconds: curr.agentWaitSeconds,
-              };
-              if (curr.backupType === "USER" && curr.backupUserId) {
-                bkBody.user = { id: curr.backupUserId };
-              } else if (curr.backupType === "QUEUE" && curr.backupQueueId) {
-                bkBody.queue = { id: curr.backupQueueId };
-              }
-              await gc.putDirectRoutingBackup(api, orgId, uid, bkBody);
+              });
             }
           }
 
@@ -881,17 +1015,43 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   // ── Cancel ──────────────────────────────────────────
   $cancelBtn.addEventListener("click", () => { cancelled = true; });
 
-  // ── Load users on mount ─────────────────────────────
+  // ── Load users and groups on mount ──────────────────
+  // Users gate the page; the group filter does not. allSettled so a failure to
+  // read groups costs the filter and nothing else.
   (async () => {
-    try {
-      const users = await gc.fetchAllUsers(api, orgId);
-      userSelect.setItems(users.map(u => ({ id: u.id, label: u.name })));
-      userSelect.setPlaceholder("Select users…");
-      setStatus("Ready. Select users and click Load Details.");
-    } catch (err) {
+    const [usersRes, groupsRes] = await Promise.allSettled([
+      gc.fetchAllUsers(api, orgId),
+      gc.fetchAllGroups(api, orgId),
+    ]);
+
+    if (usersRes.status !== "fulfilled") {
+      const err = usersRes.reason;
       setStatus(`Failed to load users: ${err.message}`, "error");
       console.error("User load error:", err);
+      return;
     }
+
+    allUsers = usersRes.value.map(u => ({ id: u.id, name: u.name }));
+    userSelect.setItems(filterUserOptions(allUsers, null, new Set()));
+    userSelect.setPlaceholder("Select users…");
+
+    if (groupsRes.status === "fulfilled") {
+      const groups = (groupsRes.value || [])
+        .filter(g => g.state === "active")
+        .map(g => ({
+          id: g.id,
+          // The count makes an empty group obvious before it is picked.
+          label: Number.isFinite(g.memberCount) ? `${g.name} (${g.memberCount})` : g.name,
+        }));
+      if (groups.length) {
+        groupSelect.setItems(groups);
+        $groupWrap.hidden = false;
+      }
+    } else {
+      console.error("Group load error:", groupsRes.reason);
+    }
+
+    setStatus("Ready. Select users and click Load Details.");
   })();
 
   return el;
