@@ -61,6 +61,10 @@ const STATUS = {
     `Preview not run — ${n.toLocaleString()} interactions to inspect. `
     + "Narrow the media types or the date range, or run Preview again to read them all.",
   scanning:   (i, n) => `Scanning interval ${i} of ${n}…`,
+  // A window with tens of thousands in it pages for a while, and a status line
+  // that does not move reads as a page that has died.
+  scanningFound: (i, n, found) =>
+    `Scanning interval ${i} of ${n} — ${found.toLocaleString()} found…`,
   inspecting: (i, n) =>
     `Inspecting ${i}–${Math.min(i + REQUEST_BATCH - 1, n)} of ${n}…`,
   moving:     (n, total) => `Moving ${n} of ${total}…`,
@@ -604,10 +608,23 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
         segmentFilters,
         conversationFilters,
       }, {
-        maxPages: 200,
-        onProgress: (n) => showProgress(
-          (i / intervals.length) * 20 + Math.min(n / 500, 1) * (20 / intervals.length)
-        ),
+        // No page limit. It used to stop at 200 pages of 100 — 20,000
+        // conversations per window — and the pager cannot tell a caller whether
+        // it reached the end or ran out of pages, so a bigger queue was
+        // silently reported short. Worse, the query runs newest-first, so what
+        // it dropped were the oldest: exactly the interactions this page exists
+        // to shift. A scan that quietly answers a different question than the
+        // one asked is the fault this page has spent several commits removing.
+        //
+        // Unbounded needs an exit, hence `shouldStop`: Cancel now takes effect
+        // between pages rather than only between windows.
+        maxPages: Infinity,
+        shouldStop: () => cancelled,
+        onProgress: (n) => {
+          setStatus(STATUS.scanningFound(i + 1, intervals.length, n));
+          showProgress(
+            (i / intervals.length) * 20 + Math.min(n / 500, 1) * (20 / intervals.length));
+        },
       });
 
       for (const c of page) {

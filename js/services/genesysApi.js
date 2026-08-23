@@ -265,12 +265,16 @@ export async function disconnectConversation(api, orgId, conversationId) {
  * @param {string}   orgId
  * @param {Object}   body           Full query body.
  * @param {Object}   [opts]
- * @param {number}   [opts.maxPages=10]  Max pages to fetch.
+ * @param {number}   [opts.maxPages=10]  Max pages to fetch. `Infinity` pages the
+ *   whole result set; pair it with `shouldStop` so there is a way out.
  * @param {Function} [opts.onProgress]   Called with (fetchedSoFar).
+ * @param {Function} [opts.shouldStop]   Checked between pages; truthy stops the
+ *   paging early. Returns what was fetched so far, so a caller that stops has
+ *   a partial result and must treat it as one.
  * @returns {Promise<Object[]>}  All conversation objects.
  */
 export async function queryConversationDetails(api, orgId, body, opts = {}) {
-  const { maxPages = 10, onProgress } = opts;
+  const { maxPages = 10, onProgress, shouldStop } = opts;
   const all = [];
 
   for (let page = 1; page <= maxPages; page++) {
@@ -288,6 +292,11 @@ export async function queryConversationDetails(api, orgId, body, opts = {}) {
     if (onProgress) onProgress(all.length);
 
     if (convs.length < 100) break;
+
+    // A caller paging without a page limit needs a way out that does not
+    // involve waiting for the end. Checked after the short-page break so a
+    // finished query is never reported as stopped.
+    if (shouldStop?.()) break;
   }
 
   return all;

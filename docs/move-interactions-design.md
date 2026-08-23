@@ -500,24 +500,39 @@ Declining is neither an error nor an empty queue, and the status says which:
 > Preview not run — 12.400 interactions to inspect. Narrow the media types or
 > the date range, or run Preview again to read them all.
 
-### 7.5 Declined: warning about a truncated scan
+### 7.5 Built: the 20,000 cap is gone
 
-`maxPages: 200` truncates at 20,000 conversations per window — `pageSize` is
-100 — and the pager cannot distinguish "that was everything" from "that was the
-first 20,000". The query runs newest-first, so a truncated window drops the
-oldest, which on this page is the end worth having.
+`maxPages: 200` truncated at 20,000 conversations per window — `pageSize` is
+100 — and the pager could not distinguish "that was everything" from "that was
+the first 20,000". The query runs newest-first, so a truncated window dropped
+the **oldest**: exactly the interactions this page exists to shift.
 
-A notice was proposed and **declined on 2026-08-23**. Recorded rather than
-dropped, because the reasoning matters if it comes back:
+A warning about it was proposed first and rejected in favour of the better fix —
+*"I dont want the limit of 20000"* — which is right. A scan that quietly answers
+a different question than the one asked is the fault the rest of this document
+is about; announcing it would have been managing the symptom.
 
-- No sample has come within three orders of magnitude — the two probes returned
-  6 and 34.
-- The detection is now free: §7.2 fetches `totalHits` per window before paging,
-  so the number needed to spot truncation is already in hand. Only the wording
-  and the decision about what to do were ever at issue.
-- **Disconnect has the identical cap**, unwarned, at
-  [disconnect.js:1051](../js/pages/interactions/disconnect.js). Whatever is
-  eventually decided should be decided for both, not bolted onto one.
+`maxPages: Infinity`, and the pager gains `shouldStop`, checked between pages.
+Unbounded without an exit would be a trap: Cancel previously took effect only
+between windows, so a single large window could not be interrupted at all. It
+now stops at the next page boundary.
+
+The scan also counts out loud — `Scanning interval 1 of 2 — 4.200 found…` —
+because a window with tens of thousands in it pages for a while, and a status
+line that does not move reads as a page that has died.
+
+**The confirmation in §7.4 is unaffected and still the gate that matters.**
+Paging costs one request per *hundred* conversations; the inspection costs one
+per conversation. Removing the cap makes the cheaper half complete rather than
+truncated — 25,000 interactions is 250 pages, against 25,000 reads if you say
+yes. That is why the question is still asked where it is, after the exact count
+is known, rather than moved ahead of the paging.
+
+**Disconnect has the identical cap** at
+[disconnect.js:1051](../js/pages/interactions/disconnect.js), still unaddressed.
+Its queue mode does not fetch per conversation, so a truncated scan there is
+cheaper to fix and differently shaped; worth its own look rather than a copied
+change.
 
 ## 8. Smaller
 
@@ -555,8 +570,8 @@ until Move is finished, so there is no case for landing the safety fixes early.
 4. **The accounting** (§6.1), designed on what the probe returned. ✅ The probe
    comes out in the same commit: it existed to name these categories, and the
    page reports them properly now.
-5. **Cost** (§7). ✅ 7.1, 7.2 and 7.4 built; 7.3 and 7.5 declined with the
-   reasons recorded.
+5. **Cost** (§7). ✅ 7.1, 7.2, 7.4 and 7.5 built; 7.3 declined with the reason
+   recorded.
 6. **Release note** — one entry; `interactions.move` is not on
    `CUSTOMER_EXCLUDED_KEYS`, so this is customer-visible.
 
