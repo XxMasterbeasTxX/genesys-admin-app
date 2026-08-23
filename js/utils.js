@@ -389,6 +389,29 @@ export function downloadWorkbook(wb, filename) {
   downloadBase64(filename, XLSX.write(wb, { bookType: "xlsx", type: "base64" }));
 }
 
+/**
+ * A wait, rounded to one unit — "45s", "12m", "3h", "6d", "2mo".
+ *
+ * Returns `null` for anything that is not a usable duration, so a caller can
+ * leave the phrase out entirely rather than print "oldest waiting null".
+ *
+ * Lived in `disconnect.js` until Move needed the same phrasing beside the same
+ * queue-depth figure; two copies of a formatter is how two pages come to
+ * describe the same number differently.
+ */
+export function formatWait(ms) {
+  if (typeof ms !== "number" || ms < 0) return null;
+  const s = Math.round(ms / 1000);
+  if (s < 60)      return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60)      return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 48)      return `${h}h`;
+  const d = Math.round(h / 24);
+  if (d < 60)      return `${d}d`;
+  return `${Math.round(d / 30)}mo`;
+}
+
 /** Generate a timestamped filename, e.g. "Prefix_2026-02-27T14-30-00". */
 export function timestampedFilename(prefix, ext = "csv") {
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);

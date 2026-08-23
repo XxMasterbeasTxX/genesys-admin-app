@@ -23,7 +23,7 @@
  *   POST /api/v2/analytics/queues/observations/query        — live queue depth
  *   GET  /api/v2/routing/queues                             — list queues
  */
-import { escapeHtml, formatDateTime, sleep, makeStatus } from "../../utils.js";
+import { escapeHtml, formatDateTime, sleep, makeStatus, formatWait } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 import { logAction } from "../../services/activityLogService.js";
@@ -369,23 +369,6 @@ function addressSegmentFilters({ senders, recipients }) {
   return out;
 }
 
-/**
- * A wait duration, compact enough to sit inside a status line: 45s, 12m, 3h,
- * 6d, 4mo. Precision past the leading unit is noise here — the question this
- * answers is "how far back does this queue reach", not "exactly how long".
- */
-function formatWait(ms) {
-  if (typeof ms !== "number" || ms < 0) return null;
-  const s = Math.round(ms / 1000);
-  if (s < 60)      return `${s}s`;
-  const m = Math.round(s / 60);
-  if (m < 60)      return `${m}m`;
-  const h = Math.round(m / 60);
-  if (h < 48)      return `${h}h`;
-  const d = Math.round(h / 24);
-  if (d < 60)      return `${d}d`;
-  return `${Math.round(d / 30)}mo`;
-}
 
 /**
  * A plain account of the address filters in force, or "" when there are none.

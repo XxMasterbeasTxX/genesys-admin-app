@@ -1154,6 +1154,7 @@ body {
 .mi-mono { font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace; font-size: 11px; }
 .mi-ok   { color: #34d399; font-weight: 600; }
 .mi-fail { color: #f87171; font-weight: 600; }
+.mi-skip { color: #f59e0b; font-weight: 600; }
 .mi-cancel { color: var(--muted); font-style: italic; }
 
 /* ══════════════════════════════════════════════════════════

@@ -15,7 +15,7 @@
  *   POST /api/v2/conversations/{id}/participants/{participantId}/replace       — transfer to dest queue
  *   GET  /api/v2/routing/queues                                               — list queues
  */
-import { escapeHtml, formatDateTime, sleep, makeStatus, makeControlBusy } from "../../utils.js";
+import { escapeHtml, formatDateTime, formatWait, sleep, makeStatus, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 import { logAction } from "../../services/activityLogService.js";
@@ -38,14 +38,91 @@ const STATUS = {
   loading:    "Loading queues…",
   scanning:   (i, n) => `Scanning interval ${i} of ${n}…`,
   inspecting: (n, total) => `Inspecting conversation ${n} of ${total}…`,
-  previewed:  (n, media) => `Preview: ${n} interaction${n !== 1 ? "s" : ""} found (${media}).`,
   moving:     (n, total) => `Moving ${n} of ${total}…`,
-  done:       (ok, fail) => `Done. Moved: ${ok}, Failed: ${fail}.`,
-  noResults:  "No active interactions found matching the criteria.",
+  noResults:  "Nothing found in this queue for the selected period.",
   error:      (msg) => `Error: ${msg}`,
+
+  /**
+   * Where everything went, not just what survived.
+   *
+   * "No active interactions found matching the criteria" used to cover five
+   * different situations — an empty queue, everything filtered by media type,
+   * everything filtered by date, legs that could not be transferred, and calls
+   * that failed — and an operator could not tell which. That ambiguity is what
+   * cost four rounds on Disconnect, and the fix there was this line.
+   *
+   * `waiting` comes from live queue observations rather than from the scan,
+   * because the two answer different questions: one is what the queue holds
+   * now, the other is what this preview could act on. "0 to move · 412
+   * waiting in queue" is plainly a filter that is too tight, where a bare "no
+   * interactions found" reads as an empty queue.
+   */
+  previewed(movable, scanned, waiting, oldestMs, skips) {
+    const parts = [`${movable.toLocaleString()} to move`];
+    if (scanned !== movable) parts.push(`${scanned.toLocaleString()} scanned`);
+    if (waiting != null) parts.push(`${waiting.toLocaleString()} waiting in queue`);
+    const age = formatWait(oldestMs);
+    if (age) parts.push(`oldest waiting ${age}`);
+    for (const [reason, n] of [...skips].sort((a, b) => b[1] - a[1])) {
+      parts.push(`${n.toLocaleString()} ${reason}`);
+    }
+    return `Preview: ${parts.join(" · ")}`;
+  },
+
+  done(ok, fail) {
+    const p = [`Moved: ${ok}`];
+    if (fail) p.push(`Failed: ${fail}`);
+    return `Done. ${p.join(", ")}.`;
+  },
+};
+
+/**
+ * Why a conversation is not being moved, in two registers: a short phrase that
+ * aggregates into the status line, and a sentence for the table's Detail
+ * column. Kept together so the two can never drift apart.
+ */
+const SKIP = {
+  beingHandled: { status: "Being handled", short: "being handled by an agent",
+                  detail: "An agent is handling this interaction" },
+  leftQueue:    { status: "Not movable",   short: "no longer in this queue",
+                  detail: "The interaction has moved on to another queue" },
+  noLeg:        { status: "Not movable",   short: "no active queue leg",
+                  detail: "No active queue leg — there is no participant to transfer" },
+  media:        { status: "Filtered",      short: "media type not selected",
+                  detail: (t) => `Media type "${t}" not selected` },
+  older:        { status: "Filtered",      short: "outside the date range",
+                  detail: "Started after the 'Older than' date" },
+  newer:        { status: "Filtered",      short: "outside the date range",
+                  detail: "Started before the 'Newer than' date" },
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────
+
+/** The four media collections a participant can carry, and what each means. */
+const MEDIA_COLLECTIONS = [
+  { key: "calls",     type: "voice" },
+  { key: "emails",    type: "email" },
+  { key: "callbacks", type: "callback" },
+  { key: "messages",  type: "message" },
+];
+
+/**
+ * True when a participant is still on the interaction.
+ *
+ * `connected` and `alerting` are the two live states, measured on 2026-08-23
+ * rather than assumed: a queue of waiting emails reported `emails:connected`
+ * throughout, and the ones an agent had picked up read `emails:disconnected` on
+ * the **queue** leg — the ACD participant's media ends the moment the
+ * interaction is answered.
+ */
+function hasLiveMedia(p) {
+  for (const mc of MEDIA_COLLECTIONS) {
+    for (const item of (p[mc.key] || [])) {
+      if (item.state === "connected" || item.state === "alerting") return true;
+    }
+  }
+  return false;
+}
 
 /** Determine media type from conversation participants. */
 function detectMediaType(participants) {
@@ -62,6 +139,14 @@ function detectMediaType(participants) {
 /**
  * Find the ACD participant currently active in the given queue.
  * Returns { participantId, mediaType } or null.
+ *
+ * Requiring **live** media is not merely a way of locating a usable
+ * `participantId` — it is also the "not currently being handled" test, and it
+ * is the only thing stopping Move blind-transferring an interaction out from
+ * under the agent working it. Measured on 2026-08-23: of 34 unended
+ * conversations in one queue, the 2 this rejected were exactly the 2 the queue
+ * reported as being interacted with. Loosening this to "any transferable
+ * participant" would read as a tidy-up and would be a defect.
  */
 function findAcdParticipant(conversation, sourceQueueId) {
   if (!conversation.participants) return null;
@@ -74,14 +159,7 @@ function findAcdParticipant(conversation, sourceQueueId) {
     if (pQueue !== sourceQueueId) continue;
 
     // Check for active media (connected or alerting)
-    const mediaCollections = [
-      { key: "calls",     type: "voice" },
-      { key: "emails",    type: "email" },
-      { key: "callbacks", type: "callback" },
-      { key: "messages",  type: "message" },
-    ];
-
-    for (const mc of mediaCollections) {
+    for (const mc of MEDIA_COLLECTIONS) {
       const items = p[mc.key];
       if (!items?.length) continue;
       for (const item of items) {
@@ -93,6 +171,48 @@ function findAcdParticipant(conversation, sourceQueueId) {
   }
 
   return null;
+}
+
+/**
+ * What Move can do with one conversation, and why — one verdict per row.
+ *
+ * Every path returns something. The page used to `continue` past anything it
+ * could not move, which is how five different outcomes came to share one
+ * message.
+ */
+function classifyConversation(conv, queueId, filters) {
+  const acd = findAcdParticipant(conv, queueId);
+  const mediaType = acd ? acd.mediaType : detectMediaType(conv.participants);
+  const row = { mediaType, startTime: formatDateTime(conv.startTime) };
+
+  if (!acd) {
+    // The reasons are worth separating: an interaction an agent is working is
+    // fine and deliberately left alone, one with no leg at all may need
+    // attention, and one that has moved on is neither.
+    const parts = conv.participants || [];
+    if (parts.some(p => p.purpose === "agent" && hasLiveMedia(p))) {
+      return { ...row, skip: SKIP.beingHandled };
+    }
+    const stillHere = parts.some(
+      p => p.purpose === "acd" && (p.queueId || p.queue?.id) === queueId);
+    return { ...row, skip: stillHere ? SKIP.noLeg : SKIP.leftQueue };
+  }
+
+  if (!filters.mediaTypes.includes(acd.mediaType)) {
+    return { ...row, skip: SKIP.media, detail: SKIP.media.detail(acd.mediaType) };
+  }
+
+  const startTime = conv.startTime ? new Date(conv.startTime) : null;
+  if (filters.olderThan && startTime
+      && startTime >= new Date(filters.olderThan + "T00:00:00Z")) {
+    return { ...row, skip: SKIP.older };
+  }
+  if (filters.newerThan && startTime
+      && startTime <= new Date(filters.newerThan + "T23:59:59Z")) {
+    return { ...row, skip: SKIP.newer };
+  }
+
+  return { ...row, participantId: acd.participantId };
 }
 
 // ── Page renderer ───────────────────────────────────────────────────
@@ -360,7 +480,8 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     $tableWrap.style.display = "";
     $tbody.innerHTML = results.map((r, i) => {
       const statusClass = r.status === "Moved" ? "mi-ok"
-        : r.status === "Failed" ? "mi-fail"
+        : r.status === "Failed" || r.status === "Not movable" ? "mi-fail"
+        : r.status === "Filtered" || r.status === "Being handled" ? "mi-skip"
         : r.status === "Cancelled" ? "mi-cancel"
         : "";
       return `<tr>
@@ -401,7 +522,7 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
 
   // ── Core: scan for matching conversations ───────────
   async function scanConversations(params) {
-    const { srcId, mediaTypes, olderThan, newerThan } = params;
+    const { srcId, mediaTypes } = params;   // the rest is read by classifyConversation
     const orgId = orgContext.get();
 
     // Step 1: Analytics query — active convs in source queue (6 × 31-day windows)
@@ -448,132 +569,66 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
       }
     }
 
-    if (!rawConvIds.length) return [];
-    if (cancelled) return [];
+    // The queue's own depth, read from live observations rather than counted
+    // from the scan: the two answer different questions, and the status line
+    // wants both. Not fatal if the permission is missing — the fields come back
+    // null and the phrase is left out.
+    const stats = await gc.getQueueStats(api, orgId, srcId, mediaTypes)
+      .catch((err) => {
+        console.warn("Could not read queue observations:", err.message);
+        return { waiting: null, interacting: null, oldestMs: null };
+      });
 
-    // Build a shim array to keep the rest of the loop compatible
-    const rawConvs = rawConvIds.map(id => ({ conversationId: id }));
+    if (!rawConvIds.length || cancelled) {
+      return { movable: [], rows: [], scanned: 0, skips: new Map(), stats };
+    }
 
-    // ── [move-probe] TEMPORARY — remove once §6.2 is settled ─────────
+    // Step 2: fetch each conversation and record a verdict for every one.
     //
-    // `findAcdParticipant` is a hard gate here: a conversation it rejects is
-    // dropped with no trace, and the page then reports "No active interactions
-    // found" whether the queue was empty, everything was filtered, or every
-    // leg was unreachable. Disconnect stopped gating on the same function after
-    // measuring that the live ACD leg is frequently gone on exactly the stuck
-    // interactions these pages exist for.
-    //
-    // Whether that also applies here cannot be reasoned out — Move genuinely
-    // needs a participantId to transfer, so some rejections are correct. Every
-    // Genesys semantic assumed from the spec or from existing code on
-    // 2026-08-21 turned out wrong, and each was settled in one round by a probe.
-    //
-    // This adds **no API calls**: it reads the same `conv` the loop already
-    // fetched. Only the queue-observation cross-check below is extra, and it is
-    // one request, tolerated if it fails.
-    const probe = {
-      total: rawConvs.length,
-      inspected: 0,
-      fetchFailed: 0,
-      noParticipants: 0,
-      acdAnywhere: 0,        // an acd participant exists, any queue
-      acdInQueue: 0,         // ...and it is this queue
-      acdLegGone: 0,         // no acd participant for this queue at all
-      wouldMatch: 0,         // what findAcdParticipant returns today
-      byMediaState: {},      // every state seen on this queue's acd legs
-      acdNoMedia: 0,         // acd leg for this queue carrying no media at all
-      purposes: {},
-    };
-    // ── end [move-probe] ────────────────────────────────────────────
+    // Every conversation gets a row. Anything that cannot be moved used to be
+    // skipped with `continue`, which is how an empty queue, a media filter, a
+    // date filter, an agent-held interaction and a failed request all came to
+    // produce the same sentence.
+    const rows    = [];   // one per conversation, in scan order
+    const movable = [];   // the subset Move will act on, pointing back at rows
+    const skips   = new Map();
+    const note = (short) => skips.set(short, (skips.get(short) || 0) + 1);
 
-    // Step 2: Get full details for each and find ACD participant
-    const matched = [];
-    for (let i = 0; i < rawConvs.length; i++) {
+    for (let i = 0; i < rawConvIds.length; i++) {
       if (cancelled) break;
 
-      const convId = rawConvs[i].conversationId;
-      setStatus(STATUS.inspecting(i + 1, rawConvs.length));
-      showProgress(20 + (i / rawConvs.length) * 70);
+      const convId = rawConvIds[i];
+      setStatus(STATUS.inspecting(i + 1, rawConvIds.length));
+      showProgress(20 + (i / rawConvIds.length) * 70);
 
       try {
         const conv = await gc.getConversation(api, orgId, convId);
-        const acd = findAcdParticipant(conv, srcId);
+        const v = classifyConversation(conv, srcId, params);
 
-        // ── [move-probe] before any `continue`, so nothing is missed ──
-        probe.inspected++;
-        const parts = conv.participants || [];
-        if (!parts.length) probe.noParticipants++;
-        let sawAcdAnywhere = false;
-        let sawAcdInQueue  = false;
-        for (const p of parts) {
-          probe.purposes[p.purpose || "(none)"] =
-            (probe.purposes[p.purpose || "(none)"] || 0) + 1;
-          if (p.purpose !== "acd") continue;
-          sawAcdAnywhere = true;
-          if ((p.queueId || p.queue?.id) !== srcId) continue;
-          sawAcdInQueue = true;
-          let sawMedia = false;
-          for (const key of ["calls", "emails", "callbacks", "messages"]) {
-            for (const item of (p[key] || [])) {
-              sawMedia = true;
-              const k = `${key}:${item.state ?? "(no state)"}`;
-              probe.byMediaState[k] = (probe.byMediaState[k] || 0) + 1;
-            }
-          }
-          if (!sawMedia) probe.acdNoMedia++;
-        }
-        if (sawAcdAnywhere) probe.acdAnywhere++;
-        if (sawAcdInQueue)  probe.acdInQueue++; else probe.acdLegGone++;
-        if (acd) probe.wouldMatch++;
-        // ── end [move-probe] ─────────────────────────────────────────
-
-        if (!acd) continue;
-
-        // Media type filter
-        if (!mediaTypes.includes(acd.mediaType)) continue;
-
-        // Date filters
-        const startTime = conv.startTime ? new Date(conv.startTime) : null;
-        if (olderThan && startTime) {
-          if (startTime >= new Date(olderThan + "T00:00:00Z")) continue;
-        }
-        if (newerThan && startTime) {
-          if (startTime <= new Date(newerThan + "T23:59:59Z")) continue;
+        if (v.skip) {
+          note(v.skip.short);
+          rows.push({ convId, mediaType: v.mediaType, startTime: v.startTime,
+                      status: v.skip.status, error: v.detail || v.skip.detail });
+          continue;
         }
 
-        matched.push({
+        movable.push({
           convId,
-          participantId: acd.participantId,
-          mediaType: acd.mediaType,
-          startTime: formatDateTime(conv.startTime),
+          participantId: v.participantId,
+          mediaType: v.mediaType,
+          startTime: v.startTime,
+          rowIdx: rows.length,
         });
+        rows.push({ convId, mediaType: v.mediaType, startTime: v.startTime,
+                    status: "Pending", error: "" });
       } catch (err) {
-        probe.fetchFailed++;   // [move-probe]
-        // Skip conversations we can't inspect (may have ended)
-        console.warn(`Could not inspect ${convId}:`, err.message);
+        note("could not be inspected");
+        rows.push({ convId, mediaType: "—", startTime: "—",
+                    status: "Failed", error: err.message || String(err) });
       }
     }
 
-    // ── [move-probe] TEMPORARY — remove once §6.2 is settled ─────────
-    //
-    // The cross-check that made the Disconnect probe conclusive: if the queue
-    // says 169 are waiting and `wouldMatch` says 0, the gate is wrong. Failure
-    // is not fatal — the counts above stand on their own.
-    const qs = await gc.getQueueStats(api, orgId, srcId, mediaTypes)
-      .catch((err) => {
-        console.warn("[move-probe] could not read queue observations:", err.message);
-        return { waiting: null, interacting: null, oldestMs: null };
-      });
-    console.log("[move-probe]", JSON.stringify({
-      ...probe,
-      matchedAfterFilters: matched.length,
-      queueWaiting:     qs.waiting,
-      queueInteracting: qs.interacting,
-      cancelled,
-    }, null, 2));
-    // ── end [move-probe] ────────────────────────────────────────────
-
-    return matched;
+    return { movable, rows, scanned: rows.length, skips, stats };
   }
 
   // ── Preview ─────────────────────────────────────────
@@ -588,7 +643,7 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     renderResults();
 
     try {
-      const found = await scanConversations(params);
+      const scan = await scanConversations(params);
 
       if (cancelled) {
         // A cancelled scan stops mid-inspection and returns what it had. That
@@ -597,23 +652,19 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
         // that looked authoritative. A partial result is not a result.
         setCandidates([]);
         setStatus("Preview cancelled — nothing was previewed. Run it again.");
-      } else if (found.length === 0) {
+      } else if (!scan.scanned) {
         setCandidates([]);
         setStatus(STATUS.noResults);
       } else {
-        setCandidates(found);
-        const mediaLabel = params.mediaTypes.length >= 4
-          ? "all media types"
-          : params.mediaTypes.join(", ");
-        setStatus(STATUS.previewed(candidates.length, mediaLabel), "success");
-
-        // Show preview in table  
-        results = candidates.map(c => ({
-          ...c,
-          status: "Pending",
-          error: "",
-        }));
+        // Every conversation gets a row, movable or not, so the table explains
+        // the status line rather than only listing what survived it.
+        results = scan.rows;
         renderResults();
+        setCandidates(scan.movable);
+        setStatus(
+          STATUS.previewed(scan.movable.length, scan.scanned,
+                           scan.stats.waiting, scan.stats.oldestMs, scan.skips),
+          scan.movable.length ? "success" : "");
       }
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
@@ -650,18 +701,14 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     let successCount = 0;
     let failCount = 0;
 
-    results = candidates.map(c => ({
-      ...c,
-      status: "Pending",
-      error: "",
-    }));
-    renderResults();
-
+    // The preview's rows stay as they are and the movable ones are updated in
+    // place through `rowIdx`. Rebuilding the table from `candidates` would drop
+    // every row explaining why something was left out, at the moment those
+    // explanations are most worth having.
     for (let i = 0; i < candidates.length; i++) {
       if (cancelled) {
-        // Mark remaining as cancelled
         for (let j = i; j < candidates.length; j++) {
-          results[j].status = "Cancelled";
+          results[candidates[j].rowIdx].status = "Cancelled";
         }
         renderResults();
         break;
@@ -673,11 +720,11 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
 
       try {
         await gc.replaceParticipantQueue(api, orgId, c.convId, c.participantId, params.dstId);
-        results[i].status = "Moved";
+        results[c.rowIdx].status = "Moved";
         successCount++;
       } catch (err) {
-        results[i].status = "Failed";
-        results[i].error = err.message || String(err);
+        results[c.rowIdx].status = "Failed";
+        results[c.rowIdx].error = err.message || String(err);
         failCount++;
       }
 

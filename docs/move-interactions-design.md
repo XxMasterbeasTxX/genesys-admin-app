@@ -1,9 +1,9 @@
 # Interactions › Move — layout and safety — Design
 
-Status: **Steps 1–3 of §10 built.** The probe ran twice (§6.3, §6.4); the
-layout, warning banner, Move gate and the guard-rails are in. Step 4 — the
-accounting (§6.1) — is next, and it removes the probe. The orphan case remains
-unseen; §6.1 is designed so production reports it.
+Status: **Steps 1–4 of §10 built.** The probe ran twice (§6.3, §6.4) and has
+now been removed, replaced by the accounting it existed to specify. Remaining:
+§7 cost, then the release note. The orphan case is still unseen in a sample —
+the page now reports it in production if it turns up.
 Author: Genesys Admin App
 Last updated: 2026-08-23
 
@@ -249,6 +249,24 @@ which is a queue-wide number and cannot attribute itself to rows.
 A status line of `0 match · 412 waiting · 412 no active queue leg` is also what
 turns §6.3's unanswered half into something production reports on its own.
 
+**Built**, and the line reads:
+
+```
+Preview: 2 to move · 4 scanned · 1.204 waiting in queue · oldest waiting 3d
+       · 1 no active queue leg · 1 being handled by an agent
+```
+
+Each reason appears only when it happened, ordered by how many, and `scanned` is
+left out entirely when it equals the number to move — a line reporting that
+everything worked should not read like an audit.
+
+Two things came with it. `formatWait` moved to `js/utils.js`, because Move now
+wants the same phrasing beside the same queue-depth figure Disconnect prints,
+and two copies of a formatter is how two pages come to describe one number
+differently. And `detectMediaType` stops being dead code here: a row that cannot
+be moved still has a media type worth showing, and `findAcdParticipant` reports
+one only for a live leg — the same division of labour Disconnect settled on.
+
 ### 6.2 The gate had never met live data — probe first
 
 *(Resolved by §6.4: the gate is right, and for a better reason than expected.
@@ -454,8 +472,9 @@ until Move is finished, so there is no case for landing the safety fixes early.
    actually exist. ✅ This is the real reason not to do safety first: attaching
    `invalidateCandidates` to the native selects and deleting that wiring one
    commit later means writing and testing the same behaviour twice.
-4. **The accounting** (§6.1), designed on what the probe returned. Unblocked —
-   see §6.3 to §6.5.
+4. **The accounting** (§6.1), designed on what the probe returned. ✅ The probe
+   comes out in the same commit: it existed to name these categories, and the
+   page reports them properly now.
 5. **Cost** (§7), only if the probe says enough conversations reach step 2 for
    it to matter.
 6. **Release note** — one entry; `interactions.move` is not on
