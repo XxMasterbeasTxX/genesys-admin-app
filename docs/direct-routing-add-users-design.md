@@ -571,6 +571,17 @@ is damaged — it is simply not offered. Out of scope here; it wants its own row
 group and its own one-of-N constraint, since the per-media-type rule means the
 SMS tag is independent of the call tag.
 
+**A backup on a user with no routable address is not reachable here.** Users
+without a phone number and without an email on a verified inbound domain are
+dropped before rendering, because every control on their card would be dead.
+If such a user also has an agent backup configured, this page will not show it.
+
+That is deliberate. A backup only takes effect when a direct routing
+interaction reaches the agent, which requires a routable address — so an
+orphaned backup changes nothing, and surfacing it would mean a card whose only
+live control governs behaviour that cannot occur. Clearing one, if it ever
+matters, is a `DELETE` in the API Explorer.
+
 **Queue-level direct routing settings.** Agent backup is only half the picture —
 `DirectRouting` on the queue carries `backupQueueId`, `waitForAgent` and
 `agentWaitSeconds` as the org-wide default for agents with nothing configured.

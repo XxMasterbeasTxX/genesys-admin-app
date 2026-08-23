@@ -438,7 +438,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
 
   // ── Render one user card ────────────────────────────
   function createUserCard(userId) {
-    const { user, backup, backupResult, strandedBackup } = loaded.get(userId);
+    const { user, backup, backupResult } = loaded.get(userId);
     const addrs = user.addresses || [];
     const card = document.createElement("div");
     card.className = "dr-user-card";
@@ -453,14 +453,6 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     }
     card.append(header);
 
-    // Only reason this card is here at all — say so, or it reads as a bug.
-    if (strandedBackup) {
-      const note = document.createElement("div");
-      note.className = "dr-email-warn";
-      note.textContent =
-        "This user has no phone number and no email on a routable domain, so direct routing cannot reach them — but a backup is configured. It is shown here so it can be removed.";
-      card.append(note);
-    }
 
     // Find current states
     const drPhoneAddr = addrs.find(a => a.mediaType === "PHONE" && a.integration === "directrouting");
@@ -1052,14 +1044,6 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       // switch is a screenful of nothing.
       for (const [uid, data] of [...loaded]) {
         if (hasRoutableAddress(data.user, emailDomainsCache, emailDomainsAvailable)) continue;
-        // One exception, on the same principle as a tagged email on an
-        // unverified domain: a backup configured for a user who has no
-        // routable address does nothing, but it is real, and this page is the
-        // only place to clear it. Hiding the card would strand it.
-        if (data.backup?.userId || data.backup?.queueId) {
-          data.strandedBackup = true;
-          continue;
-        }
         loaded.delete(uid);
         noAddresses++;
       }
