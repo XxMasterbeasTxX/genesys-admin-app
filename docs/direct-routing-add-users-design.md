@@ -1,8 +1,8 @@
 # Users — Direct Routing — Add user(s) — Design
 
 Status: **Built** — all six steps shipped to dev (2026-08-23). The backup half
-was verified against a live org first (§2.1, §2.1.1, §2.4). The Primary write
-path (§4) remains unanswered and gates nothing: the column ships read-only.
+was verified against a live org first (§2.1, §2.1.1, §2.4). The Primary column
+is read-only permanently, by policy rather than pending a test (§4).
 Author: Genesys Admin App
 Last updated: 2026-08-23
 
@@ -52,14 +52,15 @@ touch, and a Primary column that the spec says cannot work. Those are §3 and §
   the state where both are empty.
 - **Applying a change never clears an integration tag this app did not set**
   (§3). Today it blanks every one it finds.
-- **The Primary column is not shipped as an editable control again until a
-  write path is confirmed against a live org** (§4). The spec says the field is
-  read-only and derived.
+- **The Primary column is read-only and stays that way** (§4). The API will not
+  accept the write, and Genesys advises against direct routing on the primary
+  phone regardless — so there is nothing to reinstate later.
 - **Email gets the same one-of-N control phones have** (§5), because Genesys
   documents one `directrouting` tag per media type and checkboxes cannot hold
   that line.
-- **A failed domain lookup is reported as a failed lookup**, not as "the domain
-  is not configured" (§5.1).
+- **Email tagging requires a positively verified inbound domain** (§5.1). A
+  lookup that failed blocks tagging and says why; it does not fall through to
+  allowing it.
 - **Addresses opens expanded; only Backup Settings stays collapsed** (§7.1).
   This reverses an earlier deliberate choice — see that section.
 - **SMS stays out of scope** and is recorded as a known gap (§10).
@@ -274,13 +275,20 @@ mechanism: primary is expressed *in* the addresses array rather than beside it.
 That is a guess, and the community threads on this are contradictory enough that
 it should not be built on.
 
-**Decision: the column ships read-only.** It displays which address Genesys
-currently reports as primary — a tick or a dash, no input — so the information
-stays on screen and the promise disappears. The §2.1 trip carries a third
-question: PATCH a test user with an address typed `PRIMARY` and see whether
-`primaryContactInfo` follows. If it does, editing comes back in a follow-up
-under its own design, driven by the addresses array. If it does not, the column
-stays read-only permanently.
+**Decision: the column is read-only, permanently.** It displays which address
+Genesys currently reports as primary — a tick or a dash, no input — so the
+information stays on screen and the promise disappears.
+
+An earlier revision of this section left the door open: run one PATCH with an
+address typed `PRIMARY`, see whether `primaryContactInfo` follows, and reinstate
+editing if it did. That test was never run and no longer matters, because the
+API constraint is not the only reason. **Genesys advises against using the
+primary phone for direct routing at all.** A control that made it easy to set
+would be steering administrators toward the arrangement the vendor tells them to
+avoid, and whether the API happens to permit the write does not change that.
+
+So there is nothing pending here. The column shows the current primary because
+knowing it is useful when choosing which number to tag — and it goes no further.
 
 Dropping the write also removes the deselect-on-click behaviour from the primary
 radios, which existed only to express "no primary phone".
@@ -319,13 +327,25 @@ Three states, not two:
 
 | Lookup | Domain | Shown |
 |---|---|---|
-| succeeded | present | control, no warning |
-| succeeded | absent | control disabled, current orange warning |
-| failed | unknown | control **enabled**, neutral note: "Could not verify inbound email domains (requires `routing:email:manage`) — the domain is not being checked." |
+| succeeded | present | control enabled, no warning |
+| succeeded | absent | no control, warning: the domain is not configured |
+| failed | unknown | no control, warning: the domain could not be verified |
 
-Failing open is right here. The check is advisory, the tag is valid regardless,
-and a missing *view* permission must not remove a *write* the administrator
-holds.
+**This fails closed, and the first revision of this section had it wrong.** It
+argued that a missing *view* permission should not remove a *write* the
+administrator holds, and that the check was merely advisory. It is not. Direct
+routing to an email address only works when its domain is configured for inbound
+email in Genesys, so a tag applied to an unverified address does nothing — while
+looking exactly like a tag that works. An administrator would leave believing
+direct routing was live for that user.
+
+Being told the check could not run is a worse experience and a better outcome.
+The warning names the missing permission so the gap is fixable rather than
+mysterious.
+
+An address that is *already* tagged keeps a disabled control in both blocked
+cases, so an existing tag stays visible and can still be removed. Removal is
+always safe; it is only adding one that needs the domain proven.
 
 Page the call through `fetchAllPages`, as the rest of the app does.
 

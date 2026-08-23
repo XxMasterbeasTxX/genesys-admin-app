@@ -5,8 +5,10 @@
  * and configure agent-level backup routing.
  *
  * Genesys allows one `directrouting` tag per media type, so the phone and the
- * email choices are each one-of-N. Primary phone is shown but not editable:
- * `primaryContactInfo` is readOnly and auto-populated from `addresses`.
+ * email choices are each one-of-N. Email tagging is offered only for addresses
+ * on a verified inbound domain — direct routing to an email does not work
+ * otherwise. Primary phone is shown but never editable: `primaryContactInfo`
+ * is readOnly, and Genesys advises against direct routing on the primary.
  *
  * Flow:
  *   1. Select users, optionally narrowed by group
@@ -125,8 +127,9 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     <p class="page-desc">
       Assign the <code>directrouting</code> integration tag to one phone number
       and one email address per user, and configure agent-level backup routing.
-      Primary phone is shown for reference — Genesys derives it from the
-      addresses and it cannot be set here.
+      Email can only be tagged on a domain configured for inbound email in
+      Genesys. Primary phone is shown for reference only — Genesys derives it
+      from the addresses, and advises against direct routing on the primary.
     </p>
 
     <!-- User picker, with an optional group filter beside it that narrows
@@ -469,11 +472,14 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       const tdAddr = addressCell(addr ? (addr.display || addr.address) : "", !addr);
       const tdInt = integrationCell(addr);
 
-      // Primary is read-only: primaryContactInfo is readOnly on both User and
-      // UpdateUser and is auto-populated from addresses, so the radio that used
-      // to live here promised an edit the API does not accept. Showing which
-      // address Genesys reports as primary keeps the information without the
-      // promise. See §4 of the design doc.
+      // Primary is read-only, permanently — not pending a better write path.
+      // Two independent reasons: primaryContactInfo is readOnly on both User
+      // and UpdateUser and auto-populated from addresses, so the radio that
+      // used to live here promised an edit the API does not accept; and Genesys
+      // advises against routing on the primary phone in the first place, so
+      // this page should not be making it easy to set. Showing which address
+      // Genesys reports as primary keeps the information without the promise.
+      // See §4 of the design doc.
       const tdPri = document.createElement("td");
       if (!addr) {
         tdPri.textContent = "—";
@@ -550,23 +556,28 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       tdPri.textContent = "—";
       tdPri.className = "dr-addr-na";
 
-      // Offered whenever the domain is not known to be absent: a missing
-      // routing:email:manage must not remove a write the admin does hold.
-      // An address already tagged still gets its control even on an absent
-      // domain — disabled, so the tag cannot be added here, but visible and
-      // removable via None. Rendering nothing would hide a live tag and let
-      // the row read as untagged.
+      // Tagging is offered only when the domain is *positively known* to be an
+      // inbound domain in Genesys. Direct routing to an email simply does not
+      // work otherwise, so offering the control on an unverified domain would
+      // let an admin tag an address believing it routes when it cannot — a
+      // worse outcome than being told the check could not run.
+      //
+      // An address already tagged keeps a disabled control so the tag stays
+      // visible and can still be removed via None; rendering nothing would let
+      // a live tag read as untagged.
       const tagged = emailAddr.integration === "directrouting";
       const tdDR = document.createElement("td");
-      if (!domainKnown || domainExists || tagged) {
+      if (domainExists || tagged) {
         const r = document.createElement("input");
         r.type = "radio";
         r.name = `dr_email_${userId}`;
         r.value = String(idx);
         r.checked = tagged;
-        if (domainKnown && !domainExists) {
+        if (!domainExists) {
           r.disabled = true;
-          r.title = "The domain is not configured for inbound email — this tag can be removed but not re-added here.";
+          r.title = domainKnown
+            ? "The domain is not configured for inbound email — this tag can be removed but not re-added here."
+            : "The inbound domain list could not be read, so this cannot be verified — the tag can be removed but not re-added here.";
         } else {
           makeDeselectable(r, () => { emailNoneRadio.checked = true; });
         }
@@ -580,7 +591,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       tbody.append(tr);
 
       const note = !domainKnown
-        ? "Inbound email domains could not be read (requires routing:email:manage) — the domain is not being checked."
+        ? "Inbound email domains could not be read (requires routing:email:manage), so this address cannot be verified — direct routing for email is unavailable here."
         : !domainExists
           ? `Domain "${domain}" is not configured as an inbound email domain in Genesys — emails cannot be routed to this address.`
           : "";
@@ -589,7 +600,8 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         warnTr.className = "dr-email-warn-row";
         const warnTd = document.createElement("td");
         warnTd.colSpan = 5;
-        warnTd.className = domainKnown ? "dr-email-warn" : "dr-email-note";
+        // Both cases block tagging, so both read as warnings.
+        warnTd.className = "dr-email-warn";
         warnTd.textContent = note;
         warnTr.append(warnTd);
         tbody.append(warnTr);

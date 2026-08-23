@@ -4356,13 +4356,6 @@ body {
   font-style: italic;
 }
 .dr-addr-primary { color: var(--text); }
-/* "We could not check", as distinct from "the domain is absent" — stated
-   plainly rather than in the warning colour, because nothing is wrong yet. */
-.dr-email-note {
-  color: var(--muted);
-  font-size: 12px;
-  padding-top: 0;
-}
 .dr-none-row td {
   border-bottom: none;
 }
