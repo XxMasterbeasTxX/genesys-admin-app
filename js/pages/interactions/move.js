@@ -17,6 +17,7 @@
  */
 import { escapeHtml, formatDateTime, sleep, makeStatus, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
+import { createSingleSelect } from "../../components/multiSelect.js";
 import { logAction } from "../../services/activityLogService.js";
 
 // ── Constants ───────────────────────────────────────────────────────
@@ -122,26 +123,32 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     <hr class="hr">
 
     <p class="page-desc">
-      Transfer active interactions from one queue to another. Supports media
-      type filtering and date range controls. Preview matching conversations
-      before executing the move.
+      Transfer interactions waiting in one queue to another, by blind transfer.
+      Filters: media type and date range. Preview before moving — Move acts on
+      what the preview found, and cannot be undone.
     </p>
 
-    <!-- Queue selectors -->
+    <div class="mi-warning">
+      <div class="mi-warning-title">&#9888; WARNING: Move is a blind transfer and cannot be undone</div>
+      Each matching interaction is transferred to the destination queue and
+      re-queued there. It cannot be moved back automatically, and its wait time
+      in the destination queue starts again.
+    </div>
+
+    <!-- Route. One row with the direction shown: source and destination were
+         two identically sized blocks 400px apart, distinguished only by a 12px
+         grey label, on an action where reversing them is the expensive mistake. -->
     <div class="mi-controls">
-      <div class="mi-control-group mi-queue-group">
-        <label class="mi-label" id="miSrcLabel">Source Queue</label>
-        <input type="text" class="input mi-queue-search" id="miSrcSearch" placeholder="Search queues…" disabled>
-        <select class="input mi-queue-select" id="miSrcQueue" disabled>
-          <option value="">Loading queues…</option>
-        </select>
-      </div>
-      <div class="mi-control-group mi-queue-group">
-        <label class="mi-label" id="miDstLabel">Destination Queue</label>
-        <input type="text" class="input mi-queue-search" id="miDstSearch" placeholder="Search queues…" disabled>
-        <select class="input mi-queue-select" id="miDstQueue" disabled>
-          <option value="">Loading queues…</option>
-        </select>
+      <div class="mi-route">
+        <div class="mi-control-group">
+          <label class="mi-label" id="miSrcLabel">Source queue</label>
+          <div id="miSrcDropdown"></div>
+        </div>
+        <div class="mi-route-arrow" aria-hidden="true">&#8594;</div>
+        <div class="mi-control-group">
+          <label class="mi-label" id="miDstLabel">Destination queue</label>
+          <div id="miDstDropdown"></div>
+        </div>
       </div>
     </div>
 
@@ -180,8 +187,9 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
 
     <!-- Action buttons -->
     <div class="mi-actions">
-      <button class="btn" id="miPreviewBtn" disabled>Preview</button>
-      <button class="btn mi-btn-move" id="miMoveBtn" disabled>Move Interactions</button>
+      <button class="btn btn--primary" id="miPreviewBtn" disabled>Preview</button>
+      <button class="btn mi-btn-move" id="miMoveBtn" disabled
+              title="Run a preview first">Move Interactions</button>
       <button class="btn" id="miCancelBtn" style="display:none">Cancel</button>
       <button class="btn" id="miClearBtn">Clear Results</button>
     </div>
@@ -213,10 +221,12 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
   `;
 
   // ── DOM refs ────────────────────────────────────────
-  const $srcSearch    = el.querySelector("#miSrcSearch");
-  const $srcQueue     = el.querySelector("#miSrcQueue");
-  const $dstSearch    = el.querySelector("#miDstSearch");
-  const $dstQueue     = el.querySelector("#miDstQueue");
+  const ssSrc = createSingleSelect({ placeholder: "— Select queue —", searchable: true });
+  const ssDst = createSingleSelect({ placeholder: "— Select queue —", searchable: true });
+  el.querySelector("#miSrcDropdown").append(ssSrc.el);
+  el.querySelector("#miDstDropdown").append(ssDst.el);
+  ssSrc.setEnabled(false);
+  ssDst.setEnabled(false);
   const srcBusy       = makeControlBusy(el.querySelector("#miSrcLabel"));
   const dstBusy       = makeControlBusy(el.querySelector("#miDstLabel"));
   const $mediaAll     = el.querySelector("#miMediaAll");
@@ -235,27 +245,10 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
   const $tableWrap    = el.querySelector("#miTableWrap");
   const $tbody        = el.querySelector("#miTbody");
 
-  // ── Queue search / filter wiring ────────────────────
-  function populateQueueSelect($select, $search, filterText = "") {
-    const lower = filterText.toLowerCase();
-    const filtered = lower
-      ? queues.filter(q => q.name.toLowerCase().includes(lower))
-      : queues;
-
-    const prev = $select.value;
-    $select.innerHTML = `<option value="">— Select queue —</option>`
-      + filtered.map(q =>
-        `<option value="${escapeHtml(q.id)}">${escapeHtml(q.name)}</option>`
-      ).join("");
-
-    // Restore selection if still in filtered list
-    if (prev && filtered.some(q => q.id === prev)) {
-      $select.value = prev;
-    }
+  /** A queue name, for the confirmation dialog and the Activity Log entry. */
+  function queueName(id) {
+    return queues.find(q => q.id === id)?.name || "";
   }
-
-  $srcSearch.addEventListener("input", () => populateQueueSelect($srcQueue, $srcSearch, $srcSearch.value));
-  $dstSearch.addEventListener("input", () => populateQueueSelect($dstQueue, $dstSearch, $dstSearch.value));
 
   // ── Media type wiring ───────────────────────────────
   $mediaAll.addEventListener("change", () => {
@@ -288,12 +281,25 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
   function setButtonsRunning(running) {
     isRunning = running;
     $previewBtn.disabled = running;
-    $moveBtn.disabled = running;
     $cancelBtn.style.display = running ? "" : "none";
-    $srcQueue.disabled = running;
-    $dstQueue.disabled = running;
-    $srcSearch.disabled = running;
-    $dstSearch.disabled = running;
+    ssSrc.setEnabled(!running);
+    ssDst.setEnabled(!running);
+    syncMoveButton();
+  }
+
+  /**
+   * Move is available only once a preview has produced a set to act on.
+   *
+   * It used to be enabled as soon as the queues loaded, and pressing it ran the
+   * scan itself — so the whole set could be transferred without ever being
+   * shown, on an action that cannot be undone. Disconnect was given the same
+   * failsafe on 2026-08-21, for the same reason.
+   */
+  function syncMoveButton() {
+    $moveBtn.disabled = isRunning || !candidates.length;
+    $moveBtn.title = candidates.length
+      ? `Move the ${candidates.length} previewed interaction${candidates.length !== 1 ? "s" : ""}`
+      : "Run a preview first";
   }
 
   // ── Render results table ────────────────────────────
@@ -327,8 +333,8 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
 
   // ── Validate inputs ─────────────────────────────────
   function validate() {
-    const srcId = $srcQueue.value;
-    const dstId = $dstQueue.value;
+    const srcId = ssSrc.getValue();
+    const dstId = ssDst.getValue();
     if (!srcId) { setStatus("Please select a source queue.", "error"); return null; }
     if (!dstId) { setStatus("Please select a destination queue.", "error"); return null; }
     if (srcId === dstId) { setStatus("Source and destination queues must be different.", "error"); return null; }
@@ -567,32 +573,14 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     const params = validate();
     if (!params) return;
 
-    // If we don't have candidates yet, run scan first
-    if (!candidates.length) {
-      cancelled = false;
-      setButtonsRunning(true);
-      results = [];
-      renderResults();
-
-      try {
-        candidates = await scanConversations(params);
-        if (!candidates.length) {
-          setStatus(STATUS.noResults);
-          setButtonsRunning(false);
-          hideProgress();
-          return;
-        }
-      } catch (err) {
-        setStatus(STATUS.error(err.message), "error");
-        setButtonsRunning(false);
-        hideProgress();
-        return;
-      }
-    }
+    // No scan-on-press branch. The button is disabled until a preview has
+    // produced a set (`syncMoveButton`), so there is always something to move
+    // and it has always been shown first.
+    if (!candidates.length) return;
 
     // Confirmation
-    const srcName = $srcQueue.options[$srcQueue.selectedIndex]?.text || "";
-    const dstName = $dstQueue.options[$dstQueue.selectedIndex]?.text || "";
+    const srcName = queueName(params.srcId);
+    const dstName = queueName(params.dstId);
     const ok = confirm(
       `Move ${candidates.length} interaction${candidates.length !== 1 ? "s" : ""} from "${srcName}" to "${dstName}"?\n\nThis action cannot be undone.`
     );
@@ -658,8 +646,8 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
       count:       successCount + failCount,
     });
     setTimeout(hideProgress, 800);
+    candidates = []; // A fresh preview is required before another move
     setButtonsRunning(false);
-    candidates = []; // Force re-scan on next move
   });
 
   // ── Cancel ──────────────────────────────────────────
@@ -670,6 +658,7 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     candidates = [];
     results = [];
     renderResults();
+    syncMoveButton();
     hideProgress();
     setStatus(STATUS.ready);
   });
@@ -681,15 +670,13 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
       queues = await gc.fetchAllQueues(api, orgContext.get());
       queues.sort((a, b) => a.name.localeCompare(b.name));
 
-      populateQueueSelect($srcQueue, $srcSearch);
-      populateQueueSelect($dstQueue, $dstSearch);
-
-      $srcQueue.disabled = false;
-      $dstQueue.disabled = false;
-      $srcSearch.disabled = false;
-      $dstSearch.disabled = false;
+      const items = queues.map(q => ({ id: q.id, label: q.name }));
+      ssSrc.setItems(items);
+      ssDst.setItems(items);
+      ssSrc.setEnabled(true);
+      ssDst.setEnabled(true);
       $previewBtn.disabled = false;
-      $moveBtn.disabled = false;
+      // Move stays disabled: it needs a preview, not a queue list.
 
       setStatus(STATUS.ready);
     } catch (err) {

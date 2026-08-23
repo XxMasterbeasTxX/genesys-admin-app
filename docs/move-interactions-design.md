@@ -1,9 +1,9 @@
 # Interactions › Move — layout and safety — Design
 
-Status: **Probed twice — §6.3 and §6.4.** The gate is not just correct but
-precisely correct, and it turns out to be load-bearing for a reason nobody had
-credited it with (§6.4). The orphan case remains unseen; §6.1 is designed so
-production reports it rather than another probe cycle. Step 2 of §10 is next.
+Status: **Steps 1–2 of §10 built.** The probe ran twice (§6.3, §6.4) and the
+layout, warning banner and Move gate are in. Step 3 — the remaining
+guard-rails — is next. The orphan case remains unseen; §6.1 is designed so
+production reports it rather than another probe cycle.
 Author: Genesys Admin App
 Last updated: 2026-08-23
 
@@ -435,8 +435,8 @@ until Move is finished, so there is no case for landing the safety fixes early.
 1. **The probe** (§6.2). ✅ First, because it is the only step that needs a real
    org and someone else's time, and because its answer decides step 5's
    categories. Preview-only; nothing is transferred.
-2. **Layout, the warning banner, and the Move gate** (§4, §5.2). §5.2 and §4.3
-   are the same edit to the same actions row, so splitting them would mean
+2. **Layout, the warning banner, and the Move gate** (§4, §5.2). ✅ §5.2 and
+   §4.3 are the same edit to the same actions row, so splitting them would mean
    touching that row and reviewing that button twice.
 3. **The remaining guard-rails** (§5.1, §5.3), wired to the controls that will
    actually exist. This is the real reason not to do safety first: attaching
