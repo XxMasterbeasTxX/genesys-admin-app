@@ -71,6 +71,41 @@ export function filterUserOptions(users, groupMemberIds, selectedIds) {
     }));
 }
 
+/**
+ * Is there anything this page can actually do for this user?
+ *
+ * A card with no usable switch on it is noise: it takes a screenful and offers
+ * nothing. "Has an email" is not the test, because direct routing to an email
+ * only works on a domain configured for inbound email — a user whose only
+ * address is an unroutable email has nothing to tag.
+ *
+ * An email that is *already* tagged counts even on an unverified domain, since
+ * removing it is a real action and this is the only place to do it.
+ *
+ * @param {Object} user
+ * @param {Set<string>} emailDomains  Lowercased inbound domains.
+ * @param {boolean} domainsKnown      False when the lookup failed.
+ */
+export function hasRoutableAddress(user, emailDomains, domainsKnown) {
+  const addrs = user.addresses || [];
+  const phoneTypes = new Set(PHONE_TYPES.map(t => t.type));
+
+  const hasPhone = addrs.some(a =>
+    a.mediaType === "PHONE" &&
+    phoneTypes.has(a.type) &&
+    (a.address || a.display || a.extension));
+  if (hasPhone) return true;
+
+  return addrs.some(a => {
+    if (a.mediaType !== "EMAIL") return false;
+    if (a.integration === "directrouting") return true;
+    if (!domainsKnown) return false;
+    const value = a.display || a.address || "";
+    const domain = value.includes("@") ? value.split("@")[1].toLowerCase() : "";
+    return !!domain && emailDomains.has(domain);
+  });
+}
+
 // ── Page renderer ───────────────────────────────────────────────────
 
 export default function renderAddUsers({ route, me, api, orgContext, access }) {
@@ -403,7 +438,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
 
   // ── Render one user card ────────────────────────────
   function createUserCard(userId) {
-    const { user, backup, backupResult } = loaded.get(userId);
+    const { user, backup, backupResult, strandedBackup } = loaded.get(userId);
     const addrs = user.addresses || [];
     const card = document.createElement("div");
     card.className = "dr-user-card";
@@ -417,6 +452,15 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       header.innerHTML += ` <span class="dr-user-email">${escapeHtml(user.email)}</span>`;
     }
     card.append(header);
+
+    // Only reason this card is here at all — say so, or it reads as a bug.
+    if (strandedBackup) {
+      const note = document.createElement("div");
+      note.className = "dr-email-warn";
+      note.textContent =
+        "This user has no phone number and no email on a routable domain, so direct routing cannot reach them — but a backup is configured. It is shown here so it can be removed.";
+      card.append(note);
+    }
 
     // Find current states
     const drPhoneAddr = addrs.find(a => a.mediaType === "PHONE" && a.integration === "directrouting");
@@ -971,29 +1015,27 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
           if (userResult.status === "fulfilled") {
             const user = userResult.value;
             const userAddrs = user.addresses || [];
-            const workPhoneTypes = new Set(PHONE_TYPES.map(t => t.type));
-            const hasPhone = userAddrs.some(a => a.mediaType === "PHONE" && workPhoneTypes.has(a.type));
-            const hasEmail = userAddrs.some(a => a.mediaType === "EMAIL");
-            // Skip users with no phone and no email addresses
-            if (!hasPhone && !hasEmail) noAddresses++;
-            if (hasPhone || hasEmail) {
-              // getDirectRoutingBackup now reports which of "none" / "denied" /
-              // "ok" it got. The tagged result is kept whole — the backup
-              // section needs the distinction — and `settings` is what the
-              // existing render and snapshot read.
-              // A rejection is not a refusal: it may be a 500 or a dropped
-              // connection. Only the helper can say "denied", so anything that
-              // reaches here as a rejection is tagged "error" and rendered as a
-              // failure to read rather than as a missing permission.
-              const backupResult = bkResult.status === "fulfilled"
-                ? bkResult.value
-                : { state: "error", settings: null };
-              const backup = backupResult.settings;
-              // `orig` is taken from the DOM once the card is rendered, so the baseline
-              // is literally what the form shows rather than a parallel derivation
-              // of it that could disagree.
-              loaded.set(uid, { user, backup, backupResult, orig: null });
-            }
+            // Whether there is anything to do for this user depends on the
+            // inbound domain list, which is still in flight. Keep everyone for
+            // now and prune once it lands.
+            //
+            // getDirectRoutingBackup reports which of "none" / "denied" / "ok"
+            // it got. The tagged result is kept whole — the backup section
+            // needs the distinction — and `settings` is what the render and
+            // the snapshot read.
+            //
+            // A rejection is not a refusal: it may be a 500 or a dropped
+            // connection. Only the helper can say "denied", so anything that
+            // reaches here as a rejection is tagged "error" and rendered as a
+            // failure to read rather than as a missing permission.
+            const backupResult = bkResult.status === "fulfilled"
+              ? bkResult.value
+              : { state: "error", settings: null };
+            const backup = backupResult.settings;
+            // `orig` is taken from the DOM once the card is rendered, so the
+            // baseline is literally what the form shows rather than a parallel
+            // derivation of it that could disagree.
+            loaded.set(uid, { user, backup, backupResult, orig: null });
           }
 
           completed++;
@@ -1006,9 +1048,25 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       // Ensure email domains are loaded before rendering
       await emailDomainPromise;
 
+      // Drop anyone this page cannot do anything for. A card with no usable
+      // switch is a screenful of nothing.
+      for (const [uid, data] of [...loaded]) {
+        if (hasRoutableAddress(data.user, emailDomainsCache, emailDomainsAvailable)) continue;
+        // One exception, on the same principle as a tagged email on an
+        // unverified domain: a backup configured for a user who has no
+        // routable address does nothing, but it is real, and this page is the
+        // only place to clear it. Hiding the card would strand it.
+        if (data.backup?.userId || data.backup?.queueId) {
+          data.strandedBackup = true;
+          continue;
+        }
+        loaded.delete(uid);
+        noAddresses++;
+      }
+
       // Say which of the two happened, and how many of each.
       const skipParts = [];
-      if (noAddresses) skipParts.push(`${noAddresses} without addresses`);
+      if (noAddresses) skipParts.push(`${noAddresses} with no phone or routable email`);
       if (failedReads) skipParts.push(`${failedReads} could not be read`);
       const skipNote = skipParts.length ? ` (${skipParts.join(", ")})` : "";
 
@@ -1016,7 +1074,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         setStatus(
           failedReads && !noAddresses
             ? `No user details could be loaded — ${failedReads} could not be read.`
-            : `No users with phone or email addresses found${skipNote}.`,
+            : `None of the selected users have a phone number or an email on a routable domain${skipNote}.`,
           "error");
       } else {
         // Render cards
