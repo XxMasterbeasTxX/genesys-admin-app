@@ -23,7 +23,7 @@
  *   POST /api/v2/analytics/queues/observations/query        — live queue depth
  *   GET  /api/v2/routing/queues                             — list queues
  */
-import { escapeHtml, formatDateTime, sleep, makeStatus, formatWait } from "../../utils.js";
+import { escapeHtml, formatDateTime, sleep, makeStatus, formatWait, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 import { logAction } from "../../services/activityLogService.js";
@@ -474,7 +474,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
       <div id="diQueueInput" style="display:none">
         <div class="di-controls">
           <div class="di-control-group">
-            <label class="di-label">Queue</label>
+            <label class="di-label" id="diQueueLabel">Queue</label>
             <div id="diQueueDropdown"></div>
           </div>
         </div>
@@ -578,6 +578,9 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     onChange: () => invalidateCandidates(),
   });
   el.querySelector("#diQueueDropdown").append(ssQueue.el);
+  // The queue list comes from Genesys, and a disabled dropdown reads the same
+  // whether it is loading or has failed to.
+  const queueBusy = makeControlBusy(el.querySelector("#diQueueLabel"));
   ssQueue.setEnabled(false);
   const $mediaAll     = el.querySelector("#diMediaAll");
   const $mediaCbs     = el.querySelectorAll(".di-media-cb");
@@ -1370,6 +1373,7 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
 
   // ── Load queues on mount ───────────────────────────
   (async () => {
+    queueBusy(true);
     try {
       queues = await gc.fetchAllQueues(api, orgContext.get());
       queues.sort((a, b) => a.name.localeCompare(b.name));
@@ -1379,6 +1383,8 @@ export default function renderDisconnectInteractions({ me, api, orgContext }) {
     } catch (err) {
       setStatus(`Error: Failed to load queues — ${err.message}`, "error");
       console.error("Queue load error:", err);
+    } finally {
+      queueBusy(false);
     }
   })();
 
