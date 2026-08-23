@@ -343,15 +343,51 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     return emailDomainsCache;
   }
 
-  /** Make a radio deselectable: clicking a checked radio unchecks it. */
-  function makeDeselectable(radio, onDeselect) {
-    radio.addEventListener("mousedown", function () { this._wasChecked = this.checked; });
-    radio.addEventListener("click", function () {
-      if (this._wasChecked) {
-        this.checked = false;
-        if (onDeselect) onDeselect();
+  /**
+   * One direct-routing switch.
+   *
+   * Genesys allows a single `directrouting` tag per media type, which a radio
+   * group also expressed — but a radio cannot be un-ticked, so clearing a tag
+   * needed a whole extra "None" row per media type per user. A switch turns
+   * itself off, so the constraint is kept by turning the others in the group
+   * off when one comes on, and the None rows go away entirely.
+   *
+   * @param {string} group  Exclusion group, e.g. `phone_<userId>`.
+   * @param {string} value  Read back by readCurrentState.
+   */
+  function drSwitch(group, value, checked) {
+    const lbl = document.createElement("label");
+    lbl.className = "dt-toggle dt-toggle--sm";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.dataset.drGroup = group;
+    cb.dataset.drValue = value;
+    cb.checked = checked;
+    cb.setAttribute("aria-label", "Direct routing");
+
+    cb.addEventListener("change", () => {
+      if (!cb.checked) return;
+      for (const other of el.querySelectorAll(`input[data-dr-group="${group}"]`)) {
+        if (other !== cb) other.checked = false;
       }
     });
+
+    const slider = document.createElement("span");
+    slider.className = "dt-toggle-slider";
+    lbl.append(cb, slider);
+    return { lbl, cb };
+  }
+
+  /** Turn on the switch for `value` in a group, or all off when value is null. */
+  function setGroupValue(group, value) {
+    let hit = false;
+    for (const cb of el.querySelectorAll(`input[data-dr-group="${group}"]`)) {
+      const on = value !== null && cb.dataset.drValue === value && !cb.disabled;
+      cb.checked = on;
+      if (on) hit = true;
+    }
+    return hit;
   }
 
   /** Grey out a section and say which permission is missing. */
@@ -426,13 +462,6 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       if (a.mediaType === "PHONE") phoneByType[a.type] = a;
     }
 
-    // Create the NONE radio first so phone DR radios can reference it on deselect
-    const noneRadio = document.createElement("input");
-    noneRadio.type = "radio";
-    noneRadio.name = `dr_phone_${userId}`;
-    noneRadio.value = "NONE";
-    noneRadio.checked = drPhoneType === "NONE";
-
     /** One cell showing an address's current integration tag. */
     function integrationCell(addr) {
       const td = document.createElement("td");
@@ -493,16 +522,9 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         tdPri.className = "dr-addr-na";
       }
 
-      // DR radio
       const tdDR = document.createElement("td");
       if (addr) {
-        const r = document.createElement("input");
-        r.type = "radio";
-        r.name = `dr_phone_${userId}`;
-        r.value = type;
-        r.checked = drPhoneType === type;
-        makeDeselectable(r, () => { noneRadio.checked = true; });
-        tdDR.append(r);
+        tdDR.append(drSwitch(`phone_${userId}`, type, drPhoneType === type).lbl);
       } else {
         tdDR.textContent = "—";
         tdDR.className = "dr-addr-missing";
@@ -512,30 +534,12 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       tbody.append(tr);
     }
 
-    // "None" option for DR phone
-    const noneRow = document.createElement("tr");
-    noneRow.className = "dr-none-row";
-    const noneSpacerPhone = document.createElement("td");
-    noneSpacerPhone.colSpan = 4;
-    const noneTd = document.createElement("td");
-    const noneLabel = document.createElement("label");
-    noneLabel.className = "dr-none-label";
-    noneLabel.append(noneRadio, document.createTextNode(" None"));
-    noneTd.append(noneLabel);
-    noneRow.append(noneSpacerPhone, noneTd);
-    tbody.append(noneRow);
-
     // Email rows.
     // Genesys supports one directrouting tag per media type, so these are a
     // radio group like the phones, not the checkboxes that used to allow two
     // emails to be tagged at once. Keyed by index: two EMAIL addresses can
     // share a type, and keying on type silently merged them.
     const emails = addrs.filter(a => a.mediaType === "EMAIL");
-    const emailNoneRadio = document.createElement("input");
-    emailNoneRadio.type = "radio";
-    emailNoneRadio.name = `dr_email_${userId}`;
-    emailNoneRadio.value = "NONE";
-    emailNoneRadio.checked = !emails.some(a => a.integration === "directrouting");
 
     emails.forEach((emailAddr, idx) => {
       const tr = document.createElement("tr");
@@ -568,20 +572,22 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       const tagged = emailAddr.integration === "directrouting";
       const tdDR = document.createElement("td");
       if (domainExists || tagged) {
-        const r = document.createElement("input");
-        r.type = "radio";
-        r.name = `dr_email_${userId}`;
-        r.value = String(idx);
-        r.checked = tagged;
+        const { lbl, cb } = drSwitch(`email_${userId}`, String(idx), tagged);
         if (!domainExists) {
-          r.disabled = true;
-          r.title = domainKnown
+          // Off but not on: an existing tag stays visible and can be switched
+          // off, which is always safe. Adding one needs the domain proven.
+          lbl.title = domainKnown
             ? "The domain is not configured for inbound email — this tag can be removed but not re-added here."
             : "The inbound domain list could not be read, so this cannot be verified — the tag can be removed but not re-added here.";
-        } else {
-          makeDeselectable(r, () => { emailNoneRadio.checked = true; });
+          // Refused on click, not on change: preventDefault reverts the state
+          // and suppresses `change` entirely, so the exclusion handler never
+          // runs. Blocking it afterwards would have already switched off a
+          // valid selection on another row before bouncing this one back.
+          cb.addEventListener("click", (e) => {
+            if (cb.checked) e.preventDefault();
+          });
         }
-        tdDR.append(r);
+        tdDR.append(lbl);
       } else {
         tdDR.textContent = "—";
         tdDR.className = "dr-addr-na";
@@ -607,20 +613,6 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         tbody.append(warnTr);
       }
     });
-
-    if (emails.length) {
-      const eNoneRow = document.createElement("tr");
-      eNoneRow.className = "dr-none-row";
-      const eSpacer = document.createElement("td");
-      eSpacer.colSpan = 4;
-      const eNoneTd = document.createElement("td");
-      const eNoneLabel = document.createElement("label");
-      eNoneLabel.className = "dr-none-label";
-      eNoneLabel.append(emailNoneRadio, document.createTextNode(" None"));
-      eNoneTd.append(eNoneLabel);
-      eNoneRow.append(eSpacer, eNoneTd);
-      tbody.append(eNoneRow);
-    }
 
     table.append(tbody);
     addrSection.append(table);
@@ -910,16 +902,14 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
 
   // ── Read current state from DOM ─────────────────────
   function readCurrentState(userId) {
-    const drPhoneRadio = el.querySelector(`input[name="dr_phone_${userId}"]:checked`);
-    const drPhoneType = drPhoneRadio?.value || "NONE";
+    const drPhoneSwitch = el.querySelector(`input[data-dr-group="phone_${userId}"]:checked`);
+    const drPhoneType = drPhoneSwitch?.dataset.drValue || "NONE";
 
     // One email at most: Genesys allows a single directrouting tag per media
     // type. The value is the address's index, since two EMAIL addresses can
     // share a type.
-    const drEmailRadio = el.querySelector(`input[name="dr_email_${userId}"]:checked`);
-    const drEmailIndex = drEmailRadio && drEmailRadio.value !== "NONE"
-      ? Number(drEmailRadio.value)
-      : null;
+    const drEmailSwitch = el.querySelector(`input[data-dr-group="email_${userId}"]:checked`);
+    const drEmailIndex = drEmailSwitch ? Number(drEmailSwitch.dataset.drValue) : null;
 
     // Both targets are read unconditionally: they are independent, and setting
     // both is legal — user is the primary backup, queue the secondary.
@@ -1061,11 +1051,10 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
 
     let applied = 0;
     for (const uid of loaded.keys()) {
-      const sel = val === "NONE"
-        ? el.querySelector(`input[name="dr_phone_${uid}"][value="NONE"]`)
-        // Only select if the user has that phone type.
-        : el.querySelector(`input[name="dr_phone_${uid}"][value="${val}"]`);
-      if (sel) { sel.checked = true; applied++; }
+      // null turns the whole group off; otherwise it only lands on users who
+      // actually have that phone type.
+      if (setGroupValue(`phone_${uid}`, val === "NONE" ? null : val)) applied++;
+      else if (val === "NONE") applied++;
     }
 
     // Without this the control looks inert: it flips radios inside cards that

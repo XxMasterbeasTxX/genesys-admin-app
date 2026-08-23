@@ -300,10 +300,24 @@ this with a radio group and a None row. Emails use checkboxes, so two can be
 ticked and applied, and the resulting user is in a state the documentation says
 is not supported.
 
-Emails get the phone treatment: a radio group named `dr_email_{userId}` plus a
-None row. Most users have a single email address in `addresses`, so in practice
-this is a one-row group — but the constraint should be expressed by the control,
+Emails get the phone treatment: the same one-of-N control, in the same exclusion
+group. Most users have a single email address in `addresses`, so in practice
+this is a group of one — but the constraint should be expressed by the control,
 not left to how many rows happen to exist.
+
+**Revised 2026-08-23: the control is a switch, not a radio.** Radios expressed
+the constraint correctly but cannot be un-ticked, so clearing a tag needed a
+"None" row per media type per user — two extra table rows on most cards, whose
+only real job was to be a click target. Switches turn themselves off, so the
+one-per-media-type rule is kept by switching the rest of the group off when one
+comes on, and the None rows are gone. `makeDeselectable` — the click-the-checked-
+radio-to-clear trick that nobody would have guessed at — went with them.
+
+A switch is shown **only where it can be used**: an address type the user does
+not have shows a dash, not a dead control. The single exception is an email
+already tagged on a domain that cannot be verified, which keeps a switch that
+turns off but refuses to turn back on — hiding it would hide a live tag and let
+the row read as untagged.
 
 The current keying is `emailAddr.type || "WORK"`, which collides if a user holds
 two EMAIL addresses of the same type. Key on array index instead, and carry the
