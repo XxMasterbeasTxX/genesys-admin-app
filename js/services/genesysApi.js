@@ -1413,6 +1413,34 @@ export async function fetchAllCallRoutes(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/architect/ivrs", opts);
 }
 
+/** Fetch a single call route (Architect IVR). Needed fresh before a PUT. */
+export async function getCallRoute(api, orgId, ivrId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/architect/ivrs/${ivrId}`);
+}
+
+/**
+ * Replace a call route's DNIS list.
+ *
+ * The endpoint is a whole-object PUT, so the caller hands in the route exactly
+ * as it was read and only `dnis` is swapped — anything omitted is dropped.
+ * `version` must be the one from that read, so read immediately before writing.
+ *
+ * Genesys enforces that a number appears on at most one call route, which is
+ * why moving a number is a removal and an addition rather than one write.
+ */
+export async function putCallRouteDnis(api, orgId, route, dnis) {
+  const body = { ...route, dnis };
+  delete body.selfUri;
+  delete body.dateCreated;
+  delete body.dateModified;
+  delete body.modifiedBy;
+  delete body.createdBy;
+  delete body.state;
+  delete body.modifiedByApp;
+  delete body.createdByApp;
+  return api.proxyGenesys(orgId, "PUT", `/api/v2/architect/ivrs/${route.id}`, { body });
+}
+
 /** Fetch all emergency groups. */
 export async function fetchAllEmergencyGroups(api, orgId, opts = {}) {
   return fetchAllPages(

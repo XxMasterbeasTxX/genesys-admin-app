@@ -29,7 +29,7 @@
  */
 import { escapeHtml, sleep, makeStatus } from "../../../utils.js";
 import * as gc from "../../../services/genesysApi.js";
-import { createMultiSelect } from "../../../components/multiSelect.js";
+import { createMultiSelect, createSingleSelect } from "../../../components/multiSelect.js";
 import { logAction } from "../../../services/activityLogService.js";
 
 // Genesys accepts [60, 864000] for agentWaitSeconds.
@@ -172,6 +172,10 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   let emailDomainsAvailable = false; // false = the lookup failed, not "none exist"
   let didRanges = null;              // DID pool ranges, numeric
   let didPoolsAvailable = false;     // false = the lookup failed, not "no pools"
+  let callRoutes = null;             // [{ id, name, dnis }]
+  let callRoutesAvailable = false;   // false = the lookup failed, not "no routes"
+  let routeByNumber = new Map();     // digits → route, built once from callRoutes
+  const routeSelects = new Map();    // `${userId}|${phoneType}` → singleSelect
   let allUsers = [];                 // [{ id, name }] — active users, loaded once
   const groupMembers = new Map();    // groupId → Set<userId>, memoised for the page
   let filterToken = 0;               // guards against a slow fetch landing late
@@ -289,6 +293,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   const canEditAddresses = access && access.can ? access.can("users.directRouting.add", "addresses") : true;
   const canEditBackup    = access && access.can ? access.can("users.directRouting.add", "backup") : true;
   const canDeleteBackup  = access && access.can ? access.can("users.directRouting.add", "backupDelete") : true;
+  const canEditCallRoute = access && access.can ? access.can("users.directRouting.add", "callRoute") : true;
   const $summary      = el.querySelector("#drSummary");
 
   // ── Helpers ─────────────────────────────────────────
@@ -410,6 +415,28 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       didPoolsAvailable = false;
     }
     return didRanges;
+  }
+
+  async function loadCallRoutes() {
+    if (callRoutes) return callRoutes;
+    try {
+      callRoutes = await gc.fetchAllCallRoutes(api, orgId);
+      callRoutes.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      // dnis is unique across routes, so one number maps to at most one route.
+      routeByNumber = new Map();
+      for (const r of callRoutes) {
+        for (const n of r.dnis || []) routeByNumber.set(digitsOf(n), r);
+      }
+      callRoutesAvailable = true;
+    } catch {
+      // Requires routing:callRoute:view. An empty list is "could not read",
+      // not "no routes exist" — the column disables rather than offering an
+      // empty dropdown that would read as the latter.
+      callRoutes = [];
+      routeByNumber = new Map();
+      callRoutesAvailable = false;
+    }
+    return callRoutes;
   }
 
   async function loadQueues() {
@@ -584,7 +611,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     const table = document.createElement("table");
     table.className = "dr-addr-table";
     table.innerHTML = `<thead><tr>
-      <th>Type</th><th>Address</th><th>Integration</th><th>Primary</th><th>Direct Routing</th>
+      <th>Type</th><th>Address</th><th>Integration</th><th>Primary</th><th>Direct Routing</th><th>Call Routing</th>
     </tr></thead>`;
     const tbody = document.createElement("tbody");
 
@@ -678,14 +705,45 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         tdDR.className = addr ? "dr-addr-na" : "dr-addr-missing";
       }
 
-      tr.append(tdType, tdAddr, tdInt, tdPri, tdDR);
+      // Call Routing. A tagged number that no call route points at routes
+      // nothing, so this is the other half of making direct routing work.
+      // Shown whenever the number is on a route, and editable regardless of
+      // the Direct Routing switch — hiding it would conceal real config and
+      // mean enabling direct routing just to clear a stale assignment.
+      const tdRoute = document.createElement("td");
+      if (addr && callRoutesAvailable) {
+        const current = routeByNumber.get(digitsOf(addr.address || addr.display));
+        const select = createSingleSelect({
+          placeholder: "— No call route —",
+          searchable: true,
+        });
+        // No empty entry here: createSingleSelect renders the placeholder
+        // itself as the clear option, and it already selects "".
+        select.setItems(callRoutes.map(r => ({ id: r.id, label: r.name || r.id })));
+        if (current) select.setValue(current.id);
+        if (!canEditCallRoute) select.setEnabled(false);
+        routeSelects.set(`${userId}|${type}`, {
+          select,
+          number: addr.address || addr.display,
+          originalRouteId: current?.id || "",
+        });
+        tdRoute.append(select.el);
+      } else {
+        tdRoute.textContent = "—";
+        tdRoute.className = "dr-addr-na";
+        if (addr && !callRoutesAvailable) {
+          tdRoute.title = "Call routes could not be read (requires routing:callRoute:view).";
+        }
+      }
+
+      tr.append(tdType, tdAddr, tdInt, tdPri, tdDR, tdRoute);
       tbody.append(tr);
 
       if (addr && !canTagPhone) {
         const warnTr = document.createElement("tr");
         warnTr.className = "dr-email-warn-row";
         const warnTd = document.createElement("td");
-        warnTd.colSpan = 5;
+        warnTd.colSpan = 6;
         warnTd.className = "dr-email-warn";
         warnTd.textContent = didPoolsAvailable
           ? "This number is not in a Genesys DID pool — calls cannot be routed to it."
@@ -747,7 +805,12 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         tdDR.className = "dr-addr-na";
       }
 
-      tr.append(tdType, tdAddr, tdInt, tdPri, tdDR);
+      // Call routing is a phone concept; email rows keep the column shape.
+      const tdRoute = document.createElement("td");
+      tdRoute.textContent = "—";
+      tdRoute.className = "dr-addr-na";
+
+      tr.append(tdType, tdAddr, tdInt, tdPri, tdDR, tdRoute);
       tbody.append(tr);
 
       const note = !domainKnown
@@ -759,7 +822,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         const warnTr = document.createElement("tr");
         warnTr.className = "dr-email-warn-row";
         const warnTd = document.createElement("td");
-        warnTd.colSpan = 5;
+        warnTd.colSpan = 6;
         // Both cases block tagging, so both read as warnings.
         warnTd.className = "dr-email-warn";
         warnTd.textContent = note;
@@ -1080,6 +1143,84 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     return { drPhoneType, drEmailIndex, backupUserId, backupQueueId, hasBackup, waitForAgent, agentWaitSeconds };
   }
 
+  /**
+   * Every call-route reassignment the operator has made, across all cards.
+   *
+   * Kept apart from the per-user `changes` list because a call route is not
+   * the user's object: two users' numbers can live on one route, so these are
+   * applied grouped by route rather than user by user (§9.4).
+   */
+  function collectRouteChanges() {
+    if (!canEditCallRoute || !callRoutesAvailable) return [];
+    const out = [];
+    for (const [key, entry] of routeSelects) {
+      const to = entry.select.getValue() || "";
+      if (to === entry.originalRouteId) continue;
+      out.push({
+        key,
+        number: entry.number,
+        from: entry.originalRouteId,
+        to,
+        userName: loaded.get(key.split("|")[0])?.user?.name || "",
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Apply the collected reassignments, one write per affected route.
+   *
+   * Removals run before additions, always: a number may appear on only one
+   * call route, so adding before removing is rejected as in use. A route that
+   * both loses and gains numbers is written twice, which is correct and cheap.
+   *
+   * Each route is read immediately before it is written — the PUT is a
+   * whole-object write carrying a version, and a route touched by the removal
+   * pass has a new one by the time the addition pass reaches it.
+   */
+  async function applyRouteChanges(routeChanges, errors) {
+    const removals = new Map();
+    const additions = new Map();
+    const bucket = (map, key) => {
+      if (!map.has(key)) map.set(key, []);
+      return map.get(key);
+    };
+    for (const ch of routeChanges) {
+      if (ch.from) bucket(removals, ch.from).push(ch);
+      if (ch.to)   bucket(additions, ch.to).push(ch);
+    }
+
+    let done = 0, failedRoutes = 0;
+
+    async function writeRoute(routeId, mutate, involved) {
+      try {
+        const route = await gc.getCallRoute(api, orgId, routeId);
+        const next = mutate([...(route.dnis || [])]);
+        await gc.putCallRouteDnis(api, orgId, route, next);
+        done++;
+      } catch (err) {
+        failedRoutes++;
+        const who = [...new Set(involved.map(c => c.userName).filter(Boolean))].join(", ");
+        errors.push(`Call route${who ? ` (${who})` : ""}: ${(err.message || String(err)).slice(0, 120)}`);
+      }
+    }
+
+    for (const [routeId, chs] of removals) {
+      if (cancelled) break;
+      const drop = new Set(chs.map(c => digitsOf(c.number)));
+      await writeRoute(routeId, dnis => dnis.filter(n => !drop.has(digitsOf(n))), chs);
+    }
+    for (const [routeId, chs] of additions) {
+      if (cancelled) break;
+      await writeRoute(routeId, (dnis) => {
+        const have = new Set(dnis.map(digitsOf));
+        for (const c of chs) if (!have.has(digitsOf(c.number))) dnis.push(c.number);
+        return dnis;
+      }, chs);
+    }
+    return { done, failedRoutes };
+  }
+
   // ── Load Details handler ────────────────────────────
   $loadBtn.addEventListener("click", async () => {
     const selectedIds = [...userSelect.getSelected()];
@@ -1106,6 +1247,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       // Fetch email domains in parallel with user details
       const emailDomainPromise = loadEmailDomains();
       const didPoolPromise = loadDidPools();
+      const callRoutePromise = loadCallRoutes();
 
       for (let i = 0; i < selectedIds.length; i += BATCH) {
         if (cancelled) break;
@@ -1157,7 +1299,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       }
 
       // Ensure email domains are loaded before rendering
-      await Promise.all([emailDomainPromise, didPoolPromise]);
+      await Promise.all([emailDomainPromise, didPoolPromise, callRoutePromise]);
 
       // Drop anyone this page cannot do anything for. A card with no usable
       // switch is a screenful of nothing.
@@ -1184,6 +1326,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         // Render cards
         $cards.innerHTML = "";
         searchPanels = [];
+        routeSelects.clear();
         for (const uid of loaded.keys()) {
           $cards.append(createUserCard(uid));
           // Snapshot from DOM after rendering so baseline matches what the UI shows
@@ -1268,7 +1411,9 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       }
     }
 
-    if (!changes.length) {
+    const routeChanges = collectRouteChanges();
+
+    if (!changes.length && !routeChanges.length) {
       setStatus("No changes detected.", "error");
       return;
     }
@@ -1383,11 +1528,22 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         if (i < changes.length - 1) await sleep(50);
       }
 
+      // ── Phase 3: call routes, grouped by route ──
+      let routesDone = 0, routesFailed = 0;
+      if (!cancelled && routeChanges.length) {
+        setStatus(`Updating call routes…`);
+        const r = await applyRouteChanges(routeChanges, errors);
+        routesDone = r.done;
+        routesFailed = r.failedRoutes;
+      }
+
       // Summary
       showProgress(100);
       const parts = [];
       if (success) parts.push(`Success: ${success}`);
       if (failed)  parts.push(`Failed: ${failed}`);
+      if (routesDone)   parts.push(`Call routes updated: ${routesDone}`);
+      if (routesFailed) parts.push(`Call routes failed: ${routesFailed}`);
       const summaryText = cancelled
         ? `Cancelled. ${parts.join("  •  ")}`
         : parts.join("  •  ");
@@ -1398,7 +1554,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       }
       $summary.style.display = "";
 
-      setStatus(cancelled ? "Cancelled." : "Done.", failed ? "error" : "success");
+      setStatus(cancelled ? "Cancelled." : "Done.", (failed || routesFailed) ? "error" : "success");
       setTimeout(hideProgress, 800);
 
       logAction({

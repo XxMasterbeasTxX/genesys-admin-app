@@ -63,7 +63,7 @@ touch, and a Primary column that the spec says cannot work. Those are §3 and §
   failed blocks tagging and says why; it does not fall through to allowing it.
 - **Addresses opens expanded; only Backup Settings stays collapsed** (§7.1).
   This reverses an earlier deliberate choice — see that section.
-- **SMS stays out of scope** and is recorded as a known gap (§10).
+- **SMS stays out of scope** and is recorded as a known gap (§11).
 
 ## 2. The backup contract
 
@@ -554,7 +554,7 @@ group of 14 that silently yields 12.
 `createWebRtc` states the companion principle and it applies here too:
 **filtered-out users are not "skipped"**. They were never in scope. Burying them
 in the skip count hides the users who *were* considered and rejected for a
-reason worth reading — which is exactly the miscount §9 already has to fix in
+reason worth reading — which is exactly the miscount §10 already has to fix in
 the load summary.
 
 ### 8.4 Loading and disabling
@@ -571,7 +571,119 @@ around.
 The filter is disabled during a load or an apply, alongside the other controls
 in `setRunning` — `createWebRtc` does the same through `groupSelect.setEnabled`.
 
-## 9. Defects swept up alongside
+## 9. The Call Routing column
+
+Requested 2026-08-24, and the piece that makes the page finish its job rather
+than half of it. A number can sit in a DID pool, carry a `directrouting` tag,
+and still route nothing — because no call route points at it. The page can
+produce exactly that state today and says nothing about it.
+
+### 9.1 What it maps to
+
+"Call Routing" in the Genesys admin UI is an Architect IVR:
+`/api/v2/architect/ivrs`, gated by `routing:callRoute:view` and
+`routing:callRoute:edit`. The relevant field is `dnis`, a string array, and the
+spec is explicit about the constraint that shapes everything below:
+
+> Each phone number must be unique and not in use by another.
+
+The read model is already proven in this codebase — `documentation.js:494`
+walks the same endpoint and pulls `dnis` for the export — and the frontend
+helper `fetchAllCallRoutes` exists. **Nothing writes an IVR yet.** The Divisions
+page moves call routes through the bulk division endpoint, not a `PUT`, so this
+is the app's first `PUT /api/v2/architect/ivrs/{id}`.
+
+### 9.2 Reading: one fetch, one index
+
+Fetch every call route once per page and build `dnis → route` from it. Both
+halves of the column come out of that index: what the dropdown offers, and
+which route a number is already on. The `dnis` query parameter on the list
+endpoint would allow a lookup per number instead; on fifty users with three
+phones each that is 150 requests to answer a question one paged fetch already
+answers.
+
+Matching uses the same digits-only comparison as the DID pool check (§5.2) —
+`dnis` entries and address values are not reliably in the same format.
+
+### 9.3 What the cell does — decided 2026-08-24
+
+- **The route is shown whenever the number is on one, and is editable
+  regardless of the Direct Routing switch.** Displaying it only when the tag is
+  on would hide real configuration, and would mean enabling direct routing just
+  to clear a stale assignment. Consistent with how a tagged email on an
+  unverified domain stays visible and removable.
+- **Turning the Direct Routing switch off never touches the route.** One
+  control, one effect. The alternative — cleaning up the route assignment on
+  untag — means a switch quietly writing to a shared object that other users'
+  numbers also live on, which is a surprising amount of blast radius for
+  clicking a toggle.
+
+The consequence is that the two can disagree: a number can be on a route with
+no tag, or tagged with no route. That is a real state in Genesys and the column
+shows it rather than papering over it.
+
+### 9.4 Writing: batched per route, not per user
+
+This is the part that does not look like the rest of the page. Everything else
+here writes to **one user** — their addresses, their backup. A call route is a
+**shared object**, and the apply loop is per user.
+
+Three users whose numbers all go to "Main Inbound" would mean three
+`GET`→`PUT` cycles against the same object, each one invalidating the next
+one's `version`. At best the later writes 409; at worst they silently drop the
+earlier additions.
+
+So the apply path grows a third phase:
+
+1. Addresses, per user (unchanged).
+2. Backup, per user (unchanged).
+3. **Call routes, per route.** Collect every `dnis` addition and removal across
+   the whole batch, group them by route id, then do one `GET` → modify `dnis`
+   → `PUT` per affected route.
+
+The `PUT` is a whole-object write with a `version`, so the same discipline as
+the addresses array applies: read fresh, change only `dnis`, send everything
+else back exactly as found.
+
+### 9.5 Moving a number is two writes
+
+`dnis` uniqueness is enforced org-wide, so moving a number from route A to
+route B cannot be a single write. Removing from A must land before adding to B,
+or Genesys rejects the addition as in use.
+
+Both routes are in the phase-3 grouping already, so the ordering is a matter of
+sequencing removals before additions within that phase. If a removal succeeds
+and the matching addition fails, the number ends up on neither route — the
+failure is reported against the user by name, and re-running Apply completes
+the move. That is preferable to the reverse ordering, which fails cleanly but
+leaves the operator believing nothing happened.
+
+### 9.6 Permissions
+
+| Operation | Permission |
+|---|---|
+| list / read | `routing:callRoute:view` |
+| write `dnis` | `routing:callRoute:edit` |
+
+Gated like §6: the column renders read-only with the permission named when
+edit is missing, and a failed list read disables the column outright rather
+than presenting an empty dropdown that would look like "no routes exist".
+
+`featurePermissionMap` gains a `callRoute` action alongside `addresses`,
+`backup` and `backupDelete`.
+
+### 9.7 What this cannot check
+
+The column can say which route a number is on. It cannot say whether that
+route's flow actually performs a direct routing lookup — `openHoursFlow` is a
+flow reference, and what the flow does is not inspectable from here.
+
+So a number can be in a pool, tagged, and attached to a route, and still not
+direct-route, because the flow behind the route does not implement it. This
+column removes three of the four ways to get it wrong and is honest about the
+fourth.
+
+## 10. Defects swept up alongside
 
 - **Cancel is invisible during Load Details.** The handler calls
   `setRunning(true)` — which un-hides `$cancelBtn` — and *then* sets
@@ -596,7 +708,7 @@ in `setRunning` — `createWebRtc` does the same through `groupSelect.setEnabled
   reports as a run of users with nothing to configure. Count the two separately
   and say which is which.
 
-## 10. Known gaps
+## 11. Known gaps
 
 **SMS.** The Resource Center lists SMS as a direct routing channel, tagged on a
 work phone number, and `Contact.mediaType` has an `SMS` value. The page ignores
@@ -622,7 +734,7 @@ matters, is a `DELETE` in the API Explorer.
 The app has no page for it. Worth noting when this one says "no backup", because
 the interaction still has somewhere to go.
 
-## 11. Build order
+## 12. Build order
 
 All six steps are built and pushed to dev. What follows is the order they were
 built in and why, kept because the reasoning outlived the work.
@@ -673,16 +785,16 @@ is outstanding, and it gates nothing.
    gated, and after step 1, because it renders the `denied` marker that step
    produces. Cheap here; awkward anywhere earlier.
 
-6. **Layout and the remaining defects** — §7, plus whatever of §9 has not
+6. **Layout and the remaining defects** — §7, plus whatever of §10 has not
    already folded in.
 
    Last because steps 3 and 4 rewrite the markup §7 restyles. Doing the CSS
    first means doing it twice. The collapse defaults (§7.1), the toggles becoming
    real buttons (§7.4), the contrast tokens (§7.2) and the Cancel button moving
-   out of the apply wrapper (§9) are all edits to markup that does not settle
+   out of the apply wrapper (§10) are all edits to markup that does not settle
    until step 4 is done.
 
-§9 is not really a step. Most of it folds into whichever step touches the same
+§10 is not really a step. Most of it folds into whichever step touches the same
 lines: `takeSnapshot` dies when the change-detection tuple changes in step 4,
 the `escapeHtml` double-escape is in the apply loop, the skip-count miscount
 belongs with §8.3's "filtered-out is not skipped". Only the Cancel button and
@@ -694,7 +806,7 @@ the two things that change what the page can do. Everything else is a correction
 to behaviour that was already documented as working, and should not read as a
 new feature.
 
-## 12. Sources
+## 13. Sources
 
 - [Set up direct routing](https://help.genesys.cloud/articles/setting-up-direct-routing/) — the `directrouting` tag, supported address types, one tag per media type
 - [Set up backup options for a direct routing agent](https://help.genesys.cloud/articles/set-up-backup-options-for-a-direct-routing-agent/) — the endpoint and the three permissions

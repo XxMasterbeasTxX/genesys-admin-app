@@ -104,7 +104,7 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   // Genesys splits direct routing backup three ways. Clearing a backup issues a
   // DELETE, so an admin with edit but not delete could reach the control and
   // collect a 403 nobody had warned them about.
-  "users.directRouting.add":               { addresses: ["directory:user:edit"], backup: ["routing:directRoutingBackup:edit"], backupDelete: ["routing:directRoutingBackup:delete"] },
+  "users.directRouting.add":               { addresses: ["directory:user:edit"], backup: ["routing:directRoutingBackup:edit"], backupDelete: ["routing:directRoutingBackup:delete"], callRoute: ["routing:callRoute:edit"] },
 
   // ── GDPR (customer inclusion TBD — O2) ───────────────
   "gdpr.subjectRequest": { create: ["gdpr:request:add"] },

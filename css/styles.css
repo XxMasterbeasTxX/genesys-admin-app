@@ -4333,19 +4333,23 @@ body {
   font-size: 14px;
   table-layout: fixed;
 }
-/* Five columns: Type / Address / Integration / Primary / Direct Routing.
-   Weighted toward Address — the two right-hand columns hold a single glyph
-   each and had 40% of the table between them. */
+/* Six columns: Type / Address / Integration / Primary / Direct Routing /
+   Call Routing. Address still carries the most weight; Primary and Direct
+   Routing hold a single glyph each. */
 .dr-addr-table th:nth-child(1),
-.dr-addr-table td:nth-child(1) { width: 16%; }
+.dr-addr-table td:nth-child(1) { width: 14%; }
 .dr-addr-table th:nth-child(2),
-.dr-addr-table td:nth-child(2) { width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-addr-table td:nth-child(2) { width: 28%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dr-addr-table th:nth-child(3),
-.dr-addr-table td:nth-child(3) { width: 18%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-addr-table td:nth-child(3) { width: 14%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dr-addr-table th:nth-child(4),
-.dr-addr-table td:nth-child(4) { width: 11%; text-align: center; }
+.dr-addr-table td:nth-child(4) { width: 8%; text-align: center; }
 .dr-addr-table th:nth-child(5),
-.dr-addr-table td:nth-child(5) { width: 15%; text-align: center; }
+.dr-addr-table td:nth-child(5) { width: 12%; text-align: center; }
+.dr-addr-table th:nth-child(6),
+.dr-addr-table td:nth-child(6) { width: 24%; }
+/* The route picker is a dropdown in a fixed-layout cell. */
+.dr-addr-table td:nth-child(6) .ms-dropdown { max-width: 100%; }
 .dr-addr-table th,
 .dr-addr-table td {
   padding: 6px 10px;
