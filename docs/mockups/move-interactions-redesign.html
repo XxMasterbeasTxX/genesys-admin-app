@@ -47,9 +47,9 @@ body { background: var(--bg); color: var(--text); padding: 24px; }
 
 <p class="mk-note">
   Mockup for <code>docs/move-interactions-design.md</code>. Static — nothing is
-  wired up, and the dropdown below is drawn open only so the search box inside
-  it is visible. Uses the app's real <code>styles.css</code>, so colours,
-  buttons and inputs are the genuine ones.
+  wired up. Uses the app's real <code>styles.css</code>, so colours, buttons and
+  inputs are the genuine ones. The dropdown's open state is shown in its own
+  section further down, so the spacing in the layout below is the real spacing.
 </p>
 
 <div class="mk-section">
@@ -86,27 +86,15 @@ body { background: var(--bg); color: var(--text); padding: 24px; }
 
         <div class="mi-control-group mi-w-queue">
           <label class="mi-label">Destination queue</label>
-          <div class="ms-dropdown ms-dropdown--open">
-            <button type="button" class="ms-dropdown__trigger">&#8212; Select queue &#8212;</button>
-            <div class="ms-dropdown__panel">
-              <input type="text" class="ms-dropdown__search" placeholder="Search…">
-              <div class="ms-dropdown__list">
-                <div class="ms-dropdown__item">&#8212; Select queue &#8212;</div>
-                <div class="ms-dropdown__item">Back Office - Escalation</div>
-                <div class="ms-dropdown__item ms-dropdown__item--selected">Back Office - Overflow</div>
-                <div class="ms-dropdown__item">Back Office - Prod</div>
-                <div class="ms-dropdown__item">Retention - DK</div>
-                <div class="ms-dropdown__item">Sales - Prod</div>
-                <div class="ms-dropdown__item">Support - Tier 2</div>
-              </div>
-            </div>
+          <div class="ms-dropdown">
+            <button type="button" class="ms-dropdown__trigger">Back Office - Overflow</button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- ── FILTERS ──────────────────────────────────────────── -->
-    <div class="mi-controls" style="margin-top:150px">
+    <div class="mi-controls">
       <div class="mi-control-group">
         <label class="mi-label">Media Types</label>
         <div class="mi-media-types">
@@ -180,6 +168,39 @@ body { background: var(--bg); color: var(--text); padding: 24px; }
           </tr>
         </tbody>
       </table>
+    </div>
+  </section>
+</div>
+
+<div class="mk-section">
+  <div class="mk-h">The queue dropdown, open</div>
+  <p class="mk-note">
+    Shown separately because the panel is <code>position: absolute</code>: it
+    floats over whatever is beneath it and does not push the page down. An
+    earlier version of this mockup held the panel open inside the layout above
+    and spaced the filters down to clear it, which invented a gap that the real
+    page does not have.
+  </p>
+  <section class="card" style="padding-bottom:230px">
+    <div class="mi-controls">
+      <div class="mi-control-group mi-w-queue">
+        <label class="mi-label">Destination queue</label>
+        <div class="ms-dropdown ms-dropdown--open">
+          <button type="button" class="ms-dropdown__trigger">&#8212; Select queue &#8212;</button>
+          <div class="ms-dropdown__panel">
+            <input type="text" class="ms-dropdown__search" placeholder="Search…">
+            <div class="ms-dropdown__list">
+              <div class="ms-dropdown__item">&#8212; Select queue &#8212;</div>
+              <div class="ms-dropdown__item">Back Office - Escalation</div>
+              <div class="ms-dropdown__item ms-dropdown__item--selected">Back Office - Overflow</div>
+              <div class="ms-dropdown__item">Back Office - Prod</div>
+              <div class="ms-dropdown__item">Retention - DK</div>
+              <div class="ms-dropdown__item">Sales - Prod</div>
+              <div class="ms-dropdown__item">Support - Tier 2</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 </div>

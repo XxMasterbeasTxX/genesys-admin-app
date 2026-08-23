@@ -122,9 +122,18 @@ Measured in the mockup at 1440px and 1100px, in both themes:
 | Date fields on one row | ✅ |
 | Horizontal page scroll | ✅ none |
 | Move disabled before preview | ✅ |
+| Even spacing down the page | ✅ 12px between every row, no gap anywhere |
 
 **Not verified: how it looks.** Open the mockup and judge that yourself — the
 measurements say the structure holds, not that the result is attractive.
+
+**One correction to an earlier mockup.** It held the destination dropdown open
+*inside* the layout and pushed the filters down 150px to clear the panel, which
+read as a proposed gap between the queues and the media types. There is no such
+gap: the panel is `position: absolute`, so it floats over what is beneath it and
+the spacing is the standard 12px `.mi-controls` margin, as everywhere else on
+the page. The open state now has its own section in the mockup so the layout
+section shows the real spacing.
 
 ## 5. Safety — the three that can move the wrong interactions
 
