@@ -1,9 +1,9 @@
 # Interactions › Move — layout and safety — Design
 
-Status: **Probe run — partial answer, recorded in §6.3.** The gate is correct
-where it has been measured; the orphan case it was built to test was not present
-in the sample, and §6.1 is designed so that production answers it instead of
-another probe cycle. Step 2 of §10 is next.
+Status: **Probed twice — §6.3 and §6.4.** The gate is not just correct but
+precisely correct, and it turns out to be load-bearing for a reason nobody had
+credited it with (§6.4). The orphan case remains unseen; §6.1 is designed so
+production reports it rather than another probe cycle. Step 2 of §10 is next.
 Author: Genesys Admin App
 Last updated: 2026-08-23
 
@@ -218,19 +218,30 @@ look like a queue that was already empty.
 
 The categories are no longer a guess: §6.3's probe names them.
 
-| Row status | Cause | Probe counter |
-|---|---|---|
-| `Pending` | movable | `wouldMatch` |
-| `Not movable` | no ACD leg for this queue | `acdLegGone` |
-| `Not movable` | ACD leg present, media not live | `byMediaState` |
-| `Filtered` | media type not selected | — |
-| `Filtered` | outside the date range | — |
-| `Failed` | could not be inspected | `fetchFailed` |
+| Row status | Cause | Probe counter | Seen live |
+|---|---|---|---|
+| `Pending` | movable — waiting in the queue | `wouldMatch` | ✅ 32 of 34 |
+| `Being handled` | an agent has it (§6.4) | `byMediaState`, `purposes.agent` | ✅ 2 of 34 |
+| `Not movable` | no ACD leg for this queue | `acdLegGone` | not yet |
+| `Filtered` | media type not selected | — | — |
+| `Filtered` | outside the date range | — | — |
+| `Failed` | could not be inspected | `fetchFailed` | not yet |
+
+`Being handled` is its own status rather than a flavour of `Not movable`,
+because the two mean opposite things to an operator: one is an interaction doing
+fine that Move is deliberately leaving alone, the other is an interaction that
+may need attention. Read it per conversation — does it carry an `agent`
+participant with live media — rather than inferring from `queueInteracting`,
+which is a queue-wide number and cannot attribute itself to rows.
 
 A status line of `0 match · 412 waiting · 412 no active queue leg` is also what
 turns §6.3's unanswered half into something production reports on its own.
 
-### 6.2 The gate itself has never met live data — probe first
+### 6.2 The gate had never met live data — probe first
+
+*(Resolved by §6.4: the gate is right, and for a better reason than expected.
+Kept as written because the reasoning that led to the probe is the part worth
+reusing.)*
 
 `findAcdParticipant` is byte-identical to Disconnect's, and Disconnect's own
 comment records what was measured about it:
@@ -314,7 +325,55 @@ matter later.
 **And nothing about cost.** Six conversations across six months says nothing
 about §7 — that queue is quiet, and the loop was never under load.
 
-### 6.4 Why there is no second probe round
+### 6.4 The second sample — the gate is precisely right, and load-bearing
+
+A customer queue, 2026-08-23:
+
+```
+total 34 · inspected 34 · fetchFailed 0
+acdAnywhere 34 · acdInQueue 34 · acdLegGone 0 · acdNoMedia 0
+wouldMatch 32 · matchedAfterFilters 32
+byMediaState { "emails:connected": 32, "emails:disconnected": 2 }
+purposes { customer: 34, workflow: 34, acd: 34, agent: 2 }
+queueWaiting 32 · queueInteracting 2
+```
+
+The arithmetic closes three independent ways: `wouldMatch` 32 = `queueWaiting`
+32; rejected 2 = `queueInteracting` 2 = the number of `agent` participants;
+34 = 32 + 2.
+
+**`disconnected` on an ACD leg means an agent took it — not that it is dead.**
+The email leaves the queue when it is answered, and the ACD participant's media
+ends at that moment. The word says the opposite of what is happening, which is
+exactly the class of thing that has cost this work before: `interact` did not
+mean agent-held, and `wait` did not exist as a segment type. Measured now, not
+guessed.
+
+**The gate is doing safety work nobody had credited it with.** Two rejections
+were not near-misses to be recovered — they were interactions an agent was
+working, and rejecting them stops Move blind-transferring an interaction out
+from under whoever is handling it.
+
+This reverses the working assumption of §6.2, which treated a rejection as a
+possible defect. `findAcdParticipant` is **not** merely locating a usable
+`participantId`; requiring live media on the ACD leg *is* the "not currently
+being handled" test. That must be recorded as intentional, because a later
+change to "find any transferable participant" would look like a tidy-up and
+would introduce a real defect.
+
+**Still unseen:** `acdLegGone` is 0 in both samples, so the orphan case remains
+untested. §6.5 stands — though note it has now been contradicted in the useful
+direction: a second sample arrived without anyone hunting for one, and answered
+more than the first. Samples that turn up in the course of normal use are worth
+reading; it is only *going looking* for an orphan queue that is not worth the
+hours.
+
+**Incidental, for §7.** `total` 34 equals the queue's current contents exactly,
+so five of the six 31-day windows returned nothing. That is an argument for
+sizing the scan to need, and it also means no per-conversation fetch was spent
+on historical noise.
+
+### 6.5 Why there is no hunt for an orphan queue
 
 Testing the orphan case properly needs a queue full of stuck interactions, and
 inspecting one of those serially — one `getConversation` at a time — is hours.
@@ -384,7 +443,7 @@ until Move is finished, so there is no case for landing the safety fixes early.
    `invalidateCandidates` to the native selects and deleting that wiring one
    commit later means writing and testing the same behaviour twice.
 4. **The accounting** (§6.1), designed on what the probe returned. Unblocked —
-   see §6.3 and §6.4.
+   see §6.3 to §6.5.
 5. **Cost** (§7), only if the probe says enough conversations reach step 2 for
    it to matter.
 6. **Release note** — one entry; `interactions.move` is not on
