@@ -42,10 +42,24 @@ const INTERVAL_DAYS  = 31;
  */
 const REQUEST_BATCH = 10;
 
+/**
+ * Above this many conversations, ask before inspecting them.
+ *
+ * The inspection costs one request per conversation, so the wait scales with
+ * what the scan found and the operator should learn that before it starts
+ * rather than during. The same question Recent Search asks before loading
+ * participant data, at the same threshold — about six seconds' work, so a queue
+ * of ordinary size never sees it.
+ */
+const SCAN_CONFIRM_OVER = 250;
+
 const STATUS = {
   ready:      "Ready. Select source and destination queues.",
   loading:    "Loading queues…",
   counting:   "Checking which months hold anything…",
+  declined:   (n) =>
+    `Preview not run — ${n.toLocaleString()} interactions to inspect. `
+    + "Narrow the media types or the date range, or run Preview again to read them all.",
   scanning:   (i, n) => `Scanning interval ${i} of ${n}…`,
   inspecting: (i, n) =>
     `Inspecting ${i}–${Math.min(i + REQUEST_BATCH - 1, n)} of ${n}…`,
@@ -618,6 +632,23 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
       return { movable: [], rows: [], scanned: 0, skips: new Map(), stats };
     }
 
+    // The inspection is one request per conversation, so this is where the time
+    // goes. Asked here rather than before the scan: the analytics count is a
+    // sum over windows, and a long-running conversation appears in more than
+    // one of them, so it overstates. `rawConvIds` is deduplicated and exact.
+    if (rawConvIds.length > SCAN_CONFIRM_OVER) {
+      const estimate = formatWait(
+        Math.max(1, Math.round(rawConvIds.length / REQUEST_BATCH * 0.25)) * 1000);
+      const proceed = confirm(
+        `${rawConvIds.length.toLocaleString()} unended interactions were found in this queue.\n\n`
+        + `Previewing them means reading each one — about ${estimate}.\n\n`
+        + "Continue?");
+      if (!proceed) {
+        return { movable: [], rows: [], scanned: 0, skips: new Map(), stats,
+                 declined: rawConvIds.length };
+      }
+    }
+
     // Step 2: fetch each conversation and record a verdict for every one.
     //
     // Every conversation gets a row. Anything that cannot be moved used to be
@@ -699,6 +730,12 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
         // that looked authoritative. A partial result is not a result.
         setCandidates([]);
         setStatus("Preview cancelled — nothing was previewed. Run it again.");
+      } else if (scan.declined) {
+        // Declining is not an error and not an empty queue: it is a queue big
+        // enough to be worth narrowing first, and the count is the useful part
+        // of saying so.
+        setCandidates([]);
+        setStatus(STATUS.declined(scan.declined));
       } else if (!scan.scanned) {
         setCandidates([]);
         setStatus(STATUS.noResults);

@@ -473,12 +473,51 @@ attractive.
 Worth revisiting only with a measurement showing the fetches actually hurt, and
 then behind a check that the two media readings agree.
 
-### 7.4 Not addressed
+### 7.4 Built: the inspection asks before it spends
 
-`maxPages: 200` still truncates at 20,000 conversations per window without
-saying so. Left alone: no sample has come close, and a fix means deciding what
-the page should *do* about a truncated scan, which is a design question rather
-than a tuning one.
+Above **250 conversations**, before inspecting any of them:
+
+> 12.400 unended interactions were found in this queue.
+>
+> Previewing them means reading each one — about 5m.
+>
+> Continue?
+
+The same question Recent Search asks before loading participant data, at the
+same threshold and with the same arithmetic — one request per conversation, ten
+at a time, roughly a quarter-second a batch. A queue of ordinary size never sees
+it.
+
+**Asked after the scan, not before it.** The window counts from §7.2 arrive
+earlier and would allow the question sooner, but they are a sum over windows and
+the analytics interval matches on *activity*, so a long-running conversation
+appears in several of them. On a page about interactions stuck for weeks that
+overstates badly. `rawConvIds` is deduplicated and exact, and the paging it
+costs is bounded and cheap now that empty windows are skipped.
+
+Declining is neither an error nor an empty queue, and the status says which:
+
+> Preview not run — 12.400 interactions to inspect. Narrow the media types or
+> the date range, or run Preview again to read them all.
+
+### 7.5 Declined: warning about a truncated scan
+
+`maxPages: 200` truncates at 20,000 conversations per window — `pageSize` is
+100 — and the pager cannot distinguish "that was everything" from "that was the
+first 20,000". The query runs newest-first, so a truncated window drops the
+oldest, which on this page is the end worth having.
+
+A notice was proposed and **declined on 2026-08-23**. Recorded rather than
+dropped, because the reasoning matters if it comes back:
+
+- No sample has come within three orders of magnitude — the two probes returned
+  6 and 34.
+- The detection is now free: §7.2 fetches `totalHits` per window before paging,
+  so the number needed to spot truncation is already in hand. Only the wording
+  and the decision about what to do were ever at issue.
+- **Disconnect has the identical cap**, unwarned, at
+  [disconnect.js:1051](../js/pages/interactions/disconnect.js). Whatever is
+  eventually decided should be decided for both, not bolted onto one.
 
 ## 8. Smaller
 
@@ -516,7 +555,8 @@ until Move is finished, so there is no case for landing the safety fixes early.
 4. **The accounting** (§6.1), designed on what the probe returned. ✅ The probe
    comes out in the same commit: it existed to name these categories, and the
    page reports them properly now.
-5. **Cost** (§7). ✅ 7.1 and 7.2 built; 7.3 declined with the reason recorded.
+5. **Cost** (§7). ✅ 7.1, 7.2 and 7.4 built; 7.3 and 7.5 declined with the
+   reasons recorded.
 6. **Release note** — one entry; `interactions.move` is not on
    `CUSTOMER_EXCLUDED_KEYS`, so this is customer-visible.
 
