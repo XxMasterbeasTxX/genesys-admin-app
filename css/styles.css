@@ -4380,7 +4380,14 @@ body {
   padding-top: 0;
   font-style: italic;
 }
+/* A <button>, so it is reachable by keyboard; reset to look like the text
+   link it always appeared to be. */
 .dr-backup-toggle {
+  display: block;
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   padding: 8px 0 4px;
   font-size: 14px;
@@ -4462,9 +4469,35 @@ body {
 .dr-backup-search-item:hover {
   background: rgba(255,255,255,0.06);
 }
-.dr-backup-target {
-  margin-bottom: 10px;
+/* Backup pickers: a label, an optional precedence hint, the control, and a
+   clear button. Both rows are always present — empty means "not set". */
+.dr-backup-picker-row { flex-wrap: nowrap; }
+.dr-backup-picker-row .dr-backup-lbl { min-width: 96px; }
+.dr-backup-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
+.dr-backup-slot .input { min-width: 240px; }
+.dr-backup-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  min-width: 64px;
+}
+.dr-backup-clear {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.dr-backup-clear:hover { color: var(--text); }
+.dr-disabled { opacity: 0.5; }
 
 @media (prefers-color-scheme: light) {
   .dr-user-card { background: var(--panel); }
@@ -4472,6 +4505,9 @@ body {
      table shows, so they get a value that clears 4.5:1. */
   .dr-addr-foreign,
   .dr-email-warn { color: #c2410c; }
+  /* #60a5fa is ~2.6:1 on white, and this is the control that opens each
+     section — the one thing on the card that has to be findable. */
+  .dr-backup-toggle { color: #1d4ed8; }
   .dr-backup-search-results { background: #fff; }
   .dr-backup-search-item:hover { background: rgba(0,0,0,0.04); }
   .dr-btn-apply { color: #16a34a; }

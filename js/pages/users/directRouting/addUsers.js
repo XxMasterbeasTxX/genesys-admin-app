@@ -30,6 +30,10 @@ import * as gc from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import { logAction } from "../../../services/activityLogService.js";
 
+// Genesys accepts [60, 864000] for agentWaitSeconds.
+const BACKUP_WAIT_MIN = 60;
+const BACKUP_WAIT_MAX = 864000;
+
 // Phone address types relevant for direct routing
 const PHONE_TYPES = [
   { type: "WORK",  label: "Work Phone" },
@@ -90,6 +94,8 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   let allUsers = [];                 // [{ id, name }] — active users, loaded once
   const groupMembers = new Map();    // groupId → Set<userId>, memoised for the page
   let filterToken = 0;               // guards against a slow fetch landing late
+  const userNameById = new Map();    // id → name, for resolving backup targets
+  let searchPanels = [];             // open backup-user result panels, for outside-click
 
   // ── User multi-select ───────────────────────────────
   const userSelect = createMultiSelect({
@@ -200,6 +206,33 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
 
   // ── Helpers ─────────────────────────────────────────
   const orgId = orgContext.get();
+
+  // One listener for the page, not one per backup picker. The old code added a
+  // `document` handler on every render — per card, and again on every change of
+  // backup type — none of which were ever removed.
+  function onDocPointerDown(e) {
+    for (const { wrap, results } of searchPanels) {
+      if (!wrap.contains(e.target)) results.innerHTML = "";
+    }
+  }
+  document.addEventListener("pointerdown", onDocPointerDown);
+  el.__destroy = () => {
+    document.removeEventListener("pointerdown", onDocPointerDown);
+    searchPanels = [];
+  };
+
+  /** Name for a user id — from the list already loaded, else one GET. */
+  async function resolveUserName(id) {
+    if (userNameById.has(id)) return userNameById.get(id);
+    try {
+      const u = await gc.getUser(api, orgId, id);
+      const name = u?.name || id;
+      userNameById.set(id, name);
+      return name;
+    } catch {
+      return id;
+    }
+  }
 
   const setStatus = makeStatus($status, "cs-status");
   function showProgress(pct) {
@@ -337,8 +370,12 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     const primaryPhoneType = primaryPhone?.type || null;
 
     // ── Collapsible Addresses section ──
-    const addrToggle = document.createElement("div");
+    // A real button, not a div: these were the only way into either section
+    // and nothing on the card could be reached from the keyboard.
+    const addrToggle = document.createElement("button");
+    addrToggle.type = "button";
     addrToggle.className = "dr-backup-toggle";
+    addrToggle.setAttribute("aria-expanded", "false");
     addrToggle.innerHTML = `<span class="dr-backup-arrow">&#x25B6;</span> Addresses`;
 
     const addrSection = document.createElement("div");
@@ -347,6 +384,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
 
     addrToggle.addEventListener("click", () => {
       addrSection.hidden = !addrSection.hidden;
+      addrToggle.setAttribute("aria-expanded", String(!addrSection.hidden));
       addrToggle.querySelector(".dr-backup-arrow").innerHTML = addrSection.hidden ? "&#x25B6;" : "&#x25BC;";
     });
 
@@ -559,92 +597,83 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     card.append(addrToggle, addrSection);
 
     // ── Backup section ──
-    // Derived from the flat model the API actually returns. `type` never
-    // existed, so this used to be "NONE" for every user with a backup set —
-    // which then read back as a deliberate "no backup" and cleared it on Apply.
-    // §2.2 replaces the radio group with two independent pickers, at which
-    // point a user and a queue can be set at once; until then the user backup
-    // wins the display, matching its precedence as the primary.
-    const backupType = backup?.userId ? "USER" : backup?.queueId ? "QUEUE" : "NONE";
-
-    const toggle = document.createElement("div");
+    // Two independent pickers, not a three-way type. The API carries flat
+    // userId and queueId and allows both at once — user as the primary backup,
+    // queue as the secondary — which a radio group cannot express. "No backup"
+    // is simply both being empty.
+    const toggle = document.createElement("button");
+    toggle.type = "button";
     toggle.className = "dr-backup-toggle";
+    toggle.setAttribute("aria-expanded", "false");
     toggle.innerHTML = `<span class="dr-backup-arrow">&#x25B6;</span> Backup Settings`;
 
     const section = document.createElement("div");
     section.className = "dr-backup-section";
     section.hidden = true;
 
-    // Backup type radios
-    const typeRow = document.createElement("div");
-    typeRow.className = "dr-backup-row";
-    typeRow.innerHTML = `<span class="dr-backup-lbl">Type:</span>`;
-    for (const val of ["NONE", "USER", "QUEUE"]) {
-      const lbl = document.createElement("label");
-      const r = document.createElement("input");
-      r.type = "radio";
-      r.name = `bk_type_${userId}`;
-      r.value = val;
-      r.checked = backupType === val;
-      lbl.append(r, document.createTextNode(` ${val === "NONE" ? "None" : val === "USER" ? "User" : "Queue"}`));
-      typeRow.append(lbl);
+    toggle.addEventListener("click", () => {
+      section.hidden = !section.hidden;
+      toggle.setAttribute("aria-expanded", String(!section.hidden));
+      toggle.querySelector(".dr-backup-arrow").innerHTML = section.hidden ? "&#x25B6;" : "&#x25BC;";
+    });
+
+    const userRow  = buildBackupUserRow(userId, backup);
+    const queueRow = buildBackupQueueRow(userId, backup);
+    section.append(userRow.el, queueRow.el);
+
+    // The precedence only means anything when both are set; naming one
+    // "primary" while the other is empty sends the reader hunting for a
+    // secondary that does not exist.
+    function syncPrecedenceHints() {
+      const both = !!userRow.getValue() && !!queueRow.getValue();
+      userRow.hint.textContent  = both ? "(primary)" : "";
+      queueRow.hint.textContent = both ? "(secondary)" : "";
     }
-    section.append(typeRow);
+    userRow.onChange  = syncPrecedenceHints;
+    queueRow.onChange = syncPrecedenceHints;
+    syncPrecedenceHints();
 
-    // Backup target area
-    const targetDiv = document.createElement("div");
-    targetDiv.className = "dr-backup-target";
-    targetDiv.id = `bk_target_${userId}`;
-    if (backupType === "NONE") targetDiv.style.display = "none";
-    section.append(targetDiv);
-
-    // Wait options
+    // Wait options.
+    // `waitForAgent` false means "go straight to the backup", which is what the
+    // Genesys queue-level screen calls "Assign to backup immediately". Labelling
+    // the raw flag "Wait for Agent" beside a seconds box read as though ticking
+    // it was what enabled the wait — backwards.
     const optsDiv = document.createElement("div");
     optsDiv.className = "dr-backup-row";
-    optsDiv.id = `bk_opts_${userId}`;
-    if (backupType === "NONE") optsDiv.style.display = "none";
 
-    const waitLbl = document.createElement("label");
-    const waitCb = document.createElement("input");
-    waitCb.type = "checkbox";
-    waitCb.id = `bk_wait_${userId}`;
-    waitCb.checked = backup?.waitForAgent || false;
-    waitLbl.append(waitCb, document.createTextNode(" Wait for Agent"));
+    const immediateLbl = document.createElement("label");
+    const immediateCb = document.createElement("input");
+    immediateCb.type = "checkbox";
+    immediateCb.id = `bk_now_${userId}`;
+    immediateCb.checked = backup ? !backup.waitForAgent : false;
+    immediateLbl.append(immediateCb, document.createTextNode(" Send to backup immediately"));
 
     const secsLbl = document.createElement("label");
-    secsLbl.textContent = "Wait (sec): ";
+    secsLbl.textContent = "Wait for agent (sec): ";
     const secsInput = document.createElement("input");
     secsInput.type = "number";
     secsInput.id = `bk_secs_${userId}`;
     secsInput.className = "input dr-input-num";
     secsInput.value = backup?.agentWaitSeconds ?? 70;
-    secsInput.min = 0;
-    secsInput.max = 600;
+    // Genesys accepts [60, 864000]. The old 0–600 was wrong at both ends: 0 is
+    // rejected outright and the ceiling excluded most of the valid range.
+    secsInput.min = String(BACKUP_WAIT_MIN);
+    secsInput.max = String(BACKUP_WAIT_MAX);
     secsLbl.append(secsInput);
 
-    optsDiv.append(waitLbl, secsLbl);
-    section.append(optsDiv);
+    const secsHint = document.createElement("span");
+    secsHint.className = "dr-backup-hint";
+    secsHint.textContent = `${BACKUP_WAIT_MIN}–${BACKUP_WAIT_MAX}`;
 
-    // Toggle logic
-    toggle.addEventListener("click", () => {
-      section.hidden = !section.hidden;
-      toggle.querySelector(".dr-backup-arrow").innerHTML = section.hidden ? "&#x25B6;" : "&#x25BC;";
-    });
-
-    // Backup type change logic
-    section.querySelectorAll(`input[name="bk_type_${userId}"]`).forEach(r => {
-      r.addEventListener("change", () => {
-        const t = r.value;
-        targetDiv.style.display = t === "NONE" ? "none" : "";
-        optsDiv.style.display   = t === "NONE" ? "none" : "";
-        if (t !== "NONE") renderBackupTarget(targetDiv, userId, t, backup);
-      });
-    });
-
-    // Render initial target if backup exists
-    if (backupType !== "NONE") {
-      renderBackupTarget(targetDiv, userId, backupType, backup);
+    function syncWaitEnabled() {
+      secsInput.disabled = immediateCb.checked;
+      secsLbl.classList.toggle("dr-disabled", immediateCb.checked);
     }
+    immediateCb.addEventListener("change", syncWaitEnabled);
+    syncWaitEnabled();
+
+    optsDiv.append(immediateLbl, secsLbl, secsHint);
+    section.append(optsDiv);
 
     card.append(toggle, section);
 
@@ -672,100 +701,165 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     return card;
   }
 
-  // ── Render backup target picker ─────────────────────
-  function renderBackupTarget(container, userId, type, currentBackup) {
-    container.innerHTML = "";
+  // ── Backup pickers ──────────────────────────────────
+  // Each row is independently clearable. Empty means "not set"; both empty
+  // means no backup at all, which is a DELETE rather than a write.
 
-    if (type === "USER") {
-      const wrap = document.createElement("div");
-      wrap.className = "dr-backup-user-search";
+  /** One labelled row with a clear button and a slot for the control. */
+  function backupRow(labelText) {
+    const row = document.createElement("div");
+    row.className = "dr-backup-row dr-backup-picker-row";
 
-      const input = document.createElement("input");
-      input.type = "text";
-      input.className = "input";
-      input.placeholder = "Search for a backup user…";
+    const label = document.createElement("span");
+    label.className = "dr-backup-lbl";
+    label.textContent = labelText;
 
-      const hidden = document.createElement("input");
-      hidden.type = "hidden";
-      hidden.id = `bk_user_id_${userId}`;
+    const hint = document.createElement("span");
+    hint.className = "dr-backup-hint";
 
-      // The API returns only `userId` — no name. Holding the id in the hidden
-      // field is what stops an existing backup being cleared by an Apply that
-      // never touched it; resolving the id to a display name is §2.2's job.
-      if (currentBackup?.userId) {
-        hidden.value = currentBackup.userId;
-        input.placeholder = "Current backup user — search to change";
-      }
+    const slot = document.createElement("div");
+    slot.className = "dr-backup-slot";
 
-      const results = document.createElement("div");
-      results.className = "dr-backup-search-results";
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "dr-backup-clear";
+    clear.textContent = "×";
+    clear.title = `Clear ${labelText.toLowerCase()}`;
 
-      let timer;
-      input.addEventListener("input", () => {
-        clearTimeout(timer);
-        hidden.value = "";
-        const q = input.value.trim();
-        if (q.length < 2) { results.innerHTML = ""; return; }
-        timer = setTimeout(async () => {
-          try {
-            const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/users/search", {
-              body: {
-                query: [{ type: "STARTS_WITH", fields: ["name"], value: q }],
-                pageSize: 10,
-                pageNumber: 1,
-              },
-            });
-            const users = resp.results || [];
-            results.innerHTML = "";
-            for (const u of users) {
-              const div = document.createElement("div");
-              div.className = "dr-backup-search-item";
-              div.textContent = u.name;
-              div.addEventListener("click", () => {
-                input.value = u.name;
-                hidden.value = u.id;
-                results.innerHTML = "";
-              });
-              results.append(div);
-            }
-            if (!users.length) {
-              results.innerHTML = `<div class="dr-backup-search-item" style="color:var(--muted)">No results</div>`;
-            }
-          } catch {
-            results.innerHTML = `<div class="dr-backup-search-item" style="color:#f87171">Search failed</div>`;
-          }
-        }, 300);
+    row.append(label, hint, slot, clear);
+    return { row, slot, clear, hint };
+  }
+
+  function buildBackupUserRow(userId, currentBackup) {
+    const { row, slot, clear, hint } = backupRow("Backup user");
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "input";
+    input.placeholder = "Search for a backup user…";
+
+    const hidden = document.createElement("input");
+    hidden.type = "hidden";
+    hidden.id = `bk_user_id_${userId}`;
+
+    const results = document.createElement("div");
+    results.className = "dr-backup-search-results";
+
+    const wrap = document.createElement("div");
+    wrap.className = "dr-backup-user-search";
+    wrap.append(input, hidden, results);
+    slot.append(wrap);
+    searchPanels.push({ wrap, results });
+
+    const api_ = { onChange: null };
+
+    // The API stores only an id. Most backups point at an active user, who is
+    // already in `allUsers`, so the name usually costs nothing; anyone else
+    // takes one GET.
+    if (currentBackup?.userId) {
+      hidden.value = currentBackup.userId;
+      input.value = "…";
+      resolveUserName(currentBackup.userId).then((name) => {
+        // Only fill in if nothing has been typed or cleared meanwhile.
+        if (hidden.value === currentBackup.userId && input.value === "…") input.value = name;
       });
-
-      // Close results on outside click
-      document.addEventListener("pointerdown", (e) => {
-        if (!wrap.contains(e.target)) results.innerHTML = "";
-      });
-
-      wrap.append(input, hidden, results);
-      container.append(wrap);
-    } else if (type === "QUEUE") {
-      const select = document.createElement("select");
-      select.className = "input";
-      select.id = `bk_queue_id_${userId}`;
-      select.innerHTML = `<option value="">Loading queues…</option>`;
-      container.append(select);
-
-      // No label on this row, so the throbber sits beside the select itself.
-      const spin = document.createElement("span");
-      spin.className = "spin spin--sm spin--label";
-      spin.setAttribute("aria-hidden", "true");
-      container.append(spin);
-
-      loadQueues().then(queues => {
-        select.innerHTML = `<option value="">— Select a queue —</option>` +
-          queues.map(q =>
-            `<option value="${escapeHtml(q.id)}"${currentBackup?.queueId === q.id ? " selected" : ""}>${escapeHtml(q.name)}</option>`
-          ).join("");
-      }).catch(() => {
-        select.innerHTML = `<option value="">Failed to load queues</option>`;
-      }).finally(() => spin.remove());
     }
+
+    let timer;
+    input.addEventListener("input", () => {
+      clearTimeout(timer);
+      hidden.value = "";
+      api_.onChange?.();
+      const q = input.value.trim();
+      if (q.length < 2) { results.innerHTML = ""; return; }
+      timer = setTimeout(async () => {
+        try {
+          const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/users/search", {
+            body: {
+              query: [{ type: "STARTS_WITH", fields: ["name"], value: q }],
+              pageSize: 10,
+              pageNumber: 1,
+            },
+          });
+          const users = resp.results || [];
+          results.innerHTML = "";
+          for (const u of users) {
+            const div = document.createElement("div");
+            div.className = "dr-backup-search-item";
+            div.textContent = u.name;
+            div.addEventListener("click", () => {
+              input.value = u.name;
+              hidden.value = u.id;
+              userNameById.set(u.id, u.name);
+              results.innerHTML = "";
+              api_.onChange?.();
+            });
+            results.append(div);
+          }
+          if (!users.length) {
+            results.innerHTML = `<div class="dr-backup-search-item" style="color:var(--muted)">No results</div>`;
+          }
+        } catch {
+          results.innerHTML = `<div class="dr-backup-search-item" style="color:#f87171">Search failed</div>`;
+        }
+      }, 300);
+    });
+
+    clear.addEventListener("click", () => {
+      input.value = "";
+      hidden.value = "";
+      results.innerHTML = "";
+      api_.onChange?.();
+    });
+
+    return {
+      el: row,
+      hint,
+      getValue: () => hidden.value || "",
+      set onChange(fn) { api_.onChange = fn; },
+      get onChange() { return api_.onChange; },
+    };
+  }
+
+  function buildBackupQueueRow(userId, currentBackup) {
+    const { row, slot, clear, hint } = backupRow("Backup queue");
+
+    const select = document.createElement("select");
+    select.className = "input";
+    select.id = `bk_queue_id_${userId}`;
+    select.innerHTML = `<option value="">Loading queues…</option>`;
+    slot.append(select);
+
+    const spin = document.createElement("span");
+    spin.className = "spin spin--sm spin--label";
+    spin.setAttribute("aria-hidden", "true");
+    slot.append(spin);
+
+    const api_ = { onChange: null };
+
+    loadQueues().then(queues => {
+      select.innerHTML = `<option value="">— No queue backup —</option>` +
+        queues.map(q =>
+          `<option value="${escapeHtml(q.id)}"${currentBackup?.queueId === q.id ? " selected" : ""}>${escapeHtml(q.name)}</option>`
+        ).join("");
+      api_.onChange?.();
+    }).catch(() => {
+      select.innerHTML = `<option value="">Failed to load queues</option>`;
+    }).finally(() => spin.remove());
+
+    select.addEventListener("change", () => api_.onChange?.());
+    clear.addEventListener("click", () => {
+      select.value = "";
+      api_.onChange?.();
+    });
+
+    return {
+      el: row,
+      hint,
+      getValue: () => select.value || "",
+      set onChange(fn) { api_.onChange = fn; },
+      get onChange() { return api_.onChange; },
+    };
   }
 
   // ── Read current state from DOM ─────────────────────
@@ -781,21 +875,19 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       ? Number(drEmailRadio.value)
       : null;
 
-    const bkRadio = el.querySelector(`input[name="bk_type_${userId}"]:checked`);
-    const backupType = bkRadio?.value || "NONE";
+    // Both targets are read unconditionally: they are independent, and setting
+    // both is legal — user is the primary backup, queue the secondary.
+    const backupUserId  = el.querySelector(`#bk_user_id_${userId}`)?.value || null;
+    const backupQueueId = el.querySelector(`#bk_queue_id_${userId}`)?.value || null;
+    const hasBackup = !!(backupUserId || backupQueueId);
 
-    let backupUserId = null;
-    let backupQueueId = null;
-    if (backupType === "USER") {
-      backupUserId = el.querySelector(`#bk_user_id_${userId}`)?.value || null;
-    } else if (backupType === "QUEUE") {
-      backupQueueId = el.querySelector(`#bk_queue_id_${userId}`)?.value || null;
-    }
+    // The checkbox is the inverse of the API's flag: ticked means "go straight
+    // to the backup", i.e. waitForAgent false.
+    const nowCb = el.querySelector(`#bk_now_${userId}`);
+    const waitForAgent = nowCb ? !nowCb.checked : false;
+    const agentWaitSeconds = parseInt(el.querySelector(`#bk_secs_${userId}`)?.value, 10);
 
-    const waitForAgent = el.querySelector(`#bk_wait_${userId}`)?.checked || false;
-    const agentWaitSeconds = parseInt(el.querySelector(`#bk_secs_${userId}`)?.value, 10) || 70;
-
-    return { drPhoneType, drEmailIndex, backupType, backupUserId, backupQueueId, waitForAgent, agentWaitSeconds };
+    return { drPhoneType, drEmailIndex, backupUserId, backupQueueId, hasBackup, waitForAgent, agentWaitSeconds };
   }
 
   // ── Load Details handler ────────────────────────────
@@ -877,6 +969,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       } else {
         // Render cards
         $cards.innerHTML = "";
+        searchPanels = [];
         for (const uid of loaded.keys()) {
           $cards.append(createUserCard(uid));
           // Snapshot from DOM after rendering so baseline matches what the UI shows
@@ -934,13 +1027,16 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
           orig.drPhoneType !== curr.drPhoneType ||
           orig.drEmailIndex !== curr.drEmailIndex);
 
+      // Wait settings only count when a backup exists to apply them to;
+      // otherwise editing the seconds box on a user with no backup would
+      // register a change and issue a pointless DELETE.
       const backupChanged =
         canEditBackup && (
-          orig.backupType !== curr.backupType ||
           orig.backupUserId !== curr.backupUserId ||
           orig.backupQueueId !== curr.backupQueueId ||
-          orig.waitForAgent !== curr.waitForAgent ||
-          orig.agentWaitSeconds !== curr.agentWaitSeconds);
+          (curr.hasBackup && (
+            orig.waitForAgent !== curr.waitForAgent ||
+            orig.agentWaitSeconds !== curr.agentWaitSeconds)));
 
       if (addressChanged || backupChanged) {
         changes.push({ uid, data, curr, addressChanged, backupChanged });
@@ -949,6 +1045,21 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
 
     if (!changes.length) {
       setStatus("No changes detected.", "error");
+      return;
+    }
+
+    // Refuse out-of-range wait times here rather than letting Genesys 400 them
+    // partway through a batch, with some users already written and some not.
+    const badWait = changes.filter(({ curr }) =>
+      curr.hasBackup && curr.waitForAgent &&
+      !(Number.isFinite(curr.agentWaitSeconds) &&
+        curr.agentWaitSeconds >= BACKUP_WAIT_MIN &&
+        curr.agentWaitSeconds <= BACKUP_WAIT_MAX));
+    if (badWait.length) {
+      const names = badWait.map(c => c.data.user.name).join(", ");
+      setStatus(
+        `Wait for agent must be between ${BACKUP_WAIT_MIN} and ${BACKUP_WAIT_MAX} seconds: ${names}`,
+        "error");
       return;
     }
 
@@ -1014,18 +1125,18 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
           }
 
           // ── Backup PUT / DELETE ──
+          // Four cases, and no null sentinels: a PUT replaces, so clearing one
+          // side is a PUT carrying the survivor and clearing both is a DELETE.
           if (backupChanged) {
-            if (curr.backupType === "NONE") {
-              if (data.orig.backupType !== "NONE") {
+            const hadBackup = !!(data.orig.backupUserId || data.orig.backupQueueId);
+            if (!curr.hasBackup) {
+              if (hadBackup) {
                 await gc.deleteDirectRoutingBackup(api, orgId, uid);
               }
             } else {
-              // Flat userId / queueId — the shape the API actually reads. The
-              // radio group still allows only one at a time; §2.2 replaces it
-              // with two independent pickers, at which point both can be set.
               await gc.putDirectRoutingBackup(api, orgId, uid, {
-                userId:  curr.backupType === "USER"  ? curr.backupUserId  : null,
-                queueId: curr.backupType === "QUEUE" ? curr.backupQueueId : null,
+                userId: curr.backupUserId,
+                queueId: curr.backupQueueId,
                 waitForAgent: curr.waitForAgent,
                 agentWaitSeconds: curr.agentWaitSeconds,
               });
@@ -1095,6 +1206,9 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     }
 
     allUsers = usersRes.value.map(u => ({ id: u.id, name: u.name }));
+    // Doubles as the lookup for resolving a backup user id to a name: most
+    // backups point at an active user, so that costs no extra request.
+    for (const u of allUsers) userNameById.set(u.id, u.name);
     userSelect.setItems(filterUserOptions(allUsers, null, new Set()));
     userSelect.setPlaceholder("Select users…");
 
