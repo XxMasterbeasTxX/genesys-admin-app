@@ -510,10 +510,21 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     return true;
   }
 
-  /** Grey out a section and say which permission is missing. */
+  /**
+   * Grey out a section and say which permission is missing.
+   *
+   * `inert` rather than `pointer-events: none` alone: the toggles and switches
+   * are real focusable controls now, so a greyed-out section was still fully
+   * reachable by keyboard — Tab into it, flip a switch, and Apply would send a
+   * request the user has no permission for. `inert` takes the subtree out of
+   * the focus order as well as out of the pointer's reach.
+   *
+   * The toggle stays outside the section and stays live, so the section can
+   * still be opened to read why it is locked.
+   */
   function lockSection(sectionEl, toggleEl, permission, message) {
-    sectionEl.style.pointerEvents = "none";
-    sectionEl.style.opacity = "0.5";
+    sectionEl.inert = true;
+    sectionEl.classList.add("dr-locked");
     if (permission) toggleEl.title = `Requires Genesys permission: ${permission}`;
     const note = document.createElement("div");
     note.className = "dr-perm-note";
@@ -1196,6 +1207,12 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   });
 
   // ── Bulk pre-select handler ─────────────────────────
+  // Writes into the address sections, so it follows the same permission. Left
+  // enabled it would flip switches inside locked cards that Apply then ignores.
+  if (!canEditAddresses) {
+    $bulkSelect.disabled = true;
+    $bulkSelect.title = "Requires Genesys permission: directory:user:edit";
+  }
   $bulkSelect.addEventListener("change", () => {
     const val = $bulkSelect.value;
     if (!val) return;
