@@ -1,9 +1,9 @@
 # Interactions › Move — layout and safety — Design
 
-Status: **Steps 1–2 of §10 built.** The probe ran twice (§6.3, §6.4) and the
-layout, warning banner and Move gate are in. Step 3 — the remaining
-guard-rails — is next. The orphan case remains unseen; §6.1 is designed so
-production reports it rather than another probe cycle.
+Status: **Steps 1–3 of §10 built.** The probe ran twice (§6.3, §6.4); the
+layout, warning banner, Move gate and the guard-rails are in. Step 4 — the
+accounting (§6.1) — is next, and it removes the probe. The orphan case remains
+unseen; §6.1 is designed so production reports it.
 Author: Genesys Admin App
 Last updated: 2026-08-23
 
@@ -191,6 +191,18 @@ Same hazard as a partly-loaded filter set on Recent Search, and the same answer:
 a partial result is not a result.
 
 **Fix:** cancelling a preview clears `candidates`.
+
+Built with two things the section had not called for. `candidates` is now
+assigned in exactly one place, `setCandidates`, so the button state cannot drift
+from the set — the same funnel Disconnect uses. And the preview handler clears
+before it starts, so an error mid-scan cannot leave the previous set armed
+either; that path was not in §5.1 or §5.3 and is the same failure wearing a
+third hat.
+
+One thing turned up while testing: `renderResults` hid the table but left the
+discarded preview's rows in the DOM. Invisible today, and exactly the stale
+state this commit exists to stop keeping, so the body is emptied rather than
+hidden.
 
 ## 6. Zero means five things, and the page says one
 
@@ -439,7 +451,7 @@ until Move is finished, so there is no case for landing the safety fixes early.
    §4.3 are the same edit to the same actions row, so splitting them would mean
    touching that row and reviewing that button twice.
 3. **The remaining guard-rails** (§5.1, §5.3), wired to the controls that will
-   actually exist. This is the real reason not to do safety first: attaching
+   actually exist. ✅ This is the real reason not to do safety first: attaching
    `invalidateCandidates` to the native selects and deleting that wiring one
    commit later means writing and testing the same behaviour twice.
 4. **The accounting** (§6.1), designed on what the probe returned. Unblocked —

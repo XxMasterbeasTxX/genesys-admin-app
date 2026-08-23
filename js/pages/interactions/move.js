@@ -221,8 +221,16 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
   `;
 
   // ── DOM refs ────────────────────────────────────────
-  const ssSrc = createSingleSelect({ placeholder: "— Select queue —", searchable: true });
-  const ssDst = createSingleSelect({ placeholder: "— Select queue —", searchable: true });
+  const ssSrc = createSingleSelect({
+    placeholder: "— Select queue —",
+    searchable: true,
+    onChange: () => invalidateCandidates(),
+  });
+  const ssDst = createSingleSelect({
+    placeholder: "— Select queue —",
+    searchable: true,
+    onChange: () => invalidateCandidates(),
+  });
   el.querySelector("#miSrcDropdown").append(ssSrc.el);
   el.querySelector("#miDstDropdown").append(ssDst.el);
   ssSrc.setEnabled(false);
@@ -253,6 +261,7 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
   // ── Media type wiring ───────────────────────────────
   $mediaAll.addEventListener("change", () => {
     $mediaCbs.forEach(cb => { cb.checked = $mediaAll.checked; });
+    invalidateCandidates();
   });
   $mediaCbs.forEach(cb => {
     cb.addEventListener("change", () => {
@@ -260,12 +269,24 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
       const noneChecked = [...$mediaCbs].every(c => !c.checked);
       $mediaAll.checked = allChecked;
       $mediaAll.indeterminate = !allChecked && !noneChecked;
+      invalidateCandidates();
     });
   });
 
   // ── Date filter wiring ──────────────────────────────
-  $olderEnable.addEventListener("change", () => { $olderDate.disabled = !$olderEnable.checked; });
-  $newerEnable.addEventListener("change", () => { $newerDate.disabled = !$newerEnable.checked; });
+  // The dates themselves invalidate too, not only the checkboxes that enable
+  // them: editing a date after a preview changes what the preview would have
+  // found just as much as turning the filter on does.
+  $olderEnable.addEventListener("change", () => {
+    $olderDate.disabled = !$olderEnable.checked;
+    invalidateCandidates();
+  });
+  $newerEnable.addEventListener("change", () => {
+    $newerDate.disabled = !$newerEnable.checked;
+    invalidateCandidates();
+  });
+  $olderDate.addEventListener("change", () => invalidateCandidates());
+  $newerDate.addEventListener("change", () => invalidateCandidates());
 
   // ── Status / progress ───────────────────────────────
   const setStatus = makeStatus($status, "mi-status");
@@ -302,9 +323,37 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
       : "Run a preview first";
   }
 
+  /** The only place `candidates` is assigned, so the button cannot drift. */
+  function setCandidates(next) {
+    candidates = next;
+    syncMoveButton();
+  }
+
+  /**
+   * Anything that changes what a preview would find discards the preview.
+   *
+   * Without this the previewed set outlived the filters that produced it, and
+   * Move acted on it: preview against queue A, switch the source to B, press
+   * Move, and the interactions from **A** were transferred — while the
+   * confirmation read "from B", because that name was taken from the control
+   * rather than from the search. Disconnect was given the same rule in release
+   * 4.1 for the same reason.
+   */
+  function invalidateCandidates() {
+    if (!candidates.length || isRunning) return;
+    setCandidates([]);
+    results = [];
+    renderResults();
+    setStatus(STATUS.ready);
+  }
+
   // ── Render results table ────────────────────────────
   function renderResults() {
     if (!results.length) {
+      // Emptied, not just hidden: a discarded preview's rows used to stay in
+      // the DOM behind a hidden wrapper, which is the same stale state this
+      // page has just been taught not to keep.
+      $tbody.innerHTML = "";
       $tableWrap.style.display = "none";
       return;
     }
@@ -533,18 +582,26 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     if (!params) return;
 
     cancelled = false;
+    setCandidates([]);   // an error mid-scan must not leave the previous set armed
     setButtonsRunning(true);
     results = [];
     renderResults();
 
     try {
-      candidates = await scanConversations(params);
+      const found = await scanConversations(params);
 
       if (cancelled) {
-        setStatus("Preview cancelled.");
-      } else if (candidates.length === 0) {
+        // A cancelled scan stops mid-inspection and returns what it had. That
+        // partial set was previously kept and armed the Move button, so the
+        // operator could transfer a set they had never been shown, at a count
+        // that looked authoritative. A partial result is not a result.
+        setCandidates([]);
+        setStatus("Preview cancelled — nothing was previewed. Run it again.");
+      } else if (found.length === 0) {
+        setCandidates([]);
         setStatus(STATUS.noResults);
       } else {
+        setCandidates(found);
         const mediaLabel = params.mediaTypes.length >= 4
           ? "all media types"
           : params.mediaTypes.join(", ");
@@ -646,7 +703,7 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
       count:       successCount + failCount,
     });
     setTimeout(hideProgress, 800);
-    candidates = []; // A fresh preview is required before another move
+    setCandidates([]);   // a fresh preview is required before another move
     setButtonsRunning(false);
   });
 
@@ -655,10 +712,9 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
 
   // ── Clear ───────────────────────────────────────────
   $clearBtn.addEventListener("click", () => {
-    candidates = [];
+    setCandidates([]);
     results = [];
     renderResults();
-    syncMoveButton();
     hideProgress();
     setStatus(STATUS.ready);
   });
