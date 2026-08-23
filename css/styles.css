@@ -4320,14 +4320,19 @@ body {
   font-size: 14px;
   table-layout: fixed;
 }
+/* Five columns: Type / Address / Integration / Primary / Direct Routing.
+   Weighted toward Address — the two right-hand columns hold a single glyph
+   each and had 40% of the table between them. */
 .dr-addr-table th:nth-child(1),
-.dr-addr-table td:nth-child(1) { width: 20%; }
+.dr-addr-table td:nth-child(1) { width: 16%; }
 .dr-addr-table th:nth-child(2),
 .dr-addr-table td:nth-child(2) { width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dr-addr-table th:nth-child(3),
-.dr-addr-table td:nth-child(3) { width: 15%; text-align: center; }
+.dr-addr-table td:nth-child(3) { width: 18%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dr-addr-table th:nth-child(4),
-.dr-addr-table td:nth-child(4) { width: 25%; text-align: center; }
+.dr-addr-table td:nth-child(4) { width: 11%; text-align: center; }
+.dr-addr-table th:nth-child(5),
+.dr-addr-table td:nth-child(5) { width: 15%; text-align: center; }
 .dr-addr-table th,
 .dr-addr-table td {
   padding: 6px 10px;
@@ -4343,6 +4348,20 @@ body {
 .dr-addr-na {
   color: var(--muted);
   opacity: 0.5;
+}
+/* An integration tag this page does not own. Applying direct routing to the
+   same address replaces it, so it reads as something to notice. */
+.dr-addr-foreign {
+  color: #fb923c;
+  font-style: italic;
+}
+.dr-addr-primary { color: var(--text); }
+/* "We could not check", as distinct from "the domain is absent" — stated
+   plainly rather than in the warning colour, because nothing is wrong yet. */
+.dr-email-note {
+  color: var(--muted);
+  font-size: 12px;
+  padding-top: 0;
 }
 .dr-none-row td {
   border-bottom: none;
@@ -4449,6 +4468,10 @@ body {
 
 @media (prefers-color-scheme: light) {
   .dr-user-card { background: var(--panel); }
+  /* #fb923c sits near 2:1 on white; these two carry the only warnings the
+     table shows, so they get a value that clears 4.5:1. */
+  .dr-addr-foreign,
+  .dr-email-warn { color: #c2410c; }
   .dr-backup-search-results { background: #fff; }
   .dr-backup-search-item:hover { background: rgba(0,0,0,0.04); }
   .dr-btn-apply { color: #16a34a; }

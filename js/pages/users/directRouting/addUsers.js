@@ -1,19 +1,25 @@
 /**
  * Users › Direct Routing — Add user(s)
  *
- * Assign the `directrouting` integration tag to user addresses (phone / email),
- * manage the primary phone, and configure agent-level backup routing.
+ * Assign the `directrouting` integration tag to user addresses (phone / email)
+ * and configure agent-level backup routing.
+ *
+ * Genesys allows one `directrouting` tag per media type, so the phone and the
+ * email choices are each one-of-N. Primary phone is shown but not editable:
+ * `primaryContactInfo` is readOnly and auto-populated from `addresses`.
  *
  * Flow:
- *   1. Select users from multi-select
+ *   1. Select users, optionally narrowed by group
  *   2. Click "Load Details" → fetches addresses + backup settings
- *   3. Configure DR tags, primary phone, and backup per user
+ *   3. Configure DR tags and backup per user
  *   4. Click "Apply Changes" → PATCHes only modified users
  *
  * API endpoints:
  *   GET    /api/v2/users                                          — list users
  *   GET    /api/v2/users/{id}                                     — user detail (addresses, version)
- *   PATCH  /api/v2/users/{id}                                     — update addresses / primary
+ *   PATCH  /api/v2/users/{id}                                     — update addresses
+ *   GET    /api/v2/groups, /api/v2/groups/{id}/members             — group filter
+ *   GET    /api/v2/routing/email/domains                           — inbound domain check
  *   GET    /api/v2/routing/users/{id}/directroutingbackup/settings — read backup
  *   PUT    /api/v2/routing/users/{id}/directroutingbackup/settings — set backup
  *   DELETE /api/v2/routing/users/{id}/directroutingbackup/settings — remove backup
@@ -30,10 +36,6 @@ const PHONE_TYPES = [
   { type: "WORK2", label: "Work Phone 2" },
   { type: "WORK3", label: "Work Phone 3" },
 ];
-
-function phoneLabel(type) {
-  return PHONE_TYPES.find(t => t.type === type)?.label || type;
-}
 
 /**
  * Narrow the user picker's options to the selected groups.
@@ -61,28 +63,6 @@ export function filterUserOptions(users, groupMemberIds, selectedIds) {
         ? `${u.name} (not in filter)`
         : u.name,
     }));
-}
-
-/** Build a snapshot of the current DR / primary / backup state for change detection. */
-function takeSnapshot(user, backup) {
-  const addrs = user.addresses || [];
-  const drPhone = addrs.find(a => a.mediaType === "PHONE" && a.integration === "directrouting");
-  const drEmails = addrs
-    .filter(a => a.mediaType === "EMAIL" && a.integration === "directrouting")
-    .map(a => a.type);
-
-  const primaryPhone = (user.primaryContactInfo || []).find(c => c.mediaType === "PHONE");
-
-  return {
-    drPhoneType: drPhone?.type || "NONE",
-    drEmails,
-    primaryPhoneType: primaryPhone?.type || null,
-    backupType: backup?.userId ? "USER" : backup?.queueId ? "QUEUE" : "NONE",
-    backupUserId: backup?.userId || null,
-    backupQueueId: backup?.queueId || null,
-    waitForAgent: backup?.waitForAgent || false,
-    agentWaitSeconds: backup?.agentWaitSeconds ?? 70,
-  };
 }
 
 // ── Page renderer ───────────────────────────────────────────────────
@@ -137,22 +117,23 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     <hr class="hr">
 
     <p class="page-desc">
-      Assign the <code>directrouting</code> integration tag to user phone numbers
-      or email addresses, manage the primary phone number, and configure
-      agent-level backup routing.
+      Assign the <code>directrouting</code> integration tag to one phone number
+      and one email address per user, and configure agent-level backup routing.
+      Primary phone is shown for reference — Genesys derives it from the
+      addresses and it cannot be set here.
     </p>
 
-    <!-- Filter + user picker. The group filter is optional and narrows the
-         picker beside it; leaving it empty considers every active user. -->
+    <!-- User picker, with an optional group filter beside it that narrows
+         what the picker offers; leaving it empty considers every active user. -->
     <div class="cs-controls">
+      <div class="cs-control-group">
+        <label class="cs-label">Select Users</label>
+        <div id="drUserSlot"></div>
+      </div>
       <div class="cs-control-group" id="drGroupWrap" hidden>
         <label class="cs-label">Filter by Group</label>
         <div id="drGroupSlot"></div>
         <div class="dr-filter-note" id="drGroupNote"></div>
-      </div>
-      <div class="cs-control-group">
-        <label class="cs-label">Select Users</label>
-        <div id="drUserSlot"></div>
       </div>
     </div>
 
@@ -369,11 +350,14 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       addrToggle.querySelector(".dr-backup-arrow").innerHTML = addrSection.hidden ? "&#x25B6;" : "&#x25BC;";
     });
 
-    // Address table
+    // Address table.
+    // Integration is shown because this page writes it: without the column,
+    // replacing a foreign tag (microsoftteams and the like) was invisible both
+    // before and after it happened.
     const table = document.createElement("table");
     table.className = "dr-addr-table";
     table.innerHTML = `<thead><tr>
-      <th>Type</th><th>Address</th><th>Primary</th><th>Direct Routing</th>
+      <th>Type</th><th>Address</th><th>Integration</th><th>Primary</th><th>Direct Routing</th>
     </tr></thead>`;
     const tbody = document.createElement("tbody");
 
@@ -390,6 +374,34 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     noneRadio.value = "NONE";
     noneRadio.checked = drPhoneType === "NONE";
 
+    /** One cell showing an address's current integration tag. */
+    function integrationCell(addr) {
+      const td = document.createElement("td");
+      if (!addr || !addr.integration) {
+        td.textContent = "—";
+        td.className = "dr-addr-na";
+      } else if (addr.integration === "directrouting") {
+        td.textContent = "directrouting";
+      } else {
+        // A tag this page does not own. It is preserved on save unless the
+        // address is chosen for direct routing, which replaces it — so it is
+        // called out rather than shown as ordinary text.
+        td.textContent = addr.integration;
+        td.className = "dr-addr-foreign";
+        td.title = `${addr.integration} — choosing this address for direct routing replaces this tag`;
+      }
+      return td;
+    }
+
+    /** Address cell that keeps the full value reachable when it truncates. */
+    function addressCell(text, missing) {
+      const td = document.createElement("td");
+      td.textContent = text || "—";
+      if (missing) td.className = "dr-addr-missing";
+      else if (text) td.title = text;
+      return td;
+    }
+
     // Phone rows
     for (const { type, label } of PHONE_TYPES) {
       const addr = phoneByType[type];
@@ -398,27 +410,25 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       const tdType = document.createElement("td");
       tdType.textContent = label;
 
-      const tdAddr = document.createElement("td");
-      if (addr) {
-        tdAddr.textContent = addr.display || addr.address || "—";
-      } else {
-        tdAddr.textContent = "—";
-        tdAddr.className = "dr-addr-missing";
-      }
+      const tdAddr = addressCell(addr ? (addr.display || addr.address) : "", !addr);
+      const tdInt = integrationCell(addr);
 
-      // Primary radio
+      // Primary is read-only: primaryContactInfo is readOnly on both User and
+      // UpdateUser and is auto-populated from addresses, so the radio that used
+      // to live here promised an edit the API does not accept. Showing which
+      // address Genesys reports as primary keeps the information without the
+      // promise. See §4 of the design doc.
       const tdPri = document.createElement("td");
-      if (addr) {
-        const r = document.createElement("input");
-        r.type = "radio";
-        r.name = `primary_${userId}`;
-        r.value = type;
-        r.checked = primaryPhoneType === type;
-        makeDeselectable(r);
-        tdPri.append(r);
-      } else {
+      if (!addr) {
         tdPri.textContent = "—";
         tdPri.className = "dr-addr-missing";
+      } else if (primaryPhoneType === type) {
+        tdPri.textContent = "✓";
+        tdPri.className = "dr-addr-primary";
+        tdPri.title = "Genesys reports this as the primary phone";
+      } else {
+        tdPri.textContent = "—";
+        tdPri.className = "dr-addr-na";
       }
 
       // DR radio
@@ -436,7 +446,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         tdDR.className = "dr-addr-missing";
       }
 
-      tr.append(tdType, tdAddr, tdPri, tdDR);
+      tr.append(tdType, tdAddr, tdInt, tdPri, tdDR);
       tbody.append(tr);
     }
 
@@ -444,7 +454,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     const noneRow = document.createElement("tr");
     noneRow.className = "dr-none-row";
     const noneSpacerPhone = document.createElement("td");
-    noneSpacerPhone.colSpan = 3;
+    noneSpacerPhone.colSpan = 4;
     const noneTd = document.createElement("td");
     const noneLabel = document.createElement("label");
     noneLabel.className = "dr-none-label";
@@ -453,51 +463,95 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     noneRow.append(noneSpacerPhone, noneTd);
     tbody.append(noneRow);
 
-    // Email rows
+    // Email rows.
+    // Genesys supports one directrouting tag per media type, so these are a
+    // radio group like the phones, not the checkboxes that used to allow two
+    // emails to be tagged at once. Keyed by index: two EMAIL addresses can
+    // share a type, and keying on type silently merged them.
     const emails = addrs.filter(a => a.mediaType === "EMAIL");
-    for (const emailAddr of emails) {
+    const emailNoneRadio = document.createElement("input");
+    emailNoneRadio.type = "radio";
+    emailNoneRadio.name = `dr_email_${userId}`;
+    emailNoneRadio.value = "NONE";
+    emailNoneRadio.checked = !emails.some(a => a.integration === "directrouting");
+
+    emails.forEach((emailAddr, idx) => {
       const tr = document.createElement("tr");
       const address = emailAddr.display || emailAddr.address || "";
       const domain = address.includes("@") ? address.split("@")[1].toLowerCase() : "";
-      const domainExists = domain && emailDomainsCache?.has(domain);
+      // Three states, not two. When the lookup itself failed we do not know
+      // whether the domain is routable, and must not claim that it is not.
+      const domainKnown = emailDomainsAvailable && !!domain;
+      const domainExists = domainKnown && emailDomainsCache.has(domain);
 
       const tdType = document.createElement("td");
       tdType.textContent = "Email" + (emailAddr.type && emailAddr.type !== "WORK" ? ` (${emailAddr.type})` : "");
 
-      const tdAddr = document.createElement("td");
-      tdAddr.textContent = address || "—";
+      const tdAddr = addressCell(address, false);
+      const tdInt = integrationCell(emailAddr);
 
       const tdPri = document.createElement("td");
       tdPri.textContent = "—";
       tdPri.className = "dr-addr-na";
 
+      // Offered whenever the domain is not known to be absent: a missing
+      // routing:email:manage must not remove a write the admin does hold.
+      // An address already tagged still gets its control even on an absent
+      // domain — disabled, so the tag cannot be added here, but visible and
+      // removable via None. Rendering nothing would hide a live tag and let
+      // the row read as untagged.
+      const tagged = emailAddr.integration === "directrouting";
       const tdDR = document.createElement("td");
-      if (domainExists) {
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.dataset.drEmail = userId;
-        cb.value = emailAddr.type || "WORK";
-        cb.checked = emailAddr.integration === "directrouting";
-        tdDR.append(cb);
+      if (!domainKnown || domainExists || tagged) {
+        const r = document.createElement("input");
+        r.type = "radio";
+        r.name = `dr_email_${userId}`;
+        r.value = String(idx);
+        r.checked = tagged;
+        if (domainKnown && !domainExists) {
+          r.disabled = true;
+          r.title = "The domain is not configured for inbound email — this tag can be removed but not re-added here.";
+        } else {
+          makeDeselectable(r, () => { emailNoneRadio.checked = true; });
+        }
+        tdDR.append(r);
       } else {
         tdDR.textContent = "—";
         tdDR.className = "dr-addr-na";
       }
 
-      tr.append(tdType, tdAddr, tdPri, tdDR);
+      tr.append(tdType, tdAddr, tdInt, tdPri, tdDR);
       tbody.append(tr);
 
-      // Warning row if domain not in Genesys
-      if (domain && !domainExists) {
+      const note = !domainKnown
+        ? "Inbound email domains could not be read (requires routing:email:manage) — the domain is not being checked."
+        : !domainExists
+          ? `Domain "${domain}" is not configured as an inbound email domain in Genesys — emails cannot be routed to this address.`
+          : "";
+      if (note) {
         const warnTr = document.createElement("tr");
         warnTr.className = "dr-email-warn-row";
         const warnTd = document.createElement("td");
-        warnTd.colSpan = 4;
-        warnTd.className = "dr-email-warn";
-        warnTd.textContent = `Domain "${domain}" is not configured as an inbound email domain in Genesys — emails cannot be routed to this address.`;
+        warnTd.colSpan = 5;
+        warnTd.className = domainKnown ? "dr-email-warn" : "dr-email-note";
+        warnTd.textContent = note;
         warnTr.append(warnTd);
         tbody.append(warnTr);
       }
+    });
+
+    if (emails.length) {
+      const eNoneRow = document.createElement("tr");
+      eNoneRow.className = "dr-none-row";
+      const eSpacer = document.createElement("td");
+      eSpacer.colSpan = 4;
+      const eNoneTd = document.createElement("td");
+      const eNoneLabel = document.createElement("label");
+      eNoneLabel.className = "dr-none-label";
+      eNoneLabel.append(emailNoneRadio, document.createTextNode(" None"));
+      eNoneTd.append(eNoneLabel);
+      eNoneRow.append(eSpacer, eNoneTd);
+      tbody.append(eNoneRow);
     }
 
     table.append(tbody);
@@ -719,13 +773,13 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     const drPhoneRadio = el.querySelector(`input[name="dr_phone_${userId}"]:checked`);
     const drPhoneType = drPhoneRadio?.value || "NONE";
 
-    const drEmails = [];
-    el.querySelectorAll(`input[data-dr-email="${userId}"]`).forEach(cb => {
-      if (cb.checked) drEmails.push(cb.value);
-    });
-
-    const primaryRadio = el.querySelector(`input[name="primary_${userId}"]:checked`);
-    const primaryPhoneType = primaryRadio?.value || null;
+    // One email at most: Genesys allows a single directrouting tag per media
+    // type. The value is the address's index, since two EMAIL addresses can
+    // share a type.
+    const drEmailRadio = el.querySelector(`input[name="dr_email_${userId}"]:checked`);
+    const drEmailIndex = drEmailRadio && drEmailRadio.value !== "NONE"
+      ? Number(drEmailRadio.value)
+      : null;
 
     const bkRadio = el.querySelector(`input[name="bk_type_${userId}"]:checked`);
     const backupType = bkRadio?.value || "NONE";
@@ -741,7 +795,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     const waitForAgent = el.querySelector(`#bk_wait_${userId}`)?.checked || false;
     const agentWaitSeconds = parseInt(el.querySelector(`#bk_secs_${userId}`)?.value, 10) || 70;
 
-    return { drPhoneType, drEmails, primaryPhoneType, backupType, backupUserId, backupQueueId, waitForAgent, agentWaitSeconds };
+    return { drPhoneType, drEmailIndex, backupType, backupUserId, backupQueueId, waitForAgent, agentWaitSeconds };
   }
 
   // ── Load Details handler ────────────────────────────
@@ -800,7 +854,10 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
                 ? bkResult.value
                 : { state: "error", settings: null };
               const backup = backupResult.settings;
-              loaded.set(uid, { user, backup, backupResult, orig: takeSnapshot(user, backup) });
+              // `orig` is taken from the DOM once the card is rendered, so the baseline
+              // is literally what the form shows rather than a parallel derivation
+              // of it that could disagree.
+              loaded.set(uid, { user, backup, backupResult, orig: null });
             }
           }
 
@@ -870,11 +927,12 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       const curr = readCurrentState(uid);
       const orig = data.orig;
 
+      // Primary is no longer part of this: it is read-only, so it can never
+      // differ between the baseline and the form.
       const addressChanged =
         canEditAddresses && (
           orig.drPhoneType !== curr.drPhoneType ||
-          JSON.stringify(orig.drEmails) !== JSON.stringify(curr.drEmails) ||
-          orig.primaryPhoneType !== curr.primaryPhoneType);
+          orig.drEmailIndex !== curr.drEmailIndex);
 
       const backupChanged =
         canEditBackup && (
@@ -911,41 +969,46 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         showProgress(((i + 1) / changes.length) * 100);
 
         try {
-          // ── Address / primary PATCH ──
+          // ── Address PATCH ──
           if (addressChanged) {
+            // Genesys replaces the whole addresses array, so every existing
+            // address goes back. Only `integration` is rewritten, and only for
+            // the value this page owns: blanking every tag it found is how a
+            // direct-routing change used to strip an unrelated microsoftteams
+            // tag off a number nobody had selected.
+            let emailIdx = -1;
             const updatedAddresses = (data.user.addresses || []).map(addr => {
-              const clone = { ...addr };
+              const clone = {
+                address: addr.address,
+                mediaType: addr.mediaType,
+                type: addr.type,
+                integration: addr.integration,
+              };
+              if (addr.extension)   clone.extension = addr.extension;
+              if (addr.countryCode) clone.countryCode = addr.countryCode;
+
+              let chosen = false;
               if (addr.mediaType === "PHONE") {
-                clone.integration = curr.drPhoneType === addr.type ? "directrouting" : "";
+                chosen = curr.drPhoneType === addr.type;
               } else if (addr.mediaType === "EMAIL") {
-                clone.integration = curr.drEmails.includes(addr.type || "WORK") ? "directrouting" : "";
+                emailIdx++;
+                chosen = curr.drEmailIndex === emailIdx;
+              } else {
+                return clone; // SMS and anything else: untouched.
               }
+
+              if (chosen) clone.integration = "directrouting";
+              else if (addr.integration === "directrouting") clone.integration = "";
+              // Any other value is left exactly as found.
               return clone;
             });
 
-            const body = { version: data.user.version, addresses: updatedAddresses };
-
-            // Update primary phone if changed
-            if (data.orig.primaryPhoneType !== curr.primaryPhoneType) {
-              const otherPrimary = (data.user.primaryContactInfo || [])
-                .filter(c => c.mediaType !== "PHONE");
-              if (curr.primaryPhoneType) {
-                const newPrimary = updatedAddresses.find(
-                  a => a.mediaType === "PHONE" && a.type === curr.primaryPhoneType
-                );
-                if (newPrimary) {
-                  body.primaryContactInfo = [
-                    ...otherPrimary,
-                    { address: newPrimary.address, display: newPrimary.display, mediaType: "PHONE", type: newPrimary.type },
-                  ];
-                }
-              } else {
-                // Primary deselected — keep only non-phone primary entries
-                body.primaryContactInfo = otherPrimary;
-              }
-            }
-
-            const patchResult = await gc.patchUser(api, orgId, uid, body);
+            // primaryContactInfo is readOnly and auto-populated from addresses;
+            // sending it was at best ignored. See §4 of the design doc.
+            const patchResult = await gc.patchUser(api, orgId, uid, {
+              version: data.user.version,
+              addresses: updatedAddresses,
+            });
             // Update cached version for potential reapply
             if (patchResult?.version) data.user.version = patchResult.version;
           }
