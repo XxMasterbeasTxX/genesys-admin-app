@@ -58,9 +58,9 @@ touch, and a Primary column that the spec says cannot work. Those are §3 and §
 - **Email gets the same one-of-N control phones have** (§5), because Genesys
   documents one `directrouting` tag per media type and checkboxes cannot hold
   that line.
-- **Email tagging requires a positively verified inbound domain** (§5.1). A
-  lookup that failed blocks tagging and says why; it does not fall through to
-  allowing it.
+- **Tagging requires the target to be verifiably routable** — an email on a
+  configured inbound domain (§5.1), a phone in a DID pool (§5.2). A lookup that
+  failed blocks tagging and says why; it does not fall through to allowing it.
 - **Addresses opens expanded; only Backup Settings stays collapsed** (§7.1).
   This reverses an earlier deliberate choice — see that section.
 - **SMS stays out of scope** and is recorded as a known gap (§10).
@@ -293,7 +293,7 @@ knowing it is useful when choosing which number to tag — and it goes no furthe
 Dropping the write also removes the deselect-on-click behaviour from the primary
 radios, which existed only to express "no primary phone".
 
-## 5. Email tagging
+## 5. What can actually be tagged
 
 Genesys documents **one `directrouting` tag per media type**. Phones enforce
 this with a radio group and a None row. Emails use checkboxes, so two can be
@@ -323,7 +323,7 @@ The current keying is `emailAddr.type || "WORK"`, which collides if a user holds
 two EMAIL addresses of the same type. Key on array index instead, and carry the
 address string for the confirmation text.
 
-### 5.1 The domain check has a silent failure mode
+### 5.1 Email: the domain check has a silent failure mode
 
 `loadEmailDomains` calls `/api/v2/routing/email/domains` and swallows every
 error into an empty `Set`. That endpoint requires `routing:email:manage`, which
@@ -362,6 +362,40 @@ cases, so an existing tag stays visible and can still be removed. Removal is
 always safe; it is only adding one that needs the domain proven.
 
 Page the call through `fetchAllPages`, as the rest of the app does.
+
+### 5.2 Phone: the number has to be in a DID pool
+
+Added 2026-08-23, and the exact counterpart of §5.1. Direct routing on a phone
+works by a call route pointing at the number, so the number has to be one the
+org actually owns. A `directrouting` tag on anything else is inert — it looks
+identical to a working one and routes nothing, which is the failure §5.1 exists
+to prevent, arriving through the other channel.
+
+`GET /api/v2/telephony/providers/edges/didpools` returns pools as **ranges** —
+`startPhoneNumber` to `endPhoneNumber`, both E.164. That matters for cost:
+membership is a numeric comparison against a handful of pools, fetched once and
+cached for the page. The alternative, `GET .../edges/dids?phoneNumber=`, is one
+request per number — 150 of them on fifty users with three phones each.
+
+Matching is on digits only, so `+45 76 77 65 57` and `+4576776557` compare
+equal; the address list holds both forms. A pool whose bounds do not parse is
+dropped rather than matched loosely, because a wrong "yes" enables a tag that
+cannot route.
+
+**An extension is not enough.** `Contact.extension` is mutually exclusive with
+`address`, and an internal extension is not a DID, so a phone row carrying only
+an extension is not taggable and does not make a user worth loading.
+
+**This gates the whole page on `telephony:plugin:all`**, which
+`directory:user:edit` does not imply. An administrator without it can tag
+nothing, and the rows say why. That is a real cost, taken deliberately and on
+the same reasoning as §5.1: being told the check could not run is a worse
+experience and a better outcome than tagging a number that silently does not
+route. If it proves too blunt in practice, the lever is here and it is one
+condition.
+
+As with email, an address already tagged keeps a switch that turns off but not
+on, so an existing tag stays visible and removable.
 
 ## 6. Permissions
 

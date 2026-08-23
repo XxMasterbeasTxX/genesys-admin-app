@@ -71,6 +71,42 @@ export function filterUserOptions(users, groupMemberIds, selectedIds) {
     }));
 }
 
+/** Digits only, so "+45 76 77 65 57" and "+4576776557" compare equal. */
+function digitsOf(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+/**
+ * Reduce DID pools to numeric ranges once, for repeated membership tests.
+ * A pool whose bounds are not usable numbers is dropped rather than matched
+ * loosely — a wrong "yes" here enables a tag that cannot route.
+ */
+export function didPoolRanges(pools) {
+  const ranges = [];
+  for (const pool of pools || []) {
+    const start = Number(digitsOf(pool.startPhoneNumber));
+    const end   = Number(digitsOf(pool.endPhoneNumber || pool.startPhoneNumber));
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || !start) continue;
+    ranges.push({ start, end: Math.max(start, end), name: pool.name || "" });
+  }
+  return ranges;
+}
+
+/**
+ * Is this number inside a DID pool?
+ *
+ * Direct routing on a phone works by a call route pointing at the number, which
+ * means the number has to be one the org actually owns — a DID. A tag on
+ * anything else is inert, exactly like an email on an unconfigured domain.
+ *
+ * @returns {{ name: string }|null} the matching pool, or null.
+ */
+export function findDidPool(number, ranges) {
+  const n = Number(digitsOf(number));
+  if (!Number.isSafeInteger(n) || !n) return null;
+  return (ranges || []).find(r => n >= r.start && n <= r.end) || null;
+}
+
 /**
  * Is there anything this page can actually do for this user?
  *
@@ -84,16 +120,22 @@ export function filterUserOptions(users, groupMemberIds, selectedIds) {
  *
  * @param {Object} user
  * @param {Set<string>} emailDomains  Lowercased inbound domains.
- * @param {boolean} domainsKnown      False when the lookup failed.
+ * @param {boolean} domainsKnown      False when the email lookup failed.
+ * @param {{start:number,end:number}[]} didRanges  DID pool ranges.
+ * @param {boolean} didsKnown         False when the DID pool lookup failed.
  */
-export function hasRoutableAddress(user, emailDomains, domainsKnown) {
+export function hasRoutableAddress(user, emailDomains, domainsKnown, didRanges, didsKnown) {
   const addrs = user.addresses || [];
   const phoneTypes = new Set(PHONE_TYPES.map(t => t.type));
 
-  const hasPhone = addrs.some(a =>
-    a.mediaType === "PHONE" &&
-    phoneTypes.has(a.type) &&
-    (a.address || a.display || a.extension));
+  // An extension is deliberately not enough: it is not a DID, so nothing can
+  // route to it. Neither is a number outside every pool.
+  const hasPhone = addrs.some(a => {
+    if (a.mediaType !== "PHONE" || !phoneTypes.has(a.type)) return false;
+    if (a.integration === "directrouting") return true;
+    if (!didsKnown) return false;
+    return !!findDidPool(a.address || a.display, didRanges);
+  });
   if (hasPhone) return true;
 
   return addrs.some(a => {
@@ -128,6 +170,8 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   let queuesCache = null;
   let emailDomainsCache = null; // Set<string> of inbound email domains
   let emailDomainsAvailable = false; // false = the lookup failed, not "none exist"
+  let didRanges = null;              // DID pool ranges, numeric
+  let didPoolsAvailable = false;     // false = the lookup failed, not "no pools"
   let allUsers = [];                 // [{ id, name }] — active users, loaded once
   const groupMembers = new Map();    // groupId → Set<userId>, memoised for the page
   let filterToken = 0;               // guards against a slow fetch landing late
@@ -354,6 +398,20 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     if (announced) setStatus("Ready. Select users and click Load Details.");
   }
 
+  async function loadDidPools() {
+    if (didRanges) return didRanges;
+    try {
+      didRanges = didPoolRanges(await gc.fetchAllDidPools(api, orgId));
+      didPoolsAvailable = true;
+    } catch {
+      // Requires telephony:plugin:all, which directory:user:edit does not
+      // imply. An empty list here is "could not check", not "no pools exist".
+      didRanges = [];
+      didPoolsAvailable = false;
+    }
+    return didRanges;
+  }
+
   async function loadQueues() {
     if (queuesCache) return queuesCache;
     queuesCache = await gc.fetchAllQueues(api, orgId);
@@ -414,15 +472,42 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     return { lbl, cb };
   }
 
-  /** Turn on the switch for `value` in a group, or all off when value is null. */
+  /**
+   * Make a switch remove-only: it can be turned off, never on.
+   *
+   * Refused on click, not on change: preventDefault reverts the state and
+   * suppresses `change`, so the exclusion handler never runs. Blocking it
+   * afterwards would already have switched off a valid selection elsewhere.
+   * The flag is what keeps `setGroupValue` — and so the bulk control — from
+   * turning it on programmatically, which no click handler would catch.
+   */
+  function lockSwitchOn(cb, title, lbl) {
+    cb.dataset.drLocked = "1";
+    if (lbl) lbl.title = title;
+    cb.addEventListener("click", (e) => { if (cb.checked) e.preventDefault(); });
+  }
+
+  /**
+   * Turn on the switch for `value` in a group, or all off when value is null.
+   *
+   * A group with no match is left **untouched**, not cleared. The radio version
+   * behaved that way by construction — setting a radio the user did not have
+   * simply did nothing — and clearing here would mean bulk-tagging "Work Phone
+   * 2" silently stripped the existing tag from everyone who has no Work Phone 2.
+   *
+   * @returns {boolean} whether the group ended up matching the request.
+   */
   function setGroupValue(group, value) {
-    let hit = false;
-    for (const cb of el.querySelectorAll(`input[data-dr-group="${group}"]`)) {
-      const on = value !== null && cb.dataset.drValue === value && !cb.disabled;
-      cb.checked = on;
-      if (on) hit = true;
+    const boxes = [...el.querySelectorAll(`input[data-dr-group="${group}"]`)];
+    if (value === null) {
+      for (const cb of boxes) cb.checked = false;
+      return true;
     }
-    return hit;
+    const target = boxes.find(cb =>
+      cb.dataset.drValue === value && !cb.dataset.drLocked && !cb.disabled);
+    if (!target) return false;
+    for (const cb of boxes) cb.checked = cb === target;
+    return true;
   }
 
   /** Grey out a section and say which permission is missing. */
@@ -537,6 +622,14 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       const tdAddr = addressCell(addr ? (addr.display || addr.address) : "", !addr);
       const tdInt = integrationCell(addr);
 
+      // Direct routing on a phone works by a call route pointing at the
+      // number, so the number has to be one the org owns. A tag on anything
+      // else is inert — the same failure as an email on an unconfigured
+      // domain, and gated the same way.
+      const inPool = addr ? findDidPool(addr.address || addr.display, didRanges) : null;
+      const phoneTagged = addr?.integration === "directrouting";
+      const canTagPhone = didPoolsAvailable && !!inPool;
+
       // Primary is read-only, permanently — not pending a better write path.
       // Two independent reasons: primaryContactInfo is readOnly on both User
       // and UpdateUser and auto-populated from addresses, so the radio that
@@ -559,15 +652,36 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       }
 
       const tdDR = document.createElement("td");
-      if (addr) {
-        tdDR.append(drSwitch(`phone_${userId}`, type, drPhoneType === type).lbl);
+      if (addr && (canTagPhone || phoneTagged)) {
+        const { lbl, cb } = drSwitch(`phone_${userId}`, type, drPhoneType === type);
+        if (!canTagPhone) {
+          lockSwitchOn(cb, didPoolsAvailable
+            ? "This number is not in any DID pool — the tag can be removed but not re-added here."
+            : "DID pools could not be read, so this number cannot be verified — the tag can be removed but not re-added here.", lbl);
+        } else if (inPool.name) {
+          lbl.title = `In DID pool: ${inPool.name}`;
+        }
+        tdDR.append(lbl);
       } else {
         tdDR.textContent = "—";
-        tdDR.className = "dr-addr-missing";
+        tdDR.className = addr ? "dr-addr-na" : "dr-addr-missing";
       }
 
       tr.append(tdType, tdAddr, tdInt, tdPri, tdDR);
       tbody.append(tr);
+
+      if (addr && !canTagPhone) {
+        const warnTr = document.createElement("tr");
+        warnTr.className = "dr-email-warn-row";
+        const warnTd = document.createElement("td");
+        warnTd.colSpan = 5;
+        warnTd.className = "dr-email-warn";
+        warnTd.textContent = didPoolsAvailable
+          ? "This number is not in a Genesys DID pool — calls cannot be routed to it."
+          : "DID pools could not be read (requires telephony:plugin:all), so this number cannot be verified — direct routing is unavailable for it here.";
+        warnTr.append(warnTd);
+        tbody.append(warnTr);
+      }
     }
 
     // Email rows.
@@ -612,16 +726,9 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         if (!domainExists) {
           // Off but not on: an existing tag stays visible and can be switched
           // off, which is always safe. Adding one needs the domain proven.
-          lbl.title = domainKnown
+          lockSwitchOn(cb, domainKnown
             ? "The domain is not configured for inbound email — this tag can be removed but not re-added here."
-            : "The inbound domain list could not be read, so this cannot be verified — the tag can be removed but not re-added here.";
-          // Refused on click, not on change: preventDefault reverts the state
-          // and suppresses `change` entirely, so the exclusion handler never
-          // runs. Blocking it afterwards would have already switched off a
-          // valid selection on another row before bouncing this one back.
-          cb.addEventListener("click", (e) => {
-            if (cb.checked) e.preventDefault();
-          });
+            : "The inbound domain list could not be read, so this cannot be verified — the tag can be removed but not re-added here.", lbl);
         }
         tdDR.append(lbl);
       } else {
@@ -987,6 +1094,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     try {
       // Fetch email domains in parallel with user details
       const emailDomainPromise = loadEmailDomains();
+      const didPoolPromise = loadDidPools();
 
       for (let i = 0; i < selectedIds.length; i += BATCH) {
         if (cancelled) break;
@@ -1038,12 +1146,13 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       }
 
       // Ensure email domains are loaded before rendering
-      await emailDomainPromise;
+      await Promise.all([emailDomainPromise, didPoolPromise]);
 
       // Drop anyone this page cannot do anything for. A card with no usable
       // switch is a screenful of nothing.
       for (const [uid, data] of [...loaded]) {
-        if (hasRoutableAddress(data.user, emailDomainsCache, emailDomainsAvailable)) continue;
+        if (hasRoutableAddress(data.user, emailDomainsCache, emailDomainsAvailable,
+                               didRanges, didPoolsAvailable)) continue;
         loaded.delete(uid);
         noAddresses++;
       }
@@ -1094,9 +1203,8 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     let applied = 0;
     for (const uid of loaded.keys()) {
       // null turns the whole group off; otherwise it only lands on users who
-      // actually have that phone type.
+      // actually have that phone type, and leaves the rest alone.
       if (setGroupValue(`phone_${uid}`, val === "NONE" ? null : val)) applied++;
-      else if (val === "NONE") applied++;
     }
 
     // Without this the control looks inert: it flips radios inside cards that
