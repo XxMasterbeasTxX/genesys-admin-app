@@ -21,6 +21,22 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.3",
+    date: "2026-08-23",
+    title: "Move: it tells you what it will do before it does it",
+    changes: [
+      "Move Interactions now shows a preview you can trust, and cannot act on anything you have not seen. The button stays greyed until a preview has run \u2014 it used to search and transfer in one press, so an entire queue could be moved without ever appearing on screen, on an action that cannot be undone.",
+      "Changing anything after a preview clears it. Preview one queue, notice you picked the wrong source, correct it and press Move, and the interactions from the first queue were transferred \u2014 while the confirmation named the second. Every control now discards the preview: both queues, the media types, and the dates. Cancelling a preview clears it too, rather than leaving a half-finished list armed and looking complete.",
+      "The preview says where every interaction went, instead of only listing the ones it can move. \u201cNo active interactions found matching the criteria\u201d used to cover an empty queue, a media filter, a date filter, interactions with nothing left to transfer, and requests that failed \u2014 all with the same sentence. Each now has its own row and its own reason.",
+      "Interactions an agent is currently handling are listed as such and left alone. That was always the behaviour; it was simply invisible, so a queue of forty could preview as thirty-two with no explanation of the other eight.",
+      "The status line carries the queue\u2019s own depth beside the count: \u201c2 to move \u00b7 4 scanned \u00b7 1.204 waiting in queue \u00b7 oldest waiting 3d \u00b7 1 no active queue leg\u201d. A filter that matched nothing no longer looks like a queue that was already empty.",
+      "Scanning a queue is faster. Interactions are read ten at a time instead of one, and the months that hold nothing are no longer paged through at all \u2014 a queue whose backlog is from this week no longer waits on five empty months first.",
+      "The scan no longer stops at twenty thousand interactions per month. It did so silently, and because it reads newest first, what it dropped were the oldest \u2014 which on this page are usually the ones you were looking for. Above 250 interactions it now says how many it found and roughly how long reading them will take, and lets you decide. Cancel works throughout, including during the scan itself.",
+      "Source and destination sit on one line with an arrow between them, and each is a single searchable dropdown rather than a search box stacked on a list. A warning at the top of the page says what a blind transfer actually does \u2014 including that a moved interaction is re-queued, so its waiting time starts again.",
+      "The spinning ring that shows the app is working now appears in the same places across Disconnect, Move and both Search pages. Queue and Division dropdowns show it while they load on every one of them; previously only Move did, and the others simply greyed out \u2014 which looks identical to a dropdown that has failed to load.",
+    ],
+  },
+  {
     version: "4.2",
     date: "2026-08-22",
     title: "Interaction Search: filters that find what you know is there",

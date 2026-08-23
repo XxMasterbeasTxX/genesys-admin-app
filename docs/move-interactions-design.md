@@ -1,6 +1,6 @@
 # Interactions › Move — layout and safety — Design
 
-Status: **Steps 1–5 of §10 built.** Everything but the release note. The probe
+Status: **Built and released as 4.3, awaiting a test on dev.** All of §10. The probe
 ran twice (§6.3, §6.4) and has been removed, replaced by the accounting it
 existed to specify. The orphan case is still unseen in a sample — the page now
 reports it in production if it turns up.
@@ -573,7 +573,8 @@ until Move is finished, so there is no case for landing the safety fixes early.
 5. **Cost** (§7). ✅ 7.1, 7.2, 7.4 and 7.5 built; 7.3 declined with the reason
    recorded.
 6. **Release note** — one entry; `interactions.move` is not on
-   `CUSTOMER_EXCLUDED_KEYS`, so this is customer-visible.
+   `CUSTOMER_EXCLUDED_KEYS`, so this is customer-visible. ✅ Shipped as 4.3,
+   with the throbber alignment across the four interaction pages folded in.
 
 An earlier version of this list put the probe fourth and split the layout from
 the guard-rails. Both were wrong for the same reason: they ordered by how the
