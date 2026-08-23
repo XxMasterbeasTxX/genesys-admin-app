@@ -21,7 +21,7 @@
  *   POST /api/v2/analytics/conversations/details/query  — synchronous search
  *   GET  /api/v2/conversations/{id}                     — real-time participant data
  */
-import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus, sleep } from "../../utils.js";
+import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus, sleep, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 import { attrValue, filterByPD } from "../../lib/participantData.js";
@@ -173,7 +173,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     <!-- Where -->
     <div class="is-controls">
       <div class="is-control-group">
-        <label class="is-label">Queue</label>
+        <label class="is-label" id="rsQueueLabel">Queue</label>
         <div id="rsQueueDropdown"></div>
       </div>
       <div class="is-control-group">
@@ -185,7 +185,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
         <div id="rsMediaDropdown"></div>
       </div>
       <div class="is-control-group">
-        <label class="is-label">Division</label>
+        <label class="is-label" id="rsDivisionLabel">Division</label>
         <div id="rsDivisionDropdown"></div>
       </div>
     </div>
@@ -353,6 +353,10 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
   // ── Single-select dropdowns ───────────────────────────
   const ssQueue = createSingleSelect({ placeholder: "All queues", searchable: true });
   el.querySelector("#rsQueueDropdown").append(ssQueue.el);
+  // See the same block on Historical Search: a disabled dropdown reads the same
+  // whether it is loading or has failed to.
+  const queueBusy    = makeControlBusy(el.querySelector("#rsQueueLabel"));
+  const divisionBusy = makeControlBusy(el.querySelector("#rsDivisionLabel"));
   ssQueue.setEnabled(false);
 
   const ssDirection = createSingleSelect({ placeholder: "All", searchable: false });
@@ -507,6 +511,14 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
     $exportBtn.disabled = !rows.length;
   }
 
+  /** The same ring the expanded row shows, for the pane beside it. */
+  function inlineSpin() {
+    const s = document.createElement("span");
+    s.className = "spin spin--sm";
+    s.setAttribute("aria-hidden", "true");
+    return s;
+  }
+
   // ── Detail pane — lazy load via real-time API ─────────
   async function loadDetail(idx) {
     if (idx < 0 || idx >= rows.length) return;
@@ -531,7 +543,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       return;
     }
 
-    $detail.textContent = "Loading…";
+    $detail.replaceChildren(inlineSpin(), document.createTextNode(" Loading…"));
     const orgId = orgContext.get();
     try {
       const conv = await gc.getConversation(api, orgId, conversationId);
@@ -905,6 +917,7 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
 
   // ── Load queues + divisions on mount ──────────────────
   (async () => {
+    queueBusy(true); divisionBusy(true);
     try {
       const orgId = orgContext.get();
       const [queues, divisions] = await Promise.all([
@@ -923,6 +936,8 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
       console.error("Failed to load queues/divisions:", err.message);
       ssQueue.setEnabled(true);
       ssDivision.setEnabled(true);
+    } finally {
+      queueBusy(false); divisionBusy(false);
     }
   })();
 

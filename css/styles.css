@@ -1076,17 +1076,21 @@ body {
   align-items: center;
   gap: 6px;
 }
-.mi-queue-group {
-  min-width: 280px;
-  flex: 1;
+/* Source and destination read as one statement, with the direction shown
+   rather than left to two identical blocks 400px apart. */
+.mi-route {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-.mi-queue-search {
-  width: 100%;
-  margin-bottom: 4px;
+.mi-route-arrow {
+  font-size: 18px;
+  color: var(--muted);
+  padding-bottom: 6px;
+  user-select: none;
 }
-.mi-queue-select {
-  width: 100%;
-}
+.mi-route .ms-dropdown__trigger { min-width: 240px; }
 .mi-media-types {
   display: flex;
   flex-wrap: wrap;
@@ -1150,12 +1154,14 @@ body {
 .mi-mono { font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace; font-size: 11px; }
 .mi-ok   { color: #34d399; font-weight: 600; }
 .mi-fail { color: #f87171; font-weight: 600; }
+.mi-skip { color: #f59e0b; font-weight: 600; }
 .mi-cancel { color: var(--muted); font-style: italic; }
 
 /* ══════════════════════════════════════════════════════════
    Disconnect Interactions  (di-* prefix)
    ══════════════════════════════════════════════════════════ */
-.di-warning {
+.di-warning,
+.mi-warning {
   background: rgba(245, 158, 11, 0.12);
   border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: 8px;
@@ -1165,7 +1171,8 @@ body {
   font-size: 13px;
   line-height: 1.5;
 }
-.di-warning-title {
+.di-warning-title,
+.mi-warning-title {
   font-weight: 700;
   font-size: 14px;
   margin-bottom: 4px;
@@ -1714,7 +1721,8 @@ body {
   .di-progress-wrap { background: rgba(0,0,0,0.06); }
   .di-btn-disconnect { background: rgba(239,68,68,0.08); color: #dc2626; border-color: rgba(239,68,68,0.2); }
   .di-btn-disconnect:hover { background: rgba(239,68,68,0.15); }
-  .di-warning { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.2); color: #b45309; }
+  .di-warning,
+  .mi-warning { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.2); color: #b45309; }
   .di-email-note { color: #b45309; }
   .di-email-error { color: #dc2626; }
 

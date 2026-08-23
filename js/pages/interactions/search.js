@@ -17,7 +17,7 @@
  *   GET  /api/v2/analytics/conversations/details/jobs/{id}     — poll job status
  *   GET  /api/v2/analytics/conversations/details/jobs/{id}/results — fetch results
  */
-import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
+import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 import { attrValue, filterByPD } from "../../lib/participantData.js";
@@ -224,7 +224,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
     <!-- Where -->
     <div class="is-controls">
       <div class="is-control-group">
-        <label class="is-label">Queue</label>
+        <label class="is-label" id="isQueueLabel">Queue</label>
         <div id="isQueueDropdown"></div>
       </div>
       <div class="is-control-group">
@@ -236,7 +236,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
         <div id="isMediaDropdown"></div>
       </div>
       <div class="is-control-group">
-        <label class="is-label">Division</label>
+        <label class="is-label" id="isDivisionLabel">Division</label>
         <div id="isDivisionDropdown"></div>
       </div>
     </div>
@@ -354,6 +354,12 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
   // ── Single-select dropdowns ───────────────────────
   const ssQueue = createSingleSelect({ placeholder: "All queues", searchable: true });
   el.querySelector("#isQueueDropdown").append(ssQueue.el);
+  // Both dropdowns fill themselves from Genesys, and a dropdown that is merely
+  // disabled looks the same whether it is loading or has failed to. The ring on
+  // the label is the difference, and it is what every other page in the app
+  // does while a control waits on the API.
+  const queueBusy    = makeControlBusy(el.querySelector("#isQueueLabel"));
+  const divisionBusy = makeControlBusy(el.querySelector("#isDivisionLabel"));
   ssQueue.setEnabled(false);
 
   const ssDirection = createSingleSelect({ placeholder: "All", searchable: false });
@@ -998,6 +1004,7 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
 
   // ── Load queues + divisions on mount ──────────────
   (async () => {
+    queueBusy(true); divisionBusy(true);
     try {
       const orgId = orgContext.get();
       [queues, divisions] = await Promise.all([
@@ -1016,6 +1023,8 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       console.error("Failed to load queues/divisions:", err.message);
       ssQueue.setEnabled(true);
       ssDivision.setEnabled(true);
+    } finally {
+      queueBusy(false); divisionBusy(false);
     }
   })();
 

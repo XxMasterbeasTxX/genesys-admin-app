@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Interactions › Move — layout redesign (mockup)</title>
+<link rel="stylesheet" href="../../css/styles.css">
+<style>
+/* ══════════════════════════════════════════════════════════════
+   Mockup-only scaffolding. Not proposed CSS.
+   ══════════════════════════════════════════════════════════════ */
+body { background: var(--bg); color: var(--text); padding: 24px; }
+.mk-note {
+  font-size: 12px; color: var(--muted); margin: 0 0 8px;
+  border-left: 2px solid rgba(59,130,246,0.4); padding-left: 8px;
+}
+.mk-section { margin-bottom: 34px; }
+.mk-h { font-size: 13px; font-weight: 700; letter-spacing: .04em;
+        text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+
+/* ══════════════════════════════════════════════════════════════
+   PROPOSED — three new `mi-` rules, nothing more.
+   Everything else below already exists in styles.css.
+   ══════════════════════════════════════════════════════════════ */
+
+/* The queue pair reads as one statement, with the direction shown rather
+   than implied by two identical blocks 400px apart. */
+.mi-route {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.mi-route-arrow {
+  font-size: 18px;
+  color: var(--muted);
+  padding-bottom: 6px;
+  user-select: none;
+}
+
+/* Two widths, so the rows below form columns instead of each control
+   choosing its own size. Replaces `.mi-queue-group { flex: 1 }`, which is
+   what stretched one choice across half the page. */
+.mi-w-queue .ms-dropdown__trigger { min-width: 240px; }
+</style>
+</head>
+<body>
+
+<p class="mk-note">
+  Mockup for <code>docs/move-interactions-design.md</code>. Static — nothing is
+  wired up. Uses the app's real <code>styles.css</code>, so colours, buttons and
+  inputs are the genuine ones. The dropdown's open state is shown in its own
+  section further down, so the spacing in the layout below is the real spacing.
+</p>
+
+<div class="mk-section">
+  <div class="mk-h">Proposed</div>
+
+  <section class="card">
+    <h1 class="h1">Move Interactions</h1>
+    <hr class="hr">
+
+    <p class="page-desc">
+      Transfer interactions waiting in one queue to another, by blind transfer.
+      Filters: media type and date range. Preview before moving — Move acts on
+      what the preview found, and cannot be undone.
+    </p>
+
+    <div class="di-warning">
+      <div class="di-warning-title">&#9888; WARNING: Move is a blind transfer and cannot be undone</div>
+      Each matching interaction is transferred to the destination queue and
+      re-queued there. It cannot be moved back automatically, and its wait time
+      in the destination queue starts again.
+    </div>
+
+    <!-- ── ROUTE ────────────────────────────────────────────── -->
+    <div class="mi-controls">
+      <div class="mi-route">
+        <div class="mi-control-group mi-w-queue">
+          <label class="mi-label">Source queue</label>
+          <div class="ms-dropdown">
+            <button type="button" class="ms-dropdown__trigger">Web Messaging - Prod</button>
+          </div>
+        </div>
+
+        <div class="mi-route-arrow">&#8594;</div>
+
+        <div class="mi-control-group mi-w-queue">
+          <label class="mi-label">Destination queue</label>
+          <div class="ms-dropdown">
+            <button type="button" class="ms-dropdown__trigger">Back Office - Overflow</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── FILTERS ──────────────────────────────────────────── -->
+    <div class="mi-controls">
+      <div class="mi-control-group">
+        <label class="mi-label">Media Types</label>
+        <div class="mi-media-types">
+          <label class="mi-checkbox"><input type="checkbox" checked> All</label>
+          <label class="mi-checkbox"><input type="checkbox" checked> Voice</label>
+          <label class="mi-checkbox"><input type="checkbox" checked> Email</label>
+          <label class="mi-checkbox"><input type="checkbox" checked> Callback</label>
+          <label class="mi-checkbox"><input type="checkbox" checked> Message</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="mi-controls">
+      <div class="mi-control-group">
+        <label class="mi-label"><input type="checkbox"> Older than</label>
+        <input type="date" class="input mi-date" disabled>
+      </div>
+      <div class="mi-control-group">
+        <label class="mi-label"><input type="checkbox"> Newer than</label>
+        <input type="date" class="input mi-date" disabled>
+      </div>
+    </div>
+
+    <!-- ── ACTIONS ──────────────────────────────────────────── -->
+    <div class="mi-actions">
+      <button class="btn btn--primary">Preview</button>
+      <button class="btn mi-btn-move" disabled title="Run a preview first">Move Interactions</button>
+      <button class="btn">Clear Results</button>
+    </div>
+
+    <div class="mi-status">
+      Preview: 42 interactions found (email) &middot; 1.204 waiting in queue &middot; oldest waiting 3d 4h
+    </div>
+
+    <div class="mi-table-wrap">
+      <table class="data-table mi-table">
+        <thead>
+          <tr>
+            <th style="width:60px">#</th>
+            <th style="width:300px">Conversation ID</th>
+            <th style="width:100px">Media Type</th>
+            <th style="width:160px">Start Time</th>
+            <th style="width:100px">Status</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td class="mi-mono">3fa85f64-5717-4562-b3fc-2c963f66afa6</td>
+            <td>email</td>
+            <td>2026-08-19 08:14:02</td>
+            <td>Pending</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td class="mi-mono">7c1e0b2a-91d4-4a77-9f30-b0c2a5518e41</td>
+            <td>email</td>
+            <td>2026-08-19 09:41:55</td>
+            <td>Pending</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td class="mi-mono">b93d55f1-2a68-4c19-8e7b-4d0f1a9c6720</td>
+            <td>email</td>
+            <td>2026-08-20 11:02:37</td>
+            <td class="mi-fail">Not movable</td>
+            <td>No active queue leg — the interaction has no participant to transfer</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div class="mk-section">
+  <div class="mk-h">The queue dropdown, open</div>
+  <p class="mk-note">
+    Shown separately because the panel is <code>position: absolute</code>: it
+    floats over whatever is beneath it and does not push the page down. An
+    earlier version of this mockup held the panel open inside the layout above
+    and spaced the filters down to clear it, which invented a gap that the real
+    page does not have.
+  </p>
+  <section class="card" style="padding-bottom:230px">
+    <div class="mi-controls">
+      <div class="mi-control-group mi-w-queue">
+        <label class="mi-label">Destination queue</label>
+        <div class="ms-dropdown ms-dropdown--open">
+          <button type="button" class="ms-dropdown__trigger">&#8212; Select queue &#8212;</button>
+          <div class="ms-dropdown__panel">
+            <input type="text" class="ms-dropdown__search" placeholder="Search…">
+            <div class="ms-dropdown__list">
+              <div class="ms-dropdown__item">&#8212; Select queue &#8212;</div>
+              <div class="ms-dropdown__item">Back Office - Escalation</div>
+              <div class="ms-dropdown__item ms-dropdown__item--selected">Back Office - Overflow</div>
+              <div class="ms-dropdown__item">Back Office - Prod</div>
+              <div class="ms-dropdown__item">Retention - DK</div>
+              <div class="ms-dropdown__item">Sales - Prod</div>
+              <div class="ms-dropdown__item">Support - Tier 2</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<p class="mk-note">
+  What changed, and why each one: see §4 of the design doc. In short — two
+  searchable dropdowns replace four controls and stop one choice spanning half
+  the page; an arrow makes the direction of an irreversible transfer readable;
+  Preview leads and Move is greyed until one has run; the warning banner matches
+  Disconnect's; and the preview table now says why something was set aside
+  instead of dropping it silently.
+</p>
+
+</body>
+</html>
