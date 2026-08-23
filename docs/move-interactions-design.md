@@ -1,8 +1,9 @@
 # Interactions › Move — layout and safety — Design
 
-Status: **Probe shipped, awaiting a run against a real queue.** §10 is the
-agreed build order; step 1 (the probe) is in, and step 5 stays undesigned until
-its output has been read.
+Status: **Probe run — partial answer, recorded in §6.3.** The gate is correct
+where it has been measured; the orphan case it was built to test was not present
+in the sample, and §6.1 is designed so that production answers it instead of
+another probe cycle. Step 2 of §10 is next.
 Author: Genesys Admin App
 Last updated: 2026-08-23
 
@@ -215,6 +216,20 @@ status line reports the queue's own depth from `getQueueStats`, which already
 exists and already takes media types. A filter that matched nothing must not
 look like a queue that was already empty.
 
+The categories are no longer a guess: §6.3's probe names them.
+
+| Row status | Cause | Probe counter |
+|---|---|---|
+| `Pending` | movable | `wouldMatch` |
+| `Not movable` | no ACD leg for this queue | `acdLegGone` |
+| `Not movable` | ACD leg present, media not live | `byMediaState` |
+| `Filtered` | media type not selected | — |
+| `Filtered` | outside the date range | — |
+| `Failed` | could not be inspected | `fetchFailed` |
+
+A status line of `0 match · 412 waiting · 412 no active queue leg` is also what
+turns §6.3's unanswered half into something production reports on its own.
+
 ### 6.2 The gate itself has never met live data — probe first
 
 `findAcdParticipant` is byte-identical to Disconnect's, and Disconnect's own
@@ -263,7 +278,62 @@ today: an `acd` leg in another queue, no `acd` leg at all, a leg whose media is
 and a failed fetch. Every counter matched, and the preview returned the same
 rows and the same status text as before the probe existed.
 
-Nothing in §6.1 is designed further until real output has been read.
+### 6.3 What the probe returned — half an answer
+
+Run 2026-08-23 against a live queue of waiting emails:
+
+```
+total 6 · inspected 6 · fetchFailed 0
+acdAnywhere 6 · acdInQueue 6 · acdLegGone 0 · acdNoMedia 0
+wouldMatch 6 · matchedAfterFilters 6
+byMediaState { "emails:connected": 6 }
+purposes { customer: 6, workflow: 6, acd: 6 }
+queueWaiting 6 · queueInteracting 0
+```
+
+**Confirmed — and previously only assumed.** A waiting email on an ACD leg
+reports `state: "connected"`. That was the load-bearing guess inside
+`findAcdParticipant`, inherited from Disconnect and never tested here.
+
+**Confirmed.** The gate agrees exactly with the queue's own observation:
+`wouldMatch` 6 against `queueWaiting` 6. No systematic mismatch. And
+`acdAnywhere === acdInQueue`, so nothing had passed through this queue and moved
+on — the analytics scan returned the waiting set and nothing else.
+
+**Not answered — say so plainly.** `acdLegGone` and `fetchFailed` are both 0,
+so this queue held no orphans and the gate was never asked to reject anything.
+Every counter that would have signalled a fault reads zero because the
+population contained no faults. That is an absence of evidence, not evidence of
+absence.
+
+**Incidental.** Every conversation carries a `workflow` participant alongside
+customer and acd, consistent with email arriving through a flow. Nothing depends
+on it today; recorded because this is the kind of detail that turns out to
+matter later.
+
+**And nothing about cost.** Six conversations across six months says nothing
+about §7 — that queue is quiet, and the loop was never under load.
+
+### 6.4 Why there is no second probe round
+
+Testing the orphan case properly needs a queue full of stuck interactions, and
+inspecting one of those serially — one `getConversation` at a time — is hours.
+That is exactly the batching in §7, which was itself meant to be justified by
+probe data. Waiting for one to justify the other gets nowhere.
+
+The way out is §6.1: **keep the gate, and make every rejection visible.** The
+gate is correct everywhere it has been measured, and unlike a disconnect a
+transfer genuinely needs a live participant to replace, so rejecting a
+conversation with no ACD leg is probably right rather than merely convenient.
+What was never acceptable is doing it in silence.
+
+With the accounting in place, the first queue with orphans in it reports
+`0 match · 412 waiting · 412 no active queue leg` instead of "No active
+interactions found". Production answers the question, at no cost, and the
+operator is not misled in the meantime.
+
+This also unblocks §6.1, which needed the probe for its *categories* rather than
+for a verdict — and those it has.
 
 ## 7. Cost — after §6, not before
 
@@ -313,7 +383,8 @@ until Move is finished, so there is no case for landing the safety fixes early.
    actually exist. This is the real reason not to do safety first: attaching
    `invalidateCandidates` to the native selects and deleting that wiring one
    commit later means writing and testing the same behaviour twice.
-4. **The accounting** (§6.1), designed on what the probe returned.
+4. **The accounting** (§6.1), designed on what the probe returned. Unblocked —
+   see §6.3 and §6.4.
 5. **Cost** (§7), only if the probe says enough conversations reach step 2 for
    it to matter.
 6. **Release note** — one entry; `interactions.move` is not on
