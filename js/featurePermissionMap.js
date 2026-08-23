@@ -101,7 +101,10 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   "users.rolesSkills.createTemplate":      { roles: ["authorization:grant:add"], skills: ["routing:skill:assign"], languages: ["routing:language:assign"], queues: ["routing:queueMember:manage"] },
   // Template Schedules apply templates on a schedule → same apply permissions.
   "users.rolesSkills.templateSchedules":   { apply: ["authorization:grant:add", "routing:skill:assign", "routing:language:assign", "routing:queueMember:manage"] },
-  "users.directRouting.add":               { addresses: ["directory:user:edit"], backup: ["routing:directRoutingBackup:edit"] },
+  // Genesys splits direct routing backup three ways. Clearing a backup issues a
+  // DELETE, so an admin with edit but not delete could reach the control and
+  // collect a 403 nobody had warned them about.
+  "users.directRouting.add":               { addresses: ["directory:user:edit"], backup: ["routing:directRoutingBackup:edit"], backupDelete: ["routing:directRoutingBackup:delete"] },
 
   // ── GDPR (customer inclusion TBD — O2) ───────────────
   "gdpr.subjectRequest": { create: ["gdpr:request:add"] },

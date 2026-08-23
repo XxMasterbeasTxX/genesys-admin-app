@@ -1,8 +1,8 @@
 # Users — Direct Routing — Add user(s) — Design
 
-Status: **Proposed** — nothing built. The backup half is fully verified against
-a live org (§2.1, §2.1.1, §2.4). The Primary write path (§4) is the only
-open question.
+Status: **Built** — all six steps shipped to dev (2026-08-23). The backup half
+was verified against a live org first (§2.1, §2.1.1, §2.4). The Primary write
+path (§4) remains unanswered and gates nothing: the column ships read-only.
 Author: Genesys Admin App
 Last updated: 2026-08-23
 
@@ -544,6 +544,9 @@ The app has no page for it. Worth noting when this one says "no backup", because
 the interaction still has somewhere to go.
 
 ## 11. Build order
+
+All six steps are built and pushed to dev. What follows is the order they were
+built in and why, kept because the reasoning outlived the work.
 
 **The whole change lands as one merge**, tested on dev, and nothing reaches
 production part-built. An earlier revision of this section ordered the work by

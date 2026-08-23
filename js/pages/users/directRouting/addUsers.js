@@ -162,9 +162,13 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     <!-- User cards -->
     <div id="drCards" style="display:none"></div>
 
-    <!-- Apply / Cancel -->
+    <!-- Apply / Cancel. Cancel sits outside the apply wrapper: Load Details
+         hides that wrapper, which used to take the Cancel button with it and
+         leave a running load with no way to stop it. -->
     <div class="cs-actions" id="drApplyWrap" style="display:none">
       <button class="btn dr-btn-apply" id="drApplyBtn">Apply Changes</button>
+    </div>
+    <div class="cs-actions">
       <button class="btn" id="drCancelBtn" style="display:none">Cancel</button>
     </div>
 
@@ -202,6 +206,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   // the user holds the Genesys permission for (addresses vs. backup routing).
   const canEditAddresses = access && access.can ? access.can("users.directRouting.add", "addresses") : true;
   const canEditBackup    = access && access.can ? access.can("users.directRouting.add", "backup") : true;
+  const canDeleteBackup  = access && access.can ? access.can("users.directRouting.add", "backupDelete") : true;
   const $summary      = el.querySelector("#drSummary");
 
   // ── Helpers ─────────────────────────────────────────
@@ -346,9 +351,20 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     });
   }
 
+  /** Grey out a section and say which permission is missing. */
+  function lockSection(sectionEl, toggleEl, permission, message) {
+    sectionEl.style.pointerEvents = "none";
+    sectionEl.style.opacity = "0.5";
+    if (permission) toggleEl.title = `Requires Genesys permission: ${permission}`;
+    const note = document.createElement("div");
+    note.className = "dr-perm-note";
+    note.textContent = message;
+    sectionEl.prepend(note);
+  }
+
   // ── Render one user card ────────────────────────────
   function createUserCard(userId) {
-    const { user, backup } = loaded.get(userId);
+    const { user, backup, backupResult } = loaded.get(userId);
     const addrs = user.addresses || [];
     const card = document.createElement("div");
     card.className = "dr-user-card";
@@ -375,12 +391,14 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     const addrToggle = document.createElement("button");
     addrToggle.type = "button";
     addrToggle.className = "dr-backup-toggle";
-    addrToggle.setAttribute("aria-expanded", "false");
-    addrToggle.innerHTML = `<span class="dr-backup-arrow">&#x25B6;</span> Addresses`;
+    addrToggle.setAttribute("aria-expanded", "true");
+    addrToggle.innerHTML = `<span class="dr-backup-arrow">&#x25BC;</span> Addresses`;
 
+    // Expanded by render: the addresses are the task. Leaving both sections
+    // shut cost two clicks per user before anything could be read, and made
+    // the bulk auto-tag control look as though it did nothing at all.
     const addrSection = document.createElement("div");
     addrSection.className = "dr-backup-section dr-addr-section";
-    addrSection.hidden = true;
 
     addrToggle.addEventListener("click", () => {
       addrSection.hidden = !addrSection.hidden;
@@ -680,22 +698,38 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     // ── Per-section permission gating (internal refinement) ──
     // Lock the section(s) the user lacks the Genesys permission for.
     if (!canEditAddresses) {
-      addrSection.style.pointerEvents = "none";
-      addrSection.style.opacity = "0.5";
-      addrToggle.title = "Requires Genesys permission: directory:user:edit";
-      const note = document.createElement("div");
-      note.style.cssText = "color:var(--muted);font-size:12px;margin:4px 0";
-      note.textContent = "You lack the Genesys permission to change addresses / direct routing (directory:user:edit).";
-      addrSection.prepend(note);
+      lockSection(addrSection, addrToggle,
+        "directory:user:edit",
+        "You lack the Genesys permission to change addresses / direct routing (directory:user:edit).");
     }
     if (!canEditBackup) {
-      section.style.pointerEvents = "none";
-      section.style.opacity = "0.5";
-      toggle.title = "Requires Genesys permission: routing:directRoutingBackup:edit";
-      const note = document.createElement("div");
-      note.style.cssText = "color:var(--muted);font-size:12px;margin:4px 0";
-      note.textContent = "You lack the Genesys permission to change backup routing (routing:directRoutingBackup:edit).";
-      section.prepend(note);
+      lockSection(section, toggle,
+        "routing:directRoutingBackup:edit",
+        "You lack the Genesys permission to change backup routing (routing:directRoutingBackup:edit).");
+    } else if (backupResult?.state === "denied") {
+      // Genesys refused the read. The form below is empty because nothing could
+      // be loaded, not because nothing is configured — offering it as editable
+      // would let an Apply overwrite a backup we were never allowed to see.
+      lockSection(section, toggle,
+        "routing:directRoutingBackup:view",
+        "Backup settings could not be read (requires routing:directRoutingBackup:view), so they are not shown or editable here.");
+    } else if (backupResult?.state === "error") {
+      lockSection(section, toggle, null,
+        "Backup settings could not be read for this user. Reload to try again.");
+    } else if (!canDeleteBackup) {
+      // Edit without delete: setting or changing a backup is fine, removing one
+      // is not. Only bite when there is something to remove.
+      const hadBackup = !!(backup?.userId || backup?.queueId);
+      if (hadBackup) {
+        for (const b of section.querySelectorAll(".dr-backup-clear")) {
+          b.disabled = true;
+          b.title = "Requires Genesys permission: routing:directRoutingBackup:delete";
+        }
+        const note = document.createElement("div");
+        note.className = "dr-perm-note";
+        note.textContent = "You can change this backup but not remove it (requires routing:directRoutingBackup:delete).";
+        section.prepend(note);
+      }
     }
 
     return card;
@@ -906,6 +940,11 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
 
     const BATCH = 10;
     let completed = 0;
+    // The two reasons a selected user does not get a card are different, and
+    // reporting a run of failed reads as "users without addresses" hid real
+    // errors behind a benign-sounding message.
+    let noAddresses = 0;
+    let failedReads = 0;
 
     try {
       // Fetch email domains in parallel with user details
@@ -926,6 +965,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
           const userResult = results[j * 2];
           const bkResult   = results[j * 2 + 1];
 
+          if (userResult.status !== "fulfilled") failedReads++;
           if (userResult.status === "fulfilled") {
             const user = userResult.value;
             const userAddrs = user.addresses || [];
@@ -933,6 +973,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
             const hasPhone = userAddrs.some(a => a.mediaType === "PHONE" && workPhoneTypes.has(a.type));
             const hasEmail = userAddrs.some(a => a.mediaType === "EMAIL");
             // Skip users with no phone and no email addresses
+            if (!hasPhone && !hasEmail) noAddresses++;
             if (hasPhone || hasEmail) {
               // getDirectRoutingBackup now reports which of "none" / "denied" /
               // "ok" it got. The tagged result is kept whole — the backup
@@ -963,9 +1004,18 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       // Ensure email domains are loaded before rendering
       await emailDomainPromise;
 
+      // Say which of the two happened, and how many of each.
+      const skipParts = [];
+      if (noAddresses) skipParts.push(`${noAddresses} without addresses`);
+      if (failedReads) skipParts.push(`${failedReads} could not be read`);
+      const skipNote = skipParts.length ? ` (${skipParts.join(", ")})` : "";
+
       if (!loaded.size) {
-        const skipped = selectedIds.length - loaded.size;
-        setStatus(skipped ? `No users with phone or email addresses found (${skipped} skipped).` : "No user details could be loaded.", "error");
+        setStatus(
+          failedReads && !noAddresses
+            ? `No user details could be loaded — ${failedReads} could not be read.`
+            : `No users with phone or email addresses found${skipNote}.`,
+          "error");
       } else {
         // Render cards
         $cards.innerHTML = "";
@@ -979,9 +1029,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         $bulkWrap.style.display = "";
         $bulkSelect.value = "";
         $applyWrap.style.display = "";
-        const skipped = selectedIds.length - completed + (completed - loaded.size);
-        const skippedNote = selectedIds.length > loaded.size ? ` (${selectedIds.length - loaded.size} without addresses skipped)` : "";
-        setStatus(`Loaded ${loaded.size} user${loaded.size > 1 ? "s" : ""}${skippedNote}. Review settings and click Apply Changes.`);
+        setStatus(`Loaded ${loaded.size} user${loaded.size === 1 ? "" : "s"}${skipNote}. Review settings and click Apply Changes.`);
       }
 
       setTimeout(hideProgress, 600);
@@ -999,16 +1047,25 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
     const val = $bulkSelect.value;
     if (!val) return;
 
+    let applied = 0;
     for (const uid of loaded.keys()) {
-      if (val === "NONE") {
-        const noneRadio = el.querySelector(`input[name="dr_phone_${uid}"][value="NONE"]`);
-        if (noneRadio) noneRadio.checked = true;
-      } else {
-        // Only select if the user has that phone type
-        const radio = el.querySelector(`input[name="dr_phone_${uid}"][value="${val}"]`);
-        if (radio) radio.checked = true;
-      }
+      const sel = val === "NONE"
+        ? el.querySelector(`input[name="dr_phone_${uid}"][value="NONE"]`)
+        // Only select if the user has that phone type.
+        : el.querySelector(`input[name="dr_phone_${uid}"][value="${val}"]`);
+      if (sel) { sel.checked = true; applied++; }
     }
+
+    // Without this the control looks inert: it flips radios inside cards that
+    // may be scrolled well off screen, and says nothing about the ones it could
+    // not apply to.
+    const label = val === "NONE"
+      ? "None"
+      : $bulkSelect.options[$bulkSelect.selectedIndex].text;
+    const missed = loaded.size - applied;
+    setStatus(missed
+      ? `${label} selected for ${applied} of ${loaded.size} users; ${missed} have no ${label}.`
+      : `${label} selected for all ${applied} user${applied === 1 ? "" : "s"}.`);
     $bulkSelect.value = "";
   });
 
@@ -1076,7 +1133,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         if (cancelled) break;
         const { uid, data, curr, addressChanged, backupChanged } = changes[i];
 
-        setStatus(`Applying changes ${i + 1} of ${changes.length}… ${escapeHtml(data.user.name)}`);
+        setStatus(`Applying changes ${i + 1} of ${changes.length}… ${data.user.name}`);
         showProgress(((i + 1) / changes.length) * 100);
 
         try {
@@ -1131,6 +1188,12 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
             const hadBackup = !!(data.orig.backupUserId || data.orig.backupQueueId);
             if (!curr.hasBackup) {
               if (hadBackup) {
+                // The clear buttons are disabled without this permission, but
+                // the queue dropdown has its own empty option — so the guard
+                // belongs here too, where the request is actually made.
+                if (!canDeleteBackup) {
+                  throw new Error("Removing a backup requires routing:directRoutingBackup:delete");
+                }
                 await gc.deleteDirectRoutingBackup(api, orgId, uid);
               }
             } else {
