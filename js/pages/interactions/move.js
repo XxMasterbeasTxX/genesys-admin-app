@@ -399,6 +399,38 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
     // Build a shim array to keep the rest of the loop compatible
     const rawConvs = rawConvIds.map(id => ({ conversationId: id }));
 
+    // ── [move-probe] TEMPORARY — remove once §6.2 is settled ─────────
+    //
+    // `findAcdParticipant` is a hard gate here: a conversation it rejects is
+    // dropped with no trace, and the page then reports "No active interactions
+    // found" whether the queue was empty, everything was filtered, or every
+    // leg was unreachable. Disconnect stopped gating on the same function after
+    // measuring that the live ACD leg is frequently gone on exactly the stuck
+    // interactions these pages exist for.
+    //
+    // Whether that also applies here cannot be reasoned out — Move genuinely
+    // needs a participantId to transfer, so some rejections are correct. Every
+    // Genesys semantic assumed from the spec or from existing code on
+    // 2026-08-21 turned out wrong, and each was settled in one round by a probe.
+    //
+    // This adds **no API calls**: it reads the same `conv` the loop already
+    // fetched. Only the queue-observation cross-check below is extra, and it is
+    // one request, tolerated if it fails.
+    const probe = {
+      total: rawConvs.length,
+      inspected: 0,
+      fetchFailed: 0,
+      noParticipants: 0,
+      acdAnywhere: 0,        // an acd participant exists, any queue
+      acdInQueue: 0,         // ...and it is this queue
+      acdLegGone: 0,         // no acd participant for this queue at all
+      wouldMatch: 0,         // what findAcdParticipant returns today
+      byMediaState: {},      // every state seen on this queue's acd legs
+      acdNoMedia: 0,         // acd leg for this queue carrying no media at all
+      purposes: {},
+    };
+    // ── end [move-probe] ────────────────────────────────────────────
+
     // Step 2: Get full details for each and find ACD participant
     const matched = [];
     for (let i = 0; i < rawConvs.length; i++) {
@@ -411,6 +443,35 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
       try {
         const conv = await gc.getConversation(api, orgId, convId);
         const acd = findAcdParticipant(conv, srcId);
+
+        // ── [move-probe] before any `continue`, so nothing is missed ──
+        probe.inspected++;
+        const parts = conv.participants || [];
+        if (!parts.length) probe.noParticipants++;
+        let sawAcdAnywhere = false;
+        let sawAcdInQueue  = false;
+        for (const p of parts) {
+          probe.purposes[p.purpose || "(none)"] =
+            (probe.purposes[p.purpose || "(none)"] || 0) + 1;
+          if (p.purpose !== "acd") continue;
+          sawAcdAnywhere = true;
+          if ((p.queueId || p.queue?.id) !== srcId) continue;
+          sawAcdInQueue = true;
+          let sawMedia = false;
+          for (const key of ["calls", "emails", "callbacks", "messages"]) {
+            for (const item of (p[key] || [])) {
+              sawMedia = true;
+              const k = `${key}:${item.state ?? "(no state)"}`;
+              probe.byMediaState[k] = (probe.byMediaState[k] || 0) + 1;
+            }
+          }
+          if (!sawMedia) probe.acdNoMedia++;
+        }
+        if (sawAcdAnywhere) probe.acdAnywhere++;
+        if (sawAcdInQueue)  probe.acdInQueue++; else probe.acdLegGone++;
+        if (acd) probe.wouldMatch++;
+        // ── end [move-probe] ─────────────────────────────────────────
+
         if (!acd) continue;
 
         // Media type filter
@@ -432,10 +493,30 @@ export default function renderMoveInteractions({ route, me, api, orgContext }) {
           startTime: formatDateTime(conv.startTime),
         });
       } catch (err) {
+        probe.fetchFailed++;   // [move-probe]
         // Skip conversations we can't inspect (may have ended)
         console.warn(`Could not inspect ${convId}:`, err.message);
       }
     }
+
+    // ── [move-probe] TEMPORARY — remove once §6.2 is settled ─────────
+    //
+    // The cross-check that made the Disconnect probe conclusive: if the queue
+    // says 169 are waiting and `wouldMatch` says 0, the gate is wrong. Failure
+    // is not fatal — the counts above stand on their own.
+    const qs = await gc.getQueueStats(api, orgId, srcId, mediaTypes)
+      .catch((err) => {
+        console.warn("[move-probe] could not read queue observations:", err.message);
+        return { waiting: null, interacting: null, oldestMs: null };
+      });
+    console.log("[move-probe]", JSON.stringify({
+      ...probe,
+      matchedAfterFilters: matched.length,
+      queueWaiting:     qs.waiting,
+      queueInteracting: qs.interacting,
+      cancelled,
+    }, null, 2));
+    // ── end [move-probe] ────────────────────────────────────────────
 
     return matched;
   }

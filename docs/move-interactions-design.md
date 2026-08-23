@@ -1,7 +1,8 @@
 # Interactions › Move — layout and safety — Design
 
-Status: **Proposal.** Nothing built. §2 records what has been decided; the rest
-needs a go-ahead, and §6.2 needs a live probe before it is designed further.
+Status: **Probe shipped, awaiting a run against a real queue.** §10 is the
+agreed build order; step 1 (the probe) is in, and step 5 stays undesigned until
+its output has been read.
 Author: Genesys Admin App
 Last updated: 2026-08-23
 
@@ -38,6 +39,13 @@ the failsafe.
 - **One searchable control per queue**, not a search box plus a select. Stated
   directly: *"it should only have one searchable filter for each queue."*
 - **Layout and safety in one document**, because §1 says they are not separable.
+- **The layout is approved as mocked up.** The gap between the queues and the
+  media types was mockup scaffolding, not a proposal (§4.5), and a dropdown
+  panel overlaying the media types when open is fine: *"once a queue is selected
+  its fine again."*
+- **Order by what avoids duplicated work, not by urgency.** Nothing reaches
+  production until Move is finished, so there is no argument for landing the
+  safety fixes first — see §10.
 
 ## 3. What is already right, and should not be touched
 
@@ -244,7 +252,18 @@ the queue says 169 waiting and `wouldMatch` says 0, the gate is wrong. If
 `byMediaState` shows states other than `connected`/`alerting` on legs that are
 plainly waiting, that names the fix.
 
-Nothing in §6.2 is designed further until that has been seen.
+**Shipped.** It adds no API calls to the inspection — it reads the same `conv`
+the loop already fetched — and one request for the queue-observation
+cross-check, tolerated if the permission is missing. Behaviour is unchanged;
+it only logs.
+
+Verified against eight fixtures covering each way a conversation can be dropped
+today: an `acd` leg in another queue, no `acd` leg at all, a leg whose media is
+`disconnected`, a leg with no media collections, a media item with no `state`,
+and a failed fetch. Every counter matched, and the preview returned the same
+rows and the same status text as before the probe existed.
+
+Nothing in §6.1 is designed further until real output has been read.
 
 ## 7. Cost — after §6, not before
 
@@ -281,19 +300,25 @@ depends on what the probe says about how many conversations reach step 2 at all.
 
 ## 10. Build order
 
-1. **The queue dropdowns** (§4.1) with `invalidateCandidates` wired to both,
-   plus the media and date controls (§5.1). Layout and the first safety fix in
-   one commit, because the hook arrives with the component.
-2. **Preview leads, Move greyed until previewed** (§4.3, §5.2), and a cancelled
-   preview clears (§5.3). The three guard-rails together.
-3. **The warning banner** (§4.4). Independent, one block of markup.
-4. **The probe** (§6.2), against a real queue. No page changes.
-5. **The accounting** (§6.1), designed once the probe has said what the
-   categories actually are.
-6. **Cost** (§7), if the probe says it is worth it.
-7. **Release note** — one entry; `interactions.move` is not on
+Ordered to avoid doing work twice, not by urgency — nothing reaches production
+until Move is finished, so there is no case for landing the safety fixes early.
+
+1. **The probe** (§6.2). ✅ First, because it is the only step that needs a real
+   org and someone else's time, and because its answer decides step 5's
+   categories. Preview-only; nothing is transferred.
+2. **Layout, the warning banner, and the Move gate** (§4, §5.2). §5.2 and §4.3
+   are the same edit to the same actions row, so splitting them would mean
+   touching that row and reviewing that button twice.
+3. **The remaining guard-rails** (§5.1, §5.3), wired to the controls that will
+   actually exist. This is the real reason not to do safety first: attaching
+   `invalidateCandidates` to the native selects and deleting that wiring one
+   commit later means writing and testing the same behaviour twice.
+4. **The accounting** (§6.1), designed on what the probe returned.
+5. **Cost** (§7), only if the probe says enough conversations reach step 2 for
+   it to matter.
+6. **Release note** — one entry; `interactions.move` is not on
    `CUSTOMER_EXCLUDED_KEYS`, so this is customer-visible.
 
-Steps 1–3 are the whole visible change and can be reviewed together. Step 4 is
-the gate on everything after it: §6.1's categories are exactly what the probe
-returns, so designing them first would be guessing twice.
+An earlier version of this list put the probe fourth and split the layout from
+the guard-rails. Both were wrong for the same reason: they ordered by how the
+findings were written up rather than by what each step depends on.
