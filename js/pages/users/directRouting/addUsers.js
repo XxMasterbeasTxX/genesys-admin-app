@@ -692,6 +692,9 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       const tdDR = document.createElement("td");
       if (addr && (canTagPhone || phoneTagged)) {
         const { lbl, cb } = drSwitch(`phone_${userId}`, type, drPhoneType === type);
+        // Re-reads every row: turning one switch on turns its siblings off
+        // programmatically, and that fires no change event of its own.
+        cb.addEventListener("change", () => syncRouteSelects(userId));
         if (!canTagPhone) {
           lockSwitchOn(cb, didPoolsAvailable
             ? "This number is not in any DID pool — the tag can be removed but not re-added here."
@@ -1329,6 +1332,10 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         routeSelects.clear();
         for (const uid of loaded.keys()) {
           $cards.append(createUserCard(uid));
+          // Both of these read through `el`, so they run after the card is
+          // attached — inside createUserCard it is still detached and every
+          // lookup comes back empty.
+          syncRouteSelects(uid);
           // Snapshot from DOM after rendering so baseline matches what the UI shows
           loaded.get(uid).orig = readCurrentState(uid);
         }
@@ -1365,6 +1372,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       // null turns the whole group off; otherwise it only lands on users who
       // actually have that phone type, and leaves the rest alone.
       if (setGroupValue(`phone_${uid}`, val === "NONE" ? null : val)) applied++;
+      syncRouteSelects(uid);
     }
 
     // Without this the control looks inert: it flips radios inside cards that

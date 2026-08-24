@@ -607,11 +607,20 @@ Matching uses the same digits-only comparison as the DID pool check (§5.2) —
 
 ### 9.3 What the cell does — decided 2026-08-24
 
-- **The route is shown whenever the number is on one, and is editable
-  regardless of the Direct Routing switch.** Displaying it only when the tag is
-  on would hide real configuration, and would mean enabling direct routing just
-  to clear a stale assignment. Consistent with how a tagged email on an
-  unverified domain stays visible and removable.
+- **The route is shown whenever the number is on one, and is editable only
+  while that number's Direct Routing switch is on.** Revised 2026-08-24: the
+  first version left the picker editable regardless, on the argument that
+  hiding it would conceal configuration and mean enabling direct routing just
+  to clear a stale assignment. Showing it does both jobs on its own — the route
+  name stays visible when the toggle is off, greyed rather than gone — and a
+  route assignment is only meaningful for a number that carries the tag, so a
+  live picker beside a switched-off toggle invited a change that means nothing.
+
+  Greying also **reverts the picker to the value it loaded with**. Turning the
+  toggle off after choosing a route would otherwise leave a pending change that
+  is invisible, unreachable and still queued for Apply. Off means out of play,
+  in both directions. The cost is the one named above: clearing a stale
+  assignment means switching the tag on first.
 - **Turning the Direct Routing switch off never touches the route.** One
   control, one effect. The alternative — cleaning up the route assignment on
   untag — means a switch quietly writing to a shared object that other users'
