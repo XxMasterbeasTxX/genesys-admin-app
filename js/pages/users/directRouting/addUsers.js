@@ -515,6 +515,31 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   }
 
   /**
+   * Enable each Call Routing picker only while its own Direct Routing switch
+   * is on, and grey the rest.
+   *
+   * A route assignment is only meaningful for a number that carries the tag,
+   * so the picker follows the toggle rather than standing on its own.
+   *
+   * Disabling also **reverts the picker to the value it loaded with**. Turning
+   * the toggle off after choosing a route would otherwise leave a change that
+   * is invisible — greyed out, unreachable, and still queued for Apply. Off
+   * means out of play, in both directions.
+   */
+  function syncRouteSelects(userId) {
+    for (const [key, entry] of routeSelects) {
+      const sep = key.indexOf("|");
+      if (key.slice(0, sep) !== userId) continue;
+      const type = key.slice(sep + 1);
+      const sw = el.querySelector(
+        `input[data-dr-group="phone_${userId}"][data-dr-value="${type}"]`);
+      const on = !!sw?.checked;
+      if (!on) entry.select.setValue(entry.originalRouteId);
+      entry.select.setEnabled(canEditCallRoute && on);
+    }
+  }
+
+  /**
    * Turn on the switch for `value` in a group, or all off when value is null.
    *
    * A group with no match is left **untouched**, not cleared. The radio version
