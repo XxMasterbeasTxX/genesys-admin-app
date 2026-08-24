@@ -644,11 +644,27 @@ Three things follow, and all three are needed:
   is invisible, unreachable and still queued for Apply. Off means out of play,
   in both directions. The cost is the one named above: clearing a stale
   assignment means switching the tag on first.
-- **Turning the Direct Routing switch off never touches the route.** One
-  control, one effect. The alternative — cleaning up the route assignment on
-  untag — means a switch quietly writing to a shared object that other users'
-  numbers also live on, which is a surprising amount of blast radius for
-  clicking a toggle.
+- **Turning the Direct Routing switch off does not touch the route on its own —
+  it asks.** Amended 2026-08-24. The original rule was that untagging never
+  touches the route, on the grounds that a toggle quietly writing to a shared
+  object is too much blast radius for one click. That still holds for *quietly*.
+
+  But since §9.3 also greys the picker the moment the switch goes off, leaving
+  the route alone strands it: the assignment now points at an untagged number,
+  and clearing it means switching the tag back on first. So the page asks, once,
+  at the only moment the answer is obvious — *"This number is assigned to the
+  call route X. Direct routing is being switched off. Remove the number from
+  that call route as well?"* — and acts on the answer. Native `confirm`, as
+  eight other pages already use.
+
+  Answering yes stages the clear; it is applied by Apply like any other change,
+  not written on the spot. Switching the tag back on before Apply undoes it,
+  because the route is only dropped if the number is still untagged when the
+  write runs.
+
+  **Only for a switch the operator turned off themselves.** Turning a different
+  number on turns this one off as a side effect, and that is a move — the old
+  number keeping its route is not worth interrupting anyone about.
 
 The consequence is that the two can disagree: a number can be on a route with
 no tag, or tagged with no route. That is a real state in Genesys and the column

@@ -562,9 +562,43 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       const sw = el.querySelector(
         `input[data-dr-group="phone_${userId}"][data-dr-value="${type}"]`);
       const on = !!sw?.checked;
-      if (!on) entry.select.setValue(entry.originalRouteId);
+      if (on) {
+        // Switching the tag back on undoes a clear that was agreed to while
+        // switching it off — the route is only dropped if the number stays
+        // untagged when Apply runs.
+        if (entry.pendingClear) {
+          entry.pendingClear = false;
+          entry.select.setValue(entry.originalRouteId);
+        }
+      } else {
+        entry.select.setValue(entry.pendingClear ? "" : entry.originalRouteId);
+      }
       entry.select.setEnabled(canEditCallRoute && on);
     }
+  }
+
+  /**
+   * Switching a tag off leaves the number on its call route, which is right as
+   * a default — one control, one effect — but leaves an assignment that now
+   * routes to an untagged number, and the picker greys the moment the switch
+   * goes off, so it cannot be cleared afterwards without switching the tag
+   * back on. So ask, once, at the only moment the answer is obvious.
+   *
+   * Only for a switch the operator turned off themselves. Turning a different
+   * number on turns this one off as a side effect, and that is a move — the
+   * old number keeping its route is not something to interrupt anyone about.
+   */
+  function offerRouteClear(userId, type) {
+    if (!canEditCallRoute) return;
+    const entry = routeSelects.get(`${userId}|${type}`);
+    if (!entry) return;
+    const assigned = entry.select.getValue() || entry.originalRouteId;
+    if (!assigned) return;
+    const name = callRoutes?.find(r => r.id === assigned)?.name || "a call route";
+    entry.pendingClear = confirm(
+      `This number is assigned to the call route "${name}".\n\n` +
+      `Direct routing is being switched off. ` +
+      `Remove the number from that call route as well?`);
   }
 
   /**
@@ -747,7 +781,11 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
         const { lbl, cb } = drSwitch(`phone_${userId}`, type, drPhoneType === type);
         // Re-reads every row: turning one switch on turns its siblings off
         // programmatically, and that fires no change event of its own.
-        cb.addEventListener("change", () => syncRouteSelects(userId));
+        cb.addEventListener("change", () => {
+          // Before the sync, which is what applies the answer.
+          if (!cb.checked) offerRouteClear(userId, type);
+          syncRouteSelects(userId);
+        });
         if (!canTagPhone) {
           lockSwitchOn(cb, didPoolsAvailable
             ? "This number is not in any DID pool — the tag can be removed but not re-added here."
