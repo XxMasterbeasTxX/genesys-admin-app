@@ -1413,6 +1413,25 @@ export async function fetchAllCallRoutes(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/architect/ivrs", opts);
 }
 
+/**
+ * Find the call route a number is currently assigned to, asking Genesys
+ * rather than matching locally.
+ *
+ * The list endpoint filters on `dnis`, and Genesys compares numbers the way it
+ * stores them — which a client-side match cannot reliably reproduce, since a
+ * DNIS and a user's address are not guaranteed to be written in the same
+ * format. A number may be on at most one route, so the first hit is the answer.
+ *
+ * Returns null when the number is on no route, and also when the owning route
+ * is not visible to the caller — the caller must treat those the same way.
+ */
+export async function findCallRouteByDnis(api, orgId, number) {
+  const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/architect/ivrs", {
+    query: { dnis: number, pageSize: "1", pageNumber: "1" },
+  });
+  return (resp.entities || [])[0] || null;
+}
+
 /** Fetch a single call route (Architect IVR). Needed fresh before a PUT. */
 export async function getCallRoute(api, orgId, ivrId) {
   return api.proxyGenesys(orgId, "GET", `/api/v2/architect/ivrs/${ivrId}`);

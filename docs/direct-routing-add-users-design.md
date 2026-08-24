@@ -605,6 +605,29 @@ answers.
 Matching uses the same digits-only comparison as the DID pool check (§5.2) —
 `dnis` entries and address values are not reliably in the same format.
 
+**That comparison is not sufficient on its own, and treating it as such was a
+bug (2026-08-24).** A DNIS stored without the country code the address carries
+does not match on full digits, and a route in a division this account cannot
+list does not appear at all. Both surface identically, as "no call route" — and
+that is the one answer that must not be guessed, because it is what the
+operator clears against and what tells the write phase whether a removal is
+needed. Getting it wrong produced *"The addresses '+45…' is already assigned
+to the IVRConfig …"* on the addition, with no removal having run, and made
+choosing "No call route" report "no changes detected".
+
+Three things follow, and all three are needed:
+
+- The index also keys on the **last eight digits**, so a country-code
+  difference still resolves. An exact match always wins.
+- Every index **miss** is checked against Genesys before the cards render, via
+  the list endpoint's `dnis` filter, which compares numbers the way Genesys
+  stores them. Hits are trusted; only misses cost a request, so an org whose
+  formats agree pays nothing.
+- The **write phase resolves the owner again** rather than trusting the
+  baseline, and skips the pair entirely when the number is already where it is
+  wanted. The read may be stale by the time Apply runs, and a removal that does
+  not happen is the difference between a move and an error.
+
 ### 9.3 What the cell does — decided 2026-08-24
 
 - **The route is shown whenever the number is on one, and is editable only

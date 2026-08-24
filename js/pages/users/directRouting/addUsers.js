@@ -108,6 +108,37 @@ export function findDidPool(number, ranges) {
 }
 
 /**
+ * Index call routes by the numbers they carry.
+ *
+ * Keyed on digits, and additionally on the last eight, because a DNIS and a
+ * user's address are not guaranteed to be written the same way — one may carry
+ * a country code the other omits. An exact match always wins; the suffix is
+ * only consulted when there is no exact one.
+ */
+export function indexRoutesByNumber(routes) {
+  const exact = new Map();
+  const suffix = new Map();
+  for (const r of routes || []) {
+    for (const n of r.dnis || []) {
+      const d = digitsOf(n);
+      if (!d) continue;
+      if (!exact.has(d)) exact.set(d, r);
+      if (d.length >= 8 && !suffix.has(d.slice(-8))) suffix.set(d.slice(-8), r);
+    }
+  }
+  return { exact, suffix };
+}
+
+/** The route carrying this number, per the index. Null when none matches. */
+export function routeForNumber(index, number) {
+  const d = digitsOf(number);
+  if (!d || !index) return null;
+  return index.exact.get(d)
+    || (d.length >= 8 ? index.suffix.get(d.slice(-8)) : null)
+    || null;
+}
+
+/**
  * Is there anything this page can actually do for this user?
  *
  * A card with no usable switch on it is noise: it takes a screenful and offers
@@ -174,7 +205,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
   let didPoolsAvailable = false;     // false = the lookup failed, not "no pools"
   let callRoutes = null;             // [{ id, name, dnis }]
   let callRoutesAvailable = false;   // false = the lookup failed, not "no routes"
-  let routeByNumber = new Map();     // digits → route, built once from callRoutes
+  let routeIndex = null;             // number → route, built once from callRoutes
   const routeSelects = new Map();    // `${userId}|${phoneType}` → singleSelect
   let allUsers = [];                 // [{ id, name }] — active users, loaded once
   const groupMembers = new Map();    // groupId → Set<userId>, memoised for the page
@@ -423,17 +454,14 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       callRoutes = await gc.fetchAllCallRoutes(api, orgId);
       callRoutes.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
       // dnis is unique across routes, so one number maps to at most one route.
-      routeByNumber = new Map();
-      for (const r of callRoutes) {
-        for (const n of r.dnis || []) routeByNumber.set(digitsOf(n), r);
-      }
+      routeIndex = indexRoutesByNumber(callRoutes);
       callRoutesAvailable = true;
     } catch {
       // Requires routing:callRoute:view. An empty list is "could not read",
       // not "no routes exist" — the column disables rather than offering an
       // empty dropdown that would read as the latter.
       callRoutes = [];
-      routeByNumber = new Map();
+      routeIndex = indexRoutesByNumber([]);
       callRoutesAvailable = false;
     }
     return callRoutes;
@@ -740,7 +768,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       // mean enabling direct routing just to clear a stale assignment.
       const tdRoute = document.createElement("td");
       if (addr && callRoutesAvailable) {
-        const current = routeByNumber.get(digitsOf(addr.address || addr.display));
+        const current = routeForNumber(routeIndex, addr.address || addr.display);
         const select = createSingleSelect({
           placeholder: "— No call route —",
           searchable: true,
@@ -1213,6 +1241,25 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       if (!map.has(key)) map.set(key, []);
       return map.get(key);
     };
+
+    // Ask Genesys who actually holds each number rather than trusting the
+    // index built at load. The two disagree whenever a DNIS is stored in a
+    // different format from the user's address, or when the owning route sits
+    // where this account cannot list it — and the cost of being wrong is the
+    // addition failing with "already assigned" and no removal having run.
+    for (const ch of routeChanges) {
+      if (cancelled) break;
+      try {
+        const owner = await gc.findCallRouteByDnis(api, orgId, ch.number);
+        ch.from = owner?.id || "";
+      } catch {
+        // Fall back to what the page loaded with; the write may still fail,
+        // and it will say so.
+      }
+      // Genesys already has it where it is wanted.
+      if (ch.from && ch.from === ch.to) ch.to = ch.from = "";
+    }
+
     for (const ch of routeChanges) {
       if (ch.from) bucket(removals, ch.from).push(ch);
       if (ch.to)   bucket(additions, ch.to).push(ch);
@@ -1331,6 +1378,8 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
 
       // Drop anyone this page cannot do anything for. A card with no usable
       // switch is a screenful of nothing.
+      // (call-route verification follows the prune, so it only runs for cards
+      //  that will actually be rendered)
       for (const [uid, data] of [...loaded]) {
         if (hasRoutableAddress(data.user, emailDomainsCache, emailDomainsAvailable,
                                didRanges, didPoolsAvailable)) continue;
@@ -1343,6 +1392,33 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
       if (noAddresses) skipParts.push(`${noAddresses} with no phone or routable email`);
       if (failedReads) skipParts.push(`${failedReads} could not be read`);
       const skipNote = skipParts.length ? ` (${skipParts.join(", ")})` : "";
+
+      // The load index matches DNIS to addresses on digits, which fails when
+      // Genesys stores the two in different formats, and cannot see a route
+      // this account may not list. Both show up as "no route" — the one answer
+      // that must not be guessed, since it is what an operator clears against.
+      // An index hit is trusted; every miss is checked against Genesys, which
+      // compares numbers the way it stores them.
+      if (callRoutesAvailable && !cancelled) {
+        const unknown = [];
+        for (const { user } of loaded.values()) {
+          for (const a of user.addresses || []) {
+            if (a.mediaType !== "PHONE") continue;
+            const number = a.address || a.display;
+            if (!number || routeForNumber(routeIndex, number)) continue;
+            if (!unknown.includes(number)) unknown.push(number);
+          }
+        }
+        for (let i = 0; i < unknown.length && !cancelled; i += 10) {
+          const slice = unknown.slice(i, i + 10);
+          setStatus(`Checking call routes… ${Math.min(i + slice.length, unknown.length)} of ${unknown.length}`);
+          const found = await Promise.all(slice.map(n =>
+            gc.findCallRouteByDnis(api, orgId, n).catch(() => null)));
+          slice.forEach((n, j) => {
+            if (found[j]) routeIndex.exact.set(digitsOf(n), found[j]);
+          });
+        }
+      }
 
       if (!loaded.size) {
         setStatus(
