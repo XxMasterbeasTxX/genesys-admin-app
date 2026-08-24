@@ -218,18 +218,18 @@ Used by: Interaction Search, Move Interactions, Disconnect Interactions, Divisio
 | PUT | `/api/v2/routing/wrapupcodes/{codeId}` | **Update** a wrap-up code (Deployment — Basic) |
 | POST | `/api/v2/routing/queues/{queueId}/wrapupcodes` | **Assign** wrap-up codes to a queue (Deployment — Basic) |
 | GET | `/api/v2/routing/message/recipients` | List messaging recipients |
-| GET | `/api/v2/routing/email/domains` | List inbound email domains (also used by Direct Routing to validate email addresses) |
+| GET | `/api/v2/routing/email/domains` | List inbound email domains. Requires `routing:email:manage`. Direct Routing tags an email only when its domain is present here — a failed read blocks tagging rather than falling through to allowing it |
 | GET | `/api/v2/routing/email/outbound/domains` | List outbound email domains |
-| GET | `/api/v2/routing/users/{userId}/directroutingbackup/settings` | Get agent-level direct routing backup settings (Direct Routing — Add user(s)) |
-| PUT | `/api/v2/routing/users/{userId}/directroutingbackup/settings` | Set agent-level direct routing backup (type: USER/QUEUE, waitForAgent, agentWaitSeconds) |
-| DELETE | `/api/v2/routing/users/{userId}/directroutingbackup/settings` | Remove agent-level direct routing backup |
+| GET | `/api/v2/routing/users/{userId}/directroutingbackup/settings` | Get agent-level direct routing backup settings (Direct Routing — Add user(s)). 404 + `resource.not.found` means none configured; 403 means `routing:directRoutingBackup:view` is missing — the two must not be conflated |
+| PUT | `/api/v2/routing/users/{userId}/directroutingbackup/settings` | Set agent-level direct routing backup. Body is flat: `userId`, `queueId`, `waitForAgent`, `agentWaitSeconds` (valid range **60–864000**). There is no `type` field and no nested user/queue objects. Setting both makes the **user** the primary backup and the **queue** the secondary. A PUT **replaces** — omitting a side clears it, so every field to be kept must be sent. `backedUpUsers` comes back on the read and is read-only |
+| DELETE | `/api/v2/routing/users/{userId}/directroutingbackup/settings` | Remove agent-level direct routing backup. Requires `routing:directRoutingBackup:delete`, which `:edit` does not imply |
 | GET | `/api/v2/routing/email/domains/{domainId}/routes` | List email routes for a domain |
 
 ---
 
 ## 8. Architect
 
-Used by: Data Tables — Create/Copy/Edit, Deployment — Data Tables, Divisions — Flows/DataTables/Schedules/etc., Documentation Export, Deployment — Basic, **Flows — Delete Flow**
+Used by: Data Tables — Create/Copy/Edit, Deployment — Data Tables, Divisions — Flows/DataTables/Schedules/etc., Documentation Export, Deployment — Basic, **Flows — Delete Flow**, Direct Routing — Add user(s) (call routes)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -246,7 +246,9 @@ Used by: Data Tables — Create/Copy/Edit, Deployment — Data Tables, Divisions
 | POST | `/api/v2/flows/datatables/{id}/rows` | Insert a row into a data table |
 | PUT | `/api/v2/flows/datatables/{id}/rows/{rowKey}` | Replace a single row by row key (Data Tables — Edit, Rows mode save) |
 | DELETE | `/api/v2/flows/datatables/{id}/rows/{rowKey}` | Delete a single row by row key (Data Tables — Edit, Delete Selected / key-change replace flow) |
-| GET | `/api/v2/architect/ivrs` | List IVRs (Call Routing) |
+| GET | `/api/v2/architect/ivrs` | List IVRs (Call Routing). Requires `routing:callRoute:view`. Direct Routing — Add user(s) fetches these once and indexes `dnis` → route |
+| GET | `/api/v2/architect/ivrs/{ivrId}` | Get one call route. Read immediately before a PUT — the write carries a `version` |
+| PUT | `/api/v2/architect/ivrs/{ivrId}` | **Update** a call route (Direct Routing — Add user(s) writes `dnis`). Whole-object write requiring `routing:callRoute:edit`; a number may appear on **one** route only, so moving one is a removal then an addition, and writes are grouped per route rather than per user |
 | GET | `/api/v2/architect/schedules` | List routing schedules |
 | POST | `/api/v2/architect/schedules` | **Create** a routing schedule (Deployment — Basic) |
 | PUT | `/api/v2/architect/schedules/{scheduleId}` | **Update** a routing schedule (Deployment — Basic) |
@@ -316,7 +318,7 @@ Used by: WebRTC Phones — Create/Change Site, Documentation Export, Divisions �
 | GET | `/api/v2/telephony/providers/edges/trunkbasesettings` | List trunk base settings — name→ID lookup for outbound routes (Deployment — Basic) |
 | GET | `/api/v2/telephony/providers/edges/sites/{id}/numberplans` | Read existing number plans for a site (Deployment — Basic) |
 | PUT | `/api/v2/telephony/providers/edges/sites/{id}/numberplans` | Replace all number plans for a site (Deployment — Basic, merged with existing defaults) |
-| GET | `/api/v2/telephony/providers/edges/didpools` | List DID pools |
+| GET | `/api/v2/telephony/providers/edges/didpools` | List DID pools. Requires `telephony:plugin:all`. Pools are **ranges** (`startPhoneNumber`–`endPhoneNumber`, E.164); Direct Routing tags a number only if it falls inside one, matched on digits so formatted and unformatted values agree |
 | POST | `/api/v2/telephony/providers/edges/didpools` | **Create** a DID pool (Deployment — Basic) |
 | GET | `/api/v2/telephony/providers/edges/didpools/dids` | List DID numbers (assigned and unassigned) |
 | GET | `/api/v2/telephony/providers/edges/phonebasesettings` | List phone base settings |

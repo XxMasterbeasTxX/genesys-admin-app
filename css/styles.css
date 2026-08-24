@@ -1471,6 +1471,19 @@ body {
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* Table-cell sized. Despite the dt- prefix this toggle is shared — data
+   actions, data tables and direct routing all use it. */
+.dt-toggle--sm { width: 32px; height: 18px; }
+.dt-toggle--sm .dt-toggle-slider { border-radius: 18px; }
+.dt-toggle--sm .dt-toggle-slider::before {
+  height: 12px;
+  width: 12px;
+  left: 3px;
+  bottom: 3px;
+}
+.dt-toggle--sm input:checked + .dt-toggle-slider::before {
+  transform: translateX(14px);
+}
 
 /* Schema preview table */
 .dt-schema {
@@ -1946,6 +1959,10 @@ body {
   flex-direction: column;
   gap: 4px;
 }
+/* `display: flex` above beats the hidden attribute's UA rule, so a control
+   group that hides itself (an optional filter that failed to load) needs this
+   to actually disappear. */
+.cs-control-group[hidden] { display: none; }
 .cs-label {
   font-size: 12px;
   color: var(--muted);
@@ -4316,14 +4333,23 @@ body {
   font-size: 14px;
   table-layout: fixed;
 }
+/* Six columns: Type / Address / Integration / Primary / Direct Routing /
+   Call Routing. Address still carries the most weight; Primary and Direct
+   Routing hold a single glyph each. */
 .dr-addr-table th:nth-child(1),
-.dr-addr-table td:nth-child(1) { width: 20%; }
+.dr-addr-table td:nth-child(1) { width: 14%; }
 .dr-addr-table th:nth-child(2),
-.dr-addr-table td:nth-child(2) { width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-addr-table td:nth-child(2) { width: 28%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dr-addr-table th:nth-child(3),
-.dr-addr-table td:nth-child(3) { width: 15%; text-align: center; }
+.dr-addr-table td:nth-child(3) { width: 14%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dr-addr-table th:nth-child(4),
-.dr-addr-table td:nth-child(4) { width: 25%; text-align: center; }
+.dr-addr-table td:nth-child(4) { width: 8%; text-align: center; }
+.dr-addr-table th:nth-child(5),
+.dr-addr-table td:nth-child(5) { width: 12%; text-align: center; }
+.dr-addr-table th:nth-child(6),
+.dr-addr-table td:nth-child(6) { width: 24%; }
+/* The route picker is a dropdown in a fixed-layout cell. */
+.dr-addr-table td:nth-child(6) .ms-dropdown { max-width: 100%; }
 .dr-addr-table th,
 .dr-addr-table td {
   padding: 6px 10px;
@@ -4340,16 +4366,13 @@ body {
   color: var(--muted);
   opacity: 0.5;
 }
-.dr-none-row td {
-  border-bottom: none;
+/* An integration tag this page does not own. Applying direct routing to the
+   same address replaces it, so it reads as something to notice. */
+.dr-addr-foreign {
+  color: #fb923c;
+  font-style: italic;
 }
-.dr-none-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--muted);
-}
+.dr-addr-primary { color: var(--text); }
 .dr-email-warn-row td { border-bottom: none; }
 .dr-email-warn {
   color: #fb923c;
@@ -4357,7 +4380,14 @@ body {
   padding-top: 0;
   font-style: italic;
 }
+/* A <button>, so it is reachable by keyboard; reset to look like the text
+   link it always appeared to be. */
 .dr-backup-toggle {
+  display: block;
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   padding: 8px 0 4px;
   font-size: 14px;
@@ -4393,6 +4423,23 @@ body {
   padding: 4px 6px;
   font-size: 13px;
 }
+/* Paired with the `inert` attribute, which does the actual blocking. */
+.dr-locked {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.dr-perm-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 4px 0;
+}
+.dr-filter-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+  max-width: 260px;
+}
+.dr-filter-note:empty { display: none; }
 .dr-bulk-wrap {
   display: flex;
   align-items: center;
@@ -4432,12 +4479,45 @@ body {
 .dr-backup-search-item:hover {
   background: rgba(255,255,255,0.06);
 }
-.dr-backup-target {
-  margin-bottom: 10px;
+/* Backup pickers: a label, an optional precedence hint, the control, and a
+   clear button. Both rows are always present — empty means "not set". */
+.dr-backup-picker-row { flex-wrap: nowrap; }
+.dr-backup-picker-row .dr-backup-lbl { min-width: 96px; }
+.dr-backup-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
+.dr-backup-slot .input { min-width: 240px; }
+.dr-backup-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  min-width: 64px;
+}
+.dr-backup-clear {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.dr-backup-clear:hover { color: var(--text); }
+.dr-disabled { opacity: 0.5; }
 
 @media (prefers-color-scheme: light) {
   .dr-user-card { background: var(--panel); }
+  /* #fb923c sits near 2:1 on white; these two carry the only warnings the
+     table shows, so they get a value that clears 4.5:1. */
+  .dr-addr-foreign,
+  .dr-email-warn { color: #c2410c; }
+  /* #60a5fa is ~2.6:1 on white, and this is the control that opens each
+     section — the one thing on the card that has to be findable. */
+  .dr-backup-toggle { color: #1d4ed8; }
   .dr-backup-search-results { background: #fff; }
   .dr-backup-search-item:hover { background: rgba(0,0,0,0.04); }
   .dr-btn-apply { color: #16a34a; }

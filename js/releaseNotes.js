@@ -21,6 +21,26 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.4",
+    date: "2026-08-24",
+    title: "Direct Routing: the settings it showed were not the ones Genesys held",
+    changes: [
+      "Backup Settings never worked, and could quietly undo itself. The page was built against a shape the API does not have, so every agent with a backup configured showed “None” — and because the form read back as a deliberate “no backup”, pressing Apply for any other reason cleared it. Backups now load, display and save correctly.",
+      "An agent can have a backup user and a backup queue at the same time, which Genesys has always supported and the page could not express: the user takes the interaction first, the queue catches what is left. Each is set and cleared independently.",
+      "The wait setting is no longer inverted. “Wait for Agent” beside a seconds box read as though ticking it started the wait; it is now “Send to backup immediately”, matching the wording on the Genesys queue screen, and the seconds box greys out when it does not apply. Its range was 0–600 and is now 60–864000, which is what Genesys accepts — the old minimum was rejected outright and the old maximum excluded most of the valid range.",
+      "Tagging a number for direct routing no longer strips other integration tags off the user’s remaining numbers. A user with a Teams number and a work number lost the Teams tag the moment anything on their card was applied, on a row nobody had touched, in a table that did not show integrations at all. The table now has an Integration column, and the page only ever writes the value it owns.",
+      "A phone number can only be tagged if it is in a Genesys DID pool, and an email only if its domain is configured for inbound email. Neither routes anything otherwise — the tag simply sits there looking correct. Numbers and addresses that cannot be used say why, and offer no control rather than a control that does nothing.",
+      "New Call Routing column. A tagged number that no call route points at still routes nothing, so the column shows which route a number is on and lets it be set from a searchable list of every call route in the org. Assigning several agents to the same route in one pass writes to that route once, rather than once per agent.",
+      "Users the page can do nothing for are no longer listed. Someone with no phone number and no email on a routable domain used to get a full card with every control dead.",
+      "The Primary column is now read-only. It offered to set the primary phone and never did — Genesys derives it from the addresses and does not accept it being written — and Genesys advises against using the primary phone for direct routing in any case. It still shows which number is primary, which is worth knowing when choosing one to tag.",
+      "Direct routing is switched on and off with a toggle instead of a radio button, so each row can be cleared on its own and the “None” row under every group is gone.",
+      "Users can be narrowed by group before picking them, the way WebRTC Phones already works. Selecting people and then applying a filter no longer quietly unticks the ones outside it — they stay selected and are marked as outside the current filter.",
+      "The Addresses section opens with the card rather than closed, so a card can be read without two clicks. The bulk “Auto-tag phone type for all” now reports what it did — “Work Phone 2 selected for 14 of 17 users; 3 have no Work Phone 2” — where before it flipped controls inside closed sections and appeared to do nothing at all.",
+      "Cancel works during Load Details. It was hidden for the entire load, so a large selection could not be stopped.",
+      "Where a Genesys permission is missing, the affected section is greyed out and names the permission — and is now genuinely unreachable rather than merely mouse-proof. Reading backup settings, removing a backup, and editing call routes are each gated separately, because Genesys grants them separately.",
+    ],
+  },
+  {
     version: "4.3",
     date: "2026-08-23",
     title: "Move: it tells you what it will do before it does it",
