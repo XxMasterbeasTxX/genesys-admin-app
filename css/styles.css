@@ -1,3 +1,4 @@
+@charset "UTF-8";
 /* ══════════════════════════════════════════════════════════
    Genesys Admin Tool — Core Styles
    Dark-first + automatic light-mode via prefers-color-scheme
@@ -1946,7 +1947,7 @@ body {
 }
 .ed-section-summary::-webkit-details-marker { display: none; }
 .ed-section-summary::before {
-  content: "▸";
+  content: "\25B8 ";
   display: inline-block;
   width: 1em;
   color: var(--muted);
@@ -2425,7 +2426,7 @@ body {
 }
 .te-sheet-title::-webkit-details-marker { display: none; }
 .te-sheet-title::before {
-  content: "▶";
+  content: "\25B6 ";
   font-size: 10px;
   transition: transform 0.2s ease;
   color: var(--text-secondary);
