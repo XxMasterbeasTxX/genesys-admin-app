@@ -19,6 +19,7 @@
  *   POST  /api/v2/integrations/actions/{id}/draft             — create draft from published
  *   PATCH /api/v2/integrations/actions/{id}/draft             — update draft
  *   GET   /api/v2/integrations/actions/{id}/draft/validation  — validate draft
+ *                                                                (returns { valid, errors[] })
  *   POST  /api/v2/integrations/actions/{id}/draft/publish     — publish draft
  *   POST  /api/v2/integrations/actions/{id}/test              — test published action
  *   POST  /api/v2/integrations/actions/{id}/draft/test        — test draft action
@@ -26,6 +27,7 @@
 import { escapeHtml, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
+import { stripOrgSpecificUris } from "../../lib/dataActions.js";
 
 // ── Status helpers ──────────────────────────────────────────────────
 const STATUS = {
@@ -38,6 +40,13 @@ const STATUS = {
   testing:     "Running test…",
   noActions:   "No data actions found.",
   error:       (msg) => `Error: ${msg}`,
+  badJson:     (fields) =>
+    `Not valid JSON: ${fields.join(", ")}. Fix the highlighted field(s) — `
+    + "saving now would overwrite the stored value with an empty object.",
+  tplFailed:   (fields) =>
+    `Could not read the ${fields.join(" and ")} for this action. `
+    + "Editing is disabled: saving would replace the stored template with a "
+    + "blank one. Reload the action to try again.",
 };
 
 // ── Page renderer ───────────────────────────────────────────────────
@@ -281,6 +290,11 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   let integrations = [];      // org integrations
   let selectedFull = null;    // full detail of selected action
   let hasDraft = false;       // whether selected action has a draft
+  let templateFailure = null; // template fields that could not be read
+  let isDirty = false;        // form edited since the action was loaded/saved
+  // Monotonic token: a slow detail fetch for an action the user has already
+  // moved off must not paint over the newer selection.
+  let selectionSeq = 0;
 
   // ── Helpers ───────────────────────────────────────────
   const setStatus = makeStatus($status, "dt-status");
@@ -305,12 +319,47 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     return integ?.integrationType?.id || "unknown";
   }
 
-  /** Safely parse a JSON textarea value; returns fallback on empty or invalid JSON. */
-  function parseJsonField(val, fallback = {}) {
+  /**
+   * Parse a JSON textarea, collecting failures rather than hiding them.
+   *
+   * The old version returned `{}` on a parse error, so one stray comma in the
+   * Input Schema box silently PATCHed an empty contract over a real one and
+   * still reported "Draft saved". Invalid input now names the field in
+   * `errors`, and the caller aborts the save.
+   *
+   * An empty box legitimately means "no value" and yields `fallback`.
+   */
+  function parseJsonField(val, label, errors, fallback = {}) {
     const trimmed = (val || "").trim();
     if (!trimmed) return fallback;
-    try { return JSON.parse(trimmed); } catch { return fallback; }
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      errors.push(label);
+      return fallback;
+    }
   }
+
+  /** Mark a textarea as holding invalid JSON (or clear the mark). */
+  function markInvalid($field, bad) {
+    $field.classList.toggle("ed-invalid", !!bad);
+  }
+
+  /**
+   * Every field whose value goes into the draft.
+   *
+   * Editing any of them makes the on-screen form differ from what Genesys
+   * holds, which is what Publish needs to know about — see the prompt in the
+   * Publish handler.
+   */
+  const EDITABLE = [
+    $name, $category, $reqType, $reqUrl, $reqTemplate, $reqHeaders,
+    $respTransMap, $respTransMapDef, $respSuccessTempl, $inputSchema, $outputSchema,
+  ];
+  EDITABLE.forEach(($f) => {
+    $f.addEventListener("input", () => { isDirty = true; });
+    $f.addEventListener("change", () => { isDirty = true; });
+  });
 
   /** Extract properties from a JSON schema, handling nested structures. */
   function extractSchemaProps(schema) {
@@ -371,19 +420,39 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     }).join("");
   }
 
-  /** Collect test input values into an object. */
+  /**
+   * Collect test input values into an object.
+   *
+   * Returns `{ inputs, errors }`. A numeric field holding something that is not
+   * a number used to be sent as `NaN`, which serialises to `null` and makes the
+   * action fail for a reason the result pane never explains — it is reported
+   * here instead. Empty fields are omitted, as an unset parameter.
+   */
   function collectTestInputs() {
     const inputs = {};
+    const errors = [];
     $testInputs.querySelectorAll(".ed-test-field").forEach(field => {
       const key = field.dataset.key;
       const type = field.dataset.type;
-      let val = field.value.trim();
-      if (!val) return; // skip empty
-      if (type === "integer" || type === "number") val = Number(val);
-      else if (type === "boolean") val = val === "true";
-      inputs[key] = val;
+      const raw = field.value.trim();
+      markInvalid(field, false);
+      if (!raw) return; // unset parameter
+
+      if (type === "integer" || type === "number") {
+        const num = Number(raw);
+        if (!Number.isFinite(num)) {
+          errors.push(key);
+          markInvalid(field, true);
+          return;
+        }
+        inputs[key] = type === "integer" ? Math.trunc(num) : num;
+      } else if (type === "boolean") {
+        inputs[key] = raw.toLowerCase() === "true";
+      } else {
+        inputs[key] = raw;
+      }
     });
-    return inputs;
+    return { inputs, errors };
   }
 
   // ── Org selection ─────────────────────────────────────
@@ -394,12 +463,16 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
 
   function resetAll() {
     allActions = [];
+    integrations = [];
     $actionSelect.innerHTML = `<option value="">Load actions first…</option>`;
     $actionSelect.disabled = true;
     $filters.hidden = true;
     $detail.hidden = true;
     selectedFull = null;
     hasDraft = false;
+    templateFailure = null;
+    isDirty = false;
+    selectionSeq++;   // abandon any detail fetch still in flight
   }
 
   // ── Load actions ──────────────────────────────────────
@@ -510,6 +583,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
 
   // ── Select action ─────────────────────────────────────
   $actionSelect.addEventListener("change", async () => {
+    const seq = ++selectionSeq;
     const id = $actionSelect.value;
     if (!id) { $detail.hidden = true; return; }
 
@@ -531,9 +605,13 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       if (item.status === "Published") {
         pubData = await gc.getDataAction(api, $org.value, id);
       }
+      if (seq !== selectionSeq) return;   // superseded by a newer selection
 
       hasDraft = !!draftData;
       const detail = draftData || pubData;
+      // A draft-only action whose draft GET failed leaves nothing to show.
+      // Say so rather than failing on a null dereference further down.
+      if (!detail) throw new Error("Could not load this action's configuration.");
       selectedFull = detail;
 
       setProgress(80);
@@ -548,6 +626,12 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       // Editable fields
       $name.value = detail.name || "";
       $category.value = detail.category || "";
+
+      // `getDataAction`/`getDataActionDraft` resolve .vm template references
+      // into real strings. When one could not be read, the textarea below would
+      // show an empty template that Save Draft would then write back over the
+      // real one — so editing is blocked instead.
+      templateFailure = detail.templateFetchFailures || null;
 
       // Config: request
       const req = detail.config?.request || {};
@@ -582,71 +666,138 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       buildTestInputFields(detail.contract);
 
       // Test target options
-      $testTarget.innerHTML = "";
-      if (item.status === "Published") {
-        $testTarget.innerHTML += `<option value="published">Published</option>`;
-      }
-      if (hasDraft || item.status === "Draft") {
-        $testTarget.innerHTML += `<option value="draft">Draft</option>`;
-      }
+      const targets = [];
+      if (item.status === "Published") targets.push(`<option value="published">Published</option>`);
+      if (draftExists()) targets.push(`<option value="draft">Draft</option>`);
+      $testTarget.innerHTML = targets.join("");
 
-      // Enable buttons
-      $saveBtn.disabled = !canEdit;
-      $validateBtn.disabled = !canEdit || !(hasDraft || item.status === "Draft");
-      $publishBtn.disabled = !canEdit || !(hasDraft || item.status === "Draft");
-      $testBtn.disabled = !canExecute;
+      refreshActionButtons();
+      // The form now mirrors Genesys, so nothing is unsaved. (Assigning .value
+      // fires no input event, so filling the fields above did not set this.)
+      isDirty = false;
 
       $detail.hidden = false;
       hideProgress();
-      setStatus("Action loaded. Edit fields, test, or publish.");
+      setStatus(templateFailure
+        ? STATUS.tplFailed(templateFailure)
+        : "Action loaded. Edit fields, test, or publish.",
+        templateFailure ? "error" : "");
     } catch (err) {
+      if (seq !== selectionSeq) return;
       hideProgress();
       setStatus(STATUS.error(err.message), "error");
     }
   });
 
   // ── Save Draft ────────────────────────────────────────
-  $saveBtn.addEventListener("click", async () => {
+
+  /**
+   * Write the form back as a draft.
+   *
+   * Extracted from the button handler so Publish can call it too: publishing
+   * with unsaved edits on screen would otherwise promote the STORED draft and
+   * silently discard what the user is looking at.
+   *
+   * @returns {Promise<boolean>} true only if a draft was actually written.
+   */
+  async function performSave() {
     const id = $actionSelect.value;
-    if (!id || !selectedFull) return;
+    if (!id || !selectedFull) return false;
+
+    // A template we could not read must never be written back as "".
+    if (templateFailure) {
+      setStatus(STATUS.tplFailed(templateFailure), "error");
+      return false;
+    }
+
+    const actionItem = allActions.find(a => a.id === id);
+    const isDraftOnly = actionItem?.status === "Draft";
+
+    // ── Parse every JSON field FIRST. Nothing is sent unless all of them are
+    //    valid, so a syntax error can no longer blank a stored value.
+    const jsonErrors = [];
+    const headers        = parseJsonField($reqHeaders.value, "Headers", jsonErrors);
+    const translationMap = parseJsonField($respTransMap.value, "Translation Map", jsonErrors);
+    const transMapDefs   = parseJsonField($respTransMapDef.value, "Translation Map Defaults", jsonErrors);
+    const inputSchema    = isDraftOnly
+      ? parseJsonField($inputSchema.value, "Input Schema", jsonErrors, null) : null;
+    const outputSchema   = isDraftOnly
+      ? parseJsonField($outputSchema.value, "Output Success Schema", jsonErrors, null) : null;
+
+    markInvalid($reqHeaders,       jsonErrors.includes("Headers"));
+    markInvalid($respTransMap,     jsonErrors.includes("Translation Map"));
+    markInvalid($respTransMapDef,  jsonErrors.includes("Translation Map Defaults"));
+    markInvalid($inputSchema,      jsonErrors.includes("Input Schema"));
+    markInvalid($outputSchema,     jsonErrors.includes("Output Success Schema"));
+
+    if (jsonErrors.length) {
+      setStatus(STATUS.badJson(jsonErrors), "error");
+      return false;
+    }
 
     try {
       setStatus(STATUS.saving);
       setProgress(40);
       disableActions();
 
-      // If no draft exists for a published action, create one first
+      // If no draft exists for a published action, create one first. The new
+      // draft carries its OWN version, which is what UpdateDraftInput.version
+      // is checked against — the published action's version is not necessarily
+      // the same number, so use what the create returned.
+      let draftVersion = selectedFull.version;
       if (!hasDraft) {
-        await gc.createDraftFromAction(api, $org.value, id);
+        const created = await gc.createDraftFromAction(api, $org.value, id);
         hasDraft = true;
+        if (created?.version != null) draftVersion = created.version;
       }
 
-      // Patch the draft
-      const actionItem = allActions.find(a => a.id === id);
+      // `config` is replaced wholesale, so anything omitted here is dropped.
+      // timeoutSeconds is not editable on this page but is part of the stored
+      // config, and leaving it out silently cleared the action's timeout.
+      const config = {
+        request: {
+          requestType:        $reqType.value,
+          requestUrlTemplate: $reqUrl.value.trim(),
+          requestTemplate:    $reqTemplate.value,
+          headers,
+        },
+        response: {
+          translationMap,
+          translationMapDefaults: transMapDefs,
+          successTemplate:        $respSuccessTempl.value,
+        },
+      };
+      if (selectedFull.config?.timeoutSeconds != null) {
+        config.timeoutSeconds = selectedFull.config.timeoutSeconds;
+      }
+
       const patchBody = {
         name: $name.value.trim(),
         category: $category.value.trim(),
-        version: selectedFull.version || 1,
-        config: {
-          request: {
-            requestType:        $reqType.value,
-            requestUrlTemplate: $reqUrl.value.trim(),
-            requestTemplate:    $reqTemplate.value,
-            headers:            parseJsonField($reqHeaders.value),
-          },
-          response: {
-            translationMap:         parseJsonField($respTransMap.value),
-            translationMapDefaults: parseJsonField($respTransMapDef.value),
-            successTemplate:        $respSuccessTempl.value,
-          },
-        },
+        version: draftVersion != null ? draftVersion : 1,
+        config,
       };
 
-      // Include contract only for draft-only actions
-      if (actionItem?.status === "Draft") {
+      // Include contract only for draft-only actions. Start from the stored
+      // contract so fields this page has no editor for — errorSchema in
+      // particular — survive the round trip instead of being dropped, and drop
+      // the derived *Uri / *Flattened variants, which are readOnly output.
+      //
+      // An empty textarea falls back to the stored schema rather than sending
+      // null: `inputSchema` and `successSchema` are required by the contract,
+      // so "cleared" is not a state the action can legally be left in.
+      if (isDraftOnly) {
+        const stored = stripOrgSpecificUris(selectedFull.contract || {});
         patchBody.contract = {
-          input:  { inputSchema:   parseJsonField($inputSchema.value) },
-          output: { successSchema: parseJsonField($outputSchema.value) },
+          ...stored,
+          input: {
+            ...stored.input,
+            inputSchema: inputSchema != null ? inputSchema : stored.input?.inputSchema,
+          },
+          output: {
+            ...stored.output,
+            successSchema: outputSchema != null ? outputSchema : stored.output?.successSchema,
+          },
         };
       }
 
@@ -654,26 +805,29 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       selectedFull = updated;
 
       setProgress(100);
-      $infoStatus.textContent = "Published + Draft";
+      $infoStatus.textContent = isDraftOnly ? "Draft only" : "Published + Draft";
       $infoVersion.textContent = updated.version != null ? updated.version : "—";
-      $validateBtn.disabled = !canEdit;
-      $publishBtn.disabled = !canEdit;
 
       // Update test target to include draft option
       if (!$testTarget.querySelector('option[value="draft"]')) {
-        $testTarget.innerHTML += `<option value="draft">Draft</option>`;
+        $testTarget.append(new Option("Draft", "draft"));
       }
 
+      isDirty = false;
       setStatus("✓ Draft saved.", "success");
       logAction({ me, orgId: $org.value, action: "dataaction_save",
         description: `Saved draft for data action '${$actionSelect.options[$actionSelect.selectedIndex]?.text || $actionSelect.value}'` });
+      return true;
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
+      return false;
     } finally {
       hideProgress();
       enableActions();
     }
-  });
+  }
+
+  $saveBtn.addEventListener("click", () => { performSave(); });
 
   // ── Validate Draft ────────────────────────────────────
   $validateBtn.addEventListener("click", async () => {
@@ -691,11 +845,18 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       if (result.valid) {
         setStatus("✓ Draft is valid.", "success");
       } else {
-        const errors = (result.results || [])
-          .filter(r => !r.valid)
-          .map(r => r.errors?.map(e => e.message).join("; ") || "Unknown error")
-          .join(" | ");
-        setStatus(`Validation issues: ${errors}`, "error");
+        // DraftValidationResult is { valid, errors: ErrorBody[] }. The previous
+        // code walked a `results` array that this endpoint has never returned,
+        // so every validation failure rendered as an empty message on the one
+        // screen whose whole job is saying what is wrong.
+        const errors = (result.errors || [])
+          .map(e => e.message || e.code || e.messageWithParams)
+          .filter(Boolean);
+        setStatus(
+          errors.length
+            ? `Validation failed: ${errors.join(" | ")}`
+            : "Validation failed, but Genesys returned no detail.",
+          "error");
       }
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
@@ -710,13 +871,26 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     const id = $actionSelect.value;
     if (!id) return;
 
+    // Publishing promotes the STORED draft. With edits still on screen that
+    // means quietly discarding them while reporting success — the same class of
+    // silent-success bug this page was fixed for. Ask instead.
+    if (isDirty) {
+      const proceed = window.confirm(
+        "You have unsaved changes.\n\n" +
+        "Publishing promotes the saved draft, so these edits would be left " +
+        "behind. Save them first, then publish?");
+      if (!proceed) return;
+      const saved = await performSave();
+      if (!saved) return;   // performSave has already explained why
+    }
+
     try {
       setStatus(STATUS.publishing);
       setProgress(40);
       disableActions();
 
       const published = await gc.publishDataActionDraft(api, $org.value, id, {
-        version: selectedFull.version || 1,
+        version: selectedFull.version != null ? selectedFull.version : 1,
       });
       selectedFull = published;
       hasDraft = false;
@@ -725,9 +899,23 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       $infoStatus.textContent = "Published";
       $infoVersion.textContent = published.version != null ? published.version : "—";
 
-      // Update list item status
+      // Update list item status, and the option text with it — the list would
+      // otherwise keep the "[Draft]" badge on an action that is now published.
       const item = allActions.find(a => a.id === id);
-      if (item) item.status = "Published";
+      if (item) {
+        item.status = "Published";
+        const opt = $actionSelect.options[$actionSelect.selectedIndex];
+        if (opt) opt.text = opt.text.replace(/ \[Draft\]$/, "");
+      }
+      // Publishing consumes the draft and creates the published action, so the
+      // test targets swap over. A draft-only action had no "published" option
+      // to begin with — without adding it the dropdown would be left empty.
+      if (!$testTarget.querySelector('option[value="published"]')) {
+        $testTarget.append(new Option("Published", "published"));
+      }
+      const draftOpt = $testTarget.querySelector('option[value="draft"]');
+      if (draftOpt) draftOpt.remove();
+      $testTarget.value = "published";
 
       setStatus("✓ Action published.", "success");
       logAction({ me, orgId: $org.value, action: "dataaction_publish",
@@ -746,7 +934,11 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     if (!id) return;
 
     const target = $testTarget.value;
-    const inputs = collectTestInputs();
+    const { inputs, errors: inputErrors } = collectTestInputs();
+    if (inputErrors.length) {
+      setStatus(`Not a number: ${inputErrors.join(", ")}.`, "error");
+      return;
+    }
 
     try {
       setStatus(STATUS.testing);
@@ -763,7 +955,18 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
 
       setProgress(100);
       $testResult.textContent = JSON.stringify(result, null, 2);
-      setStatus(`✓ Test completed (${target}).`, "success");
+
+      // TestExecutionResult carries its own `success` flag: an action that runs
+      // and fails still returns HTTP 200. Reporting that as a green success
+      // contradicted the failure sitting in the result pane right below.
+      if (result?.success === false) {
+        const detail = result.error?.message
+          || (result.operations || []).filter(o => o.success === false)
+               .map(o => `${o.name}: ${o.error?.message || "failed"}`).join(" | ");
+        setStatus(`Test failed (${target})${detail ? `: ${detail}` : "."}`, "error");
+      } else {
+        setStatus(`✓ Test succeeded (${target}).`, "success");
+      }
     } catch (err) {
       $testResult.textContent = `Error: ${err.message}`;
       setStatus(STATUS.error(err.message), "error");
@@ -774,6 +977,35 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   });
 
   // ── Enable/disable helpers ────────────────────────────
+
+  /**
+   * Whether the selected action has something publishable.
+   *
+   * A draft-only action always does. `hasDraft` alone used to be the condition
+   * in one place and `hasDraft || status === "Draft"` in another; the two
+   * agreed only by accident, so both now go through here.
+   */
+  function draftExists() {
+    const item = allActions.find(a => a.id === $actionSelect.value);
+    return hasDraft || item?.status === "Draft";
+  }
+
+  /**
+   * Single source of truth for the four action buttons.
+   *
+   * Save/Validate/Publish need the edit permission; Test needs execute. On top
+   * of that, an action whose stored templates could not be read is not safe to
+   * write back at all, so the three write buttons stay off — testing it is
+   * still fine, since a test does not persist anything.
+   */
+  function refreshActionButtons() {
+    const write = canEdit && !templateFailure;
+    $saveBtn.disabled     = !write;
+    $validateBtn.disabled = !write || !draftExists();
+    $publishBtn.disabled  = !write || !draftExists();
+    $testBtn.disabled     = !canExecute;
+  }
+
   function disableActions() {
     $saveBtn.disabled = true;
     $validateBtn.disabled = true;
@@ -784,12 +1016,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
 
   function enableActions() {
     $loadBtn.disabled = !$org.value;
-    if ($actionSelect.value && selectedFull) {
-      $saveBtn.disabled = !canEdit;
-      $validateBtn.disabled = !canEdit || !hasDraft;
-      $publishBtn.disabled = !canEdit || !hasDraft;
-      $testBtn.disabled = !canExecute;
-    }
+    if ($actionSelect.value && selectedFull) refreshActionButtons();
   }
 
   return el;

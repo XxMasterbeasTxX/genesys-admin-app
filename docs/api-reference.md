@@ -357,14 +357,14 @@ Used by: Data Actions — Copy between Orgs, Data Actions — Edit, Documentatio
 | POST | `/api/v2/integrations/actions/drafts` | Create a draft data action |
 | GET | `/api/v2/integrations/actions/{id}` | Get a published data action (use `?expand=contract&includeConfig=true` for full contract + config) |
 | GET | `/api/v2/integrations/actions/{id}/draft` | Get the draft of a data action |
-| PUT | `/api/v2/integrations/actions/{id}/draft` | Update a data action draft |
-| PATCH | `/api/v2/integrations/actions/{id}/draft` | Patch a data action draft (`UpdateDraftInput`: name, category, integrationId, secure, version, contract, config) — used by Copy between Orgs to write the full config after `POST /drafts` |
-| GET | `/api/v2/integrations/actions/{id}/templates/requesttemplate.vm` | Fetch raw request Velocity template (inlined by Copy between Orgs when source action stores templates as file references) |
-| GET | `/api/v2/integrations/actions/{id}/templates/successtemplate.vm` | Fetch raw success Velocity template (inlined by Copy between Orgs) |
-| POST | `/api/v2/integrations/actions/{id}/draft/validation` | Validate a draft action |
+| POST | `/api/v2/integrations/actions/{id}/draft` | Create a draft from an existing published action (no body; returns the draft **with its own version**, which is what the following PATCH must send) |
+| PATCH | `/api/v2/integrations/actions/{id}/draft` | Patch a data action draft (`UpdateDraftInput`: name, category, secure, version, contract, config — **`version` is the only required field, and there is no `integrationId`**: a draft cannot be moved between integrations). `config` is replaced wholesale, so omitting `timeoutSeconds` clears it. Used by Copy between Orgs to write the full config after `POST /drafts` |
+| GET | `/api/v2/integrations/actions/{id}/templates/{fileName}` | Fetch a raw Velocity template. An action whose template is stored as a `.vm` file returns `requestTemplateUri` / `successTemplateUri` **instead of** the inline string, so every read path inlines these (`js/lib/dataActions.js`, and `getDataAction` in `onboarding-runner/lib/genesysRest.js`) — reading the inline field alone yields `""` and writing it back replaces the template with Genesys's default `${input.rawRequest}` |
+| GET | `/api/v2/integrations/actions/{id}/schemas/{fileName}` | Fetch a raw contract schema (same `*Uri` pattern as templates) |
+| GET | `/api/v2/integrations/actions/{id}/draft/validation` | Validate a draft action. **GET, not POST.** Returns `DraftValidationResult` = `{ valid: boolean, errors: ErrorBody[] }` — there is no `results` array |
 | POST | `/api/v2/integrations/actions/{id}/draft/publish` | Publish a draft action |
-| POST | `/api/v2/integrations/actions/{id}/test` | Run a test against a published action |
-| POST | `/api/v2/integrations/actions/{id}/draft/test` | Run a test against a draft action |
+| POST | `/api/v2/integrations/actions/{id}/test` | Run a test against a published action. Returns `TestExecutionResult` — an action that runs and **fails** still returns HTTP 200 with `success: false`, so check that flag, not the status code |
+| POST | `/api/v2/integrations/actions/{id}/draft/test` | Run a test against a draft action (same result shape) |
 
 ---
 
@@ -585,7 +585,7 @@ The runner authenticates to each org with client credentials (`GENESYS_<ORG>_CLI
 | POST | `/api/v2/flows/datatables/{id}/rows` | Insert copied rows into the target table |
 | GET | `/api/v2/integrations` | List target integrations to match a data action's integration by type/name |
 | GET | `/api/v2/integrations/actions` | List source data actions referenced by a flow |
-| POST | `/api/v2/integrations/actions` | Create a renamed data action in the target org |
+| POST | `/api/v2/integrations/actions` | Create a renamed data action in the target org (contract/config are stripped of the source org's `*Uri` / `*Flattened` fields first) |
 | GET | `/api/v2/scripts` | List source/target scripts (screen-pop references) |
 | POST | `/api/v2/scripts/{id}/export` | Get a temporary export URL for a source script |
 | POST | `uploads/v2/scripter` | Multipart upload to import a script into the target org (apps host, not under `/api/v2`) |

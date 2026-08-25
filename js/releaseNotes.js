@@ -21,6 +21,23 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.5",
+    date: "2026-08-25",
+    title: "Data Actions: the templates it showed were not the ones Genesys held",
+    changes: [
+      "A data action’s request and success templates are often stored by Genesys as separate files rather than as text on the action, and the app was only ever reading the text. For those actions the template boxes on the Edit page were blank — and saving a draft wrote that blank back, replacing the real template with the Genesys default. The templates are now fetched and shown wherever an action is read, on Edit, on Copy between Orgs, and in Deployment › Onboarding. If one cannot be read, the page says so and refuses to save rather than saving an empty one.",
+      "Onboarding was copying those same actions into customer orgs with the default template instead of the real one, and reporting the copy as successful. It now fails the object with the reason, in the preview as well as the deploy, where it is cheapest to act on.",
+      "Onboarding also treated every data action as changed. The comparison included file references that contain the action’s own ID and so can never match between two orgs, which meant an identical action was never offered for reuse and re-running a job created duplicates instead of picking its own objects back up.",
+      "Invalid JSON in the Headers, Translation Map or contract boxes no longer wipes the stored value. A single stray comma was silently treated as an empty object, saved over the real one, and reported as “Draft saved”. The offending box is now marked, the save is refused, and the field is named.",
+      "Saving a draft no longer clears the action’s timeout. The timeout is not editable here, but it is part of the configuration Genesys replaces wholesale on save, so leaving it out removed it.",
+      "Validation failures now say what is wrong. The page was reading a field the Genesys validation endpoint does not return, so every failure rendered as “Validation issues:” with nothing after it — on the one screen whose entire purpose is telling you what to fix.",
+      "A test that fails is reported as a failure. A data action that runs and errors still returns a successful HTTP response, and the page read that as the action having worked — showing a green tick above the failure it had just printed.",
+      "Copy between Orgs no longer carries the source org’s file references into the destination, and no longer keeps the previous destination’s integration list when you change the destination org. Picking a second destination after loading used to leave the first one’s integrations on screen, so the copy was sent with an integration ID that org has never heard of.",
+      "Editing a draft-only action keeps the parts of its contract the page has no editor for, instead of dropping them on save.",
+      "Publishing with unsaved changes on screen now asks first. Publish promotes the saved draft, so edits you had typed but not saved were quietly left behind — and the page still reported “Action published”. It now offers to save them first, and does nothing if you decline.",
+    ],
+  },
+  {
     version: "4.4",
     date: "2026-08-24",
     title: "Direct Routing: the settings it showed were not the ones Genesys held",

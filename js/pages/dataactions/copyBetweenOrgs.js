@@ -26,6 +26,7 @@ import { escapeHtml, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
+import { stripOrgSpecificUris } from "../../lib/dataActions.js";
 
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {
@@ -37,6 +38,10 @@ const STATUS = {
   done:        (name, dest, published) => `✓ Action "${name}" created in ${dest} as ${published ? "published" : "draft"}.`,
   noActions:   "No data actions found in source org.",
   noInteg:     "No compatible integration found in destination org.",
+  tplFailed:   (fields) =>
+    `Could not read the ${fields.join(" and ")} from the source org. `
+    + "Copying now would leave the destination action with the Genesys default "
+    + "template instead of the real one — reload the action before copying.",
   error:       (msg) => `Error: ${msg}`,
 };
 
@@ -169,10 +174,12 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
   const $progressBar   = el.querySelector("#daProgressBar");
   const $status        = el.querySelector("#daStatus");
 
-  let actions = [];         // source actions (summary)
-  let destActions = [];     // dest action names (uniqueness)
-  let destIntegrations = []; // dest integrations
-  let srcIntegrations = [];  // source integrations (to resolve names/types)
+  let actions = [];          // source actions (summary)
+  let destIntegrations = [];  // dest integrations
+  let srcIntegrations = [];   // source integrations (to resolve names/types)
+  // Monotonic token so a slow detail fetch for an action the user has already
+  // navigated away from cannot overwrite the newer selection.
+  let selectionSeq = 0;
 
   // ── Helpers ──────────────────────────────────────────
   const setStatus = makeStatus($status, "dt-status");
@@ -256,11 +263,22 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     updateLoadBtn();
     resetSelection();
   });
+  // Both org pickers reset the selection. The destination matters as much as
+  // the source: the integration dropdown is populated from the destination org's
+  // integrations, and an id from the previously selected org would be posted to
+  // an org that has never heard of it.
   $destOrg.addEventListener("change", () => {
     updateLoadBtn();
+    if (actions.length) {
+      resetSelection();
+      setStatus("Destination changed — load the source actions again.");
+    } else {
+      resetSelection();
+    }
   });
 
   function resetSelection() {
+    selectionSeq++;   // abandon any detail fetch still in flight
     actions = [];
     sourceCtl.setItems([]);
     sourceCtl.setEnabled(false);
@@ -287,17 +305,18 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       $loadBtn.disabled = true;
       sourceCtl.setEnabled(false);
 
-      // Fetch source actions, source integrations, dest actions, dest integrations in parallel
-      const [srcActions, srcIntegs, destActs, destIntegs] = await Promise.all([
+      // Source actions plus both integration lists. The destination action list
+      // is deliberately not fetched here — the uniqueness check runs against a
+      // fresh list at copy time, so a load-time copy would be a second full
+      // paginated walk of the destination org that nothing could trust anyway.
+      const [srcActions, srcIntegs, destIntegs] = await Promise.all([
         gc.fetchAllDataActions(api, srcOrgId, { query: { includeAuthActions: "false" } }),
         gc.fetchAllIntegrations(api, srcOrgId, { pageSize: 200 }),
-        gc.fetchAllDataActions(api, destOrgId, { query: { includeAuthActions: "false" } }),
         gc.fetchAllIntegrations(api, destOrgId, { pageSize: 200 }),
       ]);
 
       srcIntegrations = srcIntegs;
       destIntegrations = destIntegs;
-      destActions = destActs.map(a => a.name.toLowerCase());
 
       actions = srcActions.map(a => ({
         id: a.id,
@@ -335,6 +354,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
 
   // ── Source action selection ──────────────────────────
   async function handleSourceChange(id) {
+    const seq = ++selectionSeq;
     const a = actions.find(x => x.id === id);
     if (!a) {
       $sourceInfo.hidden = true;
@@ -373,62 +393,34 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     ).join("");
     $integration.disabled = false;
 
-    // Fetch full action detail (contract + config)
+    // Fetch full action detail (contract + config). `getDataAction` resolves
+    // any .vm template references to their text, so `full` always carries the
+    // real templates rather than a URI the destination org cannot follow.
     try {
       setStatus(STATUS.fetching);
       const full = await gc.getDataAction(api, $srcOrg.value, id);
-      // Genesys returns templates as file references (requestTemplateUri /
-      // successTemplateUri) rather than inline strings. Fetch the actual
-      // template content from those URIs and inline them so the copy
-      // posts real templates instead of Genesys defaulting to
-      // "${input.rawRequest}" / "${rawResult}".
-      await inlineActionTemplates(api, $srcOrg.value, full);
+      if (seq !== selectionSeq) return;   // superseded by a newer selection
+
       // Store the full detail on the action object for later use
       a._full = full;
       $contractPrev.innerHTML = buildContractPreview(full.contract);
+
+      // A template that could not be read is a silent-corruption risk: copying
+      // would hand the destination Genesys's default "${input.rawRequest}"
+      // while reporting success. Block the copy and say so.
+      if (full.templateFetchFailures) {
+        $copyBtn.disabled = true;
+        setStatus(STATUS.tplFailed(full.templateFetchFailures), "error");
+        return;
+      }
+
       $copyBtn.disabled = false;
       setStatus("Action loaded. Configure and copy.");
     } catch (err) {
+      if (seq !== selectionSeq) return;
       $contractPrev.innerHTML = `<em>Failed to load contract: ${escapeHtml(err.message)}</em>`;
       setStatus(STATUS.error(err.message), "error");
       $copyBtn.disabled = true;
-    }
-  }
-
-  /**
-   * For data actions whose templates are stored as .vm files, the
-   * action GET returns only a {requestTemplate,successTemplate}Uri.
-   * Resolve those URIs to their actual content and write it back as
-   * the inline template string, removing the URI so POST doesn't see
-   * a stale reference to the source org's template file.
-   */
-  async function inlineActionTemplates(api, orgId, full) {
-    const req  = full?.config?.request;
-    const resp = full?.config?.response;
-
-    async function fetchTemplate(uri) {
-      if (!uri) return null;
-      try {
-        const r = await api.proxyGenesys(orgId, "GET", uri);
-        // Templates are .vm text; the proxy wraps non-JSON as { raw }.
-        if (typeof r === "string") return r;
-        if (r && typeof r.raw === "string") return r.raw;
-        return null;
-      } catch (e) {
-        console.warn("[copyBetweenOrgs] failed to fetch template", uri, e);
-        return null;
-      }
-    }
-
-    if (req?.requestTemplateUri && !req.requestTemplate) {
-      const content = await fetchTemplate(req.requestTemplateUri);
-      if (content !== null) req.requestTemplate = content;
-      delete req.requestTemplateUri;
-    }
-    if (resp?.successTemplateUri && !resp.successTemplate) {
-      const content = await fetchTemplate(resp.successTemplateUri);
-      if (content !== null) resp.successTemplate = content;
-      delete resp.successTemplateUri;
     }
   }
 
@@ -441,6 +433,10 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     const sourceId = sourceCtl.getValue();
     const source = actions.find(x => x.id === sourceId);
     if (!source || !source._full) return;
+    if (source._full.templateFetchFailures) {
+      setStatus(STATUS.tplFailed(source._full.templateFetchFailures), "error");
+      return;
+    }
 
     const newName = $newName.value.trim();
     if (!newName) {
@@ -484,10 +480,11 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
       }
 
       // 2. Build the create body from the full source action.
-      //    Pass full.config through unchanged so every nested field
-      //    (requestTemplate, headers, translationMap, successTemplate,
-      //    successTemplateUri, etc.) is preserved exactly as returned
-      //    by the source GET.
+      //    Every nested field (requestTemplate, headers, translationMap,
+      //    successTemplate, timeoutSeconds) is preserved as returned by the
+      //    source GET, minus the *Uri / *Flattened fields: those name files
+      //    belonging to the SOURCE action in the SOURCE org and mean nothing
+      //    in the destination.
       setStatus(STATUS.creating);
       setProgress(40);
 
@@ -497,41 +494,55 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
         category: categoryVal || full.category || "",
         integrationId: targetIntegId,
         secure: full.secure || false,
-        contract: full.contract,
-        config: full.config,
+        contract: stripOrgSpecificUris(full.contract),
+        config: stripOrgSpecificUris(full.config),
       };
 
       // 3. Create action in destination (draft or published)
       setProgress(70);
       const usePublish = $publish.checked;
       if (usePublish) {
-        await gc.createDataAction(api, destOrgId, body);
+        try {
+          await gc.createDataAction(api, destOrgId, body);
+        } catch (pubErr) {
+          // POST /integrations/actions is explicitly unsupported for Function
+          // Integration actions — those must be created as a draft so the ZIP
+          // package can be uploaded before publishing. Genesys's own message
+          // does not say what to do about it, so say it here.
+          throw new Error(
+            `${pubErr.message} — if this is a Function Integration action, turn `
+            + `"Publish immediately" off: those can only be created as drafts.`
+          );
+        }
       } else {
         // Genesys quirk: POST /integrations/actions/drafts does not
         // persist config.request.requestTemplate (and sometimes other
         // config/response fields) on creation — it falls back to the
         // default "${input.rawRequest}". Follow up with a PATCH on the
-        // draft including ALL required UpdateDraftInput fields
-        // (name, category, integrationId, version, contract, config)
-        // so the full configuration is written.
+        // draft that restates the whole configuration.
+        //
+        // UpdateDraftInput accepts name, category, secure, contract, config
+        // and version, and requires only `version`. It has no integrationId —
+        // a draft cannot be moved between integrations — so the integration is
+        // fixed by the POST above and not repeated here.
         const created = await gc.createDataActionDraft(api, destOrgId, body);
         if (created?.id) {
           // Re-fetch to get the authoritative version.
           let currentVersion = created.version || 1;
           try {
-            const draft = await gc.getDataActionDraft(api, destOrgId, created.id);
+            const draft = await gc.getDataActionDraft(api, destOrgId, created.id,
+              { inlineTemplates: false });
             if (draft?.version) currentVersion = draft.version;
           } catch (_) { /* fall back to created.version */ }
 
           try {
             const patchBody = {
-              name:          body.name,
-              category:      body.category,
-              integrationId: body.integrationId,
-              secure:        body.secure,
-              version:       currentVersion,
-              contract:      body.contract,
-              config:        body.config,
+              name:     body.name,
+              category: body.category,
+              secure:   body.secure,
+              version:  currentVersion,
+              contract: body.contract,
+              config:   body.config,
             };
             await gc.patchDataActionDraft(api, destOrgId, created.id, patchBody);
           } catch (patchErr) {

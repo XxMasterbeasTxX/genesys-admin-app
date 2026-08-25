@@ -232,9 +232,19 @@ async function logJobOutcome({ job, source, target, division, phases, warnings, 
 
 // Fields that always differ between two orgs (or between two copies of the same
 // object) and say nothing about whether the content was edited.
+//
+// The data action *Uri / *Flattened entries matter more than they look: each
+// embeds the action's own id, so a source and target copy of the SAME action
+// never matched. Every data action therefore reported `differs: true`, the
+// conflict resolver never defaulted to "reuse", and re-running a failed job
+// created duplicates instead of picking its own objects back up.
 const VOLATILE_KEYS = new Set([
   "id", "selfUri", "name", "division", "contextId", "version",
   "dateCreated", "dateModified", "createdBy", "modifiedBy", "self",
+  // Taken from the same list the create body is stripped with, so the two
+  // cannot drift into disagreeing about which fields are org-specific.
+  ...rest.ACTION_URI_KEYS,
+  "templateFetchFailures",
 ]);
 
 /** Deep copy with volatile fields dropped and object keys sorted. */
@@ -655,6 +665,15 @@ async function runPass(job, store, log, opts) {
             `(type ${srcType || "?"}) — install/activate it in the target first`
           );
         }
+        // A template the source would not hand over cannot be copied. Creating
+        // the action anyway would give the target Genesys's default
+        // "${input.rawRequest}" while the row said "ok", so this fails loudly
+        // — in preview as well, where it is cheapest to act on.
+        if (full.templateFetchFailures) {
+          throw new Error(
+            `could not read the ${full.templateFetchFailures.join(" and ")} from the source org`
+          );
+        }
         if (preview) {
           actionPhase.items.push({
             old: srcName, new: newName, status: "planned",
@@ -663,12 +682,14 @@ async function runPass(job, store, log, opts) {
           await persist();
           continue;
         }
+        // Strip the *Uri / *Flattened fields: they name files belonging to the
+        // SOURCE action in the SOURCE org and mean nothing here.
         const createdAction = await rest.createDataAction(target, {
           name: newName,
           category: full.category,
           integrationId: tgtInteg.id,
-          contract: full.contract,
-          config: full.config,
+          contract: rest.stripOrgSpecificUris(full.contract),
+          config: rest.stripOrgSpecificUris(full.config),
           secure: full.secure,
         });
         if (createdAction && createdAction.id) guidMap.set(srcSummary.id, createdAction.id);
