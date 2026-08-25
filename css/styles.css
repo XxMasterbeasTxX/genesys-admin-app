@@ -1808,13 +1808,28 @@ body {
 /* ══════════════════════════════════════════════════════════
    Edit Data Action page  (ed-* prefix)
    ══════════════════════════════════════════════════════════ */
+/* Scoped to this page rather than .card, so the token stays where it is used. */
+.ed-page { --ed-col: 920px; }
 
-/* Field widths, replacing the inline max-widths this page used to carry. */
-.ed-field          { max-width: 550px; }
-.ed-field--wide    { max-width: 760px; }
+/* One column width for the whole page, so the picker, the identity fields and
+   the three sections share a right edge instead of stepping in and out. */
+.ed-picker-row,
+.ed-identity-fields,
+.ed-section { max-width: var(--ed-col); }
+
+/* Field widths, replacing the inline max-widths this page used to carry.
+   `.dt-input` sets a global max-width: 450px and no width, so an input left
+   alone collapses to its default size — these fill their field instead. */
+.ed-field--wide    { max-width: var(--ed-col); }
 .ed-field--narrow  { max-width: 220px; }
+.ed-field--wide > .dt-input,
+.ed-field > .dt-input {
+  width: 100%;
+  max-width: none;
+}
 .ed-code {
   width: 100%;
+  max-width: none;
   font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
   font-size: 12px;
   resize: vertical;
@@ -1834,7 +1849,18 @@ body {
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
-.ed-picker-mount { min-width: 320px; flex: 0 1 460px; }
+/* The picker takes the row minus the Refresh button. `.ms-dropdown` is
+   inline-block by default, so it sizes to its label and a long action name
+   wraps the trigger onto a second line — override both here. */
+.ed-picker-mount { flex: 1 1 320px; min-width: 320px; }
+.ed-picker-mount .ms-dropdown { display: block; width: 100%; }
+.ed-picker-mount .ms-dropdown__trigger {
+  width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .ed-filter-row {
   display: flex;
@@ -1908,12 +1934,15 @@ body {
 }
 .ed-sep { opacity: 0.45; }
 
+/* Name and Category split the column evenly, so Name gets roughly half of
+   920px rather than the ~180px an unsized input collapses to. */
 .ed-identity-fields {
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
   margin-bottom: 4px;
 }
+.ed-identity-fields > .ed-field { flex: 1 1 240px; min-width: 240px; }
 /* Read-only value styled as a field so the row still reads as a pair, while
    clearly not being an input. */
 .ed-readonly {
@@ -1934,7 +1963,7 @@ body {
   border-radius: 10px;
   background: var(--panel-2);
   margin-top: 10px;
-  max-width: 820px;
+  /* width comes from --ed-col at the top of this block */
 }
 .ed-section-summary {
   cursor: pointer;

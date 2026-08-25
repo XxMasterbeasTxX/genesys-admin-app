@@ -62,7 +62,7 @@ const STATUS = {
 // ── Page renderer ───────────────────────────────────────────────────
 export default function renderEditDataAction({ route, me, api, orgContext, access }) {
   const el = document.createElement("section");
-  el.className = "card";
+  el.className = "card ed-page";
 
   const orgId = orgContext.get();
 
