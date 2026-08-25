@@ -96,8 +96,20 @@ export async function inlineActionTemplates(fetchTemplate, action) {
 /**
  * Read a template body out of whatever the proxy returned for a `.vm` GET.
  *
- * Both proxies parse the response as JSON and fall back to `{ raw: text }`, so
- * a Velocity template arrives either as a bare string or wrapped in `raw`.
+ * Template fetches pass `raw: true`, so both proxies skip `JSON.parse` and the
+ * bytes arrive as `{ raw: text }` (a bare string is also accepted).
+ *
+ * A **parsed object** here means the `raw` flag did not take effect — an older
+ * proxy, mid-deploy. That is deliberately treated as a failure rather than
+ * re-serialised: once the proxy has parsed the file, the original text is gone,
+ * so `JSON.stringify` would be guessing at the formatting and would happily
+ * rewrite `1.0` as `1`. A template that reaches the destination subtly rewritten
+ * is the exact failure this module exists to prevent, so an unreadable template
+ * is reported as unreadable and the caller refuses to write.
+ *
+ * This is not hypothetical: a success template of `{"Status": "${Status}"}` has
+ * its placeholder inside quotes and so is itself valid JSON, which is what
+ * exposed the bug.
  */
 export function templateTextOf(resp) {
   if (typeof resp === "string") return resp;

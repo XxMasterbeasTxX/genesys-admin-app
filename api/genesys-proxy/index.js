@@ -15,7 +15,7 @@ const ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
  * Used by both the internal (client-credentials) and customer (token-forwarding)
  * paths — only the region + bearer token differ.
  */
-async function callGenesys({ region, token, method, path, body, query }) {
+async function callGenesys({ region, token, method, path, body, query, raw }) {
   let url = `https://api.${region}${path}`;
   if (query) {
     const qs = new URLSearchParams(query).toString();
@@ -50,11 +50,25 @@ async function callGenesys({ region, token, method, path, body, query }) {
   }
 
   const respBody = await genesysResp.text();
+
+  // `raw` callers want the bytes, not an interpretation of them.
+  //
+  // Data action Velocity templates are fetched through here, and a template
+  // whose placeholders sit inside quotes — {"Status": "${Status}"} — is itself
+  // valid JSON. Parsing it turns the template into an object and destroys the
+  // original text: the caller can only guess the formatting back, and
+  // JSON.stringify would happily rewrite 1.0 as 1. Since the whole point of
+  // fetching a template is to write it somewhere else unchanged, opt out of
+  // parsing entirely rather than round-tripping through a parser.
   let parsed;
-  try {
-    parsed = JSON.parse(respBody);
-  } catch {
+  if (raw) {
     parsed = { raw: respBody };
+  } else {
+    try {
+      parsed = JSON.parse(respBody);
+    } catch {
+      parsed = { raw: respBody };
+    }
   }
 
   // A 405 body says only that the method is wrong; the Allow header says which
@@ -95,7 +109,7 @@ async function callGenesys({ region, token, method, path, body, query }) {
  */
 module.exports = async function (context, req) {
   try {
-    const { customerId, method, path, body, query } = req.body || {};
+    const { customerId, method, path, body, query, raw } = req.body || {};
 
     // --- Validate input (customerId is only required for internal mode) ---
     if (!method || !path) {
@@ -176,6 +190,7 @@ module.exports = async function (context, req) {
         path,
         body,
         query,
+        raw,
       });
       context.res = result;
       return;
@@ -267,6 +282,7 @@ module.exports = async function (context, req) {
       path,
       body,
       query,
+      raw,
     });
     context.res = result;
   } catch (err) {

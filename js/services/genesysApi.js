@@ -1204,7 +1204,8 @@ export async function fetchAllDataActions(api, orgId, opts = {}) {
  * Non-JSON responses arrive wrapped as `{ raw }` — see `templateTextOf`.
  */
 function templateFetcher(api, orgId) {
-  return async (uri) => templateTextOf(await api.proxyGenesys(orgId, "GET", uri));
+  return async (uri) =>
+    templateTextOf(await api.proxyGenesys(orgId, "GET", uri, { raw: true }));
 }
 
 /**

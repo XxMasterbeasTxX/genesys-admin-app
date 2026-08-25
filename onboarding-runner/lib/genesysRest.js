@@ -7,7 +7,7 @@
 
 const { getGenesysToken } = require("./genesysAuth");
 
-async function gcFetch(org, method, path, { query, body } = {}) {
+async function gcFetch(org, method, path, { query, body, raw } = {}) {
   const token = await getGenesysToken(org.id, org.region, org.clientId, org.clientSecret);
   let url = `https://api.${org.region}${path}`;
   if (query) {
@@ -22,8 +22,16 @@ async function gcFetch(org, method, path, { query, body } = {}) {
   const resp = await fetch(url, opts);
   if (resp.status === 204) return null;
   const text = await resp.text();
+
+  // `raw` callers want the bytes. A Velocity template whose placeholders sit
+  // inside quotes — {"Status": "${Status}"} — is itself valid JSON, and parsing
+  // it destroys the original text the caller is about to write elsewhere.
   let json;
-  try { json = JSON.parse(text); } catch { json = { raw: text }; }
+  if (raw) {
+    json = { raw: text };
+  } else {
+    try { json = JSON.parse(text); } catch { json = { raw: text }; }
+  }
   if (!resp.ok) {
     let extra = "";
     if (json.code) extra = json.code;
@@ -116,8 +124,9 @@ async function inlineActionTemplates(org, action) {
     if (!cfg || !cfg[uriKey] || cfg[tplKey]) continue;
     let text = null;
     try {
-      const resp = await gcFetch(org, "GET", cfg[uriKey]);
-      // Templates are .vm text; gcFetch wraps non-JSON as { raw }.
+      const resp = await gcFetch(org, "GET", cfg[uriKey], { raw: true });
+      // `raw: true` guarantees { raw: <bytes> } — never a parsed object, which
+      // is what a JSON-valid template would otherwise become.
       if (typeof resp === "string") text = resp;
       else if (resp && typeof resp.raw === "string") text = resp.raw;
     } catch (_) { text = null; }

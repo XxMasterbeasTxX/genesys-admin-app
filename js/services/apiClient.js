@@ -54,7 +54,7 @@ export function createApiClient(getToken) {
    * @param {Object} [body]       Optional request body
    * @param {Object} [query]      Optional query parameters
    */
-  async function proxyGenesys(customerId, method, path, { body, query } = {}) {
+  async function proxyGenesys(customerId, method, path, { body, query, raw } = {}) {
     const token = typeof getToken === "function" ? getToken() : getToken;
     if (!token) throw new Error("No valid access token");
 
@@ -69,7 +69,10 @@ export function createApiClient(getToken) {
         "X-Genesys-Token": token,
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ customerId, method, path, body, query }),
+      // `raw: true` tells the proxy not to JSON.parse the response. Used for
+      // Velocity template fetches, where a template that happens to be valid
+      // JSON would otherwise arrive as an object with its original text gone.
+      body: JSON.stringify({ customerId, method, path, body, query, raw }),
     });
 
     if (resp.status === 204) return null;
