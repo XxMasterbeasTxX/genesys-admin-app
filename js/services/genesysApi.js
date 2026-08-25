@@ -13,6 +13,7 @@
  *   const convs = await gc.searchConversations(api, orgId, { ... });
  */
 import { sleep } from "../utils.js";
+import { inlineActionTemplates, templateTextOf } from "../lib/dataActions.js";
 
 // ─────────────────────────────────────────────────────────────────────
 // Generic pagination helpers
@@ -1198,11 +1199,30 @@ export async function fetchAllDataActions(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/integrations/actions", opts);
 }
 
-/** Fetch a single data action with full contract and config. */
-export async function getDataAction(api, orgId, actionId) {
-  return api.proxyGenesys(orgId, "GET",
+/**
+ * Resolve a Velocity template URI to its text through the proxy.
+ * Non-JSON responses arrive wrapped as `{ raw }` — see `templateTextOf`.
+ */
+function templateFetcher(api, orgId) {
+  return async (uri) => templateTextOf(await api.proxyGenesys(orgId, "GET", uri));
+}
+
+/**
+ * Fetch a single data action with full contract and config.
+ *
+ * Velocity templates stored as `.vm` files come back as `requestTemplateUri` /
+ * `successTemplateUri` with no inline string. They are resolved here so no
+ * caller can read an empty template and write that emptiness back — the bug
+ * this centralisation exists to make impossible. Pass
+ * `{ inlineTemplates: false }` when only the envelope (id, version) is wanted.
+ */
+export async function getDataAction(api, orgId, actionId, { inlineTemplates = true } = {}) {
+  const action = await api.proxyGenesys(orgId, "GET",
     `/api/v2/integrations/actions/${actionId}`,
     { query: { expand: "contract", includeConfig: "true" } });
+  return inlineTemplates
+    ? inlineActionTemplates(templateFetcher(api, orgId), action)
+    : action;
 }
 
 /** Create a published data action. Body: { name, category, integrationId, contract, config }. */
@@ -1222,11 +1242,14 @@ export async function fetchAllDataActionDrafts(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/integrations/actions/drafts", opts);
 }
 
-/** Get the draft of an existing action. */
-export async function getDataActionDraft(api, orgId, actionId) {
-  return api.proxyGenesys(orgId, "GET",
+/** Get the draft of an existing action. Inlines templates like `getDataAction`. */
+export async function getDataActionDraft(api, orgId, actionId, { inlineTemplates = true } = {}) {
+  const draft = await api.proxyGenesys(orgId, "GET",
     `/api/v2/integrations/actions/${actionId}/draft`,
     { query: { expand: "contract", includeConfig: "true" } });
+  return inlineTemplates
+    ? inlineActionTemplates(templateFetcher(api, orgId), draft)
+    : draft;
 }
 
 /** Create a new draft from an existing published action. */

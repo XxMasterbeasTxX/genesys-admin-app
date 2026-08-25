@@ -79,8 +79,81 @@ const createDataTableRow = (org, tableId, row) =>
 const listDataActions = (org) =>
   fetchAllPages(org, "/api/v2/integrations/actions", { query: { includeAuthActions: "false" } });
 
-const getDataAction = (org, id) =>
-  gcFetch(org, "GET", `/api/v2/integrations/actions/${id}`, { query: { expand: "contract", includeConfig: "true" } });
+/**
+ * Keys naming a file that belongs to one action in one org.
+ *
+ * They are useless in another org, and because they embed the action's own id
+ * they also make two identical actions compare as different — which is why the
+ * conflict resolver must ignore them (see VOLATILE_KEYS in processor.js).
+ */
+const ACTION_URI_KEYS = [
+  "requestTemplateUri", "successTemplateUri",
+  "inputSchemaUri", "successSchemaUri", "errorSchemaUri",
+  "inputSchemaFlattened", "successSchemaFlattened", "errorSchemaFlattened",
+];
+
+/**
+ * Resolve a data action's Velocity templates into inline strings.
+ *
+ * An action whose template was stored as a `.vm` file comes back with only a
+ * `requestTemplateUri` / `successTemplateUri` and no inline template. Copying
+ * such an action verbatim gives the target Genesys's default
+ * `${input.rawRequest}` instead of the real template, silently — so the
+ * templates are fetched and inlined here, and a fetch that fails is reported
+ * on the action as `templateFetchFailures` rather than swallowed.
+ *
+ * Mirrors `js/lib/dataActions.js` on the browser side; keep the two in step.
+ */
+async function inlineActionTemplates(org, action) {
+  const fields = [
+    ["request", "requestTemplateUri", "requestTemplate", "request template"],
+    ["response", "successTemplateUri", "successTemplate", "success template"],
+  ];
+  const failures = [];
+
+  for (const [section, uriKey, tplKey, label] of fields) {
+    const cfg = action && action.config && action.config[section];
+    if (!cfg || !cfg[uriKey] || cfg[tplKey]) continue;
+    let text = null;
+    try {
+      const resp = await gcFetch(org, "GET", cfg[uriKey]);
+      // Templates are .vm text; gcFetch wraps non-JSON as { raw }.
+      if (typeof resp === "string") text = resp;
+      else if (resp && typeof resp.raw === "string") text = resp.raw;
+    } catch (_) { text = null; }
+
+    if (typeof text === "string") {
+      cfg[tplKey] = text;
+      delete cfg[uriKey];
+    } else {
+      // Keep the URI: an action with neither a template nor a pointer to one
+      // is exactly the silent default this guards against.
+      failures.push(label);
+    }
+  }
+
+  if (failures.length) action.templateFetchFailures = failures;
+  return action;
+}
+
+/** Deep copy with every org-specific file reference stripped. */
+function stripOrgSpecificUris(value) {
+  if (Array.isArray(value)) return value.map(stripOrgSpecificUris);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (ACTION_URI_KEYS.includes(k)) continue;
+      out[k] = stripOrgSpecificUris(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+const getDataAction = async (org, id) =>
+  inlineActionTemplates(org, await gcFetch(org, "GET",
+    `/api/v2/integrations/actions/${id}`,
+    { query: { expand: "contract", includeConfig: "true" } }));
 
 const createDataAction = (org, body) =>
   gcFetch(org, "POST", "/api/v2/integrations/actions", { body });
@@ -222,6 +295,8 @@ module.exports = {
   listDataActions,
   getDataAction,
   createDataAction,
+  stripOrgSpecificUris,
+  ACTION_URI_KEYS,
   listIntegrations,
   listFlows,
   listScripts,
