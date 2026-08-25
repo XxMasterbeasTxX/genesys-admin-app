@@ -291,6 +291,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   let selectedFull = null;    // full detail of selected action
   let hasDraft = false;       // whether selected action has a draft
   let templateFailure = null; // template fields that could not be read
+  let isDirty = false;        // form edited since the action was loaded/saved
   // Monotonic token: a slow detail fetch for an action the user has already
   // moved off must not paint over the newer selection.
   let selectionSeq = 0;
@@ -343,6 +344,22 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   function markInvalid($field, bad) {
     $field.classList.toggle("ed-invalid", !!bad);
   }
+
+  /**
+   * Every field whose value goes into the draft.
+   *
+   * Editing any of them makes the on-screen form differ from what Genesys
+   * holds, which is what Publish needs to know about — see the prompt in the
+   * Publish handler.
+   */
+  const EDITABLE = [
+    $name, $category, $reqType, $reqUrl, $reqTemplate, $reqHeaders,
+    $respTransMap, $respTransMapDef, $respSuccessTempl, $inputSchema, $outputSchema,
+  ];
+  EDITABLE.forEach(($f) => {
+    $f.addEventListener("input", () => { isDirty = true; });
+    $f.addEventListener("change", () => { isDirty = true; });
+  });
 
   /** Extract properties from a JSON schema, handling nested structures. */
   function extractSchemaProps(schema) {
@@ -454,6 +471,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     selectedFull = null;
     hasDraft = false;
     templateFailure = null;
+    isDirty = false;
     selectionSeq++;   // abandon any detail fetch still in flight
   }
 
@@ -654,6 +672,9 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       $testTarget.innerHTML = targets.join("");
 
       refreshActionButtons();
+      // The form now mirrors Genesys, so nothing is unsaved. (Assigning .value
+      // fires no input event, so filling the fields above did not set this.)
+      isDirty = false;
 
       $detail.hidden = false;
       hideProgress();
@@ -669,14 +690,24 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   });
 
   // ── Save Draft ────────────────────────────────────────
-  $saveBtn.addEventListener("click", async () => {
+
+  /**
+   * Write the form back as a draft.
+   *
+   * Extracted from the button handler so Publish can call it too: publishing
+   * with unsaved edits on screen would otherwise promote the STORED draft and
+   * silently discard what the user is looking at.
+   *
+   * @returns {Promise<boolean>} true only if a draft was actually written.
+   */
+  async function performSave() {
     const id = $actionSelect.value;
-    if (!id || !selectedFull) return;
+    if (!id || !selectedFull) return false;
 
     // A template we could not read must never be written back as "".
     if (templateFailure) {
       setStatus(STATUS.tplFailed(templateFailure), "error");
-      return;
+      return false;
     }
 
     const actionItem = allActions.find(a => a.id === id);
@@ -701,7 +732,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
 
     if (jsonErrors.length) {
       setStatus(STATUS.badJson(jsonErrors), "error");
-      return;
+      return false;
     }
 
     try {
@@ -782,16 +813,21 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
         $testTarget.append(new Option("Draft", "draft"));
       }
 
+      isDirty = false;
       setStatus("✓ Draft saved.", "success");
       logAction({ me, orgId: $org.value, action: "dataaction_save",
         description: `Saved draft for data action '${$actionSelect.options[$actionSelect.selectedIndex]?.text || $actionSelect.value}'` });
+      return true;
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
+      return false;
     } finally {
       hideProgress();
       enableActions();
     }
-  });
+  }
+
+  $saveBtn.addEventListener("click", () => { performSave(); });
 
   // ── Validate Draft ────────────────────────────────────
   $validateBtn.addEventListener("click", async () => {
@@ -834,6 +870,19 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   $publishBtn.addEventListener("click", async () => {
     const id = $actionSelect.value;
     if (!id) return;
+
+    // Publishing promotes the STORED draft. With edits still on screen that
+    // means quietly discarding them while reporting success — the same class of
+    // silent-success bug this page was fixed for. Ask instead.
+    if (isDirty) {
+      const proceed = window.confirm(
+        "You have unsaved changes.\n\n" +
+        "Publishing promotes the saved draft, so these edits would be left " +
+        "behind. Save them first, then publish?");
+      if (!proceed) return;
+      const saved = await performSave();
+      if (!saved) return;   // performSave has already explained why
+    }
 
     try {
       setStatus(STATUS.publishing);

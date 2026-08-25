@@ -34,6 +34,7 @@ export const RELEASE_NOTES = [
       "A test that fails is reported as a failure. A data action that runs and errors still returns a successful HTTP response, and the page read that as the action having worked — showing a green tick above the failure it had just printed.",
       "Copy between Orgs no longer carries the source org’s file references into the destination, and no longer keeps the previous destination’s integration list when you change the destination org. Picking a second destination after loading used to leave the first one’s integrations on screen, so the copy was sent with an integration ID that org has never heard of.",
       "Editing a draft-only action keeps the parts of its contract the page has no editor for, instead of dropping them on save.",
+      "Publishing with unsaved changes on screen now asks first. Publish promotes the saved draft, so edits you had typed but not saved were quietly left behind — and the page still reported “Action published”. It now offers to save them first, and does nothing if you decline.",
     ],
   },
   {
