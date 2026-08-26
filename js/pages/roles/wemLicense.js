@@ -20,9 +20,15 @@
  *
  *   GET  /api/v2/license/users        the licenses a user is really assigned.
  *
- * Two mismatches both cost money, and the table separates them:
- *   Unlicensed trigger — permission granted that the org is not paying for.
- *   License unused     — a WEM seat whose roles never needed it.
+ * Every user listed holds a role carrying a WEM-triggering permission. The
+ * table splits them by whether a WEM licence is also assigned.
+ *
+ * What that COSTS depends on the org's licensing model, which no API exposes —
+ * `/api/v2/license/organization` is POST-only and nothing in the spec carries a
+ * billing-model field. On named licensing each triggering user is a billable
+ * seat; on concurrent they are merely eligible, and the org pays for the peak
+ * number logged in simultaneously. So this page reports the mechanism and
+ * deliberately says nothing about the bill.
  *
  * Exported function `renderWemContent` is called lazily from search.js when
  * the user toggles to the "WEM License" mode.
@@ -265,13 +271,20 @@ function sourceBadge(source) {
 const CATEGORY = {
   gap:      { label: "Unlicensed trigger", cls: "wem-cat-gap" },
   licensed: { label: "Licensed",           cls: "wem-cat-ok" },
-  unused:   { label: "License unused",     cls: "wem-cat-unused" },
 };
 
-function categorise(triggers, assigned) {
-  if (triggers && !assigned) return "gap";
-  if (triggers && assigned) return "licensed";
-  return "unused";
+/**
+ * There is deliberately no "licence but no trigger" category.
+ *
+ * It cannot occur. A WEM licence is only ever held because a permission asked
+ * for it: on named licensing the licence follows the permission, and on
+ * concurrent the set is recalculated each billing period, so a user with no
+ * triggering role in the next period simply is not assigned one. The only way
+ * to hold a licence with nothing asking for it is transiently, mid-period after
+ * a role is removed — which self-heals and is not actionable.
+ */
+function categorise(assigned) {
+  return assigned ? "licensed" : "gap";
 }
 
 // ── Public entry-point ────────────────────────────────────────────────────────
@@ -302,18 +315,19 @@ export function renderWemContent(container, { me, api, orgContext }) {
       /* ── Category colour ── */
       .wem-cat-gap    { color:#fca5a5; font-weight:600; }
       .wem-cat-ok     { color:#86efac; font-weight:600; }
-      .wem-cat-unused { color:#fbbf24; font-weight:600; }
+      /* Cost caveat — the page cannot know the org's licensing model. */
+      .wem-note--model { font-size:12px; color:var(--muted); margin:12px 0 0; max-width:760px; line-height:1.5; }
       /* ── Fallback note ── */
       .wem-note { font-size:12px; color:#fbbf24; margin-bottom:12px; max-width:760px; line-height:1.5; }
     </style>
 
     <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
       Find every user whose roles carry a permission that triggers a
-      <strong>Workforce Engagement Management</strong> add-on license, and compare that against the
-      WEM licenses they are actually assigned:
-      <span style="color:#fca5a5;font-weight:600">Unlicensed trigger</span> (permission granted but not paid for),
-      <span style="color:#86efac;font-weight:600">Licensed</span>, or
-      <span style="color:#fbbf24;font-weight:600">License unused</span> (a WEM seat no role needs).
+      <strong>Workforce Engagement Management</strong> add-on license, and whether a WEM license is
+      also assigned to them:
+      <span style="color:#fca5a5;font-weight:600">Unlicensed trigger</span> (holds a triggering
+      permission, no WEM license assigned) or
+      <span style="color:#86efac;font-weight:600">Licensed</span> (both).
     </p>
 
     <p class="wem-scope" id="wemScope">Loading license definitions…</p>
@@ -345,7 +359,7 @@ export function renderWemContent(container, { me, api, orgContext }) {
   const $progressDetail = container.querySelector("#wemProgressDetail");
   const $results        = container.querySelector("#wemResults");
 
-  let activeFilter = "all"; // "all" | "gap" | "licensed" | "unused"
+  let activeFilter = "all"; // "all" | "gap" | "licensed"
   let listedDefs    = [];
   let wemLicenseIds = [];
 
@@ -581,14 +595,14 @@ export function renderWemContent(container, { me, api, orgContext }) {
         const assigned = [...(assignedMap.get(user.id) || [])].filter((l) =>
           wemIdSet.has(l),
         );
-        if (!hits.length && !assigned.length) continue;
+        if (!hits.length) continue;
         matchedUsers.push({
           userId: user.id,
           userName: user.name || user.username || user.id,
           email: user.email || "",
           triggeringRoleIds: hits,
           assigned,
-          category: categorise(hits.length > 0, assigned.length > 0),
+          category: categorise(assigned.length > 0),
           groups: user.groups || [],
         });
       }
@@ -597,7 +611,7 @@ export function renderWemContent(container, { me, api, orgContext }) {
         hideProgress();
         setStatus("");
         $results.innerHTML = `<div class="rs-empty"><div class="rs-empty-icon">👥</div>
-          <p>No user in this org triggers or holds <strong>${escapeHtml(wemIds.join(", "))}</strong>.</p></div>`;
+          <p>No user in this org holds a permission that triggers <strong>${escapeHtml(wemIds.join(", "))}</strong>.</p></div>`;
         return;
       }
 
@@ -609,8 +623,7 @@ export function renderWemContent(container, { me, api, orgContext }) {
       // Group memberships already arrived with the bulk user fetch, so the only
       // per-object work left is reading each group's role grants — and only for
       // groups belonging to users who actually have a triggering role to
-      // attribute. A "License unused" user has no role to explain, so their
-      // groups are never looked up.
+      // attribute, and every matched user has one.
       setStatus(
         `Found ${matchedUsers.length} user${matchedUsers.length !== 1 ? "s" : ""} — resolving sources…`,
       );
@@ -644,20 +657,16 @@ export function renderWemContent(container, { me, api, orgContext }) {
       );
 
       // ── Step 5: expand into display rows ──
-      // One row per user × triggering role; users who only hold an unused
-      // license get a single row with nothing to attribute.
+      // One row per user × triggering role. Every matched user has at least
+      // one, so there is no roleless branch.
       const displayRows = [];
       for (const u of matchedUsers) {
-        if (u.triggeringRoleIds.length) {
-          for (const roleId of u.triggeringRoleIds) {
-            displayRows.push({
-              ...u,
-              role: triggeringRoles.get(roleId),
-              source: buildSourceLabel(roleId, u.groups, groupGrantsCache, groupNameCache),
-            });
-          }
-        } else {
-          displayRows.push({ ...u, role: null, source: "" });
+        for (const roleId of u.triggeringRoleIds) {
+          displayRows.push({
+            ...u,
+            role: triggeringRoles.get(roleId),
+            source: buildSourceLabel(roleId, u.groups, groupGrantsCache, groupNameCache),
+          });
         }
       }
 
@@ -665,7 +674,6 @@ export function renderWemContent(container, { me, api, orgContext }) {
       const uniqueAll      = uniq(() => true);
       const uniqueGap      = uniq((r) => r.category === "gap");
       const uniqueLicensed = uniq((r) => r.category === "licensed");
-      const uniqueUnused   = uniq((r) => r.category === "unused");
 
       const wrap = document.createElement("div");
 
@@ -687,7 +695,6 @@ export function renderWemContent(container, { me, api, orgContext }) {
         <button class="wem-pill active" data-filter="all">All<span class="wem-pill-count">${uniqueAll}</span></button>
         <button class="wem-pill" data-filter="gap">Unlicensed trigger<span class="wem-pill-count">${uniqueGap}</span></button>
         <button class="wem-pill" data-filter="licensed">Licensed<span class="wem-pill-count">${uniqueLicensed}</span></button>
-        <button class="wem-pill" data-filter="unused">License unused<span class="wem-pill-count">${uniqueUnused}</span></button>
       `;
       wrap.appendChild(pillsDiv);
 
@@ -760,13 +767,25 @@ export function renderWemContent(container, { me, api, orgContext }) {
         $tbody.appendChild(tr);
       }
 
+      // The page cannot know whether this org is on named or concurrent
+      // licensing, and the two make the same figures mean different things.
+      // Say so rather than let the reader assume one.
+      const modelNote = document.createElement("p");
+      modelNote.className = "wem-note--model";
+      modelNote.textContent =
+        "What this costs depends on your licensing model. With named licensing each " +
+        "triggering user is a billable seat. With concurrent licensing they are only " +
+        "eligible — you are billed for the peak number logged in simultaneously during " +
+        "the period, not for the total above.";
+      wrap.appendChild(modelNote);
+
       container.querySelector("#wemFilter").addEventListener("input", () => applyFilters());
 
       applyFilters();
       hideProgress();
       setStatus(
         `Done — ${uniqueAll} user${uniqueAll !== 1 ? "s" : ""} ` +
-          `(${uniqueGap} unlicensed trigger, ${uniqueLicensed} licensed, ${uniqueUnused} license unused).`,
+          `(${uniqueGap} unlicensed trigger, ${uniqueLicensed} licensed).`,
       );
 
       // ── Export ──

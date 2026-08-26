@@ -88,14 +88,16 @@ Filter pills, filter box, and Excel export are copied from `hourlyInteracting.js
 
 ## 4. Why the Assigned column earns its place
 
-Triggering and assigned are independent, and both mismatches cost money:
+Every listed user triggers; the column says whether a licence is also assigned.
+Two pills, not three — see §15 for why the third was removed.
 
-- **Triggers WEM, no WEM licence assigned** — a permission is being granted
-  that the org is not paying for. This is what shows up in a Genesys audit.
-- **WEM licence assigned, triggers nothing** — the org is paying for a seat
-  whose roles never needed it. This is the one customers want found.
-
-Three pills: *Triggers WEM*, *Unlicensed trigger*, *Licence unused*.
+**The page says nothing about cost, deliberately.** What a triggering user is
+worth depends on the licensing model, and no API exposes it:
+`/api/v2/license/organization` is POST-only and nothing in the spec carries a
+billing-model field. On **named** licensing each triggering user is a billable
+seat. On **concurrent** they are only *eligible* — the org pays for the peak
+number logged in simultaneously, so 40 triggering users can cost 13 seats. A
+line under the results states this rather than letting the reader assume.
 
 ## 5. The open questions, and why no probe is needed
 
@@ -345,3 +347,32 @@ rows nobody can act on to a page whose whole purpose is finding real exposure.
 
 The page therefore uses `/api/v2/users`' default of `state=active`, and the
 neighbouring licence exports doing the same are correct rather than defective.
+
+## 15. "Licence unused" was unreachable, and is gone
+
+The third pill counted users holding a WEM licence with no role asking for it —
+an orphaned seat. It read 0 on the first real org, and the customer worked out
+why: **it cannot happen.**
+
+A WEM licence is only ever held because a permission asked for it. The
+documented route is the `billing:user:wemUpgrade` permission, which lives in a
+role — so `/license/infer` flags that role as triggering and the holder lands in
+*Licensed*, never in *unused*. On concurrent licensing the set is recalculated
+each billing period, so a user with no triggering role in the next period is
+simply not assigned one; on named, the licence follows the permission.
+
+Two escape hatches were considered and both fail:
+
+- **Direct assignment** via `POST /api/v2/license/organization` bypasses roles.
+  Real, but not how orgs assign licences, and it would not survive the next
+  period's recalculation.
+- **A licence stranded after its role is removed.** This is the only genuine
+  case, and it is transient — it resolves at the next recalculation and there
+  is nothing to act on in the meantime.
+
+So the category was noise: a pill permanently reading 0 implies the page checks
+something meaningful when it does not. Users holding a licence with no
+triggering role are now simply not listed.
+
+This also voids §4's original claim that the page catches two money-losing
+mismatches. It catches one, and reports the licence state of it.
