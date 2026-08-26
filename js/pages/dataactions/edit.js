@@ -59,6 +59,15 @@ const STATUS = {
   noOrg:       "Select an organisation in the header to load its data actions.",
 };
 
+/**
+ * What an action runs with when the API reports no `timeoutSeconds`.
+ *
+ * The spec calls the field optional and documents no default, but every action
+ * executes with a timeout in 1–60 and the Genesys editor shows 60 for this
+ * state — so 60 is the effective value, not the absence of one.
+ */
+const DEFAULT_TIMEOUT_SECONDS = 60;
+
 // ── Page renderer ───────────────────────────────────────────────────
 export default function renderEditDataAction({ route, me, api, orgContext, access }) {
   const el = document.createElement("section");
@@ -192,8 +201,8 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
             </div>
             <div class="dt-control-group ed-field--narrow">
               <label class="dt-label" for="edReqTimeout">Execution Timeout</label>
-              <input class="dt-input" id="edReqTimeout" type="number" min="1" max="60" placeholder="not set" />
-              <span class="ed-hint">Seconds, 1–60. Blank leaves it unset.</span>
+              <input class="dt-input" id="edReqTimeout" type="number" min="1" max="60" placeholder="60" />
+              <span class="ed-hint">Seconds, 1–60.</span>
             </div>
             <div class="dt-control-group ed-field--wide">
               <label class="dt-label" for="edReqTemplate">Request Body Template</label>
@@ -711,9 +720,12 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       $reqTemplate.value = req.requestTemplate || "";
       $reqHeaders.value  = req.headers && Object.keys(req.headers).length
         ? JSON.stringify(req.headers, null, 2) : "";
-      // Blank means "not set", which is distinct from 0.
+      // The API omits timeoutSeconds entirely on every action measured (200 of
+      // 200 across demo and test-ie), so there is no stored number to show —
+      // but an action always executes with a timeout in 1–60, and Genesys shows
+      // 60 for this state. Display that rather than leaving the box blank.
       $reqTimeout.value  = detail.config?.timeoutSeconds != null
-        ? detail.config.timeoutSeconds : "";
+        ? detail.config.timeoutSeconds : DEFAULT_TIMEOUT_SECONDS;
 
       // Config: response
       const resp = detail.config?.response || {};
@@ -1040,6 +1052,34 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   }
 
   /**
+   * Rows for one declared output.
+   *
+   * An array is the common shape for a data action result, and rendering it as
+   * `["a","b","c"]` in a single cell is unreadable at any real length — so it
+   * expands into one indexed row per element, named as Genesys names them
+   * (`skills-0`, `skills-1`, …), under a header row carrying the count.
+   */
+  function outputRows(key, def, value) {
+    const label = escapeHtml(def.title || key);
+    const type  = escapeHtml(def.type || "string");
+
+    if (Array.isArray(value)) {
+      if (!value.length) {
+        return `<tr><td>${label}</td><td>${type}</td><td><em>empty</em></td></tr>`;
+      }
+      const head = `<tr><td>${label}</td><td>${type}</td>`
+        + `<td>${value.length} item${value.length === 1 ? "" : "s"}</td></tr>`;
+      const items = value.map((v, i) =>
+        `<tr class="ed-out-item">`
+        + `<td>${label}-${i}</td><td></td><td>${escapeHtml(formatValue(v))}</td></tr>`
+      ).join("");
+      return head + items;
+    }
+
+    return `<tr><td>${label}</td><td>${type}</td><td>${escapeHtml(formatValue(value))}</td></tr>`;
+  }
+
+  /**
    * Render a TestExecutionResult against the action's own output contract.
    *
    * The raw envelope told you almost nothing without reading JSON. The action
@@ -1065,12 +1105,9 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     const outProps = extractSchemaProps(selectedFull?.contract?.output?.successSchema);
     const finalResult = result?.finalResult;
     if (outProps && finalResult && typeof finalResult === "object") {
-      const rows = Object.entries(outProps).map(([key, def]) => `
-        <tr>
-          <td>${escapeHtml(def.title || key)}</td>
-          <td>${escapeHtml(def.type || "string")}</td>
-          <td>${escapeHtml(formatValue(finalResult[key]))}</td>
-        </tr>`).join("");
+      const rows = Object.entries(outProps)
+        .map(([key, def]) => outputRows(key, def, finalResult[key]))
+        .join("");
       $testOutputs.innerHTML = `
         <table class="dt-schema-table">
           <thead><tr><th>Output</th><th>Type</th><th>Value</th></tr></thead>
