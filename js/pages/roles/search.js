@@ -187,6 +187,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     <div class="rs-mode-toggle">
       <button class="rs-mode-btn active" id="rsModeSearch">Permission Search</button>
       <button class="rs-mode-btn" id="rsModeHourly">Hourly Interacting</button>
+      <button class="rs-mode-btn" id="rsModeWem">WEM License</button>
     </div>
 
     <div id="rsSearchSection">
@@ -231,6 +232,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     </div><!-- /rsSearchSection -->
 
     <div id="rsHourlySection" style="display:none"></div>
+    <div id="rsWemSection" style="display:none"></div>
   `;
 
   // ── DOM refs ──────────────────────────────────────────────
@@ -677,30 +679,46 @@ export default function renderRolesSearch({ me, api, orgContext }) {
   });
 
   // ── Mode toggle ──────────────────────────────────────────────
-  let hourlyInitialized = false;
-  const $modeSearch  = el.querySelector("#rsModeSearch");
-  const $modeHourly  = el.querySelector("#rsModeHourly");
-  const $searchSect  = el.querySelector("#rsSearchSection");
-  const $hourlySect  = el.querySelector("#rsHourlySection");
+  // Table-driven rather than pairwise: each analysis lives in its own module,
+  // is imported the first time its tab is opened, and never runs until then.
+  const MODES = [
+    { btn: "#rsModeSearch", sect: "#rsSearchSection" },
+    {
+      btn: "#rsModeHourly",
+      sect: "#rsHourlySection",
+      load: async (host) => {
+        const { renderHourlyContent } = await import("./hourlyInteracting.js");
+        renderHourlyContent(host, { me, api, orgContext });
+      },
+    },
+    {
+      btn: "#rsModeWem",
+      sect: "#rsWemSection",
+      load: async (host) => {
+        const { renderWemContent } = await import("./wemLicense.js");
+        renderWemContent(host, { me, api, orgContext });
+      },
+    },
+  ].map((m) => ({
+    ...m,
+    $btn: el.querySelector(m.btn),
+    $sect: el.querySelector(m.sect),
+    loaded: false,
+  }));
 
-  $modeSearch.addEventListener("click", () => {
-    $modeSearch.classList.add("active");
-    $modeHourly.classList.remove("active");
-    $searchSect.style.display = "";
-    $hourlySect.style.display = "none";
-  });
-
-  $modeHourly.addEventListener("click", async () => {
-    $modeSearch.classList.remove("active");
-    $modeHourly.classList.add("active");
-    $searchSect.style.display = "none";
-    $hourlySect.style.display = "";
-    if (!hourlyInitialized) {
-      hourlyInitialized = true;
-      const { renderHourlyContent } = await import("./hourlyInteracting.js");
-      renderHourlyContent($hourlySect, { me, api, orgContext });
-    }
-  });
+  for (const mode of MODES) {
+    mode.$btn.addEventListener("click", async () => {
+      for (const other of MODES) {
+        const on = other === mode;
+        other.$btn.classList.toggle("active", on);
+        other.$sect.style.display = on ? "" : "none";
+      }
+      if (mode.load && !mode.loaded) {
+        mode.loaded = true;
+        await mode.load(mode.$sect);
+      }
+    });
+  }
 
   return el;
 }

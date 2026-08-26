@@ -335,12 +335,20 @@ Used by: WebRTC Phones — Create/Change Site, Documentation Export, Divisions �
 
 ## 11. License
 
-Used by: License Consumption Export, WebRTC Phones — Create
+Used by: License Consumption Export, WebRTC Phones — Create, Roles — Permissions vs. Users (WEM License mode)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/license/users` | Per-user license consumption (paginated). Entities are `{ id, licenses: ["genesysCloudCX2", …] }` — **`licenses` is an array of id strings, not objects**; reading `.name`/`.id` off them yields `undefined` |
-| GET | `/api/v2/license/definitions` | List all available license definitions |
+| GET | `/api/v2/license/definitions` | List all available license definitions. Returns a **flat array, not an `entities` wrapper**. Each is `{ id, description, permissions: { ids: […] }, prerequisites: [{ id }], comprises: […] }`. `permissions` may come back empty on the list — re-fetch by id when you need it |
+| GET | `/api/v2/license/definitions/{licenseId}` | One definition, always with `permissions.ids` populated |
+| POST | `/api/v2/license/infer` | Body is a bare **array of roleIds**, response a bare array of license ids. Genesys' own "what licence does this role require" inference — the one the admin UI runs when it warns about a role. Authoritative for licence attribution; prefer it over comparing permissions against a definition yourself |
+
+Requires ANY of `authorization:grant:add`, `authorization:license:view`.
+
+`POST /api/v2/license/infer/permissions` (licences inferred from a list of
+permission strings) exists in the JS SDK reference but is flagged **preview**
+and is absent from the public swagger. Not used.
 
 ---
 

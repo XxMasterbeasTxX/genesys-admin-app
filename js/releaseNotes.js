@@ -21,6 +21,19 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.7",
+    date: "2026-08-26",
+    title: "Who is triggering a WEM licence",
+    changes: [
+      "Roles › Permissions vs. Users has a third tab, WEM License, alongside Permission Search and Hourly Interacting. It finds every user whose roles carry a permission that requires a Workforce Engagement Management add-on, names the role and the permissions responsible, and shows whether the permission came from the user directly or from a group.",
+      "The verdict comes from Genesys itself. Rather than compare permissions against a list of our own, the page asks the same licence-inference the Genesys admin UI uses when it warns that a role needs a licence, so its answer is the billing answer. There is no published list of WEM-triggering permissions to work from, and nothing here is scraped.",
+      "The result is checked against the licences each user actually holds, because the two mismatches cost money in opposite directions: a permission granted that the org is not paying for, and a WEM seat no role ever needed. Both are filterable, as Unlicensed trigger and License unused.",
+      "Which licences count as WEM is picked per org rather than hardcoded. Anything that looks like WEM is ticked for you and sorted to the front; orgs whose add-ons are named differently are one click away.",
+      "Everything exports to Excel, with the full list of triggering permissions per row rather than the abbreviated one the table has room for.",
+      "Group memberships are read once, with the bulk user fetch, rather than one request per user found. On an org where WEM is widely deployed that is the difference between a few dozen requests and a few thousand — the number of requests now follows the number of roles and groups, not the size of the directory.",
+    ],
+  },
+  {
     version: "4.6",
     date: "2026-08-25",
     title: "Data Actions: a page shaped like the job",

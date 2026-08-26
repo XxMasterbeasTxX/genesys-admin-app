@@ -56,6 +56,10 @@ const PATH_MODULE_RULES = [
   { test: /^\/api\/v2\/integrations\/actions\b/i, modules: ["data-actions", "export"] },
   { test: /^\/api\/v2\/authorization\/(roles|permissions|subjects)\b/i, modules: ["roles", "users", "export"] },
   { test: /^\/api\/v2\/authorization\/divisions\b/i, modules: ["divisions", "users", "roles", "export"] },
+  // Licence definitions, per-user assignments and /license/infer. Read by the
+  // WEM check on Permissions vs. Users and by the Licenses → Consumption
+  // export; unmapped, both would fail closed the moment the flag is enabled.
+  { test: /^\/api\/v2\/license\b/i, modules: ["roles", "export.licenses", "export"] },
   { test: /^\/api\/v2\/gdpr\b/i, modules: ["gdpr"] },
 
   // Configuration reads behind the Divisions pages, shared with the features

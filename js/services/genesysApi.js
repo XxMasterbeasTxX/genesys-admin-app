@@ -1190,6 +1190,34 @@ export async function fetchLicenseDefinitions(api, orgId) {
   return Array.isArray(resp) ? resp : (resp.entities || []);
 }
 
+/**
+ * Fetch a single license definition.
+ *
+ * The list endpoint above may return definitions without their `permissions`
+ * populated; this one always carries them. Callers that need `permissions.ids`
+ * should fall back to this whenever the listed entry came back skinny.
+ */
+export async function fetchLicenseDefinition(api, orgId, licenseId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/license/definitions/${encodeURIComponent(licenseId)}`);
+}
+
+/**
+ * Ask Genesys which licenses a set of roles requires.
+ *
+ * POST /api/v2/license/infer  body: [roleId]  →  [licenseId]
+ *
+ * This is the same inference the Genesys admin UI runs when it warns that a
+ * role needs a license, so its answer is the billing answer. Prefer it over
+ * comparing permissions against a license definition by hand.
+ */
+export async function inferLicensesForRoles(api, orgId, roleIds) {
+  const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/license/infer", {
+    body: roleIds,
+  });
+  return Array.isArray(resp) ? resp : [];
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Integrations / Data Actions
 // ─────────────────────────────────────────────────────────────────────
