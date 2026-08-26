@@ -1,8 +1,9 @@
 # Data Actions — Edit UI Rework — Design
 
-Status: **Implemented** — shipped in 4.6, not yet re-tested against a live org
+Status: **Live** — shipped in 4.6. Layout reviewed on dev; the save path has
+**not** been re-exercised since the rework (see §6).
 Author: Genesys Admin App
-Last updated: 2026-08-25
+Last updated: 2026-08-26
 
 ## 1. Purpose
 
@@ -229,14 +230,33 @@ handling and dirty-tracking must be carried over intact, not rewritten.
 **Tab state versus selection.** Switching action while on the Test tab should
 keep the tab and reload its contents, not silently reset to Configuration.
 
-## 7. Open questions
+## 7. Decisions taken during the build
 
-1. **Name placement** — proposed under the identity line, always visible.
-   The alternative is to move it inside Configuration, closer to Genesys's
-   Summary/Setup split, at the cost of an extra click to rename. (Category is no
-   longer part of this question — §4.8 makes it read-only identity.)
-2. **Filter row persistence** — should the category/integration/status filters
-   survive a Refresh, or reset? Surviving is friendlier; resetting is more
-   predictable.
-3. **Has any category already been changed through this page?** See §4.8 — worth
-   one check against Architect before the field is removed.
+1. **Name placement** — kept on the identity line, always visible, rather than
+   moved inside Configuration. Renaming is common enough not to cost a click.
+2. **Filter row persistence** — the category / integration / status filters
+   **survive a Refresh**. Refresh re-fetches the org's actions; it is not a
+   "start again" button, and losing a filter on every refresh would be tiresome
+   on an org with 100+ actions.
+3. **One column width.** Not foreseen in the design, but it emerged as soon as
+   the page was on screen: the picker sized itself to its label
+   (`.ms-dropdown` is `inline-block`) and the Name input collapsed to its
+   browser default (`.dt-input` sets `max-width` and no `width`), so the layout
+   stepped in and out at three different widths. All of it now hangs off a
+   single `--ed-col` token (920px) scoped to `.ed-page`, shared by the picker
+   row, the identity fields and the three sections.
+4. **Disclosure arrows are CSS escapes,** `"\25B8 "` rather than a literal `▸`.
+   `styles.css` carries no BOM and no `@charset`, so a literal rendered as
+   `â–¸`. `@charset "UTF-8"` is now declared as well. A pre-existing `▶` on
+   `.te-sheet-title` had the same fault and was fixed with it.
+
+## 8. Still open
+
+1. **Does Genesys honour a `category` change over the API?** `UpdateDraftInput`
+   accepts the field with no `readOnly` marker, but the Genesys UI offers no way
+   to set it, so it is unclear whether the service applies it, ignores it, or
+   rejects it. We match the vendor either way (§4.8) — this only decides whether
+   the old editable field was doing anything.
+2. **Has any category already drifted?** The field was editable and transmitted
+   on every save up to 4.5. If the answer to (1) is "honoured", one check against
+   Architect says whether anything needs putting back.
