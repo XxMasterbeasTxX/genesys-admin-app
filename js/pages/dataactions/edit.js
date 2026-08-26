@@ -4,11 +4,17 @@
  * Open an existing data action, view/edit its properties, and test it.
  *
  * Flow:
- *   1. Pick an org → Load all published + draft actions and integrations
- *   2. Filters: text search, category, integration, status (Published/Draft)
- *   3. Select an action → show detail (info + contract preview)
- *   4. Edit name, category, contract fields
- *   5. Test (published or draft), Save Draft, Validate, Publish
+ *   1. Org comes from the header picker; the page loads that org's published
+ *      actions, drafts and integrations once on arrival (Refresh re-fetches).
+ *   2. Searchable action picker, narrowed further by category / integration /
+ *      status.
+ *   3. Select an action → identity line, then three collapsed sections:
+ *      Contract, Configuration, Test — the order the Genesys editor uses.
+ *   4. Editable: name, request/response config, execution timeout, and the
+ *      contract of a draft-only action.
+ *      Fixed: category, integration, and the contract of a published action —
+ *      Genesys does not allow those to change, so neither do we.
+ *   5. Save Draft, Validate, Publish from the action bar; Test in its section.
  *
  * API endpoints:
  *   GET   /api/v2/integrations/actions                      — list published actions
@@ -25,13 +31,14 @@
  *   POST  /api/v2/integrations/actions/{id}/draft/test        — test draft action
  */
 import { escapeHtml, makeStatus } from "../../utils.js";
+import { createSingleSelect } from "../../components/multiSelect.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 import { stripOrgSpecificUris } from "../../lib/dataActions.js";
 
 // ── Status helpers ──────────────────────────────────────────────────
 const STATUS = {
-  ready:       "Select an org and load actions.",
+  ready:       "Loading…",
   loading:     "Loading actions and integrations…",
   fetching:    "Fetching full action detail…",
   saving:      "Saving draft…",
@@ -47,42 +54,41 @@ const STATUS = {
     `Could not read the ${fields.join(" and ")} for this action. `
     + "Editing is disabled: saving would replace the stored template with a "
     + "blank one. Reload the action to try again.",
+  badTimeout:  "Execution Timeout must be a whole number of seconds between 1 and 60, "
+    + "or blank to leave it unset.",
+  noOrg:       "Select an organisation in the header to load its data actions.",
 };
 
 // ── Page renderer ───────────────────────────────────────────────────
 export default function renderEditDataAction({ route, me, api, orgContext, access }) {
   const el = document.createElement("section");
-  el.className = "card";
+  el.className = "card ed-page";
 
-  const customers = orgContext.getCustomers();
-  const orgOptions = `<option value="">Select org…</option>`
-    + customers.map(c =>
-      `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.region)})</option>`
-    ).join("");
+  const orgId = orgContext.get();
 
   el.innerHTML = `
     <h2>Data Actions — Edit</h2>
 
     <p class="page-desc">
-      View, edit, and test existing data actions. Filter by name, category,
-      integration, or status. Edit contract fields, save drafts, validate,
-      publish, and run inline tests with custom input parameters.
+      View, edit and test the data actions in the selected org. Name and
+      configuration are editable; category, integration and contract are fixed
+      once an action exists, matching what Genesys allows.
     </p>
 
-    <div class="dt-controls">
-      <!-- Org picker -->
-      <div class="dt-control-group">
-        <label class="dt-label">Organisation</label>
-        <select class="dt-select" id="edOrg">${orgOptions}</select>
+    <!-- No org chosen: the header picker is the only place to fix that -->
+    <div class="ed-empty" id="edNoOrg" hidden>
+      Select an organisation in the header to load its data actions.
+    </div>
+
+    <div id="edMain" hidden>
+      <!-- Picker + refresh -->
+      <div class="ed-picker-row">
+        <div class="ed-picker-mount" id="edActionMount"></div>
+        <button class="btn" id="edRefreshBtn">Refresh</button>
       </div>
 
-      <div class="dt-actions" style="margin-bottom:4px">
-        <button class="btn" id="edLoadBtn" disabled>Load Actions</button>
-      </div>
-
-      <!-- Filters -->
+      <!-- Secondary filters, only once actions are loaded -->
       <div class="ed-filter-row" id="edFilters" hidden>
-        <input class="dt-input ed-filter-input" id="edFilterName" type="text" placeholder="Search name…" />
         <select class="dt-select ed-filter-select" id="edFilterCat">
           <option value="">All categories</option>
         </select>
@@ -96,165 +102,192 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
         </select>
       </div>
 
-      <!-- Action list -->
-      <div class="dt-control-group">
-        <label class="dt-label">Action</label>
-        <select class="dt-select" id="edActionSelect" disabled size="8" style="max-width:550px">
-          <option value="">Load actions first…</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Detail panel -->
-    <div id="edDetail" hidden>
-      <hr class="ed-divider" />
-
-      <div class="dt-info" id="edInfo" style="max-width:550px">
-        <div class="dt-info-row"><span class="dt-info-key">Status:</span> <span id="edInfoStatus">—</span></div>
-        <div class="dt-info-row"><span class="dt-info-key">Integration:</span> <span id="edInfoInteg">—</span></div>
-        <div class="dt-info-row"><span class="dt-info-key">Integration Type:</span> <span id="edInfoType">—</span></div>
-        <div class="dt-info-row"><span class="dt-info-key">Secure:</span> <span id="edInfoSecure">—</span></div>
-        <div class="dt-info-row"><span class="dt-info-key">Version:</span> <span id="edInfoVersion">—</span></div>
-      </div>
-
-      <!-- Editable fields -->
-      <div class="dt-controls" style="margin-top:14px">
-        <div class="dt-control-group">
-          <label class="dt-label">Name</label>
-          <input class="dt-input" id="edName" type="text" style="max-width:550px" />
-        </div>
-        <div class="dt-control-group">
-          <label class="dt-label">Category</label>
-          <input class="dt-input" id="edCategory" type="text" style="max-width:550px" />
-        </div>
-      </div>
-
-      <!-- Config: Request -->
-      <details class="ed-config-section" style="max-width:700px;margin-top:14px">
-        <summary class="ed-config-summary">Request Config</summary>
-        <div class="dt-controls" style="margin-top:10px">
-          <div class="dt-control-group">
-            <label class="dt-label">Request Type</label>
-            <select class="dt-select" id="edReqType" style="max-width:200px">
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="PATCH">PATCH</option>
-              <option value="DELETE">DELETE</option>
-            </select>
-          </div>
-          <div class="dt-control-group">
-            <label class="dt-label">URL Template</label>
-            <input class="dt-input" id="edReqUrl" type="text" style="max-width:700px" />
-          </div>
-          <div class="dt-control-group">
-            <label class="dt-label">Request Body Template</label>
-            <textarea class="dt-input" id="edReqTemplate" rows="8" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
-          </div>
-          <div class="dt-control-group">
-            <label class="dt-label">Headers (JSON)</label>
-            <textarea class="dt-input" id="edReqHeaders" rows="4" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
-          </div>
-        </div>
-      </details>
-
-      <!-- Config: Response -->
-      <details class="ed-config-section" style="max-width:700px;margin-top:8px">
-        <summary class="ed-config-summary">Response Config</summary>
-        <div class="dt-controls" style="margin-top:10px">
-          <div class="dt-control-group">
-            <label class="dt-label">Translation Map (JSON)</label>
-            <textarea class="dt-input" id="edRespTransMap" rows="6" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
-          </div>
-          <div class="dt-control-group">
-            <label class="dt-label">Translation Map Defaults (JSON)</label>
-            <textarea class="dt-input" id="edRespTransMapDefaults" rows="4" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
-          </div>
-          <div class="dt-control-group">
-            <label class="dt-label">Success Template</label>
-            <textarea class="dt-input" id="edRespSuccessTemplate" rows="6" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
-          </div>
-        </div>
-      </details>
-
-      <!-- Contract: read-only preview for published; editable JSON for draft-only -->
-      <div id="edContractPreviewWrap" style="max-width:700px;margin-top:14px">
-        <div class="dt-info-row"><span class="dt-info-key">Contract:</span></div>
-        <div class="dt-schema" id="edContractPreview"></div>
-      </div>
-
-      <div id="edContractEditWrap" hidden style="max-width:700px;margin-top:14px">
-        <div class="dt-info-row" style="margin-bottom:6px"><span class="dt-info-key">Contract (editable — draft only):</span></div>
-        <div class="dt-control-group">
-          <label class="dt-label">Input Schema (JSON)</label>
-          <textarea class="dt-input" id="edInputSchema" rows="12" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
-        </div>
-        <div class="dt-control-group" style="margin-top:8px">
-          <label class="dt-label">Output Success Schema (JSON)</label>
-          <textarea class="dt-input" id="edOutputSchema" rows="12" style="max-width:700px;width:100%;font-family:monospace;font-size:12px;resize:vertical"></textarea>
-        </div>
-      </div>
-
-      <!-- Action buttons -->
-      <div class="dt-actions" style="margin-top:14px">
+      <!-- Action bar: the three writes, the dirty marker, then messages -->
+      <div class="ed-actionbar" id="edActionBar" hidden>
         <button class="btn" id="edSaveBtn" disabled>Save Draft</button>
         <button class="btn" id="edValidateBtn" disabled>Validate Draft</button>
         <button class="btn" id="edPublishBtn" disabled>Publish</button>
+        <span class="ed-dirty" id="edDirty" hidden>&#9679; unsaved changes</span>
       </div>
 
-      <!-- Test section -->
-      <details class="ed-test-section" id="edTestSection">
-        <summary class="ed-test-summary">Test Action</summary>
+      <div class="dt-progress-wrap" id="edProgress" hidden>
+        <div class="dt-progress-bar" id="edProgressBar"></div>
+      </div>
 
-        <div class="dt-controls" style="margin-top:10px">
-          <div class="dt-control-group">
-            <label class="dt-label">Test target</label>
-            <select class="dt-select" id="edTestTarget" style="max-width:250px">
-              <option value="published">Published</option>
-              <option value="draft">Draft</option>
-            </select>
+      <div class="dt-status" id="edStatus">${STATUS.ready}</div>
+
+      <!-- Detail -->
+      <div id="edDetail" hidden>
+        <hr class="ed-divider" />
+
+        <!-- Identity: status badge first, everything else on one line -->
+        <div class="ed-identity">
+          <span class="ed-badge" id="edInfoStatus">—</span>
+          <span class="ed-identity-meta">
+            <span id="edInfoVersion">—</span>
+            <span class="ed-sep">·</span>
+            <span id="edInfoInteg" title="">—</span>
+            <span class="ed-sep">·</span>
+            <span id="edInfoSecure">—</span>
+          </span>
+        </div>
+
+        <div class="ed-identity-fields">
+          <div class="dt-control-group ed-field">
+            <label class="dt-label" for="edName">Name</label>
+            <input class="dt-input" id="edName" type="text" />
           </div>
-
-          <div id="edTestInputs" class="ed-test-inputs"></div>
-
-          <div class="dt-actions">
-            <button class="btn ed-btn-test" id="edTestBtn" disabled>Run Test</button>
-          </div>
-
-          <div class="dt-control-group">
-            <label class="dt-label">Result</label>
-            <pre class="ed-test-result" id="edTestResult"></pre>
+          <div class="dt-control-group ed-field">
+            <label class="dt-label">Category</label>
+            <div class="ed-readonly" id="edCategory"
+                 title="Fixed when the action is created — Genesys does not allow it to change">—</div>
           </div>
         </div>
-      </details>
-    </div>
 
-    <!-- Progress -->
-    <div class="dt-progress-wrap" id="edProgress" hidden>
-      <div class="dt-progress-bar" id="edProgressBar"></div>
-    </div>
+        <!-- Contract -->
+        <details class="ed-section" id="edSecContract">
+          <summary class="ed-section-summary">Contract</summary>
+          <div class="ed-section-body">
+            <div id="edContractPreviewWrap">
+              <p class="ed-note">
+                The contract is fixed once an action is published — flows referencing it
+                depend on these fields, and Genesys does not allow it to change either.
+                Create a new action to use a different contract.
+              </p>
+              <div class="dt-schema" id="edContractPreview"></div>
+            </div>
 
-    <!-- Status -->
-    <div class="dt-status" id="edStatus">${STATUS.ready}</div>
+            <div id="edContractEditWrap" hidden>
+              <p class="ed-note">This action exists only as a draft, so its contract can still be changed.</p>
+              <div class="dt-control-group ed-field--wide">
+                <label class="dt-label" for="edInputSchema">Input Schema (JSON)</label>
+                <textarea class="dt-input ed-code" id="edInputSchema" rows="12"></textarea>
+              </div>
+              <div class="dt-control-group ed-field--wide">
+                <label class="dt-label" for="edOutputSchema">Output Success Schema (JSON)</label>
+                <textarea class="dt-input ed-code" id="edOutputSchema" rows="12"></textarea>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Configuration -->
+        <details class="ed-section" id="edSecConfig">
+          <summary class="ed-section-summary">Configuration</summary>
+          <div class="ed-section-body">
+            <h4 class="ed-subhead">Request</h4>
+            <div class="dt-control-group ed-field--narrow">
+              <label class="dt-label" for="edReqType">HTTP Method</label>
+              <select class="dt-select" id="edReqType">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+                <option value="DELETE">DELETE</option>
+              </select>
+            </div>
+            <div class="dt-control-group ed-field--wide">
+              <label class="dt-label" for="edReqUrl">Request URL Template</label>
+              <input class="dt-input" id="edReqUrl" type="text" />
+            </div>
+            <div class="dt-control-group ed-field--narrow">
+              <label class="dt-label" for="edReqTimeout">Execution Timeout</label>
+              <input class="dt-input" id="edReqTimeout" type="number" min="1" max="60" placeholder="not set" />
+              <span class="ed-hint">Seconds, 1–60. Blank leaves it unset.</span>
+            </div>
+            <div class="dt-control-group ed-field--wide">
+              <label class="dt-label" for="edReqTemplate">Request Body Template</label>
+              <textarea class="dt-input ed-code" id="edReqTemplate" rows="8"></textarea>
+            </div>
+            <div class="dt-control-group ed-field--wide">
+              <label class="dt-label" for="edReqHeaders">Headers (JSON)</label>
+              <textarea class="dt-input ed-code" id="edReqHeaders" rows="4"></textarea>
+            </div>
+
+            <h4 class="ed-subhead">Response</h4>
+            <div class="dt-control-group ed-field--wide">
+              <label class="dt-label" for="edRespTransMap">Translation Map (JSON)</label>
+              <textarea class="dt-input ed-code" id="edRespTransMap" rows="6"></textarea>
+            </div>
+            <div class="dt-control-group ed-field--wide">
+              <label class="dt-label" for="edRespTransMapDefaults">Translation Map Defaults (JSON)</label>
+              <textarea class="dt-input ed-code" id="edRespTransMapDefaults" rows="4"></textarea>
+            </div>
+            <div class="dt-control-group ed-field--wide">
+              <label class="dt-label" for="edRespSuccessTemplate">Success Template</label>
+              <textarea class="dt-input ed-code" id="edRespSuccessTemplate" rows="6"></textarea>
+            </div>
+          </div>
+        </details>
+
+        <!-- Test -->
+        <details class="ed-section" id="edSecTest">
+          <summary class="ed-section-summary">Test</summary>
+          <div class="ed-section-body">
+            <div class="dt-control-group ed-field--narrow">
+              <label class="dt-label" for="edTestTarget">Test target</label>
+              <select class="dt-select" id="edTestTarget">
+                <option value="published">Published</option>
+                <option value="draft">Draft</option>
+              </select>
+            </div>
+
+            <div id="edTestInputs" class="ed-test-inputs"></div>
+
+            <div class="dt-actions">
+              <button class="btn ed-btn-test" id="edTestBtn" disabled>Run Test</button>
+            </div>
+
+            <div id="edTestOutcome" class="ed-test-outcome" hidden></div>
+
+            <div id="edTestOutputsWrap" hidden>
+              <h4 class="ed-subhead">Outputs</h4>
+              <div class="dt-schema" id="edTestOutputs"></div>
+            </div>
+
+            <details class="ed-subsection" id="edTestStepsWrap" hidden>
+              <summary class="ed-subsection-summary">Steps</summary>
+              <div class="dt-schema" id="edTestSteps"></div>
+            </details>
+
+            <details class="ed-subsection" id="edTestRawWrap" hidden>
+              <summary class="ed-subsection-summary">Raw response</summary>
+              <pre class="ed-test-result" id="edTestResult"></pre>
+            </details>
+          </div>
+        </details>
+      </div>
+    </div>
   `;
 
   // ── DOM refs ──────────────────────────────────────────
-  const $org           = el.querySelector("#edOrg");
-  const $loadBtn       = el.querySelector("#edLoadBtn");
+  const $noOrg         = el.querySelector("#edNoOrg");
+  const $main          = el.querySelector("#edMain");
+  const $actionMount   = el.querySelector("#edActionMount");
+  const $refreshBtn    = el.querySelector("#edRefreshBtn");
+  const $actionBar     = el.querySelector("#edActionBar");
+  const $dirtyMark     = el.querySelector("#edDirty");
   const $filters       = el.querySelector("#edFilters");
-  const $filterName    = el.querySelector("#edFilterName");
   const $filterCat     = el.querySelector("#edFilterCat");
   const $filterInteg   = el.querySelector("#edFilterInteg");
   const $filterStatus  = el.querySelector("#edFilterStatus");
-  const $actionSelect  = el.querySelector("#edActionSelect");
   const $detail        = el.querySelector("#edDetail");
   const $infoStatus    = el.querySelector("#edInfoStatus");
   const $infoInteg     = el.querySelector("#edInfoInteg");
-  const $infoType      = el.querySelector("#edInfoType");
   const $infoSecure    = el.querySelector("#edInfoSecure");
   const $infoVersion   = el.querySelector("#edInfoVersion");
   const $name          = el.querySelector("#edName");
   const $category      = el.querySelector("#edCategory");
+  const $reqTimeout    = el.querySelector("#edReqTimeout");
+  const $secContract   = el.querySelector("#edSecContract");
+  const $secConfig     = el.querySelector("#edSecConfig");
+  const $secTest       = el.querySelector("#edSecTest");
+  const $testOutcome   = el.querySelector("#edTestOutcome");
+  const $testOutputs   = el.querySelector("#edTestOutputs");
+  const $testOutputsWrap = el.querySelector("#edTestOutputsWrap");
+  const $testSteps     = el.querySelector("#edTestSteps");
+  const $testStepsWrap = el.querySelector("#edTestStepsWrap");
+  const $testRawWrap   = el.querySelector("#edTestRawWrap");
   const $contractPrev      = el.querySelector("#edContractPreview");
   const $contractPrevWrap  = el.querySelector("#edContractPreviewWrap");
   const $contractEditWrap  = el.querySelector("#edContractEditWrap");
@@ -285,6 +318,16 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     $saveBtn.title = $validateBtn.title = $publishBtn.title = "Requires Genesys permission: integrations:action:edit";
   }
   if (!canExecute) $testBtn.title = "Requires Genesys permission: integrations:action:execute";
+
+  // Searchable action picker. Replaces the old listbox plus its separate
+  // name filter — the component carries the search inline.
+  const actionCtl = createSingleSelect({
+    placeholder: "Select an action…",
+    searchable:  true,
+    onChange:    (id) => handleActionChange(id),
+  });
+  actionCtl.setEnabled(false);
+  $actionMount.append(actionCtl.el);
 
   let allActions = [];        // merged published + draft-only
   let integrations = [];      // org integrations
@@ -345,6 +388,29 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     $field.classList.toggle("ed-invalid", !!bad);
   }
 
+  /** Set the unsaved-changes flag and its marker in the action bar together. */
+  function setDirty(next) {
+    isDirty = next;
+    $dirtyMark.hidden = !next;
+  }
+
+  /** The selected action's own name, for status text and the activity log. */
+  function actionName(id) {
+    return allActions.find(a => a.id === id)?.name || id;
+  }
+
+  /**
+   * Paint the status badge. The three states are visually distinct because
+   * status decides which controls do anything: a draft can be published, a
+   * published action with no draft cannot.
+   */
+  function setStatusBadge(text) {
+    $infoStatus.textContent = text;
+    $infoStatus.className = "ed-badge "
+      + (text === "Published" ? "is-published"
+         : text === "Draft only" ? "is-draft" : "is-both");
+  }
+
   /**
    * Every field whose value goes into the draft.
    *
@@ -353,12 +419,12 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
    * Publish handler.
    */
   const EDITABLE = [
-    $name, $category, $reqType, $reqUrl, $reqTemplate, $reqHeaders,
+    $name, $reqType, $reqUrl, $reqTimeout, $reqTemplate, $reqHeaders,
     $respTransMap, $respTransMapDef, $respSuccessTempl, $inputSchema, $outputSchema,
   ];
   EDITABLE.forEach(($f) => {
-    $f.addEventListener("input", () => { isDirty = true; });
-    $f.addEventListener("change", () => { isDirty = true; });
+    $f.addEventListener("input", () => setDirty(true));
+    $f.addEventListener("change", () => setDirty(true));
   });
 
   /** Extract properties from a JSON schema, handling nested structures. */
@@ -455,34 +521,36 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     return { inputs, errors };
   }
 
-  // ── Org selection ─────────────────────────────────────
-  $org.addEventListener("change", () => {
-    $loadBtn.disabled = !$org.value;
-    resetAll();
-  });
-
   function resetAll() {
     allActions = [];
     integrations = [];
-    $actionSelect.innerHTML = `<option value="">Load actions first…</option>`;
-    $actionSelect.disabled = true;
+    actionCtl.setItems([]);
+    actionCtl.setEnabled(false);
     $filters.hidden = true;
+    $actionBar.hidden = true;
     $detail.hidden = true;
     selectedFull = null;
     hasDraft = false;
     templateFailure = null;
-    isDirty = false;
+    setDirty(false);
     selectionSeq++;   // abandon any detail fetch still in flight
   }
 
   // ── Load actions ──────────────────────────────────────
-  $loadBtn.addEventListener("click", async () => {
-    const orgId = $org.value;
+
+  /**
+   * Fetch the org's actions, drafts and integrations.
+   *
+   * Deliberately not run on every render, unlike `datatables/edit`: this is
+   * three paginated walks rather than one, so it runs once on arrival and then
+   * only when Refresh is pressed.
+   */
+  async function loadActions() {
     if (!orgId) return;
 
     try {
       setStatus(STATUS.loading);
-      $loadBtn.disabled = true;
+      $refreshBtn.disabled = true;
       resetAll();
 
       const [published, drafts, integs] = await Promise.all([
@@ -520,7 +588,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
 
       if (!allActions.length) {
         setStatus(STATUS.noActions);
-        $loadBtn.disabled = false;
+        $refreshBtn.disabled = false;
         return;
       }
 
@@ -529,14 +597,16 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       $filters.hidden = false;
       applyFilters();
 
-      $actionSelect.disabled = false;
-      $loadBtn.disabled = false;
-      setStatus(`Loaded ${allActions.length} action(s). Select one to view/edit.`);
+      actionCtl.setEnabled(true);
+      $refreshBtn.disabled = false;
+      setStatus(`Loaded ${allActions.length} action(s). Select one to view or edit.`);
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
-      $loadBtn.disabled = false;
+      $refreshBtn.disabled = false;
     }
-  });
+  }
+
+  $refreshBtn.addEventListener("click", loadActions);
 
   // ── Filters ───────────────────────────────────────────
   function populateFilterDropdowns() {
@@ -550,13 +620,12 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   }
 
   function getFilteredActions() {
-    const nameQ = $filterName.value.trim().toLowerCase();
+    // Name is no longer filtered here — the picker searches its own items.
     const catQ  = $filterCat.value;
     const integQ = $filterInteg.value;
     const statusQ = $filterStatus.value;
 
     return allActions.filter(a => {
-      if (nameQ && !a.name.toLowerCase().includes(nameQ)) return false;
       if (catQ && a.category !== catQ) return false;
       if (integQ && a.integrationId !== integQ) return false;
       if (statusQ && a.status !== statusQ) return false;
@@ -564,28 +633,26 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     });
   }
 
+  /** Feed the picker the actions matching the current filters. */
   function applyFilters() {
     const filtered = getFilteredActions();
-    $actionSelect.innerHTML = filtered.length
-      ? filtered.map(a => {
-          const badge = a.status === "Draft" ? " [Draft]" : "";
-          const cat = a.category ? `  (${a.category})` : "";
-          return `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}${cat}${badge}</option>`;
-        }).join("")
-      : `<option value="">No matching actions</option>`;
+    actionCtl.setItems(filtered.map(a => ({
+      id:    a.id,
+      label: `${a.name}${a.category ? `  (${a.category})` : ""}${a.status === "Draft" ? "  [Draft]" : ""}`,
+    })));
+    // setItems clears the selection, so nothing is on screen to describe.
+    $actionBar.hidden = true;
     $detail.hidden = true;
   }
 
-  $filterName.addEventListener("input", applyFilters);
   $filterCat.addEventListener("change", applyFilters);
   $filterInteg.addEventListener("change", applyFilters);
   $filterStatus.addEventListener("change", applyFilters);
 
   // ── Select action ─────────────────────────────────────
-  $actionSelect.addEventListener("change", async () => {
+  async function handleActionChange(id) {
     const seq = ++selectionSeq;
-    const id = $actionSelect.value;
-    if (!id) { $detail.hidden = true; return; }
+    if (!id) { $actionBar.hidden = true; $detail.hidden = true; return; }
 
     const item = allActions.find(a => a.id === id);
     if (!item) return;
@@ -597,13 +664,13 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       // Try to get draft; if 404 means no draft exists
       let draftData = null;
       try {
-        draftData = await gc.getDataActionDraft(api, $org.value, id);
+        draftData = await gc.getDataActionDraft(api, orgId, id);
       } catch { /* no draft */ }
 
       // Get published detail (for published actions)
       let pubData = null;
       if (item.status === "Published") {
-        pubData = await gc.getDataAction(api, $org.value, id);
+        pubData = await gc.getDataAction(api, orgId, id);
       }
       if (seq !== selectionSeq) return;   // superseded by a newer selection
 
@@ -616,16 +683,20 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
 
       setProgress(80);
 
-      // Populate info panel
-      $infoStatus.textContent = hasDraft ? (item.status === "Published" ? "Published + Draft" : "Draft only") : "Published";
+      // Identity: badge plus one line of context
+      const statusText = hasDraft
+        ? (item.status === "Published" ? "Published + Draft" : "Draft only")
+        : "Published";
+      setStatusBadge(statusText);
       $infoInteg.textContent = integName(item.integrationId);
-      $infoType.textContent = integType(item.integrationId);
-      $infoSecure.textContent = detail.secure ? "Yes" : "No";
-      $infoVersion.textContent = detail.version != null ? detail.version : "—";
+      // Integration type is diagnostic, not something read every visit.
+      $infoInteg.title = `Integration type: ${integType(item.integrationId)}`;
+      $infoSecure.textContent = detail.secure ? "secure" : "not secure";
+      $infoVersion.textContent = detail.version != null ? `v${detail.version}` : "—";
 
-      // Editable fields
+      // Name is editable; category is fixed at creation, so it is shown only.
       $name.value = detail.name || "";
-      $category.value = detail.category || "";
+      $category.textContent = detail.category || "—";
 
       // `getDataAction`/`getDataActionDraft` resolve .vm template references
       // into real strings. When one could not be read, the textarea below would
@@ -640,6 +711,9 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       $reqTemplate.value = req.requestTemplate || "";
       $reqHeaders.value  = req.headers && Object.keys(req.headers).length
         ? JSON.stringify(req.headers, null, 2) : "";
+      // Blank means "not set", which is distinct from 0.
+      $reqTimeout.value  = detail.config?.timeoutSeconds != null
+        ? detail.config.timeoutSeconds : "";
 
       // Config: response
       const resp = detail.config?.response || {};
@@ -671,11 +745,15 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       if (draftExists()) targets.push(`<option value="draft">Draft</option>`);
       $testTarget.innerHTML = targets.join("");
 
+      // A previous action's results must not linger under a new selection.
+      clearTestResults();
+
       refreshActionButtons();
       // The form now mirrors Genesys, so nothing is unsaved. (Assigning .value
       // fires no input event, so filling the fields above did not set this.)
-      isDirty = false;
+      setDirty(false);
 
+      $actionBar.hidden = false;
       $detail.hidden = false;
       hideProgress();
       setStatus(templateFailure
@@ -687,7 +765,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       hideProgress();
       setStatus(STATUS.error(err.message), "error");
     }
-  });
+  }
 
   // ── Save Draft ────────────────────────────────────────
 
@@ -701,7 +779,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
    * @returns {Promise<boolean>} true only if a draft was actually written.
    */
   async function performSave() {
-    const id = $actionSelect.value;
+    const id = actionCtl.getValue();
     if (!id || !selectedFull) return false;
 
     // A template we could not read must never be written back as "".
@@ -735,6 +813,22 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       return false;
     }
 
+    // Execution Timeout: blank is "not set"; anything else must be 1–60, the
+    // range Genesys accepts. Sending an out-of-range value is a 400 the user
+    // would have to decode from the API's own wording.
+    const timeoutRaw = $reqTimeout.value.trim();
+    let timeoutSeconds = null;
+    if (timeoutRaw) {
+      const n = Number(timeoutRaw);
+      if (!Number.isInteger(n) || n < 1 || n > 60) {
+        markInvalid($reqTimeout, true);
+        setStatus(STATUS.badTimeout, "error");
+        return false;
+      }
+      timeoutSeconds = n;
+    }
+    markInvalid($reqTimeout, false);
+
     try {
       setStatus(STATUS.saving);
       setProgress(40);
@@ -746,14 +840,12 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       // the same number, so use what the create returned.
       let draftVersion = selectedFull.version;
       if (!hasDraft) {
-        const created = await gc.createDraftFromAction(api, $org.value, id);
+        const created = await gc.createDraftFromAction(api, orgId, id);
         hasDraft = true;
         if (created?.version != null) draftVersion = created.version;
       }
 
       // `config` is replaced wholesale, so anything omitted here is dropped.
-      // timeoutSeconds is not editable on this page but is part of the stored
-      // config, and leaving it out silently cleared the action's timeout.
       const config = {
         request: {
           requestType:        $reqType.value,
@@ -767,13 +859,16 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
           successTemplate:        $respSuccessTempl.value,
         },
       };
-      if (selectedFull.config?.timeoutSeconds != null) {
-        config.timeoutSeconds = selectedFull.config.timeoutSeconds;
-      }
+      // A blank timeout box means "not set", so the key is omitted rather than
+      // sent as 0. Anything present is carried through; before this field
+      // existed, omitting it silently cleared the action's timeout.
+      if (timeoutSeconds != null) config.timeoutSeconds = timeoutSeconds;
 
+      // `category` is deliberately absent: Genesys fixes it at creation and its
+      // own UI offers no way to change it, so the page shows it read-only and
+      // never writes it. `integrationId` is not part of UpdateDraftInput at all.
       const patchBody = {
         name: $name.value.trim(),
-        category: $category.value.trim(),
         version: draftVersion != null ? draftVersion : 1,
         config,
       };
@@ -801,7 +896,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
         };
       }
 
-      const updated = await gc.patchDataActionDraft(api, $org.value, id, patchBody);
+      const updated = await gc.patchDataActionDraft(api, orgId, id, patchBody);
       selectedFull = updated;
 
       setProgress(100);
@@ -813,10 +908,10 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
         $testTarget.append(new Option("Draft", "draft"));
       }
 
-      isDirty = false;
+      setDirty(false);
       setStatus("✓ Draft saved.", "success");
-      logAction({ me, orgId: $org.value, action: "dataaction_save",
-        description: `Saved draft for data action '${$actionSelect.options[$actionSelect.selectedIndex]?.text || $actionSelect.value}'` });
+      logAction({ me, orgId, action: "dataaction_save",
+        description: `Saved draft for data action '${actionName(id)}'` });
       return true;
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
@@ -831,7 +926,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
 
   // ── Validate Draft ────────────────────────────────────
   $validateBtn.addEventListener("click", async () => {
-    const id = $actionSelect.value;
+    const id = actionCtl.getValue();
     if (!id) return;
 
     try {
@@ -839,7 +934,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       setProgress(50);
       disableActions();
 
-      const result = await gc.validateDataActionDraft(api, $org.value, id);
+      const result = await gc.validateDataActionDraft(api, orgId, id);
       setProgress(100);
 
       if (result.valid) {
@@ -868,7 +963,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
 
   // ── Publish ───────────────────────────────────────────
   $publishBtn.addEventListener("click", async () => {
-    const id = $actionSelect.value;
+    const id = actionCtl.getValue();
     if (!id) return;
 
     // Publishing promotes the STORED draft. With edits still on screen that
@@ -889,7 +984,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       setProgress(40);
       disableActions();
 
-      const published = await gc.publishDataActionDraft(api, $org.value, id, {
+      const published = await gc.publishDataActionDraft(api, orgId, id, {
         version: selectedFull.version != null ? selectedFull.version : 1,
       });
       selectedFull = published;
@@ -902,11 +997,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       // Update list item status, and the option text with it — the list would
       // otherwise keep the "[Draft]" badge on an action that is now published.
       const item = allActions.find(a => a.id === id);
-      if (item) {
-        item.status = "Published";
-        const opt = $actionSelect.options[$actionSelect.selectedIndex];
-        if (opt) opt.text = opt.text.replace(/ \[Draft\]$/, "");
-      }
+      if (item) item.status = "Published";
       // Publishing consumes the draft and creates the published action, so the
       // test targets swap over. A draft-only action had no "published" option
       // to begin with — without adding it the dropdown would be left empty.
@@ -918,8 +1009,8 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       $testTarget.value = "published";
 
       setStatus("✓ Action published.", "success");
-      logAction({ me, orgId: $org.value, action: "dataaction_publish",
-        description: `Published data action '${$actionSelect.options[$actionSelect.selectedIndex]?.text || $actionSelect.value}'` });
+      logAction({ me, orgId, action: "dataaction_publish",
+        description: `Published data action '${actionName(id)}'` });
     } catch (err) {
       setStatus(STATUS.error(err.message), "error");
     } finally {
@@ -929,8 +1020,97 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   });
 
   // ── Test ──────────────────────────────────────────────
+
+  /** Hide every result pane — used when switching action or starting a run. */
+  function clearTestResults() {
+    $testOutcome.hidden = true;
+    $testOutcome.textContent = "";
+    $testOutputsWrap.hidden = true;
+    $testStepsWrap.hidden = true;
+    $testRawWrap.hidden = true;
+    $testResult.textContent = "";
+  }
+
+  /** Format one output value for display, without hiding its shape. */
+  function formatValue(v) {
+    if (v === undefined) return "—";
+    if (v === null) return "null";
+    if (typeof v === "object") return JSON.stringify(v);
+    return String(v);
+  }
+
+  /**
+   * Render a TestExecutionResult against the action's own output contract.
+   *
+   * The raw envelope told you almost nothing without reading JSON. The action
+   * declares what it returns, so the values are shown by name and type, the
+   * per-step breakdown becomes readable, and the dump is kept but demoted.
+   */
+  function renderTestResult(result, target) {
+    const failed = result?.success === false;
+
+    const detail = failed
+      ? (result.error?.message
+         || (result.operations || []).filter(o => o.success === false)
+              .map(o => `${o.name}: ${o.error?.message || "failed"}`).join(" | "))
+      : "";
+
+    $testOutcome.hidden = false;
+    $testOutcome.className = `ed-test-outcome ${failed ? "is-fail" : "is-ok"}`;
+    $testOutcome.textContent = failed
+      ? `Test failed (${target})${detail ? ` — ${detail}` : ""}`
+      : `Test succeeded (${target})`;
+
+    // Outputs, named from contract.output.successSchema
+    const outProps = extractSchemaProps(selectedFull?.contract?.output?.successSchema);
+    const finalResult = result?.finalResult;
+    if (outProps && finalResult && typeof finalResult === "object") {
+      const rows = Object.entries(outProps).map(([key, def]) => `
+        <tr>
+          <td>${escapeHtml(def.title || key)}</td>
+          <td>${escapeHtml(def.type || "string")}</td>
+          <td>${escapeHtml(formatValue(finalResult[key]))}</td>
+        </tr>`).join("");
+      $testOutputs.innerHTML = `
+        <table class="dt-schema-table">
+          <thead><tr><th>Output</th><th>Type</th><th>Value</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      $testOutputsWrap.hidden = false;
+    } else {
+      $testOutputsWrap.hidden = true;
+    }
+
+    // Steps — the reason a failing test used to be hard to read
+    const ops = result?.operations || [];
+    if (ops.length) {
+      const rows = ops.map(o => `
+        <tr>
+          <td>${escapeHtml(String(o.step ?? ""))}</td>
+          <td>${escapeHtml(o.name || "—")}</td>
+          <td>${o.success === false
+                ? '<span class="ed-step-fail">failed</span>'
+                : '<span class="ed-step-ok">ok</span>'}</td>
+          <td>${escapeHtml(o.error?.message || "")}</td>
+        </tr>`).join("");
+      $testSteps.innerHTML = `
+        <table class="dt-schema-table">
+          <thead><tr><th>#</th><th>Step</th><th>Result</th><th>Error</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      $testStepsWrap.hidden = false;
+      // A failure is the one time the steps are worth opening unprompted.
+      $testStepsWrap.open = failed;
+    } else {
+      $testStepsWrap.hidden = true;
+    }
+
+    $testResult.textContent = JSON.stringify(result, null, 2);
+    $testRawWrap.hidden = false;
+  }
+
   $testBtn.addEventListener("click", async () => {
-    const id = $actionSelect.value;
+    const id = actionCtl.getValue();
     if (!id) return;
 
     const target = $testTarget.value;
@@ -944,30 +1124,29 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       setStatus(STATUS.testing);
       setProgress(50);
       disableActions();
-      $testResult.textContent = "Running…";
+      clearTestResults();
 
       let result;
       if (target === "draft") {
-        result = await gc.testDataActionDraft(api, $org.value, id, inputs);
+        result = await gc.testDataActionDraft(api, orgId, id, inputs);
       } else {
-        result = await gc.testDataAction(api, $org.value, id, inputs);
+        result = await gc.testDataAction(api, orgId, id, inputs);
       }
 
       setProgress(100);
-      $testResult.textContent = JSON.stringify(result, null, 2);
+      renderTestResult(result, target);
 
       // TestExecutionResult carries its own `success` flag: an action that runs
       // and fails still returns HTTP 200. Reporting that as a green success
       // contradicted the failure sitting in the result pane right below.
       if (result?.success === false) {
-        const detail = result.error?.message
-          || (result.operations || []).filter(o => o.success === false)
-               .map(o => `${o.name}: ${o.error?.message || "failed"}`).join(" | ");
-        setStatus(`Test failed (${target})${detail ? `: ${detail}` : "."}`, "error");
+        setStatus(`Test failed (${target}) — see Outputs and Steps below.`, "error");
       } else {
         setStatus(`✓ Test succeeded (${target}).`, "success");
       }
     } catch (err) {
+      clearTestResults();
+      $testRawWrap.hidden = false;
       $testResult.textContent = `Error: ${err.message}`;
       setStatus(STATUS.error(err.message), "error");
     } finally {
@@ -986,7 +1165,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
    * agreed only by accident, so both now go through here.
    */
   function draftExists() {
-    const item = allActions.find(a => a.id === $actionSelect.value);
+    const item = allActions.find(a => a.id === actionCtl.getValue());
     return hasDraft || item?.status === "Draft";
   }
 
@@ -1011,12 +1190,24 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     $validateBtn.disabled = true;
     $publishBtn.disabled = true;
     $testBtn.disabled = true;
-    $loadBtn.disabled = true;
+    $refreshBtn.disabled = true;
   }
 
   function enableActions() {
-    $loadBtn.disabled = !$org.value;
-    if ($actionSelect.value && selectedFull) refreshActionButtons();
+    $refreshBtn.disabled = false;
+    if (actionCtl.getValue() && selectedFull) refreshActionButtons();
+  }
+
+  // ── Boot ──────────────────────────────────────────────
+  // The org comes from the header picker. Changing it re-renders this whole
+  // page (app.js wires orgContext.onChange to router.render), so there is no
+  // subscription here and no stale state to clear.
+  if (!orgId) {
+    $noOrg.hidden = false;
+    setStatus(STATUS.noOrg);
+  } else {
+    $main.hidden = false;
+    loadActions();
   }
 
   return el;

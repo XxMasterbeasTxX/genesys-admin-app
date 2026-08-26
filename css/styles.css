@@ -1,3 +1,4 @@
+@charset "UTF-8";
 /* ══════════════════════════════════════════════════════════
    Genesys Admin Tool — Core Styles
    Dark-first + automatic light-mode via prefers-color-scheme
@@ -1747,7 +1748,19 @@ body {
   /* Edit Data Action - light overrides */
   .ed-test-result { background: #f1f5f9; border-color: rgba(0,0,0,0.10); color: #0f172a; }
   .ed-divider { border-color: rgba(0,0,0,0.08); }
-  .ed-test-summary { color: #2563eb; }
+  /* These two carry a white-on-dark wash that vanishes on a light ground. */
+  .ed-readonly { background: rgba(0,0,0,0.03); }
+  .ed-section-summary:hover,
+  .ed-subsection-summary { color: #2563eb; }
+  .ed-subsection-summary:hover { color: #1d4ed8; }
+  .ed-dirty { color: #b45309; }
+  .ed-step-ok   { color: #15803d; }
+  .ed-step-fail { color: #b91c1c; }
+  .ed-test-outcome.is-ok   { color: #15803d; background: rgba(21,128,61,0.08);  border-color: rgba(21,128,61,0.25); }
+  .ed-test-outcome.is-fail { color: #b91c1c; background: rgba(185,28,28,0.08); border-color: rgba(185,28,28,0.25); }
+  .ed-badge.is-published { color: #15803d; background: rgba(21,128,61,0.1);  border-color: rgba(21,128,61,0.25); }
+  .ed-badge.is-draft     { color: #b45309; background: rgba(180,83,9,0.1);   border-color: rgba(180,83,9,0.25); }
+  .ed-badge.is-both      { color: #1d4ed8; background: rgba(29,78,216,0.1);  border-color: rgba(29,78,216,0.25); }
   .ed-btn-test { background: rgba(59,130,246,0.08); color: #2563eb; border-color: rgba(59,130,246,0.2); }
   .ed-btn-test:hover { background: rgba(59,130,246,0.15); }
 
@@ -1795,46 +1808,252 @@ body {
 /* ══════════════════════════════════════════════════════════
    Edit Data Action page  (ed-* prefix)
    ══════════════════════════════════════════════════════════ */
+/* Scoped to this page rather than .card, so the token stays where it is used. */
+.ed-page { --ed-col: 920px; }
+
+/* One column width for the whole page, so the picker, the identity fields and
+   the three sections share a right edge instead of stepping in and out. */
+.ed-picker-row,
+.ed-identity-fields,
+.ed-section { max-width: var(--ed-col); }
+
+/* Field widths, replacing the inline max-widths this page used to carry.
+   `.dt-input` sets a global max-width: 450px and no width, so an input left
+   alone collapses to its default size — these fill their field instead. */
+.ed-field--wide    { max-width: var(--ed-col); }
+.ed-field--narrow  { max-width: 220px; }
+.ed-field--wide > .dt-input,
+.ed-field > .dt-input {
+  width: 100%;
+  max-width: none;
+}
+.ed-code {
+  width: 100%;
+  max-width: none;
+  font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.ed-empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 18px 0;
+}
+
+/* ── Picker row ──────────────────────────────────────── */
+.ed-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+/* The picker takes the row minus the Refresh button. `.ms-dropdown` is
+   inline-block by default, so it sizes to its label and a long action name
+   wraps the trigger onto a second line — override both here. */
+.ed-picker-mount { flex: 1 1 320px; min-width: 320px; }
+.ed-picker-mount .ms-dropdown { display: block; width: 100%; }
+.ed-picker-mount .ms-dropdown__trigger {
+  width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .ed-filter-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
-.ed-filter-input {
-  max-width: 200px;
+.ed-filter-select { max-width: 180px; }
+
+/* ── Action bar ──────────────────────────────────────── */
+.ed-actionbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 0 4px;
 }
-.ed-filter-select {
-  max-width: 180px;
+.ed-dirty {
+  font-size: 12px;
+  color: #f0b429;
+  margin-left: 4px;
+  white-space: nowrap;
 }
+
 .ed-divider {
   border: none;
-  border-top: 1px solid rgba(255,255,255,0.06);
-  margin: 16px 0;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
 }
-.ed-test-section {
-  margin-top: 16px;
-  padding: 12px 14px;
+
+/* ── Identity ────────────────────────────────────────── */
+.ed-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.ed-badge {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.ed-badge.is-published {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.3);
+}
+.ed-badge.is-draft {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.3);
+}
+.ed-badge.is-both {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.12);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+.ed-identity-meta {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ed-sep { opacity: 0.45; }
+
+/* Name and Category split the column evenly, so Name gets roughly half of
+   920px rather than the ~180px an unsized input collapses to. */
+.ed-identity-fields {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.ed-identity-fields > .ed-field { flex: 1 1 240px; min-width: 240px; }
+/* Read-only value styled as a field so the row still reads as a pair, while
+   clearly not being an input. */
+.ed-readonly {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
   border-radius: 8px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  max-width: 550px;
+  background: rgba(255,255,255,0.02);
+  min-height: 36px;
+  display: flex;
+  align-items: center;
 }
-.ed-test-summary {
+
+/* ── Collapsible sections ────────────────────────────── */
+.ed-section {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  margin-top: 10px;
+  /* width comes from --ed-col at the top of this block */
+}
+.ed-section-summary {
   cursor: pointer;
+  user-select: none;
   font-weight: 600;
   font-size: 13px;
-  color: #60a5fa;
+  padding: 11px 14px;
+  color: var(--text);
+  list-style: none;
+}
+.ed-section-summary::-webkit-details-marker { display: none; }
+.ed-section-summary::before {
+  content: "\25B8 ";
+  display: inline-block;
+  width: 1em;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.ed-section[open] > .ed-section-summary::before { transform: rotate(90deg); }
+.ed-section-summary:hover { color: #93c5fd; }
+.ed-section-body {
+  padding: 4px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ed-subhead {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ed-subsection {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.ed-subsection-summary {
+  cursor: pointer;
   user-select: none;
+  font-size: 12px;
+  color: #60a5fa;
 }
-.ed-test-summary:hover {
-  color: #93c5fd;
+.ed-subsection-summary:hover { color: #93c5fd; }
+
+.ed-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+  max-width: 70ch;
 }
+.ed-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  display: block;
+}
+
+/* ── Test ────────────────────────────────────────────── */
 .ed-test-inputs {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
+.ed-test-outcome {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+.ed-test-outcome.is-ok {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.28);
+}
+.ed-test-outcome.is-fail {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.28);
+}
+.ed-step-ok   { color: #34d399; }
+.ed-step-fail { color: #f87171; font-weight: 600; }
+
 .ed-test-result {
   margin: 0;
   padding: 10px 12px;
@@ -1844,7 +2063,7 @@ body {
   font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
   font-size: 12px;
   color: var(--text);
-  max-height: 300px;
+  max-height: 320px;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1857,7 +2076,8 @@ body {
 .ed-btn-test:hover {
   background: rgba(59,130,246,0.22);
 }
-/* A JSON textarea (or numeric test input) whose contents would not parse.
+
+/* A JSON textarea (or numeric input) whose contents would not parse.
    Marked rather than silently coerced: the save is blocked until it is fixed. */
 .ed-invalid,
 .ed-invalid:focus {
@@ -2235,7 +2455,7 @@ body {
 }
 .te-sheet-title::-webkit-details-marker { display: none; }
 .te-sheet-title::before {
-  content: "▶";
+  content: "\25B6 ";
   font-size: 10px;
   transition: transform 0.2s ease;
   color: var(--text-secondary);
