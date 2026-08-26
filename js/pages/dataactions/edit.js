@@ -192,8 +192,8 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
             </div>
             <div class="dt-control-group ed-field--narrow">
               <label class="dt-label" for="edReqTimeout">Execution Timeout</label>
-              <input class="dt-input" id="edReqTimeout" type="number" min="1" max="60" placeholder="not set" />
-              <span class="ed-hint">Seconds, 1–60. Blank leaves it unset.</span>
+              <input class="dt-input" id="edReqTimeout" type="number" min="1" max="60" placeholder="60" />
+              <span class="ed-hint">Seconds, 1–60. Blank leaves it unset, which is what the Genesys editor shows as 60.</span>
             </div>
             <div class="dt-control-group ed-field--wide">
               <label class="dt-label" for="edReqTemplate">Request Body Template</label>
