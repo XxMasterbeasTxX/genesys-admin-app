@@ -256,3 +256,31 @@ minus its prerequisites is every CX3 extra, not the WEM subset, so every row
 would flag and the column headed "Triggering Permissions" would be answering a
 different question than its label claims. Better to make that the user's
 explicit choice with the caveat attached.
+
+## 12. The picker was my uncertainty, wearing a UI
+
+§3 step 1 had the user confirm which licences count as WEM, on the reasoning
+that hardcoding ids is how the page rots. That reasoning was about *not knowing
+the ids* — and it resolved a build-time unknown by handing the decision to the
+person least able to make it. An admin at a customer opening this page sees
+`cxCloudSF`, `gcSTAupgrade`, `examplePremiumAppUserLicense` and is implicitly
+asked which of them is WEM.
+
+The hint never needed the help: it matched 2/2 on the first live orgs. So the
+page now decides, states what it chose in one line, and shows only that chip.
+
+- **Found** — "Checking against **gc2WEMupgrade**." One chip. Search enabled.
+- **Bundled** (§11) — the base licence named, no chips, and the panel explains.
+- **Neither** — the only case a choice is genuinely required, and the only case
+  the full list opens by itself.
+
+**Change** reveals everything, **Show less** collapses back. The escape hatch
+stays because a silently wrong answer about licence compliance is worse than a
+link — and because the same machinery answers a legitimate adjacent question
+(`gcSTAupgrade`, say) for anyone who wants it.
+
+One bug worth recording: `.wem-lic-chip` sets `display:inline-flex`, which
+outranks the UA sheet's `[hidden] { display:none }`. Setting `hidden` on the
+chips left the JS assertions passing — `label.hidden` was true — while every
+chip stayed on screen. It took reading the rendered text, not the DOM, to see
+it. `.wem-lic-chip[hidden] { display:none }` fixes it.
