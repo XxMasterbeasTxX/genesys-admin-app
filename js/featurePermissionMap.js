@@ -131,8 +131,20 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
  * Their absence below is a decision, not an oversight.
  *
  * SHAPE: accessKey → { <logicalAction>: spec }, where spec is either
- *   ["a:b:c", "d:e:f"]         → ANY of these (matches the write map's shape)
- *   { all: ["a:b:c", ...] }    → ALL of these (Genesys declares some ops this way)
+ *   ["a:b:c", "d:e:f"]         → ANY of these
+ *   { all: ["a:b:c", ...] }    → ALL of these
+ *
+ * WHICH TO USE. ANY is for alternatives on the SAME data — where Genesys itself
+ * declares `ANY`, e.g. conversationDetail:view or agentConversationDetail:view
+ * on one analytics endpoint. **ALL is for a page that aggregates DISTINCT
+ * datasets**, each with its own permission.
+ *
+ * The write map's composite policy ("gate on the primary permission; sub-call
+ * failures surface as per-item errors") does not carry over, and assuming it
+ * did was a bug here. Sub-calls do not fail: they run as the OAuth client, not
+ * as the user, so every one of them succeeds. Under ANY, holding
+ * `routing:wrapupCode:view` alone would open Get Lists and hand over the
+ * presence definitions too. Aggregating pages therefore require the lot.
  *
  * Composite pages gate on the PRIMARY permission — the data the page exists to
  * show — with sub-call failures surfacing as per-item errors, per §6 of the plan.
@@ -158,9 +170,9 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   "export.licenses.consumption":  { view: ["authorization:grant:add", "authorization:license:view"] },
   "export.roles.allOrgs":         { view: ["authorization:role:view"] },
   "export.roles.singleOrg":       { view: ["authorization:role:view"] },
-  "export.users.allRoles":        { view: ["authorization:role:view"] },
-  "export.users.filteredRoles":   { view: ["authorization:role:view"] },
-  "export.users.queuesSkills":    { view: ["routing:queue:view"] },
+  "export.users.allRoles":        { view: { all: ["authorization:role:view", "authorization:grant:view"] } },
+  "export.users.filteredRoles":   { view: { all: ["authorization:role:view", "authorization:grant:view"] } },
+  "export.users.queuesSkills":    { view: { all: ["routing:queue:view", "routing:skill:view"] } },
   "export.users.trustee":         { view: ["authorization:orgTrustee:view"] },
   // Deliberate exception to the rule above. `/api/v2/license/users` declares no
   // permission, so "gate what Genesys gates" would leave this open — but the
@@ -183,15 +195,15 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   "interactions.search.transcripts.search":          { view: { all: ["recording:recording:view", "speechAndTextAnalytics:data:view"] } },
 
   // ── Roles ────────────────────────────────────────────
-  "roles.compare":             { view: ["authorization:role:view"] },
+  "roles.compare":             { view: { all: ["authorization:role:view", "authorization:grant:view"] } },
   // Three tabs, two answers. Permission Search and Hourly Interacting read
   // roles; the WEM tab additionally reads the licence API. Gating the page on
   // the union would deny the first two to someone entitled to them.
-  "roles.search":              { view: ["authorization:role:view"],
+  "roles.search":              { view: { all: ["authorization:role:view", "authorization:grant:view"] },
                                  wem:  ["authorization:grant:add", "authorization:license:view"] },
 
   // ── Utilities ────────────────────────────────────────
-  "utilities.getLists":        { view: ["presence:presenceDefinition:view", "routing:wrapupCode:view"] },
+  "utilities.getLists":        { view: { all: ["presence:presenceDefinition:view", "routing:wrapupCode:view"] } },
 
   // NOT gated, deliberately:
   //   export.scheduled, export.users.skillTemplates  — app-owned storage

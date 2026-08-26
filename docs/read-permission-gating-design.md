@@ -171,3 +171,49 @@ be indistinguishable from a permissions decision, `resolveAccess` exposes
 `verificationFailed` and the shell renders an explicit "Access could not be
 verified" panel — the failure is visible rather than either silently permissive
 or silently broken.
+
+## 10. ANY vs ALL — the composite rule, corrected
+
+Found while checking why a limited user still saw everything under Utilities.
+Two of those three are ungated by design; the third, **Get Lists**, was gated
+`ANY` of `presence:presenceDefinition:view` / `routing:wrapupCode:view`. That is
+wrong, and the reason is §1's again.
+
+The write map's composite policy — *"gate on the primary permission; sub-call
+failures surface as per-item errors"* — assumes a sub-call can fail. **Under
+client credentials it cannot.** Every sub-call runs as the OAuth client and
+succeeds. So `ANY` on a page that aggregates distinct datasets hands over all of
+them to someone entitled to one: hold `routing:wrapupCode:view` alone and Get
+Lists opens, presence definitions included.
+
+The corrected rule:
+
+- **ANY** where the permissions are alternatives for the *same* data — mirroring
+  a Genesys `ANY`, e.g. `conversationDetail:view` / `agentConversationDetail:view`
+  on one analytics endpoint, or `grant:add` / `license:view` on the licence API.
+- **ALL** where the page aggregates *distinct* datasets, each with its own
+  permission.
+
+Switched to ALL: `utilities.getLists`, `export.users.queuesSkills`
+(queues + skills), `export.users.allRoles` and `export.users.filteredRoles`
+(roles + grants), `roles.compare` and `roles.search` (roles + grants for source
+attribution).
+
+### The default tab was a hole of its own
+
+`roles.search` renders Permission Search's section in the markup, visible before
+any gate runs. Disabling its button alone left a denied user looking at the very
+UI the gate withholds. The page now opens the first tab the user is **allowed**
+— a licence-only user lands on WEM — and replaces the body with a locked state
+when none is. Verified across four permission sets:
+
+| Holds | Result |
+| --- | --- |
+| `role:view` + `grant:view` | Search active, Hourly on, WEM disabled |
+| `role:view` only | all three disabled, no section rendered, locked |
+| `license:view` only | Search/Hourly disabled, **WEM active** |
+| nothing | all disabled, locked |
+
+Tooltips say "or" for an ANY requirement and "and" for ALL. Not cosmetic:
+telling someone they need both when either would do sends them to request more
+access than they need.

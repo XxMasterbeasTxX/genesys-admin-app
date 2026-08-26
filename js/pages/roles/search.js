@@ -26,6 +26,7 @@
  */
 import { escapeHtml, exportXlsx, timestampedFilename, makeStatus, makeControlBusy } from "../../utils.js";
 import { fetchAllAuthorizationRoles, fetchAllUsers } from "../../services/genesysApi.js";
+import { getReadPermissions } from "../../featurePermissionMap.js";
 
 // ── Permission catalog ────────────────────────────────────────────────────────
 
@@ -684,10 +685,14 @@ export default function renderRolesSearch({ me, api, orgContext, access }) {
   // Table-driven rather than pairwise: each analysis lives in its own module,
   // is imported the first time its tab is opened, and never runs until then.
   const MODES = [
-    { btn: "#rsModeSearch", sect: "#rsSearchSection" },
+    // Permission Search and Hourly Interacting read the same things — roles,
+    // plus authorization/subjects for source attribution — so they share the
+    // "view" action. The WEM tab reads the licence API and carries its own.
+    { btn: "#rsModeSearch", sect: "#rsSearchSection", action: "view" },
     {
       btn: "#rsModeHourly",
       sect: "#rsHourlySection",
+      action: "view",
       load: async (host) => {
         const { renderHourlyContent } = await import("./hourlyInteracting.js");
         renderHourlyContent(host, { me, api, orgContext });
@@ -710,28 +715,56 @@ export default function renderRolesSearch({ me, api, orgContext, access }) {
     $btn: el.querySelector(m.btn),
     $sect: el.querySelector(m.sect),
     loaded: false,
+    permitted: !m.action || !access?.can || access.can("roles.search", m.action),
   }));
+
+  function activate(mode) {
+    for (const other of MODES) {
+      const on = other === mode;
+      other.$btn.classList.toggle("active", on);
+      other.$sect.style.display = on ? "" : "none";
+    }
+  }
+
+  // Permission Search is the default tab and its section is already visible in
+  // the markup, so a disabled button alone would leave a denied user looking at
+  // the very UI the gate exists to withhold. Open the first tab they are
+  // actually allowed; if that is none, replace the page body outright.
+  const firstAllowed = MODES.find((m) => m.permitted);
+  if (!firstAllowed) {
+    const missing = access?.getMissingPermissions?.("roles.search", "view") || [];
+    for (const m of MODES) m.$sect.style.display = "none";
+    const denied = document.createElement("div");
+    denied.className = "rs-empty";
+    denied.innerHTML = `<div class="rs-empty-icon">&#128274;</div>
+      <p>You do not have permission to view this page.</p>
+      ${missing.length ? `<p style="font-size:13px;margin-top:8px">Requires
+        <strong>${escapeHtml(missing.join(", "))}</strong> in the company org.</p>` : ""}`;
+    el.appendChild(denied);
+  } else {
+    activate(firstAllowed);
+  }
 
   for (const mode of MODES) {
     // A tab the user lacks the permission for is shown disabled and says which
     // permission is missing, rather than vanishing — per the hide-vs-disable
     // policy in docs/customer-facing-plan.md §7.
-    if (mode.action && access?.can && !access.can("roles.search", mode.action)) {
+    if (!mode.permitted) {
+      // "or" vs "and" is not cosmetic: telling someone they need both
+      // permissions when either would do sends them to request too much.
       const missing = access.getMissingPermissions?.("roles.search", mode.action) || [];
+      const { mode: reqMode } = getReadPermissions("roles.search", mode.action);
+      const joined = missing.join(reqMode === "all" ? " and " : " or ");
       mode.$btn.disabled = true;
       mode.$btn.classList.add("rs-mode-btn--denied");
       mode.$btn.title = missing.length
-        ? `Requires ${missing.join(" or ")} in the company org`
+        ? `Requires ${joined} in the company org`
         : "You do not have permission for this view";
       continue;
     }
 
     mode.$btn.addEventListener("click", async () => {
-      for (const other of MODES) {
-        const on = other === mode;
-        other.$btn.classList.toggle("active", on);
-        other.$sect.style.display = on ? "" : "none";
-      }
+      activate(mode);
       if (mode.load && !mode.loaded) {
         mode.loaded = true;
         await mode.load(mode.$sect);
