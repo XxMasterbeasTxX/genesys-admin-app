@@ -524,12 +524,6 @@ export function renderWemContent(container, { me, api, orgContext }) {
           // whole directory, so that loop was the page's real scaling cost —
           // an order of magnitude more requests than the per-role infer calls.
           expand: ["authorization", "groups"],
-          // Small pages, deliberately. `authorization` expands to the user's
-          // entire effective permission set, and on an org where admin roles
-          // are widely held that is megabytes per user; 100 of them plus their
-          // groups in one response outran the Function's budget and came back
-          // as a bodyless 500. Fewer users per request, more requests.
-          pageSize: 25,
           // Active users only, which is /api/v2/users' default. Inactive
           // accounts are deliberately out of scope: they do not count towards
           // licence billing, so a deactivated user holding a WEM licence is
