@@ -469,11 +469,14 @@ export async function replaceParticipantQueue(api, orgId, conversationId, partic
  * @returns {Promise<Object[]>}
  */
 export async function fetchAllUsers(api, orgId, opts = {}) {
-  const { expand = [], state, onProgress, shouldStop } = opts;
+  const { expand = [], state, onProgress, shouldStop, pageSize } = opts;
   const query = {};
   if (expand.length) query.expand = expand.join(",");
   if (state) query.state = state;
-  return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress, shouldStop });
+  // `pageSize` matters once `expand` is heavy. `authorization` carries a user's
+  // whole effective permission set, so 100 admins per page is megabytes and can
+  // outrun the Function's request budget — pass a smaller page for those calls.
+  return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress, shouldStop, pageSize });
 }
 
 /** Create a new user. Minimum body: { name, email }. */
