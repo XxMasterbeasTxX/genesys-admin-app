@@ -45,6 +45,49 @@ import {
 // and a hardcoded id list is how this page would rot.
 const WEM_HINT = /wem|workforce\s*engagement/i;
 
+// Genesys Cloud CX 3 and above bundle WEM into the base license, so those orgs
+// have no separate WEM add-on to buy — and `/license/definitions` returns only
+// what an org can actually hold, so the WEM SKU is genuinely absent rather than
+// merely unticked. `gc2WEMupgrade` sits beside `cloudCX2`; nothing sits beside
+// `cloudCX3`.
+const BASE_TIER = /^cloudCX(\d+)/i;
+const WEM_BUNDLED_FROM_TIER = 3;
+
+/** The highest cloudCX tier this org can hold, or null if it holds none. */
+function highestBaseTier(defs) {
+  let best = null;
+  for (const d of defs) {
+    const m = BASE_TIER.exec(d.id || "");
+    if (!m) continue;
+    const tier = Number(m[1]);
+    if (!Number.isNaN(tier) && (best === null || tier > best.tier)) {
+      best = { tier, id: d.id };
+    }
+  }
+  return best;
+}
+
+/**
+ * What to tell someone whose org pre-ticked nothing.
+ *
+ * On a CX3 org that is not a failure to find the add-on — it is the answer.
+ * Saying "tick the add-on licenses to check" sends them looking for a licence
+ * that does not exist for their org, so name the bundling instead and point at
+ * the question they *can* ask.
+ */
+function noWemSelectionMessage(defs) {
+  const base = highestBaseTier(defs);
+  if (base && base.tier >= WEM_BUNDLED_FROM_TIER) {
+    return (
+      `${base.id} includes WEM, so this org buys no separate WEM add-on and no user ` +
+      `here can hold a WEM permission they are not licensed for. Tick ${base.id} to ask ` +
+      `the related question instead — whose roles require it — but read the results as ` +
+      `"needs ${base.id}", not "needs WEM".`
+    );
+  }
+  return "No license id looked like WEM — tick the add-on licenses to check.";
+}
+
 // ── Concurrency helper ────────────────────────────────────────────────────────
 
 async function runBatched(tasks, concurrency = 10) {
@@ -388,7 +431,20 @@ export function renderWemContent(container, { me, api, orgContext }) {
       });
       syncSearchEnabled();
       if (!selectedLicenseIds().length) {
-        setStatus("No license id looked like WEM — tick the add-on licenses to check.");
+        setStatus(noWemSelectionMessage(listedDefs));
+        // The centred panel is the louder of the two, so it must not still be
+        // telling them to confirm a selection that does not exist for this org.
+        const base = highestBaseTier(listedDefs);
+        if (base && base.tier >= WEM_BUNDLED_FROM_TIER) {
+          $results.innerHTML = `<div class="rs-empty">
+            <div class="rs-empty-icon">📦</div>
+            <p><strong>${escapeHtml(base.id)}</strong> already includes WEM.</p>
+            <p style="font-size:13px;max-width:46ch;margin:8px auto 0">
+              There is no separate WEM add-on for this org to buy, so nobody can be
+              carrying a WEM permission it is not paying for.
+            </p>
+          </div>`;
+        }
       }
     } catch (err) {
       $licenses.innerHTML = `<span style="font-size:12px;color:#f87171">Could not load license definitions: ${escapeHtml(err.message)}</span>`;

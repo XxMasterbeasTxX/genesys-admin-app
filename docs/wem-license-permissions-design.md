@@ -225,3 +225,34 @@ The same optimisation would apply to `hourlyInteracting.js`. Left alone
 deliberately: it is a different page, its matched set is small enough that the
 loop has never hurt, and widening this change into it would put an untested
 edit on a working feature.
+
+## 11. CX3 bundles WEM, and the page has to say so
+
+Found on the first real run (2026-08-26), across two live orgs:
+
+| Org | Base | WEM SKU in `/license/definitions` |
+| --- | --- | --- |
+| Nemlig | `cloudCX2` | `gc2WEMupgrade` — pre-ticks correctly |
+| Demo | `cloudCX3` | **none** |
+
+`/license/definitions` returns only the licences an org can actually hold, and
+**CX3 and above bundle WEM into the base licence**. So on a CX3 org the WEM
+add-on is not unticked, it is absent — there is no such SKU to buy.
+
+The `/wem/i` hint was never wrong. But the empty state it produced said
+"No license id looked like WEM — tick the add-on licenses to check", which
+sends someone hunting for a licence their org cannot have. On a CX3 org that
+missing SKU *is the answer*: nobody can hold a WEM permission they are not
+licensed for, because everyone with the base licence already has WEM.
+
+The page now detects the highest `cloudCX<n>` the org can hold and, when
+nothing pre-ticks at tier ≥ 3, names the bundling in both the status line and
+the centred panel. It also points at the question that *is* answerable there
+— tick the base licence to see whose roles require it — while saying plainly
+that those results read as "needs cloudCX3", not "needs WEM".
+
+Deliberately not done: pre-ticking `cloudCX3` automatically. Its permission set
+minus its prerequisites is every CX3 extra, not the WEM subset, so every row
+would flag and the column headed "Triggering Permissions" would be answering a
+different question than its label claims. Better to make that the user's
+explicit choice with the caveat attached.
