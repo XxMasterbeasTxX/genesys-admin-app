@@ -1,6 +1,6 @@
 # Gating read-only features on the user's own permissions — Design
 
-Status: **Proposed** — awaiting go-ahead, no code written
+Status: **Built** — enforcing, no audit mode (all staff hold admin permissions in demo)
 Author: Genesys Admin App
 Last updated: 2026-08-26
 
@@ -135,3 +135,39 @@ permission-driven greying was correct. It is a latent hole all the same, and it
 would nullify everything above the moment it fired. Recommended fix: fail closed,
 and render an explicit "could not verify your access" state so the failure is
 visible rather than either silently permissive or silently empty.
+
+## 9. Built — what changed from the proposal
+
+**No audit mode.** The customer's call: every colleague currently holds admin
+permissions in the demo org, so nobody is locked out and staging the rollout
+would buy nothing. Simulated against the real permission sets before shipping:
+an admin (`*:*:*`) keeps **86/86** keys; the three-permission test user drops to
+**12/86**.
+
+**Coverage is complete and closed**: 53 write-gated, 27 read-gated, 6
+deliberately ungated (`export.scheduled`, `export.users.skillTemplates` —
+app-owned storage; `export.users.allGroups` — `/groups` is ungated;
+`utilities.ipRanges` — no Genesys data; `utilities.permissionCatalog` —
+`/authorization/permissions` declares none). No nav key is unaccounted for.
+
+### One deliberate exception to §2
+
+`export.users.lastLogin` is gated on the licence permission even though
+`/api/v2/license/users` declares none. The page emits **one row per
+user-licence pair** — the same data `export.licenses.consumption` is gated on.
+Left ungated it is simply the way round that gate, and a gate you can walk
+around is not a gate.
+
+The lesson generalises: §2's rule derives the *floor*, not the ceiling. Where
+two pages surface the same data and only one is gated, the ungated one needs
+the same gate regardless of what the spec declares. This was the only such
+overlap found; the other licence readers (`phones.webrtc.create`, the WEM tab)
+already sit behind permissions.
+
+### §8 is fixed too
+
+The group lookup now fails **closed**. Because an empty sidebar would otherwise
+be indistinguishable from a permissions decision, `resolveAccess` exposes
+`verificationFailed` and the shell renders an explicit "Access could not be
+verified" panel — the failure is visible rather than either silently permissive
+or silently broken.

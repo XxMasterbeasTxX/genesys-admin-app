@@ -5058,6 +5058,23 @@ body {
 /* ══════════════════════════════════════════════════════════
    Sidebar version footer + Release Notes page
    ══════════════════════════════════════════════════════════ */
+.nav-verify-warning {
+  margin: 12px 10px;
+  padding: 10px 12px;
+  border: 1px solid #f59e0b;
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, .10);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.nav-verify-warning strong { color: #fbbf24; font-weight: 600; }
+.nav-verify-warning span { color: var(--muted); }
+
 .nav-version {
   flex: 0 0 auto;
   align-self: flex-start;

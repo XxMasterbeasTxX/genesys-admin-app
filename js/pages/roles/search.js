@@ -104,7 +104,7 @@ async function runBatched(tasks, concurrency = 10) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function renderRolesSearch({ me, api, orgContext }) {
+export default function renderRolesSearch({ me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -177,6 +177,8 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       .rs-mode-btn { padding:7px 22px; background:none; border:none; color:var(--muted); cursor:pointer; font:inherit; font-size:13px; font-weight:600; transition:background .12s,color .12s; }
       .rs-mode-btn.active { background:rgba(59,130,246,.22); color:#60a5fa; }
       .rs-mode-btn:not(.active):hover { background:rgba(255,255,255,.05); color:var(--text); }
+      .rs-mode-btn--denied { opacity:.4; cursor:not-allowed; }
+      .rs-mode-btn--denied:hover { background:none; color:var(--muted); }
       @keyframes rs-slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(280%)} }
       .rs-progress-fill.indeterminate { width:35%; animation:rs-slide 1.3s ease-in-out infinite; }
       .rs-progress-detail { font-size:11px; color:var(--muted); margin-top:3px; }
@@ -694,6 +696,10 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     {
       btn: "#rsModeWem",
       sect: "#rsWemSection",
+      // The WEM tab reads the licence API, which its two siblings do not, so it
+      // carries its own permission. Gating the whole page on the union would
+      // deny Permission Search to someone entitled to it.
+      action: "wem",
       load: async (host) => {
         const { renderWemContent } = await import("./wemLicense.js");
         renderWemContent(host, { me, api, orgContext });
@@ -707,6 +713,19 @@ export default function renderRolesSearch({ me, api, orgContext }) {
   }));
 
   for (const mode of MODES) {
+    // A tab the user lacks the permission for is shown disabled and says which
+    // permission is missing, rather than vanishing — per the hide-vs-disable
+    // policy in docs/customer-facing-plan.md §7.
+    if (mode.action && access?.can && !access.can("roles.search", mode.action)) {
+      const missing = access.getMissingPermissions?.("roles.search", mode.action) || [];
+      mode.$btn.disabled = true;
+      mode.$btn.classList.add("rs-mode-btn--denied");
+      mode.$btn.title = missing.length
+        ? `Requires ${missing.join(" or ")} in the company org`
+        : "You do not have permission for this view";
+      continue;
+    }
+
     mode.$btn.addEventListener("click", async () => {
       for (const other of MODES) {
         const on = other === mode;
