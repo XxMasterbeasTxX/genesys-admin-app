@@ -1052,6 +1052,34 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   }
 
   /**
+   * Rows for one declared output.
+   *
+   * An array is the common shape for a data action result, and rendering it as
+   * `["a","b","c"]` in a single cell is unreadable at any real length — so it
+   * expands into one indexed row per element, named as Genesys names them
+   * (`skills-0`, `skills-1`, …), under a header row carrying the count.
+   */
+  function outputRows(key, def, value) {
+    const label = escapeHtml(def.title || key);
+    const type  = escapeHtml(def.type || "string");
+
+    if (Array.isArray(value)) {
+      if (!value.length) {
+        return `<tr><td>${label}</td><td>${type}</td><td><em>empty</em></td></tr>`;
+      }
+      const head = `<tr><td>${label}</td><td>${type}</td>`
+        + `<td>${value.length} item${value.length === 1 ? "" : "s"}</td></tr>`;
+      const items = value.map((v, i) =>
+        `<tr class="ed-out-item">`
+        + `<td>${label}-${i}</td><td></td><td>${escapeHtml(formatValue(v))}</td></tr>`
+      ).join("");
+      return head + items;
+    }
+
+    return `<tr><td>${label}</td><td>${type}</td><td>${escapeHtml(formatValue(value))}</td></tr>`;
+  }
+
+  /**
    * Render a TestExecutionResult against the action's own output contract.
    *
    * The raw envelope told you almost nothing without reading JSON. The action
@@ -1077,12 +1105,9 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     const outProps = extractSchemaProps(selectedFull?.contract?.output?.successSchema);
     const finalResult = result?.finalResult;
     if (outProps && finalResult && typeof finalResult === "object") {
-      const rows = Object.entries(outProps).map(([key, def]) => `
-        <tr>
-          <td>${escapeHtml(def.title || key)}</td>
-          <td>${escapeHtml(def.type || "string")}</td>
-          <td>${escapeHtml(formatValue(finalResult[key]))}</td>
-        </tr>`).join("");
+      const rows = Object.entries(outProps)
+        .map(([key, def]) => outputRows(key, def, finalResult[key]))
+        .join("");
       $testOutputs.innerHTML = `
         <table class="dt-schema-table">
           <thead><tr><th>Output</th><th>Type</th><th>Value</th></tr></thead>
