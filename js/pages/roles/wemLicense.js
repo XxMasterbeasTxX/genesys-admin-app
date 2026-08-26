@@ -42,13 +42,13 @@ import {
 
 // Which license definitions count as the WEM add-on. A hint rather than a
 // hardcoded id list, because which WEM SKUs an org holds varies — matched
-// 2/2 on the first live orgs (`gc2WEMupgrade` beside `cloudCX2`).
+// 2/2 on the first live orgs (gc2WEMupgrade beside cloudCX2).
 //
-// The page acts on this itself and reports what it chose. An admin at a
-// customer has no reason to know one SKU id from another, so opening with a
-// grid of every licence the org holds asks a question they cannot answer;
-// the full list stays behind "Change" for the org this hint misses, because
-// a silently wrong answer about licence compliance is worse than a link.
+// The page acts on this itself and reports what it found. It is deliberately
+// not a control: this page answers one question — who holds a WEM licence and
+// how they got it — and a picker would both widen that and depend on the one
+// thing an admin has no reason to know, which id is WEM. If this hint ever
+// misses an org, fix the hint.
 const WEM_HINT = /wem|workforce\s*engagement/i;
 
 // Genesys Cloud CX 3 and above bundle WEM into the base license, so those orgs
@@ -71,24 +71,6 @@ function highestBaseTier(defs) {
     }
   }
   return best;
-}
-
-/**
- * What to tell someone whose org identified no WEM add-on.
- *
- * The scope line and the empty panel already state the fact, so this carries
- * only what to do about it — a third restatement of "CX3 bundles WEM" would
- * just be noise on the same screen.
- */
-function noWemSelectionMessage(defs) {
-  const base = highestBaseTier(defs);
-  if (base && base.tier >= WEM_BUNDLED_FROM_TIER) {
-    return (
-      `To ask the related question instead — whose roles require ${base.id} at all — ` +
-      `open Change and tick it. Read those results as "needs ${base.id}", not "needs WEM".`
-    );
-  }
-  return "Tick the licences you want checked.";
 }
 
 // ── Concurrency helper ────────────────────────────────────────────────────────
@@ -296,24 +278,9 @@ export function renderWemContent(container, { me, api, orgContext }) {
       .wem-pill.active { background:rgba(59,130,246,.22); border-color:#3b82f6; color:#60a5fa; }
       .wem-pill .wem-pill-count { margin-left:6px; font-size:11px; opacity:.7; }
       /* ── License picker ── */
-      .wem-lic-wrap { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; max-width:760px; }
-      .wem-lic-wrap:empty { margin-bottom:0; }
       /* ── Scope line ── */
-      .wem-scope { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
-      .wem-scope-text { font-size:13px; color:var(--muted); }
-      .wem-scope-text strong { color:#93c5fd; font-weight:600; }
-      .wem-scope-toggle { background:none; border:none; padding:0; font:inherit; font-size:12px;
-                          color:var(--muted); text-decoration:underline; cursor:pointer; }
-      .wem-scope-toggle:hover { color:var(--text); }
-      .wem-lic-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border:1px solid var(--border);
-                      border-radius:20px; font-size:12px; color:var(--muted); cursor:pointer; user-select:none;
-                      transition:background .1s,color .1s,border-color .1s; }
-      .wem-lic-chip input { display:none; }
-      .wem-lic-chip.checked { background:rgba(59,130,246,.18); border-color:#3b82f6; color:#93c5fd; }
-      .wem-lic-chip:hover { border-color:#6b7280; color:var(--text); }
-      /* display:inline-flex above outranks the UA sheet's [hidden]{display:none},
-         so collapsing the list needs this or the chips stay on screen. */
-      .wem-lic-chip[hidden] { display:none; }
+      .wem-scope { font-size:13px; color:var(--muted); margin-bottom:16px; max-width:760px; line-height:1.6; }
+      .wem-scope strong { color:#93c5fd; font-weight:600; }
       /* ── Permission badge ── */
       .wem-badge--perm { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;
                          white-space:nowrap; background:rgba(239,68,68,.15); color:#fca5a5; border:1px solid #ef4444; margin:1px 2px; }
@@ -340,11 +307,7 @@ export function renderWemContent(container, { me, api, orgContext }) {
       <span style="color:#fbbf24;font-weight:600">License unused</span> (a WEM seat no role needs).
     </p>
 
-    <div class="wem-scope">
-      <span class="wem-scope-text" id="wemScopeText">Loading license definitions…</span>
-      <button type="button" class="wem-scope-toggle" id="wemScopeToggle" hidden>Change</button>
-    </div>
-    <div class="wem-lic-wrap" id="wemLicenses"></div>
+    <p class="wem-scope" id="wemScope">Loading license definitions…</p>
 
     <div style="margin-bottom:18px">
       <button class="rs-search-btn" id="wemSearchBtn" disabled>Search</button>
@@ -365,9 +328,7 @@ export function renderWemContent(container, { me, api, orgContext }) {
   `;
 
   // ── DOM refs ──────────────────────────────────────────────
-  const $licenses       = container.querySelector("#wemLicenses");
-  const $scopeText      = container.querySelector("#wemScopeText");
-  const $scopeToggle    = container.querySelector("#wemScopeToggle");
+  const $scope          = container.querySelector("#wemScope");
   const $searchBtn      = container.querySelector("#wemSearchBtn");
   const $status         = container.querySelector("#wemStatus");
   const $progressWrap   = container.querySelector("#wemProgressWrap");
@@ -376,7 +337,8 @@ export function renderWemContent(container, { me, api, orgContext }) {
   const $results        = container.querySelector("#wemResults");
 
   let activeFilter = "all"; // "all" | "gap" | "licensed" | "unused"
-  let listedDefs   = [];
+  let listedDefs    = [];
+  let wemLicenseIds = [];
 
   const setStatus = makeStatus($status, "rs-status");
 
@@ -402,129 +364,59 @@ export function renderWemContent(container, { me, api, orgContext }) {
     $progressDetail.textContent = "";
   }
 
-  function selectedLicenseIds() {
-    return [...$licenses.querySelectorAll("input:checked")].map((i) => i.value);
-  }
-
-  function syncSearchEnabled() {
-    $searchBtn.disabled = selectedLicenseIds().length === 0;
-  }
-
-  /** Hide every chip that is not currently ticked. */
-  function collapseToSelection() {
-    for (const label of $licenses.querySelectorAll(".wem-lic-chip")) {
-      label.hidden = !label.querySelector("input").checked;
-    }
-  }
-
-  function expandAllChips() {
-    for (const label of $licenses.querySelectorAll(".wem-lic-chip")) label.hidden = false;
-  }
-
-  /**
-   * Say what is being checked, in prose.
-   *
-   * An admin at a customer has no reason to know one licence id from another,
-   * so the page decides and reports its decision rather than opening with a
-   * grid of fourteen SKUs and an implicit question. The full list stays one
-   * click away for the org whose add-on is named something the hint misses —
-   * a silently wrong answer about licence compliance is worse than a link.
-   */
-  function renderScope() {
-    const picked = selectedLicenseIds();
-    if (picked.length) {
-      $scopeText.innerHTML =
-        `Checking against ${picked.map((id) => `<strong>${escapeHtml(id)}</strong>`).join(", ")}.`;
-    } else {
-      const base = highestBaseTier(listedDefs);
-      $scopeText.innerHTML =
-        base && base.tier >= WEM_BUNDLED_FROM_TIER
-          ? `No separate WEM add-on for this org — <strong>${escapeHtml(base.id)}</strong> includes it.`
-          : `No WEM add-on identified for this org.`;
-    }
-  }
-
-  // ── License picker ────────────────────────────────────────
-  (async function loadLicenses() {
+  // ── Identify the WEM add-on ───────────────────────────────
+  // Read-only. The page has one job — who holds a WEM licence, and how they
+  // got it — so it works out which SKU that is and says so. It does not offer
+  // the choice: an escape hatch would need exactly the knowledge an admin does
+  // not have (which id is WEM), so it could only ever help whoever is debugging
+  // it. If the hint ever misses an org, the hint is what gets fixed.
+  (async function identifyWemLicense() {
     const org = orgContext?.getDetails?.();
     if (!org) {
-      $scopeText.textContent = "Select a customer org first.";
+      $scope.textContent = "Select a customer org first.";
       return;
     }
     try {
       listedDefs = await fetchLicenseDefinitions(api, org.id);
       if (!listedDefs.length) {
-        $scopeText.textContent = "No license definitions returned for this org.";
+        $scope.textContent = "No license definitions returned for this org.";
         return;
       }
-      // WEM first, then everything else: the order only shows once someone
-      // opens the full list, and there it puts the likely picks up front.
-      const sorted = [...listedDefs].sort((a, b) => {
-        const aw = WEM_HINT.test(a.id || "") ? 0 : 1;
-        const bw = WEM_HINT.test(b.id || "") ? 0 : 1;
-        return aw - bw || String(a.id).localeCompare(String(b.id));
-      });
-      $licenses.innerHTML = sorted
-        .map((d) => {
-          const hinted =
-            WEM_HINT.test(d.id || "") || WEM_HINT.test(d.description || "");
-          return `<label class="wem-lic-chip${hinted ? " checked" : ""}" title="${escapeHtml(d.description || d.id)}">
-            <input type="checkbox" value="${escapeHtml(d.id)}"${hinted ? " checked" : ""}>
-            ${escapeHtml(d.id)}
-          </label>`;
-        })
-        .join("");
-      $licenses.querySelectorAll("input").forEach((input) => {
-        input.addEventListener("change", () => {
-          input.closest(".wem-lic-chip").classList.toggle("checked", input.checked);
-          syncSearchEnabled();
-          renderScope();
-        });
-      });
 
-      syncSearchEnabled();
-      renderScope();
+      wemLicenseIds = listedDefs
+        .filter((d) => WEM_HINT.test(d.id || "") || WEM_HINT.test(d.description || ""))
+        .map((d) => d.id);
 
-      const found = selectedLicenseIds().length > 0;
-      const base  = highestBaseTier(listedDefs);
-      const bundled = !found && base && base.tier >= WEM_BUNDLED_FROM_TIER;
-
-      // Show the licence that was found, and nothing else. The one case where
-      // a choice genuinely has to be made — no add-on found and no bundling to
-      // explain it — is the one case the full list opens by itself.
-      if (found || bundled) {
-        collapseToSelection();
-        $scopeToggle.hidden = false;
-      } else {
-        expandAllChips();
+      if (wemLicenseIds.length) {
+        $scope.innerHTML =
+          `Checking against ${wemLicenseIds.map((id) => `<strong>${escapeHtml(id)}</strong>`).join(" and ")}.`;
+        $searchBtn.disabled = false;
+        return;
       }
 
-      if (bundled) {
-        setStatus(noWemSelectionMessage(listedDefs));
-        // The centred panel is the louder of the two, so it must not still be
-        // telling them to confirm a selection that does not exist for this org.
-        $results.innerHTML = `<div class="rs-empty">
-          <div class="rs-empty-icon">📦</div>
-          <p><strong>${escapeHtml(base.id)}</strong> already includes WEM.</p>
-          <p style="font-size:13px;max-width:46ch;margin:8px auto 0">
-            There is no separate WEM add-on for this org to buy, so nobody can be
-            carrying a WEM permission it is not paying for.
-          </p>
-        </div>`;
-      } else if (!found) {
-        setStatus(noWemSelectionMessage(listedDefs));
-      }
+      // No WEM add-on. Two reasons, one conclusion: nobody here can be holding
+      // a WEM licence, so there is nothing for this check to find.
+      const base = highestBaseTier(listedDefs);
+      const bundled = base && base.tier >= WEM_BUNDLED_FROM_TIER;
+      $searchBtn.disabled = true;
+      $scope.innerHTML = bundled
+        ? `This org has no separate WEM add-on — <strong>${escapeHtml(base.id)}</strong> includes WEM.`
+        : `This org has no WEM add-on.`;
+      $results.innerHTML = `<div class="rs-empty">
+        <div class="rs-empty-icon">📦</div>
+        <p>${bundled
+              ? `<strong>${escapeHtml(base.id)}</strong> already includes WEM.`
+              : `No WEM add-on for this org.`}</p>
+        <p style="font-size:13px;max-width:46ch;margin:8px auto 0">
+          There is no separate WEM licence for anyone here to hold, so nobody can be
+          carrying a WEM permission this org is not paying for.
+        </p>
+      </div>`;
     } catch (err) {
-      $scopeText.innerHTML = `<span style="color:#f87171">Could not load license definitions: ${escapeHtml(err.message)}</span>`;
+      $scope.innerHTML = `<span style="color:#f87171">Could not load license definitions: ${escapeHtml(err.message)}</span>`;
     }
   })();
 
-  $scopeToggle.addEventListener("click", () => {
-    const opening = $scopeToggle.textContent === "Change";
-    if (opening) expandAllChips();
-    else collapseToSelection();
-    $scopeToggle.textContent = opening ? "Show less" : "Change";
-  });
 
   // ── Filters ───────────────────────────────────────────────
   function applyFilters() {
@@ -562,7 +454,7 @@ export function renderWemContent(container, { me, api, orgContext }) {
       setStatus("Please select a customer org first.", "error");
       return;
     }
-    const wemIds = selectedLicenseIds();
+    const wemIds = wemLicenseIds;
     if (!wemIds.length) {
       setStatus("Select at least one WEM license.", "error");
       return;
@@ -903,7 +795,7 @@ export function renderWemContent(container, { me, api, orgContext }) {
       hideProgress();
       setStatus(`Error: ${err.message}`, "error");
     } finally {
-      syncSearchEnabled();
+      $searchBtn.disabled = wemLicenseIds.length === 0;
     }
   });
 }

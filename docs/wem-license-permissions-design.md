@@ -267,20 +267,28 @@ person least able to make it. An admin at a customer opening this page sees
 asked which of them is WEM.
 
 The hint never needed the help: it matched 2/2 on the first live orgs. So the
-page now decides, states what it chose in one line, and shows only that chip.
+page decides, states what it found, and offers nothing to click.
 
-- **Found** — "Checking against **gc2WEMupgrade**." One chip. Search enabled.
-- **Bundled** (§11) — the base licence named, no chips, and the panel explains.
-- **Neither** — the only case a choice is genuinely required, and the only case
-  the full list opens by itself.
+- **Found** — "Checking against **gc2WEMupgrade**." Search enabled. Two SKUs
+  read "Checking against **gc1WEMupgrade** and **gc2WEMupgrade**."
+- **None** — the reason is named (`cloudCX3` bundles it, or the org simply has
+  no add-on) and Search is disabled. Both reasons reach the same conclusion:
+  there is no WEM licence for anyone here to hold.
 
-**Change** reveals everything, **Show less** collapses back. The escape hatch
-stays because a silently wrong answer about licence compliance is worse than a
-link — and because the same machinery answers a legitimate adjacent question
-(`gcSTAupgrade`, say) for anyone who wants it.
+An intermediate revision kept a **Change** link to the full list, justified as
+"a silently wrong answer about licence compliance is worse than a link". That
+justification does not survive contact with who the control is *for*: using it
+correctly requires knowing which SKU is WEM, which is precisely the knowledge
+the paragraph above establishes the admin does not have. It could only ever
+have helped whoever was debugging the page. It also quietly widened the page's
+job — point it at `gcSTAupgrade` and every label on the results table lies.
 
-One bug worth recording: `.wem-lic-chip` sets `display:inline-flex`, which
+So the escape hatch is gone, and the recovery path for a missed org is to fix
+the hint. That is the better loop anyway: it fixes the org that reported it and
+every other org at once. 109 lines lighter.
+
+One bug worth recording: `.wem-lic-chip` set `display:inline-flex`, which
 outranks the UA sheet's `[hidden] { display:none }`. Setting `hidden` on the
 chips left the JS assertions passing — `label.hidden` was true — while every
 chip stayed on screen. It took reading the rendered text, not the DOM, to see
-it. `.wem-lic-chip[hidden] { display:none }` fixes it.
+it. The chips are gone now, but the lesson is not: assert on rendered output.
