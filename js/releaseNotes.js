@@ -21,6 +21,22 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.6",
+    date: "2026-08-25",
+    title: "Data Actions: a page shaped like the job",
+    changes: [
+      "Data Actions › Edit no longer has its own organisation dropdown. It uses the one in the header, like every other single-org page in the app.",
+      "The action picker is a searchable dropdown instead of a scrolling list box with a separate search field beside it. Category, integration and status remain as filters, but sit out of the way until there are actions to filter.",
+      "Contract, Configuration and Test are now three collapsible sections in the order Genesys uses, and the page opens with all three closed. Test used to be at the very bottom, behind everything else; it is now one click from the top. Contract used to be permanently expanded despite being the one thing you cannot edit.",
+      "Save Draft, Validate and Publish moved to a bar directly under the picker, with the status message beside them, so they stay in view instead of scrolling away behind a long request template.",
+      "Unsaved changes are now visible while you have them, rather than only being mentioned when you press Publish.",
+      "A test result is shown against the action’s own output contract — each output by name, type and value — with the execution steps listed separately and the raw response kept but tucked away. Previously the whole thing was a wall of JSON, and a failing test gave you no indication of which step failed.",
+      "Execution Timeout is editable, 1 to 60 seconds as Genesys allows. It was previously invisible here, so setting one meant going to Genesys.",
+      "Category is no longer presented as editable. Genesys fixes it when an action is created and offers no way to change it; this page offered a text box that suggested otherwise. It is now shown as a read-only value, and the Contract section says why a published action’s contract cannot be changed instead of just showing a table you cannot edit.",
+      "The status of an action — published, draft, or both — now reads as a badge rather than the first of five rows of small text, since it decides what the buttons will do.",
+    ],
+  },
+  {
     version: "4.5",
     date: "2026-08-25",
     title: "Data Actions: the templates it showed were not the ones Genesys held",
