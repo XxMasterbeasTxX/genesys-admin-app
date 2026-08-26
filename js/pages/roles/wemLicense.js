@@ -510,6 +510,10 @@ export function renderWemContent(container, { me, api, orgContext }) {
           // whole directory, so that loop was the page's real scaling cost —
           // an order of magnitude more requests than the per-role infer calls.
           expand: ["authorization", "groups"],
+          // /api/v2/users defaults to state=active. On a licence audit that
+          // hides the very thing you are looking for: an inactive user still
+          // holding a WEM seat is pure waste, and was invisible here.
+          state: "any",
           onProgress: (f, t) => { usersFetched = f; if (t != null) usersTotal = t; updateProgress(); },
         }),
         fetchAllLicenseUsers(api, org.id, {
