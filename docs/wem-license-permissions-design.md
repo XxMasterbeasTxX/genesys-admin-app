@@ -335,11 +335,13 @@ counted*; Export → Licenses → Consumption answers *who holds a seat now*; an
 this page answers *who could trigger one, and which role does it* — which is
 the question it was built for.
 
-## 14. Inactive users are in scope
+## 14. Inactive users are deliberately out of scope
 
-`/api/v2/users` defaults to `state=active`. A licence audit that cannot see
-inactive users misses the clearest waste there is — a dormant account still
-occupying a seat. Fixed in `5077e28` with `state: "any"`.
+`5077e28` added `state: "any"` on the reasoning that a dormant account still
+holding a WEM seat is obvious waste. That reasoning was wrong and it has been
+reverted: **inactive users do not count towards licence billing**, so such an
+account is not a seat anyone is paying for. Including them would have added
+rows nobody can act on to a page whose whole purpose is finding real exposure.
 
-The neighbouring licence exports have the same defect and are tracked
-separately; they were left alone rather than widening this change.
+The page therefore uses `/api/v2/users`' default of `state=active`, and the
+neighbouring licence exports doing the same are correct rather than defective.
