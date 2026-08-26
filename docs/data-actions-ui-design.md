@@ -250,13 +250,25 @@ keep the tab and reload its contents, not silently reset to Configuration.
    `â–¸`. `@charset "UTF-8"` is now declared as well. A pre-existing `▶` on
    `.te-sheet-title` had the same fault and was fixed with it.
 
-## 8. Still open
+## 8. Closed without an answer
 
-1. **Does Genesys honour a `category` change over the API?** `UpdateDraftInput`
-   accepts the field with no `readOnly` marker, but the Genesys UI offers no way
-   to set it, so it is unclear whether the service applies it, ignores it, or
-   rejects it. We match the vendor either way (§4.8) — this only decides whether
-   the old editable field was doing anything.
-2. **Has any category already drifted?** The field was editable and transmitted
-   on every save up to 4.5. If the answer to (1) is "honoured", one check against
-   Architect says whether anything needs putting back.
+**Does Genesys honour a `category` change over the API, and has any category
+already drifted?** Closed 2026-08-26 as not worth the measurement.
+
+`UpdateDraftInput` accepts `category` with no `readOnly` marker, but the Genesys
+UI offers no way to set it, so whether the service applies it, ignores it or
+rejects it was never established. The field was editable and transmitted on
+every save up to 4.5, so in principle a category could have been changed through
+this page.
+
+Closed because **the answer changes nothing**. Read-only is correct either way —
+we match what the vendor's own editor permits (§4.8) — so the question only ever
+decided whether the old field had been doing something, not what the page should
+do now. Category is metadata used for grouping in Architect; a drifted one is
+visible at a glance and costs a moment to correct, so hunting for one on the
+chance it exists is not a good trade.
+
+**What would reopen it:** someone reporting an action filed under an unexpected
+category in Architect. At that point the check is one PATCH against a scratch
+action to see whether the API honours the field, and a scan of categories against
+their `demo` originals.
