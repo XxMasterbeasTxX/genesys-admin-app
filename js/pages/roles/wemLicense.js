@@ -51,11 +51,20 @@ import {
 // misses an org, fix the hint.
 const WEM_HINT = /wem|workforce\s*engagement/i;
 
-// Genesys Cloud CX 3 and above bundle WEM into the base license, so those orgs
-// have no separate WEM add-on to buy — and `/license/definitions` returns only
-// what an org can actually hold, so the WEM SKU is genuinely absent rather than
-// merely unticked. `gc2WEMupgrade` sits beside `cloudCX2`; nothing sits beside
-// `cloudCX3`.
+// The WEM add-on an org holds follows its CX tier, and the three cases are
+// exhaustive:
+//
+//   cloudCX1  →  gc1WEMupgrade
+//   cloudCX2  →  gc2WEMupgrade
+//   cloudCX3+ →  none; WEM is bundled into the base license
+//
+// The upgrades are alternatives, not additions — no org holds both. And
+// `/license/definitions` returns only what an org can actually hold, so on
+// CX3 the WEM SKU is genuinely absent rather than merely unselected: its
+// absence is the answer, not a failure to find it.
+//
+// `wemLicenseIds` stays a list all the same. It costs nothing, and it keeps
+// working if Genesys renames or adds a tier.
 const BASE_TIER = /^cloudCX(\d+)/i;
 const WEM_BUNDLED_FROM_TIER = 3;
 

@@ -232,8 +232,14 @@ Found on the first real run (2026-08-26), across two live orgs:
 
 | Org | Base | WEM SKU in `/license/definitions` |
 | --- | --- | --- |
-| Nemlig | `cloudCX2` | `gc2WEMupgrade` — pre-ticks correctly |
+| Nemlig | `cloudCX2` | `gc2WEMupgrade` — identified correctly |
 | Demo | `cloudCX3` | **none** |
+
+The customer then supplied the general rule, which makes the three cases
+exhaustive rather than merely observed: `cloudCX1` takes `gc1WEMupgrade`,
+`cloudCX2` takes `gc2WEMupgrade`, `cloudCX3` and above take neither. The
+upgrades are **alternatives, not additions** — no org holds both, so there is
+no such thing as an org with two WEM SKUs to test against.
 
 `/license/definitions` returns only the licences an org can actually hold, and
 **CX3 and above bundle WEM into the base licence**. So on a CX3 org the WEM
