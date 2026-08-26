@@ -298,3 +298,48 @@ outranks the UA sheet's `[hidden] { display:none }`. Setting `hidden` on the
 chips left the JS assertions passing — `label.hidden` was true — while every
 chip stayed on screen. It took reading the rendered text, not the DOM, to see
 it. The chips are gone now, but the lesson is not: assert on rendered output.
+
+## 13. This page's numbers will not match a concurrent bill
+
+Cost an hour on the first real run, so it is written down.
+
+Nemlig showed **40 users** on this page against **13** on the Genesys billing
+page, and the obvious conclusion — that the page over-reports — was wrong.
+They measure different things, and on a concurrent-licensing org they cannot
+agree:
+
+- **This page** reads `/api/v2/license/users`: who holds a licence **right now**.
+- **The bill** reads peak concurrency: the largest number of licence holders
+  **logged in simultaneously** at any point in the billing period.
+
+From *Concurrent licensing model billing overview* in the Resource Centre:
+users who hold a licence during the usage period are eligible for the
+concurrency calculation, charges reflect the highest licence a user **was
+assigned during the period**, and peaks shorter than 30 minutes are
+disregarded and may span non-contiguous intervals.
+
+Two consequences worth holding on to:
+
+1. **Licences are assigned, not attached at login.** A tempting reading of
+   "concurrent" is that the licence is drawn from a pool when someone signs in;
+   it is not. Users hold licences, and concurrency counts how many holders were
+   on at once.
+2. **A point-in-time API cannot reconstruct the peak.** If 6 hold the licence
+   today and the bill says 13, assignments changed during the period. No
+   snapshot endpoint can recover that, and this page should not pretend to.
+   Genesys publishes the **Concurrent Usage report**, which lists the counted
+   users and their login times — that is the tool for "who were the 13".
+
+So the division of labour is: the Concurrent Usage report answers *who was
+counted*; Export → Licenses → Consumption answers *who holds a seat now*; and
+this page answers *who could trigger one, and which role does it* — which is
+the question it was built for.
+
+## 14. Inactive users are in scope
+
+`/api/v2/users` defaults to `state=active`. A licence audit that cannot see
+inactive users misses the clearest waste there is — a dormant account still
+occupying a seat. Fixed in `5077e28` with `state: "any"`.
+
+The neighbouring licence exports have the same defect and are tracked
+separately; they were left alone rather than widening this change.

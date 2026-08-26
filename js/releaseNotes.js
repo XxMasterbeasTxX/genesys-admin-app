@@ -32,6 +32,8 @@ export const RELEASE_NOTES = [
       "Everything exports to Excel, with the full list of triggering permissions per row rather than the abbreviated one the table has room for.",
       "Group memberships are read once, with the bulk user fetch, rather than one request per user found. On an org where WEM is widely deployed that is the difference between a few dozen requests and a few thousand — the number of requests now follows the number of roles and groups, not the size of the directory.",
       "An organisation on Genesys Cloud CX 3 or above has no WEM add-on to select, because CX 3 already includes WEM. The page now says so — and says that nobody in such an organisation can be carrying a WEM permission it is not paying for — rather than asking you to pick a licence that does not exist for you.",
+      "Inactive users are included. A deactivated account still holding a WEM licence is the clearest seat there is to reclaim, and it was previously invisible here.",
+      "Note that on an organisation with concurrent licensing these figures will not match the Genesys bill, and are not meant to: this page reports who holds a licence now, while the bill reports the peak number logged in simultaneously during the period. Genesys’ own Concurrent Usage report lists the users behind that peak.",
     ],
   },
   {
