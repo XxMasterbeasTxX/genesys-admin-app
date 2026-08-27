@@ -128,6 +128,9 @@ first is the cheaper order.
    out. And a permission that *is* in the base licence cannot trigger the
    add-on by definition, so nothing legitimate is lost to over-subtraction.
 
+   **Qualified by §17** — that last sentence holds per licence, not across a
+   set of them.
+
 3. **The WEM licence ids in this org.** Never a build blocker — §3 step 1
    discovers them at runtime and puts them in front of the user. Hardcoding
    them was already rejected.
@@ -398,3 +401,42 @@ action lists — so there is no write-side exposure to this change.
 The practical effect is on testing, not behaviour: a wildcard role can no longer
 be constructed, so the test pass now checks that **no** `*` appears rather than
 that one expands correctly.
+
+## 17. Subtract per licence, not across the set
+
+Found by E3 firing on Nykredit, which holds **both** WEM upgrades.
+
+`wemOnlyPermissions` used to union every selected licence's permissions, union
+every prerequisite's permissions, and subtract once at the end. With one WEM SKU
+that is fine. With two it lets **one licence's base cancel another licence's
+triggers**:
+
+- Quality Management requires the add-on on CX 1, so quality permissions are in
+  `gc1WEMupgrade`.
+- Quality Management is *bundled* into CX 2 — and `cloudCX2` is
+  `gc2WEMupgrade`'s prerequisite.
+- Union-then-subtract therefore erased quality from the result entirely.
+
+The symptom was a **Quality Administrator** role showing *Not attributable*:
+`/license/infer` said it needed WEM, and the explanation column had nothing left
+to point at. Exactly the disagreement §E3 of the test pass was written to catch.
+
+Now each licence is netted against its own prerequisites and the results are
+unioned:
+
+    (gc1WEM − cloudCX1) ∪ (gc2WEM − cloudCX2)
+
+rather than
+
+    (gc1WEM ∪ gc2WEM) − (cloudCX1 ∪ cloudCX2)
+
+Covered by a regression test that fails against the old logic and passes against
+the new — checked both ways round rather than written to match the fix.
+
+### And an org *can* hold both WEM SKUs
+
+§A2 of the test pass recorded, on the customer's steer, that the two upgrades
+are alternatives and no org holds both. Nykredit holds both, so that was wrong.
+Presumably it runs a mix of CX 1 and CX 2 users. The code never depended on the
+claim — `wemLicenseIds` has always been a list — which is the only reason this
+surfaced as a subtraction bug rather than a crash.

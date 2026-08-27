@@ -166,21 +166,36 @@ async function collectPermissions(api, orgId, def, cache, seen = new Set()) {
 async function wemOnlyPermissions(api, orgId, licenseIds, listed, cache) {
   const byId = new Map(listed.map((d) => [d.id, d]));
   const selected = new Set(licenseIds);
-  const granted = new Set();
-  const base = new Set();
+  const out = new Set();
 
+  // Net each licence against ITS OWN prerequisites, then union the results.
+  //
+  // Unioning everything first and subtracting everything after lets one SKU's
+  // base cancel another SKU's triggers. An org holding both WEM upgrades hit
+  // exactly that: Quality Management requires the add-on on CX 1, so quality
+  // permissions are in gc1WEMupgrade — but they are bundled into cloudCX2,
+  // which is gc2WEMupgrade's prerequisite. Subtracting globally erased them,
+  // and a Quality Administrator role came back "Not attributable" while
+  // /license/infer still said it needed WEM.
   for (const id of licenseIds) {
     const def = await resolveDefinition(api, orgId, byId.get(id) || id, cache);
     if (!def) continue;
-    for (const p of await collectPermissions(api, orgId, def, cache)) granted.add(p);
+
+    const granted = await collectPermissions(api, orgId, def, cache);
+
+    const base = new Set();
     for (const pre of def.prerequisites || []) {
       const preId = typeof pre === "string" ? pre : pre?.id;
+      // A selected licence is never its own base: if one WEM SKU lists another
+      // as a prerequisite, subtracting it would empty the result.
       if (selected.has(preId)) continue;
       for (const p of await collectPermissions(api, orgId, pre, cache)) base.add(p);
     }
+
+    for (const p of granted) if (!base.has(p)) out.add(p);
   }
 
-  return new Set([...granted].filter((p) => !base.has(p)));
+  return out;
 }
 
 // ── Permission matching (wildcard-aware) ──────────────────────────────────────
