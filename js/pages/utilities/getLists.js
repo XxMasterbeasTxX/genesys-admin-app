@@ -209,17 +209,36 @@ async function fetchPermissionsVsLicenses(api, orgId) {
   }
   licenceIds.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 
-  const rows = perms
-    .sort((a, b) => a.permission.localeCompare(b.permission, undefined, { sensitivity: "base" }))
-    .map((p) => {
-      const held = byPermission.get(p.permission);
-      const row = { ...p, licenceCount: held ? held.size : 0 };
-      for (const id of licenceIds) row[`lic_${id}`] = held && held.has(id) ? "Yes" : "";
-      return row;
-    });
+  // One row per permission-LICENCE pair, not one per permission. A column per
+  // licence was a wall of mostly-empty ticks that scrolled off the screen, and
+  // collapsing them into one comma-separated cell would have made the licence
+  // filter list combinations rather than licences — so picking one licence
+  // would mean ticking every combination containing it.
+  //
+  // Long format sidesteps both: the Licence column holds a single value, so the
+  // existing per-column filter works untouched and "only gc2WEMupgrade" gives
+  // exactly the permissions that licence grants. Few permissions carry more
+  // than one licence, so the row count grows modestly — and `# Licences` still
+  // says how many a permission has in total, so a repeated row is legible
+  // rather than looking like a duplicate.
+  //
+  // A permission in no licence keeps one row with an empty Licence, because
+  // "nothing licence-gates this" is an answer worth being able to filter for.
+  const rows = [];
+  for (const p of perms.sort((a, b) =>
+    a.permission.localeCompare(b.permission, undefined, { sensitivity: "base" }))) {
+    const held = byPermission.get(p.permission);
+    const list = held ? licenceIds.filter((id) => held.has(id)) : [];
+    if (!list.length) {
+      rows.push({ ...p, licenceCount: 0, licence: "" });
+    } else {
+      for (const id of list) rows.push({ ...p, licenceCount: list.length, licence: id });
+    }
+  }
 
   const columns = [
     { key: "permission",    label: "Permission",     wch: 46 },
+    { key: "licence",       label: "Licence",        wch: 30 },
     { key: "label",         label: "Label",          wch: 34 },
     { key: "domain",        label: "Domain",         wch: 22 },
     { key: "entity",        label: "Entity",         wch: 26 },
@@ -227,7 +246,6 @@ async function fetchPermissionsVsLicenses(api, orgId) {
     { key: "divisionAware", label: "Division Aware", wch: 14 },
     { key: "conditions",    label: "Conditions",     wch: 12 },
     { key: "licenceCount",  label: "# Licences",     wch: 11 },
-    ...licenceIds.map((id) => ({ key: `lic_${id}`, label: id, wch: Math.max(14, id.length + 2) })),
   ];
 
   return { rows, columns };
@@ -259,15 +277,19 @@ const LIST_DEFS = [
     key: "permissions-vs-licenses",
     action: "licenses",
     label: "Permissions vs. Licenses",
-    desc: `Every permission in the org's catalog against every licence that grants it —
-           one column per licence, so filtering a licence column gives you the permissions it
-           carries. Sources: <code>GET /api/v2/authorization/permissions</code> and
-           <code>GET /api/v2/license/definitions</code>. Shows what each licence
-           <em>grants</em>; that is not the same as what triggers a charge. Columns differ per
-           org, since Genesys returns only the licences an org can hold.`,
+    desc: `Every permission in the org's catalog paired with each licence that grants it —
+           one row per permission and licence, so filtering the <strong>Licence</strong> column to one
+           value gives exactly the permissions it carries. A permission granted by two licences
+           appears twice; <strong>#&nbsp;Licences</strong> says how many in total. Sources:
+           <code>GET /api/v2/authorization/permissions</code> and
+           <code>GET /api/v2/license/definitions</code>. Shows what each licence <em>grants</em>;
+           that is not the same as what triggers a charge. Which licences appear differs per org,
+           since Genesys returns only the ones an org can hold.`,
     filePrefix: "Permissions_vs_Licenses",
     sheetName: "Permissions vs Licenses",
-    unit: "permissions",
+    // "rows", not "permissions": a row is a permission-licence pair, so the
+    // count exceeds the number of permissions and saying otherwise would lie.
+    unit: "rows",
     // columns come from fetch — one per licence, not known until it runs
     fetch: fetchPermissionsVsLicenses,
   },
@@ -308,6 +330,12 @@ const PAGE_STYLES = `
    so the sticky header follows the light/dark theme like everything else. */
 .gl-table-wrap { max-height: 62vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 16px; }
 .gl-table { width: 100%; }
+/* A second scrollbar above the table. With a dozen columns the real one sits
+   below the fold, so reaching it means scrolling down past every row first.
+   This is a bar of the same scrollWidth whose position is kept in sync both
+   ways; it hides itself when there is nothing to scroll. */
+.gl-scroll-top { overflow-x: auto; overflow-y: hidden; }
+.gl-scroll-top .gl-scroll-spacer { height: 1px; }
 .gl-table thead th {
   position: sticky; top: 0; z-index: 2;
   background: var(--panel);
@@ -636,6 +664,9 @@ export default async function renderGetLists(ctx = {}) {
   let allRows = [];
   // Set when a list's fetch returns { rows, columns } instead of a bare array.
   let dynamicCols = null;
+  // Live only while a table is rendered; disconnected on clear.
+  let scrollObserver = null;
+  let sizeScrollerRef = null;
   const colsFor = (def) => dynamicCols || def.columns || [];
   let sortKey = null;
   let sortDir = "asc";
@@ -650,6 +681,11 @@ export default async function renderGetLists(ctx = {}) {
   function clearTable() {
     detachFilters?.();
     detachFilters = null;
+    // The observer outlives innerHTML = "" otherwise, and keeps firing against
+    // a detached node every time the container resizes.
+    scrollObserver?.disconnect();
+    scrollObserver = null;
+    sizeScrollerRef = null;
     $results.innerHTML = "";
   }
 
@@ -700,6 +736,7 @@ export default async function renderGetLists(ctx = {}) {
     const unit = currentDef.unit || "rows";
 
     $results.innerHTML = `
+      <div class="gl-scroll-top" id="glScrollTop"><div class="gl-scroll-spacer"></div></div>
       <div class="gl-table-wrap">
         <table class="data-table ll-preview-table gl-table">
           <thead>
@@ -724,8 +761,43 @@ export default async function renderGetLists(ctx = {}) {
       </div>
     `;
 
+    // Keep the top scrollbar and the table in step. The spacer is given the
+    // table's scroll width so the bar's thumb matches; if nothing overflows,
+    // the bar hides rather than sitting there as a dead 1px strip.
+    const $scrollTop = $results.querySelector("#glScrollTop");
+    const $tableWrap = $results.querySelector(".gl-table-wrap");
+    if ($scrollTop && $tableWrap) {
+      const spacer = $scrollTop.querySelector(".gl-scroll-spacer");
+      const sizeScroller = () => {
+        const w = $tableWrap.scrollWidth;
+        spacer.style.width = `${w}px`;
+        $scrollTop.style.display = w > $tableWrap.clientWidth ? "" : "none";
+      };
+      sizeScrollerRef = sizeScroller;
+      sizeScroller();
+      // Column widths settle after layout, and again whenever the box resizes.
+      requestAnimationFrame(sizeScroller);
+      if (typeof ResizeObserver === "function") {
+        const ro = new ResizeObserver(sizeScroller);
+        ro.observe($tableWrap);
+        scrollObserver = ro;
+      }
+      // Guard against the echo: each handler would otherwise re-fire the other.
+      let syncing = false;
+      const link = (from, to) => from.addEventListener("scroll", () => {
+        if (syncing) return;
+        syncing = true;
+        to.scrollLeft = from.scrollLeft;
+        syncing = false;
+      });
+      link($scrollTop, $tableWrap);
+      link($tableWrap, $scrollTop);
+    }
+
     detachFilters = attachHeaderFilters($results, (visible, total, filtered) => {
       $count.textContent = filtered ? `${visible} / ${total} ${unit}` : `${total} ${unit}`;
+      // Hiding rows can change the table's width; keep the bar honest.
+      $results.querySelector("#glScrollTop") && sizeScrollerRef?.();
     });
 
     // Only the label sorts — the filter button and its panel stop the click.

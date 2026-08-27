@@ -9,15 +9,28 @@ which needed this and did not have it.
 
 ## 1. What it is
 
-Every permission in the org's catalog, against every licence that grants it —
-one row per permission, one boolean column per licence.
+Every permission in the org's catalog, paired with each licence that grants it —
+**one row per permission and licence**.
 
 ```
-PERMISSION                          LABEL              cloudCX1  cloudCX2  gc2WEMupgrade  gcSTAupgrade  …
-quality:evaluation:add              Evaluation - Add             ✓         ✓
-analytics:botflowsession:view       Botflow Session - View                 ✓
-routing:queue:view                  Queue - View       ✓         ✓         ✓
+PERMISSION                     LICENCE          LABEL               # LICENCES
+analytics:botflowsession:view  gc2WEMupgrade    Botflow - View      1
+presence:presenceDefinition:view                Presence Def - View 0
+quality:evaluation:add         cloudCX2         Evaluation - Add    2
+quality:evaluation:add         gc2WEMupgrade    Evaluation - Add    2
+routing:queue:view             cloudCX1         Queue - View        2
+routing:queue:view             cloudCX2         Queue - View        2
 ```
+
+Long format, not a matrix. A column per licence was a wall of mostly-empty ticks
+that scrolled off screen; collapsing them into one comma-separated cell would
+have made the licence filter list *combinations* rather than licences, so
+picking one licence meant ticking every combination containing it. One row per
+pair sidesteps both — the Licence column holds a single value, the existing
+per-column filter works untouched, and **only** on one licence gives exactly its
+permissions. Few permissions carry more than one licence, so the row count grows
+modestly, and `# Licences` keeps a repeated row legible rather than looking like
+a duplicate.
 
 Filter the `gc2WEMupgrade` column to ✓ and you have "permissions assigning WEM",
 which is where this started. But the same sheet answers it for **any** licence
