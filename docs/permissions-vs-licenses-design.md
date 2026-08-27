@@ -72,21 +72,33 @@ Two limits worth stating on the page:
   all.
 - **Snapshot.** Genesys changes licence contents; the sheet is true when run.
 
-## 5. Placement — needs a decision
+## 5. Placement — decided: a list under Get Lists
 
-Asked for under **Utilities › Get Lists**. That would work, but Get Lists is
-gated ALL of `presence:presenceDefinition:view` + `routing:wrapupCode:view`
-(§ read-permission-gating-design.md), because it aggregates distinct datasets.
-Adding this sheet adds `authorization:license:view` to that set, so anyone
-holding the first two but not the third **loses Get Lists entirely**.
+It goes in **Utilities › Get Lists** as one more entry in `LIST_DEFS`.
 
-Recommendation: **its own page**, `Utilities › Permissions vs. Licenses`, access
-key `utilities.permissionsVsLicenses`, gated on
-`["authorization:grant:add", "authorization:license:view"]` (ANY — Genesys'
-own alternatives for `/license/definitions`). Clean gate, and it is a derived
-view rather than a straight list export, which is what Get Lists is for.
+The objection in the first draft — that adding it would pull
+`authorization:license:view` into Get Lists' gate and cost the page to anyone
+lacking it — was based on a misreading, and the misreading was mine. Get Lists
+shows **one list at a time**: it is a picker over a registry, each entry with its
+own `fetch`. It never loads two datasets in one run, so the ALL gate that
+read-permission-gating-design.md §10 gave it was wrong from the start, and
+someone holding only `routing:wrapupCode:view` was being denied a page they were
+entitled to use.
 
-The name deliberately echoes **Roles › Permissions vs. Users**.
+Gating is now **per list**. Each `LIST_DEFS` entry names an `action`:
+
+```js
+"utilities.getLists": {
+  presence: { all: ["presence:presenceDefinition:view"] },
+  wrapup:   { all: ["routing:wrapupCode:view"] },
+  licenses: ["authorization:grant:add", "authorization:license:view"],
+},
+```
+
+A list the user cannot read simply does not appear in the picker. The page-level
+check omits `action`, which unions to ANY — "can they see anything here" — so
+lacking one list never costs access to the others. Fixed and verified ahead of
+this feature; adding the new list is now a one-entry change with its own gate.
 
 ## 6. Shape
 

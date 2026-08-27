@@ -194,7 +194,10 @@ The corrected rule:
 - **ALL** where the page aggregates *distinct* datasets, each with its own
   permission.
 
-Switched to ALL: `utilities.getLists`, `export.users.queuesSkills`
+Switched to ALL: ~~`utilities.getLists`~~ (**wrong — corrected 2026-08-27**: that page shows one
+list at a time from a registry and never aggregates, so it is gated per list instead, and
+requiring ALL had been denying it to anyone holding only one of the two permissions),
+`export.users.queuesSkills`
 (queues + skills), `export.users.allRoles` and `export.users.filteredRoles`
 (roles + grants), `roles.compare` and `roles.search` (roles + grants for source
 attribution).

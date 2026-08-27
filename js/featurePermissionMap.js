@@ -203,7 +203,15 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
                                  wem:  ["authorization:grant:add", "authorization:license:view"] },
 
   // ── Utilities ────────────────────────────────────────
-  "utilities.getLists":        { view: { all: ["presence:presenceDefinition:view", "routing:wrapupCode:view"] } },
+  // One action per list, because the page shows ONE list at a time — it is a
+  // picker over a registry, not an aggregate. An earlier revision required ALL
+  // of these, on a misreading of the file, which denied the whole page to
+  // someone entitled to one of its lists. Omitting `action` asks "can they see
+  // anything here", which unions to ANY and is the right page-level question.
+  "utilities.getLists":        {
+    presence: { all: ["presence:presenceDefinition:view"] },
+    wrapup:   { all: ["routing:wrapupCode:view"] },
+  },
 
   // NOT gated, deliberately:
   //   export.scheduled, export.users.skillTemplates  — app-owned storage

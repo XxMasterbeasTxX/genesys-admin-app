@@ -10,6 +10,10 @@
  *
  * Each definition supplies:
  *   key        id used by the picker
+ *   action     gate name in FEATURE_READ_PERMISSIONS["utilities.getLists"].
+ *              Each list is gated on its own permission and simply does not
+ *              appear in the picker without it, so lacking one list never costs
+ *              access to the others. A list with no `action` is ungated.
  *   label      what the picker shows
  *   desc       one line under the heading, HTML
  *   filePrefix leading part of the exported filename
@@ -127,6 +131,7 @@ async function fetchWrapupCodes(api, orgId) {
 const LIST_DEFS = [
   {
     key: "presence-definitions",
+    action: "presence",
     label: "Presence Definitions",
     desc: `Every presence definition in the org with all of its language labels —
            one row per language. Source: <code>GET /api/v2/presence/definitions</code>.`,
@@ -146,6 +151,7 @@ const LIST_DEFS = [
   },
   {
     key: "wrapup-codes",
+    action: "wrapup",
     label: "Wrap-up Codes",
     desc: `Every wrap-up code in the org with its division.
            Source: <code>GET /api/v2/routing/wrapupcodes</code>.`,
@@ -445,7 +451,13 @@ function attachHeaderFilters(wrap, onChange) {
 
 // ── Page renderer ─────────────────────────────────────────────────────
 export default async function renderGetLists(ctx = {}) {
-  const { api } = ctx;
+  const { api, access } = ctx;
+
+  // Only the lists this user may actually read. The page-level gate asks
+  // whether they can see *any* of them, so reaching here means at least one.
+  const visibleDefs = LIST_DEFS.filter(
+    (d) => !d.action || !access?.can || access.can("utilities.getLists", d.action),
+  );
   const el = document.createElement("section");
   el.className = "card";
 
@@ -470,7 +482,7 @@ export default async function renderGetLists(ctx = {}) {
       <div class="di-control-group" style="min-width: 280px;">
         <label class="di-label" for="glListSelect">List</label>
         <select class="input" id="glListSelect">
-          ${LIST_DEFS.map((d) => `<option value="${escapeHtml(d.key)}">${escapeHtml(d.label)}</option>`).join("")}
+          ${visibleDefs.map((d) => `<option value="${escapeHtml(d.key)}">${escapeHtml(d.label)}</option>`).join("")}
         </select>
       </div>
       <button class="btn" id="glLoadBtn">Load</button>
@@ -498,7 +510,7 @@ export default async function renderGetLists(ctx = {}) {
   const $export  = el.querySelector("#glExportBtn");
 
   // ── State ────────────────────────────────────────────
-  let currentDef = LIST_DEFS[0];
+  let currentDef = visibleDefs[0];
   let allRows = [];
   let sortKey = null;
   let sortDir = "asc";
@@ -659,7 +671,7 @@ export default async function renderGetLists(ctx = {}) {
 
   // ── Wiring ───────────────────────────────────────────
   $select.addEventListener("change", () => {
-    currentDef = LIST_DEFS.find((d) => d.key === $select.value) || LIST_DEFS[0];
+    currentDef = visibleDefs.find((d) => d.key === $select.value) || visibleDefs[0];
     showIdle();
   });
 
