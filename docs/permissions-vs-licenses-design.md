@@ -1,6 +1,6 @@
 # Utilities — Permissions vs. Licenses — Design
 
-Status: **Proposed** — awaiting go-ahead, no code written
+Status: **Built** — shipped as a Get Lists entry, 2026-08-27
 Author: Genesys Admin App
 Last updated: 2026-08-27
 

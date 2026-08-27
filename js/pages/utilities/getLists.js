@@ -19,11 +19,19 @@
  *   filePrefix leading part of the exported filename
  *   sheetName  worksheet name in the workbook
  *   unit       what a row is, for the "N rows" count
- *   columns    [{ key, label, wch }] — drives the table AND the workbook
- *   fetch      async (api, orgId) => row objects keyed by column.key
+ *   columns    [{ key, label, wch }] — drives the table AND the workbook.
+ *              Omit it when the columns are not known until the data is:
+ *              `fetch` may return `{ rows, columns }` instead of a bare array,
+ *              and those columns win. Permissions vs. Licenses needs this —
+ *              it has one column per licence the org holds.
+ *   fetch      async (api, orgId) => row objects keyed by column.key,
+ *              or { rows, columns } when the shape is data-dependent
  */
 import { escapeHtml, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
-import { fetchAllWrapupCodes, fetchAllDivisions } from "../../services/genesysApi.js";
+import {
+  fetchAllWrapupCodes, fetchAllDivisions,
+  fetchLicenseDefinitions, fetchLicenseDefinition,
+} from "../../services/genesysApi.js";
 import { orgContext } from "../../services/orgContext.js";
 
 // ── Presence definitions ──────────────────────────────────────────────
@@ -127,6 +135,104 @@ async function fetchWrapupCodes(api, orgId) {
   return rows;
 }
 
+// ── Permissions vs. Licenses ──────────────────────────────────────────
+/**
+ * Every permission in the org's catalog against every licence that grants it.
+ *
+ *   GET /api/v2/authorization/permissions   the catalog (paginated).
+ *                                           Declares no required permission.
+ *   GET /api/v2/license/definitions         per licence, `permissions.ids`
+ *
+ * Invert the second, join onto the first. No per-permission calls: the
+ * definitions already carry the mapping, so this costs one catalog walk plus
+ * one definitions call (and a by-id re-fetch for any definition that arrives
+ * without its permissions, which the list endpoint sometimes does).
+ *
+ * Reading it: because a licence's permission set appears to be cumulative, a
+ * permission shows against every tier that includes it. That is the point, not
+ * noise — `quality:evaluation:add` ticked for cloudCX2, cloudCX3 and
+ * gc1WEMupgrade reads as "bundled from CX 2 up; on CX 1 it needs the add-on".
+ *
+ * Only what the API says. No help-article cross-referencing and no billing
+ * interpretation: what a licence GRANTS and what TRIGGERS a charge are
+ * different questions, and this answers the first.
+ */
+async function fetchPermissionsVsLicenses(api, orgId) {
+  // Catalog → flat permission strings, keeping the metadata worth showing.
+  const perms = [];
+  let page = 1, pageCount = null;
+  do {
+    const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/authorization/permissions", {
+      query: { pageSize: "100", pageNumber: String(page) },
+    });
+    pageCount = resp.pageCount ?? 1;
+    for (const entry of resp.entities || []) {
+      if (!entry.domain || !entry.permissionMap) continue;
+      for (const [entity, actions] of Object.entries(entry.permissionMap)) {
+        for (const a of actions || []) {
+          if (!a.action) continue;
+          perms.push({
+            permission: `${entry.domain}:${entity}:${a.action}`,
+            domain: entry.domain,
+            entity,
+            action: a.action,
+            label: a.label || "",
+            divisionAware: a.divisionAware ? "Yes" : "",
+            conditions: a.allowsConditions ? "Yes" : "",
+          });
+        }
+      }
+    }
+    page++;
+  } while (page <= pageCount);
+
+  // Licence definitions → permission → Set(licence ids).
+  const defs = await fetchLicenseDefinitions(api, orgId);
+  const byPermission = new Map();
+  const licenceIds = [];
+
+  for (const listed of defs) {
+    if (!listed?.id) continue;
+    let def = listed;
+    if (!def.permissions?.ids?.length) {
+      try {
+        def = await fetchLicenseDefinition(api, orgId, listed.id);
+      } catch {
+        def = listed; // a licence we cannot read is simply an empty column
+      }
+    }
+    licenceIds.push(listed.id);
+    for (const pid of def.permissions?.ids || []) {
+      if (!byPermission.has(pid)) byPermission.set(pid, new Set());
+      byPermission.get(pid).add(listed.id);
+    }
+  }
+  licenceIds.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+  const rows = perms
+    .sort((a, b) => a.permission.localeCompare(b.permission, undefined, { sensitivity: "base" }))
+    .map((p) => {
+      const held = byPermission.get(p.permission);
+      const row = { ...p, licenceCount: held ? held.size : 0 };
+      for (const id of licenceIds) row[`lic_${id}`] = held && held.has(id) ? "Yes" : "";
+      return row;
+    });
+
+  const columns = [
+    { key: "permission",    label: "Permission",     wch: 46 },
+    { key: "label",         label: "Label",          wch: 34 },
+    { key: "domain",        label: "Domain",         wch: 22 },
+    { key: "entity",        label: "Entity",         wch: 26 },
+    { key: "action",        label: "Action",         wch: 16 },
+    { key: "divisionAware", label: "Division Aware", wch: 14 },
+    { key: "conditions",    label: "Conditions",     wch: 12 },
+    { key: "licenceCount",  label: "# Licences",     wch: 11 },
+    ...licenceIds.map((id) => ({ key: `lic_${id}`, label: id, wch: Math.max(14, id.length + 2) })),
+  ];
+
+  return { rows, columns };
+}
+
 // ── The registry ──────────────────────────────────────────────────────
 const LIST_DEFS = [
   {
@@ -148,6 +254,22 @@ const LIST_DEFS = [
       { key: "divisionId",     label: "Division ID",     wch: 38 },
     ],
     fetch: fetchPresenceDefinitions,
+  },
+  {
+    key: "permissions-vs-licenses",
+    action: "licenses",
+    label: "Permissions vs. Licenses",
+    desc: `Every permission in the org's catalog against every licence that grants it —
+           one column per licence, so filtering a licence column gives you the permissions it
+           carries. Sources: <code>GET /api/v2/authorization/permissions</code> and
+           <code>GET /api/v2/license/definitions</code>. Shows what each licence
+           <em>grants</em>; that is not the same as what triggers a charge. Columns differ per
+           org, since Genesys returns only the licences an org can hold.`,
+    filePrefix: "Permissions_vs_Licenses",
+    sheetName: "Permissions vs Licenses",
+    unit: "permissions",
+    // columns come from fetch — one per licence, not known until it runs
+    fetch: fetchPermissionsVsLicenses,
   },
   {
     key: "wrapup-codes",
@@ -512,6 +634,9 @@ export default async function renderGetLists(ctx = {}) {
   // ── State ────────────────────────────────────────────
   let currentDef = visibleDefs[0];
   let allRows = [];
+  // Set when a list's fetch returns { rows, columns } instead of a bare array.
+  let dynamicCols = null;
+  const colsFor = (def) => dynamicCols || def.columns || [];
   let sortKey = null;
   let sortDir = "asc";
   let detachFilters = null;
@@ -566,7 +691,7 @@ export default async function renderGetLists(ctx = {}) {
   function render() {
     clearTable();
 
-    const cols = currentDef.columns;
+    const cols = colsFor(currentDef);
     if (!allRows.length) {
       $results.innerHTML = `<div class="gl-empty">No rows returned for this org.</div>`;
       return;
@@ -623,6 +748,7 @@ export default async function renderGetLists(ctx = {}) {
    */
   function showIdle() {
     allRows = [];
+    dynamicCols = null;
     sortKey = null;
     sortDir = "asc";
     clearTable();
@@ -638,6 +764,7 @@ export default async function renderGetLists(ctx = {}) {
     const org = orgContext?.getDetails?.();
     if (!org) {
       allRows = [];
+    dynamicCols = null;
       clearTable();
       $actions.style.display = "none";
       setStatus("Please select a customer org first.", "error");
@@ -652,7 +779,14 @@ export default async function renderGetLists(ctx = {}) {
     $select.disabled = true;
 
     try {
-      allRows = await currentDef.fetch(api, org.id);
+      const fetched = await currentDef.fetch(api, org.id);
+      if (Array.isArray(fetched)) {
+        allRows = fetched;
+        dynamicCols = null;
+      } else {
+        allRows = fetched?.rows || [];
+        dynamicCols = fetched?.columns || null;
+      }
       if (!allRows.length) {
         setStatus(`No ${what} returned for this org.`, "error");
         return;
@@ -689,7 +823,7 @@ export default async function renderGetLists(ctx = {}) {
     const sheets = [{
       name: currentDef.sheetName || currentDef.label,
       rows,
-      columns: currentDef.columns,
+      columns: colsFor(currentDef),
     }];
     const prefix = `${currentDef.filePrefix}_${(org?.name || "org").replace(/[^\w]+/g, "_")}`;
     try {
