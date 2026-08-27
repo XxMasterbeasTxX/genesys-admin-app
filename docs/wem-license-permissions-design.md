@@ -2,7 +2,7 @@
 
 Status: **Built** — shipped as release 4.7; probe skipped, see §5
 Author: Genesys Admin App
-Last updated: 2026-08-26
+Last updated: 2026-08-27
 
 Sibling of the Hourly Interacting check (`js/pages/roles/hourlyInteracting.js`),
 which this deliberately mirrors: same page, same third mode slot, same table,
@@ -453,3 +453,20 @@ Worth deciding separately: a licence left over from a former subscription is
 arguably the clearest cleanup target on the page, and arguably a false positive
 if the org no longer buys it. Right now the page checks both, and `/license/infer`
 still returns the legacy SKU, so Genesys evidently still considers it live.
+
+## 18. Verified
+
+Full test pass green on 2026-08-27 — 40 cases across three customer orgs.
+Three of them earned their place by finding real defects rather than confirming
+what was already believed:
+
+| Case | Found |
+| --- | --- |
+| **E3** | the per-licence subtraction bug (§17) — a Quality Administrator role reading *Not attributable* on an org holding both WEM SKUs |
+| **F2** | that WEM is *faster* than Hourly Interacting, not slower — measured evidence the bulk-groups fetch (§10) works, and the reason Hourly is now flagged for the same treatment |
+| **I2** | Hourly Interacting's export ignoring the filter — pre-existing, fixed in `423d9f7` so the two adjacent tabs stop disagreeing |
+
+Several cases were rewritten mid-pass because they described behaviour that no
+longer existed — the licence picker, three categories, wildcard roles, blocking
+a URL that cannot be blocked. Each of those was a case that would have reported
+a failure that was not one.
