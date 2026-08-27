@@ -136,6 +136,12 @@ export default function renderLicenseConsumptionExport({ route, me, api, orgCont
       Exports a per-user licence consumption report. Fixed columns: Name, Email, Division.
       One boolean column per licence. Use the filter to restrict to a single licence.
     </p>
+    <p class="page-desc" style="margin-top:-4px">
+      Shows the licences <strong>currently assigned</strong>. On an organisation with concurrent
+      licensing this will not match your Genesys bill, which reports the peak number of users
+      logged in simultaneously during the billing period rather than how many hold a licence.
+      Genesys&rsquo; own <em>Concurrent Usage report</em> lists the users behind that figure.
+    </p>
 
     <!-- Phase 1: Load licence definitions -->
     <div class="te-actions">
