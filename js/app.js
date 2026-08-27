@@ -288,6 +288,21 @@ function renderSignInGate() {
 
   // --- Build navigation ---
   const navEl = document.getElementById("appNav");
+
+  // The group lookup failing used to grant everything. It now denies, which
+  // would otherwise render as an empty sidebar indistinguishable from "you have
+  // no access" — so say which it is. See docs/read-permission-gating-design.md §8.
+  if (access.verificationFailed) {
+    const warn = document.createElement("div");
+    warn.className = "nav-verify-warning";
+    warn.innerHTML =
+      `<strong>Access could not be verified.</strong>` +
+      `<span>Your group membership could not be read, so nothing is shown. ` +
+      `Reload to retry; if it persists, this is not a permissions decision.</span>`;
+    navEl.appendChild(warn);
+    setHeader({ authText: `Auth: ok · ${userName} · access unverified` });
+  }
+
   const nav = createNav(navEl, NAV_TREE, access);
 
   // --- Version footer (bottom of the sidebar) ---

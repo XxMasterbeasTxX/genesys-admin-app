@@ -21,6 +21,28 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.7",
+    date: "2026-08-26",
+    title: "Who is triggering a WEM licence",
+    changes: [
+      "Utilities › Get Lists gains **Permissions vs. Licenses**: every permission in your organisation against every licence that grants it, one column per licence. Filter a licence column to see exactly which permissions it carries. It shows what a licence grants, which is not the same as what triggers a charge.",
+      "Each list in Get Lists is now gated on its own permission rather than the page requiring all of them. Previously someone entitled to one list but not another lost the whole page. A list you cannot open is shown greyed out with the permission it needs, so you can see it exists and what to ask for.",
+      "Roles › Permissions vs. Users has a third tab, WEM License, alongside Permission Search and Hourly Interacting. It finds every user whose roles carry a permission that requires a Workforce Engagement Management add-on, names the role and the permissions responsible, and shows whether the permission came from the user directly or from a group.",
+      "The verdict comes from Genesys itself. Rather than compare permissions against a list of our own, the page asks the same licence-inference the Genesys admin UI uses when it warns that a role needs a licence, so its answer is the billing answer. There is no published list of WEM-triggering permissions to work from, and nothing here is scraped.",
+      "The result is checked against the licences each user actually holds, so you can see who triggers WEM with a licence assigned and who triggers it without one.",
+      "A Roles view sits beside the other filters. The same findings grouped by role — how many users each one affects, how many of them are licensed, and the permissions responsible — ordered so the role affecting the most people is first. One role usually accounts for most of the list, so this is the view you act on; the user list stays for checking whether a given person is meant to have it.",
+      "The page does not tell you what this costs, because it cannot know: with named licensing each triggering user is a billable seat, while with concurrent licensing they are only eligible and you are billed for the peak number logged in at once. It says so under the results rather than letting you assume one.",
+      "The page works out which licence counts as WEM and tells you what it is checking, rather than opening with every licence your organisation holds and asking you to choose one. There is nothing to pick: this page answers who holds a WEM licence and how they got it, and picking a licence would mean knowing which of your SKUs is the WEM one.",
+      "Everything exports to Excel, with the full list of triggering permissions per row rather than the abbreviated one the table has room for.",
+      "Hourly Interacting’s export now respects the filter too, matching the new tab beside it. It used to write every row regardless of which pill or search term you had applied — so filtering to the users you wanted and pressing Export handed back the whole list anyway.",
+      "Hourly Interacting is faster. It used to fetch each matched user’s groups in a separate request; they now arrive with the main user fetch, so the number of requests follows the number of roles and groups rather than the number of people found.",
+      "Export › Licenses › Consumption now says what it is showing: licences currently assigned. On an organisation with concurrent licensing that will never match the Genesys bill, which reports the peak number logged in at once — two people here spent an hour treating the difference as a defect.",
+      "Group memberships are read once, with the bulk user fetch, rather than one request per user found. On an org where WEM is widely deployed that is the difference between a few dozen requests and a few thousand — the number of requests now follows the number of roles and groups, not the size of the directory.",
+      "An organisation on Genesys Cloud CX 3 or above has no WEM add-on to select, because CX 3 already includes WEM. The page now says so — and says that nobody in such an organisation can be carrying a WEM permission it is not paying for — rather than asking you to pick a licence that does not exist for you.",
+      "Note that on an organisation with concurrent licensing these figures will not match the Genesys bill, and are not meant to: this page reports who holds a licence now, while the bill reports the peak number logged in simultaneously during the period. Genesys’ own Concurrent Usage report lists the users behind that peak.",
+    ],
+  },
+  {
     version: "4.6",
     date: "2026-08-25",
     title: "Data Actions: a page shaped like the job",

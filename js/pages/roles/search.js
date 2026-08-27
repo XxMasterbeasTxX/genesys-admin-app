@@ -26,6 +26,7 @@
  */
 import { escapeHtml, exportXlsx, timestampedFilename, makeStatus, makeControlBusy } from "../../utils.js";
 import { fetchAllAuthorizationRoles, fetchAllUsers } from "../../services/genesysApi.js";
+import { getReadPermissions } from "../../featurePermissionMap.js";
 
 // ── Permission catalog ────────────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ async function runBatched(tasks, concurrency = 10) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function renderRolesSearch({ me, api, orgContext }) {
+export default function renderRolesSearch({ me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
 
@@ -177,6 +178,8 @@ export default function renderRolesSearch({ me, api, orgContext }) {
       .rs-mode-btn { padding:7px 22px; background:none; border:none; color:var(--muted); cursor:pointer; font:inherit; font-size:13px; font-weight:600; transition:background .12s,color .12s; }
       .rs-mode-btn.active { background:rgba(59,130,246,.22); color:#60a5fa; }
       .rs-mode-btn:not(.active):hover { background:rgba(255,255,255,.05); color:var(--text); }
+      .rs-mode-btn--denied { opacity:.4; cursor:not-allowed; }
+      .rs-mode-btn--denied:hover { background:none; color:var(--muted); }
       @keyframes rs-slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(280%)} }
       .rs-progress-fill.indeterminate { width:35%; animation:rs-slide 1.3s ease-in-out infinite; }
       .rs-progress-detail { font-size:11px; color:var(--muted); margin-top:3px; }
@@ -187,6 +190,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     <div class="rs-mode-toggle">
       <button class="rs-mode-btn active" id="rsModeSearch">Permission Search</button>
       <button class="rs-mode-btn" id="rsModeHourly">Hourly Interacting</button>
+      <button class="rs-mode-btn" id="rsModeWem">WEM License</button>
     </div>
 
     <div id="rsSearchSection">
@@ -231,6 +235,7 @@ export default function renderRolesSearch({ me, api, orgContext }) {
     </div><!-- /rsSearchSection -->
 
     <div id="rsHourlySection" style="display:none"></div>
+    <div id="rsWemSection" style="display:none"></div>
   `;
 
   // ── DOM refs ──────────────────────────────────────────────
@@ -677,30 +682,95 @@ export default function renderRolesSearch({ me, api, orgContext }) {
   });
 
   // ── Mode toggle ──────────────────────────────────────────────
-  let hourlyInitialized = false;
-  const $modeSearch  = el.querySelector("#rsModeSearch");
-  const $modeHourly  = el.querySelector("#rsModeHourly");
-  const $searchSect  = el.querySelector("#rsSearchSection");
-  const $hourlySect  = el.querySelector("#rsHourlySection");
+  // Table-driven rather than pairwise: each analysis lives in its own module,
+  // is imported the first time its tab is opened, and never runs until then.
+  const MODES = [
+    // Permission Search and Hourly Interacting read the same things — roles,
+    // plus authorization/subjects for source attribution — so they share the
+    // "view" action. The WEM tab reads the licence API and carries its own.
+    { btn: "#rsModeSearch", sect: "#rsSearchSection", action: "view" },
+    {
+      btn: "#rsModeHourly",
+      sect: "#rsHourlySection",
+      action: "view",
+      load: async (host) => {
+        const { renderHourlyContent } = await import("./hourlyInteracting.js");
+        renderHourlyContent(host, { me, api, orgContext });
+      },
+    },
+    {
+      btn: "#rsModeWem",
+      sect: "#rsWemSection",
+      // The WEM tab reads the licence API, which its two siblings do not, so it
+      // carries its own permission. Gating the whole page on the union would
+      // deny Permission Search to someone entitled to it.
+      action: "wem",
+      load: async (host) => {
+        const { renderWemContent } = await import("./wemLicense.js");
+        renderWemContent(host, { me, api, orgContext });
+      },
+    },
+  ].map((m) => ({
+    ...m,
+    $btn: el.querySelector(m.btn),
+    $sect: el.querySelector(m.sect),
+    loaded: false,
+    permitted: !m.action || !access?.can || access.can("roles.search", m.action),
+  }));
 
-  $modeSearch.addEventListener("click", () => {
-    $modeSearch.classList.add("active");
-    $modeHourly.classList.remove("active");
-    $searchSect.style.display = "";
-    $hourlySect.style.display = "none";
-  });
-
-  $modeHourly.addEventListener("click", async () => {
-    $modeSearch.classList.remove("active");
-    $modeHourly.classList.add("active");
-    $searchSect.style.display = "none";
-    $hourlySect.style.display = "";
-    if (!hourlyInitialized) {
-      hourlyInitialized = true;
-      const { renderHourlyContent } = await import("./hourlyInteracting.js");
-      renderHourlyContent($hourlySect, { me, api, orgContext });
+  function activate(mode) {
+    for (const other of MODES) {
+      const on = other === mode;
+      other.$btn.classList.toggle("active", on);
+      other.$sect.style.display = on ? "" : "none";
     }
-  });
+  }
+
+  // Permission Search is the default tab and its section is already visible in
+  // the markup, so a disabled button alone would leave a denied user looking at
+  // the very UI the gate exists to withhold. Open the first tab they are
+  // actually allowed; if that is none, replace the page body outright.
+  const firstAllowed = MODES.find((m) => m.permitted);
+  if (!firstAllowed) {
+    const missing = access?.getMissingPermissions?.("roles.search", "view") || [];
+    for (const m of MODES) m.$sect.style.display = "none";
+    const denied = document.createElement("div");
+    denied.className = "rs-empty";
+    denied.innerHTML = `<div class="rs-empty-icon">&#128274;</div>
+      <p>You do not have permission to view this page.</p>
+      ${missing.length ? `<p style="font-size:13px;margin-top:8px">Requires
+        <strong>${escapeHtml(missing.join(", "))}</strong> in the company org.</p>` : ""}`;
+    el.appendChild(denied);
+  } else {
+    activate(firstAllowed);
+  }
+
+  for (const mode of MODES) {
+    // A tab the user lacks the permission for is shown disabled and says which
+    // permission is missing, rather than vanishing — per the hide-vs-disable
+    // policy in docs/customer-facing-plan.md §7.
+    if (!mode.permitted) {
+      // "or" vs "and" is not cosmetic: telling someone they need both
+      // permissions when either would do sends them to request too much.
+      const missing = access.getMissingPermissions?.("roles.search", mode.action) || [];
+      const { mode: reqMode } = getReadPermissions("roles.search", mode.action);
+      const joined = missing.join(reqMode === "all" ? " and " : " or ");
+      mode.$btn.disabled = true;
+      mode.$btn.classList.add("rs-mode-btn--denied");
+      mode.$btn.title = missing.length
+        ? `Requires ${joined} in the company org`
+        : "You do not have permission for this view";
+      continue;
+    }
+
+    mode.$btn.addEventListener("click", async () => {
+      activate(mode);
+      if (mode.load && !mode.loaded) {
+        mode.loaded = true;
+        await mode.load(mode.$sect);
+      }
+    });
+  }
 
   return el;
 }

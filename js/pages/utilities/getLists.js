@@ -10,16 +10,29 @@
  *
  * Each definition supplies:
  *   key        id used by the picker
+ *   action     gate name in FEATURE_READ_PERMISSIONS["utilities.getLists"].
+ *              Each list is gated on its own permission and simply does not
+ *              appear in the picker without it, so lacking one list never costs
+ *              access to the others. A list with no `action` is ungated.
  *   label      what the picker shows
  *   desc       one line under the heading, HTML
  *   filePrefix leading part of the exported filename
  *   sheetName  worksheet name in the workbook
  *   unit       what a row is, for the "N rows" count
- *   columns    [{ key, label, wch }] — drives the table AND the workbook
- *   fetch      async (api, orgId) => row objects keyed by column.key
+ *   columns    [{ key, label, wch }] — drives the table AND the workbook.
+ *              Omit it when the columns are not known until the data is:
+ *              `fetch` may return `{ rows, columns }` instead of a bare array,
+ *              and those columns win. Permissions vs. Licenses needs this —
+ *              it has one column per licence the org holds.
+ *   fetch      async (api, orgId) => row objects keyed by column.key,
+ *              or { rows, columns } when the shape is data-dependent
  */
 import { escapeHtml, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
-import { fetchAllWrapupCodes, fetchAllDivisions } from "../../services/genesysApi.js";
+import {
+  fetchAllWrapupCodes, fetchAllDivisions,
+  fetchLicenseDefinitions, fetchLicenseDefinition,
+} from "../../services/genesysApi.js";
+import { getReadPermissions } from "../../featurePermissionMap.js";
 import { orgContext } from "../../services/orgContext.js";
 
 // ── Presence definitions ──────────────────────────────────────────────
@@ -123,10 +136,127 @@ async function fetchWrapupCodes(api, orgId) {
   return rows;
 }
 
+// ── Permissions vs. Licenses ──────────────────────────────────────────
+/**
+ * Every permission in the org's catalog against every licence that grants it.
+ *
+ *   GET /api/v2/authorization/permissions   the catalog (paginated).
+ *                                           Declares no required permission.
+ *   GET /api/v2/license/definitions         per licence, `permissions.ids`
+ *
+ * Invert the second, join onto the first. No per-permission calls: the
+ * definitions already carry the mapping, so this costs one catalog walk plus
+ * one definitions call (and a by-id re-fetch for any definition that arrives
+ * without its permissions, which the list endpoint sometimes does).
+ *
+ * Reading it: because a licence's permission set appears to be cumulative, a
+ * permission shows against every tier that includes it. That is the point, not
+ * noise — `quality:evaluation:add` ticked for cloudCX2, cloudCX3 and
+ * gc1WEMupgrade reads as "bundled from CX 2 up; on CX 1 it needs the add-on".
+ *
+ * Only what the API says. No help-article cross-referencing and no billing
+ * interpretation: what a licence GRANTS and what TRIGGERS a charge are
+ * different questions, and this answers the first.
+ */
+async function fetchPermissionsVsLicenses(api, orgId) {
+  // Catalog → flat permission strings, keeping the metadata worth showing.
+  const perms = [];
+  let page = 1, pageCount = null;
+  do {
+    const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/authorization/permissions", {
+      query: { pageSize: "100", pageNumber: String(page) },
+    });
+    pageCount = resp.pageCount ?? 1;
+    for (const entry of resp.entities || []) {
+      if (!entry.domain || !entry.permissionMap) continue;
+      for (const [entity, actions] of Object.entries(entry.permissionMap)) {
+        for (const a of actions || []) {
+          if (!a.action) continue;
+          perms.push({
+            permission: `${entry.domain}:${entity}:${a.action}`,
+            domain: entry.domain,
+            entity,
+            action: a.action,
+            label: a.label || "",
+            divisionAware: a.divisionAware ? "Yes" : "",
+            conditions: a.allowsConditions ? "Yes" : "",
+          });
+        }
+      }
+    }
+    page++;
+  } while (page <= pageCount);
+
+  // Licence definitions → permission → Set(licence ids).
+  const defs = await fetchLicenseDefinitions(api, orgId);
+  const byPermission = new Map();
+  const licenceIds = [];
+
+  for (const listed of defs) {
+    if (!listed?.id) continue;
+    let def = listed;
+    if (!def.permissions?.ids?.length) {
+      try {
+        def = await fetchLicenseDefinition(api, orgId, listed.id);
+      } catch {
+        def = listed; // a licence we cannot read is simply an empty column
+      }
+    }
+    licenceIds.push(listed.id);
+    for (const pid of def.permissions?.ids || []) {
+      if (!byPermission.has(pid)) byPermission.set(pid, new Set());
+      byPermission.get(pid).add(listed.id);
+    }
+  }
+  licenceIds.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+  // One row per permission-LICENCE pair, not one per permission. A column per
+  // licence was a wall of mostly-empty ticks that scrolled off the screen, and
+  // collapsing them into one comma-separated cell would have made the licence
+  // filter list combinations rather than licences — so picking one licence
+  // would mean ticking every combination containing it.
+  //
+  // Long format sidesteps both: the Licence column holds a single value, so the
+  // existing per-column filter works untouched and "only gc2WEMupgrade" gives
+  // exactly the permissions that licence grants. Few permissions carry more
+  // than one licence, so the row count grows modestly — and `# Licences` still
+  // says how many a permission has in total, so a repeated row is legible
+  // rather than looking like a duplicate.
+  //
+  // A permission in no licence keeps one row with an empty Licence, because
+  // "nothing licence-gates this" is an answer worth being able to filter for.
+  const rows = [];
+  for (const p of perms.sort((a, b) =>
+    a.permission.localeCompare(b.permission, undefined, { sensitivity: "base" }))) {
+    const held = byPermission.get(p.permission);
+    const list = held ? licenceIds.filter((id) => held.has(id)) : [];
+    if (!list.length) {
+      rows.push({ ...p, licenceCount: 0, licence: "" });
+    } else {
+      for (const id of list) rows.push({ ...p, licenceCount: list.length, licence: id });
+    }
+  }
+
+  const columns = [
+    { key: "permission",    label: "Permission",     wch: 46 },
+    { key: "licence",       label: "Licence",        wch: 30 },
+    { key: "label",         label: "Label",          wch: 34 },
+    { key: "domain",        label: "Domain",         wch: 22 },
+    { key: "entity",        label: "Entity",         wch: 26 },
+    { key: "action",        label: "Action",         wch: 16 },
+    { key: "divisionAware", label: "Division Aware", wch: 14 },
+    { key: "conditions",    label: "Conditions",     wch: 12 },
+    { key: "licenceCount",  label: "# Licences",     wch: 11 },
+  ];
+
+  return { rows, columns };
+}
+
 // ── The registry ──────────────────────────────────────────────────────
 const LIST_DEFS = [
   {
     key: "presence-definitions",
+    action: "presence",
     label: "Presence Definitions",
     desc: `Every presence definition in the org with all of its language labels —
            one row per language. Source: <code>GET /api/v2/presence/definitions</code>.`,
@@ -145,7 +275,28 @@ const LIST_DEFS = [
     fetch: fetchPresenceDefinitions,
   },
   {
+    key: "permissions-vs-licenses",
+    action: "licenses",
+    label: "Permissions vs. Licenses",
+    desc: `Every permission in the org's catalog paired with each licence that grants it —
+           one row per permission and licence, so filtering the <strong>Licence</strong> column to one
+           value gives exactly the permissions it carries. A permission granted by two licences
+           appears twice; <strong>#&nbsp;Licences</strong> says how many in total. Sources:
+           <code>GET /api/v2/authorization/permissions</code> and
+           <code>GET /api/v2/license/definitions</code>. Shows what each licence <em>grants</em>;
+           that is not the same as what triggers a charge. Which licences appear differs per org,
+           since Genesys returns only the ones an org can hold.`,
+    filePrefix: "Permissions_vs_Licenses",
+    sheetName: "Permissions vs Licenses",
+    // "rows", not "permissions": a row is a permission-licence pair, so the
+    // count exceeds the number of permissions and saying otherwise would lie.
+    unit: "rows",
+    // columns come from fetch — one per licence, not known until it runs
+    fetch: fetchPermissionsVsLicenses,
+  },
+  {
     key: "wrapup-codes",
+    action: "wrapup",
     label: "Wrap-up Codes",
     desc: `Every wrap-up code in the org with its division.
            Source: <code>GET /api/v2/routing/wrapupcodes</code>.`,
@@ -180,6 +331,17 @@ const PAGE_STYLES = `
    so the sticky header follows the light/dark theme like everything else. */
 .gl-table-wrap { max-height: 62vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 16px; }
 .gl-table { width: 100%; }
+/* A second scrollbar above the table. With a dozen columns the real one sits
+   below the fold, so reaching it means scrolling down past every row first.
+   This is a bar of the same scrollWidth whose position is kept in sync both
+   ways; it hides itself when there is nothing to scroll. */
+/* A list the user cannot read stays in the picker, greyed, saying what it
+   needs — hiding it left them unable to tell the list existed or what to ask
+   for. Browsers grey disabled options themselves, but not legibly against this
+   theme, so say it explicitly. */
+#glListSelect option:disabled { color: var(--muted); font-style: italic; }
+.gl-scroll-top { overflow-x: auto; overflow-y: hidden; }
+.gl-scroll-top .gl-scroll-spacer { height: 1px; }
 .gl-table thead th {
   position: sticky; top: 0; z-index: 2;
   background: var(--panel);
@@ -445,7 +607,29 @@ function attachHeaderFilters(wrap, onChange) {
 
 // ── Page renderer ─────────────────────────────────────────────────────
 export default async function renderGetLists(ctx = {}) {
-  const { api } = ctx;
+  const { api, access } = ctx;
+
+  // Every list is shown; the ones this user cannot read are disabled in the
+  // picker and say which permission they need. Hiding them was worse on both
+  // counts — the user could not tell the list existed, nor what to ask for —
+  // and it is the same hide-vs-disable policy the rest of the app follows for
+  // features behind a missing permission (docs/customer-facing-plan.md §7).
+  //
+  // The page-level gate asks whether they can read *any* list, so reaching
+  // here means at least one is usable.
+  const canUse = (d) =>
+    !d.action || !access?.can || access.can("utilities.getLists", d.action);
+
+  /** "authorization:grant:add or authorization:license:view" — or "and" for ALL. */
+  function missingFor(def) {
+    if (!def.action) return "";
+    const missing = access?.getMissingPermissions?.("utilities.getLists", def.action) || [];
+    if (!missing.length) return "";
+    const { mode } = getReadPermissions("utilities.getLists", def.action);
+    return missing.join(mode === "all" ? " and " : " or ");
+  }
+
+  const allowedDefs = LIST_DEFS.filter(canUse);
   const el = document.createElement("section");
   el.className = "card";
 
@@ -470,7 +654,14 @@ export default async function renderGetLists(ctx = {}) {
       <div class="di-control-group" style="min-width: 280px;">
         <label class="di-label" for="glListSelect">List</label>
         <select class="input" id="glListSelect">
-          ${LIST_DEFS.map((d) => `<option value="${escapeHtml(d.key)}">${escapeHtml(d.label)}</option>`).join("")}
+          ${LIST_DEFS.map((d) => {
+            const ok = canUse(d);
+            const need = ok ? "" : missingFor(d);
+            return `<option value="${escapeHtml(d.key)}"${ok ? "" : " disabled"}>`
+              + escapeHtml(d.label)
+              + (ok ? "" : escapeHtml(need ? ` — needs ${need}` : " — no permission"))
+              + `</option>`;
+          }).join("")}
         </select>
       </div>
       <button class="btn" id="glLoadBtn">Load</button>
@@ -498,8 +689,14 @@ export default async function renderGetLists(ctx = {}) {
   const $export  = el.querySelector("#glExportBtn");
 
   // ── State ────────────────────────────────────────────
-  let currentDef = LIST_DEFS[0];
+  let currentDef = allowedDefs[0];
   let allRows = [];
+  // Set when a list's fetch returns { rows, columns } instead of a bare array.
+  let dynamicCols = null;
+  // Live only while a table is rendered; disconnected on clear.
+  let scrollObserver = null;
+  let sizeScrollerRef = null;
+  const colsFor = (def) => dynamicCols || def.columns || [];
   let sortKey = null;
   let sortDir = "asc";
   let detachFilters = null;
@@ -513,6 +710,11 @@ export default async function renderGetLists(ctx = {}) {
   function clearTable() {
     detachFilters?.();
     detachFilters = null;
+    // The observer outlives innerHTML = "" otherwise, and keeps firing against
+    // a detached node every time the container resizes.
+    scrollObserver?.disconnect();
+    scrollObserver = null;
+    sizeScrollerRef = null;
     $results.innerHTML = "";
   }
 
@@ -554,7 +756,7 @@ export default async function renderGetLists(ctx = {}) {
   function render() {
     clearTable();
 
-    const cols = currentDef.columns;
+    const cols = colsFor(currentDef);
     if (!allRows.length) {
       $results.innerHTML = `<div class="gl-empty">No rows returned for this org.</div>`;
       return;
@@ -563,6 +765,7 @@ export default async function renderGetLists(ctx = {}) {
     const unit = currentDef.unit || "rows";
 
     $results.innerHTML = `
+      <div class="gl-scroll-top" id="glScrollTop"><div class="gl-scroll-spacer"></div></div>
       <div class="gl-table-wrap">
         <table class="data-table ll-preview-table gl-table">
           <thead>
@@ -587,8 +790,43 @@ export default async function renderGetLists(ctx = {}) {
       </div>
     `;
 
+    // Keep the top scrollbar and the table in step. The spacer is given the
+    // table's scroll width so the bar's thumb matches; if nothing overflows,
+    // the bar hides rather than sitting there as a dead 1px strip.
+    const $scrollTop = $results.querySelector("#glScrollTop");
+    const $tableWrap = $results.querySelector(".gl-table-wrap");
+    if ($scrollTop && $tableWrap) {
+      const spacer = $scrollTop.querySelector(".gl-scroll-spacer");
+      const sizeScroller = () => {
+        const w = $tableWrap.scrollWidth;
+        spacer.style.width = `${w}px`;
+        $scrollTop.style.display = w > $tableWrap.clientWidth ? "" : "none";
+      };
+      sizeScrollerRef = sizeScroller;
+      sizeScroller();
+      // Column widths settle after layout, and again whenever the box resizes.
+      requestAnimationFrame(sizeScroller);
+      if (typeof ResizeObserver === "function") {
+        const ro = new ResizeObserver(sizeScroller);
+        ro.observe($tableWrap);
+        scrollObserver = ro;
+      }
+      // Guard against the echo: each handler would otherwise re-fire the other.
+      let syncing = false;
+      const link = (from, to) => from.addEventListener("scroll", () => {
+        if (syncing) return;
+        syncing = true;
+        to.scrollLeft = from.scrollLeft;
+        syncing = false;
+      });
+      link($scrollTop, $tableWrap);
+      link($tableWrap, $scrollTop);
+    }
+
     detachFilters = attachHeaderFilters($results, (visible, total, filtered) => {
       $count.textContent = filtered ? `${visible} / ${total} ${unit}` : `${total} ${unit}`;
+      // Hiding rows can change the table's width; keep the bar honest.
+      $results.querySelector("#glScrollTop") && sizeScrollerRef?.();
     });
 
     // Only the label sorts — the filter button and its panel stop the click.
@@ -611,6 +849,7 @@ export default async function renderGetLists(ctx = {}) {
    */
   function showIdle() {
     allRows = [];
+    dynamicCols = null;
     sortKey = null;
     sortDir = "asc";
     clearTable();
@@ -626,6 +865,7 @@ export default async function renderGetLists(ctx = {}) {
     const org = orgContext?.getDetails?.();
     if (!org) {
       allRows = [];
+    dynamicCols = null;
       clearTable();
       $actions.style.display = "none";
       setStatus("Please select a customer org first.", "error");
@@ -640,7 +880,14 @@ export default async function renderGetLists(ctx = {}) {
     $select.disabled = true;
 
     try {
-      allRows = await currentDef.fetch(api, org.id);
+      const fetched = await currentDef.fetch(api, org.id);
+      if (Array.isArray(fetched)) {
+        allRows = fetched;
+        dynamicCols = null;
+      } else {
+        allRows = fetched?.rows || [];
+        dynamicCols = fetched?.columns || null;
+      }
       if (!allRows.length) {
         setStatus(`No ${what} returned for this org.`, "error");
         return;
@@ -659,7 +906,10 @@ export default async function renderGetLists(ctx = {}) {
 
   // ── Wiring ───────────────────────────────────────────
   $select.addEventListener("change", () => {
-    currentDef = LIST_DEFS.find((d) => d.key === $select.value) || LIST_DEFS[0];
+    // A disabled option cannot be chosen, but never trust the DOM for a gate:
+    // fall back to the first list they may actually read.
+    const picked = LIST_DEFS.find((d) => d.key === $select.value);
+    currentDef = picked && canUse(picked) ? picked : allowedDefs[0];
     showIdle();
   });
 
@@ -677,7 +927,7 @@ export default async function renderGetLists(ctx = {}) {
     const sheets = [{
       name: currentDef.sheetName || currentDef.label,
       rows,
-      columns: currentDef.columns,
+      columns: colsFor(currentDef),
     }];
     const prefix = `${currentDef.filePrefix}_${(org?.name || "org").replace(/[^\w]+/g, "_")}`;
     try {

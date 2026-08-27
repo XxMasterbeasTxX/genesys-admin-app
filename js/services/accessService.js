@@ -6,7 +6,10 @@
  */
 import { CONFIG } from "../config.js";
 import { SUPERUSER_IDS } from "../accessConfig.js";
-import { isWriteGated, getRequiredPermissions, getActionPermissions } from "../featurePermissionMap.js";
+import {
+  isWriteGated, getRequiredPermissions, getActionPermissions,
+  isReadGated, getReadPermissions,
+} from "../featurePermissionMap.js";
 
 // Feature flag: when true, internal users' WRITE actions are additionally gated
 // by their OWN Genesys permissions in the company org (see docs/customer-facing-plan.md
@@ -145,9 +148,15 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
     isSuper ? Promise.resolve(null) : fetchUserPermissions(accessToken),
   ]);
 
+  // Fail CLOSED. This used to grant every group's access when the lookup
+  // failed, which handed full read access to anyone whose token could not read
+  // its own groups — while the permission gate twelve lines below was already
+  // explicitly fail-closed. Two halves of one function cannot disagree about
+  // which way to fail. The failure is surfaced (see `verificationFailed`) so it
+  // reads as "we could not check" rather than as an empty menu.
   const groupsFailed = groupNames === null;
   if (groupsFailed) {
-    console.warn("[accessService] Could not fetch groups — granting group-level access as fallback.");
+    console.error("[accessService] Could not fetch groups — denying access until verified.");
   }
 
   const permsAvailable = Array.isArray(permList);
@@ -166,7 +175,8 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
    */
   function hasAccess(pageKey) {
     if (!pageKey) return true;
-    if (isSuper || groupsFailed) return true;
+    if (isSuper) return true;
+    if (groupsFailed) return false;
     if (keys.has("*")) return true;
     const parts = pageKey.split(".");
     for (let i = parts.length - 1; i > 0; i--) {
@@ -184,23 +194,49 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
    * Read-only / app-storage features (not in the write map) are always "allowed"
    * when group-granted. Superusers are always "allowed".
    */
-  function accessState(pageKey) {
+  function accessState(pageKey, action) {
     if (!hasAccess(pageKey)) return "hidden";
     if (isSuper) return "allowed";
-    if (!ENFORCE_PERMISSION_REFINEMENT || !isWriteGated(pageKey)) return "allowed";
-    const required = getRequiredPermissions(pageKey);
-    if (!required.length) return "allowed";
-    // Fail-closed: if we couldn't read the user's permissions, deny write features.
-    if (!permsAvailable) return "denied-no-permission";
-    return required.some(hasPermission) ? "allowed" : "denied-no-permission";
+    if (!ENFORCE_PERMISSION_REFINEMENT) return "allowed";
+
+    if (isWriteGated(pageKey)) {
+      const required = getRequiredPermissions(pageKey);
+      if (!required.length) return "allowed";
+      // Fail-closed: if we couldn't read the user's permissions, deny.
+      if (!permsAvailable) return "denied-no-permission";
+      return required.some(hasPermission) ? "allowed" : "denied-no-permission";
+    }
+
+    // Reads are gated on what Genesys itself requires for the endpoints the
+    // page reads — the client-credentials path means a read here is not the
+    // user's own read. See docs/read-permission-gating-design.md.
+    if (isReadGated(pageKey)) {
+      const { mode, permissions } = getReadPermissions(pageKey, action);
+      if (!permissions.length) return "allowed";
+      if (!permsAvailable) return "denied-no-permission";
+      const ok = mode === "all"
+        ? permissions.every(hasPermission)
+        : permissions.some(hasPermission);
+      return ok ? "allowed" : "denied-no-permission";
+    }
+
+    return "allowed";
   }
 
   /** The required write permissions the user is missing for a page key. */
-  function getMissingPermissions(pageKey) {
-    if (isSuper || !isWriteGated(pageKey)) return [];
-    const required = getRequiredPermissions(pageKey);
-    if (!permsAvailable) return required;
-    return required.filter((p) => !hasPermission(p));
+  function getMissingPermissions(pageKey, action) {
+    if (isSuper) return [];
+    if (isWriteGated(pageKey)) {
+      const required = getRequiredPermissions(pageKey);
+      if (!permsAvailable) return required;
+      return required.filter((p) => !hasPermission(p));
+    }
+    if (isReadGated(pageKey)) {
+      const { permissions } = getReadPermissions(pageKey, action);
+      if (!permsAvailable) return permissions;
+      return permissions.filter((p) => !hasPermission(p));
+    }
+    return [];
   }
 
   /**
@@ -212,18 +248,37 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
   function can(accessKey, action) {
     if (isSuper) return true;
     if (!ENFORCE_PERMISSION_REFINEMENT) return true;
-    const perms = getActionPermissions(accessKey, action);
-    if (!perms.length) return true;
-    if (!permsAvailable) return false;
-    return perms.every(hasPermission);
+
+    const writePerms = getActionPermissions(accessKey, action);
+    if (writePerms.length) {
+      if (!permsAvailable) return false;
+      return writePerms.every(hasPermission);
+    }
+
+    // A read action of a read-gated feature — e.g. the WEM tab of
+    // roles.search, which needs the licence permission its siblings do not.
+    if (isReadGated(accessKey)) {
+      const { mode, permissions } = getReadPermissions(accessKey, action);
+      if (!permissions.length) return true;
+      if (!permsAvailable) return false;
+      return mode === "all"
+        ? permissions.every(hasPermission)
+        : permissions.some(hasPermission);
+    }
+
+    return true;
   }
 
   return {
     hasAccess,
-    hasAnyAccess() { return isSuper || groupsFailed || keys.size > 0; },
+    hasAnyAccess() { return isSuper || keys.size > 0; },
     accessState,
     getMissingPermissions,
     can,
+    // True when the group lookup failed, so nothing could be verified. Lets the
+    // shell say "could not verify your access" instead of showing an empty menu
+    // that looks like a permissions decision.
+    verificationFailed: groupsFailed,
   };
 }
 
@@ -262,6 +317,7 @@ export function resolveCustomerAccess(entitlements) {
     accessState(pageKey) { return hasAccess(pageKey) ? "allowed" : "hidden"; },
     getMissingPermissions() { return []; },
     can() { return true; },
+    verificationFailed: false,
   };
 }
 

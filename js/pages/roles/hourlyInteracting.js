@@ -344,7 +344,12 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
           },
         }),
         fetchAllUsers(api, org.id, {
-          expand: ["authorization"],
+          // `groups` rides along here rather than costing a
+          // GET /users/{id}?expand=groups per matched user afterwards. Measured
+          // on a real org: the WEM License tab, which does this, finished faster
+          // than this page did despite additionally calling /license/infer once
+          // per role. The per-user loop was the difference.
+          expand: ["authorization", "groups"],
           onProgress: (f, t) => {
             usersFetched = f;
             if (t != null) usersTotal = t;
@@ -400,7 +405,7 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
             email: user.email || "",
             roleId: billingRoleId,
             roleName: roleMap.get(billingRoleId)?.name || billingRoleId,
-            groups: [],
+            groups: user.groups || [],
             category,
             forbiddenRoles,
           });
@@ -415,36 +420,9 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
         return;
       }
 
-      // ── Step 2b: fetch group memberships for matched users ──
-      const uniqueUserIds = [...new Set(matchedUsers.map((u) => u.userId))];
-      let grpFetched = 0;
       setStatus(
-        `Found ${matchedUsers.length} assignment${matchedUsers.length !== 1 ? "s" : ""} — fetching group memberships…`,
+        `Found ${matchedUsers.length} assignment${matchedUsers.length !== 1 ? "s" : ""} — resolving sources…`,
       );
-      showProgress(0, uniqueUserIds.length);
-      const userGroupMap = new Map();
-
-      await runBatched(
-        uniqueUserIds.map((userId) => async () => {
-          try {
-            const detail = await api.proxyGenesys(
-              org.id,
-              "GET",
-              `/api/v2/users/${userId}`,
-              { query: { expand: "groups" } },
-            );
-            userGroupMap.set(userId, detail.groups || []);
-          } catch {
-            userGroupMap.set(userId, []);
-          }
-          showProgress(++grpFetched, uniqueUserIds.length);
-        }),
-        10,
-      );
-
-      for (const u of matchedUsers) {
-        u.groups = userGroupMap.get(u.userId) || [];
-      }
 
       // Sort alphabetically
       matchedUsers.sort((a, b) =>
@@ -611,6 +589,12 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
         ];
         const rows = [];
         container.querySelectorAll("#hiTbody tr").forEach((tr) => {
+          // Export what is on screen, not everything. The pills and the text
+          // filter exist so you can narrow to an actionable set; an export that
+          // silently ignores them hands back a different answer from the one you
+          // asked for. Matches the WEM License tab, which sits beside this one —
+          // the two disagreeing was worse than either choice on its own.
+          if (tr.hidden) return;
           const cells = tr.querySelectorAll("td");
           rows.push({
             user:      cells[0]?.textContent?.trim() || "",

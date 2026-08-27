@@ -469,11 +469,14 @@ export async function replaceParticipantQueue(api, orgId, conversationId, partic
  * @returns {Promise<Object[]>}
  */
 export async function fetchAllUsers(api, orgId, opts = {}) {
-  const { expand = [], state, onProgress, shouldStop } = opts;
+  const { expand = [], state, onProgress, shouldStop, pageSize } = opts;
   const query = {};
   if (expand.length) query.expand = expand.join(",");
   if (state) query.state = state;
-  return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress, shouldStop });
+  // `pageSize` matters once `expand` is heavy. `authorization` carries a user's
+  // whole effective permission set, so 100 admins per page is megabytes and can
+  // outrun the Function's request budget — pass a smaller page for those calls.
+  return fetchAllPages(api, orgId, "/api/v2/users", { query, onProgress, shouldStop, pageSize });
 }
 
 /** Create a new user. Minimum body: { name, email }. */
@@ -1188,6 +1191,34 @@ export async function fetchLicenseDefinitions(api, orgId) {
   const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/license/definitions");
   // API returns a flat array directly (not wrapped in .entities)
   return Array.isArray(resp) ? resp : (resp.entities || []);
+}
+
+/**
+ * Fetch a single license definition.
+ *
+ * The list endpoint above may return definitions without their `permissions`
+ * populated; this one always carries them. Callers that need `permissions.ids`
+ * should fall back to this whenever the listed entry came back skinny.
+ */
+export async function fetchLicenseDefinition(api, orgId, licenseId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/license/definitions/${encodeURIComponent(licenseId)}`);
+}
+
+/**
+ * Ask Genesys which licenses a set of roles requires.
+ *
+ * POST /api/v2/license/infer  body: [roleId]  →  [licenseId]
+ *
+ * This is the same inference the Genesys admin UI runs when it warns that a
+ * role needs a license, so its answer is the billing answer. Prefer it over
+ * comparing permissions against a license definition by hand.
+ */
+export async function inferLicensesForRoles(api, orgId, roleIds) {
+  const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/license/infer", {
+    body: roleIds,
+  });
+  return Array.isArray(resp) ? resp : [];
 }
 
 // ─────────────────────────────────────────────────────────────────────

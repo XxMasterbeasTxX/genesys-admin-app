@@ -49,7 +49,7 @@ These are the Azure Functions endpoints exposed by the app itself.
 | --- | --- | --- |
 | GET | `/api/customers` | Fetch the list of configured customer orgs |
 | GET | `/api/org-config` | Resolve org context server-side. **Authenticated** (user token via `X-Genesys-Token`): returns `{ mode: "internal", org, customers }` for the internal org, or `{ mode: "customer", org, customer, entitlements }` for a registered customer org (org verified via `organizations/me`); `403 organization_not_recognized` otherwise. **Pre-login** (no token, `?org=<slug>`): returns `{ prelogin: true, login: { id, name, region, clientId } }` — the customer org's PUBLIC OAuth login config so the SPA can build the authorize URL before login. Never returns secrets, entitlements, or other orgs' data. |
-| POST | `/api/genesys-proxy` | Proxy any Genesys Cloud API call. Mode is decided server-side from the caller's own token (never the request body): internal org → client-credentials (body `customerId` selects any org); customer org → token-forwarding locked to the caller's own org/region (`403 org_locked` on mismatch) with a customer request guard; unverified/absent token → `401`. |
+| POST | `/api/genesys-proxy` | Proxy any Genesys Cloud API call. Mode is decided server-side from the caller's own token (never the request body): internal org → client-credentials (body `customerId` selects any org); customer org → token-forwarding locked to the caller's own org/region (`403 org_locked` on mismatch) with a customer request guard; unverified/absent token → `401`. **Reading its failures:** a Genesys-side error always carries a `message` or `error` in the body, so a **bodyless 500** — surfacing in the UI as a bare `Proxy GET <path> → 500` — means the Function itself died, typically a heavy request on a cold host just after a deploy. Retry warm before concluding anything about the request shape. |
 | GET | `/api/ipranges?region={awsRegionCode}` | Genesys public IP ranges for a region. Resolves a configured customer org for the region's host, authenticates via client-credentials, and forwards `GET /api/v2/ipranges`. Injects four Cloud Media Services CIDRs as `CLOUD_MEDIA_SERVICES` entries for commercial regions. Returns 400 if no customer org is configured for the region. Adds `meta: { region, host, fetchedAt, cloudMediaInjected, cloudMediaSource }`. |
 | GET | `/api/aws-ipranges` | Proxies the Amazon feed `https://ip-ranges.amazonaws.com/ip-ranges.json`. Anonymous; 15-min in-process cache (`?force=true` to bypass). Adds `meta: { fetchedAt, cached, ttlMs }`. |
 | POST | `/api/doc-export` | On-demand Documentation export — body: `{ orgId, includeDataTables? }` — returns base64 workbook (XLSX or ZIP) |
@@ -157,13 +157,14 @@ Used by: All Groups Export, All Roles Export, Filtered on Role(s) Export, Truste
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/v2/users` | List users (paginated; supports `expand=skills,languages,station,division`) |
+| GET | `/api/v2/users` | List users (paginated). **Defaults to `state=active`** — pass `state=any` to include inactive accounts, though licence audits deliberately do not, since inactive users are not billed. Expand options include `skills,languages,station,division,authorization,groups` |
+| GET | `/api/v2/users?expand=authorization,groups` | The bulk pattern behind Hourly Interacting and the WEM License tab. `groups` riding along here replaces a `GET /users/{id}?expand=groups` per matched user, so the request count follows roles and groups rather than directory size. `authorization` carries each user's whole effective permission set, so responses are large — `fetchAllUsers` accepts a `pageSize` if one is ever too large, though the default 100 is fine in practice |
 | POST | `/api/v2/users/search` | Search users by name/email — body: `{ query: [{ type: "CONTAINS"/"QUERY_STRING", fields: ["name","email"], value }] }` — response key is `results` (not `entities`); used by Compare Users picker, Configure Users |
 | GET | `/api/v2/users/me` | Get current authenticated user and group memberships |
-| GET | `/api/v2/users/me?expand=authorization` | Get the signed-in user's own effective permissions (`authorization.permissions` + `authorization.permissionPolicies`) — used by the access-control layer to gate write features by the user's Genesys permissions (see docs/customer-facing-plan.md §6) |
+| GET | `/api/v2/users/me?expand=authorization` | The signed-in user's own effective permissions (`authorization.permissions` + `authorization.permissionPolicies`, merged — some orgs populate only one). Gates **both write and read** features against the user's own Genesys permissions. Read gating was added 2026-08-27; docs/customer-facing-plan.md §6's read-only exemption is superseded — see docs/read-permission-gating-design.md |
 | GET | `/api/v2/users/{userId}` | Get a single user by ID |
 | GET | `/api/v2/users/{userId}/directreports` | Get direct reports of a user (Configure Users — Reports To mode) |
-| GET | `/api/v2/users/{userId}?expand=groups` | Get user with `groups` array inline — used to resolve group memberships for Compare Users and All Roles Export attribution (phase 2b) |
+| GET | `/api/v2/users/{userId}?expand=groups` | Get one user with `groups` inline — still used by Compare Users and All Roles Export for attribution. **Prefer the bulk `expand=groups` above** where the whole set is being walked: Hourly Interacting and the WEM tab dropped this loop and got measurably faster |
 | PATCH | `/api/v2/users/{userId}` | Update user (e.g., change division) |
 | GET | `/api/v2/groups` | List all groups |
 | GET | `/api/v2/groups/{groupId}` | Get a single group by ID — used to resolve group display name in Compare Users and All Roles Export (group name for "Assigned by" column) |
@@ -335,12 +336,28 @@ Used by: WebRTC Phones — Create/Change Site, Documentation Export, Divisions �
 
 ## 11. License
 
-Used by: License Consumption Export, WebRTC Phones — Create
+Used by: License Consumption Export, WebRTC Phones — Create, Roles — Permissions vs. Users (WEM License mode)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/v2/license/users` | Per-user license consumption (paginated). Entities are `{ id, licenses: ["genesysCloudCX2", …] }` — **`licenses` is an array of id strings, not objects**; reading `.name`/`.id` off them yields `undefined` |
-| GET | `/api/v2/license/definitions` | List all available license definitions |
+| GET | `/api/v2/license/users` | Licences **currently assigned** per user (paginated). Entities are `{ id, licenses: ["genesysCloudCX2", …] }` — **`licenses` is an array of id strings, not objects**; reading `.name`/`.id` off them yields `undefined`. On a concurrent-licensing org this will **not** reconcile to the bill, which reports peak simultaneous logins rather than holders (observed: 6 assigned vs 13 billed). Genesys' *Concurrent Usage report* is the only source for the users behind a billed figure |
+| GET | `/api/v2/license/definitions` | List all available license definitions. Returns a **flat array, not an `entities` wrapper**. Each is `{ id, description, permissions: { ids: […] }, prerequisites: [{ id }], comprises: […] }`. `permissions` may come back empty on the list — re-fetch by id when you need it |
+| GET | `/api/v2/license/definitions/{licenseId}` | One definition, always with `permissions.ids` populated |
+| POST | `/api/v2/license/infer` | Body is a bare **array of roleIds**, response a bare array of license ids. Genesys' own "what licence does this role require" inference — the one the admin UI runs when it warns about a role. Authoritative for licence attribution; prefer it over comparing permissions against a definition yourself |
+
+Requires ANY of `authorization:grant:add`, `authorization:license:view`.
+
+`POST /api/v2/license/infer/permissions` (licences inferred from a list of
+permission strings) exists in the JS SDK reference but is flagged **preview**
+and is absent from the public swagger. Not used.
+
+**WEM SKUs follow the CX tier**, and `/license/definitions` returns only what an
+org can actually hold: `cloudCX1` → `gc1WEMupgrade`, `cloudCX2` → `gc2WEMupgrade`,
+`cloudCX3`+ → none, because CX3 bundles WEM. That describes a steady-state org —
+**one that has changed tier can carry both**, so code reading these must handle a
+list. When netting an upgrade against its prerequisites, do it **per licence**:
+subtracting the union across two SKUs lets one licence's base cancel the other's
+triggers.
 
 ---
 

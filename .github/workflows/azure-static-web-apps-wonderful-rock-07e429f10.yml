@@ -1,6 +1,11 @@
 name: Azure Static Web Apps CI/CD
 
 on:
+  # Manual trigger. Added after a GitHub Actions outage on 2026-08-26 swallowed
+  # two pushes: runs are not created retroactively, so recovering meant pushing
+  # an empty commit purely to generate a push event. This gives a Run workflow
+  # button instead.
+  workflow_dispatch:
   push:
     branches:
       - main
