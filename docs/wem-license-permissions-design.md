@@ -376,3 +376,25 @@ triggering role are now simply not listed.
 
 This also voids §4's original claim that the page catches two money-losing
 mismatches. It catches one, and reports the licence state of it.
+
+## 16. Wildcard permissions are gone (2026-06-01)
+
+Genesys deprecated the *including any future permissions* logic behind the
+**All Permissions** option — announced 2026-04-20, effective 2026-06-01. All
+Permissions survives as a selection convenience, but:
+
+- permissions are saved as explicit individual entries, not wildcards;
+- existing roles were **automatically refreshed** to expand their wildcards;
+- **API responses expand wildcards into explicit permissions** rather than
+  returning `*`.
+
+So `getMatchingFromRole`'s `*` handling can no longer fire on a migrated org.
+It stays anyway: regional rollouts lag, and a bare `*` arriving here is better
+treated as a signal that an org was missed than silently ignored.
+
+Nothing in the app writes wildcards — Roles Create and Copy build explicit
+action lists — so there is no write-side exposure to this change.
+
+The practical effect is on testing, not behaviour: a wildcard role can no longer
+be constructed, so the test pass now checks that **no** `*` appears rather than
+that one expands correctly.

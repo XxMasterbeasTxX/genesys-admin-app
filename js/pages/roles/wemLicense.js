@@ -201,6 +201,13 @@ function buildPermissionIndex(permArr) {
 /**
  * Collect every concrete indexed permission matched by a role's policies,
  * expanding the wildcards a policy may carry in domain / entity / actionSet.
+ *
+ * The wildcard expansion should now be inert. Genesys deprecated the
+ * "including any future permissions" logic behind All Permissions effective
+ * 2026-06-01: existing roles were refreshed to explicit permissions, and API
+ * responses expand wildcards rather than returning `*`. Kept as a safety net —
+ * regional rollouts lag, and a bare `*` reaching here is a useful signal that
+ * an org was not migrated, rather than something to silently drop.
  */
 function getMatchingFromRole(role, byDomain) {
   const found = [];
