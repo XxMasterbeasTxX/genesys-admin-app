@@ -137,11 +137,25 @@ against **any** customer org (still executed via client-credentials).
   the effective permission set, expanding wildcards the same way Roles → Compare already does; the
   result combines with group access in `hasAccess()`.
 
-### Read-only exemption (agreed)
-Permission-gating **only governs WRITE/mutating actions**. **All read-only features** are gated by
-app group/entitlement **alone** — the user's own permission is irrelevant because nothing changes.
-This covers **Export**, **Audit → Search**, **Flows → Journey**, **Roles → Compare / Permissions-vs-
-Users**, and **Interactions → Search / Transcripts**.
+### Read-only exemption (SUPERSEDED 2026-08-27)
+> **This no longer holds.** See
+> [read-permission-gating-design.md](read-permission-gating-design.md).
+>
+> The exemption said permission-gating governs WRITE actions only, and that all read-only features
+> are gated by app group alone because "the user's own permission is irrelevant when nothing
+> changes". That reasoning ignores the client-credentials path: an internal user's reads do not run
+> as them, they run as the org's OAuth client, against **any** configured customer org. A test user
+> holding three permissions could read every customer's licence consumption.
+>
+> Read-only features are now gated on the permission **Genesys itself requires** for the endpoints
+> they read, taken from `x-inin-requires-permissions` in the OpenAPI spec. Endpoints Genesys does
+> not gate — `/users`, `/groups`, `/authorization/permissions` — stay ungated, because requiring a
+> permission there would deny data any Genesys client hands over anyway.
+
+The original text, for reference: permission-gating **only governs WRITE/mutating actions**; **all
+read-only features** are gated by app group/entitlement **alone**. This covered **Export**,
+**Audit → Search**, **Flows → Journey**, **Roles → Compare / Permissions-vs-Users**, and
+**Interactions → Search / Transcripts**.
 
 ### Group-only features (no Genesys permission gate)
 - **Export** — read-only, runs via OAuth client-creds; the **OAuth client's** perms matter, not the
