@@ -470,3 +470,24 @@ Several cases were rewritten mid-pass because they described behaviour that no
 longer existed — the licence picker, three categories, wildcard roles, blocking
 a URL that cannot be blocked. Each of those was a case that would have reported
 a failure that was not one.
+
+## 19. The Roles pill
+
+Added 2026-08-27. On A&Til six of nine rows were the same role with the same
+permission; on an earlier Nemlig run it was 34 of 40. The user table tells you
+the same fact many times over.
+
+A fourth pill switches to a role-centric view of the same data — role, users,
+licensed, unlicensed, triggering permissions — sorted by blast radius, so the
+role affecting the most people is first. Fix that one and six people stop being
+exposed.
+
+It is a **view swap, not a filter**: the Roles pill hides the user table and
+shows the role table, the text filter switches to matching role names, and the
+export follows whichever view is on screen.
+
+Deliberately additive. The user list is not redundant — it is the only thing
+that answers "is this person meant to have this". Roles tell you what to change;
+users tell you whether changing it is safe. The customer's hesitation about
+whether individual users belonged on the page was the signal that the answer is
+both, separately, rather than one replacing the other.

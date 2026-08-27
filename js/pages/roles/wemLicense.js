@@ -335,6 +335,8 @@ export function renderWemContent(container, { me, api, orgContext }) {
       .wem-badge--no { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;
                        background:rgba(239,68,68,.15); color:#fca5a5; border:1px solid #ef4444; }
       /* ── Category colour ── */
+      .wem-pill--roles { margin-left:6px; border-left-width:1px; }
+      .wem-num { text-align:right; font-variant-numeric:tabular-nums; width:1%; white-space:nowrap; }
       .wem-cat-gap    { color:#fca5a5; font-weight:600; }
       .wem-cat-ok     { color:#86efac; font-weight:600; }
       /* Cost caveat — the page cannot know the org's licensing model. */
@@ -468,6 +470,36 @@ export function renderWemContent(container, { me, api, orgContext }) {
     const $tbody = container.querySelector("#wemTbody");
     if (!$tbody) return;
     const q = (container.querySelector("#wemFilter")?.value || "").toLowerCase();
+    const $summaryEl = container.querySelector("#wemSummary");
+    const $userWrap  = $tbody.closest(".rs-table-wrap");
+    const $roleWrap  = container.querySelector("#wemRoleWrap");
+    const $filterEl  = container.querySelector("#wemFilter");
+
+    // The Roles pill swaps the table rather than filtering it: it answers a
+    // different question from the other three, over the same data.
+    if (activeFilter === "roles") {
+      if ($userWrap) $userWrap.hidden = true;
+      if ($roleWrap) $roleWrap.hidden = false;
+      if ($filterEl) $filterEl.placeholder = "Filter by role\u2026";
+
+      let shown = 0, total = 0;
+      for (const tr of container.querySelectorAll("#wemRoleTbody tr")) {
+        total++;
+        const show = !q || (tr.dataset.name || "").toLowerCase().includes(q);
+        tr.hidden = !show;
+        if (show) shown++;
+      }
+      if ($summaryEl) {
+        $summaryEl.textContent = shown === total
+          ? `${total} role${total !== 1 ? "s" : ""}`
+          : `${shown} of ${total} roles`;
+      }
+      return;
+    }
+
+    if ($userWrap) $userWrap.hidden = false;
+    if ($roleWrap) $roleWrap.hidden = true;
+    if ($filterEl) $filterEl.placeholder = "Filter by name or email\u2026";
 
     let visibleCount = 0;
     let totalCount = 0;
@@ -686,10 +718,44 @@ export function renderWemContent(container, { me, api, orgContext }) {
         for (const roleId of u.triggeringRoleIds) {
           displayRows.push({
             ...u,
+            roleId,
             role: triggeringRoles.get(roleId),
             source: buildSourceLabel(roleId, u.groups, groupGrantsCache, groupNameCache),
           });
         }
+      }
+
+      // ── Step 5b: the same rows, grouped by role ──
+      // A user list answers "is this person meant to have it". A role list
+      // answers "what do I change" — and one role usually accounts for most of
+      // the table, so this is the shape you act on. Sorted by blast radius.
+      const roleRows = [];
+      {
+        const byRole = new Map();
+        for (const r of displayRows) {
+          if (!byRole.has(r.roleId)) {
+            byRole.set(r.roleId, {
+              name: r.role?.name || r.roleId,
+              perms: r.role?.perms || [],
+              users: new Set(),
+              licensed: new Set(),
+            });
+          }
+          const e = byRole.get(r.roleId);
+          e.users.add(r.userId);
+          if (r.category === "licensed") e.licensed.add(r.userId);
+        }
+        for (const e of byRole.values()) {
+          roleRows.push({
+            name: e.name,
+            perms: e.perms,
+            users: e.users.size,
+            licensed: e.licensed.size,
+            unlicensed: e.users.size - e.licensed.size,
+          });
+        }
+        roleRows.sort((a, b) => b.users - a.users
+          || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       }
 
       const uniq = (pred) => new Set(displayRows.filter(pred).map((r) => r.userId)).size;
@@ -717,6 +783,7 @@ export function renderWemContent(container, { me, api, orgContext }) {
         <button class="wem-pill active" data-filter="all">All<span class="wem-pill-count">${uniqueAll}</span></button>
         <button class="wem-pill" data-filter="gap">Unlicensed trigger<span class="wem-pill-count">${uniqueGap}</span></button>
         <button class="wem-pill" data-filter="licensed">Licensed<span class="wem-pill-count">${uniqueLicensed}</span></button>
+        <button class="wem-pill wem-pill--roles" data-filter="roles">Roles<span class="wem-pill-count">${roleRows.length}</span></button>
       `;
       wrap.appendChild(pillsDiv);
 
@@ -759,6 +826,26 @@ export function renderWemContent(container, { me, api, orgContext }) {
         </table>
       `;
       wrap.appendChild(tableWrap);
+
+      const roleWrap = document.createElement("div");
+      roleWrap.className = "rs-table-wrap";
+      roleWrap.id = "wemRoleWrap";
+      roleWrap.hidden = true;
+      roleWrap.innerHTML = `
+        <table class="rs-table">
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Users</th>
+              <th>Licensed</th>
+              <th>Unlicensed</th>
+              <th>Triggering Permissions</th>
+            </tr>
+          </thead>
+          <tbody id="wemRoleTbody"></tbody>
+        </table>
+      `;
+      wrap.appendChild(roleWrap);
       $results.appendChild(wrap);
 
       const $tbody = container.querySelector("#wemTbody");
@@ -801,6 +888,22 @@ export function renderWemContent(container, { me, api, orgContext }) {
         "the period, not for the total above.";
       wrap.appendChild(modelNote);
 
+      const $roleTbody = container.querySelector("#wemRoleTbody");
+      for (const r of roleRows) {
+        const tr = document.createElement("tr");
+        tr.dataset.name = r.name;
+        tr.innerHTML = `
+          <td class="rs-role-cell">${escapeHtml(r.name)}</td>
+          <td class="wem-num">${r.users}</td>
+          <td class="wem-num"><span class="wem-cat-ok">${r.licensed || ""}</span></td>
+          <td class="wem-num"><span class="wem-cat-gap">${r.unlicensed || ""}</span></td>
+          <td>${r.perms.length
+            ? `<span class="wem-badge--perm" title="${escapeHtml(r.perms.join(", "))}">${escapeHtml(r.perms[0])}${r.perms.length > 1 ? ` +${r.perms.length - 1}` : ""}</span>`
+            : `<span class="wem-badge--none">Not attributable</span>`}</td>
+        `;
+        $roleTbody.appendChild(tr);
+      }
+
       container.querySelector("#wemFilter").addEventListener("input", () => applyFilters());
 
       applyFilters();
@@ -827,6 +930,31 @@ export function renderWemContent(container, { me, api, orgContext }) {
           { key: "perms",    label: "Triggering Permissions", wch: 70 },
           { key: "assigned", label: "WEM License Assigned",   wch: 32 },
         ];
+        // Export the view you are looking at, and only its visible rows.
+        if (activeFilter === "roles") {
+          const rtrs = [...container.querySelectorAll("#wemRoleTbody tr")];
+          const roleCols = [
+            { key: "role",       label: "Role",                   wch: 44 },
+            { key: "users",      label: "Users",                  wch: 8  },
+            { key: "licensed",   label: "Licensed",               wch: 10 },
+            { key: "unlicensed", label: "Unlicensed",             wch: 12 },
+            { key: "perms",      label: "Triggering Permissions", wch: 70 },
+          ];
+          const rrows = roleRows
+            .filter((_, i) => !rtrs[i]?.hidden)
+            .map((r) => ({
+              role: r.name, users: r.users, licensed: r.licensed,
+              unlicensed: r.unlicensed, perms: r.perms.join(", "),
+            }));
+          try {
+            exportXlsx([{ name: "WEM Roles", rows: rrows, columns: roleCols }],
+              timestampedFilename(`WEM_License_Roles_${orgSlug}`, "xlsx"));
+          } catch (err) {
+            setStatus(err.message, "error");
+          }
+          return;
+        }
+
         const trs = [...container.querySelectorAll("#wemTbody tr")];
         const rows = displayRows
           .filter((_, i) => !trs[i]?.hidden)
