@@ -436,7 +436,18 @@ the new — checked both ways round rather than written to match the fix.
 ### And an org *can* hold both WEM SKUs
 
 §A2 of the test pass recorded, on the customer's steer, that the two upgrades
-are alternatives and no org holds both. Nykredit holds both, so that was wrong.
-Presumably it runs a mix of CX 1 and CX 2 users. The code never depended on the
-claim — `wemLicenseIds` has always been a list — which is the only reason this
-surfaced as a subtraction bug rather than a crash.
+are alternatives and no org holds both. Nykredit holds both. The reason is not a
+mix of user tiers: **the org was on CX 2 and downgraded to CX 1**, and the CX 2
+WEM SKU is still in `/license/definitions` — three users still show it assigned
+alongside the CX 1 one.
+
+So the rule "one tier, one WEM SKU" describes a *steady-state* org. Any org that
+has changed tier can carry both, and the WEM upgrade an org holds is history as
+much as configuration. The code never depended on the claim — `wemLicenseIds`
+has always been a list — which is the only reason this surfaced as a subtraction
+bug rather than a crash.
+
+Worth deciding separately: a licence left over from a former subscription is
+arguably the clearest cleanup target on the page, and arguably a false positive
+if the org no longer buys it. Right now the page checks both, and `/license/infer`
+still returns the legacy SKU, so Genesys evidently still considers it live.
