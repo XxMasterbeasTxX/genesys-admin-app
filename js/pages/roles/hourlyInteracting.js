@@ -611,6 +611,12 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
         ];
         const rows = [];
         container.querySelectorAll("#hiTbody tr").forEach((tr) => {
+          // Export what is on screen, not everything. The pills and the text
+          // filter exist so you can narrow to an actionable set; an export that
+          // silently ignores them hands back a different answer from the one you
+          // asked for. Matches the WEM License tab, which sits beside this one —
+          // the two disagreeing was worse than either choice on its own.
+          if (tr.hidden) return;
           const cells = tr.querySelectorAll("td");
           rows.push({
             user:      cells[0]?.textContent?.trim() || "",
