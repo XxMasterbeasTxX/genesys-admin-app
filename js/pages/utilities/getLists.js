@@ -32,6 +32,7 @@ import {
   fetchAllWrapupCodes, fetchAllDivisions,
   fetchLicenseDefinitions, fetchLicenseDefinition,
 } from "../../services/genesysApi.js";
+import { getReadPermissions } from "../../featurePermissionMap.js";
 import { orgContext } from "../../services/orgContext.js";
 
 // ── Presence definitions ──────────────────────────────────────────────
@@ -334,6 +335,11 @@ const PAGE_STYLES = `
    below the fold, so reaching it means scrolling down past every row first.
    This is a bar of the same scrollWidth whose position is kept in sync both
    ways; it hides itself when there is nothing to scroll. */
+/* A list the user cannot read stays in the picker, greyed, saying what it
+   needs — hiding it left them unable to tell the list existed or what to ask
+   for. Browsers grey disabled options themselves, but not legibly against this
+   theme, so say it explicitly. */
+#glListSelect option:disabled { color: var(--muted); font-style: italic; }
 .gl-scroll-top { overflow-x: auto; overflow-y: hidden; }
 .gl-scroll-top .gl-scroll-spacer { height: 1px; }
 .gl-table thead th {
@@ -603,11 +609,27 @@ function attachHeaderFilters(wrap, onChange) {
 export default async function renderGetLists(ctx = {}) {
   const { api, access } = ctx;
 
-  // Only the lists this user may actually read. The page-level gate asks
-  // whether they can see *any* of them, so reaching here means at least one.
-  const visibleDefs = LIST_DEFS.filter(
-    (d) => !d.action || !access?.can || access.can("utilities.getLists", d.action),
-  );
+  // Every list is shown; the ones this user cannot read are disabled in the
+  // picker and say which permission they need. Hiding them was worse on both
+  // counts — the user could not tell the list existed, nor what to ask for —
+  // and it is the same hide-vs-disable policy the rest of the app follows for
+  // features behind a missing permission (docs/customer-facing-plan.md §7).
+  //
+  // The page-level gate asks whether they can read *any* list, so reaching
+  // here means at least one is usable.
+  const canUse = (d) =>
+    !d.action || !access?.can || access.can("utilities.getLists", d.action);
+
+  /** "authorization:grant:add or authorization:license:view" — or "and" for ALL. */
+  function missingFor(def) {
+    if (!def.action) return "";
+    const missing = access?.getMissingPermissions?.("utilities.getLists", def.action) || [];
+    if (!missing.length) return "";
+    const { mode } = getReadPermissions("utilities.getLists", def.action);
+    return missing.join(mode === "all" ? " and " : " or ");
+  }
+
+  const allowedDefs = LIST_DEFS.filter(canUse);
   const el = document.createElement("section");
   el.className = "card";
 
@@ -632,7 +654,14 @@ export default async function renderGetLists(ctx = {}) {
       <div class="di-control-group" style="min-width: 280px;">
         <label class="di-label" for="glListSelect">List</label>
         <select class="input" id="glListSelect">
-          ${visibleDefs.map((d) => `<option value="${escapeHtml(d.key)}">${escapeHtml(d.label)}</option>`).join("")}
+          ${LIST_DEFS.map((d) => {
+            const ok = canUse(d);
+            const need = ok ? "" : missingFor(d);
+            return `<option value="${escapeHtml(d.key)}"${ok ? "" : " disabled"}>`
+              + escapeHtml(d.label)
+              + (ok ? "" : escapeHtml(need ? ` — needs ${need}` : " — no permission"))
+              + `</option>`;
+          }).join("")}
         </select>
       </div>
       <button class="btn" id="glLoadBtn">Load</button>
@@ -660,7 +689,7 @@ export default async function renderGetLists(ctx = {}) {
   const $export  = el.querySelector("#glExportBtn");
 
   // ── State ────────────────────────────────────────────
-  let currentDef = visibleDefs[0];
+  let currentDef = allowedDefs[0];
   let allRows = [];
   // Set when a list's fetch returns { rows, columns } instead of a bare array.
   let dynamicCols = null;
@@ -877,7 +906,10 @@ export default async function renderGetLists(ctx = {}) {
 
   // ── Wiring ───────────────────────────────────────────
   $select.addEventListener("change", () => {
-    currentDef = visibleDefs.find((d) => d.key === $select.value) || visibleDefs[0];
+    // A disabled option cannot be chosen, but never trust the DOM for a gate:
+    // fall back to the first list they may actually read.
+    const picked = LIST_DEFS.find((d) => d.key === $select.value);
+    currentDef = picked && canUse(picked) ? picked : allowedDefs[0];
     showIdle();
   });
 

@@ -196,7 +196,7 @@ The corrected rule:
 
 Switched to ALL: ~~`utilities.getLists`~~ (**wrong — corrected 2026-08-27**: that page shows one
 list at a time from a registry and never aggregates, so it is gated per list instead, and
-requiring ALL had been denying it to anyone holding only one of the two permissions),
+requiring ALL had been denying it to anyone holding only one of the two permissions; each list is now gated individually and a denied one is shown disabled with the permission it needs, per §7 of the customer-facing plan),
 `export.users.queuesSkills`
 (queues + skills), `export.users.allRoles` and `export.users.filteredRoles`
 (roles + grants), `roles.compare` and `roles.search` (roles + grants for source

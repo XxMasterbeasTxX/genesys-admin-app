@@ -211,6 +211,11 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   "utilities.getLists":        {
     presence: { all: ["presence:presenceDefinition:view"] },
     wrapup:   { all: ["routing:wrapupCode:view"] },
+    // Permissions vs. Licenses reads /license/definitions. ANY, mirroring the
+    // alternatives Genesys itself declares for that endpoint. Missing this
+    // entry left the list ungated — an action with no spec is treated as
+    // "nothing to check", so it was open to anyone who could reach the page.
+    licenses: ["authorization:grant:add", "authorization:license:view"],
   },
 
   // NOT gated, deliberately:
