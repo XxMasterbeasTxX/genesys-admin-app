@@ -404,7 +404,9 @@ that one expands correctly.
 
 ## 17. Subtract per licence, not across the set
 
-Found by E3 firing on Nykredit, which holds **both** WEM upgrades.
+Found by E3 firing on **A&Til**, which holds **both** WEM upgrades.
+(Not Nykredit — that is the CX 1 scale org, single SKU. Two different
+orgs surfaced two different problems within an hour of each other.)
 
 `wemOnlyPermissions` used to union every selected licence's permissions, union
 every prerequisite's permissions, and subtract once at the end. With one WEM SKU
@@ -436,8 +438,8 @@ the new — checked both ways round rather than written to match the fix.
 ### And an org *can* hold both WEM SKUs
 
 §A2 of the test pass recorded, on the customer's steer, that the two upgrades
-are alternatives and no org holds both. Nykredit holds both. The reason is not a
-mix of user tiers: **the org was on CX 2 and downgraded to CX 1**, and the CX 2
+are alternatives and no org holds both. A&Til holds both. The reason is not a
+mix of user tiers: **A&Til was on CX 2 and downgraded to CX 1**, and the CX 2
 WEM SKU is still in `/license/definitions` — three users still show it assigned
 alongside the CX 1 one.
 
