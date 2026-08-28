@@ -2069,7 +2069,19 @@ body {
    rather than putting a second scrollbar inside the page. */
 .ed-page .dt-schema {
   max-height: none;
-  overflow: visible;
+  /* Height grows freely — that was the point of dropping the 200px cap. Width
+     still has to be contained: `overflow: visible` let a long value push the
+     table straight past the card edge. With no max-height the vertical axis
+     never actually scrolls, so this only ever acts sideways. */
+  overflow-x: auto;
+}
+
+/* A signed URL or token has no spaces in it, so the browser will not break it
+   and the table claims whatever width the longest one needs. Values are the
+   last column in every table on this page — Outputs, Steps, contract preview —
+   so let them break anywhere and the table fits its container again. */
+.ed-page .dt-schema-table td:last-child {
+  overflow-wrap: anywhere;
 }
 
 .ed-test-result {
