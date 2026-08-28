@@ -186,7 +186,12 @@ export const GROUP_ACCESS = {
   // credentials, stays superuser-only for both groups.
   "Genesys App - Master Admin": [...ADMIN_BASE, "flows.delete", "phones.webrtc.delete"],
   "Genesys App - Admin": ADMIN_BASE,
-  "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*", "roles.compare", "roles.search", "flows.journey"],
+  // Support gets `data-actions.test` and NOT `data-actions.*`: the Test page is
+  // mapped to `integrations:action:execute` alone, so this grants running an
+  // action without the ability to edit, publish or copy one. Naming the single
+  // key rather than the section is the whole point — a wildcard here would hand
+  // over the editor as well.
+  "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*", "roles.compare", "roles.search", "flows.journey", "data-actions.test"],
   "Genesys App - Export": ["export.*"],
 };
 
