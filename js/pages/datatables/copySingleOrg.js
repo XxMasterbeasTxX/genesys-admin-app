@@ -1,5 +1,5 @@
 /**
- * Data Tables › Copy - Single Org
+ * Data Tables › Copy
  *
  * Copies a data table (structure + optionally rows) within the
  * currently-selected customer org.
@@ -42,7 +42,7 @@ export default function renderCopySingleOrg({ route, me, api, orgContext }) {
   el.className = "card";
 
   el.innerHTML = `
-    <h2>Data Tables — Copy (Single Org)</h2>
+    <h2>Data Tables — Copy</h2>
 
     <p class="page-desc">
       Copy a data table (structure + optionally rows) within the same org.

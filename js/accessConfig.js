@@ -43,7 +43,7 @@
  *   data-tables.create                 Create
  *   data-tables.edit                   Edit
  *   data-tables.copy.betweenOrgs       Copy - Between Orgs
- *   data-tables.copy.singleOrg         Copy - Single Org
+ *   data-tables.copy.singleOrg         Copy
  *
  *   DEPLOYMENT
  *   deployment.basic                   Basic
