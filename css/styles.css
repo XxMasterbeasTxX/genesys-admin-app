@@ -1761,6 +1761,9 @@ body {
   .ed-badge.is-published { color: #15803d; background: rgba(21,128,61,0.1);  border-color: rgba(21,128,61,0.25); }
   .ed-badge.is-draft     { color: #b45309; background: rgba(180,83,9,0.1);   border-color: rgba(180,83,9,0.25); }
   .ed-badge.is-both      { color: #1d4ed8; background: rgba(29,78,216,0.1);  border-color: rgba(29,78,216,0.25); }
+  .ts-target.is-on { background: rgba(59,130,246,0.12); color: #1d4ed8; border-color: rgba(59,130,246,0.35); }
+  .ed-diff { color: #b45309; }
+  .ed-note.is-warn { color: #b45309; border-left-color: rgba(180,83,9,0.45); }
   .ed-btn-test { background: rgba(59,130,246,0.08); color: #2563eb; border-color: rgba(59,130,246,0.2); }
   .ed-btn-test:hover { background: rgba(59,130,246,0.15); }
 
@@ -2106,6 +2109,74 @@ body {
 }
 .ed-btn-test:hover {
   background: rgba(59,130,246,0.22);
+}
+
+/* ── Test page (ts-* prefix) ─────────────────────────── */
+
+/* Inputs left, results right. Asymmetric on purpose: inputs are short text
+   fields, results are not — a signed URL overflowed a full-width card, so half
+   of one would be worse. Steps and the raw response stay outside this grid. */
+.ts-split {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 20px;
+  align-items: start;
+  margin-top: 14px;
+  max-width: var(--ed-col);
+}
+@media (max-width: 900px) {
+  .ts-split { grid-template-columns: 1fr; }
+}
+.ts-inputs,
+.ts-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;            /* let a long value wrap instead of stretching the grid */
+}
+.ts-inputs .ed-field { max-width: none; }
+
+/* Published / Draft / Both. Disabled rather than hidden when a target does not
+   exist, so it is clear why it cannot be picked. */
+.ts-targets { display: flex; gap: 0; }
+.ts-target {
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.ts-target:first-child { border-radius: 8px 0 0 8px; }
+.ts-target:last-child  { border-radius: 0 8px 8px 0; }
+.ts-target + .ts-target { border-left: none; }
+.ts-target:hover:not(:disabled):not(.is-on) { color: var(--text); }
+.ts-target.is-on {
+  background: rgba(59,130,246,0.16);
+  color: #93c5fd;
+  border-color: rgba(59,130,246,0.35);
+}
+.ts-target:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ts-result { display: flex; flex-direction: column; gap: 8px; }
+.ts-result + .ts-result { margin-top: 14px; }
+
+/* An output whose value differs between Published and Draft — the reason for
+   running both, so it is marked rather than left to be spotted. */
+.ed-diff {
+  color: #fbbf24;
+  font-weight: 600;
+  margin-left: 4px;
+  cursor: help;
+}
+
+.ed-type { opacity: 0.5; }
+
+/* Running a POST/PUT/DELETE action changes data for real. */
+.ed-note.is-warn {
+  color: #fbbf24;
+  border-left-color: rgba(251,191,36,0.5);
 }
 
 /* A JSON textarea (or numeric input) whose contents would not parse.

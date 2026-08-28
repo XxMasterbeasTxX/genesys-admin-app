@@ -28,6 +28,10 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
 
   // ── Data Actions ─────────────────────────────────────
   "data-actions.edit":            { edit: ["integrations:action:edit"], execute: ["integrations:action:execute"] },
+  // Execute only, deliberately: this is what makes "may test, may not change"
+  // expressible at nav level. data-actions.edit grants the page on EITHER of
+  // its permissions, so an execute-only user would otherwise get the editor.
+  "data-actions.test":            { execute: ["integrations:action:execute"] },
   "data-actions.copy.betweenOrgs":{ create: ["integrations:action:add"] },
 
   // ── Data Tables ──────────────────────────────────────

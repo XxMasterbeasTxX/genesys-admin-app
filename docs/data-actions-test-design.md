@@ -1,6 +1,6 @@
 # Data Actions — Test (new page) — Design
 
-Status: **Proposed** — awaiting go-ahead
+Status: **Implemented** — shipped in 4.8, not yet run against a live org
 Author: Genesys Admin App
 Last updated: 2026-08-28
 

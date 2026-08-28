@@ -21,6 +21,19 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.8",
+    date: "2026-08-28",
+    title: "Data Actions — Test: run an action without being able to change it",
+    changes: [
+      "New page: Data Actions › Test. It runs data actions and shows what came back, and that is all it does — no save, no publish, no editable field.",
+      "It exists for a permissions reason rather than a layout one. Access to the Edit page is granted by either the edit permission or the execute permission, so anyone allowed to test an action was handed the full editor as well. The new page is granted by execute alone, so “may test, may not change” is now something you can actually give someone.",
+      "Published and Draft can be run together, and any output whose value differs between the two is marked — comparing them is usually the whole reason for testing a draft.",
+      "Inputs sit on the left and results on the right, so a value can be changed and the action re-run without scrolling. The execution steps and the raw response stay full width underneath, where there is room for them.",
+      "The page says what pressing Run will do. A test executes the action for real, so an action that writes will write: if it is a POST, PUT or DELETE the page says so before you press it, and says when running Both means doing it twice.",
+      "The Edit page’s Test section and the new page share one implementation instead of two copies, so the two cannot drift apart.",
+    ],
+  },
+  {
     version: "4.7",
     date: "2026-08-26",
     title: "Who is triggering a WEM licence",
