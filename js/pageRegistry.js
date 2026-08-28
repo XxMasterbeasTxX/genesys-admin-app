@@ -227,8 +227,6 @@ const registry = {
     import("./pages/utilities/getLists.js").then((m) => m.default(ctx)),
   "/utilities/ip-ranges": (ctx) =>
     import("./pages/utilities/ipRanges.js").then((m) => m.default(ctx)),
-  "/utilities/permission-catalog": (ctx) =>
-    import("./pages/utilities/permissionCatalog.js").then((m) => m.default(ctx)),
 };
 
 /**

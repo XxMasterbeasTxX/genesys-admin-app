@@ -299,7 +299,13 @@ Confirmed against the live demo permission catalog (2026-07-06). Only **write ac
 
 ---
 
-## 9. Permission Catalog report page (agreed — next buildable piece)
+## 9. Permission Catalog report page (BUILT — REMOVED 2026-08-28)
+
+> **The page no longer exists.** Utilities › Get Lists → **Permissions vs. Licenses** reads the
+> same catalog and pairs each permission with the licences that grant it, making this page a
+> strict subset. Removed along with `utilities.permissionCatalog`. The section is kept because
+> §8's permission map was authored with this page, which is why the map exists in the shape it
+> does.
 
 An internal, admin-only page that dumps the **full live permission catalog** for the selected org
 (run against **demo**) so we can finalize §8.
@@ -356,10 +362,9 @@ never from a request field:
 
 ## 12. Phased roadmap (build one step at a time, test each thoroughly)
 
-1. **Permission Catalog report page** (§9) → finalize the write-permission map (§8). **[BUILT — pending testing]**
-   - `js/pages/utilities/permissionCatalog.js`; nav leaf under Utilities (`utilities.permission-catalog`);
-     route `/utilities/permission-catalog` in `pageRegistry.js`; access key `utilities.permissionCatalog`
-     (covered by admin `*`; not granted to Support/Export).
+1. **Permission Catalog report page** (§9) → finalize the write-permission map (§8). **[BUILT — REMOVED 2026-08-28]**
+   - It did its job: the map in §8 was authored from it. Superseded by Utilities › Get Lists →
+     Permissions vs. Licenses; page, nav leaf, route and access key all removed.
 2. **Internal permission-refinement + hide/disable UX** (§6, §7): `accessState()`, fail-closed,
    superuser bypass, read-only exemption. Prerequisite audit first. **[PARTIALLY BUILT]**
    - `js/featurePermissionMap.js` — finalized write-permission map + helpers (`isWriteGated`,
@@ -400,7 +405,7 @@ never from a request field:
      Customer-mode access keys come from `entitlements` via `accessService.js::resolveCustomerAccess`.
    - 5d: end-to-end test as a customer user (Test IE) incl. tamper/isolation cases. **[DONE — validated on dev 2026-07-15]**
      - Verified: IE-region login via customer PKCE client; org locked to Test IE; menu limited to
-       entitlements (no Billing / Permission Catalog); pages load IE-only data (proxy 200).
+       entitlements (no Billing); pages load IE-only data (proxy 200).
      - Isolation: proxy call targeting another org → blocked (no other-org data, 401); billing
        endpoint → `403 endpoint_not_available_for_customer`.
    - Prereq for 5d: a PKCE client in the customer org; its `clientId` added to `CUSTOMER_REGISTRY_JSON`.
@@ -455,7 +460,7 @@ never from a request field:
 | D8 | Exports & app-owned storage = **group-only** (no permission gate) | ✅ agreed |
 | D9 | Composite features gate on **primary write permission** | ✅ agreed |
 | D10 | Hide modules with no access; **disable** leaf/buttons with tooltip; add `accessState()` | ✅ agreed |
-| D11 | Build the **Permission Catalog** report page next (Utilities, admin-only) | ✅ agreed |
+| D11 | Build the **Permission Catalog** report page next (Utilities, admin-only) | ✅ agreed — page removed 2026-08-28, superseded by Get Lists → Permissions vs. Licenses |
 
 ## 14. Resolved decisions (were open)
 
