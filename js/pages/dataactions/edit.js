@@ -1181,11 +1181,23 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
       } else {
         setStatus(`✓ Test succeeded (${target}).`, "success");
       }
+
+      // A test is not a rehearsal: it executes the action, so a POST action
+      // creates a record and a DELETE deletes one. That belongs in the log
+      // alongside the saves and publishes, whether it succeeded or not.
+      // Inputs are deliberately not recorded — they can carry personal data.
+      logAction({ me, orgId, action: "dataaction_test",
+        description: `Tested ${target} data action '${actionName(id)}'`
+          + ` — ${result?.success === false ? "failed" : "succeeded"}` });
     } catch (err) {
       clearTestResults();
       $testRawWrap.hidden = false;
       $testResult.textContent = `Error: ${err.message}`;
       setStatus(STATUS.error(err.message), "error");
+      // Logged too: a request that errored may still have reached the third
+      // party and done its work, so "attempted" is the honest record.
+      logAction({ me, orgId, action: "dataaction_test",
+        description: `Tested ${target} data action '${actionName(id)}' — errored: ${err.message}` });
     } finally {
       hideProgress();
       enableActions();

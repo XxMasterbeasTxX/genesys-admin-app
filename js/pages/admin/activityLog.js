@@ -24,6 +24,7 @@ const ACTION_LABELS = {
   dataaction_copy:        "Data Action Copy",
   dataaction_save:        "Data Action Save",
   dataaction_publish:     "Data Action Publish",
+  dataaction_test:        "Data Action Test",
   deployment_basic:       "Deployment — Basic",
   deployment_onboarding:  "Deployment — Onboarding",
   deployment_onboarding_preview: "Deployment — Onboarding (previewed only)",
