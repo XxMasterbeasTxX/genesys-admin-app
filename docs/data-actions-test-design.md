@@ -149,24 +149,19 @@ re-run against the Edit page afterwards to prove the move was inert.
 
 ## 8. Activity Log
 
-**The Edit page logs tests; this page does not.** Decided 2026-08-28.
+**Tests are not logged, on either page.** Decided 2026-08-28.
 
-The Edit page not logging them was the actual gap — a test executes the action,
-so a POST creates a record and a DELETE deletes one, and that belongs in the log
-beside the saves and publishes it sits between. Added: a `dataaction_test`
-entry naming the action, the target and the outcome, on success, on failure, and
-on a request that errored (which may still have reached the third party).
-**Inputs are never recorded** — they can carry personal data.
+Testing is iterative by nature: the same action is run repeatedly while inputs
+are adjusted, and on this page that is the entire purpose rather than an
+incident within an edit session. A log filled with those entries is a log nobody
+reads, which costs more than the entries are worth. The Activity Log stays a
+record of **changes to configuration** — saves, publishes, copies, deploys.
 
-This page stays out of it because testing is its entire purpose rather than an
-incident within an edit session. Someone iterating on inputs runs the same
-action repeatedly, and a log filled with that is a log nobody reads — which
-costs more than the entries are worth.
-
-> The consequence, recorded because it is the opposite of what the risk analysis
-> would pick: the **higher**-risk case is the unlogged one. An Edit-page user's
-> writes are already logged, so test entries there are incremental, whereas a
-> Test-page user holds execute rights and nothing else — their action runs can
-> create or delete records and leave no trace. This is a deliberate trade
-> against log noise, not an oversight. If an execute-only grant is ever made to
-> someone outside the team, revisit it.
+> The consequence, recorded so it is a known trade rather than an oversight: a
+> test **executes** the action, so a POST creates a record and a DELETE deletes
+> one, and none of that is captured. It matters most for the execute-only user
+> this page exists to serve — they can cause writes and leave no trace, having
+> no other logged activity to sit alongside. Accepted on the basis that the
+> grant goes to trusted operators. **Revisit if an execute-only grant is ever
+> made to someone outside the team**, or if a customer entitlement grants
+> `data-actions.*` (§7).

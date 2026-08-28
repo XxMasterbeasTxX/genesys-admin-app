@@ -33,7 +33,6 @@
  *   dataaction_copy      — Copy a data action between orgs
  *   dataaction_save      — Save a data action draft
  *   dataaction_publish   — Publish a data action draft
- *   dataaction_test      — Run a data action (executes it for real)
  *   phone_create         — Bulk-create WebRTC phones
  *   phone_move           — Move phones to a different site
  *   schedule_create      — Create an automated schedule
