@@ -21,6 +21,8 @@ const registry = {
     import("./pages/dataactions/copyBetweenOrgs.js").then((m) => m.default(ctx)),
   "/dataactions/edit": (ctx) =>
     import("./pages/dataactions/edit.js").then((m) => m.default(ctx)),
+  "/dataactions/test": (ctx) =>
+    import("./pages/dataactions/test.js").then((m) => m.default(ctx)),
 
   // ── Data Tables ───────────────────────────────────────
   "/datatables/create": (ctx) =>

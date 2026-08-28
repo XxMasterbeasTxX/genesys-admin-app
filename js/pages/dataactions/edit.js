@@ -35,6 +35,10 @@ import { createSingleSelect } from "../../components/multiSelect.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 import { stripOrgSpecificUris } from "../../lib/dataActions.js";
+import {
+  inputFieldsHtml, collectInputs, outcomeOf,
+  outputsTableHtml, stepsTableHtml, contractPreviewHtml, resolvedRequestOf,
+} from "../../lib/dataActionTest.js";
 
 // ── Status helpers ──────────────────────────────────────────────────
 const STATUS = {
@@ -436,100 +440,6 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     $f.addEventListener("change", () => setDirty(true));
   });
 
-  /** Extract properties from a JSON schema, handling nested structures. */
-  function extractSchemaProps(schema) {
-    if (!schema) return null;
-    if (schema.properties && Object.keys(schema.properties).length) return schema.properties;
-    if (schema.items?.properties && Object.keys(schema.items.properties).length) return schema.items.properties;
-    return null;
-  }
-
-  /** Build HTML table preview of input/output contract schemas. */
-  function buildContractPreview(contract) {
-    if (!contract) return "<em>No contract</em>";
-    const sections = [];
-
-    const inputProps = extractSchemaProps(contract.input?.inputSchema);
-    if (inputProps) {
-      const rows = Object.entries(inputProps).map(([key, def], i) =>
-        `<tr><td>${i + 1}</td><td>${escapeHtml(def.title || key)}</td><td>${escapeHtml(def.type || "string")}</td></tr>`
-      ).join("");
-      sections.push(`<strong>Input</strong>
-        <table class="dt-schema-table">
-          <thead><tr><th>#</th><th>Field</th><th>Type</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`);
-    }
-
-    const outputProps = extractSchemaProps(contract.output?.successSchema);
-    if (outputProps) {
-      const rows = Object.entries(outputProps).map(([key, def], i) =>
-        `<tr><td>${i + 1}</td><td>${escapeHtml(def.title || key)}</td><td>${escapeHtml(def.type || "string")}</td></tr>`
-      ).join("");
-      sections.push(`<strong>Output (success)</strong>
-        <table class="dt-schema-table">
-          <thead><tr><th>#</th><th>Field</th><th>Type</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`);
-    }
-
-    return sections.length ? sections.join("") : "<em>Empty contract</em>";
-  }
-
-  /** Build test input fields from the input contract schema. */
-  function buildTestInputFields(contract) {
-    const props = extractSchemaProps(contract?.input?.inputSchema);
-    if (!props || !Object.keys(props).length) {
-      $testInputs.innerHTML = "<em style='font-size:12px;color:var(--muted)'>No input parameters required.</em>";
-      return;
-    }
-    $testInputs.innerHTML = Object.entries(props).map(([key, def]) => {
-      const label = def.title || key;
-      const type = def.type || "string";
-      return `
-        <div class="dt-control-group">
-          <label class="dt-label">${escapeHtml(label)} <span style="opacity:0.5">(${escapeHtml(type)})</span></label>
-          <input class="dt-input ed-test-field" data-key="${escapeHtml(key)}" data-type="${escapeHtml(type)}"
-                 type="text" placeholder="${escapeHtml(key)}" style="max-width:450px" />
-        </div>`;
-    }).join("");
-  }
-
-  /**
-   * Collect test input values into an object.
-   *
-   * Returns `{ inputs, errors }`. A numeric field holding something that is not
-   * a number used to be sent as `NaN`, which serialises to `null` and makes the
-   * action fail for a reason the result pane never explains — it is reported
-   * here instead. Empty fields are omitted, as an unset parameter.
-   */
-  function collectTestInputs() {
-    const inputs = {};
-    const errors = [];
-    $testInputs.querySelectorAll(".ed-test-field").forEach(field => {
-      const key = field.dataset.key;
-      const type = field.dataset.type;
-      const raw = field.value.trim();
-      markInvalid(field, false);
-      if (!raw) return; // unset parameter
-
-      if (type === "integer" || type === "number") {
-        const num = Number(raw);
-        if (!Number.isFinite(num)) {
-          errors.push(key);
-          markInvalid(field, true);
-          return;
-        }
-        inputs[key] = type === "integer" ? Math.trunc(num) : num;
-      } else if (type === "boolean") {
-        inputs[key] = raw.toLowerCase() === "true";
-      } else {
-        inputs[key] = raw;
-      }
-    });
-    return { inputs, errors };
-  }
-
   function resetAll() {
     allActions = [];
     integrations = [];
@@ -745,11 +655,11 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
         $outputSchema.value = detail.contract?.output?.successSchema
           ? JSON.stringify(detail.contract.output.successSchema, null, 2) : "";
       } else {
-        $contractPrev.innerHTML = buildContractPreview(detail.contract);
+        $contractPrev.innerHTML = contractPreviewHtml(detail.contract);
       }
 
       // Test inputs from input contract
-      buildTestInputFields(detail.contract);
+      $testInputs.innerHTML = inputFieldsHtml(detail.contract);
 
       // Test target options
       const targets = [];
@@ -1043,42 +953,6 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     $testResult.textContent = "";
   }
 
-  /** Format one output value for display, without hiding its shape. */
-  function formatValue(v) {
-    if (v === undefined) return "—";
-    if (v === null) return "null";
-    if (typeof v === "object") return JSON.stringify(v);
-    return String(v);
-  }
-
-  /**
-   * Rows for one declared output.
-   *
-   * An array is the common shape for a data action result, and rendering it as
-   * `["a","b","c"]` in a single cell is unreadable at any real length — so it
-   * expands into one indexed row per element, named as Genesys names them
-   * (`skills-0`, `skills-1`, …), under a header row carrying the count.
-   */
-  function outputRows(key, def, value) {
-    const label = escapeHtml(def.title || key);
-    const type  = escapeHtml(def.type || "string");
-
-    if (Array.isArray(value)) {
-      if (!value.length) {
-        return `<tr><td>${label}</td><td>${type}</td><td><em>empty</em></td></tr>`;
-      }
-      const head = `<tr><td>${label}</td><td>${type}</td>`
-        + `<td>${value.length} item${value.length === 1 ? "" : "s"}</td></tr>`;
-      const items = value.map((v, i) =>
-        `<tr class="ed-out-item">`
-        + `<td>${label}-${i}</td><td></td><td>${escapeHtml(formatValue(v))}</td></tr>`
-      ).join("");
-      return head + items;
-    }
-
-    return `<tr><td>${label}</td><td>${type}</td><td>${escapeHtml(formatValue(value))}</td></tr>`;
-  }
-
   /**
    * Render a TestExecutionResult against the action's own output contract.
    *
@@ -1087,60 +961,30 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
    * per-step breakdown becomes readable, and the dump is kept but demoted.
    */
   function renderTestResult(result, target) {
-    const failed = result?.success === false;
+    const { failed, detail } = outcomeOf(result);
 
-    const detail = failed
-      ? (result.error?.message
-         || (result.operations || []).filter(o => o.success === false)
-              .map(o => `${o.name}: ${o.error?.message || "failed"}`).join(" | "))
-      : "";
+    // Show the request that was actually sent, beside the outcome. An empty
+    // result is otherwise indistinguishable between "there is no such data" and
+    // "you asked for page 10 of 100".
+    const sent = resolvedRequestOf(result);
+    const headline = failed
+      ? `Test failed (${target})${detail ? ` \u2014 ${detail}` : ""}`
+      : `Test succeeded (${target})`;
 
     $testOutcome.hidden = false;
     $testOutcome.className = `ed-test-outcome ${failed ? "is-fail" : "is-ok"}`;
-    $testOutcome.textContent = failed
-      ? `Test failed (${target})${detail ? ` — ${detail}` : ""}`
-      : `Test succeeded (${target})`;
+    $testOutcome.innerHTML = `<div>${escapeHtml(headline)}</div>`
+      + (sent ? `<div class="ed-req-line">${escapeHtml(sent)}</div>` : "");
 
-    // Outputs, named from contract.output.successSchema
-    const outProps = extractSchemaProps(selectedFull?.contract?.output?.successSchema);
-    const finalResult = result?.finalResult;
-    if (outProps && finalResult && typeof finalResult === "object") {
-      const rows = Object.entries(outProps)
-        .map(([key, def]) => outputRows(key, def, finalResult[key]))
-        .join("");
-      $testOutputs.innerHTML = `
-        <table class="dt-schema-table">
-          <thead><tr><th>Output</th><th>Type</th><th>Value</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`;
-      $testOutputsWrap.hidden = false;
-    } else {
-      $testOutputsWrap.hidden = true;
-    }
+    const outputs = outputsTableHtml(selectedFull?.contract, result?.finalResult);
+    $testOutputs.innerHTML = outputs || "";
+    $testOutputsWrap.hidden = !outputs;
 
-    // Steps — the reason a failing test used to be hard to read
-    const ops = result?.operations || [];
-    if (ops.length) {
-      const rows = ops.map(o => `
-        <tr>
-          <td>${escapeHtml(String(o.step ?? ""))}</td>
-          <td>${escapeHtml(o.name || "—")}</td>
-          <td>${o.success === false
-                ? '<span class="ed-step-fail">failed</span>'
-                : '<span class="ed-step-ok">ok</span>'}</td>
-          <td>${escapeHtml(o.error?.message || "")}</td>
-        </tr>`).join("");
-      $testSteps.innerHTML = `
-        <table class="dt-schema-table">
-          <thead><tr><th>#</th><th>Step</th><th>Result</th><th>Error</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`;
-      $testStepsWrap.hidden = false;
-      // A failure is the one time the steps are worth opening unprompted.
-      $testStepsWrap.open = failed;
-    } else {
-      $testStepsWrap.hidden = true;
-    }
+    const steps = stepsTableHtml(result);
+    $testSteps.innerHTML = steps || "";
+    $testStepsWrap.hidden = !steps;
+    // A failure is the one time the steps are worth opening unprompted.
+    if (steps) $testStepsWrap.open = failed;
 
     $testResult.textContent = JSON.stringify(result, null, 2);
     $testRawWrap.hidden = false;
@@ -1151,7 +995,7 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
     if (!id) return;
 
     const target = $testTarget.value;
-    const { inputs, errors: inputErrors } = collectTestInputs();
+    const { inputs, errors: inputErrors } = collectInputs($testInputs);
     if (inputErrors.length) {
       setStatus(`Not a number: ${inputErrors.join(", ")}.`, "error");
       return;

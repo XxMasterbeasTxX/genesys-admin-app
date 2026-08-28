@@ -27,6 +27,7 @@ import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 import { stripOrgSpecificUris } from "../../lib/dataActions.js";
+import { contractPreviewHtml } from "../../lib/dataActionTest.js";
 
 // ── Status messages ────────────────────────────────────────────────
 const STATUS = {
@@ -194,54 +195,6 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
     $progressBar.style.width = "0%";
   }
 
-  /** Extract properties from a JSON schema, handling nested structures. */
-  function extractSchemaProps(schema) {
-    if (!schema) return null;
-    // Direct properties
-    if (schema.properties && Object.keys(schema.properties).length) {
-      return schema.properties;
-    }
-    // Nested under items (array wrapper)
-    if (schema.items?.properties && Object.keys(schema.items.properties).length) {
-      return schema.items.properties;
-    }
-    return null;
-  }
-
-  /** Build a table preview of input/output contract schemas. */
-  function buildContractPreview(contract) {
-    if (!contract) return "<em>No contract</em>";
-    const sections = [];
-
-    // Input schema
-    const inputProps = extractSchemaProps(contract.input?.inputSchema);
-    if (inputProps) {
-      const rows = Object.entries(inputProps).map(([key, def], i) =>
-        `<tr><td>${i + 1}</td><td>${escapeHtml(def.title || key)}</td><td>${escapeHtml(def.type || "string")}</td></tr>`
-      ).join("");
-      sections.push(`<strong>Input</strong>
-        <table class="dt-schema-table">
-          <thead><tr><th>#</th><th>Field</th><th>Type</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`);
-    }
-
-    // Output (success) schema
-    const outputProps = extractSchemaProps(contract.output?.successSchema);
-    if (outputProps) {
-      const rows = Object.entries(outputProps).map(([key, def], i) =>
-        `<tr><td>${i + 1}</td><td>${escapeHtml(def.title || key)}</td><td>${escapeHtml(def.type || "string")}</td></tr>`
-      ).join("");
-      sections.push(`<strong>Output (success)</strong>
-        <table class="dt-schema-table">
-          <thead><tr><th>#</th><th>Field</th><th>Type</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`);
-    }
-
-    return sections.length ? sections.join("") : "<em>Empty contract</em>";
-  }
-
   /** Find integration name by ID in a list. */
   function integName(list, id) {
     const integ = list.find(i => i.id === id);
@@ -403,7 +356,7 @@ export default function renderCopyDataActionBetweenOrgs({ route, me, api, orgCon
 
       // Store the full detail on the action object for later use
       a._full = full;
-      $contractPrev.innerHTML = buildContractPreview(full.contract);
+      $contractPrev.innerHTML = contractPreviewHtml(full.contract);
 
       // A template that could not be read is a silent-corruption risk: copying
       // would hand the destination Genesys's default "${input.rawRequest}"

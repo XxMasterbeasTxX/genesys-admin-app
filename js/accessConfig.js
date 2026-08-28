@@ -37,6 +37,7 @@
  *   DATA ACTIONS
  *   data-actions.copy.betweenOrgs      Copy - Between Orgs
  *   data-actions.edit                  Edit
+ *   data-actions.test                  Test (execute only)
  *
  *   DATA TABLES
  *   data-tables.create                 Create
