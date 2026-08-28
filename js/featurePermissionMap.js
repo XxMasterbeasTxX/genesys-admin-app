@@ -226,8 +226,6 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   //   export.scheduled, export.users.skillTemplates  — app-owned storage
   //   export.users.allGroups                         — /groups is ungated
   //   utilities.ipRanges                             — no Genesys data
-  //   utilities.permissionCatalog                    — /authorization/permissions
-  //                                                    declares no permission
 });
 
 /** Normalize a spec to { mode: "any"|"all", permissions: string[] }. */

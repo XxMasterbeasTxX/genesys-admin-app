@@ -144,11 +144,22 @@ would buy nothing. Simulated against the real permission sets before shipping:
 an admin (`*:*:*`) keeps **86/86** keys; the three-permission test user drops to
 **12/86**.
 
-**Coverage is complete and closed**: 53 write-gated, 27 read-gated, 6
+**Coverage is complete and closed**: 53 write-gated, 27 read-gated, 5
 deliberately ungated (`export.scheduled`, `export.users.skillTemplates` —
 app-owned storage; `export.users.allGroups` — `/groups` is ungated;
-`utilities.ipRanges` — no Genesys data; `utilities.permissionCatalog` —
-`/authorization/permissions` declares none). No nav key is unaccounted for.
+`utilities.ipRanges` — no Genesys data). No nav key is unaccounted for.
+
+**Update 2026-08-28.** `utilities.permissionCatalog` was removed along with its
+page: Utilities › Get Lists → **Permissions vs. Licenses** reads the same
+`/authorization/permissions` catalog and adds the licence that grants each
+permission, so the older page was a strict subset. The key counts above are the
+figures measured at ship time; the nav-key total is now **85**, and the ungated
+set lost the one member that was ungated because `/authorization/permissions`
+declares no permission. Note the consequence: the catalog is now reachable only
+through a list gated on `authorization:grant:add` / `authorization:license:view`,
+because it is joined against `/license/definitions`, which Genesys does gate.
+That is a deliberate exception to §2 — accepted because every colleague holds
+admin in the demo org, the same basis as the no-audit-mode call above.
 
 ### One deliberate exception to §2
 

@@ -114,7 +114,7 @@ eighteen others:
 `components/schedulePanel.js:502` ·
 `interactions/recordings/jobsList.js:77,226,285` · `gdpr/requestStatus.js:70` ·
 `flows/journeyFlow.js:424` · `requests.js:171` · `utilities/getLists.js:480` ·
-`utilities/ipRanges.js:196` · `utilities/permissionCatalog.js:102` ·
+`utilities/ipRanges.js:196` ·
 `interactions/searchRecent.js:358` · `roles/create.js:677,776` ·
 `roles/copy/copyBetweenOrgs.js:815`
 
@@ -151,9 +151,9 @@ somewhere else, or the button simply greys out:
 - **Navigation.** [`router.js:62`](../js/router.js) awaits `resolve(route)`,
   which is one of **87 dynamic `import()`s** in
   [`pageRegistry.js`](../js/pageRegistry.js). The outgoing page stays on
-  screen, inert, until the module lands. Four pages (`activityLog`,
-  `getLists`, `ipRanges`, `permissionCatalog`) also fetch data before returning
-  their element, so the stall is network-length.
+  screen, inert, until the module lands. Three pages (`activityLog`,
+  `getLists`, `ipRanges`) also fetch data before returning their element, so
+  the stall is network-length.
 - **Org switch.** [`app.js:369`](../js/app.js) re-renders the whole page on
   customer change, silently.
 
@@ -435,7 +435,6 @@ status lines, 52 took the one-line swap unchanged. The other eight, as built:
   busy state on that page already flags itself, so inference would add only risk.
 - [`requests.js`](../js/pages/requests.js),
   [`getLists.js`](../js/pages/utilities/getLists.js),
-  [`permissionCatalog.js`](../js/pages/utilities/permissionCatalog.js),
   [`interactions/totals.js`](../js/pages/export/interactions/totals.js) — these
   also toggle `$status.style.display`; each keeps a wrapper that preserves it.
 - [`subjectRequest.js`](../js/pages/gdpr/subjectRequest.js) — the one page whose
