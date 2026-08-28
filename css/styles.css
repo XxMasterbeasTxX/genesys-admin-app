@@ -2057,6 +2057,18 @@ body {
 .ed-step-ok   { color: #34d399; }
 .ed-step-fail { color: #f87171; font-weight: 600; }
 
+/* The request the action actually sent, under the outcome. Reads as secondary
+   to the result but has to stay legible — it is the line that explains an
+   empty result. */
+.ed-req-line {
+  margin-top: 5px;
+  font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+}
+
 /* One element of an array output, indented under the row that names it. */
 .ed-out-item td:first-child {
   padding-left: 22px;

@@ -95,6 +95,12 @@ PUT or DELETE action it means the side effect happens **twice** — two rows
 created, two records deleted. This is why Both is a visible choice rather than
 silent behaviour, and why §7 carries a standing warning.
 
+**The request that was sent is shown**, under the outcome, taken from the step
+in which Genesys resolves the URL template. Without it an empty result is
+indistinguishable between "there is no such data" and "you asked for page 10 of
+100" — a distinction that cost three false bug reports during 4.6 testing, every
+one of them a mistyped page number. Both pages show it.
+
 **Differences are marked.** When both targets ran, an output whose value differs
 between Published and Draft is flagged in the Draft table. Comparing the two is
 the reason for running both, and asking someone to eyeball two tables for a
@@ -127,6 +133,9 @@ be escaped: a result is third-party response data going into `innerHTML`.
 - **No editable fields.** Name, category and config are shown read-only, so the
   tester can see what they are testing without being able to change it.
 - **No contract editing**, even for draft-only actions.
+- **No contract section at all.** The input fields and the Outputs table already
+  name every field with its type, so it would only repeat itself. Edit is where
+  the contract is worth reading.
 - **No org picker** — the header one, as everywhere else.
 
 ## 7. Risks

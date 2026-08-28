@@ -119,6 +119,24 @@ export function outcomeOf(result) {
   return { failed, detail };
 }
 
+/**
+ * The request the action actually sent, from the execution steps.
+ *
+ * Genesys resolves the URL template in its own step and reports the result as
+ * `[GET] https://…`. Without it on screen, an empty result is indistinguishable
+ * between "there is no such data" and "you asked for page 10 of 100" — a
+ * distinction that has cost three false bug reports.
+ *
+ * @returns {string|null} the resolved request line, or null if the steps do not
+ *   carry one (an action that failed before resolving the URL).
+ */
+export function resolvedRequestOf(result) {
+  const op = (result?.operations || []).find(
+    (o) => typeof o.result === "string" && /https?:\/\//.test(o.result)
+  );
+  return op ? op.result : null;
+}
+
 /** Rows for one declared output — see `outputsTableHtml`. */
 function outputRows(key, def, value, compare) {
   const label = escapeHtml(def.title || key);

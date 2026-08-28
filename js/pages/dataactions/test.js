@@ -28,7 +28,7 @@ import { createSingleSelect } from "../../components/multiSelect.js";
 import * as gc from "../../services/genesysApi.js";
 import {
   inputFieldsHtml, collectInputs, outcomeOf,
-  outputsTableHtml, stepsTableHtml, contractPreviewHtml,
+  outputsTableHtml, stepsTableHtml, resolvedRequestOf,
 } from "../../lib/dataActionTest.js";
 
 const STATUS = {
@@ -99,12 +99,9 @@ export default function renderTestDataAction({ route, me, api, orgContext, acces
           </span>
         </div>
 
-        <details class="ed-section">
-          <summary class="ed-section-summary">Contract</summary>
-          <div class="ed-section-body">
-            <div class="dt-schema" id="tsContractPreview"></div>
-          </div>
-        </details>
+        <!-- No Contract section: the input fields and the Outputs table
+             already name every field with its type, so it would only repeat
+             itself. Edit is where the contract is worth reading. -->
 
         <!-- Inputs left, results right -->
         <div class="ts-split">
@@ -156,7 +153,6 @@ export default function renderTestDataAction({ route, me, api, orgContext, acces
   const $infoInteg    = el.querySelector("#tsInfoInteg");
   const $infoSecure   = el.querySelector("#tsInfoSecure");
   const $infoVersion  = el.querySelector("#tsInfoVersion");
-  const $contractPrev = el.querySelector("#tsContractPreview");
   const $targets      = el.querySelector("#tsTargets");
   const $inputFields  = el.querySelector("#tsInputFields");
   const $runBtn       = el.querySelector("#tsRunBtn");
@@ -361,7 +357,6 @@ export default function renderTestDataAction({ route, me, api, orgContext, acces
       $infoSecure.textContent = detail.secure ? "secure" : "not secure";
       $infoVersion.textContent = detail.version != null ? `v${detail.version}` : "—";
 
-      $contractPrev.innerHTML = contractPreviewHtml(detail.contract);
       $inputFields.innerHTML = inputFieldsHtml(detail.contract);
 
       syncTargetButtons(item);
@@ -390,11 +385,14 @@ export default function renderTestDataAction({ route, me, api, orgContext, acces
   function renderResultBlock(label, result, compareTo) {
     const { failed, detail } = outcomeOf(result);
     const outputs = outputsTableHtml(selectedFull?.contract, result?.finalResult, { compareTo });
+    // What was actually sent, so an empty result is readable at a glance.
+    const sent = resolvedRequestOf(result);
     return `
       <div class="ts-result">
         <div class="ed-test-outcome ${failed ? "is-fail" : "is-ok"}">
-          ${escapeHtml(label)} — ${failed ? "failed" : "succeeded"}${
-            failed && detail ? `: ${escapeHtml(detail)}` : ""}
+          <div>${escapeHtml(label)} — ${failed ? "failed" : "succeeded"}${
+            failed && detail ? `: ${escapeHtml(detail)}` : ""}</div>
+          ${sent ? `<div class="ed-req-line">${escapeHtml(sent)}</div>` : ""}
         </div>
         ${outputs || `<p class="ed-note">This action declares no outputs.</p>`}
       </div>`;

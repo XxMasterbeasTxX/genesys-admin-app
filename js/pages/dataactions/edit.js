@@ -37,7 +37,7 @@ import { logAction } from "../../services/activityLogService.js";
 import { stripOrgSpecificUris } from "../../lib/dataActions.js";
 import {
   inputFieldsHtml, collectInputs, outcomeOf,
-  outputsTableHtml, stepsTableHtml, contractPreviewHtml,
+  outputsTableHtml, stepsTableHtml, contractPreviewHtml, resolvedRequestOf,
 } from "../../lib/dataActionTest.js";
 
 // ── Status helpers ──────────────────────────────────────────────────
@@ -963,11 +963,18 @@ export default function renderEditDataAction({ route, me, api, orgContext, acces
   function renderTestResult(result, target) {
     const { failed, detail } = outcomeOf(result);
 
-    $testOutcome.hidden = false;
-    $testOutcome.className = `ed-test-outcome ${failed ? "is-fail" : "is-ok"}`;
-    $testOutcome.textContent = failed
+    // Show the request that was actually sent, beside the outcome. An empty
+    // result is otherwise indistinguishable between "there is no such data" and
+    // "you asked for page 10 of 100".
+    const sent = resolvedRequestOf(result);
+    const headline = failed
       ? `Test failed (${target})${detail ? ` \u2014 ${detail}` : ""}`
       : `Test succeeded (${target})`;
+
+    $testOutcome.hidden = false;
+    $testOutcome.className = `ed-test-outcome ${failed ? "is-fail" : "is-ok"}`;
+    $testOutcome.innerHTML = `<div>${escapeHtml(headline)}</div>`
+      + (sent ? `<div class="ed-req-line">${escapeHtml(sent)}</div>` : "");
 
     const outputs = outputsTableHtml(selectedFull?.contract, result?.finalResult);
     $testOutputs.innerHTML = outputs || "";
