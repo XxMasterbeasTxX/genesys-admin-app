@@ -5770,3 +5770,17 @@ a.fr-shipped:hover { text-decoration: underline; }
   .dq-preset.is-active { color: #1d4ed8; border-color: #1d4ed8; }
   .dq-table tbody tr:hover { background: rgba(0,0,0,0.03); }
 }
+
+/* Coverage page extras */
+.dq-range-line {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.dq-perm-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+.dq-perm-note code {
+  font-size: 11px;
+}

@@ -17,7 +17,7 @@
  * lets one filter object serialise to both with nothing lost.
  */
 
-import { createMultiSelect, createSingleSelect } from "./multiSelect.js";
+import { createMultiSelect } from "./multiSelect.js";
 import {
   fetchAllUsers, fetchAllQueues, fetchAllTeams,
   fetchAllDivisions, fetchAllEvaluationForms,
@@ -196,6 +196,13 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
 
   media.setItems(MEDIA_TYPES.map((m) => ({ id: m.id, label: m.label })));
 
+  // Id → name, per list, filled by loadOptions and read back by the pages.
+  const lookups = {
+    agents: new Map(), teams: new Map(), divisions: new Map(),
+    queues: new Map(), forms: new Map(),
+    media: new Map(MEDIA_TYPES.map((m) => [m.id, m.label])),
+  };
+
   // ── Change plumbing ─────────────────────────────────
   $from.addEventListener("change", () => { markActivePreset(); emit(); });
   $to.addEventListener("change", () => { markActivePreset(); emit(); });
@@ -272,31 +279,31 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
 
       const jobs = [
         {
-          label: "agents", ms: agents,
+          label: "agents", lookupKey: "agents", ms: agents,
           run: () => fetchAllUsers(api, orgId, { query: { state: "active" } }),
           map: (u) => ({ id: u.id, label: u.name || u.email || u.id }),
           restoreKey: "agentIds",
         },
         {
-          label: "work teams", ms: teams,
+          label: "work teams", lookupKey: "teams", ms: teams,
           run: () => fetchAllTeams(api, orgId),
           map: (t) => ({ id: t.id, label: t.name || t.id }),
           restoreKey: "teamIds",
         },
         {
-          label: "divisions", ms: divisions,
+          label: "divisions", lookupKey: "divisions", ms: divisions,
           run: () => fetchAllDivisions(api, orgId),
           map: (d) => ({ id: d.id, label: d.name || d.id }),
           restoreKey: "divisionIds",
         },
         {
-          label: "queues", ms: queues,
+          label: "queues", lookupKey: "queues", ms: queues,
           run: () => fetchAllQueues(api, orgId),
           map: (q) => ({ id: q.id, label: q.name || q.id }),
           restoreKey: "queueIds",
         },
         {
-          label: "evaluation forms", ms: forms,
+          label: "evaluation forms", lookupKey: "forms", ms: forms,
           run: () => fetchAllEvaluationForms(api, orgId),
           // Keyed on contextId, not id: a form has one id per version, and
           // filtering by version would silently drop evaluations scored on
@@ -317,6 +324,8 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
           }
           job.ms.setItems(items);
           job.ms.setEnabled(items.length > 0);
+          const store = lookups[job.lookupKey];
+          if (store) for (const i of items) store.set(i.id, i.label);
           if (!items.length) job.ms.setPlaceholder(`No ${job.label}`);
           const keep = restore?.[job.restoreKey];
           if (keep?.length) job.ms.setSelected(keep.filter((id) => items.some((i) => i.id === id)));
@@ -331,6 +340,15 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
 
       return warnings;
     },
+
+    /**
+     * Id → name maps for the lists this bar already loaded.
+     *
+     * Aggregate responses group by id and carry no names, so every page needs
+     * these. Handing back what the bar fetched anyway is what stops each page
+     * re-fetching the whole user directory to label a bar chart.
+     */
+    getLookups() { return lookups; },
 
     setEnabled(on) {
       for (const ms of [agents, teams, divisions, queues, forms, media]) ms.setEnabled(on);
