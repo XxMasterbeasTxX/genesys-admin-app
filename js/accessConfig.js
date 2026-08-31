@@ -45,6 +45,11 @@
  *   data-tables.copy.betweenOrgs       Copy - Between Orgs
  *   data-tables.copy.singleOrg         Copy
  *
+ *   DASHBOARDS  (read-only; no writes of any kind)
+ *   dashboards.quality.coverage        Quality — Evaluation Coverage
+ *   dashboards.quality.scores          Quality — Evaluation Scores
+ *   dashboards.quality.aiScoring       Quality — AI Scoring
+ *
  *   DEPLOYMENT
  *   deployment.basic                   Basic
  *   deployment.datatables              Data Tables
@@ -166,7 +171,7 @@
  * ability to bulk-delete phones without anyone granting it.
  */
 const ADMIN_BASE = [
-  "audit.*", "data-actions.*", "data-tables.*", "divisions.*", "export.*",
+  "audit.*", "dashboards.*", "data-actions.*", "data-tables.*", "divisions.*", "export.*",
   "gdpr.*", "interactions.*", "roles.*", "users.*",
   "utilities.*", "wrapupCodes.*",
   "deployment.basic", "deployment.datatables", "deployment.test.testCases",

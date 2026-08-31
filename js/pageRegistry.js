@@ -34,6 +34,14 @@ const registry = {
   "/datatables/copy-single": (ctx) =>
     import("./pages/datatables/copySingleOrg.js").then((m) => m.default(ctx)),
 
+  // ── Dashboards › Quality ──────────────────────────────
+  "/dashboards/quality/coverage": (ctx) =>
+    import("./pages/dashboards/quality/coverage.js").then((m) => m.default(ctx)),
+  "/dashboards/quality/scores": (ctx) =>
+    import("./pages/dashboards/quality/scores.js").then((m) => m.default(ctx)),
+  "/dashboards/quality/ai-scoring": (ctx) =>
+    import("./pages/dashboards/quality/aiScoring.js").then((m) => m.default(ctx)),
+
   // ── Interactions ─────────────────────────────────────
   "/interactions/search/participant-data/recent": (ctx) =>
     import("./pages/interactions/searchRecent.js").then((m) => m.default(ctx)),

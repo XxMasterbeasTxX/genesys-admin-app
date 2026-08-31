@@ -30,6 +30,23 @@ export const NAV_TREE = [
     ],
   },
   {
+    label: "Dashboards",
+    path: "dashboards",
+    enabled: true,
+    children: [
+      {
+        label: "Quality",
+        path: "quality",
+        enabled: true,
+        children: [
+          { label: "Evaluation Coverage", path: "coverage",   enabled: true, access: "dashboards.quality.coverage"  },
+          { label: "Evaluation Scores",   path: "scores",     enabled: true, access: "dashboards.quality.scores"    },
+          { label: "AI Scoring",          path: "ai-scoring", enabled: true, access: "dashboards.quality.aiScoring" },
+        ],
+      },
+    ],
+  },
+  {
     label: "Divisions",
     path: "divisions",
     enabled: true,

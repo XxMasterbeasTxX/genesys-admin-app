@@ -157,6 +157,24 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // ── Audit ────────────────────────────────────────────
   "audit.search":              { view: { all: ["audits:audit:view"] } },
 
+  // ── Dashboards › Quality ─────────────────────────────
+  // Coverage is `all:` because it aggregates two genuinely distinct datasets:
+  // the analytics evaluation aggregates, and the agent/evaluator activity
+  // listings from the quality domain. Neither substitutes for the other, so
+  // under ANY someone holding only quality:evaluation:view would be handed the
+  // analytics aggregates as well.
+  "dashboards.quality.coverage":  { view: { all: ["analytics:evaluationAggregate:view",
+                                                  "quality:evaluation:view"] } },
+  // Scores gates the page on the data it exists to show, and its row-level
+  // drill-down separately: without searchAny you get the charts and no detail
+  // table, which is a coherent page rather than a denial.
+  "dashboards.quality.scores":    { view:   ["analytics:evaluationAggregate:view"],
+                                    detail: ["quality:evaluation:searchAny"] },
+  // The analytics domain cannot answer a single question on this page — AI
+  // scoring failure types, suggestion acceptance and disputes exist only as
+  // search aggregations — so searchAny alone is the gate.
+  "dashboards.quality.aiScoring": { view: ["quality:evaluation:searchAny"] },
+
   // ── Deployment ───────────────────────────────────────
   "deployment.test.testCases": { view: ["architect:flow:view"] },
 
