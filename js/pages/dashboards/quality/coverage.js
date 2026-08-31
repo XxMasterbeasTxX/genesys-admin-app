@@ -221,14 +221,35 @@ export default function renderCoverage({ me, api, orgContext, access }) {
     return warnings;
   }
 
+  /**
+   * Fill the filter dropdowns without being asked.
+   *
+   * Setting a scope BEFORE asking for data is the natural order, and the whole
+   * point of the bar. Loading the lists only inside the Load handler left every
+   * dropdown empty until the first load — and an empty multiSelect ignores
+   * clicks rather than opening, so the controls looked broken rather than
+   * unready. Failures are silent here: the Load handler reports them properly,
+   * and a warning about a list nobody has tried to use yet is just noise.
+   */
+  async function primeOptions() {
+    const org = currentOrg();
+    if (!org) return;
+    try {
+      await ensureOptions(org.id);
+    } catch { /* reported on Load, where it matters */ }
+  }
+
   // The org can change under the page from the header dropdown. Reload the
   // dropdowns when it does, rather than offering the previous customer's
   // queues as filters for this one.
   const unsubscribe = orgContext?.onChange?.(() => {
     optionsOrgId = null;
     $results.hidden = true;
+    primeOptions();
   });
   if (unsubscribe) el.__destroy = unsubscribe;
+
+  primeOptions();
 
   // ── Rendering helpers ───────────────────────────────
 
@@ -343,9 +364,12 @@ export default function renderCoverage({ me, api, orgContext, access }) {
     $loadBtn.disabled = true;
     filters.setEnabled(false);
     $results.hidden = true;
-    setStatus("Loading filter options…");
+    setStatus("Loading…");
 
     try {
+      // Usually a no-op — primeOptions has already run. Still awaited, because
+      // pressing Load immediately on a slow org must not query with a scope the
+      // user could not yet see.
       const optionWarnings = await ensureOptions(org.id);
       const f = filters.getFilters();
       const lookups = filters.getLookups();

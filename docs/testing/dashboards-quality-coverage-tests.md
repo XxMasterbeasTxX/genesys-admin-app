@@ -61,6 +61,10 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 | 2.8 | Click **Last 12 Months** | Dates span 12 whole months; highlight moves to that button | ☐ | |
 | 2.9 | Type a From date later than To | An amber warning line appears under the bar: "The start date is after the end date." | ☐ | |
 | 2.10 | With that invalid range, click **Load dashboard** | Refuses with "Fix the date range before loading." — no API call | ☐ | |
+| 2.10a | **Before pressing Load**, open **Agents** | The list is already populated and opens — filter options load when the page opens, not when you press Load | ☐ | |
+| 2.10b | While they are still loading | Each dropdown reads "Loading agents…" etc. and is greyed out — never a live-looking button that ignores clicks | ☐ | |
+| 2.10c | Set a queue filter, then press Load | Loads with that scope, first time, without a load beforehand | ☐ | |
+| 2.10d | If a list fails or is empty | That one dropdown stays disabled saying "No work teams" / "evaluation forms unavailable"; the others still work | ☐ | |
 | 2.11 | Fix the dates, open **Agents** | A searchable checkbox list of active users, with Select all | ☐ | |
 | 2.12 | Type in the Agents search box | List filters; "Select all matching (n)" changes accordingly | ☐ | |
 | 2.13 | Select two agents, then click **Clear filters** | All dropdowns reset to their "All …" placeholders; dates are untouched | ☐ | |

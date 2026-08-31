@@ -224,6 +224,16 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
 
   media.setItems(MEDIA_TYPES.map((m) => ({ id: m.id, label: m.label })));
 
+  // Until loadOptions runs, the scope dropdowns hold nothing — and an empty
+  // multiSelect swallows clicks silently (its trigger returns early when it has
+  // no items). A control that looks live and does nothing is worse than a
+  // disabled one, so they start explicitly disabled and say why.
+  for (const [ms, label] of [[agents, "agents"], [teams, "teams"], [divisions, "divisions"],
+                             [queues, "queues"], [forms, "forms"]]) {
+    ms.setPlaceholder(`Loading ${label}…`);
+    ms.setEnabled(false);
+  }
+
   // Id → name, per list, filled by loadOptions and read back by the pages.
   const lookups = {
     agents: new Map(), teams: new Map(), divisions: new Map(),
@@ -307,31 +317,31 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
 
       const jobs = [
         {
-          label: "agents", lookupKey: "agents", ms: agents,
+          label: "agents", placeholder: "All agents", lookupKey: "agents", ms: agents,
           run: () => fetchAllUsers(api, orgId, { query: { state: "active" } }),
           map: (u) => ({ id: u.id, label: u.name || u.email || u.id }),
           restoreKey: "agentIds",
         },
         {
-          label: "work teams", lookupKey: "teams", ms: teams,
+          label: "work teams", placeholder: "All teams", lookupKey: "teams", ms: teams,
           run: () => fetchAllTeams(api, orgId),
           map: (t) => ({ id: t.id, label: t.name || t.id }),
           restoreKey: "teamIds",
         },
         {
-          label: "divisions", lookupKey: "divisions", ms: divisions,
+          label: "divisions", placeholder: "All divisions", lookupKey: "divisions", ms: divisions,
           run: () => fetchAllDivisions(api, orgId),
           map: (d) => ({ id: d.id, label: d.name || d.id }),
           restoreKey: "divisionIds",
         },
         {
-          label: "queues", lookupKey: "queues", ms: queues,
+          label: "queues", placeholder: "All queues", lookupKey: "queues", ms: queues,
           run: () => fetchAllQueues(api, orgId),
           map: (q) => ({ id: q.id, label: q.name || q.id }),
           restoreKey: "queueIds",
         },
         {
-          label: "evaluation forms", lookupKey: "forms", ms: forms,
+          label: "evaluation forms", placeholder: "All forms", lookupKey: "forms", ms: forms,
           run: () => fetchAllEvaluationForms(api, orgId),
           // Keyed on contextId, not id: a form has one id per version, and
           // filtering by version would silently drop evaluations scored on
@@ -354,7 +364,7 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
           job.ms.setEnabled(items.length > 0);
           const store = lookups[job.lookupKey];
           if (store) for (const i of items) store.set(i.id, i.label);
-          if (!items.length) job.ms.setPlaceholder(`No ${job.label}`);
+          job.ms.setPlaceholder(items.length ? job.placeholder : `No ${job.label}`);
           const keep = restore?.[job.restoreKey];
           if (keep?.length) job.ms.setSelected(keep.filter((id) => items.some((i) => i.id === id)));
         } catch (err) {
@@ -379,7 +389,11 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
     getLookups() { return lookups; },
 
     setEnabled(on) {
-      for (const ms of [agents, teams, divisions, queues, forms, media]) ms.setEnabled(on);
+      // Re-enabling must not resurrect a dropdown that has nothing in it — that
+      // is how a control goes back to looking live while still ignoring clicks.
+      for (const ms of [agents, teams, divisions, queues, forms, media]) {
+        ms.setEnabled(on && ms.count() > 0);
+      }
       $from.disabled = !on;
       $to.disabled = !on;
       $basis.disabled = !on;
