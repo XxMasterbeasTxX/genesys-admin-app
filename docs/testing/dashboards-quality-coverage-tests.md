@@ -162,6 +162,8 @@ settle it, so record what you actually see rather than pass/fail.
 | 5.15 | Look at the **By queue** panel | **This is the decisive one.** Either a named queue, or a **No queue** row. Write down which, and the name if named | ☐ | Shows: ______ |
 | 5.16 | Expand **Show the queries this page sent**, find the "by queue" call | Read the `groups returned:` line. `{}` means no queue on the evaluation; `{"queueId":"…"}` means a queue, just not the one filtered | ☐ | Group: ______ |
 | 5.17 | If it names a queue, compare with the Interactions view | Is it a different queue than the Interactions list shows for the same conversation? | ☐ | |
+| 5.17a | **Open question.** Find a period with HUMAN evaluations (AI-scored tile below 100%) and look at By queue | Do human evaluations name a real queue, where AI-scored ones show "No queue"? This is the one thing still unknown — see design §9a | ☐ | Answer: ______ |
+| 5.17b | On an AI-only period, check **By evaluator** | Reads **No evaluator (AI-scored)**, never "Unknown user" | ☐ | |
 | 5.18 | Re-apply the queue filter | Tiles show 0, and a note says how many evaluations exist and sends you to the By queue panel | ☐ | |
 | 5.19 | Click **Run isolation probes** | Six probes appear, each stripping one variable; the ones that find data are green | ☐ | |
 

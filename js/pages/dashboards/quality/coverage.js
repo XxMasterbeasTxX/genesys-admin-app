@@ -339,11 +339,21 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       `<span>${escapeHtml(stamp(points[points.length - 1].interval))}</span>`;
   }
 
-  /** Map a grouped aggregate into labelled, sorted bar rows. */
-  function toRows(map, lookup, { unknownLabel = "Unknown" } = {}) {
+  /**
+   * Map a grouped aggregate into labelled, sorted bar rows.
+   *
+   * Two different absences, which an earlier version conflated under one label:
+   * a key that is PRESENT but not in the lookup is a real id this app could not
+   * resolve — a deactivated user, a deleted form — and deserves the id. A key
+   * that is ABSENT means the aggregate carries no such value at all, which is a
+   * fact about the data rather than a lookup failure. Labelling an AI-scored
+   * evaluation's missing evaluator as "Unknown user" invited exactly the wrong
+   * conclusion: that a person was involved and this app lost their name.
+   */
+  function toRows(map, lookup, { unknownLabel = "Unknown", emptyLabel = unknownLabel } = {}) {
     return statsMapToSorted(map, "count").map(({ key, stats, value }) => ({
       key,
-      label: lookup?.get(key) || (key ? `${unknownLabel} (${shortId(key)})` : unknownLabel),
+      label: key ? (lookup?.get(key) || `${unknownLabel} (${shortId(key)})`) : emptyLabel,
       value,
       stats,
     }));
@@ -474,16 +484,19 @@ export default function renderCoverage({ me, api, orgContext, access }) {
 
       renderBars($("byForm"),
         toRows(parseGroupedAggregate(formResp, "contextId"), lookups.forms,
-          { unknownLabel: "Unknown form" }),
+          { unknownLabel: "Unknown form", emptyLabel: "No form recorded" }),
         { format: fmtCount });
 
       renderBars($("byAgent"),
-        toRows(agentMap, lookups.agents, { unknownLabel: "Unknown user" }),
+        toRows(agentMap, lookups.agents,
+          { unknownLabel: "Unknown user", emptyLabel: "No agent recorded" }),
         { format: fmtCount });
 
+      // An AI-scored evaluation has no human evaluator, so an absent
+      // evaluatorId is the normal case here rather than a missing name.
       renderBars($("byEvaluator"),
         toRows(parseGroupedAggregate(evaluatorResp, "evaluatorId"), lookups.agents,
-          { unknownLabel: "Unknown user" }),
+          { unknownLabel: "Unknown user", emptyLabel: "No evaluator (AI-scored)" }),
         { fill: "dq-fill-alt", format: fmtCount });
 
       $("byAgentSub").textContent =

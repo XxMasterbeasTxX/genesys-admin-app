@@ -634,54 +634,54 @@ Shared with `totals.js` (§5.2). Ranges longer than 3 months are allowed
 everywhere; the Scores detail table hides itself with an explanation, and the AI
 page chunks. Nothing is refused.
 
-## 9a. A queue filter excludes evaluations that a queue demonstrably produced
+## 9a. AI-scored evaluations carry no queue
 
-**Status: cause not yet established.** Recorded here because the first attempt
-at an answer was wrong, and the wrong answer is instructive.
+Settled on dev against 3C Retail, 2026-09-01, after a queue filter on a queue
+with visible evaluations returned zero.
 
-**What is certain**, from isolation probes on dev, 2026-08-31. For one org and
-one day: an unfiltered query returned **16** evaluations; the identical query
-with a single `queueId` predicate returned **none**; the same query grouped by
-`queueId` returned those 16 in **one result row**.
+**The observation.** With the queue filter cleared, the **By queue** band shows
+a single row: **No queue — 16**. The `group` object of the grouped-by-`queueId`
+response carries no `queueId` at all. So the earlier ambiguity is resolved in
+favour of *the dimension is not populated*, not *a different queue*.
 
-**What was wrongly concluded from that.** That the evaluations carry no queue,
-because the interactions were `OB_DK_` outbound calls and outbound work is not
-ACD-routed. That reasoning does not survive contact with the facts: these calls
-are an outbound **campaign** whose calls are transferred to a queue
-(`ININ-OUTBOUND-TRANSFERRED-TO-QUEUE`), the Interactions view shows the queue,
-and the evaluation **program selects them precisely because they are in that
-queue**. A queue is unambiguously involved.
+**The qualifier that matters.** All 16 were AI-scored (`16 AI · 0 human`, form
+"# AI Scoring POC"). The finding is therefore precisely:
 
-The error was evidential, not domain knowledge: "one result row" is ambiguous
-between *no queue key at all* and *all sixteen sharing one queue key*, and the
-probe printed only the row COUNT, never the `group` object. The conclusion was
-drawn from evidence that could not support it.
+> For these AI-scored evaluations, the aggregate carries no `queueId` — even
+> though the conversation was routed through a queue and the scoring program
+> selects on that queue.
 
-**The two live candidates.**
+**Still unknown: whether HUMAN evaluations carry one.** Nothing observed so far
+speaks to it, because this org's sample contains no human evaluations at all.
+Testing it needs a period with human evaluation activity. Recorded rather than
+assumed, because the previous two attempts at this question were both wrong
+from over-reading partial evidence:
 
-1. **The evaluation carries a different queue than the conversation displays.**
-   A transferred outbound call has more than one segment. The evaluation is
-   attached to one agent participant, and may inherit that segment's queue — or
-   the campaign's — rather than the queue the Interactions list shows as *the*
-   queue. Filtering on the displayed queue would then legitimately miss it.
-2. **The `queueId` dimension is not populated on evaluation aggregates**, at
-   least in this org, whatever the conversation carries.
+1. First: "outbound work is not ACD-routed, so no queue." Wrong — these are
+   campaign calls transferred to a queue, and the program selects them *because*
+   of that queue.
+2. Second: inferred from a single result row without ever looking at the group
+   object, which could not distinguish "no key" from "one shared key".
 
-**The observation that separates them** is the `group` object of the
-grouped-by-`queueId` response: `{}` means candidate 2, `{"queueId": "<other
-guid>"}` means candidate 1. The diagnostics panel now prints it, and the "By
-queue" band will name the queue directly once the row is no longer dropped.
+**Consequence for the queue filter.** Where evaluations carry no queue, a queue
+filter cannot match them and never will. The page does not pretend otherwise: a
+filtered result of zero triggers one unfiltered query, and the note then reports
+how many evaluations exist and sends the user to the By queue band, which names
+the truth directly.
 
-**What was fixed regardless, because it is a bug under either candidate.**
-`parseGroupedAggregate` skipped any row whose group lacked the dimension, so an
-absent-key bucket vanished entirely and a band could read "no evaluations in
-this period" while evaluations existed. Rows with an absent key are now kept
-under `""` and render as **No queue** / **Unknown form**.
+**A related labelling fix the same screenshot exposed.** The By evaluator band
+read "Unknown user" for those 16, because the row's absent `evaluatorId` was
+labelled with the same string as an id that fails a name lookup. Those are
+different facts — one is "a person was involved and this app lost their name",
+the other is "no person was involved" — and the first reading is actively
+misleading for AI scoring. Absent keys now render as **No evaluator
+(AI-scored)**, **No agent recorded**, **No form recorded**; a present-but-
+unresolvable id keeps the `Unknown user (abc12345…)` form.
 
-**Ruled out, and worth recording so they are not re-suspected:** the local
-`+02:00` interval offset, the `timeZone` parameter, and
-`alternateTimeDimension: conversationStart`. All three were present on the query
-that returned 16.
+**Confirmed working in the same load:** the §6.3 participate-permission
+denominator resolved to **25** evaluatable agents, of whom 2 were evaluated and
+23 were not. So `quality:evaluation:participate` is the right permission string
+and the role→members union works against a live org.
 
 ## 10. Risks and unknowns
 
