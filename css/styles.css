@@ -5795,3 +5795,9 @@ a.fr-shipped:hover { text-decoration: underline; }
   );
 }
 
+
+/* Score bars are coloured by the band they fall in, so a chart of percentages
+   reads at a glance rather than needing the number at the end of every row. */
+.dq-fill-bad  { background: #d9534f; }
+.dq-fill-warn { background: #e0a34a; }
+.dq-fill-good { background: #58c4a0; }

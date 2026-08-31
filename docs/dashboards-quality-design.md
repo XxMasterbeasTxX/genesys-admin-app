@@ -459,6 +459,25 @@ from anywhere else in this app.
 `evaluations/search` for the question-level breakdown and the row-level table,
 capped at 3 months (§9.1).
 
+**Build status.** The aggregate-backed half is built: tiles, trend,
+distribution, and the agent/form breakdowns, all with no date-range limit. The
+question-group band (§7.3) and the detail table (§7.4) both need
+`quality/evaluations/search` and are separate steps.
+
+Two things changed against the sketch below, both consequences of §9a. There is
+no "Score by queue" band, because there is no queue on an evaluation. And the
+**score distribution comes from aggregate `views`** — `function: "rangeBound"`
+against `oTotalScore`, computed server-side — rather than from the search
+endpoint's RANGE aggregation. That was worth finding: it means the distribution
+works at any range, where a search-backed one would have been capped at three
+months like the rest of §7.4.
+
+Score bars are drawn as a share of **100%**, not of the largest value in the
+set. A percentage rescaled to its own maximum makes a group averaging 88% fill
+the track whenever nobody beat it, reading as excellent when it is only the best
+of a poor field. The trend uses a fixed 0–100 axis for the same reason: an
+average-score chart that rescales itself hides the decline it exists to show.
+
 ### 7.1 Bands
 
 ```

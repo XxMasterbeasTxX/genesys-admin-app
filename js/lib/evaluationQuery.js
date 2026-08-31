@@ -579,12 +579,72 @@ export async function aggregateAcrossWindows(filters, runOne, months = 3) {
 // Misc
 // ─────────────────────────────────────────────────────────────────────
 
-/** Sort a Map of stats into a descending array, for bar rendering. */
-export function statsMapToSorted(map, by = "count") {
-  return [...map.entries()]
+/**
+ * Sort a Map of stats into an array, for bar rendering.
+ *
+ * `dir` matters more than it looks. Counts are read largest-first — who did the
+ * most. Scores are read smallest-first, because the actionable end of a score
+ * distribution is the bottom of it, and a chart that buries the worst performer
+ * below a "…and 40 more" line answers the wrong question.
+ */
+export function statsMapToSorted(map, by = "count", dir = "desc") {
+  const rows = [...map.entries()]
     .map(([key, stats]) => ({ key, stats, value: by === "average" ? statsAverage(stats) : stats[by] }))
-    .filter((r) => r.value != null)
-    .sort((a, b) => b.value - a.value);
+    .filter((r) => r.value != null);
+  rows.sort((a, b) => (dir === "asc" ? a.value - b.value : b.value - a.value));
+  return rows;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Score distribution
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * The bands a total score is bucketed into.
+ *
+ * Genesys total scores are percentages, so these are fixed rather than derived
+ * from the data: a distribution whose buckets move with the sample cannot be
+ * compared between two periods, which is the main thing anyone does with one.
+ */
+export const SCORE_BANDS = Object.freeze([
+  { name: "band0", label: "Under 60%", gte: 0,  lt: 60 },
+  { name: "band1", label: "60–79%",    gte: 60, lt: 80 },
+  { name: "band2", label: "80–89%",    gte: 80, lt: 90 },
+  { name: "band3", label: "90% and above", gte: 90, lt: 101 },
+]);
+
+/**
+ * Build the `views` array that buckets a metric into the score bands.
+ *
+ * `rangeBound` is computed server-side, so the distribution costs nothing extra
+ * and — unlike the search endpoint's RANGE aggregation — carries no 3-month
+ * limit. It is the reason this band works at any date range.
+ */
+export function scoreBandViews(target = "oTotalScore") {
+  return SCORE_BANDS.map((b) => ({
+    name: b.name,
+    target,
+    function: "rangeBound",
+    range: { gte: b.gte, lt: b.lt },
+  }));
+}
+
+/**
+ * Read the `views` out of an aggregate response.
+ * @returns {Map<string, {count:number, sum:number, min:number, max:number}>}
+ */
+export function parseAggregateViews(resp) {
+  const out = new Map();
+  for (const row of resp?.results || []) {
+    for (const d of row.data || []) {
+      for (const v of d.views || []) {
+        if (!v.name || !v.stats) continue;
+        const prev = out.get(v.name);
+        out.set(v.name, prev ? mergeStats(prev, v.stats) : normaliseStats(v.stats));
+      }
+    }
+  }
+  return out;
 }
 
 /** An empty filter object, for a page's initial state. */
