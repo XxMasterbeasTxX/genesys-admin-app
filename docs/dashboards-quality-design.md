@@ -668,6 +668,18 @@ that still matters for `evaluatorId` (see below). The empty-state note still
 distinguishes a zero caused by filters from one caused by the period; it just no
 longer has a queue-specific branch.
 
+**The diagnostics that found this are gone.** A "Show the queries this page
+sent" panel and six isolation probes were built to answer this question, and
+answered it. They were then removed: the probes fired six extra requests to
+settle a question nobody will ask again, and the panel was a developer tool on a
+page that ships to customers, exposing query structure to people with no use for
+it. Recoverable from commit `85882f4` if Scores or AI Scoring need the same
+treatment - the technique is worth repeating, the residue is not.
+
+What survives is the part that was never diagnostics: when a filtered result is
+zero, ONE unfiltered query runs and the note reports how many evaluations
+actually exist. That is UX, and it costs one request only on the empty path.
+
 ### 9a.1 The AI evaluator is Virtual Supervisor
 
 An AI-scored evaluation carries no `evaluatorId`, because no person scored it.

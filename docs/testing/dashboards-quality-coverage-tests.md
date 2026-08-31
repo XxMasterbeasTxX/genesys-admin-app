@@ -160,8 +160,8 @@ Genesys Interactions view shows belongs to the conversation. See design 9a.
 | 5.16 | On an AI-scored period, check **By evaluator** | Reads **Virtual Supervisor (AI scoring)** - never "Unknown user", never "No evaluator" | | |
 | 5.17 | On a period with human evaluations | Real evaluator names appear | | |
 | 5.18 | Set a filter that matches nothing, load | Tiles show 0 and a note says how many evaluations exist and to clear filters one at a time | | |
-| 5.19 | Expand **Show the queries this page sent** | Each call lists its body and the `group` objects returned | | |
-| 5.20 | Click **Run isolation probes** | Five probes appear, each stripping one variable | | |
+| 5.19 | Same load, check the network tab | Exactly one extra aggregate call - the unfiltered check. On a normal load there is none | | |
+| 5.20 | Anywhere on the page | **No** "Show the queries this page sent" panel - the diagnostics were removed once they had done their job | | |
 
 ## 6. Evaluator workload table
 

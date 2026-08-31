@@ -131,17 +131,6 @@ export default function renderCoverage({ me, api, orgContext, access }) {
         </div>
       </div>
 
-      <details class="dq-diag" data-c="diag">
-        <summary>Show the queries this page sent</summary>
-        <p class="dq-panel-sub">
-          Every request that produced the numbers above, with what came back.
-          Here because a dashboard that reports zero is indistinguishable from
-          one that asked the wrong question.
-        </p>
-        <button class="btn btn-sm" data-c="diagProbe">Run isolation probes</button>
-        <div data-c="diagBody"></div>
-      </details>
-
       <div class="dq-panel">
         <h3 class="dq-panel-title">Evaluator workload</h3>
         <p class="dq-panel-sub">
@@ -189,20 +178,6 @@ export default function renderCoverage({ me, api, orgContext, access }) {
 
   const filters = createEvaluationFilters({ api, showTimeBasis: true });
   $("filters").append(filters.el);
-
-  $("diagProbe").addEventListener("click", async (e) => {
-    const org = currentOrg();
-    if (!org || !lastFilters) return;
-    e.target.disabled = true;
-    e.target.textContent = "Running…";
-    try {
-      await runProbes(org.id, lastFilters, lastCalls);
-      renderDiagnostics(lastCalls);
-    } finally {
-      e.target.disabled = false;
-      e.target.textContent = "Run isolation probes";
-    }
-  });
 
   // ── Option loading, per org ─────────────────────────
   let optionsOrgId = null;
@@ -380,23 +355,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
 
       const granularity = pickGranularity(f.from, f.to);
 
-      // Each call is recorded so the diagnostic panel can show exactly what was
-      // asked and what came back, rather than only the zero it resolved to.
-      const calls = [];
-      const q = async (label, opts) => {
-        const body = toAggregateQuery(f, opts);
-        const entry = { label, path: "/api/v2/analytics/evaluations/aggregates/query", body };
-        calls.push(entry);
-        try {
-          const resp = await queryEvaluationAggregates(api, org.id, body);
-          entry.resultCount = (resp?.results || []).length;
-          entry.groups = describeGroups(resp);
-          return resp;
-        } catch (err) {
-          entry.error = `${err.status || ""} ${err.message}`.trim();
-          throw err;
-        }
-      };
+      const q = (opts) => queryEvaluationAggregates(api, org.id, toAggregateQuery(f, opts));
 
       // One fan-out of parallel proxy calls from the browser, in the shape
       // export/interactions/totals.js uses. Deliberately not one server call
@@ -406,13 +365,13 @@ export default function renderCoverage({ me, api, orgContext, access }) {
         totalResp, releasedResp, systemResp, trendResp,
         formResp, agentResp, evaluatorResp,
       ] = await Promise.all([
-        q("total", { metrics: ["nEvaluations"] }),
-        q("by released", { metrics: ["nEvaluations"], groupBy: ["released"] }),
-        q("by systemSubmitted", { metrics: ["nEvaluations"], groupBy: ["systemSubmitted"] }),
-        q("trend", { metrics: ["nEvaluations"], granularity }),
-        q("by form", { metrics: ["nEvaluations"], groupBy: ["contextId"] }),
-        q("by agent", { metrics: ["nEvaluations"], groupBy: ["userId"] }),
-        q("by evaluator", { metrics: ["nEvaluations"], groupBy: ["evaluatorId"] }),
+        q({ metrics: ["nEvaluations"] }),
+        q({ metrics: ["nEvaluations"], groupBy: ["released"] }),
+        q({ metrics: ["nEvaluations"], groupBy: ["systemSubmitted"] }),
+        q({ metrics: ["nEvaluations"], granularity }),
+        q({ metrics: ["nEvaluations"], groupBy: ["contextId"] }),
+        q({ metrics: ["nEvaluations"], groupBy: ["userId"] }),
+        q({ metrics: ["nEvaluations"], groupBy: ["evaluatorId"] }),
       ]);
 
       const total = parseAggregateTotal(totalResp).count;
@@ -516,11 +475,8 @@ export default function renderCoverage({ me, api, orgContext, access }) {
             { ...f, agentIds: [], teamIds: [], divisionIds: [], formContextIds: [], mediaTypes: [] },
             { metrics: ["nEvaluations"] },
           );
-          calls.push({ label: "unfiltered check", path: AGG_PATH, body: bare, probe: true });
-          const resp = await api.proxyGenesys(org.id, "POST", AGG_PATH, { body: bare });
+          const resp = await queryEvaluationAggregates(api, org.id, bare);
           excludedByFilters = parseAggregateTotal(resp).count;
-          calls[calls.length - 1].total = excludedByFilters;
-          calls[calls.length - 1].resultCount = (resp?.results || []).length;
         } catch { /* the explanation is a nicety; its absence must not fail the load */ }
       }
 
@@ -554,10 +510,6 @@ export default function renderCoverage({ me, api, orgContext, access }) {
 
       $why.textContent = why;
       $why.hidden = !why;
-
-      lastCalls = calls;
-      lastFilters = f;
-      renderDiagnostics(calls);
 
       $results.hidden = false;
       const warnings = [...optionWarnings, ...(eligible.warning ? [eligible.warning] : []),
@@ -635,89 +587,6 @@ export default function renderCoverage({ me, api, orgContext, access }) {
           ? "Coverage percentage hidden: working out who can be evaluated needs authorization:role:view, which this page does not require."
           : `Could not work out who can be evaluated: ${err.message}`,
       };
-    }
-  }
-
-  const AGG_PATH = "/api/v2/analytics/evaluations/aggregates/query";
-
-  /**
-   * The `group` object of each returned row, as text.
-   *
-   * A group-by returning a single row is ambiguous between "all share one key"
-   * and "no key at all", and only the group objects separate them. `{}` here
-   * means the dimension is absent from the data — the reading that cost a round
-   * trip when the probes reported counts alone.
-   */
-  function describeGroups(resp) {
-    const rows = resp?.results || [];
-    if (!rows.length) return "none";
-    return rows.slice(0, 8).map((r) => JSON.stringify(r.group || {})).join(", ") +
-      (rows.length > 8 ? `, …${rows.length - 8} more` : "");
-  }
-
-  /**
-   * Strip one variable at a time from a query that came back empty.
-   *
-   * The page's own query differs from a bare one in four ways — a local UTC
-   * offset on the interval, a `timeZone`, an `alternateTimeDimension`, and the
-   * scope filters. Any one of them can empty a result, and from the outside
-   * they are indistinguishable. Each probe removes exactly one and reports its
-   * count, so the first probe that returns rows names the cause.
-   */
-  async function runProbes(orgId, f, calls) {
-    const path = AGG_PATH;
-    const utcInterval = `${f.from}T00:00:00.000Z/${f.to}T23:59:59.999Z`;
-    const full = toAggregateQuery(f, { metrics: ["nEvaluations"] });
-
-    const probes = [
-      ["as sent, but interval in UTC (Z)",
-        { ...full, interval: utcInterval }],
-      ["as sent, without timeZone",
-        (() => { const b = { ...full }; delete b.timeZone; return b; })()],
-      ["as sent, without alternateTimeDimension (endpoint default)",
-        (() => { const b = { ...full }; delete b.alternateTimeDimension; return b; })()],
-      ["as sent, without the scope filters",
-        (() => { const b = { ...full }; delete b.filter; return b; })()],
-      ["bare — interval and metric only",
-        { interval: utcInterval, metrics: ["nEvaluations"] }],
-    ];
-
-    for (const [label, body] of probes) {
-      const entry = { label: `PROBE — ${label}`, path, body, probe: true };
-      calls.push(entry);
-      try {
-        const resp = await api.proxyGenesys(orgId, "POST", path, { body });
-        entry.resultCount = (resp?.results || []).length;
-        entry.total = parseAggregateTotal(resp).count;
-        entry.groups = describeGroups(resp);
-      } catch (err) {
-        entry.error = `${err.status || ""} ${err.message}`.trim();
-      }
-    }
-  }
-
-  /** The last load's calls, so the probe button can append to them. */
-  let lastCalls = [];
-  let lastFilters = null;
-
-  /** Render the recorded calls, newest question first. */
-  function renderDiagnostics(calls) {
-    const $body = $("diagBody");
-    $body.innerHTML = "";
-    for (const c of calls) {
-      const box = document.createElement("div");
-      box.className = "dq-diag-call" + (c.probe ? " is-probe" : "");
-      const verdict = c.error
-        ? `error: ${c.error}`
-        : `${c.total != null ? c.total.toLocaleString() + " evaluations · " : ""}${c.resultCount ?? 0} result row(s)`;
-      box.innerHTML = `
-        <div class="dq-diag-head">
-          <span class="dq-diag-label">${escapeHtml(c.label)}</span>
-          <span class="dq-diag-verdict${c.error ? " is-error" : (c.total > 0 || c.resultCount > 0) ? " is-hit" : ""}">${escapeHtml(verdict)}</span>
-        </div>
-        ${c.groups ? `<div class="dq-diag-groups">groups returned: ${escapeHtml(c.groups)}</div>` : ""}
-        <pre class="dq-diag-body">${escapeHtml(JSON.stringify(c.body, null, 2))}</pre>`;
-      $body.append(box);
     }
   }
 
