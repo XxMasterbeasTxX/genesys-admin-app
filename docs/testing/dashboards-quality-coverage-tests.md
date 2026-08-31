@@ -46,11 +46,16 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 2.1 | Look at the filter bar | Three captioned bands: **When**, **Who**, **What** | ☐ | |
-| 2.2 | Check the When band | From, To, five quick-range buttons, and a **Dates refer to** dropdown | ☐ | |
+| 2.2 | Check the When band | From, To, eight quick-range buttons, and a **Dates refer to** dropdown | ☐ | |
 | 2.3 | Open the **Dates refer to** dropdown | Three options: Conversation date, Created, Released | ☐ | |
 | 2.4 | Check the Who band | Agents, Work Teams, Divisions — **no Groups dropdown** (dropped by design) | ☐ | |
 | 2.5 | Check the What band | Queues, Forms, Media types, Clear filters | ☐ | |
-| 2.6 | Try to set **To** to today | The date picker will not allow it — max is yesterday | ☐ | |
+| 2.6 | Try to set **To** to today | Allowed — max is **today**. The range is partial and the page marks it as such | ☐ | |
+| 2.6a | Default range on first load | **Yesterday**, with that preset highlighted | ☐ | |
+| 2.6b | Click **Today**, then **This week**, then **Yesterday** | Each fills the dates and highlights; This week runs Monday → today | ☐ | |
+| 2.6c | With **Today** selected, load, and look at the trend | Buckets are **hourly**, not one single column | ☐ | |
+| 2.6d | Same view — the final column | Drawn hatched; the axis says "last bucket still filling" | ☐ | |
+| 2.6e | Around midnight local, click **Today** | The range starts at your local midnight, not 02:00 — days are cut in your own timezone, not UTC | ☐ | |
 | 2.7 | Click **Last Month** | Dates fill in as the whole previous calendar month, and the button highlights | ☐ | |
 | 2.8 | Click **Last 12 Months** | Dates span 12 whole months; highlight moves to that button | ☐ | |
 | 2.9 | Type a From date later than To | An amber warning line appears under the bar: "The start date is after the end date." | ☐ | |
@@ -63,7 +68,7 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 2.14 | Set a distinctive scope (e.g. one queue + one form + Last 3 Months) | — | ☐ | |
+| 2.14 | Set a distinctive scope (e.g. one queue + one form + Today) | — | ☐ | |
 | 2.15 | Navigate to **Evaluation Scores**, then back to Coverage | Every selection is still there, dates included | ☐ | |
 | 2.16 | Navigate to a page in another section (e.g. Audit › Search) and back | Selections still there | ☐ | |
 | 2.17 | Open the app in a **new browser tab** and go to Coverage | Selections are **not** carried over — this is sessionStorage, and that is intended | ☐ | |
@@ -75,7 +80,7 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 3.1 | With **no org selected**, click Load dashboard | Red status: "Please select a customer org from the dropdown above." | ☐ | |
-| 3.2 | Select an org, click Load dashboard | Status messages progress: loading filter options → querying aggregates → agents denominator → evaluator activity | ☐ | |
+| 3.2 | Select an org, click Load dashboard | Status progresses: filter options → aggregates → which agents can be evaluated → evaluator activity | ☐ | |
 | 3.3 | While loading | Load button disabled, all filter controls greyed out | ☐ | |
 | 3.4 | After loading | Controls re-enable; results appear below | ☐ | |
 | 3.5 | Change org in the header dropdown | Results hide themselves rather than showing the previous customer's numbers | ☐ | |
@@ -89,9 +94,9 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 4.1 | Look at the range line above the tiles | Reads like "1 Jul 2026 — 31 Jul 2026 · 1,284 evaluations" | ☐ | |
-| 4.2 | Count the tiles | Five: Evaluations, Agents evaluated, Evaluations per agent, Released, AI-scored | ☐ | |
+| 4.2 | Count the tiles | Six: Evaluations, Agents evaluated, Not evaluated, Evaluations per agent, Released, AI-scored | ☐ | |
 | 4.3 | **Evaluations** tile | A count, with a sub-line naming the time basis in use | ☐ | |
-| 4.4 | **Agents evaluated** tile | A count, and a sub-line stating the denominator — e.g. "38% of 210 agents who handled interactions" | ☐ | |
+| 4.4 | **Agents evaluated** tile | A count, and a sub-line stating the denominator — e.g. "39% of 210 who can be evaluated" | ☐ | |
 | 4.5 | **Evaluations per agent** | A one-decimal number, sub-line "among agents who were evaluated" | ☐ | |
 | 4.6 | **Released** | A percentage plus "n of m" underneath | ☐ | |
 | 4.7 | **AI-scored** | A percentage plus "n AI · m human" underneath | ☐ | |
@@ -168,6 +173,12 @@ Do this with a range where you know evaluations exist.
 
 If all three totals are **identical**, that is suspicious — note it. It would
 mean `alternateTimeDimension` is not being applied.
+
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 7.5 | Click **Today**, set basis to **Conversation date**, load | In an org with AI scoring on, this is **populated** — AI scores a conversation almost immediately | ☐ | |
+| 7.6 | If it comes back empty | A note explains that these dates match the conversation, that human evaluation lags by days, and suggests Created or Released | ☐ | |
+| 7.7 | Switch that same Today view to **Created** | Shows the evaluation work actually done today, of conversations from any date | ☐ | |
 
 ---
 
