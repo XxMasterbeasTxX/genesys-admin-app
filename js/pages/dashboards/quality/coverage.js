@@ -493,6 +493,27 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       setStatus("Loading evaluator activity…");
       const workloadWarning = await renderEvaluatorWorkload(org.id, f);
 
+      // An empty result has two very different causes and the page must not
+      // present them the same way: nothing happened in this period, or the
+      // scope filters excluded everything that did. One extra unfiltered query
+      // tells them apart, and it only runs when the answer was zero AND a
+      // filter was set — never on the common path.
+      let excludedByFilters = 0;
+      if (total === 0 && hasScopeFilters(f)) {
+        setStatus("Nothing matched — checking whether the filters excluded it…");
+        try {
+          const bare = toAggregateQuery(
+            { ...f, agentIds: [], teamIds: [], queueIds: [], divisionIds: [], formContextIds: [], mediaTypes: [] },
+            { metrics: ["nEvaluations"] },
+          );
+          calls.push({ label: "unfiltered check", path: AGG_PATH, body: bare, probe: true });
+          const resp = await api.proxyGenesys(org.id, "POST", AGG_PATH, { body: bare });
+          excludedByFilters = parseAggregateTotal(resp).count;
+          calls[calls.length - 1].total = excludedByFilters;
+          calls[calls.length - 1].resultCount = (resp?.results || []).length;
+        } catch { /* the explanation is a nicety; its absence must not fail the load */ }
+      }
+
       // ── Range line and warnings ───────────────────
       $("rangeLine").textContent =
         `${formatRange(f.from, f.to)} · ${total.toLocaleString()} evaluations`;
@@ -533,26 +554,6 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       $why.textContent = why;
       $why.hidden = !why;
 
-      // An empty result has two very different causes and the page must not
-      // present them the same way: nothing happened in this period, or the
-      // scope filters excluded everything that did. One extra unfiltered query
-      // tells them apart, and it only runs when the answer was zero AND a
-      // filter was set — never on the common path.
-      let excludedByFilters = 0;
-      if (total === 0 && hasScopeFilters(f)) {
-        setStatus("Nothing matched — checking whether the filters excluded it…");
-        try {
-          const bare = toAggregateQuery(
-            { ...f, agentIds: [], teamIds: [], queueIds: [], divisionIds: [], formContextIds: [], mediaTypes: [] },
-            { metrics: ["nEvaluations"] },
-          );
-          calls.push({ label: "unfiltered check", path: AGG_PATH, body: bare, probe: true });
-          const resp = await api.proxyGenesys(org.id, "POST", AGG_PATH, { body: bare });
-          excludedByFilters = parseAggregateTotal(resp).count;
-          calls[calls.length - 1].total = excludedByFilters;
-          calls[calls.length - 1].resultCount = (resp?.results || []).length;
-        } catch { /* the explanation is a nicety; its absence must not fail the load */ }
-      }
       lastCalls = calls;
       lastFilters = f;
       renderDiagnostics(calls);
