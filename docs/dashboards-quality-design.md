@@ -45,8 +45,8 @@ query builders and fire all of them on every load.
   that survives is native on both backing endpoints, so one filter object
   serialises to both query shapes with no divergence. This is the decision that
   keeps §5.1 small.
-- **Filters: date range, agents, work teams, queues, divisions, forms, media
-  type.** Built once as a shared component (§5.2), persisted in `sessionStorage`
+- **Filters: date range, agents, work teams, divisions, forms, media type.**
+  No queue filter - see 9a; evaluations carry no queue to filter on. Built once as a shared component (§5.2), persisted in `sessionStorage`
   so moving between the three pages keeps your scope.
 - **Short ranges are offered, and days are LOCAL** (§5.4). Today, Yesterday and
   This week sit alongside the calendar-complete presets, and the default range
@@ -278,7 +278,6 @@ The filter bar, in the shape of
 | Date range + presets | — | `interval` |
 | Agents | `fetchAllUsers` | `userId` / `agentId` |
 | Work Teams | `fetchAllTeams` | `teamId` / `agentTeamId` |
-| Queues | `fetchAllQueues` | `queueId` |
 | Divisions | `fetchAllDivisions` | `divisionId` |
 | Forms | `GET /quality/publishedforms/evaluations` | `formId` / `contextId` |
 | Media type | static list | `mediaType` |
@@ -634,54 +633,54 @@ Shared with `totals.js` (§5.2). Ranges longer than 3 months are allowed
 everywhere; the Scores detail table hides itself with an explanation, and the AI
 page chunks. Nothing is refused.
 
-## 9a. AI-scored evaluations carry no queue
+## 9a. There is no queue filter, and no By queue band
 
-Settled on dev against 3C Retail, 2026-09-01, after a queue filter on a queue
-with visible evaluations returned zero.
+**Decision: both removed.** Settled on dev against 3C Retail, 2026-09-01.
 
-**The observation.** With the queue filter cleared, the **By queue** band shows
-a single row: **No queue — 16**. The `group` object of the grouped-by-`queueId`
-response carries no `queueId` at all. So the earlier ambiguity is resolved in
-favour of *the dimension is not populated*, not *a different queue*.
+**What the evidence showed.** With the queue filter cleared, the By queue band
+rendered a single row - **No queue, 16** - and the `group` object of the
+grouped-by-`queueId` response carried no `queueId` at all. An evaluation
+aggregate does not have a queue.
 
-**The qualifier that matters.** All 16 were AI-scored (`16 AI · 0 human`, form
-"# AI Scoring POC"). The finding is therefore precisely:
+**Why the Genesys UI appears to contradict that.** The Interactions view can
+filter on *Has Evaluation* and shows a Queue column beside it, which looks like
+proof that evaluations know their queue. They do not. That view lists
+**conversations** which have an evaluation, and the Queue column is the
+**conversation's** - several rows in the sample carry two or three queues
+(`Leasy_salg, Omstilling Kredit, Omstilling_Salg`). No single evaluation owns
+one of them, so there is nothing there to filter an evaluation by.
 
-> For these AI-scored evaluations, the aggregate carries no `queueId` — even
-> though the conversation was routed through a queue and the scoring program
-> selects on that queue.
+**Why not route it through `quality/evaluations/search` instead.** That endpoint
+does take `queueId` and does return a `queue` per item, so it was a live option.
+It was dropped rather than pursued: it would make queue filtering the one
+feature on this page requiring `quality:evaluation:searchAny`, cap it at three
+months while every other filter runs unbounded, and give a Coverage page two
+different backing queries whose numbers could disagree. A filter that works
+differently from every other filter on the same bar is worse than no filter.
 
-**Still unknown: whether HUMAN evaluations carry one.** Nothing observed so far
-speaks to it, because this org's sample contains no human evaluations at all.
-Testing it needs a period with human evaluation activity. Recorded rather than
-assumed, because the previous two attempts at this question were both wrong
-from over-reading partial evidence:
+**So the bar offers no Queues control and the page has no By queue band.** A
+control that can only ever return nothing is not worth explaining to every user
+who tries it.
 
-1. First: "outbound work is not ACD-routed, so no queue." Wrong — these are
-   campaign calls transferred to a queue, and the program selects them *because*
-   of that queue.
-2. Second: inferred from a single result row without ever looking at the group
-   object, which could not distinguish "no key" from "one shared key".
+**Consequences already implemented elsewhere.** `parseGroupedAggregate` keeps
+rows whose group lacks the dimension - a real bug found on the way here, and one
+that still matters for `evaluatorId` (see below). The empty-state note still
+distinguishes a zero caused by filters from one caused by the period; it just no
+longer has a queue-specific branch.
 
-**Consequence for the queue filter.** Where evaluations carry no queue, a queue
-filter cannot match them and never will. The page does not pretend otherwise: a
-filtered result of zero triggers one unfiltered query, and the note then reports
-how many evaluations exist and sends the user to the By queue band, which names
-the truth directly.
+### 9a.1 The AI evaluator is Virtual Supervisor
 
-**A related labelling fix the same screenshot exposed.** The By evaluator band
-read "Unknown user" for those 16, because the row's absent `evaluatorId` was
-labelled with the same string as an id that fails a name lookup. Those are
-different facts — one is "a person was involved and this app lost their name",
-the other is "no person was involved" — and the first reading is actively
-misleading for AI scoring. Absent keys now render as **No evaluator
-(AI-scored)**, **No agent recorded**, **No form recorded**; a present-but-
-unresolvable id keeps the `Unknown user (abc12345…)` form.
+An AI-scored evaluation carries no `evaluatorId`, because no person scored it.
+Genesys attributes it to **Virtual Supervisor**, which is what the
+conversation's Quality Summary shows.
 
-**Confirmed working in the same load:** the §6.3 participate-permission
-denominator resolved to **25** evaluatable agents, of whom 2 were evaluated and
-23 were not. So `quality:evaluation:participate` is the right permission string
-and the role→members union works against a live org.
+The band names it as such - but only when the AI count accounts for the whole
+absent-evaluator bucket. An `evaluatorId` can also be missing because the
+evaluator was deleted, and labelling that "Virtual Supervisor" would be the same
+class of error as the one it replaced: an earlier revision labelled these 16
+"Unknown user", which reads as *a person was involved and this app lost their
+name*. When the counts do not match, the bucket falls back to **No evaluator
+recorded**.
 
 ## 10. Risks and unknowns
 

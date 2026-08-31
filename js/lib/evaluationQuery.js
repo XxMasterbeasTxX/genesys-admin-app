@@ -52,6 +52,12 @@ import { localIso, utcIso, localTimeZone } from "../utils/dateRanges.js";
  * below is native on both endpoints, so one filter object serialises to both
  * with nothing lost.
  *
+ * NO QUEUE, deliberately (design §9a). An evaluation aggregate carries no
+ * `queueId` — the queue a Genesys Interactions row shows belongs to the
+ * CONVERSATION, which can pass through several queues, and no single evaluation
+ * owns one of them. A queue filter here could only ever return nothing, so it
+ * is not offered rather than offered and silently empty.
+ *
  * On forms: `formContextIds` maps to the `contextId` field on both sides, not
  * `formId`. A form has a `formId` per VERSION and a `contextId` shared across
  * versions; filtering by version silently excludes evaluations scored on other
@@ -60,7 +66,6 @@ import { localIso, utcIso, localTimeZone } from "../utils/dateRanges.js";
 const FILTER_MAP = Object.freeze([
   { key: "agentIds",       dimension: "userId",     searchField: "agentId"     },
   { key: "teamIds",        dimension: "teamId",     searchField: "agentTeamId" },
-  { key: "queueIds",       dimension: "queueId",    searchField: "queueId"     },
   { key: "divisionIds",    dimension: "divisionId", searchField: "divisionId"  },
   { key: "formContextIds", dimension: "contextId",  searchField: "contextId"   },
   { key: "mediaTypes",     dimension: "mediaType",  searchField: "mediaType"   },
@@ -256,11 +261,11 @@ export function dimensionPredicate(dimension, value) {
 export function parseGroupedAggregate(resp, dimension, metric = "nEvaluations") {
   const out = new Map();
   for (const row of resp?.results || []) {
-    // A row whose group LACKS the dimension is data, not noise: an evaluation
-    // of an outbound interaction carries no queue, because the agent was never
-    // routed one. Keyed to "" so it renders as "No queue" / "Unknown form"
-    // rather than vanishing. Dropping these rows silently under-reported every
-    // grouped band by exactly the evaluations that most needed explaining.
+    // A row whose group LACKS the dimension is data, not noise: an AI-scored
+    // evaluation carries no evaluatorId, because no person scored it. Keyed to
+    // "" so the page can name the absence rather than dropping the row, which
+    // silently under-reported every grouped band by exactly the evaluations
+    // that most needed explaining.
     const key = dimension ? (row.group?.[dimension] ?? "") : "__all__";
     const stats = findMetricStats(row, metric);
     if (!stats) continue;
@@ -587,7 +592,7 @@ export function emptyFilters(from, to) {
   return {
     from, to,
     timeBasis: "conversation",
-    agentIds: [], teamIds: [], queueIds: [],
+    agentIds: [], teamIds: [],
     divisionIds: [], formContextIds: [], mediaTypes: [],
   };
 }

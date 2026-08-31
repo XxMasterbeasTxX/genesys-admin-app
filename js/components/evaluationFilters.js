@@ -9,7 +9,14 @@
  *   await bar.loadOptions(orgId);   // populates the dropdowns
  *   bar.getFilters();               // → EvaluationFilters (js/lib/evaluationQuery.js)
  *
- * WHAT IS NOT HERE, deliberately: a Groups filter. No evaluation endpoint that
+ * WHAT IS NOT HERE, deliberately.
+ *
+ * A QUEUES filter. An evaluation aggregate carries no queue at all — the queue
+ * shown against an evaluation in the Genesys Interactions view belongs to the
+ * CONVERSATION, which routinely passes through several. Offering the control
+ * would mean offering a filter that can only ever return nothing. See §9a.
+ *
+ * A Groups filter. No evaluation endpoint that
  * can back a dashboard carries a group dimension — only quality/agents/activity
  * does — so a group filter would have to be expanded client-side into member
  * user ids, and would then filter some bands of a page but not others. Every
@@ -19,7 +26,7 @@
 
 import { createMultiSelect } from "./multiSelect.js";
 import {
-  fetchAllUsers, fetchAllQueues, fetchAllTeams,
+  fetchAllUsers, fetchAllTeams,
   fetchAllDivisions, fetchAllEvaluationForms,
 } from "../services/genesysApi.js";
 import { MEDIA_TYPES, TIME_BASIS_OPTIONS, emptyFilters } from "../lib/evaluationQuery.js";
@@ -110,10 +117,6 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
     <div class="dq-filter-band">
       <span class="dq-filter-caption">What</span>
       <div class="dq-filter-fields">
-        <div class="cs-control-group">
-          <label class="cs-label">Queues</label>
-          <div data-f="queues"></div>
-        </div>
         <div class="cs-control-group">
           <label class="cs-label">Forms</label>
           <div data-f="forms"></div>
@@ -211,14 +214,12 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
   const agents = createMultiSelect({ placeholder: "All agents", searchable: true, onChange: emit });
   const teams = createMultiSelect({ placeholder: "All teams", searchable: true, onChange: emit });
   const divisions = createMultiSelect({ placeholder: "All divisions", searchable: true, onChange: emit });
-  const queues = createMultiSelect({ placeholder: "All queues", searchable: true, onChange: emit });
   const forms = createMultiSelect({ placeholder: "All forms", searchable: true, onChange: emit });
   const media = createMultiSelect({ placeholder: "All media types", onChange: emit });
 
   $("agents").append(agents.el);
   $("teams").append(teams.el);
   $("divisions").append(divisions.el);
-  $("queues").append(queues.el);
   $("forms").append(forms.el);
   $("media").append(media.el);
 
@@ -228,8 +229,8 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
   // multiSelect swallows clicks silently (its trigger returns early when it has
   // no items). A control that looks live and does nothing is worse than a
   // disabled one, so they start explicitly disabled and say why.
-  for (const [ms, label] of [[agents, "agents"], [teams, "teams"], [divisions, "divisions"],
-                             [queues, "queues"], [forms, "forms"]]) {
+  for (const [ms, label] of [[agents, "agents"], [teams, "teams"],
+                             [divisions, "divisions"], [forms, "forms"]]) {
     ms.setPlaceholder(`Loading ${label}…`);
     ms.setEnabled(false);
   }
@@ -237,7 +238,7 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
   // Id → name, per list, filled by loadOptions and read back by the pages.
   const lookups = {
     agents: new Map(), teams: new Map(), divisions: new Map(),
-    queues: new Map(), forms: new Map(),
+    forms: new Map(),
     media: new Map(MEDIA_TYPES.map((m) => [m.id, m.label])),
   };
 
@@ -247,7 +248,7 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
   $basis.addEventListener("change", emit);
 
   $("reset").addEventListener("click", () => {
-    for (const ms of [agents, teams, divisions, queues, forms, media]) ms.setSelected([]);
+    for (const ms of [agents, teams, divisions, forms, media]) ms.setSelected([]);
     emit();
   });
 
@@ -259,7 +260,6 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
       agentIds: [...agents.getSelected()],
       teamIds: [...teams.getSelected()],
       divisionIds: [...divisions.getSelected()],
-      queueIds: [...queues.getSelected()],
       formContextIds: [...forms.getSelected()],
       mediaTypes: [...media.getSelected()],
     };
@@ -335,12 +335,6 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
           restoreKey: "divisionIds",
         },
         {
-          label: "queues", placeholder: "All queues", lookupKey: "queues", ms: queues,
-          run: () => fetchAllQueues(api, orgId),
-          map: (q) => ({ id: q.id, label: q.name || q.id }),
-          restoreKey: "queueIds",
-        },
-        {
           label: "evaluation forms", placeholder: "All forms", lookupKey: "forms", ms: forms,
           run: () => fetchAllEvaluationForms(api, orgId),
           // Keyed on contextId, not id: a form has one id per version, and
@@ -391,7 +385,7 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
     setEnabled(on) {
       // Re-enabling must not resurrect a dropdown that has nothing in it — that
       // is how a control goes back to looking live while still ignoring clicks.
-      for (const ms of [agents, teams, divisions, queues, forms, media]) {
+      for (const ms of [agents, teams, divisions, forms, media]) {
         ms.setEnabled(on && ms.count() > 0);
       }
       $from.disabled = !on;

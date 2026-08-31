@@ -49,7 +49,7 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 | 2.2 | Check the When band | From, To, eight quick-range buttons, and a **Dates refer to** dropdown | ☐ | |
 | 2.3 | Open the **Dates refer to** dropdown | Three options: Conversation date, Created, Released | ☐ | |
 | 2.4 | Check the Who band | Agents, Work Teams, Divisions — **no Groups dropdown** (dropped by design) | ☐ | |
-| 2.5 | Check the What band | Queues, Forms, Media types, Clear filters | ☐ | |
+| 2.5 | Check the What band | Forms, Media types, Clear filters - **no Queues** | ☐ | |
 | 2.6 | Try to set **To** to today | Allowed — max is **today**. The range is partial and the page marks it as such | ☐ | |
 | 2.6a | Default range on first load | **Yesterday**, with that preset highlighted | ☐ | |
 | 2.6b | Click **Today**, then **This week**, then **Yesterday** | Each fills the dates and highlights; This week runs Monday → today | ☐ | |
@@ -63,7 +63,7 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 | 2.10 | With that invalid range, click **Load dashboard** | Refuses with "Fix the date range before loading." — no API call | ☐ | |
 | 2.10a | **Before pressing Load**, open **Agents** | The list is already populated and opens — filter options load when the page opens, not when you press Load | ☐ | |
 | 2.10b | While they are still loading | Each dropdown reads "Loading agents…" etc. and is greyed out — never a live-looking button that ignores clicks | ☐ | |
-| 2.10c | Set a queue filter, then press Load | Loads with that scope, first time, without a load beforehand | ☐ | |
+| 2.10c | Set an agent filter, then press Load | Loads with that scope, first time, without a load beforehand | ☐ | |
 | 2.10d | If a list fails or is empty | That one dropdown stays disabled saying "No work teams" / "evaluation forms unavailable"; the others still work | ☐ | |
 | 2.11 | Fix the dates, open **Agents** | A searchable checkbox list of active users, with Select all | ☐ | |
 | 2.12 | Type in the Agents search box | List filters; "Select all matching (n)" changes accordingly | ☐ | |
@@ -73,7 +73,7 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 2.14 | Set a distinctive scope (e.g. one queue + one form + Today) | — | ☐ | |
+| 2.14 | Set a distinctive scope (e.g. one agent + one form + Today) | — | ☐ | |
 | 2.15 | Navigate to **Evaluation Scores**, then back to Coverage | Every selection is still there, dates included | ☐ | |
 | 2.16 | Navigate to a page in another section (e.g. Audit › Search) and back | Selections still there | ☐ | |
 | 2.17 | Open the app in a **new browser tab** and go to Coverage | Selections are **not** carried over — this is sessionStorage, and that is intended | ☐ | |
@@ -139,33 +139,29 @@ the real one.
 | 5.3 | Set the range to Last 12 Months and reload | Sub-line now says "**Weekly** buckets"; columns are readable, not hairlines | ☐ | |
 | 5.4 | Hover a column | Tooltip shows the date and the count | ☐ | |
 | 5.5 | Read the axis line under the chart | Start date on the left, "peak n" in the middle, end date on the right | ☐ | |
-| 5.6 | **By queue** panel | Bars labelled with real queue names — not GUIDs | ☐ | |
 | 5.7 | **By form** panel | Bars labelled with real form names — not GUIDs | ☐ | |
 | 5.8 | **By agent** panel | Bars labelled with real user names; sub-line says "the top 25 of n" | ☐ | |
 | 5.9 | **By evaluator** panel | Real user names, and the bars are a different colour from the agent panel | ☐ | |
 | 5.10 | If any band has more than 25 rows | A line underneath reads "…and n more." | ☐ | |
 | 5.11 | Any bar labelled "Unknown user (abc12345…)" or "Unknown form (…)"? | Possible and not a bug — deactivated users and deleted forms do this. **Note how many** | ☐ | Count: ______ |
-| 5.12 | Add up the By queue bars | Should be at or below the Evaluations total (evaluations with no queue sit under "No queue") | ☐ | |
 | 5.13 | Add up the By agent bars (top 25 plus "…and n more") | Row count should equal the **Agents evaluated** tile | ☐ | |
 
 ---
 
-## 5a. Queue filtering — OPEN QUESTION
+## 5a. No queue anywhere, and the AI evaluator
 
-A queue filter on a queue that demonstrably produced evaluations returns zero.
-The cause is **not yet established** — see design §9a. These cases are here to
-settle it, so record what you actually see rather than pass/fail.
+Queue filtering was removed - evaluations carry no queue, and the queue the
+Genesys Interactions view shows belongs to the conversation. See design 9a.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 5.14 | Load with **no** queue filter, same day and org as before | Tiles show the real count (16 in the case investigated) | ☐ | |
-| 5.15 | Look at the **By queue** panel | **This is the decisive one.** Either a named queue, or a **No queue** row. Write down which, and the name if named | ☐ | Shows: ______ |
-| 5.16 | Expand **Show the queries this page sent**, find the "by queue" call | Read the `groups returned:` line. `{}` means no queue on the evaluation; `{"queueId":"…"}` means a queue, just not the one filtered | ☐ | Group: ______ |
-| 5.17 | If it names a queue, compare with the Interactions view | Is it a different queue than the Interactions list shows for the same conversation? | ☐ | |
-| 5.17a | **Open question.** Find a period with HUMAN evaluations (AI-scored tile below 100%) and look at By queue | Do human evaluations name a real queue, where AI-scored ones show "No queue"? This is the one thing still unknown — see design §9a | ☐ | Answer: ______ |
-| 5.17b | On an AI-only period, check **By evaluator** | Reads **No evaluator (AI-scored)**, never "Unknown user" | ☐ | |
-| 5.18 | Re-apply the queue filter | Tiles show 0, and a note says how many evaluations exist and sends you to the By queue panel | ☐ | |
-| 5.19 | Click **Run isolation probes** | Six probes appear, each stripping one variable; the ones that find data are green | ☐ | |
+| 5.14 | Look at the filter bar | **No Queues dropdown.** Agents, Work Teams, Divisions, Forms, Media types only | | |
+| 5.15 | Look at the panels | **No By queue panel.** By form runs full width | | |
+| 5.16 | On an AI-scored period, check **By evaluator** | Reads **Virtual Supervisor (AI scoring)** - never "Unknown user", never "No evaluator" | | |
+| 5.17 | On a period with human evaluations | Real evaluator names appear | | |
+| 5.18 | Set a filter that matches nothing, load | Tiles show 0 and a note says how many evaluations exist and to clear filters one at a time | | |
+| 5.19 | Expand **Show the queries this page sent** | Each call lists its body and the `group` objects returned | | |
+| 5.20 | Click **Run isolation probes** | Five probes appear, each stripping one variable | | |
 
 ## 6. Evaluator workload table
 

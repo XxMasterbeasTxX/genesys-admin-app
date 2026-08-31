@@ -80,9 +80,8 @@ export default function renderCoverage({ me, api, orgContext, access }) {
 
     <p class="page-desc">
       How much quality evaluation is actually happening: how many evaluations
-      were completed, how they are spread across queues, forms, agents and
-      evaluators, and whether evaluators are keeping up with what they have
-      been assigned.
+      were completed, how they are spread across forms, agents and evaluators,
+      and whether evaluators are keeping up with what they have been assigned.
     </p>
     <p class="page-desc dq-perm-note">
       Needs <code>analytics:evaluationAggregate:view</code> and
@@ -113,17 +112,10 @@ export default function renderCoverage({ me, api, orgContext, access }) {
         <div class="dq-trend-axis" data-c="trendAxis"></div>
       </div>
 
-      <div class="dq-grid-2">
-        <div class="dq-panel">
-          <h3 class="dq-panel-title">By queue</h3>
-          <p class="dq-panel-sub">Evaluations completed, per queue.</p>
-          <div class="dq-bars" data-c="byQueue"></div>
-        </div>
-        <div class="dq-panel">
-          <h3 class="dq-panel-title">By form</h3>
-          <p class="dq-panel-sub">Evaluations completed, per evaluation form.</p>
-          <div class="dq-bars" data-c="byForm"></div>
-        </div>
+      <div class="dq-panel">
+        <h3 class="dq-panel-title">By form</h3>
+        <p class="dq-panel-sub">Evaluations completed, per evaluation form.</p>
+        <div class="dq-bars" data-c="byForm"></div>
       </div>
 
       <div class="dq-grid-2">
@@ -241,7 +233,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
 
   // The org can change under the page from the header dropdown. Reload the
   // dropdowns when it does, rather than offering the previous customer's
-  // queues as filters for this one.
+  // agents and forms as filters for this one.
   const unsubscribe = orgContext?.onChange?.(() => {
     optionsOrgId = null;
     $results.hidden = true;
@@ -412,13 +404,12 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       // are independent.
       const [
         totalResp, releasedResp, systemResp, trendResp,
-        queueResp, formResp, agentResp, evaluatorResp,
+        formResp, agentResp, evaluatorResp,
       ] = await Promise.all([
         q("total", { metrics: ["nEvaluations"] }),
         q("by released", { metrics: ["nEvaluations"], groupBy: ["released"] }),
         q("by systemSubmitted", { metrics: ["nEvaluations"], groupBy: ["systemSubmitted"] }),
         q("trend", { metrics: ["nEvaluations"], granularity }),
-        q("by queue", { metrics: ["nEvaluations"], groupBy: ["queueId"] }),
         q("by form", { metrics: ["nEvaluations"], groupBy: ["contextId"] }),
         q("by agent", { metrics: ["nEvaluations"], groupBy: ["userId"] }),
         q("by evaluator", { metrics: ["nEvaluations"], groupBy: ["evaluatorId"] }),
@@ -477,11 +468,6 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       // ── Bands ─────────────────────────────────────
       const fmtCount = (r) => r.value.toLocaleString();
 
-      renderBars($("byQueue"),
-        toRows(parseGroupedAggregate(queueResp, "queueId"), lookups.queues,
-          { unknownLabel: "No queue" }),
-        { format: fmtCount });
-
       renderBars($("byForm"),
         toRows(parseGroupedAggregate(formResp, "contextId"), lookups.forms,
           { unknownLabel: "Unknown form", emptyLabel: "No form recorded" }),
@@ -492,11 +478,22 @@ export default function renderCoverage({ me, api, orgContext, access }) {
           { unknownLabel: "Unknown user", emptyLabel: "No agent recorded" }),
         { format: fmtCount });
 
-      // An AI-scored evaluation has no human evaluator, so an absent
-      // evaluatorId is the normal case here rather than a missing name.
+      // An AI-scored evaluation carries no evaluatorId, because no person
+      // scored it — Genesys attributes it to "Virtual Supervisor", which is
+      // what the Quality Summary of the conversation shows. Named as such
+      // rather than left as an absence, but only when the AI count accounts
+      // for the whole bucket: an evaluatorId can also be missing because the
+      // evaluator was deleted, and calling that Virtual Supervisor would be
+      // the same class of error as calling AI scoring an "Unknown user".
+      const evaluatorMap = parseGroupedAggregate(evaluatorResp, "evaluatorId");
+      const noEvaluator = evaluatorMap.get("")?.count || 0;
       renderBars($("byEvaluator"),
-        toRows(parseGroupedAggregate(evaluatorResp, "evaluatorId"), lookups.agents,
-          { unknownLabel: "Unknown user", emptyLabel: "No evaluator (AI-scored)" }),
+        toRows(evaluatorMap, lookups.agents, {
+          unknownLabel: "Unknown user",
+          emptyLabel: noEvaluator > 0 && noEvaluator === aiCount
+            ? "Virtual Supervisor (AI scoring)"
+            : "No evaluator recorded",
+        }),
         { fill: "dq-fill-alt", format: fmtCount });
 
       $("byAgentSub").textContent =
@@ -516,7 +513,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
         setStatus("Nothing matched — checking whether the filters excluded it…");
         try {
           const bare = toAggregateQuery(
-            { ...f, agentIds: [], teamIds: [], queueIds: [], divisionIds: [], formContextIds: [], mediaTypes: [] },
+            { ...f, agentIds: [], teamIds: [], divisionIds: [], formContextIds: [], mediaTypes: [] },
             { metrics: ["nEvaluations"] },
           );
           calls.push({ label: "unfiltered check", path: AGG_PATH, body: bare, probe: true });
@@ -541,21 +538,12 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       let why = "";
 
       if (excludedByFilters > 0) {
-        // The filters, not the period, produced the zero. Say that much — and
-        // for a queue filter, point at the evidence rather than asserting a
-        // cause. An evaluation is attached to one agent participant, and which
-        // queue it inherits on a multi-segment conversation (a campaign call
-        // transferred to a queue, say) is not the same question as which queue
-        // the Interactions list displays. The "By queue" panel answers it
-        // directly, so send the user there instead of guessing on their behalf.
+        // The filters, not the period, produced the zero. Naming which filter
+        // is the user's to discover — the page states the fact and leaves the
+        // bisecting to them rather than guessing on their behalf.
         why = `${excludedByFilters.toLocaleString()} evaluation(s) exist in this period, ` +
-          "but none match the filters you set. ";
-        why += f.queueIds.length
-          ? "Clear the queue filter and check the “By queue” panel — it names the queue these " +
-            "evaluations are actually attributed to, which on a transferred or multi-segment " +
-            "conversation need not be the queue the Interactions view shows. If they appear under " +
-            "“No queue”, the evaluation carries no queue for this app to filter on."
-          : "Try clearing them one at a time to see which one excludes everything.";
+          "but none match the filters you set. Try clearing them one at a time to see " +
+          "which one excludes everything.";
       } else if (total === 0 && f.timeBasis === "conversation" && dayCount(f.from, f.to) <= 7) {
         why =
           "Nothing here yet. These dates are matched against the CONVERSATION, " +
@@ -655,10 +643,10 @@ export default function renderCoverage({ me, api, orgContext, access }) {
   /**
    * The `group` object of each returned row, as text.
    *
-   * The one thing the first round of probes could not answer: a group-by that
-   * returns a single row is ambiguous between "all in one queue" and "no queue
-   * at all", and only the group keys separate them. `{}` here means the
-   * dimension is absent from the data.
+   * A group-by returning a single row is ambiguous between "all share one key"
+   * and "no key at all", and only the group objects separate them. `{}` here
+   * means the dimension is absent from the data — the reading that cost a round
+   * trip when the probes reported counts alone.
    */
   function describeGroups(resp) {
     const rows = resp?.results || [];
@@ -692,8 +680,6 @@ export default function renderCoverage({ me, api, orgContext, access }) {
         (() => { const b = { ...full }; delete b.filter; return b; })()],
       ["bare — interval and metric only",
         { interval: utcInterval, metrics: ["nEvaluations"] }],
-      ["bare, and grouped by queue (does an evaluation carry a queue at all?)",
-        { interval: utcInterval, metrics: ["nEvaluations"], groupBy: ["queueId"] }],
     ];
 
     for (const [label, body] of probes) {
