@@ -634,6 +634,46 @@ Shared with `totals.js` (§5.2). Ranges longer than 3 months are allowed
 everywhere; the Scores detail table hides itself with an explanation, and the AI
 page chunks. Nothing is refused.
 
+## 9a. An evaluation does not always carry a queue
+
+Established on dev, 2026-08-31, by isolation probes after a queue filter on a
+queue with visible evaluations returned zero.
+
+**The finding.** For the same period and org, an unfiltered query returned 16
+evaluations; the identical query with one `queueId` predicate returned none;
+and the same query grouped by `queueId` returned those 16 in a **single row
+whose `group` object carried no `queueId` at all**. The interactions concerned
+were `OB_DK_` outbound calls.
+
+**Why.** An evaluation inherits a queue only when the evaluated interaction was
+routed through one. Outbound and other non-ACD work never is, so those
+evaluations have no `queueId` — and therefore **no queue filter can ever match
+them**. This is the Genesys data model, not a defect, but it makes the queue
+filter quietly lossy in exactly the orgs that do most outbound.
+
+**Three consequences, all now implemented.**
+
+1. `parseGroupedAggregate` used to `continue` past a row whose group lacked the
+   dimension. That silently dropped the entire no-queue bucket, so a "By queue"
+   band could report "no evaluations in this period" while 16 sat outside every
+   queue. Rows with an absent key are now kept under `""` and render as
+   **No queue** / **Unknown form**. This was a real bug and the probes are what
+   surfaced it.
+2. A zero caused by the FILTERS is now distinguished from a zero caused by the
+   PERIOD. When the total is zero and any scope filter is set, one extra
+   unfiltered query runs; if it returns rows, the page says how many exist and —
+   when a queue filter is set — explains that outbound evaluations carry no
+   queue. Only on the empty path, never on the common one.
+3. What the first probe round could NOT answer was recorded as a gap: a
+   group-by returning one row is ambiguous between "all in one queue" and "no
+   queue at all". The diagnostics panel now prints each row's `group` object,
+   so `{}` settles it directly.
+
+**Ruled out by the same probes**, and worth recording so they are not
+re-suspected: the local `+02:00` interval offset, the `timeZone` parameter, and
+`alternateTimeDimension: conversationStart`. All three were present on the query
+that returned 16.
+
 ## 10. Risks and unknowns
 
 **To test against a live org before the layout is fixed:**

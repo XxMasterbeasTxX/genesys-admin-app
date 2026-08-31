@@ -256,8 +256,12 @@ export function dimensionPredicate(dimension, value) {
 export function parseGroupedAggregate(resp, dimension, metric = "nEvaluations") {
   const out = new Map();
   for (const row of resp?.results || []) {
-    const key = dimension ? row.group?.[dimension] : "__all__";
-    if (dimension && key == null) continue;
+    // A row whose group LACKS the dimension is data, not noise: an evaluation
+    // of an outbound interaction carries no queue, because the agent was never
+    // routed one. Keyed to "" so it renders as "No queue" / "Unknown form"
+    // rather than vanishing. Dropping these rows silently under-reported every
+    // grouped band by exactly the evaluations that most needed explaining.
+    const key = dimension ? (row.group?.[dimension] ?? "") : "__all__";
     const stats = findMetricStats(row, metric);
     if (!stats) continue;
     const prev = out.get(key);

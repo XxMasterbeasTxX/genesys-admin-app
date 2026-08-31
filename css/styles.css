@@ -5844,3 +5844,11 @@ a.fr-shipped:hover { text-decoration: underline; }
 @media (prefers-color-scheme: light) {
   .dq-diag-body { background: rgba(0,0,0,0.05); }
 }
+.dq-diag-groups {
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  margin-bottom: 6px;
+  overflow-x: auto;
+  white-space: nowrap;
+}

@@ -158,6 +158,9 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
   $basis.value = stored?.timeBasis || "conversation";
 
   // ── Presets ─────────────────────────────────────────
+  // The preset the user last clicked, so an ambiguous range (Monday, where
+  // "This week" and "Today" are the same dates) highlights what they chose.
+  let chosenPreset = null;
   const $presets = $("presets");
   for (const preset of RANGE_PRESETS) {
     const btn = document.createElement("button");
@@ -169,18 +172,38 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
       const r = resolvePreset(preset.key);
       $from.value = r.from;
       $to.value = r.to;
+      chosenPreset = preset.key;
       markActivePreset();
       emit();
     });
     $presets.append(btn);
   }
 
-  /** Light up whichever preset the current dates happen to match. */
+  /**
+   * Light up exactly ONE preset.
+   *
+   * Presets can resolve to the same range — on a Monday "This week" IS "Today",
+   * and at the start of a month "Last Month" can coincide with others. Matching
+   * purely on dates then lights two buttons at once, which reads as a bug even
+   * though both are true. The preset the user actually clicked wins while its
+   * dates still hold; only after the dates are edited by hand does it fall back
+   * to the first match in display order.
+   */
   function markActivePreset() {
+    let active = null;
+    if (chosenPreset) {
+      const r = resolvePreset(chosenPreset);
+      if (r && r.from === $from.value && r.to === $to.value) active = chosenPreset;
+      else chosenPreset = null;
+    }
+    if (!active) {
+      for (const p of RANGE_PRESETS) {
+        const r = resolvePreset(p.key);
+        if (r && r.from === $from.value && r.to === $to.value) { active = p.key; break; }
+      }
+    }
     for (const btn of $presets.querySelectorAll(".dq-preset")) {
-      const r = resolvePreset(btn.dataset.preset);
-      const on = r && r.from === $from.value && r.to === $to.value;
-      btn.classList.toggle("is-active", !!on);
+      btn.classList.toggle("is-active", btn.dataset.preset === active);
     }
   }
 
@@ -209,8 +232,8 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
   };
 
   // ── Change plumbing ─────────────────────────────────
-  $from.addEventListener("change", () => { markActivePreset(); emit(); });
-  $to.addEventListener("change", () => { markActivePreset(); emit(); });
+  $from.addEventListener("change", () => { chosenPreset = null; markActivePreset(); emit(); });
+  $to.addEventListener("change", () => { chosenPreset = null; markActivePreset(); emit(); });
   $basis.addEventListener("change", emit);
 
   $("reset").addEventListener("click", () => {

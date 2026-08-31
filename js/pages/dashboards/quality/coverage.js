@@ -21,7 +21,7 @@
 import { createEvaluationFilters } from "../../../components/evaluationFilters.js";
 import {
   toAggregateQuery, parseGroupedAggregate, parseAggregateTotal,
-  parseAggregateSeries, statsMapToSorted,
+  parseAggregateSeries, statsMapToSorted, hasScopeFilters,
 } from "../../../lib/evaluationQuery.js";
 import {
   queryEvaluationAggregates, fetchEvaluatorActivity,
@@ -146,6 +146,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
           Here because a dashboard that reports zero is indistinguishable from
           one that asked the wrong question.
         </p>
+        <button class="btn btn-sm" data-c="diagProbe">Run isolation probes</button>
         <div data-c="diagBody"></div>
       </details>
 
@@ -196,6 +197,20 @@ export default function renderCoverage({ me, api, orgContext, access }) {
 
   const filters = createEvaluationFilters({ api, showTimeBasis: true });
   $("filters").append(filters.el);
+
+  $("diagProbe").addEventListener("click", async (e) => {
+    const org = currentOrg();
+    if (!org || !lastFilters) return;
+    e.target.disabled = true;
+    e.target.textContent = "Running…";
+    try {
+      await runProbes(org.id, lastFilters, lastCalls);
+      renderDiagnostics(lastCalls);
+    } finally {
+      e.target.disabled = false;
+      e.target.textContent = "Run isolation probes";
+    }
+  });
 
   // ── Option loading, per org ─────────────────────────
   let optionsOrgId = null;
@@ -349,7 +364,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
         try {
           const resp = await queryEvaluationAggregates(api, org.id, body);
           entry.resultCount = (resp?.results || []).length;
-          entry.response = resp;
+          entry.groups = describeGroups(resp);
           return resp;
         } catch (err) {
           entry.error = `${err.status || ""} ${err.message}`.trim();
@@ -465,25 +480,55 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       // basis is worth explaining, because human evaluation lags a call by
       // days and the page would otherwise look broken.
       const $why = $("emptyWhy");
-      if (total === 0 && f.timeBasis === "conversation" && dayCount(f.from, f.to) <= 7) {
-        $why.textContent =
+      let why = "";
+
+      if (excludedByFilters > 0) {
+        // The filters, not the period, produced the zero — and the commonest
+        // reason is a queue filter. An evaluation inherits a queue only when
+        // the evaluated interaction was routed through one, so evaluations of
+        // outbound and other non-ACD work carry no queue and NO queue filter
+        // can ever match them. Silence here reads as "no evaluations exist",
+        // which is the opposite of the truth.
+        why = `${excludedByFilters.toLocaleString()} evaluation(s) exist in this period, ` +
+          "but none match the filters you set. ";
+        why += f.queueIds.length
+          ? "Note that an evaluation only carries a queue when the interaction was routed through one — " +
+            "evaluations of outbound or other non-ACD work carry no queue, so a queue filter can never match them. " +
+            "Clear the queue filter and look at the “By queue” panel: those evaluations appear under “No queue”."
+          : "Try clearing them one at a time to see which one excludes everything.";
+      } else if (total === 0 && f.timeBasis === "conversation" && dayCount(f.from, f.to) <= 7) {
+        why =
           "Nothing here yet. These dates are matched against the CONVERSATION, " +
           "and a conversation is usually evaluated days after it happens — only " +
           "AI scoring lands the same day. Switch “Dates refer to” to Created " +
           "or Released to see the evaluation work done in this period.";
-        $why.hidden = false;
-      } else {
-        $why.hidden = true;
       }
 
-      // When the page has come back empty, the useful question is no longer
-      // "what did we ask" but "which PART of what we asked emptied it". These
-      // probes strip one variable each, so the answer is in the panel rather
-      // than in a round of guesses.
-      if (total === 0) {
-        setStatus("Nothing came back — running probes to find out which part of the query emptied it…");
-        await runProbes(org.id, f, calls);
+      $why.textContent = why;
+      $why.hidden = !why;
+
+      // An empty result has two very different causes and the page must not
+      // present them the same way: nothing happened in this period, or the
+      // scope filters excluded everything that did. One extra unfiltered query
+      // tells them apart, and it only runs when the answer was zero AND a
+      // filter was set — never on the common path.
+      let excludedByFilters = 0;
+      if (total === 0 && hasScopeFilters(f)) {
+        setStatus("Nothing matched — checking whether the filters excluded it…");
+        try {
+          const bare = toAggregateQuery(
+            { ...f, agentIds: [], teamIds: [], queueIds: [], divisionIds: [], formContextIds: [], mediaTypes: [] },
+            { metrics: ["nEvaluations"] },
+          );
+          calls.push({ label: "unfiltered check", path: AGG_PATH, body: bare, probe: true });
+          const resp = await api.proxyGenesys(org.id, "POST", AGG_PATH, { body: bare });
+          excludedByFilters = parseAggregateTotal(resp).count;
+          calls[calls.length - 1].total = excludedByFilters;
+          calls[calls.length - 1].resultCount = (resp?.results || []).length;
+        } catch { /* the explanation is a nicety; its absence must not fail the load */ }
       }
+      lastCalls = calls;
+      lastFilters = f;
       renderDiagnostics(calls);
 
       $results.hidden = false;
@@ -565,6 +610,23 @@ export default function renderCoverage({ me, api, orgContext, access }) {
     }
   }
 
+  const AGG_PATH = "/api/v2/analytics/evaluations/aggregates/query";
+
+  /**
+   * The `group` object of each returned row, as text.
+   *
+   * The one thing the first round of probes could not answer: a group-by that
+   * returns a single row is ambiguous between "all in one queue" and "no queue
+   * at all", and only the group keys separate them. `{}` here means the
+   * dimension is absent from the data.
+   */
+  function describeGroups(resp) {
+    const rows = resp?.results || [];
+    if (!rows.length) return "none";
+    return rows.slice(0, 8).map((r) => JSON.stringify(r.group || {})).join(", ") +
+      (rows.length > 8 ? `, …${rows.length - 8} more` : "");
+  }
+
   /**
    * Strip one variable at a time from a query that came back empty.
    *
@@ -575,7 +637,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
    * count, so the first probe that returns rows names the cause.
    */
   async function runProbes(orgId, f, calls) {
-    const path = "/api/v2/analytics/evaluations/aggregates/query";
+    const path = AGG_PATH;
     const utcInterval = `${f.from}T00:00:00.000Z/${f.to}T23:59:59.999Z`;
     const full = toAggregateQuery(f, { metrics: ["nEvaluations"] });
 
@@ -601,12 +663,16 @@ export default function renderCoverage({ me, api, orgContext, access }) {
         const resp = await api.proxyGenesys(orgId, "POST", path, { body });
         entry.resultCount = (resp?.results || []).length;
         entry.total = parseAggregateTotal(resp).count;
-        entry.response = resp;
+        entry.groups = describeGroups(resp);
       } catch (err) {
         entry.error = `${err.status || ""} ${err.message}`.trim();
       }
     }
   }
+
+  /** The last load's calls, so the probe button can append to them. */
+  let lastCalls = [];
+  let lastFilters = null;
 
   /** Render the recorded calls, newest question first. */
   function renderDiagnostics(calls) {
@@ -623,6 +689,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
           <span class="dq-diag-label">${escapeHtml(c.label)}</span>
           <span class="dq-diag-verdict${c.error ? " is-error" : (c.total > 0 || c.resultCount > 0) ? " is-hit" : ""}">${escapeHtml(verdict)}</span>
         </div>
+        ${c.groups ? `<div class="dq-diag-groups">groups returned: ${escapeHtml(c.groups)}</div>` : ""}
         <pre class="dq-diag-body">${escapeHtml(JSON.stringify(c.body, null, 2))}</pre>`;
       $body.append(box);
     }

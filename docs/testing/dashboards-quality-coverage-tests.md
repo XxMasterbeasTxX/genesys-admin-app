@@ -53,6 +53,7 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 | 2.6 | Try to set **To** to today | Allowed — max is **today**. The range is partial and the page marks it as such | ☐ | |
 | 2.6a | Default range on first load | **Yesterday**, with that preset highlighted | ☐ | |
 | 2.6b | Click **Today**, then **This week**, then **Yesterday** | Each fills the dates and highlights; This week runs Monday → today | ☐ | |
+| 2.6f | On a **Monday**, click This week | Only **This week** highlights, even though the dates equal Today. Clicking Today then highlights only Today | ☐ | |
 | 2.6c | With **Today** selected, load, and look at the trend | Buckets are **hourly**, not one single column | ☐ | |
 | 2.6d | Same view — the final column | Drawn hatched; the axis says "last bucket still filling" | ☐ | |
 | 2.6e | Around midnight local, click **Today** | The range starts at your local midnight, not 02:00 — days are cut in your own timezone, not UTC | ☐ | |
@@ -144,6 +145,20 @@ the real one.
 | 5.13 | Add up the By agent bars (top 25 plus "…and n more") | Row count should equal the **Agents evaluated** tile | ☐ | |
 
 ---
+
+## 5a. Queue filtering and evaluations with no queue
+
+An evaluation inherits a queue only when the interaction was routed through one,
+so evaluations of outbound / non-ACD work carry none and no queue filter can
+match them. See design §9a.
+
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 5.14 | Load with no queue filter, on a day with outbound evaluations | The **By queue** panel shows a **No queue** row — it must not be missing | ☐ | |
+| 5.15 | Add a queue filter that matches nothing, load | Tiles show 0, and a note says how many evaluations exist and that outbound evaluations carry no queue | ☐ | |
+| 5.16 | Clear the filter again | The numbers come back | ☐ | |
+| 5.17 | Expand **Show the queries this page sent** | Each call lists its request body and the `group` objects returned | ☐ | |
+| 5.18 | Click **Run isolation probes** | Six probes appear, each stripping one variable; the ones that find data are green | ☐ | |
 
 ## 6. Evaluator workload table
 
