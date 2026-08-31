@@ -100,15 +100,25 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 
 ### ★ UNKNOWN 4.10 — does the coverage denominator work?
 
+The denominator is now the set of users holding `quality:evaluation:participate`
+— the permission that makes an agent evaluatable at all. The permission string
+is the one thing here that no machine-readable source confirms, so this case
+also verifies the string itself.
+
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 4.10 | Look at the **Agents evaluated** sub-line | One of three: (a) a real percentage and denominator, (b) "coverage % needs analytics:conversationDetail:view", (c) "denominator unavailable" | ☐ | Which one? ______ |
+| 4.10 | Look at the **Agents evaluated** sub-line | One of: **(a)** "39% of 210 who can be evaluated", **(b)** "no role grants evaluation participate", **(c)** "coverage % needs authorization:role:view", **(d)** "eligible agents unavailable" | ☐ | Which? ______ |
+| 4.11 | Look at the **Not evaluated** tile | A count of agents who can be evaluated but have nothing in this period | ☐ | |
+| 4.12 | Sanity-check that count against the org | Plausible — not zero in an org that evaluates a sample, not the whole headcount | ☐ | |
 
-If (b), that is correct behaviour — the page is telling you the OAuth client
-lacks a permission this page deliberately does not require. If (c), copy the
-warning text at the bottom of the page here: ______________________
+**(a)** is the good case. **(c)** is correct behaviour — the page is reporting a
+permission it deliberately does not require, and degrades rather than fails.
 
----
+**(b) is the one to report.** It means either the org grants the permission to
+nobody, or `quality:evaluation:participate` is not the right string. Check in
+Genesys under Roles whether any role has Quality › Evaluation › Participate
+ticked; if one does and the app still says (b), the string is wrong and I need
+the real one.
 
 ## 5. The results — charts and bands
 

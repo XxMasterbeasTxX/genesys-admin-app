@@ -1373,6 +1373,19 @@ export async function fetchAgentActivity(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/quality/agents/activity", opts);
 }
 
+/**
+ * Roles that carry a given permission string.
+ *
+ * `GET /api/v2/authorization/roles?permission=…` filters server-side, which is
+ * how Roles › Permissions vs. Users already answers this question.
+ */
+export async function fetchRolesWithPermission(api, orgId, permission, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/authorization/roles", {
+    ...opts,
+    query: { ...(opts.query || {}), permission },
+  });
+}
+
 /** Per-evaluator activity: assigned/started/completed, evaluations and calibrations. */
 export async function fetchEvaluatorActivity(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/quality/evaluators/activity", opts);

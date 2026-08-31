@@ -398,27 +398,50 @@ against the 45-second `/api` cap.
 
 Seven calls, all parallel, all cheap — these are pre-computed aggregates.
 
-### 6.3 "Agents covered" needs a denominator
+### 6.3 The coverage denominator: who can be evaluated at all
 
-The tile that matters most is the one the API does not answer: *what share of
-agents were evaluated at all*. `nEvaluations` grouped by `userId` gives the
-numerator — the count of distinct groups returned. The denominator is the number
-of agents who **could** have been evaluated, which evaluation data cannot know.
+The tile that matters most is *what share of agents were evaluated*.
+`nEvaluations` grouped by `userId` gives the numerator. The denominator is the
+population that could have been evaluated — and that is not a judgement call:
 
-Options, in order of preference:
+**An agent can only be the subject of an evaluation if they hold
+`quality:evaluation:participate`.** So the users who hold that permission ARE
+the eligible population, exactly.
 
-1. **Agents who handled an interaction in the period** — a conversation
-   aggregate grouped by `userId`, one extra call to a domain the app already
-   reads. Honest and meaningful, and the denominator a QM manager actually has
-   in mind.
-2. Active users in the org (`fetchAllUsers`, state `active`). Cheap, but
-   inflated by everyone who is not an agent.
-3. Show the numerator alone and no percentage.
+This replaces two proxies an earlier revision of this document proposed, both
+of which were worse and one of which was expensive:
 
-Recommend (1), with the tile labelled "of agents who handled interactions" so
-the denominator is stated on the tile rather than in a tooltip. Note it needs
-`analytics:conversationDetail:view`, which is *not* in the §3.2 gate — so the
-tile degrades to (3) when the permission is absent rather than failing the page.
+| Proxy | Why it is wrong |
+|---|---|
+| Active users in the org | Counts everyone who was never evaluatable — inflated by every supervisor, admin and back-office account |
+| Agents who handled an interaction | Misses evaluatable agents who were quiet in the period, and needs `analytics:conversationDetail:view`, a permission this page does not otherwise require |
+
+**How it is resolved.** The same way Roles › Permissions vs. Users already
+answers this question: `GET /api/v2/authorization/roles?permission=…` for the
+roles that carry it, then the union of their members via
+`GET /api/v2/authorization/roles/{roleId}/users`. Union rather than sum — a
+user can reach the permission through more than one role. Costs
+`authorization:role:view`; the role-members call declares no permission at all.
+
+`authorization:role:view` is **not** added to the page's gate. The denominator
+is not what the page exists to show, so per §6 of the customer-facing plan a
+403 degrades the tile to a bare count and says why, rather than failing the
+page.
+
+**The payoff, which the proxies could not give.** Because the eligible set is a
+real population and not an estimate, `eligible − evaluated` is meaningful: a
+**Not evaluated** tile counts agents who can be evaluated but have nothing
+recorded against them in the period. That is the actionable half of a coverage
+figure — the number a QM manager can do something about.
+
+**One caveat, recorded because no machine-readable source settles it.**
+`quality:evaluation:participate` does not appear in the Genesys OpenAPI spec.
+That is expected rather than suspicious: the spec lists permissions that gate
+API *operations*, and this one gates none — it is a capability flag the
+permission catalog carries. `GET /api/v2/authorization/permissions` is the
+authority. It is held as a named constant in the page for that reason, and if
+no role in an org carries it the tile says so plainly instead of reporting 0%
+coverage, which would be a lie whichever way the truth fell.
 
 ### 6.4 Time basis control
 

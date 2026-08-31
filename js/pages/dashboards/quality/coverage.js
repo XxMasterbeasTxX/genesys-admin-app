@@ -25,6 +25,7 @@ import {
 } from "../../../lib/evaluationQuery.js";
 import {
   queryEvaluationAggregates, fetchEvaluatorActivity,
+  fetchRolesWithPermission, fetchRoleUsers,
 } from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
@@ -47,6 +48,22 @@ function pickGranularity(from, to) {
 function granularityLabel(g) {
   return g === "PT1H" ? "Hourly" : g === "P1D" ? "Daily" : "Weekly";
 }
+
+/**
+ * The permission that makes an agent evaluatable at all.
+ *
+ * An agent can only be the subject of an evaluation if they hold this, so the
+ * set of users who hold it IS the population a coverage figure should be
+ * measured against — not "everyone active", and not "everyone who took a call".
+ *
+ * It does not appear in the Genesys OpenAPI spec, and that is expected rather
+ * than suspicious: the spec lists permissions that gate API OPERATIONS, and
+ * this one gates none — it is a capability flag the permission catalog carries.
+ * `GET /api/v2/authorization/permissions` is the authority. Kept as a named
+ * constant because it is the one string here that no machine-readable source
+ * confirms.
+ */
+const PARTICIPATE_PERMISSION = "quality:evaluation:participate";
 
 /** Short id, for when a name cannot be resolved. */
 function shortId(id) {
@@ -342,18 +359,29 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       const humanCount = systemMap.get("false")?.count || 0;
       const agentsEvaluated = agentMap.size;
 
-      setStatus("Working out how many agents could have been evaluated…");
-      const denominator = await fetchAgentDenominator(org.id, f);
+      setStatus("Working out which agents can be evaluated…");
+      const eligible = await fetchEligibleAgents(org.id);
 
       const pct = (n, d) => (d > 0 ? `${Math.round((n / d) * 100)}%` : null);
+
+      // Evaluatable agents with nothing recorded against them in this period —
+      // the actionable half of a coverage figure, and only knowable because the
+      // eligible set is a real population rather than a proxy.
+      let missed = null;
+      if (eligible.ids) {
+        missed = 0;
+        for (const id of eligible.ids) if (!agentMap.has(id)) missed++;
+      }
 
       $("tiles").innerHTML = [
         tile("Evaluations", total.toLocaleString(),
           f.timeBasis === "conversation" ? "by conversation date" : `by ${f.timeBasis} date`),
         tile("Agents evaluated", agentsEvaluated.toLocaleString(),
-          denominator.value != null
-            ? `${pct(agentsEvaluated, denominator.value)} of ${denominator.value.toLocaleString()} ${denominator.label}`
-            : denominator.note),
+          eligible.ids
+            ? `${pct(agentsEvaluated, eligible.ids.size)} of ${eligible.ids.size.toLocaleString()} who can be evaluated`
+            : eligible.note),
+        tile("Not evaluated", missed == null ? null : missed.toLocaleString(),
+          missed == null ? "needs the eligible list" : "can be evaluated, but were not"),
         tile("Evaluations per agent",
           agentsEvaluated > 0 ? (total / agentsEvaluated).toFixed(1) : null,
           "among agents who were evaluated"),
@@ -422,7 +450,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       }
 
       $results.hidden = false;
-      const warnings = [...optionWarnings, ...(denominator.warning ? [denominator.warning] : []),
+      const warnings = [...optionWarnings, ...(eligible.warning ? [eligible.warning] : []),
         ...(workloadWarning ? [workloadWarning] : [])];
       if (warnings.length) setStatus(warnings.join(" "), "error");
       else hideStatus();
@@ -437,41 +465,65 @@ export default function renderCoverage({ me, api, orgContext, access }) {
   /**
    * The denominator for "agents evaluated" — §6.3 of the design.
    *
-   * Evaluation data cannot know how many agents COULD have been evaluated, so
-   * the honest denominator is agents who handled an interaction in the period,
-   * which comes from the conversation aggregate domain.
+   * An agent can only be evaluated if they hold `quality:evaluation:participate`,
+   * so the users who hold it are exactly the population a coverage figure means.
+   * That beats the two proxies an earlier revision used: "everyone active"
+   * counts people who were never evaluatable, and "everyone who handled an
+   * interaction" both misses evaluatable agents who were quiet that period and
+   * needs `analytics:conversationDetail:view` — a permission this page does not
+   * otherwise require.
    *
-   * That domain needs `analytics:conversationDetail:view`, which is NOT part of
-   * this page's gate. When it is missing the tile falls back to a bare count
-   * rather than failing the page — a coverage percentage nobody is entitled to
-   * see is not a reason to withhold the evaluation counts.
+   * Resolved the way Roles › Permissions vs. Users already does it: ask which
+   * roles carry the permission, then take the union of their members. Needs
+   * `authorization:role:view`, which is NOT part of this page's gate — a 403
+   * degrades the tile to a bare count rather than failing the page.
+   *
+   * @returns {Promise<{ids: Set<string>|null, note: string, warning: string|null}>}
    */
-  async function fetchAgentDenominator(orgId, f) {
+  async function fetchEligibleAgents(orgId) {
     try {
-      const body = {
-        interval: `${f.from}T00:00:00.000Z/${f.to}T23:59:59.999Z`,
-        metrics: ["nConversations"],
-        groupBy: ["userId"],
-      };
-      const resp = await api.proxyGenesys(orgId, "POST",
-        "/api/v2/analytics/conversations/aggregates/query", { body });
-      const handled = new Set();
-      for (const row of resp?.results || []) {
-        const id = row.group?.userId;
-        if (id) handled.add(id);
+      const roles = await fetchRolesWithPermission(api, orgId, PARTICIPATE_PERMISSION);
+
+      if (!roles.length) {
+        // No role carries it. Either the org genuinely grants it to nobody, or
+        // the permission string is not what this app thinks it is. Said plainly
+        // rather than shown as a coverage of 0%, which would be a lie either way.
+        return {
+          ids: null,
+          note: "no role grants evaluation participate",
+          warning: `No role in this org carries ${PARTICIPATE_PERMISSION}, so there is no population to measure coverage against.`,
+        };
       }
-      if (!handled.size) {
-        return { value: null, note: "no interaction data for this period", warning: null };
+
+      // A user can reach the permission through more than one role, so the
+      // union is taken over ids rather than summing role membership counts.
+      const ids = new Set();
+      const lists = await Promise.all(
+        roles.map((r) => fetchRoleUsers(api, orgId, r.id).catch(() => [])),
+      );
+      for (const list of lists) {
+        for (const u of list) {
+          const id = typeof u === "string" ? u : u?.id;
+          if (id) ids.add(id);
+        }
       }
-      return { value: handled.size, label: "agents who handled interactions", warning: null };
+
+      if (!ids.size) {
+        return {
+          ids: null,
+          note: "no users hold evaluation participate",
+          warning: null,
+        };
+      }
+      return { ids, note: "", warning: null };
     } catch (err) {
       const denied = err.status === 403;
       return {
-        value: null,
-        note: denied ? "coverage % needs analytics:conversationDetail:view" : "denominator unavailable",
+        ids: null,
+        note: denied ? "coverage % needs authorization:role:view" : "eligible agents unavailable",
         warning: denied
-          ? "Coverage percentage hidden: it needs analytics:conversationDetail:view, which this page does not require."
-          : `Could not work out the agent denominator: ${err.message}`,
+          ? "Coverage percentage hidden: working out who can be evaluated needs authorization:role:view, which this page does not require."
+          : `Could not work out who can be evaluated: ${err.message}`,
       };
     }
   }
