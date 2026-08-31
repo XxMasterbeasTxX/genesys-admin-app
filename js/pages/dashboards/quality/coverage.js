@@ -483,18 +483,20 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       let why = "";
 
       if (excludedByFilters > 0) {
-        // The filters, not the period, produced the zero — and the commonest
-        // reason is a queue filter. An evaluation inherits a queue only when
-        // the evaluated interaction was routed through one, so evaluations of
-        // outbound and other non-ACD work carry no queue and NO queue filter
-        // can ever match them. Silence here reads as "no evaluations exist",
-        // which is the opposite of the truth.
+        // The filters, not the period, produced the zero. Say that much — and
+        // for a queue filter, point at the evidence rather than asserting a
+        // cause. An evaluation is attached to one agent participant, and which
+        // queue it inherits on a multi-segment conversation (a campaign call
+        // transferred to a queue, say) is not the same question as which queue
+        // the Interactions list displays. The "By queue" panel answers it
+        // directly, so send the user there instead of guessing on their behalf.
         why = `${excludedByFilters.toLocaleString()} evaluation(s) exist in this period, ` +
           "but none match the filters you set. ";
         why += f.queueIds.length
-          ? "Note that an evaluation only carries a queue when the interaction was routed through one — " +
-            "evaluations of outbound or other non-ACD work carry no queue, so a queue filter can never match them. " +
-            "Clear the queue filter and look at the “By queue” panel: those evaluations appear under “No queue”."
+          ? "Clear the queue filter and check the “By queue” panel — it names the queue these " +
+            "evaluations are actually attributed to, which on a transferred or multi-segment " +
+            "conversation need not be the queue the Interactions view shows. If they appear under " +
+            "“No queue”, the evaluation carries no queue for this app to filter on."
           : "Try clearing them one at a time to see which one excludes everything.";
       } else if (total === 0 && f.timeBasis === "conversation" && dayCount(f.from, f.to) <= 7) {
         why =

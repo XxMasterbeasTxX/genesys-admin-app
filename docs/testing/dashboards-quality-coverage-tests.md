@@ -146,19 +146,20 @@ the real one.
 
 ---
 
-## 5a. Queue filtering and evaluations with no queue
+## 5a. Queue filtering — OPEN QUESTION
 
-An evaluation inherits a queue only when the interaction was routed through one,
-so evaluations of outbound / non-ACD work carry none and no queue filter can
-match them. See design §9a.
+A queue filter on a queue that demonstrably produced evaluations returns zero.
+The cause is **not yet established** — see design §9a. These cases are here to
+settle it, so record what you actually see rather than pass/fail.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 5.14 | Load with no queue filter, on a day with outbound evaluations | The **By queue** panel shows a **No queue** row — it must not be missing | ☐ | |
-| 5.15 | Add a queue filter that matches nothing, load | Tiles show 0, and a note says how many evaluations exist and that outbound evaluations carry no queue | ☐ | |
-| 5.16 | Clear the filter again | The numbers come back | ☐ | |
-| 5.17 | Expand **Show the queries this page sent** | Each call lists its request body and the `group` objects returned | ☐ | |
-| 5.18 | Click **Run isolation probes** | Six probes appear, each stripping one variable; the ones that find data are green | ☐ | |
+| 5.14 | Load with **no** queue filter, same day and org as before | Tiles show the real count (16 in the case investigated) | ☐ | |
+| 5.15 | Look at the **By queue** panel | **This is the decisive one.** Either a named queue, or a **No queue** row. Write down which, and the name if named | ☐ | Shows: ______ |
+| 5.16 | Expand **Show the queries this page sent**, find the "by queue" call | Read the `groups returned:` line. `{}` means no queue on the evaluation; `{"queueId":"…"}` means a queue, just not the one filtered | ☐ | Group: ______ |
+| 5.17 | If it names a queue, compare with the Interactions view | Is it a different queue than the Interactions list shows for the same conversation? | ☐ | |
+| 5.18 | Re-apply the queue filter | Tiles show 0, and a note says how many evaluations exist and sends you to the By queue panel | ☐ | |
+| 5.19 | Click **Run isolation probes** | Six probes appear, each stripping one variable; the ones that find data are green | ☐ | |
 
 ## 6. Evaluator workload table
 

@@ -634,43 +634,52 @@ Shared with `totals.js` (§5.2). Ranges longer than 3 months are allowed
 everywhere; the Scores detail table hides itself with an explanation, and the AI
 page chunks. Nothing is refused.
 
-## 9a. An evaluation does not always carry a queue
+## 9a. A queue filter excludes evaluations that a queue demonstrably produced
 
-Established on dev, 2026-08-31, by isolation probes after a queue filter on a
-queue with visible evaluations returned zero.
+**Status: cause not yet established.** Recorded here because the first attempt
+at an answer was wrong, and the wrong answer is instructive.
 
-**The finding.** For the same period and org, an unfiltered query returned 16
-evaluations; the identical query with one `queueId` predicate returned none;
-and the same query grouped by `queueId` returned those 16 in a **single row
-whose `group` object carried no `queueId` at all**. The interactions concerned
-were `OB_DK_` outbound calls.
+**What is certain**, from isolation probes on dev, 2026-08-31. For one org and
+one day: an unfiltered query returned **16** evaluations; the identical query
+with a single `queueId` predicate returned **none**; the same query grouped by
+`queueId` returned those 16 in **one result row**.
 
-**Why.** An evaluation inherits a queue only when the evaluated interaction was
-routed through one. Outbound and other non-ACD work never is, so those
-evaluations have no `queueId` — and therefore **no queue filter can ever match
-them**. This is the Genesys data model, not a defect, but it makes the queue
-filter quietly lossy in exactly the orgs that do most outbound.
+**What was wrongly concluded from that.** That the evaluations carry no queue,
+because the interactions were `OB_DK_` outbound calls and outbound work is not
+ACD-routed. That reasoning does not survive contact with the facts: these calls
+are an outbound **campaign** whose calls are transferred to a queue
+(`ININ-OUTBOUND-TRANSFERRED-TO-QUEUE`), the Interactions view shows the queue,
+and the evaluation **program selects them precisely because they are in that
+queue**. A queue is unambiguously involved.
 
-**Three consequences, all now implemented.**
+The error was evidential, not domain knowledge: "one result row" is ambiguous
+between *no queue key at all* and *all sixteen sharing one queue key*, and the
+probe printed only the row COUNT, never the `group` object. The conclusion was
+drawn from evidence that could not support it.
 
-1. `parseGroupedAggregate` used to `continue` past a row whose group lacked the
-   dimension. That silently dropped the entire no-queue bucket, so a "By queue"
-   band could report "no evaluations in this period" while 16 sat outside every
-   queue. Rows with an absent key are now kept under `""` and render as
-   **No queue** / **Unknown form**. This was a real bug and the probes are what
-   surfaced it.
-2. A zero caused by the FILTERS is now distinguished from a zero caused by the
-   PERIOD. When the total is zero and any scope filter is set, one extra
-   unfiltered query runs; if it returns rows, the page says how many exist and —
-   when a queue filter is set — explains that outbound evaluations carry no
-   queue. Only on the empty path, never on the common one.
-3. What the first probe round could NOT answer was recorded as a gap: a
-   group-by returning one row is ambiguous between "all in one queue" and "no
-   queue at all". The diagnostics panel now prints each row's `group` object,
-   so `{}` settles it directly.
+**The two live candidates.**
 
-**Ruled out by the same probes**, and worth recording so they are not
-re-suspected: the local `+02:00` interval offset, the `timeZone` parameter, and
+1. **The evaluation carries a different queue than the conversation displays.**
+   A transferred outbound call has more than one segment. The evaluation is
+   attached to one agent participant, and may inherit that segment's queue — or
+   the campaign's — rather than the queue the Interactions list shows as *the*
+   queue. Filtering on the displayed queue would then legitimately miss it.
+2. **The `queueId` dimension is not populated on evaluation aggregates**, at
+   least in this org, whatever the conversation carries.
+
+**The observation that separates them** is the `group` object of the
+grouped-by-`queueId` response: `{}` means candidate 2, `{"queueId": "<other
+guid>"}` means candidate 1. The diagnostics panel now prints it, and the "By
+queue" band will name the queue directly once the row is no longer dropped.
+
+**What was fixed regardless, because it is a bug under either candidate.**
+`parseGroupedAggregate` skipped any row whose group lacked the dimension, so an
+absent-key bucket vanished entirely and a band could read "no evaluations in
+this period" while evaluations existed. Rows with an absent key are now kept
+under `""` and render as **No queue** / **Unknown form**.
+
+**Ruled out, and worth recording so they are not re-suspected:** the local
+`+02:00` interval offset, the `timeZone` parameter, and
 `alternateTimeDimension: conversationStart`. All three were present on the query
 that returned 16.
 
