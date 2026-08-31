@@ -28,6 +28,8 @@
 // The filter object
 // ─────────────────────────────────────────────────────────────────────
 
+import { localIso, utcIso, localTimeZone } from "../utils/dateRanges.js";
+
 /**
  * @typedef {Object} EvaluationFilters
  * @property {string}   from            Inclusive start, yyyy-mm-dd.
@@ -111,16 +113,19 @@ export const EVALUATION_STATUSES = Object.freeze([
 // Intervals
 // ─────────────────────────────────────────────────────────────────────
 
-/** `yyyy-mm-dd` pair → the ISO-8601 interval the analytics domain expects. */
+/**
+ * `yyyy-mm-dd` pair → the ISO-8601 interval the analytics domain expects,
+ * carrying the viewer's own UTC offset at each end.
+ *
+ * The offset matters more than it looks. Genesys uses the INTERVAL's offset
+ * for the range bounds even when `timeZone` is also supplied, so a `Z`-suffixed
+ * interval asks for a UTC day whatever timezone is named alongside it. At
+ * UTC+2 that puts everything from local midnight to 02:00 in the wrong day —
+ * invisible across a month, decisive across "Today".
+ */
 export function toInterval(from, to) {
-  return `${from}T00:00:00.000Z/${to}T23:59:59.999Z`;
+  return `${localIso(from)}/${localIso(to, true)}`;
 }
-
-/** Start-of-day ISO timestamp, in the format the search endpoint documents. */
-function startOfDay(day) { return `${day}T00:00:00.000Z`; }
-
-/** End-of-day ISO timestamp, in the format the search endpoint documents. */
-function endOfDay(day) { return `${day}T23:59:59.999Z`; }
 
 /**
  * Split an inclusive day range into windows of at most `months` months.
@@ -200,6 +205,9 @@ export function toAggregateQuery(filters, opts = {}) {
   } = opts;
 
   const body = { interval: toInterval(filters.from, filters.to), metrics };
+  // Names the zone the response's granularity buckets are cut in, so an
+  // hourly or daily series lines up with local days across a DST change.
+  body.timeZone = localTimeZone();
   if (groupBy?.length) body.groupBy = groupBy;
   if (granularity) body.granularity = granularity;
   if (views?.length) body.views = views;
@@ -374,8 +382,11 @@ export function toSearchRequest(filters, opts = {}) {
   const query = [{
     type: "DATE_RANGE",
     field: basis.search,
-    startValue: startOfDay(from),
-    endValue: endOfDay(to),
+    // The search endpoint documents its format as yyyy-MM-dd'T'HH:mm:ss.SSS'Z',
+    // so the local day boundary is converted to UTC rather than sent as an
+    // offset string it may not accept. Same instant either way.
+    startValue: utcIso(from),
+    endValue: utcIso(to, true),
   }];
 
   for (const { key, searchField } of FILTER_MAP) {

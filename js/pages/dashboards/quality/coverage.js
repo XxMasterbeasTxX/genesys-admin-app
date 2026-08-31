@@ -26,17 +26,26 @@ import {
 import {
   queryEvaluationAggregates, fetchEvaluatorActivity,
 } from "../../../services/genesysApi.js";
-import { dayCount, formatRange } from "../../../utils/dateRanges.js";
+import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
 
 /**
- * Daily buckets up to about two months, weekly beyond.
+ * Hourly for a day or two, daily up to about two months, weekly beyond.
  *
- * A year at P1D is 365 columns in a 700px panel — under three pixels each,
- * which is noise rather than a trend.
+ * Each threshold is about column width. A year at P1D is 365 columns in a
+ * 700px panel — under three pixels each, which is noise rather than a trend.
+ * At the other end, "Today" at P1D is a single column: a chart with one bar,
+ * which is not a chart. PT1H gives it 24.
  */
 function pickGranularity(from, to) {
-  return dayCount(from, to) <= 62 ? "P1D" : "P1W";
+  const days = dayCount(from, to);
+  if (days <= 2) return "PT1H";
+  return days <= 62 ? "P1D" : "P1W";
+}
+
+/** Human label for a granularity, for the sub-line under a chart title. */
+function granularityLabel(g) {
+  return g === "PT1H" ? "Hourly" : g === "P1D" ? "Daily" : "Weekly";
 }
 
 /** Short id, for when a name cannot be resolved. */
@@ -76,6 +85,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
 
     <div data-c="results" hidden>
       <div class="dq-range-line" data-c="rangeLine"></div>
+      <div class="dq-panel-note" data-c="emptyWhy" hidden></div>
 
       <div class="dq-tiles" data-c="tiles"></div>
 
@@ -222,7 +232,13 @@ export default function renderCoverage({ me, api, orgContext, access }) {
     }
   }
 
-  function renderTrend(points) {
+  /**
+   * @param {boolean} partial  The range runs up to now, so the LAST bucket is
+   *   still filling. Marked rather than drawn flat: an unmarked trailing dip
+   *   reads as evaluation activity collapsing this morning, which is the one
+   *   wrong conclusion this chart could invite.
+   */
+  function renderTrend(points, granularity, partial) {
     const $trend = $("trend");
     const $axis = $("trendAxis");
     $trend.innerHTML = "";
@@ -231,19 +247,33 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       $trend.innerHTML = `<div class="dq-bar-empty">No evaluations in this period.</div>`;
       return;
     }
+
+    const hourly = granularity === "PT1H";
+    const stamp = (iso) => {
+      const at = (iso || "").split("/")[0];
+      if (!hourly) return at.slice(0, 10);
+      const d = new Date(at);
+      return Number.isNaN(d.getTime())
+        ? at.slice(0, 16).replace("T", " ")
+        : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    };
+
     const max = Math.max(...points.map((p) => p.stats.count), 0);
-    for (const p of points) {
+    points.forEach((p, i) => {
       const col = document.createElement("div");
-      col.className = "dq-trend-col";
+      const isLast = partial && i === points.length - 1;
+      col.className = "dq-trend-col" + (isLast ? " is-partial" : "");
       const h = max > 0 ? (p.stats.count / max) * 100 : 0;
       col.style.height = `${Math.max(h, p.stats.count > 0 ? 2 : 0)}%`;
-      const day = (p.interval || "").slice(0, 10);
-      col.title = `${day}: ${p.stats.count.toLocaleString()}`;
+      col.title = `${stamp(p.interval)}: ${p.stats.count.toLocaleString()}` +
+        (isLast ? " (still in progress)" : "");
       $trend.append(col);
-    }
-    const first = (points[0].interval || "").slice(0, 10);
-    const last = (points[points.length - 1].interval || "").slice(0, 10);
-    $axis.innerHTML = `<span>${escapeHtml(first)}</span><span>peak ${max.toLocaleString()}</span><span>${escapeHtml(last)}</span>`;
+    });
+
+    $axis.innerHTML =
+      `<span>${escapeHtml(stamp(points[0].interval))}</span>` +
+      `<span>peak ${max.toLocaleString()}${partial ? " · last bucket still filling" : ""}</span>` +
+      `<span>${escapeHtml(stamp(points[points.length - 1].interval))}</span>`;
   }
 
   /** Map a grouped aggregate into labelled, sorted bar rows. */
@@ -334,9 +364,11 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       ].join("");
 
       // ── Trend ─────────────────────────────────────
+      const partial = includesToday(f.to);
       $("trendSub").textContent =
-        `${granularity === "P1D" ? "Daily" : "Weekly"} buckets · ${formatRange(f.from, f.to)}`;
-      renderTrend(parseAggregateSeries(trendResp));
+        `${granularityLabel(granularity)} buckets · ${formatRange(f.from, f.to)}` +
+        (partial ? " · today is still in progress" : "");
+      renderTrend(parseAggregateSeries(trendResp), granularity, partial);
 
       // ── Bands ─────────────────────────────────────
       const fmtCount = (r) => r.value.toLocaleString();
@@ -370,6 +402,24 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       // ── Range line and warnings ───────────────────
       $("rangeLine").textContent =
         `${formatRange(f.from, f.to)} · ${total.toLocaleString()} evaluations`;
+
+      // Driven by the RESULT, not by which preset was clicked. A short range
+      // on the conversation basis is perfectly meaningful where AI scoring is
+      // on — those evaluations land against the conversation almost
+      // immediately. It is only when such a range comes back empty that the
+      // basis is worth explaining, because human evaluation lags a call by
+      // days and the page would otherwise look broken.
+      const $why = $("emptyWhy");
+      if (total === 0 && f.timeBasis === "conversation" && dayCount(f.from, f.to) <= 7) {
+        $why.textContent =
+          "Nothing here yet. These dates are matched against the CONVERSATION, " +
+          "and a conversation is usually evaluated days after it happens — only " +
+          "AI scoring lands the same day. Switch “Dates refer to” to Created " +
+          "or Released to see the evaluation work done in this period.";
+        $why.hidden = false;
+      } else {
+        $why.hidden = true;
+      }
 
       $results.hidden = false;
       const warnings = [...optionWarnings, ...(denominator.warning ? [denominator.warning] : []),

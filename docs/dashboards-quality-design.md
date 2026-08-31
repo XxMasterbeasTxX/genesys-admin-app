@@ -48,6 +48,11 @@ query builders and fire all of them on every load.
 - **Filters: date range, agents, work teams, queues, divisions, forms, media
   type.** Built once as a shared component (§5.2), persisted in `sessionStorage`
   so moving between the three pages keeps your scope.
+- **Short ranges are offered, and days are LOCAL** (§5.4). Today, Yesterday and
+  This week sit alongside the calendar-complete presets, and the default range
+  is **Yesterday**. This forces the dashboards out of UTC: at UTC+2 a UTC
+  "today" starts at 02:00 local, which is invisible across a month and wrong
+  across a day. Days are cut in the viewer's own timezone.
 - **Charts run long; only the row-level detail table is capped** (§9). The
   3-month ceiling on `evaluations/search` is a per-request limit, not a data
   limit, and aggregation results recombine across consecutive windows *exactly*
@@ -297,6 +302,49 @@ shared across versions. Filtering by `formId` silently excludes evaluations
 scored on other versions of the same form, which is almost never what someone
 picking "Sales QA v3" from a dropdown means. The dropdown lists forms by
 context and filters on `contextId`; version-level filtering is not offered.
+
+### 5.4 Dates: short ranges, local days, partial buckets
+
+Presets, in order: **Today**, **Yesterday**, **This week**, Last Week, Last
+Month, Last 3 Months, Last 12 Months, Last Year. Default **Yesterday** — the
+last complete day is the question someone opening a QM dashboard usually has,
+and it is the only short range that is not still filling.
+
+An earlier revision capped the date picker at *yesterday*, borrowed from
+`totals.js` where a partial day silently corrupts a monthly billing total.
+That is the right rule there and the wrong one here: "what happened today" is
+a legitimate question of a dashboard. Three consequences follow, and all three
+are the price of the short presets rather than optional polish.
+
+**Local days, not UTC.** `EvaluationAggregationQuery` takes a `timeZone`
+(IANA names, default UTC), but the spec is explicit that *the interval's own
+offset is used even when `timeZone` is specified*. So a `Z`-suffixed interval
+asks for a UTC day whatever zone is named beside it. `toInterval` therefore
+emits the viewer's offset at each end — read per date, so a range spanning a
+DST change gets `+02:00` at one end and `+01:00` at the other — and
+`timeZone` is sent as well, which is what aligns the granularity buckets.
+`quality/evaluations/search` documents its format as
+`yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`, so it gets the same local boundary converted
+to UTC instead: `2026-08-30T22:00:00.000Z` for a Danish midnight.
+
+**Hourly granularity.** Thresholds are about column width: `PT1H` at two days
+or under, `P1D` to about two months, `P1W` beyond. "Today" at `P1D` is one
+column, which is not a chart.
+
+**Partial buckets are marked.** A range ending today is incomplete by
+construction, so its last bucket is drawn hatched and the axis says "last
+bucket still filling". Unmarked, a trailing dip reads as evaluation activity
+collapsing this morning — the one wrong conclusion the chart could invite.
+
+**What is deliberately NOT done: switching the time basis for short ranges.**
+An earlier draft of this section assumed a conversation-basis "Today" would
+always be empty, because a call is evaluated days after it happens. That is
+true only of *human* evaluation. **AI scoring evaluates a conversation almost
+immediately**, so wherever it is enabled a conversation-basis "Today" is
+populated and meaningful — and on the AI Scoring page (§8) it is the natural
+operational view. The page therefore never overrides the basis the user set.
+It explains itself only when a short conversation-basis range actually comes
+back empty, driven by the result rather than by which preset was clicked.
 
 ### 5.3 Styling
 

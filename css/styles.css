@@ -5784,3 +5784,13 @@ a.fr-shipped:hover { text-decoration: underline; }
 .dq-perm-note code {
   font-size: 11px;
 }
+
+/* A trend bucket that is still filling — the range runs up to now. Hatched
+   rather than solid so a partial final column cannot be read as a real drop. */
+.dq-trend-col.is-partial {
+  background: repeating-linear-gradient(
+    135deg,
+    #4c8dff, #4c8dff 3px,
+    rgba(76, 141, 255, 0.35) 3px, rgba(76, 141, 255, 0.35) 6px
+  );
+}

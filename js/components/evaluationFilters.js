@@ -60,7 +60,10 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
   const el = document.createElement("div");
   el.className = "dq-filters";
 
-  const defaults = resolvePreset("lastMonth");
+  // Yesterday by default: the last complete day is what someone opening a QM
+  // dashboard is usually asking about, and it is the only short range that is
+  // not still filling.
+  const defaults = resolvePreset("yesterday");
   const stored = loadStored();
 
   el.innerHTML = `
@@ -136,8 +139,10 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
   const $note = $("note");
 
   // ── Dates ───────────────────────────────────────────
-  // Max is yesterday: the analytics lake is not real-time, and a range ending
-  // today reports a partial day as a whole one — a visible false dip.
+  // Max is TODAY. A range ending today is partial by definition and the pages
+  // mark its trailing bucket as in progress rather than refusing the range —
+  // AI scoring lands against a conversation almost immediately, so today's
+  // evaluations are real data, not an artefact.
   const maxDay = latestSelectableDay();
   $from.max = maxDay;
   $to.max = maxDay;
@@ -366,6 +371,6 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
 
 /** A fresh, empty filter object matching this bar's defaults. */
 export function defaultFilters() {
-  const r = resolvePreset("lastMonth");
+  const r = resolvePreset("yesterday");
   return emptyFilters(r.from, r.to);
 }
