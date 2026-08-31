@@ -1341,6 +1341,44 @@ export async function fetchAllExternalContacts(api, orgId, opts = {}) {
 
 
 // ─────────────────────────────────────────────────────────────────────
+// Quality / Evaluations
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch the published evaluation forms.
+ *
+ * Published rather than all: an unpublished form has never scored anything, so
+ * offering one as a filter can only ever return nothing.
+ *
+ * Each entry carries both `id` (this VERSION of the form) and `contextId`
+ * (shared across every version). Filters key on `contextId` — see the note in
+ * js/lib/evaluationQuery.js on why filtering by version is the wrong default.
+ */
+export async function fetchAllEvaluationForms(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/quality/publishedforms/evaluations", opts);
+}
+
+/** Query the evaluation aggregate domain. */
+export async function queryEvaluationAggregates(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/analytics/evaluations/aggregates/query", { body });
+}
+
+/** Search evaluations — rows, aggregations, or both. Max 3-month range. */
+export async function searchEvaluations(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/quality/evaluations/search", { body });
+}
+
+/** Per-agent evaluation activity: counts, average and extreme scores. */
+export async function fetchAgentActivity(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/quality/agents/activity", opts);
+}
+
+/** Per-evaluator activity: assigned/started/completed, evaluations and calibrations. */
+export async function fetchEvaluatorActivity(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/quality/evaluators/activity", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Groups / Divisions
 // ─────────────────────────────────────────────────────────────────────
 

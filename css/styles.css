@@ -5558,3 +5558,215 @@ a.fr-shipped:hover { text-decoration: underline; }
 @media (prefers-color-scheme: light) {
   .fr-waiting { color: #8a5a00; border-color: rgba(138,90,0,0.35); }
 }
+
+/* ══════════════════════════════════════════════════════════
+   Dashboards › Quality  (dq-* prefix)
+   docs/dashboards-quality-design.md §5.3
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Filter bar ──────────────────────────────────────── */
+/* Three captioned bands rather than one wrapping row. The caption is what
+   turns a wall of dropdowns into a form: it names the question each row
+   answers, and it stops the grouping changing with window width — the exact
+   fault documented in docs/interactions-search-redesign.md §3.1. */
+.dq-filters {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+}
+.dq-filter-band {
+  align-items: flex-start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 72px 1fr;
+}
+.dq-filter-caption {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding-top: 20px;
+  text-transform: uppercase;
+}
+.dq-filter-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.dq-filter-fields .ms-dropdown { min-width: 190px; }
+.dq-filter-reset { justify-content: flex-end; }
+.dq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.dq-preset.is-active {
+  border-color: #4c8dff;
+  color: #9dc1ff;
+}
+.dq-filter-note {
+  color: #ffd28a;
+  font-size: 12px;
+  padding-left: 84px;
+}
+
+/* ── Stat tiles ──────────────────────────────────────── */
+.dq-tiles {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin-bottom: 18px;
+}
+.dq-tile {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.dq-tile-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.dq-tile-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-top: 4px;
+}
+.dq-tile-sub {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.dq-tile-value.is-empty { color: var(--muted); font-size: 20px; }
+
+/* ── Chart groups ────────────────────────────────────── */
+.dq-grid-2 {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+.dq-panel {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  padding: 14px;
+}
+.dq-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.dq-panel-sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 10px;
+}
+.dq-panel-note {
+  color: #ffd28a;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* ── Horizontal bars (generalised from .it-bar-*) ────── */
+.dq-bars { display: flex; flex-direction: column; gap: 6px; }
+.dq-bar-row {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(120px, 200px) 1fr auto;
+}
+.dq-bar-label {
+  color: var(--text);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dq-bar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+  height: 14px;
+  overflow: hidden;
+}
+.dq-bar-fill {
+  background: #4c8dff;
+  border-radius: 999px;
+  height: 100%;
+  min-width: 2px;
+  transition: width 0.25s ease;
+}
+.dq-fill-alt { background: #58c4a0; }
+.dq-fill-warn { background: #e0a34a; }
+.dq-bar-value {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 96px;
+  text-align: right;
+}
+.dq-bar-empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 10px 0;
+}
+
+/* ── Trend (sparkline-style column chart) ────────────── */
+.dq-trend {
+  align-items: flex-end;
+  display: flex;
+  gap: 2px;
+  height: 120px;
+  width: 100%;
+}
+.dq-trend-col {
+  background: #4c8dff;
+  border-radius: 2px 2px 0 0;
+  flex: 1 1 0;
+  min-height: 1px;
+  min-width: 2px;
+}
+.dq-trend-axis {
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+/* ── Tables ──────────────────────────────────────────── */
+.dq-table-wrap { overflow-x: auto; }
+.dq-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 100%;
+  width: 100%;
+}
+.dq-table th {
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+.dq-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+}
+.dq-table td.is-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.dq-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+
+/* ── Light mode ──────────────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  .dq-bar-track { background: #e5e7eb; }
+  .dq-filter-note, .dq-panel-note { color: #8a5a00; }
+  .dq-preset.is-active { color: #1d4ed8; border-color: #1d4ed8; }
+  .dq-table tbody tr:hover { background: rgba(0,0,0,0.03); }
+}
