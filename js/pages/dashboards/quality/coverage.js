@@ -139,6 +139,16 @@ export default function renderCoverage({ me, api, orgContext, access }) {
         </div>
       </div>
 
+      <details class="dq-diag" data-c="diag">
+        <summary>Show the queries this page sent</summary>
+        <p class="dq-panel-sub">
+          Every request that produced the numbers above, with what came back.
+          Here because a dashboard that reports zero is indistinguishable from
+          one that asked the wrong question.
+        </p>
+        <div data-c="diagBody"></div>
+      </details>
+
       <div class="dq-panel">
         <h3 class="dq-panel-title">Evaluator workload</h3>
         <p class="dq-panel-sub">
@@ -328,7 +338,24 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       setStatus("Querying evaluation aggregates…");
 
       const granularity = pickGranularity(f.from, f.to);
-      const q = (opts) => queryEvaluationAggregates(api, org.id, toAggregateQuery(f, opts));
+
+      // Each call is recorded so the diagnostic panel can show exactly what was
+      // asked and what came back, rather than only the zero it resolved to.
+      const calls = [];
+      const q = async (label, opts) => {
+        const body = toAggregateQuery(f, opts);
+        const entry = { label, path: "/api/v2/analytics/evaluations/aggregates/query", body };
+        calls.push(entry);
+        try {
+          const resp = await queryEvaluationAggregates(api, org.id, body);
+          entry.resultCount = (resp?.results || []).length;
+          entry.response = resp;
+          return resp;
+        } catch (err) {
+          entry.error = `${err.status || ""} ${err.message}`.trim();
+          throw err;
+        }
+      };
 
       // One fan-out of parallel proxy calls from the browser, in the shape
       // export/interactions/totals.js uses. Deliberately not one server call
@@ -338,14 +365,14 @@ export default function renderCoverage({ me, api, orgContext, access }) {
         totalResp, releasedResp, systemResp, trendResp,
         queueResp, formResp, agentResp, evaluatorResp,
       ] = await Promise.all([
-        q({ metrics: ["nEvaluations"] }),
-        q({ metrics: ["nEvaluations"], groupBy: ["released"] }),
-        q({ metrics: ["nEvaluations"], groupBy: ["systemSubmitted"] }),
-        q({ metrics: ["nEvaluations"], granularity }),
-        q({ metrics: ["nEvaluations"], groupBy: ["queueId"] }),
-        q({ metrics: ["nEvaluations"], groupBy: ["contextId"] }),
-        q({ metrics: ["nEvaluations"], groupBy: ["userId"] }),
-        q({ metrics: ["nEvaluations"], groupBy: ["evaluatorId"] }),
+        q("total", { metrics: ["nEvaluations"] }),
+        q("by released", { metrics: ["nEvaluations"], groupBy: ["released"] }),
+        q("by systemSubmitted", { metrics: ["nEvaluations"], groupBy: ["systemSubmitted"] }),
+        q("trend", { metrics: ["nEvaluations"], granularity }),
+        q("by queue", { metrics: ["nEvaluations"], groupBy: ["queueId"] }),
+        q("by form", { metrics: ["nEvaluations"], groupBy: ["contextId"] }),
+        q("by agent", { metrics: ["nEvaluations"], groupBy: ["userId"] }),
+        q("by evaluator", { metrics: ["nEvaluations"], groupBy: ["evaluatorId"] }),
       ]);
 
       const total = parseAggregateTotal(totalResp).count;
@@ -449,6 +476,16 @@ export default function renderCoverage({ me, api, orgContext, access }) {
         $why.hidden = true;
       }
 
+      // When the page has come back empty, the useful question is no longer
+      // "what did we ask" but "which PART of what we asked emptied it". These
+      // probes strip one variable each, so the answer is in the panel rather
+      // than in a round of guesses.
+      if (total === 0) {
+        setStatus("Nothing came back — running probes to find out which part of the query emptied it…");
+        await runProbes(org.id, f, calls);
+      }
+      renderDiagnostics(calls);
+
       $results.hidden = false;
       const warnings = [...optionWarnings, ...(eligible.warning ? [eligible.warning] : []),
         ...(workloadWarning ? [workloadWarning] : [])];
@@ -525,6 +562,69 @@ export default function renderCoverage({ me, api, orgContext, access }) {
           ? "Coverage percentage hidden: working out who can be evaluated needs authorization:role:view, which this page does not require."
           : `Could not work out who can be evaluated: ${err.message}`,
       };
+    }
+  }
+
+  /**
+   * Strip one variable at a time from a query that came back empty.
+   *
+   * The page's own query differs from a bare one in four ways — a local UTC
+   * offset on the interval, a `timeZone`, an `alternateTimeDimension`, and the
+   * scope filters. Any one of them can empty a result, and from the outside
+   * they are indistinguishable. Each probe removes exactly one and reports its
+   * count, so the first probe that returns rows names the cause.
+   */
+  async function runProbes(orgId, f, calls) {
+    const path = "/api/v2/analytics/evaluations/aggregates/query";
+    const utcInterval = `${f.from}T00:00:00.000Z/${f.to}T23:59:59.999Z`;
+    const full = toAggregateQuery(f, { metrics: ["nEvaluations"] });
+
+    const probes = [
+      ["as sent, but interval in UTC (Z)",
+        { ...full, interval: utcInterval }],
+      ["as sent, without timeZone",
+        (() => { const b = { ...full }; delete b.timeZone; return b; })()],
+      ["as sent, without alternateTimeDimension (endpoint default)",
+        (() => { const b = { ...full }; delete b.alternateTimeDimension; return b; })()],
+      ["as sent, without the scope filters",
+        (() => { const b = { ...full }; delete b.filter; return b; })()],
+      ["bare — interval and metric only",
+        { interval: utcInterval, metrics: ["nEvaluations"] }],
+      ["bare, and grouped by queue (does an evaluation carry a queue at all?)",
+        { interval: utcInterval, metrics: ["nEvaluations"], groupBy: ["queueId"] }],
+    ];
+
+    for (const [label, body] of probes) {
+      const entry = { label: `PROBE — ${label}`, path, body, probe: true };
+      calls.push(entry);
+      try {
+        const resp = await api.proxyGenesys(orgId, "POST", path, { body });
+        entry.resultCount = (resp?.results || []).length;
+        entry.total = parseAggregateTotal(resp).count;
+        entry.response = resp;
+      } catch (err) {
+        entry.error = `${err.status || ""} ${err.message}`.trim();
+      }
+    }
+  }
+
+  /** Render the recorded calls, newest question first. */
+  function renderDiagnostics(calls) {
+    const $body = $("diagBody");
+    $body.innerHTML = "";
+    for (const c of calls) {
+      const box = document.createElement("div");
+      box.className = "dq-diag-call" + (c.probe ? " is-probe" : "");
+      const verdict = c.error
+        ? `error: ${c.error}`
+        : `${c.total != null ? c.total.toLocaleString() + " evaluations · " : ""}${c.resultCount ?? 0} result row(s)`;
+      box.innerHTML = `
+        <div class="dq-diag-head">
+          <span class="dq-diag-label">${escapeHtml(c.label)}</span>
+          <span class="dq-diag-verdict${c.error ? " is-error" : (c.total > 0 || c.resultCount > 0) ? " is-hit" : ""}">${escapeHtml(verdict)}</span>
+        </div>
+        <pre class="dq-diag-body">${escapeHtml(JSON.stringify(c.body, null, 2))}</pre>`;
+      $body.append(box);
     }
   }
 
