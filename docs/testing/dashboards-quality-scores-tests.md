@@ -163,7 +163,8 @@ counts. This is the one arithmetic error the data shape invites.
 | 10.18 | **Previous** / **Next** at the bottom | Pages through the filtered rows; reads "Page 2 of 4"; no new requests fire | | |
 | 10.19 | **Rows per page** | 25 / 50 / 100 / 200; re-pages instantly with no new requests | | |
 | 10.20 | **Fetch order** at the top | Decides the order rows are fetched in; column sorting works on top of it | | |
-| 10.21 | A very busy range (over 5,000) | The count says the list is the first 5,000 and to narrow the dates | | |
+| 10.21 | A very busy range (over 2,500) | The count says the list is the first 2,500 and to narrow the dates | | |
+| 10.21a | Network tab while it loads | Requests go out five at a time at pageSize 100 — never 200, which the endpoint refuses | | |
 | 10.22 | Open the **Score** or **Critical** filter | A **From / To** range, not a hundred checkboxes. Placeholders show the actual lowest and highest | | |
 | 10.23 | Type a From value | Filters live; rows with no score drop out, which the panel says | | |
 | 10.24 | Set both From and To | Only rows inside the range remain | | |

@@ -256,11 +256,14 @@ export default function renderScores({ me, api, orgContext, access }) {
   // disposer; the table is redrawn on every page turn, so the previous one is
   // released before the next is attached, and again on teardown.
   let disposeFilters = null;
-  // 200 a request, 25 requests: enough for any range a person will actually
-  // read, and a hard stop so a busy quarter cannot turn one panel into a
-  // thousand-request page. Past it the footer says the list is partial.
-  const FETCH_PAGE_SIZE = 200;
-  const MAX_DETAIL_PAGES = 25;
+  // The search endpoint refuses a page size over 100, so pages are fetched 100
+  // at a time, FIVE AT ONCE — the same shape 750c028 gave the documentation
+  // export after a single sequential page-walk ate 44 of its 47 seconds. The
+  // response carries no total, so the walk stops when a batch returns a short
+  // page; the cost of that is at most four wasted requests on the last batch.
+  const FETCH_PAGE_SIZE = 100;
+  const FETCH_CONCURRENCY = 5;
+  const MAX_DETAIL_PAGES = 25;   // 2,500 rows, then the footer says it is partial
   let detailSize = 25;
   let detailVisible = [];
   let criticalRows = [];
@@ -919,18 +922,26 @@ export default function renderScores({ me, api, orgContext, access }) {
       // over the result rather than a query.
       const items = [];
       let truncated = false;
-      for (let page = 1; page <= MAX_DETAIL_PAGES; page++) {
-        const resp = await searchEvaluations(api, orgId, toSearchRequest(f, {
-          pageSize: FETCH_PAGE_SIZE,
-          pageNumber: page,
-          sortBy: $("detailSort").value,
-          sortOrder: "DESC",
-          systemSubmitted: detailWho() === "ai",
-        }));
-        const batch = resp?.results || [];
-        items.push(...batch);
-        if (batch.length < FETCH_PAGE_SIZE) break;
-        if (page === MAX_DETAIL_PAGES) truncated = true;
+      const fetchPage = (page) => searchEvaluations(api, orgId, toSearchRequest(f, {
+        pageSize: FETCH_PAGE_SIZE,
+        pageNumber: page,
+        sortBy: $("detailSort").value,
+        sortOrder: "DESC",
+        systemSubmitted: detailWho() === "ai",
+      })).then((resp) => resp?.results || []);
+
+      for (let first = 1; first <= MAX_DETAIL_PAGES; first += FETCH_CONCURRENCY) {
+        const pages = [];
+        for (let p = first; p < first + FETCH_CONCURRENCY && p <= MAX_DETAIL_PAGES; p++) pages.push(p);
+        const batches = await Promise.all(pages.map(fetchPage));
+
+        let done = false;
+        for (const batch of batches) {
+          items.push(...batch);
+          if (batch.length < FETCH_PAGE_SIZE) { done = true; break; }
+        }
+        if (done) break;
+        if (first + FETCH_CONCURRENCY > MAX_DETAIL_PAGES) truncated = true;
         $rows.innerHTML =
           `<tr><td colspan="9" class="dq-bar-empty">Loading… ${items.length.toLocaleString()} so far</td></tr>`;
       }
