@@ -5817,3 +5817,4 @@ a.fr-shipped:hover { text-decoration: underline; }
   color: var(--muted);
   font-style: italic;
 }
+.cs-label.is-active { color: var(--accent); font-weight: 700; }

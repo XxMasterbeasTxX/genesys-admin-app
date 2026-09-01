@@ -31,6 +31,8 @@ is new.
 | 1.1 | Open **Dashboards › Quality › Evaluation Scores** | The real page, not "Coming soon" | | |
 | 1.2 | Read the permission note | Names `analytics:evaluationAggregate:view` and the Hourly Interacting warning | | |
 | 1.3 | Look at the filter bar | Same bar as Coverage, but **no "Dates refer to"** — that is set on Coverage and inherited | | |
+| 1.3a | If any filter is set | The bar reads "n filters active" and **Clear filters** is highlighted — selections persist across pages for the session, so this is how you spot one you set earlier | | |
+| 1.3b | Click **Clear filters** | The count and the highlight both go | | |
 | 1.4 | Set a scope on Coverage, then come here | The same scope is already applied | | |
 | 1.5 | Count the panels | Average score over time, Score distribution, Lowest-scoring agents, By form, Critical scores | | |
 
@@ -119,7 +121,8 @@ counts. This is the one arithmetic error the data shape invites.
 | 9.4 | Check the order | Lowest average first | | |
 | 9.5 | Set a range over three months | The sub-line says how many windows it combined, and it still returns data | | |
 | 9.6 | Compare a 12-month result against four separate 3-month loads | Counts should add up and the weighted average should match | | |
-| 9.7 | If the band errors | **Report the exact message.** The open question is whether the endpoint accepts our form CONTEXT id where its docs say "a single formID" | | Message: ______ |
+| 9.7 | Read the band’s sub-line | Names the form and says "current published version only" — the endpoint rejects a form context id, so this band is scoped to one version. **Answered 2026-09-01** | | |
+| 9.8 | If your org has several versions of a form | Counts here may be lower than the By form band, which spans every version. Expected, not a fault | | |
 
 ## 10. The evaluations table (§7.4)
 
@@ -127,6 +130,7 @@ counts. This is the one arithmetic error the data shape invites.
 |---|---|---|---|---|
 | 10.1 | Load a range of three months or less | The table appears with rows | | |
 | 10.2 | Columns | Agent, Evaluator, Form, Conversation, Submitted, Score, Critical, Status, Released | | |
+| 10.2a | Agent and Form columns | **Names, never GUIDs** | | |
 | 10.3 | An AI-scored row | Evaluator reads **Virtual Supervisor** | | |
 | 10.4 | **Scored by** — switch between "A person" and "AI" | The rows change; page resets to 1 | | |
 | 10.5 | **The open question.** Compare the two counts against the AI-scored tile | Does "A person" + "AI" equal the total, or does one of them already include both? | | Answer: ______ |

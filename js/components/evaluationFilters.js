@@ -126,7 +126,7 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
           <div data-f="media"></div>
         </div>
         <div class="cs-control-group dq-filter-reset">
-          <label class="cs-label">&nbsp;</label>
+          <label class="cs-label" data-f="activeCount">&nbsp;</label>
           <button class="btn btn-sm" data-f="reset">Clear filters</button>
         </div>
       </div>
@@ -265,10 +265,29 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
     };
   }
 
+  /**
+   * Say how many scope filters are set.
+   *
+   * Selections persist across pages and reloads for the whole session, which is
+   * what makes moving between the three Quality pages keep your scope. The cost
+   * is that a filter set five minutes ago on another page silently narrows this
+   * one, with nothing on screen saying so. This is the something.
+   */
+  function markActiveFilters() {
+    const f = getFilters();
+    const n = ["agentIds", "teamIds", "divisionIds", "formContextIds", "mediaTypes"]
+      .reduce((sum, k) => sum + (f[k]?.length || 0), 0);
+    const $count = $("activeCount");
+    $count.textContent = n ? `${n} filter${n === 1 ? "" : "s"} active` : "\u00a0";
+    $count.classList.toggle("is-active", n > 0);
+    $("reset").classList.toggle("btn-primary", n > 0);
+  }
+
   function emit() {
     const filters = getFilters();
     saveStored(filters);
     validate(filters);
+    markActiveFilters();
     onChange?.(filters);
   }
 
@@ -295,6 +314,7 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
   }
 
   markActivePreset();
+  markActiveFilters();
 
   return {
     el,
@@ -358,6 +378,17 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
           job.ms.setEnabled(items.length > 0);
           const store = lookups[job.lookupKey];
           if (store) for (const i of items) store.set(i.id, i.label);
+          // Forms are keyed by CONTEXT id for filtering, but an evaluation
+          // record names its form by VERSION id. Both point at the same name,
+          // so both go in the lookup — otherwise a detail row can only show a
+          // GUID for a form the filter bar is already displaying by name.
+          if (job.lookupKey === "forms") {
+            for (const row of rows) {
+              const name = job.map(row).label;
+              if (row.id) lookups.forms.set(row.id, name);
+              if (row.contextId) lookups.forms.set(row.contextId, name);
+            }
+          }
           job.ms.setPlaceholder(items.length ? job.placeholder : `No ${job.label}`);
           const keep = restore?.[job.restoreKey];
           if (keep?.length) job.ms.setSelected(keep.filter((id) => items.some((i) => i.id === id)));
@@ -370,6 +401,7 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
 
       if (restore?.mediaTypes?.length) media.setSelected(restore.mediaTypes);
 
+      markActiveFilters();
       return warnings;
     },
 

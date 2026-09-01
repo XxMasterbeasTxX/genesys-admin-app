@@ -46,7 +46,10 @@ query builders and fire all of them on every load.
   serialises to both query shapes with no divergence. This is the decision that
   keeps §5.1 small.
 - **Filters: date range, agents, work teams, divisions, forms, media type.**
-  No queue filter - see 9a; evaluations carry no queue to filter on. Built once as a shared component (§5.2), persisted in `sessionStorage`
+  No queue filter - see 9a; evaluations carry no queue to filter on. Selections
+  persist for the session across all three pages, and the bar now SAYS how many
+  are set: persistence is what makes the shared scope useful, and it is also how
+  a filter chosen on another page five minutes ago silently narrows this one. Built once as a shared component (§5.2), persisted in `sessionStorage`
   so moving between the three pages keeps your scope.
 - **Short ranges are offered, and days are LOCAL** (§5.4). Today, Yesterday and
   This week sit alongside the calendar-complete presets, and the default range
@@ -526,6 +529,32 @@ averages to get an org average is wrong whenever queues have unequal evaluation
 counts, and it is the mistake this shape invites. `evaluationQuery.js` returns
 `{ count, sum }` and never a bare average, so the wrong thing is awkward to
 write.
+
+### 7.3a Question groups need a form VERSION, not a form context
+
+**Settled on dev, 2026-09-01.** The endpoint says exactly what it wants:
+
+> Aggregating against question group level fields require either a single top
+> level Term aggregation for questionGroupId and querying by either a single
+> formId or a list of questionGroupIds, OR querying by a single questionGroupId
+> or questionId
+
+A form **context** id is rejected. Everywhere else in this feature the context
+is the right key — §5.1 keys forms on it precisely so that filtering by a form
+does not silently exclude evaluations scored on its other versions. This one
+band cannot have that, so it resolves the context to the id of its latest
+published version and scopes the query to that.
+
+**The consequence is stated on screen** rather than hidden: the band's sub-line
+names the form and says "current published version only". Evaluations scored on
+an earlier version are not in it. That is the trade the context id exists to
+avoid everywhere else, and the band is the one place it cannot be avoided.
+
+**A related fix the same screenshot forced.** The detail table showed a GUID in
+its Form column, because the lookup was keyed on context ids while an evaluation
+record names its form by VERSION id. The lookup now answers to both — the two
+point at the same name, and a row showing a GUID for a form the filter bar is
+displaying by name is a lookup this page declined to do.
 
 ### 7.3 The question-level band needs a single form
 

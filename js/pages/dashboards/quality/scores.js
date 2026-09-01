@@ -567,9 +567,38 @@ export default function renderScores({ me, api, orgContext, access }) {
     }
 
     const windows = splitCount(f);
-    $sub.textContent = "Average score per question group, weakest first." +
-      (windows > 1 ? ` Queried in ${windows} three-month windows and combined.` : "");
     try {
+      // The endpoint is explicit about what it will accept here: "a single top
+      // level Term aggregation for questionGroupId and querying by either a
+      // single formId or a list of questionGroupIds". A form CONTEXT id — which
+      // is what the filter bar carries, and what every other band uses — is
+      // rejected. So the context is resolved to the id of its latest published
+      // VERSION and the query is scoped to that.
+      //
+      // The consequence is real and is stated on screen: this band covers the
+      // current published version of the form only. Evaluations scored on an
+      // earlier version are not in it, which is exactly the trade the context
+      // id exists to avoid everywhere else.
+      const forms = await fetchEvaluationFormsByContext(api, orgId, f.formContextIds);
+      const form = forms[0];
+      if (!form?.id) {
+        $sub.textContent = "Average score per question group, weakest first.";
+        $bars.innerHTML = '<div class="dq-bar-empty">Could not resolve that form.</div>';
+        $note.textContent = "The form could not be looked up, so there is no version to query by.";
+        $note.hidden = false;
+        return;
+      }
+
+      const names = new Map();
+      for (const g of form.questionGroups || []) {
+        if (g.id) names.set(g.id, g.name || g.id);
+      }
+
+      $sub.textContent =
+        `Average score per question group, weakest first — ${form.name || "this form"}, ` +
+        "current published version only." +
+        (windows > 1 ? ` Queried in ${windows} three-month windows and combined.` : "");
+
       // The search endpoint caps each request at three months, but this
       // aggregation is TERM with a STATS child — both recombine across
       // consecutive windows exactly (§9.2), and questionGroupId is far below
@@ -577,24 +606,14 @@ export default function renderScores({ me, api, orgContext, access }) {
       // cardinality fields. So a long range becomes several requests rather
       // than a refusal, and this band keeps working where the row-level table
       // below genuinely cannot.
-      const [merged, forms] = await Promise.all([
-        aggregateAcrossWindows(f, (w) => searchEvaluations(api, orgId, toSearchRequest(f, {
+      const merged = await aggregateAcrossWindows(f, (w) => searchEvaluations(api, orgId,
+        toSearchRequest({ ...f, formContextIds: [] }, {
           window: w,
           systemSubmitted: detailWho() === "ai",
+          extraCriteria: [{ type: "EXACT", field: "formId", values: [form.id] }],
           aggregations: [termAggregationWith("byGroup", "questionGroupId",
             [statsAggregation("score", "questionGroupScorePercentage")])],
-        }))),
-        // Names, not GUIDs: a list of question-group ids is not a finding
-        // anyone can act on. Failure here degrades the labels, not the band.
-        fetchEvaluationFormsByContext(api, orgId, f.formContextIds).catch(() => []),
-      ]);
-
-      const names = new Map();
-      for (const form of forms) {
-        for (const g of form.questionGroups || []) {
-          if (g.id) names.set(g.id, g.name || g.id);
-        }
-      }
+        })));
 
       const buckets = merged.aggregations.byGroup?.buckets || [];
       const rows = buckets
