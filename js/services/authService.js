@@ -31,7 +31,11 @@ export function saveTabHandoff() {
   const token = sessionStorage.getItem(K_ACCESS_TOKEN);
   const expiresAt = sessionStorage.getItem(K_EXPIRES_AT);
   if (!token || !expiresAt) return;
-  localStorage.setItem(K_HANDOFF, JSON.stringify({ token, expiresAt, ts: Date.now() }));
+  // sessionOrg travels with the token it describes. Dropping it would land the
+  // receiving tab with an unmarked session — read as a mismatch there, costing a
+  // needless re-login on a handoff that was perfectly legitimate.
+  const sessionOrg = sessionStorage.getItem(K_SESSION_ORG);
+  localStorage.setItem(K_HANDOFF, JSON.stringify({ token, expiresAt, sessionOrg, ts: Date.now() }));
 }
 
 /**
@@ -43,11 +47,15 @@ function consumeTabHandoff() {
   const raw = localStorage.getItem(K_HANDOFF);
   if (!raw) return;
   try {
-    const { token, expiresAt, ts } = JSON.parse(raw);
+    const { token, expiresAt, sessionOrg, ts } = JSON.parse(raw);
     // Only accept handoffs less than 30 seconds old
     if (Date.now() - ts > 30_000) { localStorage.removeItem(K_HANDOFF); return; }
     sessionStorage.setItem(K_ACCESS_TOKEN, token);
     sessionStorage.setItem(K_EXPIRES_AT, expiresAt);
+    // A handoff written before this field existed carries no marker: leave it
+    // absent rather than inventing one, so the reuse check re-logins instead of
+    // trusting a session whose org nobody recorded.
+    if (typeof sessionOrg === "string") sessionStorage.setItem(K_SESSION_ORG, sessionOrg);
   } catch (_) { /* ignore corrupt data */ }
   localStorage.removeItem(K_HANDOFF);
 }
@@ -385,6 +393,14 @@ export function loginViaPopup() {
         sessionStorage.setItem(K_EXPIRES_AT, String(d.expiresAt));
         storeLoginTarget(d.loginRegion || CONFIG.region, d.loginClientId || CONFIG.oauthClientId);
         if (d.orgHint) sessionStorage.setItem(K_ORG_HINT, d.orgHint);
+        // Stamp the session, exactly as the redirect path does. The popup is a
+        // separate browsing context with its own sessionStorage and never stores
+        // the hint, so it usually reports orgHint: null even for a customer
+        // sign-in — `hint`, read in THIS window when the popup was opened, is the
+        // reliable answer. Without this the token lands unmarked, the next boot
+        // reads that as a mismatch and clears it, and the sign-in button appears
+        // to do nothing for ever.
+        sessionStorage.setItem(K_SESSION_ORG, d.orgHint || hint || "");
         resolve({ status: "authenticated" });
       } else {
         reject(new Error((d && d.error) || "auth-failed"));
@@ -463,9 +479,18 @@ export async function ensureAuthenticatedWithMe() {
   // a session with no marker is a pre-existing one from before this check shipped:
   // treated as a mismatch, costing one re-login, after which it is self-healing.
   //
-  // No loop guard is needed and none is used: clearAuthSession() drops the token,
-  // so the next boot has nothing to reuse and lands in branch C's sign-in gate.
-  // This branch cannot fire twice in a row, and every new token stamps a marker.
+  // THE INVARIANT THIS DEPENDS ON: every site that mints a session must stamp
+  // K_SESSION_ORG. There are three — the redirect exchange below, the popup's
+  // finish() in loginViaPopup (the one the Genesys iframe actually uses, since a
+  // framed app cannot navigate itself to the login host), and consumeTabHandoff.
+  // Miss one and the sign-in button dies silently: that path mints an unmarked
+  // token, this check reads unmarked as a mismatch and clears it, and the user
+  // lands back on the gate every time with nothing to show for the click. Shipped
+  // exactly that way once, stamping only the redirect path. Add a fourth minting
+  // site and it must stamp too.
+  //
+  // Given the invariant holds, no loop guard is needed: clearAuthSession() drops
+  // the token, so the next boot has nothing to reuse and lands in branch C.
   const existing = getValidAccessToken();
   if (existing) {
     const requested = urlOrgParam();

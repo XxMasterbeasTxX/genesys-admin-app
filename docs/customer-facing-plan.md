@@ -422,8 +422,15 @@ never from a request field:
        param as "internal" would sign every customer out on their first reload.
      - The stored hint is deliberately not cleared on mismatch: it is the target the next login must use, and
        it is what carries the org across the redirect leg, where the URL has only `?code=`.
-     - No loop guard: clearing the session removes the token, so the next boot has nothing to reuse and lands
-       in the sign-in gate. The branch cannot fire twice running, and every new token stamps a marker.
+     - **Every site that mints a session must stamp the marker.** There are three: the redirect exchange,
+       `loginViaPopup`'s `finish()` — the one the Genesys iframe actually uses, since a framed app cannot
+       navigate itself to the login host — and `consumeTabHandoff`. Shipped first stamping only the redirect
+       path, which killed the sign-in button: the popup minted an unmarked token, the next boot read unmarked
+       as a mismatch and cleared it, and the gate came back every time. `saveTabHandoff` now carries the
+       marker alongside the token so a legitimate new tab is not re-logged in; a handoff written before that
+       field existed arrives unmarked and re-logins, which is the safe direction.
+     - No loop guard, given that invariant holds: clearing the session removes the token, so the next boot
+       has nothing to reuse and lands in the sign-in gate.
 
      | # | Session | URL | Expected |
      |---|---|---|---|
@@ -436,9 +443,15 @@ never from a request field:
      | 7 | customer (`dktv`) | `?org=test-ie` | token dropped → re-login as Test IE |
      | 8 | login return leg, hint `test-ie` in storage | `?code=…&state=…` | stamps `gc_session_org="test-ie"` |
      | 9 | login return leg, no hint | `?code=…&state=…` | stamps `gc_session_org=""` |
+     | 10 | popup sign-in for a customer (popup reports `orgHint: null`) | — | stamps `test-ie`, and the next boot reuses it |
+     | 11 | popup sign-in for internal | — | stamps `""` |
+     | 12 | handoff of a customer session | `?org=test-ie` in the receiving tab | marker travels; no re-login |
+     | 13 | handoff of an internal session | `?org=test-ie` in the receiving tab | still rejected |
 
-     **[DONE — all nine verified 2026-09-01](against the real `authService.js` with only its imports and the
-     DOM stubbed; cases 1–7 drive `ensureAuthenticatedWithMe` branch B, 8–9 the branch A login leg.)**
+     **[DONE — all thirteen verified 2026-09-01](against the real `authService.js` with only its imports and
+     the DOM stubbed; cases 1–7 drive `ensureAuthenticatedWithMe` branch B, 8–9 the redirect login leg, 10–11
+     `loginViaPopup`, 12–13 the handoff. Cases 10–11 were confirmed to FAIL with the popup stamp removed —
+     case 10 reproduces the dead sign-in button exactly.)**
      Not fixed, by design: the mirror case — an internal user opening the bare origin in a tab holding a
      customer session keeps the stored hint and stays in customer mode. It fails toward *less* access, and
      fixing it means deciding a bare URL means "internal", which is exactly what breaks case 3.
