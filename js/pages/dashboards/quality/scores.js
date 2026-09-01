@@ -36,6 +36,7 @@ import {
 } from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
+import { attachColumnFilters } from "../../../utils/columnFilter.js";
 
 /** Hourly for a day or two, daily to about two months, weekly beyond. */
 function pickGranularity(from, to) {
@@ -175,14 +176,32 @@ export default function renderScores({ me, api, orgContext, access }) {
         </div>
         <div class="dq-table-wrap" data-c="detailWrap" hidden>
           <table class="dq-table">
-            <thead><tr>
-              <th>Agent</th><th>Evaluator</th><th>Form</th>
-              <th>Conversation</th><th>Submitted</th>
-              <th class="is-num">Score</th><th class="is-num">Critical</th>
-              <th>Status</th><th>Released</th>
-            </tr></thead>
+            <thead>
+              <tr>
+                <th>Agent</th><th>Evaluator</th><th>Form</th>
+                <th>Conversation</th><th>Submitted</th>
+                <th class="is-num">Score</th><th class="is-num">Critical</th>
+                <th>Status</th><th>Released</th>
+              </tr>
+              <tr class="ll-filter-row">
+                <th></th><th></th><th></th><th></th><th></th>
+                <th></th><th></th><th></th><th></th>
+              </tr>
+            </thead>
             <tbody data-c="detailRows"></tbody>
           </table>
+        </div>
+        <div class="dq-foot" data-c="detailFoot" hidden>
+          <span class="dq-foot-count" data-c="detailCount"></span>
+          <label class="dq-foot-size">
+            Rows per page
+            <select class="input" data-c="detailSize">
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </label>
         </div>
         <div class="dq-panel-note" data-c="detailNote" hidden></div>
       </details>
@@ -197,6 +216,18 @@ export default function renderScores({ me, api, orgContext, access }) {
           fall while the total score holds up, which is the case worth catching.
         </p>
         <div class="dq-bars" data-c="byAgentCritical"></div>
+        <div class="dq-foot">
+          <span class="dq-foot-count" data-c="criticalCount"></span>
+          <label class="dq-foot-size">
+            Agents shown
+            <select class="input" data-c="criticalSize">
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </label>
+        </div>
       </details>
     </div>
   `;
@@ -227,7 +258,12 @@ export default function renderScores({ me, api, orgContext, access }) {
     ? access.can("dashboards.quality.scores", "detail")
     : true;
 
-  const DETAIL_PAGE_SIZE = 25;
+  // attachColumnFilters registers a document-level listener and returns its
+  // disposer; the table is redrawn on every page turn, so the previous one is
+  // released before the next is attached, and again on teardown.
+  let disposeFilters = null;
+  let detailSize = 25;
+  let criticalRows = [];
   let detailPage = 1;
   let aiCount = 0;
   let humanCount = 0;
@@ -243,6 +279,19 @@ export default function renderScores({ me, api, orgContext, access }) {
     if (org && lastLoaded) renderQuestionGroups(org.id, lastLoaded);
     detailDirty = true;
     requestDetail();
+  });
+
+  $("detailSize").addEventListener("change", () => {
+    detailSize = Number($("detailSize").value) || 25;
+    detailPage = 1;
+    detailDirty = true;
+    requestDetail();
+  });
+
+  // Critical scores needs no request for this — the by-agent aggregate already
+  // holds every agent, so the selector only decides how many bars are drawn.
+  $("criticalSize").addEventListener("change", () => {
+    renderCritical();
   });
 
   $("detailSort").addEventListener("change", () => {
@@ -301,7 +350,11 @@ export default function renderScores({ me, api, orgContext, access }) {
     $results.hidden = true;
     primeOptions();
   });
-  if (unsubscribe) el.__destroy = unsubscribe;
+  if (unsubscribe) {
+    el.__destroy = () => { unsubscribe(); disposeFilters?.(); };
+  } else {
+    el.__destroy = () => disposeFilters?.();
+  }
 
   primeOptions();
 
@@ -534,9 +587,9 @@ export default function renderScores({ me, api, orgContext, access }) {
         toScoreRows(parseGroupedAggregate(formResp, "contextId", "oTotalScore"), lookups.forms,
           { unknownLabel: "Unknown form", emptyLabel: "No form recorded" }));
 
-      const criticalRows = toScoreRows(agentCritical, lookups.agents,
+      criticalRows = toScoreRows(agentCritical, lookups.agents,
         { unknownLabel: "Unknown user", emptyLabel: "No agent recorded" });
-      renderScoreBars($("byAgentCritical"), criticalRows);
+      renderCritical();
 
       // A collapsed panel that says nothing is just a thing to click. The
       // summary carries the count so it is worth reading shut.
@@ -730,6 +783,15 @@ export default function renderScores({ me, api, orgContext, access }) {
       : `No evaluations scored by a person here, but ${other.toLocaleString()} were scored by AI — switch “Scored by” above.`;
   }
 
+  /** Draw the critical-score bars at the currently chosen size. */
+  function renderCritical() {
+    const size = Number($("criticalSize").value) || 25;
+    renderScoreBars($("byAgentCritical"), criticalRows, { limit: size });
+    $("criticalCount").textContent = criticalRows.length
+      ? `Showing ${Math.min(size, criticalRows.length).toLocaleString()} of ${criticalRows.length.toLocaleString()} agent(s)`
+      : "";
+  }
+
   /** How many 3-month windows a range needs. */
   function splitCount(f) {
     return exceedsSearchWindow(f.from, f.to)
@@ -780,12 +842,14 @@ export default function renderScores({ me, api, orgContext, access }) {
       $sub.textContent = "Individual evaluations need the quality:evaluation:searchAny permission.";
       $wrap.hidden = true;
       $controls.hidden = true;
+      $("detailFoot").hidden = true;
       return;
     }
     if (exceedsSearchWindow(f.from, f.to)) {
       $sub.textContent = "";
       $wrap.hidden = true;
       $controls.hidden = true;
+      $("detailFoot").hidden = true;
       $note.textContent =
         "Individual evaluations are shown for ranges of three months or less. " +
         "Everything above works at any range; this table is the one part that cannot, " +
@@ -802,7 +866,7 @@ export default function renderScores({ me, api, orgContext, access }) {
 
     try {
       const resp = await searchEvaluations(api, orgId, toSearchRequest(f, {
-        pageSize: DETAIL_PAGE_SIZE,
+        pageSize: detailSize,
         pageNumber: detailPage,
         sortBy: $("detailSort").value,
         sortOrder: "DESC",
@@ -862,9 +926,35 @@ export default function renderScores({ me, api, orgContext, access }) {
         $note.hidden = false;
       }
 
+      // Filters and sorting act on the rows this page is holding. The count
+      // line says so in as many words, because a filter that silently searched
+      // a quarter of the matches would be exactly the kind of half-truth this
+      // feature has already been caught by twice.
+      // Only the tbody is redrawn on a page turn, so the filter row survives —
+      // and a second attach would inject a second set of buttons beside the
+      // first, leaving the live ones bound to rows no longer in the document.
+      // Emptying the row first is what keeps one attach per render.
+      disposeFilters?.();
+      for (const th of $("detailWrap").querySelectorAll(".ll-filter-row th")) {
+        th.replaceChildren();
+        th.className = "";
+      }
+      for (const th of $("detailWrap").querySelectorAll("thead tr:first-child th")) {
+        th.querySelector(".cf-sort-mark")?.remove();
+        th.classList.remove("cf-sortable", "cf-sorted");
+      }
+      disposeFilters = attachColumnFilters($("detailWrap"), {
+        sortable: true,
+        numericCols: [5, 6],
+        countEl: $("detailCount"),
+        totalLabel: "on this page",
+      });
+      $("detailCount").textContent = `${items.length} on this page`;
+      $("detailFoot").hidden = false;
+
       $("detailPage").textContent = `Page ${detailPage}`;
       $("detailPrev").disabled = detailPage <= 1;
-      $("detailNext").disabled = items.length < DETAIL_PAGE_SIZE;
+      $("detailNext").disabled = items.length < detailSize;
     } catch (err) {
       $rows.innerHTML = '<tr><td colspan="9" class="dq-bar-empty">Could not load evaluations.</td></tr>';
       $note.textContent = err.status === 403

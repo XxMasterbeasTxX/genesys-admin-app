@@ -5847,3 +5847,35 @@ a.fr-shipped:hover { text-decoration: underline; }
   font-variant-numeric: tabular-nums;
 }
 .dq-fold[open] > summary { margin-bottom: 8px; }
+
+/* Sortable headers (opt-in via attachColumnFilters { sortable: true }) */
+.cf-sortable { cursor: pointer; user-select: none; }
+.cf-sortable:hover { color: var(--text); }
+.cf-sortable:focus-visible { outline: 2px solid #4c8dff; outline-offset: -2px; }
+.cf-sorted { color: #4c8dff; }
+.cf-sort-mark { font-size: 10px; }
+
+/* Panel footer: row count on the left, page size on the right */
+.dq-foot {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+.dq-foot-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.dq-foot-size {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+}
+.dq-foot-size .input { padding: 4px 8px; width: auto; }

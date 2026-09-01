@@ -38,6 +38,8 @@ is new.
 | 1.6 | **Evaluations** and **Critical scores** | Both start **folded** — they grow with the size of the programme | | |
 | 1.7 | Their summaries while folded | Carry a count: "16 in this period", "12 agent(s)" — or "needs a range of 3 months or less" | | |
 | 1.8 | Open **Critical scores** | Content is already there — it costs no extra request | | |
+| 1.8a | **Agents shown** at the bottom of Critical scores | 25 / 50 / 100 / 200; changes how many bars are drawn, with no new request | | |
+| 1.8b | Its count line | Reads "Showing n of m agent(s)" | | |
 | 1.9 | Network tab: load with **Evaluations** folded | **No** row search fires; the folded table costs nothing | | |
 | 1.10 | Open **Evaluations** | One row search fires then | | |
 | 1.11 | Fold and unfold it again without changing anything | No further request — folding is navigation, not a new question | | |
@@ -147,6 +149,15 @@ counts. This is the one arithmetic error the data shape invites.
 | 10.5 | **The open question.** Compare the two counts against the AI-scored tile | Does "A person" + "AI" equal the total, or does one of them already include both? | | Answer: ______ |
 | 10.6 | **Sort by** — change it | Rows re-sort; page resets to 1 | | |
 | 10.7 | **Next** / **Previous** | Paging works; Previous disabled on page 1; Next disabled on a short last page | | |
+| 10.11 | **Rows per page** at the bottom | 25 / 50 / 100 / 200; changing it refetches from page 1 | | |
+| 10.12 | Click a **column header** | Sorts by that column; clicking again reverses; an arrow marks the sorted one | | |
+| 10.13 | Sort **Score** and **Critical** | Sorted as numbers, not text — 100% must not land between 10% and 20% | | |
+| 10.14 | Open a column’s filter button | A search box, **All** / **None**, and a checkbox per distinct value | | |
+| 10.15 | Click **None**, then tick one value | Only those rows remain; the footer reads "1 / 25 on this page" | | |
+| 10.16 | Click **All** | Every row returns and the count drops the fraction | | |
+| 10.17 | Type in a filter’s search box | The value list narrows as you type | | |
+| 10.18 | Turn the page, then check the header | **One** set of filter buttons per column, never two | | |
+| 10.19 | Note the scope | Filters and sorting act on the loaded page only. Raise **Rows per page** to widen it | | |
 | 10.8 | Set a range over three months | The table hides and explains that only this part is capped | | |
 | 10.9 | Narrow the range again | It comes back | | |
 | 10.10 | Any row you lack permission for | Shows as "An evaluation you do not have permission to see", not omitted | | |

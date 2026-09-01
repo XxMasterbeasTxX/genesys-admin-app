@@ -15,6 +15,11 @@
  * @param {number[]}    [opts.skipCols]    - Col indices to skip (used when filterCols absent).
  * @param {HTMLElement} [opts.countEl]     - Span to rewrite with visible/total count.
  * @param {string}      [opts.totalLabel]  - Label appended to count, e.g. "rows" or "roles".
+ * @param {boolean}     [opts.sortable]    - Click a header to sort by that column.
+ *                                           OFF by default, so the eight pages that
+ *                                           already use this keep the behaviour they shipped with.
+ * @param {number[]}    [opts.numericCols] - Columns to compare as numbers when sorting.
+ *                                           Only meaningful with `sortable`.
  * @returns {Function} cleanup — removes global listeners; call when table is destroyed.
  */
 export function attachColumnFilters(tableWrap, opts = {}) {
@@ -223,6 +228,68 @@ export function attachColumnFilters(tableWrap, opts = {}) {
     const btn      = btnMap[colIdx];
     const isActive = activeFilters[colIdx] != null;
     btn?.classList.toggle("cf-btn--active", isActive);
+  }
+
+  // ── Sorting (opt-in) ────────────────────────────────────────────────────────
+  //
+  // Sorts the rows the table is HOLDING, which for a server-paged table is one
+  // page. That is the same scope the filters above work at, and the two staying
+  // consistent is what makes the count line honest — a header that silently
+  // reordered only a quarter of the matches would be worse than no header.
+  if (opts.sortable) {
+    const numeric = new Set(opts.numericCols || []);
+    let sortCol = null;
+    let sortAsc = true;
+
+    /** Text of a cell, as a number when the column is numeric. */
+    function cellKey(tr, colIdx) {
+      const raw = (tr.querySelectorAll("td")[colIdx]?.textContent || "").trim();
+      if (!numeric.has(colIdx)) return raw.toLowerCase();
+      // Strip anything that is not part of a number — "50.0%" and
+      // "1,284 eval(s)" both have a number in them worth sorting by.
+      const n = parseFloat(raw.replace(/[^0-9.\-]/g, ""));
+      return Number.isNaN(n) ? -Infinity : n;
+    }
+
+    function applySort() {
+      if (sortCol == null) return;
+      const rows = Array.from(tbody.querySelectorAll("tr"));
+      rows.sort((a, b) => {
+        const ka = cellKey(a, sortCol);
+        const kb = cellKey(b, sortCol);
+        if (ka < kb) return sortAsc ? -1 : 1;
+        if (ka > kb) return sortAsc ? 1 : -1;
+        return 0;
+      });
+      for (const tr of rows) tbody.append(tr);
+    }
+
+    headerCells.forEach((th, colIdx) => {
+      th.classList.add("cf-sortable");
+      th.tabIndex = 0;
+      th.setAttribute("role", "button");
+      const mark = document.createElement("span");
+      mark.className = "cf-sort-mark";
+      th.append(mark);
+
+      const toggle = () => {
+        if (sortCol === colIdx) sortAsc = !sortAsc;
+        else { sortCol = colIdx; sortAsc = true; }
+        for (const other of headerCells) {
+          const m = other.querySelector(".cf-sort-mark");
+          if (m) m.textContent = "";
+          other.classList.remove("cf-sorted");
+        }
+        mark.textContent = sortAsc ? " ▲" : " ▼";
+        th.classList.add("cf-sorted");
+        applySort();
+      };
+
+      th.addEventListener("click", toggle);
+      th.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+      });
+    });
   }
 
   // ── Close dropdown on outside click ────────────────────────────────────────
