@@ -3,51 +3,54 @@
  *
  * See docs/dashboards-quality-design.md §8.
  *
- * The question: is AI scoring working, and is anyone accepting what it suggests?
+ * The question: is AI doing the work, is it succeeding, and is anyone letting
+ * it stand?
  *
- * Two sources, deliberately:
+ * TWO LANES, NEVER ADDED TOGETHER. Genesys ships two different AI features and
+ * the first build of this page averaged them into one word:
  *
- *   POST /api/v2/quality/evaluations/search        the AI-specific figures
- *   POST /api/v2/analytics/evaluations/aggregates/query   counts and scores
+ *   Auto-evaluation      AI scores and SUBMITS the evaluation itself.
+ *                        systemSubmitted: true. Fails by producing nothing.
+ *                        Trust signal: a person disputing or rescoring it.
  *
- * The AI-only data — failure types, suggestion acceptance, disputes, rescores,
- * which questions the model answered — exists ONLY as search aggregations. The
- * plain counts and the score comparison come from the aggregate domain instead,
- * which carries no date-range limit and costs one request rather than a walk
- * across 3-month windows.
+ *   Evaluation Assistance  AI SUGGESTS answers to a human evaluator, who
+ *                        accepts or overrides. systemSubmitted: false. Fails
+ *                        by producing something nobody takes.
+ *                        Trust signal: the acceptance rate.
  *
- * The page's gate is `quality:evaluation:searchAny`. The aggregate half
- * additionally wants `analytics:evaluationAggregate:view`, which is NOT part of
- * that gate — so those bands degrade on their own and say why, and the
- * AI-specific ones still work. That is the same split Coverage uses for its
- * denominator.
+ * They are configured differently, fail differently and are trusted
+ * differently, so one blended "AI acceptance" number answers nothing about
+ * either. That split also fixes a real bug: the old page asked a
+ * systemSubmitted:true request for eaSuggestionCount — assistance figures from
+ * the population that by definition has none.
+ *
+ * ONE SOURCE: POST /api/v2/quality/evaluations/search. The analytics aggregate
+ * domain was only ever here to carry the counts and the AI-vs-human
+ * comparison; the comparison is gone (the two never score the same sample, so
+ * the gap was not evidence of anything) and the search response's own `total`
+ * carries the counts. So the page needs one permission,
+ * `quality:evaluation:searchAny`, and has no half that degrades separately.
+ *
+ * RATES, NOT COUNTS, for the two bands that matter. A count says what
+ * happened; a rate over time says whether it is getting better or worse, which
+ * is the only version of this anyone can act on.
  *
  * Read-only, so no Activity Log entry.
  */
 
 import { createEvaluationFilters } from "../../../components/evaluationFilters.js";
 import {
-  toAggregateQuery, toSearchRequest, dimensionPredicate,
-  parseGroupedAggregate, parseAggregateTotal, parseAggregateSeries,
-  statsAverage, aggregateAcrossWindows,
-  termAggregation, termAggregationWith, sumAggregation, statsAggregation,
+  toSearchRequest, aggregateAcrossWindows,
+  termAggregation, termAggregationWith, sumAggregation,
+  dateHistogramAggregation, searchDateField, calendarIntervalFor,
   AI_FAILURE_LABELS, exceedsSearchWindow,
 } from "../../../lib/evaluationQuery.js";
-import {
-  queryEvaluationAggregates, searchEvaluations, fetchEvaluationFormsByContext,
-} from "../../../services/genesysApi.js";
+import { searchEvaluations, fetchEvaluationFormsByContext } from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml, spinHtml } from "../../../utils.js";
 
-/** Hourly for a day or two, daily to about two months, weekly beyond. */
-function pickGranularity(from, to) {
-  const days = dayCount(from, to);
-  if (days <= 2) return "PT1H";
-  return days <= 62 ? "P1D" : "P1W";
-}
-
-function granularityLabel(g) {
-  return g === "PT1H" ? "Hourly" : g === "P1D" ? "Daily" : "Weekly";
+function intervalLabel(ci) {
+  return ci === "1h" ? "Hourly" : ci === "1d" ? "Daily" : "Weekly";
 }
 
 /** A percentage, or null when the denominator is nothing. */
@@ -67,6 +70,27 @@ function failureLabel(raw) {
   return AI_FAILURE_LABELS[raw] || raw.replace(/([a-z])([A-Z])/g, "$1 $2");
 }
 
+/**
+ * A histogram bucket key as a date.
+ *
+ * The endpoint returns either an epoch-millisecond key or a formatted
+ * `keyAsString` depending on the aggregation, and the normaliser hands over
+ * whichever it got. Both are handled rather than one assumed.
+ */
+function bucketDate(key) {
+  const raw = String(key ?? "");
+  const d = /^\d+$/.test(raw) ? new Date(Number(raw)) : new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function bucketStamp(key, ci) {
+  const d = bucketDate(key);
+  if (!d) return String(key ?? "").slice(0, 16);
+  return ci === "1h"
+    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
 export default function renderAiScoring({ me, api, orgContext, access }) {
   const el = document.createElement("section");
   el.className = "card";
@@ -76,11 +100,12 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
     <hr class="hr">
 
     <p class="page-desc">
-      How much of your quality programme AI is doing, whether it is succeeding,
-      and whether anyone is accepting what it suggests: the AI share of
-      evaluations, suggestion acceptance, scoring failures by cause, and how
-      AI-scored evaluations compare with human-scored ones.
+      What AI is doing in your quality programme, whether it is succeeding, and
+      whether people are letting it stand. Auto-evaluation and Evaluation
+      Assistance are two different features and are reported separately: one
+      submits evaluations on its own, the other suggests answers to a human.
     </p>
+
     <div data-c="filters"></div>
 
     <div class="cs-actions">
@@ -91,60 +116,69 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
 
     <div data-c="results" hidden>
       <div class="dq-range-line" data-c="rangeLine"></div>
-      <div class="dq-panel-note" data-c="emptyWhy" hidden></div>
 
-      <div class="dq-tiles" data-c="tiles"></div>
+      <!-- ── Lane A — auto-evaluation ─────────────────────────────── -->
+      <div class="dq-lane">
+        <h2 class="dq-lane-title">Auto-evaluation</h2>
+        <p class="dq-lane-sub">
+          AI scores and submits the whole evaluation itself, as Virtual
+          Supervisor. No person is involved unless one disputes or rescores it.
+        </p>
 
-      <div class="dq-panel">
-        <h3 class="dq-panel-title">AI and human evaluations over time</h3>
-        <p class="dq-panel-sub" data-c="trendSub"></p>
-        <div class="dq-trend" data-c="trend"></div>
-        <div class="dq-trend-axis" data-c="trendAxis"></div>
-        <div class="dq-panel-note" data-c="trendNote" hidden></div>
-      </div>
+        <div class="dq-tiles" data-c="autoTiles"></div>
+        <div class="dq-panel-note" data-c="autoEmpty" hidden></div>
 
-      <div class="dq-grid-2">
         <div class="dq-panel">
-          <h3 class="dq-panel-title">Why AI scoring failed</h3>
+          <h3 class="dq-panel-title">Did it run?</h3>
           <p class="dq-panel-sub">
             Evaluations AI could not score, by cause. Quota reached is a
-            commercial limit rather than a fault.
+            commercial limit rather than a fault — it means the org has scored
+            as much as it bought.
           </p>
           <div class="dq-bars" data-c="failures"></div>
         </div>
+
         <div class="dq-panel">
-          <h3 class="dq-panel-title">Suggestions offered and accepted</h3>
-          <p class="dq-panel-sub" data-c="suggestSub">
-            AI scoring and Evaluation Assistance, side by side.
-          </p>
-          <div class="dq-bars" data-c="suggestions"></div>
+          <h3 class="dq-panel-title">Did it stick?</h3>
+          <p class="dq-panel-sub" data-c="overturnSub"></p>
+          <div class="dq-trend is-rate" data-c="overturnTrend"></div>
+          <div class="dq-trend-axis" data-c="overturnAxis"></div>
+          <div class="dq-panel-note" data-c="overturnNote" hidden></div>
+        </div>
+
+        <div class="dq-panel">
+          <h3 class="dq-panel-title">Which questions it answered</h3>
+          <p class="dq-panel-sub" data-c="autoQSub"></p>
+          <div class="dq-bars is-long-label" data-c="autoQuestions"></div>
+          <div class="dq-panel-note" data-c="autoQNote" hidden></div>
         </div>
       </div>
 
-      <div class="dq-panel">
-        <h3 class="dq-panel-title">AI-scored against human-scored</h3>
-        <p class="dq-panel-sub" data-c="compareSub">
-          Average score by who did the scoring. A gap is worth understanding
-          before it is worth acting on — the two are rarely scoring the same
-          sample of work.
+      <!-- ── Lane B — evaluation assistance ───────────────────────── -->
+      <div class="dq-lane">
+        <h2 class="dq-lane-title">Evaluation Assistance</h2>
+        <p class="dq-lane-sub">
+          AI suggests answers to a human evaluator, who accepts them or writes
+          their own. These evaluations are submitted by a person.
         </p>
-        <div class="dq-bars" data-c="compare"></div>
-        <div class="dq-panel-note" data-c="compareNote" hidden></div>
-      </div>
 
-      <div class="dq-panel">
-        <h3 class="dq-panel-title">Which questions the model answered</h3>
-        <p class="dq-panel-sub" data-c="questionSub"></p>
-        <div class="dq-bars is-long-label" data-c="questions"></div>
-        <div class="dq-panel-note" data-c="questionNote" hidden></div>
-      </div>
+        <div class="dq-tiles" data-c="eaTiles"></div>
+        <div class="dq-panel-note" data-c="eaEmpty" hidden></div>
 
-      <div class="dq-panel">
-        <h3 class="dq-panel-title">After the model answered</h3>
-        <p class="dq-panel-sub">
-          What happened to AI-scored evaluations once a person saw them.
-        </p>
-        <div class="dq-bars" data-c="after"></div>
+        <div class="dq-panel">
+          <h3 class="dq-panel-title">Are the suggestions taken?</h3>
+          <p class="dq-panel-sub" data-c="acceptSub"></p>
+          <div class="dq-trend is-rate" data-c="acceptTrend"></div>
+          <div class="dq-trend-axis" data-c="acceptAxis"></div>
+          <div class="dq-panel-note" data-c="acceptNote" hidden></div>
+        </div>
+
+        <div class="dq-panel">
+          <h3 class="dq-panel-title">Which questions it answered</h3>
+          <p class="dq-panel-sub" data-c="eaQSub"></p>
+          <div class="dq-bars is-long-label" data-c="eaQuestions"></div>
+          <div class="dq-panel-note" data-c="eaQNote" hidden></div>
+        </div>
       </div>
     </div>
   `;
@@ -230,93 +264,84 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
   }
 
   /**
-   * Two series on one axis: AI and human, per bucket.
+   * A rate per bucket, plotted against a fixed 0–100% axis.
    *
-   * Stacked rather than side by side, because the question is "how much of the
-   * whole is AI doing" and a stack answers that at a glance where two adjacent
-   * bars make you do the arithmetic.
+   * Fixed rather than scaled to the data, deliberately: the whole reason these
+   * bands are rates is so two periods can be compared, and an axis that moves
+   * with the sample defeats that.
+   *
+   * A bucket with a zero denominator has NO rate — nothing was offered, or
+   * nothing was scored. It draws as a flat tick rather than a zero-height bar,
+   * because "nothing happened here" and "everything here was rejected" are
+   * opposite facts and a zero-height bar says the second one.
+   *
+   * @param {Array<{key:string, num:number, den:number}>} points
    */
-  function renderTrend(aiPoints, humanPoints, granularity, partial) {
-    const $trend = $("trend");
-    const $axis = $("trendAxis");
+  function renderRateTrend($trend, $axis, points, opts) {
+    const { ci, partial, fill = "", noun, verb } = opts;
     $trend.innerHTML = "";
     $axis.innerHTML = "";
 
-    const byInterval = new Map();
-    for (const p of aiPoints) byInterval.set(p.interval, { ai: p.stats.count, human: 0 });
-    for (const p of humanPoints) {
-      const e = byInterval.get(p.interval) || { ai: 0, human: 0 };
-      e.human = p.stats.count;
-      byInterval.set(p.interval, e);
-    }
-    const points = [...byInterval.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
     if (!points.length) {
-      $trend.innerHTML = `<div class="dq-bar-empty">No evaluations in this period.</div>`;
+      $trend.innerHTML = `<div class="dq-bar-empty">Nothing in this period.</div>`;
       return;
     }
 
-    const max = Math.max(...points.map(([, v]) => v.ai + v.human), 0);
-    const hourly = granularity === "PT1H";
-    const stamp = (iso) => {
-      const at = (iso || "").split("/")[0];
-      if (!hourly) return at.slice(0, 10);
-      const d = new Date(at);
-      return Number.isNaN(d.getTime()) ? at.slice(0, 16).replace("T", " ")
-        : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    };
-
-    points.forEach(([interval, v], i) => {
+    points.forEach((p, i) => {
       const col = document.createElement("div");
       const isLast = partial && i === points.length - 1;
-      col.className = "dq-stack" + (isLast ? " is-partial" : "");
-      const total = v.ai + v.human;
-      col.style.height = max > 0 ? `${Math.max((total / max) * 100, total > 0 ? 2 : 0)}%` : "0%";
-      col.innerHTML = `
-        <div class="dq-stack-human" style="height:${total ? (v.human / total) * 100 : 0}%"></div>
-        <div class="dq-stack-ai" style="height:${total ? (v.ai / total) * 100 : 0}%"></div>`;
-      col.title = `${stamp(interval)}: ${v.ai} AI · ${v.human} human` +
-        (isLast ? " (still in progress)" : "");
+      const hasRate = p.den > 0;
+      const rate = hasRate ? (p.num / p.den) * 100 : 0;
+      col.className = `dq-trend-col ${fill}` +
+        (hasRate ? "" : " is-nodata") + (isLast && hasRate ? " is-partial" : "");
+      col.style.height = hasRate ? `${Math.max(Math.min(rate, 100), rate > 0 ? 2 : 0)}%` : "";
+      col.title = hasRate
+        ? `${bucketStamp(p.key, ci)}: ${rate.toFixed(1)}% — ` +
+          `${p.num.toLocaleString()} of ${p.den.toLocaleString()} ${noun}` +
+          (isLast ? " (still in progress)" : "")
+        : `${bucketStamp(p.key, ci)}: no ${noun}`;
       $trend.append(col);
     });
 
-    const totals = points.reduce((a, [, v]) => ({ ai: a.ai + v.ai, human: a.human + v.human }),
-      { ai: 0, human: 0 });
+    const num = points.reduce((s, p) => s + p.num, 0);
+    const den = points.reduce((s, p) => s + p.den, 0);
     $axis.innerHTML =
-      `<span>${escapeHtml(stamp(points[0][0]))}</span>` +
-      `<span><span class="dq-key dq-key--ai"></span>${totals.ai.toLocaleString()} AI · ` +
-      `<span class="dq-key dq-key--human"></span>${totals.human.toLocaleString()} human` +
+      `<span>${escapeHtml(bucketStamp(points[0].key, ci))}</span>` +
+      `<span>${escapeHtml(share(num, den) ?? "—")} ${escapeHtml(verb)} overall · ` +
+      `${num.toLocaleString()} of ${den.toLocaleString()} ${escapeHtml(noun)}` +
       `${partial ? " · last bucket still filling" : ""}</span>` +
-      `<span>${escapeHtml(stamp(points[points.length - 1][0]))}</span>`;
+      `<span>${escapeHtml(bucketStamp(points[points.length - 1].key, ci))}</span>`;
   }
 
   /**
-   * How often AI answered each question on a form.
+   * Which questions on a form the model answered, least often first.
    *
-   * The interesting AI-scoring question that nothing else answers: a model that
-   * scores 90% of questions but never touches three of them is telling you
-   * something about those three.
+   * The interesting question nothing else answers: a model that scores most of
+   * a form but never touches three questions is telling you something about
+   * those three — usually that they are badly worded, or need a human.
    *
-   * Question-level fields are only aggregatable alongside a top-level TERM on
-   * `questionId` and a query scoped to one form, so this needs a single form
-   * selected — the same constraint the Weakest question groups band lives under
-   * (§7.3a). It is its own request, so a refusal costs this band and nothing
-   * else on the page.
+   * Question-level fields (anything named question*) are only aggregatable
+   * alongside a single top-level TERM on `questionId` and a query scoped to one
+   * form, and mixing one into a request with evaluation-level fields is
+   * rejected outright rather than degraded. So this is its own request per
+   * lane, and a refusal costs this band alone (§8.2a).
    */
-  async function renderPerQuestion(orgId, f) {
-    const $bars = $("questions");
-    const $sub = $("questionSub");
-    const $note = $("questionNote");
+  async function renderPerQuestion(orgId, f, lane) {
+    const { bars: barsKey, sub: subKey, note: noteKey, field, systemSubmitted, who } = lane;
+    const $bars = $(barsKey);
+    const $sub = $(subKey);
+    const $note = $(noteKey);
     $note.hidden = true;
 
     if (f.formContextIds.length !== 1) {
       $sub.textContent = f.formContextIds.length === 0
-        ? "Select exactly one form in the filter bar to see which of its questions AI answered."
+        ? `Select exactly one form in the filter bar to see which of its questions ${who} answered.`
         : `Select exactly one form — ${f.formContextIds.length} are selected, and questions are not comparable across forms.`;
       $bars.innerHTML = '<div class="dq-bar-empty">No single form selected.</div>';
       return;
     }
 
-    $sub.textContent = "How often AI answered each question, least often first.";
+    $sub.textContent = `How often ${who} answered each question, least often first.`;
     $bars.innerHTML = `<div class="dq-bar-empty">${spinHtml("Loading questions…")}</div>`;
 
     try {
@@ -334,15 +359,14 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
       const merged = await aggregateAcrossWindows(f, (w) => searchEvaluations(api, orgId,
         toSearchRequest({ ...f, formContextIds: [] }, {
           window: w,
-          systemSubmitted: true,
+          systemSubmitted,
           extraCriteria: [{ type: "EXACT", field: "formId", values: [form.id] }],
           aggregations: [termAggregationWith("byQuestion", "questionId",
-            [termAggregation("aiScored", "questionAiScored")], 200)],
+            [termAggregation("scored", field)], 100)],
         })));
 
       const rows = (merged.aggregations.byQuestion?.buckets || []).map((b) => {
-        const sub = b.sub?.aiScored;
-        const yes = (sub?.buckets || [])
+        const yes = (b.sub?.scored?.buckets || [])
           .find((x) => String(x.key).toLowerCase() === "true")?.count || 0;
         return {
           label: names.get(b.key) || `Question (${String(b.key).slice(0, 8)}…)`,
@@ -353,10 +377,10 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
       }).sort((a, b) => (a.count / (a.total || 1)) - (b.count / (b.total || 1)));
 
       renderCountBars($bars, rows,
-        { empty: "No question-level scoring recorded for this form and period." });
+        { empty: `No question-level scoring by ${who} for this form and period.` });
       $sub.textContent =
-        `How often AI answered each question on ${form.name || "this form"}, least often first — ` +
-        "current published version only.";
+        `How often ${who} answered each question on ${form.name || "this form"}, ` +
+        "least often first — current published version only.";
     } catch (err) {
       $bars.innerHTML = '<div class="dq-bar-empty">Could not load questions.</div>';
       $note.textContent = `The per-question query was rejected: ${err.message}`;
@@ -384,203 +408,181 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
     try {
       const optionWarnings = await ensureOptions(org.id);
       const f = filters.getFilters();
-      const granularity = pickGranularity(f.from, f.to);
+      const ci = calendarIntervalFor(dayCount(f.from, f.to));
+      const dateField = searchDateField(f.timeBasis);
+      const partial = includesToday(f.to);
       const windows = exceedsSearchWindow(f.from, f.to)
         ? Math.ceil(dayCount(f.from, f.to) / 90) : 1;
+      const windowNote = windows > 1
+        ? ` Queried in ${windows} three-month windows and combined.` : "";
 
       $("failures").innerHTML = `<div class="dq-bar-empty">${spinHtml("Loading failures…")}</div>`;
-      $("suggestions").innerHTML = `<div class="dq-bar-empty">${spinHtml("Loading suggestions…")}</div>`;
-      $("after").innerHTML = `<div class="dq-bar-empty">${spinHtml("Loading…")}</div>`;
 
-      // ── The AI-specific half: search aggregations, chunked ──
-      // Every one of these is TERM, SUM or STATS, all of which recombine across
-      // consecutive 3-month windows exactly (§9.2), and every TERM field is a
-      // low-cardinality enum — so chunking is safe and this band works at any
-      // date range.
-      // EVALUATION-LEVEL fields only.
-      //
-      // The endpoint separates evaluation-level aggregations from QUESTION-level
-      // ones (anything named question*), and the question ones are legal only
-      // alongside a top-level TERM on questionId and a query scoped to a single
-      // form. Asking for both kinds in one request does not degrade — it is
-      // rejected outright, and since every aggregation on this page rode in one
-      // request, three question-level fields took the whole page down with them.
-      // They now live in their own request, below, which can fail alone.
-      setStatus("Querying AI scoring…");
-      const aiAgg = await aggregateAcrossWindows(f, (w) => searchEvaluations(api, org.id,
-        toSearchRequest(f, {
-          window: w,
-          systemSubmitted: true,
-          aggregations: [
-            termAggregation("failureType", "aiScoringFailureType"),
-            sumAggregation("aiSuggested", "aiSuggestionCount"),
-            sumAggregation("aiAccepted", "aiAcceptedSuggestionCount"),
-            sumAggregation("eaSuggested", "eaSuggestionCount"),
-            sumAggregation("eaAccepted", "eaAcceptedSuggestionCount"),
-            sumAggregation("disputes", "disputeCount"),
-            sumAggregation("rescores", "rescoreCount"),
-            statsAggregation("aiScore", "totalScore"),
-          ],
-        })));
-      const A = aiAgg.aggregations;
+      // Both lanes in parallel. They are separate requests because they are
+      // separate POPULATIONS — systemSubmitted true and false — not merely for
+      // tidiness, and either can fail without taking the other down.
+      setStatus("Querying auto-evaluation and assistance…");
+      const [autoRes, eaRes] = await Promise.allSettled([
+        // R1 — auto-evaluation. Evaluation-level fields only (§8.2a).
+        aggregateAcrossWindows(f, (w) => searchEvaluations(api, org.id,
+          toSearchRequest(f, {
+            window: w,
+            systemSubmitted: true,
+            aggregations: [
+              termAggregation("failureType", "aiScoringFailureType"),
+              sumAggregation("disputes", "disputeCount"),
+              sumAggregation("rescores", "rescoreCount"),
+              dateHistogramAggregation("overTime", dateField, ci, [
+                sumAggregation("disputes", "disputeCount"),
+                sumAggregation("rescores", "rescoreCount"),
+              ]),
+            ],
+          }))),
+        // R2 — assistance. Attached to evaluations a PERSON submitted, which is
+        // why this cannot ride along with the request above.
+        aggregateAcrossWindows(f, (w) => searchEvaluations(api, org.id,
+          toSearchRequest(f, {
+            window: w,
+            systemSubmitted: false,
+            aggregations: [
+              sumAggregation("offered", "eaSuggestionCount"),
+              sumAggregation("accepted", "eaAcceptedSuggestionCount"),
+              dateHistogramAggregation("overTime", dateField, ci, [
+                sumAggregation("offered", "eaSuggestionCount"),
+                sumAggregation("accepted", "eaAcceptedSuggestionCount"),
+              ]),
+            ],
+          }))),
+      ]);
+
       // `value` first, not `sum`. A SUM aggregation answers in `value` and
       // leaves `sum` unset (EvaluationSearchAggregationResponse), and the
-      // normaliser defaults an unset `sum` to 0 — so reading `sum` first meant
-      // every suggestion, dispute and rescore count on this page read zero no
-      // matter what came back. `sum` stays as the fallback for STATS.
-      const sum = (name) => A[name]?.value ?? A[name]?.sum ?? 0;
+      // normaliser defaults an unset `sum` to 0 — so reading `sum` first made
+      // every suggestion, dispute and rescore figure read zero no matter what
+      // came back. `sum` stays as the fallback for STATS.
+      const readSum = (agg) => agg?.value ?? agg?.sum ?? 0;
 
-      // ── The counting half: aggregates, unbounded ──
-      setStatus("Counting AI and human evaluations…");
-      let aiCount = 0, humanCount = 0, aiScore = null, humanScore = null;
-      let aiSeries = [], humanSeries = [], aggregateFailed = null;
-      try {
-        const aiPred = [dimensionPredicate("systemSubmitted", "true")];
-        const huPred = [dimensionPredicate("systemSubmitted", "false")];
-        const [splitResp, scoreResp, aiTrend, huTrend] = await Promise.all([
-          queryEvaluationAggregates(api, org.id,
-            toAggregateQuery(f, { metrics: ["nEvaluations"], groupBy: ["systemSubmitted"] })),
-          queryEvaluationAggregates(api, org.id,
-            toAggregateQuery(f, { metrics: ["oTotalScore"], groupBy: ["systemSubmitted"] })),
-          queryEvaluationAggregates(api, org.id,
-            toAggregateQuery(f, { metrics: ["nEvaluations"], granularity, extraPredicates: aiPred })),
-          queryEvaluationAggregates(api, org.id,
-            toAggregateQuery(f, { metrics: ["nEvaluations"], granularity, extraPredicates: huPred })),
-        ]);
-        const split = parseGroupedAggregate(splitResp, "systemSubmitted");
-        aiCount = split.get("true")?.count || 0;
-        humanCount = split.get("false")?.count || 0;
-        const scores = parseGroupedAggregate(scoreResp, "systemSubmitted", "oTotalScore");
-        aiScore = scores.get("true") || null;
-        humanScore = scores.get("false") || null;
-        aiSeries = parseAggregateSeries(aiTrend);
-        humanSeries = parseAggregateSeries(huTrend);
-      } catch (err) {
-        aggregateFailed = err.status === 403
-          ? "Needs analytics:evaluationAggregate:view, which this page does not require."
-          : err.message;
+      // ── Lane A — auto-evaluation ──────────────────
+      if (autoRes.status === "rejected") {
+        $("autoTiles").innerHTML = "";
+        $("autoEmpty").textContent =
+          `Auto-evaluation figures could not be loaded: ${autoRes.reason?.message || autoRes.reason}`;
+        $("autoEmpty").hidden = false;
+        $("failures").innerHTML = '<div class="dq-bar-empty">Not available.</div>';
+        renderRateTrend($("overturnTrend"), $("overturnAxis"), [], { ci, partial, noun: "", verb: "" });
+      } else {
+        const A = autoRes.value.aggregations;
+        const scored = autoRes.value.total;
+        const failures = (A.failureType?.buckets || []).reduce((s, b) => s + b.count, 0);
+        const disputes = readSum(A.disputes);
+        const rescores = readSum(A.rescores);
+
+        $("autoTiles").innerHTML = [
+          tile("Auto-evaluated", scored.toLocaleString(), "submitted by Virtual Supervisor"),
+          tile("Scoring failures", failures.toLocaleString(),
+            share(failures, scored) ? `${share(failures, scored)} of them` : "none in this period"),
+          tile("Disputed", disputes.toLocaleString(), "disputes raised against them"),
+          tile("Rescored", rescores.toLocaleString(), "scored again by a person"),
+        ].join("");
+
+        $("autoEmpty").hidden = scored > 0;
+        if (!scored) {
+          $("autoEmpty").textContent =
+            "No auto-evaluations in this period. Every figure in this lane is about " +
+            "evaluations AI submitted itself, so they are all zero by definition rather " +
+            "than because something failed.";
+        }
+
+        renderCountBars($("failures"),
+          (A.failureType?.buckets || [])
+            .map((b) => ({ label: failureLabel(b.key), count: b.count, fill: "dq-fill-bad" }))
+            .sort((a, b) => b.count - a.count),
+          { empty: "No AI scoring failures in this period." });
+
+        // Disputes and rescores are EVENT counts — one evaluation can be
+        // disputed twice — so this is events per evaluation, not a share of
+        // evaluations, and the wording says so rather than implying a
+        // percentage of evaluations that were overturned.
+        const points = (A.overTime?.buckets || [])
+          .map((b) => ({
+            key: b.key,
+            num: readSum(b.sub?.disputes) + readSum(b.sub?.rescores),
+            den: b.count,
+          }))
+          .sort((a, b) => (bucketDate(a.key) || 0) - (bucketDate(b.key) || 0));
+        $("overturnSub").textContent =
+          `Disputes and rescores per auto-evaluation, ${intervalLabel(ci).toLowerCase()}. ` +
+          "A line that climbs means people are trusting the model less over time." + windowNote;
+        renderRateTrend($("overturnTrend"), $("overturnAxis"), points,
+          { ci, partial, fill: "is-warnfill", noun: "auto-evaluations", verb: "overturned" });
+        $("overturnNote").hidden = !!(disputes + rescores);
+        if (!(disputes + rescores)) {
+          $("overturnNote").textContent =
+            "Nothing was disputed or rescored in this period.";
+        }
       }
 
-      // ── Tiles ─────────────────────────────────────
-      const total = aiCount + humanCount;
-      const suggested = sum("aiSuggested") + sum("eaSuggested");
-      const accepted = sum("aiAccepted") + sum("eaAccepted");
-      const failures = (A.failureType?.buckets || []).reduce((s, b) => s + b.count, 0);
+      // ── Lane B — evaluation assistance ────────────
+      if (eaRes.status === "rejected") {
+        $("eaTiles").innerHTML = "";
+        $("eaEmpty").textContent =
+          `Assistance figures could not be loaded: ${eaRes.reason?.message || eaRes.reason}`;
+        $("eaEmpty").hidden = false;
+        renderRateTrend($("acceptTrend"), $("acceptAxis"), [], { ci, partial, noun: "", verb: "" });
+      } else {
+        const B = eaRes.value.aggregations;
+        const offered = readSum(B.offered);
+        const accepted = readSum(B.accepted);
 
-      $("tiles").innerHTML = [
-        tile("AI-scored", aggregateFailed ? null : aiCount.toLocaleString(),
-          aggregateFailed ? "count unavailable" : "evaluations submitted by AI"),
-        tile("AI share", aggregateFailed ? null : share(aiCount, total),
-          aggregateFailed ? "" : `${humanCount.toLocaleString()} scored by a person`),
-        tile("Suggestions accepted", share(accepted, suggested),
-          `${accepted.toLocaleString()} of ${suggested.toLocaleString()} offered`),
-        tile("Scoring failures", failures ? failures.toLocaleString() : "0",
-          failures ? "AI could not score these" : "none in this period"),
-        tile("Disputed", sum("disputes").toLocaleString(), "AI-scored evaluations disputed"),
-        tile("Rescored", sum("rescores").toLocaleString(), "scored again after AI"),
-      ].join("");
+        // Deliberately no "evaluations assisted" tile. `eaSuggestionCount` is
+        // not a queryable criteria field, so there is no way to ask for "human
+        // evaluations where assistance offered something" — the response total
+        // here is every human evaluation, assisted or not. The lane reports
+        // suggestions, and says "suggestions" (§8.1a).
+        $("eaTiles").innerHTML = [
+          tile("Suggestions offered", offered.toLocaleString(), "by Evaluation Assistance"),
+          tile("Suggestions accepted", accepted.toLocaleString(), "kept by the evaluator"),
+          tile("Acceptance rate", share(accepted, offered),
+            offered ? "of what was offered" : "nothing offered in this period"),
+        ].join("");
 
-      // ── Trend ─────────────────────────────────────
-      const partial = includesToday(f.to);
-      $("trendSub").textContent =
-        `${granularityLabel(granularity)} buckets · ${formatRange(f.from, f.to)}` +
+        $("eaEmpty").hidden = offered > 0;
+        if (!offered) {
+          $("eaEmpty").textContent =
+            "No assistance suggestions in this period. Either Evaluation Assistance is not " +
+            "switched on for these forms, or no human evaluations were submitted.";
+        }
+
+        const points = (B.overTime?.buckets || [])
+          .map((b) => ({
+            key: b.key,
+            num: readSum(b.sub?.accepted),
+            den: readSum(b.sub?.offered),
+          }))
+          .sort((a, b) => (bucketDate(a.key) || 0) - (bucketDate(b.key) || 0));
+        $("acceptSub").textContent =
+          `Share of suggestions the evaluator kept, ${intervalLabel(ci).toLowerCase()}. ` +
+          "This is the clearest signal on the page: it is people voting on the model's " +
+          "answers one question at a time." + windowNote;
+        renderRateTrend($("acceptTrend"), $("acceptAxis"), points,
+          { ci, partial, fill: "is-goodfill", noun: "suggestions", verb: "accepted" });
+        $("acceptNote").hidden = true;
+      }
+
+      // ── Per-question bands, one per lane ──────────
+      await Promise.all([
+        renderPerQuestion(org.id, f, {
+          bars: "autoQuestions", sub: "autoQSub", note: "autoQNote",
+          field: "questionAiScored", systemSubmitted: true, who: "AI",
+        }),
+        renderPerQuestion(org.id, f, {
+          bars: "eaQuestions", sub: "eaQSub", note: "eaQNote",
+          field: "questionEaScored", systemSubmitted: false, who: "Assistance",
+        }),
+      ]);
+
+      $("rangeLine").textContent = formatRange(f.from, f.to) +
         (partial ? " · today is still in progress" : "");
-      if (aggregateFailed) {
-        $("trend").innerHTML = `<div class="dq-bar-empty">Not available.</div>`;
-        $("trendNote").textContent = aggregateFailed;
-        $("trendNote").hidden = false;
-      } else {
-        $("trendNote").hidden = true;
-        renderTrend(aiSeries, humanSeries, granularity, partial);
-      }
-
-      // ── Failure types ─────────────────────────────
-      renderCountBars($("failures"),
-        (A.failureType?.buckets || [])
-          .map((b) => ({ label: failureLabel(b.key), count: b.count, fill: "dq-fill-bad" }))
-          .sort((a, b) => b.count - a.count),
-        { empty: "No AI scoring failures in this period." });
-
-      // ── Suggestions ───────────────────────────────
-      // AI scoring and Evaluation Assistance are different features and are
-      // kept apart: an org may run one, both or neither, and adding them
-      // together would hide which one people actually accept.
-      renderCountBars($("suggestions"), [
-        { label: "AI suggested", count: sum("aiSuggested") },
-        { label: "AI accepted", count: sum("aiAccepted"), fill: "dq-fill-good" },
-        { label: "Assistance suggested", count: sum("eaSuggested") },
-        { label: "Assistance accepted", count: sum("eaAccepted"), fill: "dq-fill-good" },
-      ], { empty: "No suggestions were offered in this period." });
-      $("suggestSub").textContent =
-        `AI scoring and Evaluation Assistance, side by side.` +
-        (windows > 1 ? ` Queried in ${windows} three-month windows and combined.` : "");
-
-      // ── Score comparison ──────────────────────────
-      const cmp = [];
-      if (aiScore?.count) {
-        cmp.push({ label: "AI-scored", count: aiScore.count,
-          value: `${statsAverage(aiScore).toFixed(1)}% · ${aiScore.count.toLocaleString()} eval(s)`,
-          fill: "dq-fill-alt" });
-      }
-      if (humanScore?.count) {
-        cmp.push({ label: "Human-scored", count: humanScore.count,
-          value: `${statsAverage(humanScore).toFixed(1)}% · ${humanScore.count.toLocaleString()} eval(s)`,
-          fill: "dq-fill-good" });
-      }
-      // Widths track the AVERAGE, not the count, so the bars compare what the
-      // panel is about. The count rides along in the label.
-      $("compare").innerHTML = "";
-      if (aggregateFailed) {
-        $("compare").innerHTML = `<div class="dq-bar-empty">Not available.</div>`;
-        $("compareNote").textContent = aggregateFailed;
-        $("compareNote").hidden = false;
-      } else if (!cmp.length) {
-        $("compare").innerHTML = `<div class="dq-bar-empty">Nothing scored in this period.</div>`;
-        $("compareNote").hidden = true;
-      } else {
-        $("compareNote").hidden = true;
-        for (const c of cmp) {
-          const avg = c.label === "AI-scored" ? statsAverage(aiScore) : statsAverage(humanScore);
-          const row = document.createElement("div");
-          row.className = "dq-bar-row";
-          row.innerHTML = `
-            <span class="dq-bar-label">${escapeHtml(c.label)}</span>
-            <div class="dq-bar-track"><div class="dq-bar-fill ${c.fill}" style="width:${
-              Math.max(Math.min(avg, 100), 0)}%"></div></div>
-            <span class="dq-bar-value">${escapeHtml(c.value)}</span>`;
-          $("compare").append(row);
-        }
-        if (cmp.length === 1) {
-          $("compareNote").textContent =
-            "Only one kind of scoring happened in this period, so there is nothing to compare it with.";
-          $("compareNote").hidden = false;
-        }
-      }
-
-      // ── After the model answered ──────────────────
-      renderCountBars($("after"), [
-        { label: "Disputes raised", count: sum("disputes"), fill: "dq-fill-warn" },
-        { label: "Rescored by a person", count: sum("rescores"), fill: "dq-fill-warn" },
-      ], { empty: "No disputes or rescores against AI-scored evaluations in this period." });
-
-      // ── Per question (needs one form) ─────────────
-      await renderPerQuestion(org.id, f);
-
-      // ── Range line and empty state ────────────────
-      $("rangeLine").textContent =
-        `${formatRange(f.from, f.to)}` +
-        (aggregateFailed ? "" : ` · ${aiCount.toLocaleString()} AI-scored of ${total.toLocaleString()}`);
-
-      const $why = $("emptyWhy");
-      if (!aggregateFailed && total > 0 && aiCount === 0) {
-        $why.textContent =
-          `Nothing on this page: none of the ${total.toLocaleString()} evaluation(s) in this ` +
-          "period were scored by AI. Every figure here is about AI scoring, so it is all zero " +
-          "by definition rather than because something failed.";
-        $why.hidden = false;
-      } else {
-        $why.hidden = true;
-      }
 
       $results.hidden = false;
       if (optionWarnings.length) setStatus(optionWarnings.join(" "), "error");

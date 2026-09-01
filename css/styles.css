@@ -5810,6 +5810,56 @@ a.fr-shipped:hover { text-decoration: underline; }
   font-size: 13px;
   margin-bottom: 10px;
 }
+
+/* ── AI Scoring lanes ──────────────────────────────────
+   Auto-evaluation and Evaluation Assistance are separate features measured on
+   separate populations, so the page keeps them in visibly separate lanes. The
+   rule above each is doing real work: it is what stops a reader carrying a
+   number from one lane into the other. */
+.dq-lane { margin-top: 26px; }
+.dq-lane + .dq-lane { border-top: 1px solid var(--border); padding-top: 22px; }
+.dq-lane-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+.dq-lane-sub {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 14px;
+  max-width: 70ch;
+}
+
+/* A rate column, plotted against a fixed 0-100% axis. A bucket with a zero
+   denominator has NO rate: it draws as a flat tick rather than a zero-height
+   bar, because "nothing was offered here" and "everything here was rejected"
+   are opposite facts and a zero-height bar states the second one. */
+.dq-trend-col.is-warnfill { background: #e0a34a; }
+.dq-trend-col.is-goodfill { background: #58c4a0; }
+.dq-trend-col.is-warnfill.is-partial {
+  background: repeating-linear-gradient(135deg,
+    #e0a34a, #e0a34a 3px, rgba(224, 163, 74, 0.35) 3px, rgba(224, 163, 74, 0.35) 6px);
+}
+.dq-trend-col.is-goodfill.is-partial {
+  background: repeating-linear-gradient(135deg,
+    #58c4a0, #58c4a0 3px, rgba(88, 196, 160, 0.35) 3px, rgba(88, 196, 160, 0.35) 6px);
+}
+/* A rate chart is plotted against a FIXED 0-100% axis so two periods can be
+   compared, which only works if the axis is visible - otherwise a 14% column
+   here and a 60% column on a data-scaled chart look much the same. Gridlines
+   every 25%, from the bottom. */
+.dq-trend.is-rate {
+  background-image: repeating-linear-gradient(
+    to top, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 25%);
+}
+
+/* Last, so it beats the fill colours above on equal specificity: a no-data
+   bucket must not be painted in the colour of the metric it has no value for. */
+.dq-trend-col.is-nodata {
+  align-self: flex-end;
+  background: rgba(255, 255, 255, 0.14);
+  height: 2px;
+}
 /* A trend bucket that is still filling — the range runs up to now. Hatched
    rather than solid so a partial final column cannot be read as a real drop. */
 .dq-trend-col.is-partial {

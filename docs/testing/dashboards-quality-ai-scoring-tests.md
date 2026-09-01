@@ -1,141 +1,143 @@
-# Test form — Dashboards › Quality › AI Scoring
+# Test pass — Dashboards › Quality › AI Scoring
 
-Page: **Dashboards › Quality › AI Scoring** (`/dashboards/quality/ai-scoring`)
-Design: [dashboards-quality-design.md](../dashboards-quality-design.md) §8
-Environment: **dev**
-Tester: ______________________  Date: ______________________
+Rebuilt page. The first version reported facts about "AI" as one thing; this one
+runs as **two lanes** because Genesys has two features:
 
-## What this page is
+- **Auto-evaluation** — AI scores and *submits* the evaluation itself (Virtual
+  Supervisor). Fails by producing nothing. You trust it less when people dispute
+  or rescore it.
+- **Evaluation Assistance** — AI *suggests* answers to a human evaluator, who
+  accepts or overrides. Fails by producing something nobody takes. You trust it
+  more when the acceptance rate rises.
 
-Everything here is about **AI-scored** evaluations. In an org where nothing is
-AI-scored it is legitimately all zero, and the page says so rather than looking
-broken — that is a pass, not a failure.
+Nothing is ever added across the two lanes. Everything comes from
+`POST /api/v2/quality/evaluations/search`, so the page needs one permission,
+`quality:evaluation:searchAny`, and there is no half that degrades on its own.
 
-It draws on two sources. The AI-specific figures (failures, suggestions,
-disputes, rescores, which questions the model answered) come from the evaluation
-search and are chunked across 3-month windows, so **there is no date-range
-limit**. The plain counts, the trend and the score comparison come from the
-aggregate domain, which needs a permission this page does not require — those
-bands degrade on their own.
+Design: `docs/dashboards-quality-design.md` §8.
+
+Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 
 ---
 
-## 1. Access and shape
+## 1. Getting there
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 1.1 | Open **Dashboards › Quality › AI Scoring** | The real page, not "Coming soon" | | |
-| 1.3 | Open with **no customer selected** | Prompts you to select one; Load disabled; dropdowns say "Select a customer to load …" | | |
-| 1.4 | Filter bar | Same shared bar, no "Dates refer to" — that is set on Coverage | | |
-| 1.5 | Panels | AI and human evaluations over time; Why AI scoring failed; Suggestions offered and accepted; AI-scored against human-scored; Which questions the model answered; After the model answered | | |
-| 1.6 | No permission note anywhere on the page | The page describes what it shows and nothing about permissions | | |
+| 1.1 | Open **Dashboards › Quality › AI Scoring** | Page loads, no console errors | | |
+| 1.2 | Look under the description | No permission note — the page describes what it shows and nothing about permissions | | |
+| 1.3 | Before choosing an org | Filters disabled, message asks you to pick a customer org | | |
+| 1.4 | Pick an org | Dropdowns fill; Load becomes available | | |
+| 1.5 | Two lanes are visible | **Auto-evaluation** and **Evaluation Assistance**, each with its own heading, its own one-line explanation and its own tiles | | |
+| 1.6 | Panels under Auto-evaluation | Did it run? · Did it stick? · Which questions it answered | | |
+| 1.7 | Panels under Evaluation Assistance | Are the suggestions taken? · Which questions it answered | | |
+| 1.8 | Nothing compares AI to humans anywhere on the page | No score comparison, no AI-vs-human trend, no "AI share" | | |
 
-## 2. Tiles
-
-| # | Do this | Expect | Result | Notes |
-|---|---|---|---|---|
-| 2.1 | Load a period with AI scoring | Six tiles: AI-scored, AI share, Suggestions accepted, Scoring failures, Disputed, Rescored | | |
-| 2.2 | **AI share** | A percentage, with the human count underneath | | |
-| 2.3 | Cross-check AI share against the **Coverage** page's AI-scored tile | Same split for the same period | | Coverage: ______ / here: ______ |
-| 2.4 | **Suggestions accepted** | A percentage, with "n of m offered" underneath | | |
-| 2.5 | **Scoring failures** | A count; "none in this period" when zero | | |
-| 2.6 | Range line | Reads "n AI-scored of m" | | |
-
-## 3. The trend
+## 2. Filters
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 3.1 | Look at the chart | Stacked columns — AI on top of human, one column per bucket | | |
-| 3.2 | Hover a column | "n AI · m human" for that bucket | | |
-| 3.3 | The axis | A colour key and the totals for both | | |
-| 3.4 | Load a single day | Hourly buckets | | |
-| 3.5 | Load Last 12 Months | Weekly buckets, and it still works — no 3-month limit | | |
-| 3.6 | A range ending **today** | The last column is dimmed and the axis says it is still filling | | |
+| 2.1 | Change the date range and Load | Both lanes reload; the range line above them matches | | |
+| 2.2 | Pick an agent | Both lanes narrow to that agent | | |
+| 2.3 | Pick a form | Both "Which questions it answered" bands become available | | |
+| 2.4 | Switch the time basis (Conversation / Created / Released) | Both trends re-bucket on that field — the chart should describe the same period the filter bar names | | |
+| 2.5 | Navigate away and back | Filters are remembered | | |
 
-## 4. Why AI scoring failed
-
-| # | Do this | Expect | Result | Notes |
-|---|---|---|---|---|
-| 4.1 | Look at the panel | One bar per failure cause, largest first | | |
-| 4.2 | Labels | Readable English — "Quota reached", "Service error" — never raw enum values like `QuotaReached` | | |
-| 4.3 | If **Quota reached** appears | **Worth knowing.** It means the org has scored as much as it bought, not that anything is broken | | Count: ______ |
-| 4.4 | An org with no failures | "No AI scoring failures in this period." | | |
-
-## 5. Suggestions
+## 3. Auto-evaluation — tiles
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 5.1 | Look at the panel | Four bars: AI suggested / accepted, Assistance suggested / accepted | | |
-| 5.2 | Accepted bars | Green, and never larger than their suggested bar | | |
-| 5.3 | AI scoring and Evaluation Assistance | Kept apart, not added together — an org may run one, both or neither | | |
-| 5.4 | Over a range longer than three months | Sub-line says how many windows it combined | | |
-| 5.5 | Compare a 6-month load with two 3-month loads | The totals should add up | | |
+| 3.1 | Read the tiles | Auto-evaluated · Scoring failures · Disputed · Rescored | | |
+| 3.2 | **Auto-evaluated** | The count of evaluations Virtual Supervisor submitted. Cross-check against Evaluation Scores filtered to AI for the same period | | |
+| 3.3 | **Scoring failures** | A count *and* a share of auto-evaluations | | |
+| 3.4 | A period where AI ran cleanly | Failures reads 0 with "none in this period", not "—" | | |
+| 3.5 | A period with **no** auto-evaluations | A note explains the whole lane is zero by definition rather than by failure | | |
 
-## 6. AI-scored against human-scored
-
-| # | Do this | Expect | Result | Notes |
-|---|---|---|---|---|
-| 6.1 | Look at the panel | Two bars, average score each, with the evaluation count beside | | |
-| 6.2 | Bar widths | Track the **average**, not the count — a 90% bar is nearly full regardless of volume | | |
-| 6.3 | A period with only AI scoring | One bar, and a note saying there is nothing to compare with | | |
-| 6.4 | Cross-check against **Evaluation Scores** | The averages should agree for the same period and filters | | |
-
-## 7. Which questions the model answered, and what happened after
-
-Question-level fields can only be aggregated against a single form, so this band
-needs exactly one form selected. See design §8.2a.
+## 4. Auto-evaluation — Did it run?
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 7.1 | Load with **no** form selected | The questions panel asks for one form; **every other panel still loads** | | |
-| 7.2 | Load with **two or more** forms selected | Same, saying how many are selected | | |
-| 7.3 | Select **one** form and load | A bar per question, named, reading "n of m", least-often-answered first | | |
-| 7.4 | Read the sub-line | Names the form and says current published version only | | |
-| 7.5 | Sanity | The "of m" figures should be the same for every question on the form | | |
-| 7.6 | A form AI has never scored | An empty state, not an error | | |
-| 7.7 | "After the model answered" panel | Disputes raised, Rescored by a person | | |
-| 7.8 | Sanity | Disputes and rescores should match the tiles, and **should not both be zero** if the tiles are non-zero | | |
+| 4.1 | Read the panel | One bar per failure cause, largest first | | |
+| 4.2 | Causes are in plain English | "Quota reached", not `QuotaReached` | | |
+| 4.3 | Quota reached is present | The sub-line frames it as a commercial limit, not a fault | | |
+| 4.4 | No failures in the period | "No AI scoring failures in this period." | | |
 
-## 8. Degrading and empty states
+## 5. Auto-evaluation — Did it stick? ★
+
+This is one of the two bands the rebuild exists for.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 8.1 | Without `analytics:evaluationAggregate:view` | AI-scored and AI share tiles show "—"; the trend and the comparison say which permission is missing; **failures, suggestions, questions and "after" still work** | | |
-| 8.2 | Without `quality:evaluation:searchAny` | The page says it needs that permission | | |
-| 8.3 | A period with evaluations but **none AI-scored** | A note explains everything is zero by definition, not by failure | | |
-| 8.4 | A period with nothing at all | Clean empty states, no errors | | |
-| 8.5 | Filters that match nothing | Same | | |
+| 5.1 | Read the panel | Columns over time, faint gridlines every 25%, axis text underneath | | |
+| 5.2 | Read the wording | "Disputes and rescores **per auto-evaluation**" — not a percentage of evaluations overturned. They are event counts and one evaluation can be disputed twice | | |
+| 5.3 | Hover a column | Date, the rate, and "n of m auto-evaluations" | | |
+| 5.4 | A period containing a day with **no** auto-evaluations | That day is a flat neutral tick, **not** a zero-height bar, and its tooltip says so. "Nothing happened" and "0%" must not look the same | | |
+| 5.5 | Compare two different periods | The bars are comparable — the axis is fixed 0–100%, it does not rescale to the data | | |
+| 5.6 | A range ending today | The last column is hatched and the axis says it is still filling | | |
+| 5.7 | Nothing disputed or rescored at all | A note says so under the chart | | |
+| 5.8 | Sanity | The overall figure in the axis should agree with the Disputed and Rescored tiles | | |
 
-## 9. Cost and hygiene
-
-| # | Do this | Expect | Result | Notes |
-|---|---|---|---|---|
-| 9.1 | DevTools → Console | No errors, no unhandled rejections | | |
-| 9.2 | Network, one load of a 1-month range | One search call plus four aggregate calls | | Count: ______ |
-| 9.3 | Network, one load of a 12-month range | Four search calls (one per window) plus four aggregate calls | | Count: ______ |
-| 9.4 | Every search request body | Carries `systemSubmitted: true` — this page is only ever about AI | | |
-| 9.5 | Time a 12-month load on your biggest org | Well under 45 seconds | | ______ s |
-| 9.6 | Light mode | Stack colours and bar colours still readable | | |
-
-## 10. ★ Open question — by agent
-
-The design (§8.3) flagged that `agentId` appears in the search aggregation field
-enum but is missing from that endpoint's own "allowed fields by aggregation
-type" list. No by-agent band was built because of it.
+## 6. Evaluation Assistance — tiles
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 10.1 | Would a per-agent view of AI scoring be useful to you? | — | | Answer: ______ |
+| 6.1 | Read the tiles | Suggestions offered · Suggestions accepted · Acceptance rate | | |
+| 6.2 | ★ **Do these show anything at all?** | On the old page these were asked of AI-submitted evaluations, which by definition have none, so they were always zero. If your org runs Assistance, they should now be non-zero | | |
+| 6.3 | Every tile says "suggestions", never "evaluations" | Deliberate: there is no way to ask the API for "human evaluations where assistance offered something", so the page must not imply a count it does not have | | |
+| 6.4 | Nothing offered in the period | Acceptance rate reads "—", and a note gives the two possible reasons | | |
 
-If yes, I will test whether `agentId` is aggregatable before designing it.
+## 7. Evaluation Assistance — Are the suggestions taken? ★
 
-## 11. Overall
+The other band the rebuild exists for.
 
-Anything wrong or worth changing:
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 7.1 | Read the panel | Share of suggestions the evaluator kept, per bucket | | |
+| 7.2 | Hover a column | Date, the rate, and "n of m suggestions" | | |
+| 7.3 | A bucket with no suggestions offered | Flat neutral tick, not a zero bar | | |
+| 7.4 | Sanity | The overall figure in the axis should agree with the Acceptance rate tile | | |
+| 7.5 | Judgement call | Does this number tell you something you would act on? That is the whole reason the page was rebuilt — say so if it does not | | |
 
-```
+## 8. Which questions it answered — both lanes
 
+Question-level fields can only be aggregated against a single form, so both
+bands need exactly one form selected (design §8.2a).
 
-```
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 8.1 | Load with **no** form selected | Both bands ask for one form; **every other panel still loads** | | |
+| 8.2 | Load with **two or more** forms | Same, saying how many are selected | | |
+| 8.3 | Select **one** form and load | A bar per question, named, "n of m", least-often-answered first | | |
+| 8.4 | Question text has room | Full sentences readable, not all ellipsised to the same prefix | | |
+| 8.5 | Compare the two lanes | The Auto band and the Assistance band should show **different** numbers — they are different populations. Identical figures would mean one of them is querying the wrong one | | |
+| 8.6 | Read each sub-line | Names the form, says current published version only, and names which of AI / Assistance it is about | | |
+| 8.7 | A form AI has never scored | An empty state, not an error | | |
 
-Ready to call Dashboards › Quality finished?   Yes / Not yet
+## 9. Degrading and empty states
+
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 9.1 | Without `quality:evaluation:searchAny` | The page says it needs that permission | | |
+| 9.2 | If one lane's query fails | That lane says why; **the other lane still works in full** | | |
+| 9.3 | If a per-question query fails | That band alone says so; its lane's other panels are unaffected | | |
+| 9.4 | A period with nothing at all | Clean empty states in both lanes, no errors | | |
+| 9.5 | Filters that match nothing | Same | | |
+| 9.6 | Every action shows a throbber while loading | Load button disables, panels show spinners | | |
+
+## 10. Cost and hygiene
+
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 10.1 | Network tab on Load | Two search requests, plus one per per-question band when a form is selected. **No call to `analytics/evaluations/aggregates/query`** — the rebuild removed that dependency | | |
+| 10.2 | The two lane requests differ | One carries `systemSubmitted: true`, the other `false`. This is the fix for the old page's bug | | |
+| 10.3 | A range longer than 3 months | Sub-lines say it was queried in n windows and combined; figures stay coherent | | |
+| 10.4 | Nothing appears in the Activity Log | Read-only page | | |
+
+## 11. ★ Open questions
+
+| # | Question | Your answer |
+|---|---|---|
+| 11.1 | Does the page now answer something you would act on? | |
+| 11.2 | Is the Assistance lane populated in your org, or is Assistance simply not in use? | |
+| 11.3 | Is "per auto-evaluation" the right denominator for Did it stick?, or would you rather see raw dispute/rescore counts over time? | |
+| 11.4 | Would a per-agent or per-evaluator cut of either lane be useful? (Needs checking first — the API may refuse it, design §8.3) | |

@@ -849,6 +849,14 @@ either way the lane split removes the possibility.
   visible in aggregate as the evaluation-level `aiScoringFailureType`, and
   keeping it would cost a third question-level request under the one-form
   constraint of section 8.2a.
+- **`aiSuggestionCount` / `aiAcceptedSuggestionCount`.** Decided during the
+  build rather than the design. On an auto-submitted evaluation the model's own
+  answers *are* the evaluation, so "suggested versus accepted" has no stable
+  meaning there and any figure would have needed the kind of hedging that got
+  the score comparison deleted. The acceptance question belongs to the
+  Assistance lane, where a person is genuinely choosing. If a Genesys behaviour
+  turns up that gives these a clear meaning on auto-evaluations, they are one
+  SUM each to add back.
 
 Removing the whole comparison half has a consequence worth stating plainly: the
 analytics aggregate domain was only ever there to carry the counts and the
@@ -908,8 +916,8 @@ Four requests, each of which fails alone.
 
 | # | Lane | `systemSubmitted` | Aggregations |
 |---|---|---|---|
-| R1 | Auto | `true` | `TERM aiScoringFailureType`; `SUM disputeCount`, `SUM rescoreCount`, `SUM aiSuggestionCount`, `SUM aiAcceptedSuggestionCount`; `DATE_HISTOGRAM submittedDate` with `SUM disputeCount` + `SUM rescoreCount` sub-aggregations |
-| R2 | Assistance | `false` | `SUM eaSuggestionCount`, `SUM eaAcceptedSuggestionCount`; `DATE_HISTOGRAM submittedDate` with both as sub-aggregations |
+| R1 | Auto | `true` | `TERM aiScoringFailureType`; `SUM disputeCount`, `SUM rescoreCount`; `DATE_HISTOGRAM` on the time basis field with `SUM disputeCount` + `SUM rescoreCount` sub-aggregations |
+| R2 | Assistance | `false` | `SUM eaSuggestionCount`, `SUM eaAcceptedSuggestionCount`; `DATE_HISTOGRAM` on the time basis field with both as sub-aggregations |
 | R3 | Auto, per question | `true` | `TERM questionId` -> `TERM questionAiScored` (one form, section 8.2a) |
 | R4 | Assistance, per question | `false` | `TERM questionId` -> `TERM questionEaScored` (one form, section 8.2a) |
 
@@ -918,6 +926,30 @@ under a `DATE_HISTOGRAM` parent, which is what makes the rate bands possible at
 all. Sums inside date buckets recombine across 3-month windows exactly -- buckets
 merge on their key and the sums add (section 9.2) -- so `mergeSub` already
 covers it.
+
+The histogram buckets on the SAME field the range was filtered on, via
+`searchDateField(timeBasis)`. Bucketing on a fixed field while filtering on a
+chosen one would let the chart describe a different period from the one the
+filter bar names, silently.
+
+Counts come from `EvaluationSearchResponse.total`, summed across windows --
+disjoint windows, so it adds exactly. `aggregateAcrossWindows` carries it.
+
+### 8.2b Two honesty rules the rate bands follow
+
+**A zero denominator is not a zero rate.** A bucket where nothing was offered
+and a bucket where everything offered was rejected are opposite facts, and a
+zero-height column states the second one. A bucket with no denominator draws as
+a flat neutral tick instead, and its tooltip says "no suggestions".
+
+**The axis is fixed at 0-100% and drawn.** The entire point of a rate is that
+two periods can be compared; an axis that rescales to the sample destroys that.
+Gridlines every 25% make the scale visible, because an undrawn axis is an
+invisible one and a 14% column then reads as arbitrary.
+
+One wording consequence worth keeping: disputes and rescores are EVENT counts --
+one evaluation can be disputed twice -- so the auto lane's band is "disputes and
+rescores per auto-evaluation", never "percentage of evaluations overturned".
 
 The failure-type enum is worth labelling properly rather than echoing:
 `QuotaReached`, `ParsingError`, `ServiceError`, `InvalidRequest`,

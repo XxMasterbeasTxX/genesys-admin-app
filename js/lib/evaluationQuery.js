@@ -489,9 +489,44 @@ export function termAggregationWith(name, field, subAggregations, size = 100) {
   return { name, field, type: "TERM", size, subAggregations };
 }
 
-/** A DATE_HISTOGRAM aggregation. */
-export function dateHistogramAggregation(name, field, calendarInterval = "1d") {
-  return { name, field, type: "DATE_HISTOGRAM", calendarInterval };
+/**
+ * A DATE_HISTOGRAM aggregation, optionally carrying sub-aggregations.
+ *
+ * The sub-aggregations are what make a RATE over time possible. A bare
+ * histogram gives a count per bucket, which only answers "how much"; nesting
+ * two SUMs inside each bucket gives a numerator and a denominator per bucket,
+ * which answers "what share" — and a share is the only version of most of this
+ * data that can be compared between one month and the next.
+ *
+ * `EvaluationSearchSubAggregationDTO` permits the full type set under a
+ * histogram parent, SUM included.
+ */
+export function dateHistogramAggregation(name, field, calendarInterval = "1d", subAggregations) {
+  const a = { name, field, type: "DATE_HISTOGRAM", calendarInterval };
+  if (subAggregations?.length) a.subAggregations = subAggregations;
+  return a;
+}
+
+/**
+ * The search-domain date field for a time basis.
+ *
+ * A histogram has to bucket on the SAME field the range was filtered on, or the
+ * chart quietly describes a different period from the one the filter bar says
+ * it does.
+ */
+export function searchDateField(timeBasis) {
+  return (TIME_BASIS[timeBasis] || TIME_BASIS.conversation).search;
+}
+
+/**
+ * A calendar interval for a histogram, matched to the range.
+ *
+ * Same thresholds as the aggregate domain's granularity so the two never
+ * disagree about what "a bucket" means.
+ */
+export function calendarIntervalFor(days) {
+  if (days <= 2) return "1h";
+  return days <= 62 ? "1d" : "1w";
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -656,6 +691,11 @@ export async function aggregateAcrossWindows(filters, runOne, months = 3) {
   const responses = await Promise.all(windows.map((w) => runOne(w)));
   return {
     aggregations: mergeAggregations(responses.map(parseSearchAggregations)),
+    // Windows are disjoint, so the row totals add exactly. Worth carrying: it
+    // is the only count of matching evaluations a pure aggregation request
+    // gets back, and fetching it separately would be a second request for a
+    // number already in the response.
+    total: responses.reduce((s, r) => s + (r?.total || 0), 0),
     windows: windows.length,
   };
 }
