@@ -793,107 +793,131 @@ as a redacted row rather than dropped, for the same reason as
 
 ## 8. Page 3 — AI Scoring
 
-**Question:** is AI scoring working, and is anyone accepting what it suggests?
+**Question:** is AI doing the work, is it succeeding, and is anyone letting it
+stand?
 
 **Audience:** whoever owns the AI scoring rollout. Narrow, but this data has no
 good home in the standard Genesys views, which is the argument for the page.
 
-**Build status: complete.**
+**Build status: rebuilt.** The first build shipped and was rejected on the only
+grounds that matter -- "I am not sure what I get from this dashboard." It was
+right to reject. The page was organised around a *mechanism* (here are facts
+about AI) rather than a *decision*, which makes it a status page. Coverage asks
+"are we evaluating enough"; Scores asks "where are failures concentrated"; this
+one asked nothing. Section 8.0 is the rebuild.
 
-**Backed by two sources, not one.** The design assumed `evaluations/search`
-almost entirely. In the event the plain counts, the trend and the score
-comparison come from the ANALYTICS aggregate domain instead, because
-`systemSubmitted` is a dimension there — so those come back in one unbounded
-request rather than a walk across 3-month windows, and the trend can use real
-granularity instead of a DATE_HISTOGRAM. The search endpoint keeps everything
-only it knows: failure types, suggestion acceptance, disputes, rescores, and
-which questions the model answered.
+### 8.0 Two lanes, because there are two products
 
-That splits the permissions, and the split is deliberate. The page's gate stays
-`quality:evaluation:searchAny`; the aggregate half additionally wants
-`analytics:evaluationAggregate:view`, which is NOT in that gate. Those bands
-degrade on their own and name the missing permission, and every AI-specific band
-still works — the same shape as Coverage's denominator (§6.3).
+The single biggest fault in the first build: it averaged two unrelated features
+into one word, "AI".
 
-**Every search request carries `systemSubmitted: true`.** The flag defaults to
-false, so a page about AI scoring that forgot it would report human work under
-an AI heading — silently, and plausibly.
+| | Auto-evaluation | Evaluation Assistance |
+|---|---|---|
+| What it does | Scores **and submits** the whole evaluation itself | **Suggests** answers to a human evaluator, who accepts or overrides |
+| Who submits | Virtual Supervisor | A person |
+| `systemSubmitted` | `true` | `false` |
+| Fields | `aiScoringFailureType`, `aiSuggestionCount`, `aiAcceptedSuggestionCount`, `questionAiScored` | `eaSuggestionCount`, `eaAcceptedSuggestionCount`, `questionEaScored` |
+| Fails by | Not producing a score at all | Producing one nobody takes |
+| Trust signal | Disputes and rescores -- a person overturning it | Acceptance rate -- a person taking it |
 
-**No by-agent band**, per §8.3: `agentId` is in the aggregation field enum but
-absent from that endpoint's own allowed-fields list, and it was not worth
-building a band that might simply be refused. The test form asks whether a
-per-agent view is wanted before that is investigated.
+They are configured differently, they fail differently, and they are trusted
+differently. One "AI acceptance" number spanning both answers nothing about
+either. The page therefore runs as two labelled lanes, top to bottom, and never
+adds them together.
+
+**This also fixes a live bug.** The first build issued ONE search request with
+`systemSubmitted: true` and asked it for `eaSuggestionCount` and
+`eaAcceptedSuggestionCount`. Evaluation Assistance suggestions are attached to
+evaluations a *person* submitted, so that request asks for assistance figures
+from the population that by definition has none. The "Assistance suggested /
+Assistance accepted" bars could only ever have been under-reported, and are most
+likely structurally zero. Confirm against a live org with assistance enabled;
+either way the lane split removes the possibility.
+
+### 8.0a What was removed, and why
+
+- **AI-scored against human-scored.** The two are not scoring the same sample of
+  work, so the gap is not evidence of anything. The band carried a sub-line
+  saying so, which is the tell: a number needing that much hedging is not a
+  finding. Removed outright rather than caveated harder.
+- **AI and human evaluations over time.** Volume vanity outside a rollout. The
+  AI/human split is already on Scores as a "Scored by" band, which is where a
+  comparison belongs.
+- **The AI share tile.** A share *of human work* is a comparison by definition.
+  This page is about AI on its own terms.
+- **`questionAiAnswerFailureType`.** Answer-level failure causes are already
+  visible in aggregate as the evaluation-level `aiScoringFailureType`, and
+  keeping it would cost a third question-level request under the one-form
+  constraint of section 8.2a.
+
+Removing the whole comparison half has a consequence worth stating plainly: the
+analytics aggregate domain was only ever there to carry the counts and the
+comparison. Both are gone, so **the page is now backed by `evaluations/search`
+alone** -- one permission, `quality:evaluation:searchAny`, and no half that
+degrades separately. `EvaluationSearchResponse.total` supplies the lane counts.
 
 ### 8.1 Bands
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  [ filter bar — §5.2 ]                                           │
-├──────────────────────────────────────────────────────────────────┤
-│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐                     │
-│  │ AI     │ │ Accept │ │ Failure│ │ Dispute│                     │
-│  │ share  │ │ rate   │ │ rate   │ │ rate   │                     │
-│  └────────┘ └────────┘ └────────┘ └────────┘                     │
-├──────────────────────────────────────────────────────────────────┤
-│  AI vs human evaluations over time      (DATE_HISTOGRAM)         │
-├───────────────────────────┬──────────────────────────────────────┤
-│  Failure types            │  AI vs EA suggestions                │
-│  (aiScoringFailureType)   │  (suggested / accepted, both)        │
-├───────────────────────────┴──────────────────────────────────────┤
-│  Score comparison — AI-scored vs human-scored (STATS on both)    │
-├──────────────────────────────────────────────────────────────────┤
-│  Which questions the model answered  (needs ONE form — §8.2a)    │
-├──────────────────────────────────────────────────────────────────┤
-│  Rescores and disputes on AI-scored evaluations                  │
-└──────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+|  [ filter bar -- section 5.2 ]                                   |
++------------------------------------------------------------------+
+|  AUTO-EVALUATION            (systemSubmitted: true)              |
+|  +--------+ +--------+ +--------+ +--------+                     |
+|  | Scored | | Failed | |Disputed| |Rescored|                     |
+|  +--------+ +--------+ +--------+ +--------+                     |
+|                                                                  |
+|  A1  Did it run?      Why AI scoring failed + failures over time |
+|  A2  Did it stick?    Dispute / rescore rate over time           |
+|  A3  Where does it    Per question, least-answered first         |
+|      abstain?         (needs ONE form -- section 8.2a)           |
++------------------------------------------------------------------+
+|  EVALUATION ASSISTANCE      (systemSubmitted: false)             |
+|  +--------+ +--------+ +--------+                                |
+|  |Offered | |Accepted| | Accept |                                |
+|  |        | |        | |  rate  |                                |
+|  +--------+ +--------+ +--------+                                |
+|                                                                  |
+|  B1  Is it trusted?   Acceptance rate over time  <- the headline |
+|  B2  Where does it    Per question (needs ONE form)              |
+|      abstain?                                                    |
++------------------------------------------------------------------+
 ```
+
+**A2 and B1 are the point of the page.** Both are *rates over time*, not counts.
+A count says what happened; a rate over time says whether it is getting better
+or worse, which is the only version of this a person can act on. A rescore rate
+climbing month over month means trust in auto-evaluation is falling. An
+acceptance rate climbing means assistance is being tuned well.
+
+### 8.1a One honest limitation in the Assistance lane
+
+There is no way to count *assisted evaluations*. `eaSuggestionCount` is not in
+`EvaluationSearchCriteriaDTO`'s field enum, so a query cannot say "human
+evaluations where assistance offered something", and the response `total` for
+`systemSubmitted: false` is every human evaluation whether assisted or not.
+
+The lane therefore reports suggestion volumes, the acceptance rate and
+per-question coverage -- never an "n evaluations assisted" figure. The tiles say
+"suggestions", not "evaluations", so nothing on the page implies a number it
+does not have.
 
 ### 8.2 Aggregations used
 
-| Band | Field | Type |
-|---|---|---|
-| AI share | `systemSubmitted` request flag, two calls | `COUNT` |
-| Acceptance | `aiSuggestionCount`, `aiAcceptedSuggestionCount`, `eaSuggestionCount`, `eaAcceptedSuggestionCount` | `SUM` |
-| Failure types | `aiScoringFailureType`, `questionAiAnswerFailureType` | `TERM` |
-| Trend | `submittedDate` | `DATE_HISTOGRAM` |
-| Score comparison | `totalScore` | `STATS` |
-| Rescores / disputes | `rescoreCount`, `disputeCount` | `SUM` |
-| AI-scored questions | `questionAiScored`, `questionEaScored` | `TERM` |
+Four requests, each of which fails alone.
 
-Every one recombines exactly across windows (§9.2), and every `TERM` field here
-is a low-cardinality enum or boolean, so the 100-bucket cap cannot bite.
+| # | Lane | `systemSubmitted` | Aggregations |
+|---|---|---|---|
+| R1 | Auto | `true` | `TERM aiScoringFailureType`; `SUM disputeCount`, `SUM rescoreCount`, `SUM aiSuggestionCount`, `SUM aiAcceptedSuggestionCount`; `DATE_HISTOGRAM submittedDate` with `SUM disputeCount` + `SUM rescoreCount` sub-aggregations |
+| R2 | Assistance | `false` | `SUM eaSuggestionCount`, `SUM eaAcceptedSuggestionCount`; `DATE_HISTOGRAM submittedDate` with both as sub-aggregations |
+| R3 | Auto, per question | `true` | `TERM questionId` -> `TERM questionAiScored` (one form, section 8.2a) |
+| R4 | Assistance, per question | `false` | `TERM questionId` -> `TERM questionEaScored` (one form, section 8.2a) |
 
-### 8.2a Question-level fields cannot share a request
-
-The last row of that table is not like the others, and the first build got it
-wrong. The search endpoint treats anything named `question*` as a QUESTION-level
-field, legal only when the request carries a single top-level `TERM` on
-`questionId` **and** is scoped to one `formId`, one `questionGroupId` or a list
-of `questionIds`. Mixing a question-level field with an evaluation-level one is
-not degraded — it is rejected outright:
-
-> Aggregating against question level fields require either a single top level
-> Term aggregation for questionId and querying by either a single formId, a
-> single questionGroupId or list of questionIds OR querying by a single
-> questionId
-
-Because every aggregation on the page originally rode in one request,
-`questionAiAnswerFailureType`, `questionAiScored` and `questionEaScored` took the
-whole page down with them. They now live in a second request of their own —
-`TERM questionId` with a nested `TERM questionAiScored`, scoped by an EXACT
-`formId` criterion — which fails alone and leaves the rest of the page standing.
-
-The consequence for the user is the same constraint the Weakest question groups
-band lives under (§7.3a): the band needs **exactly one form** selected in the
-filter bar, and says so when it does not have one. Questions are not comparable
-across forms anyway, so this is a real constraint rather than only a technical
-one. The band reads least-often-answered first — a model that scores most
-questions but never touches three of them is saying something about those three.
-
-`questionAiAnswerFailureType` was dropped rather than moved. Its only home would
-be a third request under the same one-form constraint, and answer-level failure
-causes are already visible in aggregate as the evaluation-level
-`aiScoringFailureType` band.
+`EvaluationSearchSubAggregationDTO` permits the full type set including `SUM`
+under a `DATE_HISTOGRAM` parent, which is what makes the rate bands possible at
+all. Sums inside date buckets recombine across 3-month windows exactly -- buckets
+merge on their key and the sums add (section 9.2) -- so `mergeSub` already
+covers it.
 
 The failure-type enum is worth labelling properly rather than echoing:
 `QuotaReached`, `ParsingError`, `ServiceError`, `InvalidRequest`,
@@ -901,7 +925,39 @@ The failure-type enum is worth labelling properly rather than echoing:
 `QuotaReached` in particular is a commercial fact, not a bug, and should read as
 one.
 
-### 8.3 The one thing that may not be possible
+### 8.2a Question-level fields cannot share a request
+
+Anything named `question*` is a QUESTION-level field, legal only when the
+request carries a single top-level `TERM` on `questionId` **and** is scoped to
+one `formId`, one `questionGroupId` or a list of `questionIds`. Mixing a
+question-level field with an evaluation-level one is not degraded -- it is
+rejected outright:
+
+> Aggregating against question level fields require either a single top level
+> Term aggregation for questionId and querying by either a single formId, a
+> single questionGroupId or list of questionIds OR querying by a single
+> questionId
+
+Because every aggregation originally rode in one request, three question-level
+fields took the whole page down with them. Hence R3 and R4 above, each its own
+request, each failing alone.
+
+The user-facing consequence is the constraint Weakest question groups already
+lives under (section 7.3a): the abstention bands need **exactly one form**
+selected, and say so when they do not have one. Questions are not comparable
+across forms anyway, so this is a real constraint rather than only a technical
+one.
+
+Both bands read least-often-answered first. A model that answers most questions
+but never touches three of them is saying something about those three -- usually
+that they are badly worded, or need a human.
+
+Question text is a sentence, not a word. The default bar-label column
+ellipsises every question on a real form to the same prefix ("Oplyste
+agenten ..."), which is worse than no label; these bands use the wide two-line
+label variant.
+
+### 8.3 The one thing that may not be possible (still open)
 
 The spec lists `agentId` and `evaluatorId` in the aggregation field enum but
 **omits them from its own "allowed fields by aggregation type" breakdown**.

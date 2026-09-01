@@ -5685,6 +5685,24 @@ a.fr-shipped:hover { text-decoration: underline; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A bar list whose labels are sentences rather than words — question text,
+   chiefly. Against the default 200px column every question on a real form
+   ellipsises to the same prefix ("Oplyste agenten …"), which is worse than no
+   label at all: the rows become unidentifiable and the band unreadable. Wrap
+   to two lines against a much wider column instead. */
+.dq-bars.is-long-label .dq-bar-row {
+  grid-template-columns: minmax(240px, 45%) 1fr auto;
+}
+.dq-bars.is-long-label .dq-bar-label {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  line-clamp: 2;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
 .dq-bar-track {
   background: rgba(255,255,255,0.06);
   border-radius: 999px;

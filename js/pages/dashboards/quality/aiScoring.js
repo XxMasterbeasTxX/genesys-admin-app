@@ -135,7 +135,7 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
       <div class="dq-panel">
         <h3 class="dq-panel-title">Which questions the model answered</h3>
         <p class="dq-panel-sub" data-c="questionSub"></p>
-        <div class="dq-bars" data-c="questions"></div>
+        <div class="dq-bars is-long-label" data-c="questions"></div>
         <div class="dq-panel-note" data-c="questionNote" hidden></div>
       </div>
 
