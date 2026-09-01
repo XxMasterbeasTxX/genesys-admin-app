@@ -171,6 +171,12 @@ counts. This is the one arithmetic error the data shape invites.
 | 10.25 | Click **Clear** in that panel | Every row returns — the total goes back to the full count, not the page size | | |
 | 10.26 | With a filter active, sort a column | The total in the footer does **not** shrink to one page | | |
 | 10.27 | Click inside a filter panel | It does not sort the table behind it | | |
+| 10.28 | The filter control in each header | A real button beside the name, big enough to hit — not a hairline caret | | |
+| 10.29 | Open **Conversation** or **Submitted** | A **date** From/To pair, with the actual first and last date as a hint | | |
+| 10.30 | Pick the same date for From and To | That whole day is included, not just its midnight | | |
+| 10.31 | Sort **Conversation** | Sorted by real date — April must not come before August | | |
+| 10.32 | Click **None** on any column | The table stays put and reads "No rows match these filters." | | |
+| 10.33 | Then tick a value back on | The rows return. **The dropdown must stay reachable throughout** | | |
 
 ## 11. Overall
 

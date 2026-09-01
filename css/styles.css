@@ -5883,16 +5883,34 @@ a.fr-shipped:hover { text-decoration: underline; }
 /* Compact filter: the header names the column once, and carries a caret that
    opens its value list. Clicking the cell sorts; clicking the caret filters. */
 .cf-btn--compact {
-  background: none;
-  border: none;
-  color: var(--muted);
+  align-items: center;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
   cursor: pointer;
-  font-size: 9px;
+  display: inline-flex;
+  flex: none;
+  font-size: 10px;
+  height: 20px;
+  justify-content: center;
   margin-left: 6px;
-  padding: 0 2px;
+  min-width: 22px;
+  padding: 0;
+  vertical-align: middle;
 }
-.cf-btn--compact:hover { color: #4c8dff; }
-.cf-btn--compact.cf-btn--active { color: #4c8dff; }
+.cf-btn--compact:hover { background: rgba(76,141,255,0.22); border-color: #4c8dff; color: #9dc1ff; }
+.cf-btn--compact:focus-visible { outline: 2px solid #4c8dff; outline-offset: 1px; }
+.cf-btn--compact.cf-btn--active {
+  background: rgba(76,141,255,0.28);
+  border-color: #4c8dff;
+  color: #9dc1ff;
+}
+@media (prefers-color-scheme: light) {
+  .cf-btn--compact { background: rgba(0,0,0,0.05); }
+  .cf-btn--compact:hover,
+  .cf-btn--compact.cf-btn--active { background: rgba(29,78,216,0.12); color: #1d4ed8; }
+}
 .dq-foot-pager { align-items: center; display: flex; gap: 8px; }
 
 /* Numeric column filter: a FROM/TO range instead of a value list */
@@ -5923,3 +5941,11 @@ a.fr-shipped:hover { text-decoration: underline; }
   margin-top: 8px;
 }
 .dq-bar-filter { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; max-width: 280px; }
+/* A sortable header carrying a filter control needs the two to sit together
+   without the caret wrapping under the label. */
+.cf-th.cf-sortable { white-space: nowrap; }
+/* A column filter's dropdown hangs below the header inside this scroll box, so
+   the box must stay tall enough to show one even when every row is filtered
+   out — otherwise the control that hid the rows becomes unreachable. */
+.dq-table-wrap { min-height: 260px; }
+.dq-empty-row[hidden] { display: none; }

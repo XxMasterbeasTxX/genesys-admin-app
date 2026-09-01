@@ -796,6 +796,7 @@ export default function renderScores({ me, api, orgContext, access }) {
    * 25 rows that happened to be on screen.
    */
   function showPage(truncatedAt = 0) {
+    const $rows = $("detailRows");
     const size = detailSize;
     const total = detailVisible.length;
     const pages = Math.max(Math.ceil(total / size), 1);
@@ -805,6 +806,9 @@ export default function renderScores({ me, api, orgContext, access }) {
     detailVisible.forEach((tr, i) => {
       tr.style.display = i >= start && i < start + size ? "" : "none";
     });
+
+    const empty = $rows.querySelector(".dq-empty-row");
+    if (empty) empty.hidden = total > 0;
 
     const shown = Math.min(size, Math.max(total - start, 0));
     $("detailCount").textContent = total
@@ -979,8 +983,8 @@ export default function renderScores({ me, api, orgContext, access }) {
           <td>${escapeHtml(agentName || "—")}</td>
           <td>${escapeHtml(evaluatorName)}</td>
           <td>${escapeHtml(formName || "—")}</td>
-          <td>${escapeHtml(shortDate(it.conversationDate))}</td>
-          <td>${escapeHtml(shortDate(it.submittedDate))}</td>
+          <td data-value="${escapeHtml(it.conversationDate || "")}">${escapeHtml(shortDate(it.conversationDate))}</td>
+          <td data-value="${escapeHtml(it.submittedDate || "")}">${escapeHtml(shortDate(it.submittedDate))}</td>
           <td class="is-num">${score == null ? "—" : Number(score).toFixed(1) + "%"}</td>
           <td class="is-num">${crit == null ? "—" : Number(crit).toFixed(1) + "%"}</td>
           <td>${escapeHtml(it.status || "—")}</td>
@@ -1021,12 +1025,26 @@ export default function renderScores({ me, api, orgContext, access }) {
         numericCols: [5, 6],
         // Score and Critical are measured quantities: their distinct values run
         // to nearly one per row, so they get a FROM/TO range rather than a
-        // hundred checkboxes.
+        // hundred checkboxes. The two date columns get a date range for the
+        // same reason — every row has its own timestamp.
         rangeCols: [5, 6],
+        dateCols: [3, 4],
         onChange: (visible) => { detailVisible = visible; detailPage = 1; showPage(); },
       });
 
       detailVisible = Array.from($rows.querySelectorAll("tr"));
+
+      // Added AFTER the filters are attached, so it is never mistaken for data
+      // and never appears in a column's value list. It exists so that filtering
+      // everything out leaves the table standing: an empty tbody collapses the
+      // scroll box to the height of its header, which clips the very dropdown
+      // being used and makes the filter impossible to undo.
+      const emptyRow = document.createElement("tr");
+      emptyRow.className = "dq-empty-row";
+      emptyRow.innerHTML = '<td colspan="9" class="dq-bar-empty">No rows match these filters.</td>';
+      emptyRow.hidden = true;
+      $rows.append(emptyRow);
+
       detailPage = 1;
       showPage(truncated ? items.length : 0);
       $("detailFoot").hidden = false;

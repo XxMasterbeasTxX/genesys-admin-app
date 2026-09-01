@@ -26,6 +26,10 @@
  * @param {Function}    [opts.onChange]    - Called with the rows still visible after every
  *                                           filter or sort. Lets a caller layer its own
  *                                           paging on top without duplicating the state.
+ * @param {number[]}    [opts.dateCols]    - Columns filtered by a FROM/TO date range. The cell
+ *                                           must carry the real timestamp in `data-value`;
+ *                                           its displayed text is formatted for people and is
+ *                                           not reliably parseable back into a date.
  * @param {number[]}    [opts.rangeCols]   - Columns filtered by a numeric FROM/TO range
  *                                           instead of a list of values. For a measured
  *                                           quantity - a score, a duration, a count - the
@@ -69,6 +73,28 @@ export function attachColumnFilters(tableWrap, opts = {}) {
   const totalCount  = allDataRows.length;
 
   const rangeCols = new Set(opts.rangeCols || []);
+  const dateCols = new Set(opts.dateCols || []);
+
+  /**
+   * A cell's underlying value, preferring `data-value` over what is on screen.
+   *
+   * Displayed text is written for a reader — "31. aug., 12.00" — and parsing it
+   * back is guesswork that changes with the viewer's locale. Anything that must
+   * be compared rather than read carries its real value in the attribute.
+   */
+  function cellRaw(tr, colIdx) {
+    const td = tr.querySelectorAll("td")[colIdx];
+    if (!td) return "";
+    return td.dataset.value ?? td.textContent.trim();
+  }
+
+  /** A cell's time value in ms, or null when it holds no date. */
+  function cellTime(tr, colIdx) {
+    const raw = cellRaw(tr, colIdx);
+    if (!raw) return null;
+    const t = Date.parse(raw);
+    return Number.isNaN(t) ? null : t;
+  }
 
   /** A cell's numeric value, or null when it holds no number. */
   function cellNumber(tr, colIdx) {
@@ -82,7 +108,7 @@ export function attachColumnFilters(tableWrap, opts = {}) {
   /** @type {Record<number, string[]>} */
   const colValues = {};
   for (const colIdx of colsToFilter) {
-    if (rangeCols.has(colIdx)) { colValues[colIdx] = []; continue; }
+    if (rangeCols.has(colIdx) || dateCols.has(colIdx)) { colValues[colIdx] = []; continue; }
     const vals = new Set();
     for (const tr of allDataRows) {
       const td = tr.querySelectorAll("td")[colIdx];
@@ -118,6 +144,7 @@ export function attachColumnFilters(tableWrap, opts = {}) {
     btn.type      = "button";
     btn.className = opts.compact ? "cf-btn cf-btn--compact" : "cf-btn";
     btn.title     = `Filter ${label}`;
+    btn.setAttribute("aria-label", `Filter ${label}`);
     btn.innerHTML = opts.compact
       ? `<span class="cf-caret">▼</span>`
       : `<span class="cf-btn-label">${label || "▼"}</span>` +
@@ -129,6 +156,61 @@ export function attachColumnFilters(tableWrap, opts = {}) {
     // Floating dropdown panel
     const panel = document.createElement("div");
     panel.className = "cf-dropdown";
+
+    if (dateCols.has(colIdx)) {
+      if (opts.compact) panel.addEventListener("click", (e) => e.stopPropagation());
+      const times = allDataRows.map((tr) => cellTime(tr, colIdx)).filter((t) => t != null);
+      const day = (t) => new Date(t).toLocaleDateString("en-CA"); // yyyy-mm-dd, local
+      panel.classList.add("cf-dropdown--range");
+      panel.innerHTML = `
+        <div class="cf-range">
+          <label>From <input class="cf-date-min" type="date"></label>
+          <label>To <input class="cf-date-max" type="date"></label>
+        </div>
+        <div class="cf-actions">
+          <button type="button" class="cf-action-btn cf-range-clear">Clear</button>
+        </div>
+        <div class="cf-range-hint">${times.length
+          ? `${day(Math.min(...times))} to ${day(Math.max(...times))}`
+          : "No dates in this column"}</div>`;
+
+      const minEl = panel.querySelector(".cf-date-min");
+      const maxEl = panel.querySelector(".cf-date-max");
+
+      const applyDates = ((ci) => () => {
+        // Whole local days at both ends: picking the same date for From and To
+        // must mean that day, not the single instant of its midnight.
+        const min = minEl.value ? new Date(`${minEl.value}T00:00:00`).getTime() : null;
+        const max = maxEl.value ? new Date(`${maxEl.value}T23:59:59.999`).getTime() : null;
+        if (min == null && max == null) delete activeFilters[ci];
+        else activeFilters[ci] = { min, max, isDate: true };
+        syncButton(ci);
+        applyFilters();
+      })(colIdx);
+
+      minEl.addEventListener("input", applyDates);
+      maxEl.addEventListener("input", applyDates);
+      for (const elx of [minEl, maxEl]) elx.addEventListener("click", (e) => e.stopPropagation());
+      panel.querySelector(".cf-range-clear").addEventListener("click", (e) => {
+        e.stopPropagation();
+        minEl.value = "";
+        maxEl.value = "";
+        applyDates();
+      });
+
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const wasOpen = panel.classList.contains("open");
+        if (openDropdown && openDropdown !== panel) openDropdown.classList.remove("open");
+        panel.classList.toggle("open", !wasOpen);
+        openDropdown = wasOpen ? null : panel;
+        if (!wasOpen) requestAnimationFrame(() => minEl.focus());
+      });
+
+      th.append(btn, panel);
+      btnMap[colIdx] = btn;
+      continue;
+    }
 
     if (rangeCols.has(colIdx)) {
       if (opts.compact) panel.addEventListener("click", (e) => e.stopPropagation());
@@ -298,13 +380,13 @@ export function attachColumnFilters(tableWrap, opts = {}) {
           const cellVal = (cells[colIdx]?.textContent || "").trim();
           if (!sel.has(cellVal)) { match = false; break; }
         } else {
-          // A range. A row with no number in that column cannot satisfy a
-          // numeric bound, so it drops out — said in the panel rather than
-          // left for the reader to deduce from a shorter table.
-          const n = cellNumber(tr, colIdx);
-          if (n == null) { match = false; break; }
-          if (sel.min != null && n < sel.min) { match = false; break; }
-          if (sel.max != null && n > sel.max) { match = false; break; }
+          // A range, over dates or numbers. A row with nothing comparable in
+          // that column cannot satisfy a bound, so it drops out — said in the
+          // panel rather than left to be deduced from a shorter table.
+          const v = sel.isDate ? cellTime(tr, colIdx) : cellNumber(tr, colIdx);
+          if (v == null) { match = false; break; }
+          if (sel.min != null && v < sel.min) { match = false; break; }
+          if (sel.max != null && v > sel.max) { match = false; break; }
         }
       }
 
@@ -341,8 +423,10 @@ export function attachColumnFilters(tableWrap, opts = {}) {
 
     /** Text of a cell, as a number when the column is numeric. */
     function cellKey(tr, colIdx) {
-      const raw = (tr.querySelectorAll("td")[colIdx]?.textContent || "").trim();
-      if (!numeric.has(colIdx)) return raw.toLowerCase();
+      // `data-value` first: an ISO timestamp sorts correctly as text, whereas
+      // "31. aug., 12.00" sorts alphabetically and puts April before August.
+      const raw = cellRaw(tr, colIdx);
+      if (!numeric.has(colIdx)) return String(raw).toLowerCase();
       // Strip anything that is not part of a number — "50.0%" and
       // "1,284 eval(s)" both have a number in them worth sorting by.
       const n = parseFloat(raw.replace(/[^0-9.\-]/g, ""));
