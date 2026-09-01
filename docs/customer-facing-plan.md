@@ -488,6 +488,7 @@ Internal-only features (Utilities, Deployment, cross-org copies, trustee/all-org
 | `user-access` | `users.*`, `roles.*`, `divisions.*` |
 | `configuration` | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
 | `gdpr` (add-on) | `gdpr.*` |
+| `demo` (internal, not sellable) | `*` — every module a customer may hold; the customer-exclusion list still applies |
 
 A customer's registry entry just lists what they bought, e.g. `"packages": ["insights", "gdpr"]`.
 See [customer-onboarding.md](customer-onboarding.md) for the full onboarding steps.
