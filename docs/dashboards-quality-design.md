@@ -531,6 +531,32 @@ media type counts under each, which the panel says.
 other candidate for that slot and was not taken. It remains the most obvious
 unanswered question in this feature if a calibration view is ever wanted.
 
+### 7.0b An evaluation's media type is not a conversation's
+
+Found 2026-09-01, when the new By media type band drew back a bar labelled
+"Unknown media (call)".
+
+The conversation domain enumerates `voice`; **`Evaluation.mediaType` enumerates
+`CALL`** — along with CALLBACK, CHAT, COBROWSE, EMAIL, MESSAGE, INTERNAL_MESSAGE,
+SCREEN_MONITORING, SOCIAL_EXPRESSION, VIDEO, SCREENSHARE. Two different
+vocabularies for the same idea, one word apart.
+
+So the shared filter bar had been offering **Voice**, and filtering evaluations
+by `voice` matches nothing at all. Silently — an empty dashboard looks the same
+whether nothing happened or the query asked for a value that cannot exist. It
+survived unnoticed until a band drew the real value out of the data.
+
+`MEDIA_TYPES` now carries the evaluation domain's own values. The three
+underscored ones are deliberately left out of the dropdown: how the aggregate
+serialises them is unverified, and offering a filter that might silently match
+nothing is precisely the fault being fixed. `mediaLabel` still names them if
+they appear in data, tidying any unrecognised value rather than calling it
+unknown — a word this app has not seen is still Genesys' word for something.
+
+**The general lesson, for the AI Scoring page and anything after it:** a
+dimension shared by name between two Genesys domains is not necessarily shared
+by value. Draw the values out with a groupBy before offering them as a filter.
+
 ### 7.1 Bands
 
 ```

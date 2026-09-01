@@ -50,6 +50,7 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 | 2.3 | Open the **Dates refer to** dropdown | Three options: Conversation date, Created, Released | ☐ | |
 | 2.4 | Check the Who band | Agents, Work Teams, Divisions — **no Groups dropdown** (dropped by design) | ☐ | |
 | 2.5 | Check the What band | Forms, Media types, Clear filters - **no Queues** | ☐ | |
+| 2.5a | Open **Media types** | Offers **Call**, not Voice — evaluations use a different media enum from conversations, and filtering on Voice can never match | ☐ | |
 | 2.6 | Try to set **To** to today | Allowed — max is **today**. The range is partial and the page marks it as such | ☐ | |
 | 2.6a | Default range on first load | **Yesterday**, with that preset highlighted | ☐ | |
 | 2.6b | Click **Today**, then **This week**, then **Yesterday** | Each fills the dates and highlights; This week runs Monday → today | ☐ | |

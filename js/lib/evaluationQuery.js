@@ -89,14 +89,49 @@ export const TIME_BASIS_OPTIONS = Object.freeze(
   Object.entries(TIME_BASIS).map(([key, v]) => ({ key, label: v.label })),
 );
 
-/** Media types an evaluation can carry. */
+/**
+ * Media types an EVALUATION can carry.
+ *
+ * Not the same list as the conversation domain, which is the trap here. A
+ * conversation is `voice`; the evaluation of that same conversation is `call`
+ * (`Evaluation.mediaType` enumerates CALL, CALLBACK, CHAT, COBROWSE, EMAIL,
+ * MESSAGE, INTERNAL_MESSAGE, SCREEN_MONITORING, SOCIAL_EXPRESSION, VIDEO,
+ * SCREENSHARE). Filtering evaluations by `voice` therefore matches nothing at
+ * all — silently, which is how it survived until a By media type band drew the
+ * value back out as "call".
+ *
+ * The three underscored values are deliberately absent: how the aggregate
+ * serialises them is unverified, and offering a filter that might silently
+ * match nothing is the fault this list exists to fix. `mediaLabel` still names
+ * them if they turn up in data.
+ */
 export const MEDIA_TYPES = Object.freeze([
-  { id: "voice",    label: "Voice" },
-  { id: "chat",     label: "Chat" },
-  { id: "email",    label: "Email" },
-  { id: "message",  label: "Message" },
-  { id: "callback", label: "Callback" },
+  { id: "call",        label: "Call" },
+  { id: "callback",    label: "Callback" },
+  { id: "chat",        label: "Chat" },
+  { id: "email",       label: "Email" },
+  { id: "message",     label: "Message" },
+  { id: "cobrowse",    label: "Cobrowse" },
+  { id: "video",       label: "Video" },
+  { id: "screenshare", label: "Screen share" },
 ]);
+
+const MEDIA_LABEL_BY_ID = new Map(MEDIA_TYPES.map((m) => [m.id, m.label]));
+
+/**
+ * A media type as a person would write it.
+ *
+ * Falls back to tidying the raw value rather than calling it unknown: a value
+ * this app has not seen is still Genesys' own word for something, and
+ * "Internal message" reads better than "Unknown media (internal_message)".
+ */
+export function mediaLabel(raw) {
+  if (!raw) return "No media recorded";
+  const key = String(raw).toLowerCase();
+  if (MEDIA_LABEL_BY_ID.has(key)) return MEDIA_LABEL_BY_ID.get(key);
+  const words = key.replace(/[_-]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 /** AI scoring failure types, labelled for people rather than echoed raw. */
 export const AI_FAILURE_LABELS = Object.freeze({

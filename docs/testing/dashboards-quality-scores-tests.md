@@ -37,7 +37,7 @@ is new.
 | 1.3b | Click **Clear filters** | The count and the highlight both go | | |
 | 1.4 | Set a scope on Coverage, then come here | The same scope is already applied | | |
 | 1.5 | Panel order | Average score over time, Score distribution, By form + By media type, Agent scores, Weakest question groups, Evaluations | | |
-| 1.5a | **By media type** | Average score per media type, lowest first, named (Voice, Chat, Email) not raw ids | | |
+| 1.5a | **By media type** | Average score per media type, lowest first, named (Call, Callback, Email) not raw ids. **Call, never Voice** — evaluations use a different enum from conversations | | |
 | 1.5b | There is **no** separate Critical scores panel | It is the Total/Critical toggle inside Agent scores | | |
 | 1.6 | **Evaluations** and **Critical scores** | Both start **folded** — they grow with the size of the programme | | |
 | 1.7 | Their summaries while folded | Carry a count: "16 in this period", "12 agent(s)" — or "needs a range of 3 months or less" | | |
@@ -45,7 +45,9 @@ is new.
 | 1.8a | Default order | **Lowest first** | | |
 | 1.8b | **Order** → Highest first | Reverses; the same agents, other end first | | |
 | 1.8c | **Score** → Critical | Redraws with critical scores; order may differ from Total | | |
-| 1.8d | **Filter agents** | Type part of a name; bars narrow live | | |
+| 1.8d | **Agents** picker | A multi-select: search, tick several, "n selected". No selection means all | | |
+| 1.8d1 | Tick two agents | Only those two bars; count says "2 of 2 matching — n in total" | | |
+| 1.8d2 | Untick them | All agents return | | |
 | 1.8e | **Score between** From/To | Only agents in that band remain | | |
 | 1.8f | A combination matching nobody | "No agent matches these filters" | | |
 | 1.8g | **Agents shown** | 25 / 50 / 100 / 200 | | |

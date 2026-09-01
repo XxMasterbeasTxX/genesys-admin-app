@@ -36,11 +36,9 @@ import {
 } from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
-import { MEDIA_TYPES } from "../../../lib/evaluationQuery.js";
+import { mediaLabel } from "../../../lib/evaluationQuery.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
-
-/** Media type id → the name a person would use for it. */
-const MEDIA_LABELS = new Map(MEDIA_TYPES.map((m) => [m.id, m.label]));
+import { createMultiSelect } from "../../../components/multiSelect.js";
 
 /** Hourly for a day or two, daily to about two months, weekly beyond. */
 function pickGranularity(from, to) {
@@ -153,9 +151,8 @@ export default function renderScores({ me, api, orgContext, access }) {
             </select>
           </div>
           <div class="cs-control-group">
-            <label class="cs-label" for="dqAgentFilter">Filter agents</label>
-            <input class="input" id="dqAgentFilter" type="search" data-c="agentFilter"
-                   placeholder="Type part of a name…" autocomplete="off">
+            <label class="cs-label">Agents</label>
+            <div data-c="agentPick"></div>
           </div>
           <div class="cs-control-group">
             <label class="cs-label">Score between</label>
@@ -330,9 +327,19 @@ export default function renderScores({ me, api, orgContext, access }) {
   for (const c of ["agentMetric", "agentOrder", "agentSize"]) {
     $(c).addEventListener("change", () => renderAgents());
   }
-  for (const c of ["agentFilter", "agentMin", "agentMax"]) {
+  for (const c of ["agentMin", "agentMax"]) {
     $(c).addEventListener("input", () => renderAgents());
   }
+
+  // A multi-select rather than a text box: "how are these four doing" is the
+  // question a supervisor actually brings, and typing one name at a time
+  // cannot answer it. Searchable, so it still works at 400 agents.
+  const agentPick = createMultiSelect({
+    placeholder: "All agents",
+    searchable: true,
+    onChange: () => renderAgents(),
+  });
+  $("agentPick").append(agentPick.el);
 
   $("detailSort").addEventListener("change", () => {
     detailPage = 1;
@@ -641,6 +648,10 @@ export default function renderScores({ me, api, orgContext, access }) {
         critical: toScoreRows(agentCritical, lookups.agents,
           { unknownLabel: "Unknown user", emptyLabel: "No agent recorded" }),
       };
+      // Keyed on the agent id the aggregate grouped by, so a name that repeats
+      // is still two people.
+      agentPick.setItemsKeepSelection(
+        agentRows.total.map((r) => ({ id: r.key, label: r.label })));
       renderAgents();
 
       // A collapsed panel that says nothing is just a thing to click. The
@@ -650,8 +661,8 @@ export default function renderScores({ me, api, orgContext, access }) {
         : "nothing scored";
 
       renderScoreBars($("byMedia"),
-        toScoreRows(parseGroupedAggregate(mediaResp, "mediaType", "oTotalScore"), MEDIA_LABELS,
-          { unknownLabel: "Unknown media", emptyLabel: "No media recorded" }));
+        statsMapToSorted(parseGroupedAggregate(mediaResp, "mediaType", "oTotalScore"), "average", "asc")
+          .map(({ key, stats, value }) => ({ key, label: mediaLabel(key), value, stats })));
       $("detailHint").textContent = exceedsSearchWindow(f.from, f.to)
         ? "needs a range of 3 months or less"
         : `${count.toLocaleString()} in this period`;
@@ -881,12 +892,14 @@ export default function renderScores({ me, api, orgContext, access }) {
   function renderAgents() {
     const metric = $("agentMetric").value === "critical" ? "critical" : "total";
     const size = Number($("agentSize").value) || 25;
-    const term = ($("agentFilter").value || "").trim().toLowerCase();
+    const picked = agentPick.getSelected();
     const min = $("agentMin").value === "" ? null : Number($("agentMin").value);
     const max = $("agentMax").value === "" ? null : Number($("agentMax").value);
 
     const all = agentRows[metric] || [];
-    let rows = term ? all.filter((r) => r.label.toLowerCase().includes(term)) : all;
+    // No selection means everyone, not nobody — the dropdown reads "All agents"
+    // in that state and must behave the way it reads.
+    let rows = picked.size ? all.filter((r) => picked.has(r.key)) : all;
     if (min != null) rows = rows.filter((r) => r.value >= min);
     if (max != null) rows = rows.filter((r) => r.value <= max);
 
@@ -896,7 +909,7 @@ export default function renderScores({ me, api, orgContext, access }) {
 
     renderScoreBars($("byAgent"), rows, { limit: size });
 
-    const narrowed = term || min != null || max != null;
+    const narrowed = picked.size > 0 || min != null || max != null;
     if (!all.length) {
       $("agentCount").textContent = "";
     } else if (!rows.length) {
