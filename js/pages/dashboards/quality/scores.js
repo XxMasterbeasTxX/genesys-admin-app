@@ -204,6 +204,11 @@ export default function renderScores({ me, api, orgContext, access }) {
           Average critical score per agent, lowest first. A critical score can
           fall while the total score holds up, which is the case worth catching.
         </p>
+        <div class="dq-bar-filter">
+          <label class="cs-label" for="dqCriticalFilter">Filter agents</label>
+          <input class="input" id="dqCriticalFilter" type="search" data-c="criticalFilter"
+                 placeholder="Type part of a name…" autocomplete="off">
+        </div>
         <div class="dq-bars" data-c="byAgentCritical"></div>
         <div class="dq-foot">
           <span class="dq-foot-count" data-c="criticalCount"></span>
@@ -287,6 +292,11 @@ export default function renderScores({ me, api, orgContext, access }) {
   $("criticalSize").addEventListener("change", () => {
     renderCritical();
   });
+
+  // A name filter rather than a value list: this panel stays a bar chart, and
+  // the question it answers is "where is this one person" among agents whose
+  // scores are all distinct numbers.
+  $("criticalFilter").addEventListener("input", () => renderCritical());
 
   $("detailSort").addEventListener("change", () => {
     detailPage = 1;
@@ -806,10 +816,25 @@ export default function renderScores({ me, api, orgContext, access }) {
   /** Draw the critical-score bars at the currently chosen size. */
   function renderCritical() {
     const size = Number($("criticalSize").value) || 25;
-    renderScoreBars($("byAgentCritical"), criticalRows, { limit: size });
-    $("criticalCount").textContent = criticalRows.length
-      ? `Showing ${Math.min(size, criticalRows.length).toLocaleString()} of ${criticalRows.length.toLocaleString()} agent(s)`
-      : "";
+    const term = ($("criticalFilter").value || "").trim().toLowerCase();
+    const rows = term
+      ? criticalRows.filter((r) => r.label.toLowerCase().includes(term))
+      : criticalRows;
+
+    renderScoreBars($("byAgentCritical"), rows, { limit: size });
+
+    if (!criticalRows.length) {
+      $("criticalCount").textContent = "";
+    } else if (!rows.length) {
+      $("criticalCount").textContent = `No agent matches “${term}”`;
+    } else {
+      // Both numbers, when a filter is on: how many are drawn, how many matched,
+      // and how many there are — a bar chart capped at 25 otherwise looks like
+      // the whole answer.
+      $("criticalCount").textContent =
+        `Showing ${Math.min(size, rows.length).toLocaleString()} of ${rows.length.toLocaleString()}` +
+        (term ? ` matching — ${criticalRows.length.toLocaleString()} agent(s) in total` : " agent(s)");
+    }
   }
 
   /** How many 3-month windows a range needs. */
@@ -983,6 +1008,10 @@ export default function renderScores({ me, api, orgContext, access }) {
         compact: true,
         sortable: true,
         numericCols: [5, 6],
+        // Score and Critical are measured quantities: their distinct values run
+        // to nearly one per row, so they get a FROM/TO range rather than a
+        // hundred checkboxes.
+        rangeCols: [5, 6],
         onChange: (visible) => { detailVisible = visible; detailPage = 1; showPage(); },
       });
 

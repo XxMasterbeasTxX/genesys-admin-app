@@ -5894,3 +5894,32 @@ a.fr-shipped:hover { text-decoration: underline; }
 .cf-btn--compact:hover { color: #4c8dff; }
 .cf-btn--compact.cf-btn--active { color: #4c8dff; }
 .dq-foot-pager { align-items: center; display: flex; gap: 8px; }
+
+/* Numeric column filter: a FROM/TO range instead of a value list */
+.cf-dropdown--range { min-width: 210px; padding: 10px; }
+.cf-range { display: flex; gap: 8px; }
+.cf-range label {
+  color: var(--muted);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  font-size: 11px;
+  gap: 4px;
+}
+.cf-range input {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 5px 7px;
+  width: 100%;
+}
+.cf-range input:focus { border-color: #4c8dff; outline: none; }
+.cf-range-hint {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 8px;
+}
+.dq-bar-filter { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; max-width: 280px; }

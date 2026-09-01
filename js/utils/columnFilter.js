@@ -26,6 +26,11 @@
  * @param {Function}    [opts.onChange]    - Called with the rows still visible after every
  *                                           filter or sort. Lets a caller layer its own
  *                                           paging on top without duplicating the state.
+ * @param {number[]}    [opts.rangeCols]   - Columns filtered by a numeric FROM/TO range
+ *                                           instead of a list of values. For a measured
+ *                                           quantity - a score, a duration, a count - the
+ *                                           distinct values are nearly as many as the rows,
+ *                                           and a hundred checkboxes is not a control.
  * @returns {Function} cleanup — removes global listeners; call when table is destroyed.
  */
 export function attachColumnFilters(tableWrap, opts = {}) {
@@ -63,10 +68,21 @@ export function attachColumnFilters(tableWrap, opts = {}) {
   const allDataRows = Array.from(tbody.querySelectorAll("tr"));
   const totalCount  = allDataRows.length;
 
+  const rangeCols = new Set(opts.rangeCols || []);
+
+  /** A cell's numeric value, or null when it holds no number. */
+  function cellNumber(tr, colIdx) {
+    const raw = (tr.querySelectorAll("td")[colIdx]?.textContent || "").trim();
+    if (!raw) return null;
+    const n = parseFloat(raw.replace(/[^0-9.\-]/g, ""));
+    return Number.isNaN(n) ? null : n;
+  }
+
   // Build sorted unique value lists per filterable column
   /** @type {Record<number, string[]>} */
   const colValues = {};
   for (const colIdx of colsToFilter) {
+    if (rangeCols.has(colIdx)) { colValues[colIdx] = []; continue; }
     const vals = new Set();
     for (const tr of allDataRows) {
       const td = tr.querySelectorAll("td")[colIdx];
@@ -113,6 +129,60 @@ export function attachColumnFilters(tableWrap, opts = {}) {
     // Floating dropdown panel
     const panel = document.createElement("div");
     panel.className = "cf-dropdown";
+
+    if (rangeCols.has(colIdx)) {
+      if (opts.compact) panel.addEventListener("click", (e) => e.stopPropagation());
+      const nums = allDataRows.map((tr) => cellNumber(tr, colIdx)).filter((n) => n != null);
+      const lo = nums.length ? Math.min(...nums) : 0;
+      const hi = nums.length ? Math.max(...nums) : 0;
+      panel.classList.add("cf-dropdown--range");
+      panel.innerHTML = `
+        <div class="cf-range">
+          <label>From <input class="cf-range-min" type="number" placeholder="${lo}"></label>
+          <label>To <input class="cf-range-max" type="number" placeholder="${hi}"></label>
+        </div>
+        <div class="cf-actions">
+          <button type="button" class="cf-action-btn cf-range-clear">Clear</button>
+        </div>
+        <div class="cf-range-hint">Rows with no value are hidden while a range is set.</div>`;
+
+      const minEl = panel.querySelector(".cf-range-min");
+      const maxEl = panel.querySelector(".cf-range-max");
+
+      const applyRange = ((ci) => () => {
+        const min = minEl.value === "" ? null : Number(minEl.value);
+        const max = maxEl.value === "" ? null : Number(maxEl.value);
+        activeFilters[ci] = (min == null && max == null) ? undefined : { min, max };
+        if (activeFilters[ci] === undefined) delete activeFilters[ci];
+        syncButton(ci);
+        applyFilters();
+      })(colIdx);
+
+      minEl.addEventListener("input", applyRange);
+      maxEl.addEventListener("input", applyRange);
+      for (const el of [minEl, maxEl]) el.addEventListener("click", (e) => e.stopPropagation());
+      panel.querySelector(".cf-range-clear").addEventListener("click", (e) => {
+        // The panel lives inside the header cell, which sorts on click.
+        e.stopPropagation();
+        minEl.value = "";
+        maxEl.value = "";
+        applyRange();
+      });
+
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const wasOpen = panel.classList.contains("open");
+        if (openDropdown && openDropdown !== panel) openDropdown.classList.remove("open");
+        panel.classList.toggle("open", !wasOpen);
+        openDropdown = wasOpen ? null : panel;
+        if (!wasOpen) requestAnimationFrame(() => minEl.focus());
+      });
+
+      th.append(btn, panel);
+      btnMap[colIdx] = btn;
+      continue;
+    }
+
     panel.innerHTML = `
       <input class="cf-search" type="text" placeholder="Search values…" />
       <div class="cf-actions">
@@ -120,6 +190,8 @@ export function attachColumnFilters(tableWrap, opts = {}) {
         <button type="button" class="cf-action-btn cf-none">None</button>
       </div>
       <div class="cf-list"></div>`;
+
+    if (opts.compact) panel.addEventListener("click", (e) => e.stopPropagation());
 
     const searchInput = panel.querySelector(".cf-search");
     const listEl      = panel.querySelector(".cf-list");
@@ -220,9 +292,20 @@ export function attachColumnFilters(tableWrap, opts = {}) {
       const cells = Array.from(tr.querySelectorAll("td"));
       let match = true;
 
-      for (const [idxStr, selected] of activeEntries) {
-        const cellVal = (cells[+idxStr]?.textContent || "").trim();
-        if (!selected.has(cellVal)) { match = false; break; }
+      for (const [idxStr, sel] of activeEntries) {
+        const colIdx = +idxStr;
+        if (sel instanceof Set) {
+          const cellVal = (cells[colIdx]?.textContent || "").trim();
+          if (!sel.has(cellVal)) { match = false; break; }
+        } else {
+          // A range. A row with no number in that column cannot satisfy a
+          // numeric bound, so it drops out — said in the panel rather than
+          // left for the reader to deduce from a shorter table.
+          const n = cellNumber(tr, colIdx);
+          if (n == null) { match = false; break; }
+          if (sel.min != null && n < sel.min) { match = false; break; }
+          if (sel.max != null && n > sel.max) { match = false; break; }
+        }
       }
 
       tr.style.display = match ? "" : "none";
@@ -277,7 +360,11 @@ export function attachColumnFilters(tableWrap, opts = {}) {
         return 0;
       });
       for (const tr of rows) tbody.append(tr);
-      opts.onChange?.(rows.filter((tr) => tr.style.display !== "none"));
+      // Re-run the filters rather than reporting whatever is on screen. A
+      // caller that pages the rows has hidden most of them, and handing back
+      // only the visible ones would shrink its idea of the match to a single
+      // page every time a column was sorted.
+      applyFilters();
     }
 
     headerCells.forEach((th, colIdx) => {

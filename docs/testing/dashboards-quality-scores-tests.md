@@ -40,6 +40,10 @@ is new.
 | 1.8 | Open **Critical scores** | Content is already there — it costs no extra request | | |
 | 1.8a | **Agents shown** at the bottom of Critical scores | 25 / 50 / 100 / 200; changes how many bars are drawn, with no new request | | |
 | 1.8b | Its count line | Reads "Showing n of m agent(s)" | | |
+| 1.8c | **Filter agents** box in Critical scores | Type part of a name; the bars narrow live | | |
+| 1.8d | Its count while filtering | Reads "Showing n of m matching — k agent(s) in total" | | |
+| 1.8e | Type something that matches nobody | "No agent matches …" rather than an empty panel | | |
+| 1.8f | Clear the box | All agents return | | |
 | 1.9 | Network tab: load with **Evaluations** folded | **No** row search fires; the folded table costs nothing | | |
 | 1.10 | Open **Evaluations** | One row search fires then | | |
 | 1.11 | Fold and unfold it again without changing anything | No further request — folding is navigation, not a new question | | |
@@ -160,6 +164,12 @@ counts. This is the one arithmetic error the data shape invites.
 | 10.19 | **Rows per page** | 25 / 50 / 100 / 200; re-pages instantly with no new requests | | |
 | 10.20 | **Fetch order** at the top | Decides the order rows are fetched in; column sorting works on top of it | | |
 | 10.21 | A very busy range (over 5,000) | The count says the list is the first 5,000 and to narrow the dates | | |
+| 10.22 | Open the **Score** or **Critical** filter | A **From / To** range, not a hundred checkboxes. Placeholders show the actual lowest and highest | | |
+| 10.23 | Type a From value | Filters live; rows with no score drop out, which the panel says | | |
+| 10.24 | Set both From and To | Only rows inside the range remain | | |
+| 10.25 | Click **Clear** in that panel | Every row returns — the total goes back to the full count, not the page size | | |
+| 10.26 | With a filter active, sort a column | The total in the footer does **not** shrink to one page | | |
+| 10.27 | Click inside a filter panel | It does not sort the table behind it | | |
 
 ## 11. Overall
 
