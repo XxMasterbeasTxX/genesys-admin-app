@@ -5879,3 +5879,18 @@ a.fr-shipped:hover { text-decoration: underline; }
   gap: 8px;
 }
 .dq-foot-size .input { padding: 4px 8px; width: auto; }
+
+/* Compact filter: the header names the column once, and carries a caret that
+   opens its value list. Clicking the cell sorts; clicking the caret filters. */
+.cf-btn--compact {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 9px;
+  margin-left: 6px;
+  padding: 0 2px;
+}
+.cf-btn--compact:hover { color: #4c8dff; }
+.cf-btn--compact.cf-btn--active { color: #4c8dff; }
+.dq-foot-pager { align-items: center; display: flex; gap: 8px; }

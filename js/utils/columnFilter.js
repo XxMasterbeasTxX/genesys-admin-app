@@ -20,6 +20,12 @@
  *                                           already use this keep the behaviour they shipped with.
  * @param {number[]}    [opts.numericCols] - Columns to compare as numbers when sorting.
  *                                           Only meaningful with `sortable`.
+ * @param {boolean}     [opts.compact]     - Put the filter control IN the header cell
+ *                                           instead of a second row, so the column is
+ *                                           named once. Needs no `ll-filter-row`.
+ * @param {Function}    [opts.onChange]    - Called with the rows still visible after every
+ *                                           filter or sort. Lets a caller layer its own
+ *                                           paging on top without duplicating the state.
  * @returns {Function} cleanup — removes global listeners; call when table is destroyed.
  */
 export function attachColumnFilters(tableWrap, opts = {}) {
@@ -31,7 +37,9 @@ export function attachColumnFilters(tableWrap, opts = {}) {
   if (!thead || !tbody) return () => {};
 
   const headerRow = thead.querySelector("tr:first-child");
-  const filterRow = thead.querySelector("tr.ll-filter-row");
+  // In compact mode the header row IS the filter row: the control goes inside
+  // the cell that already names the column, so the name is not printed twice.
+  const filterRow = opts.compact ? headerRow : thead.querySelector("tr.ll-filter-row");
   if (!headerRow || !filterRow) return () => {};
 
   const headerCells = Array.from(headerRow.querySelectorAll("th"));
@@ -86,16 +94,21 @@ export function attachColumnFilters(tableWrap, opts = {}) {
     th.classList.add("cf-th");
 
     const values = colValues[colIdx];
-    const label  = (headerCells[colIdx]?.textContent || "").trim();
+    const label  = (headerCells[colIdx]?.dataset.label
+      || headerCells[colIdx]?.textContent || "").trim();
 
     // Toggle button shown in the filter row cell
     const btn = document.createElement("button");
     btn.type      = "button";
-    btn.className = "cf-btn";
-    btn.title     = label;
-    btn.innerHTML =
-      `<span class="cf-btn-label">${label || "▼"}</span>` +
-      `<span class="cf-caret">▼</span>`;
+    btn.className = opts.compact ? "cf-btn cf-btn--compact" : "cf-btn";
+    btn.title     = `Filter ${label}`;
+    btn.innerHTML = opts.compact
+      ? `<span class="cf-caret">▼</span>`
+      : `<span class="cf-btn-label">${label || "▼"}</span>` +
+        `<span class="cf-caret">▼</span>`;
+    // In compact mode the cell is also the sort target, so the filter must not
+    // sort the table on its way to opening the dropdown.
+    if (opts.compact) btn.addEventListener("click", (e) => e.stopPropagation());
 
     // Floating dropdown panel
     const panel = document.createElement("div");
@@ -222,6 +235,8 @@ export function attachColumnFilters(tableWrap, opts = {}) {
         ? `${visible} / ${totalCount} ${totalLabel}`
         : `${totalCount} ${totalLabel}`;
     }
+
+    opts.onChange?.(allDataRows.filter((tr) => tr.style.display !== "none"));
   }
 
   function syncButton(colIdx) {
@@ -262,10 +277,12 @@ export function attachColumnFilters(tableWrap, opts = {}) {
         return 0;
       });
       for (const tr of rows) tbody.append(tr);
+      opts.onChange?.(rows.filter((tr) => tr.style.display !== "none"));
     }
 
     headerCells.forEach((th, colIdx) => {
       th.classList.add("cf-sortable");
+      if (!th.dataset.label) th.dataset.label = (th.textContent || "").trim();
       th.tabIndex = 0;
       th.setAttribute("role", "button");
       const mark = document.createElement("span");

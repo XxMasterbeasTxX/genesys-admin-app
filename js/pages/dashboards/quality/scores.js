@@ -153,25 +153,13 @@ export default function renderScores({ me, api, orgContext, access }) {
         <p class="dq-panel-sub" data-c="detailSub"></p>
         <div class="dq-detail-controls" data-c="detailControls" hidden>
           <div class="cs-control-group">
-            <label class="cs-label">Sort by</label>
+            <label class="cs-label">Fetch order</label>
             <select class="input" data-c="detailSort">
               <option value="conversationDate">Conversation date</option>
               <option value="submittedDate">Submitted</option>
               <option value="createdDate">Created</option>
               <option value="releaseDate">Released</option>
             </select>
-          </div>
-          <div class="cs-control-group">
-            <label class="cs-label">&nbsp;</label>
-            <button class="btn btn-sm" data-c="detailPrev">Previous</button>
-          </div>
-          <div class="cs-control-group">
-            <label class="cs-label">&nbsp;</label>
-            <button class="btn btn-sm" data-c="detailNext">Next</button>
-          </div>
-          <div class="cs-control-group">
-            <label class="cs-label">&nbsp;</label>
-            <span class="dq-detail-page" data-c="detailPage"></span>
           </div>
         </div>
         <div class="dq-table-wrap" data-c="detailWrap" hidden>
@@ -183,16 +171,17 @@ export default function renderScores({ me, api, orgContext, access }) {
                 <th class="is-num">Score</th><th class="is-num">Critical</th>
                 <th>Status</th><th>Released</th>
               </tr>
-              <tr class="ll-filter-row">
-                <th></th><th></th><th></th><th></th><th></th>
-                <th></th><th></th><th></th><th></th>
-              </tr>
             </thead>
             <tbody data-c="detailRows"></tbody>
           </table>
         </div>
         <div class="dq-foot" data-c="detailFoot" hidden>
           <span class="dq-foot-count" data-c="detailCount"></span>
+          <span class="dq-foot-pager">
+            <button class="btn btn-sm" data-c="detailPrev">Previous</button>
+            <span class="dq-detail-page" data-c="detailPage"></span>
+            <button class="btn btn-sm" data-c="detailNext">Next</button>
+          </span>
           <label class="dq-foot-size">
             Rows per page
             <select class="input" data-c="detailSize">
@@ -262,7 +251,13 @@ export default function renderScores({ me, api, orgContext, access }) {
   // disposer; the table is redrawn on every page turn, so the previous one is
   // released before the next is attached, and again on teardown.
   let disposeFilters = null;
+  // 200 a request, 25 requests: enough for any range a person will actually
+  // read, and a hard stop so a busy quarter cannot turn one panel into a
+  // thousand-request page. Past it the footer says the list is partial.
+  const FETCH_PAGE_SIZE = 200;
+  const MAX_DETAIL_PAGES = 25;
   let detailSize = 25;
+  let detailVisible = [];
   let criticalRows = [];
   let detailPage = 1;
   let aiCount = 0;
@@ -284,8 +279,7 @@ export default function renderScores({ me, api, orgContext, access }) {
   $("detailSize").addEventListener("change", () => {
     detailSize = Number($("detailSize").value) || 25;
     detailPage = 1;
-    detailDirty = true;
-    requestDetail();
+    showPage();
   });
 
   // Critical scores needs no request for this — the by-agent aggregate already
@@ -322,13 +316,11 @@ export default function renderScores({ me, api, orgContext, access }) {
   $("detailPrev").addEventListener("click", () => {
     if (detailPage <= 1) return;
     detailPage -= 1;
-    detailDirty = true;
-    requestDetail();
+    showPage();
   });
   $("detailNext").addEventListener("click", () => {
     detailPage += 1;
-    detailDirty = true;
-    requestDetail();
+    showPage();
   });
 
   let optionsOrgId = null;
@@ -783,6 +775,34 @@ export default function renderScores({ me, api, orgContext, access }) {
       : `No evaluations scored by a person here, but ${other.toLocaleString()} were scored by AI — switch “Scored by” above.`;
   }
 
+  /**
+   * Show one page of whatever survived the column filters.
+   *
+   * Paging is a view over the rows already fetched, so turning a page costs
+   * nothing and a filter applies across the whole range rather than the
+   * 25 rows that happened to be on screen.
+   */
+  function showPage(truncatedAt = 0) {
+    const size = detailSize;
+    const total = detailVisible.length;
+    const pages = Math.max(Math.ceil(total / size), 1);
+    if (detailPage > pages) detailPage = pages;
+    const start = (detailPage - 1) * size;
+
+    detailVisible.forEach((tr, i) => {
+      tr.style.display = i >= start && i < start + size ? "" : "none";
+    });
+
+    const shown = Math.min(size, Math.max(total - start, 0));
+    $("detailCount").textContent = total
+      ? `Showing ${shown.toLocaleString()} of ${total.toLocaleString()}` +
+        (truncatedAt ? ` (first ${truncatedAt.toLocaleString()} — narrow the dates for the rest)` : "")
+      : "Nothing matches these filters";
+    $("detailPage").textContent = `Page ${detailPage} of ${pages}`;
+    $("detailPrev").disabled = detailPage <= 1;
+    $("detailNext").disabled = detailPage >= pages;
+  }
+
   /** Draw the critical-score bars at the currently chosen size. */
   function renderCritical() {
     const size = Number($("criticalSize").value) || 25;
@@ -865,15 +885,30 @@ export default function renderScores({ me, api, orgContext, access }) {
     $rows.innerHTML = '<tr><td colspan="9" class="dq-bar-empty">Loading…</td></tr>';
 
     try {
-      const resp = await searchEvaluations(api, orgId, toSearchRequest(f, {
-        pageSize: detailSize,
-        pageNumber: detailPage,
-        sortBy: $("detailSort").value,
-        sortOrder: "DESC",
-        systemSubmitted: detailWho() === "ai",
-      }));
-
-      const items = resp?.results || [];
+      // Every evaluation in the range, not one page of it.
+      //
+      // The column filters offer the values they can SEE, so a page-at-a-time
+      // table could only ever offer the 25 names on screen — which is not a
+      // filter, it is a coincidence. Fetching the lot makes the dropdowns
+      // complete and lets sorting mean something; paging below becomes a view
+      // over the result rather than a query.
+      const items = [];
+      let truncated = false;
+      for (let page = 1; page <= MAX_DETAIL_PAGES; page++) {
+        const resp = await searchEvaluations(api, orgId, toSearchRequest(f, {
+          pageSize: FETCH_PAGE_SIZE,
+          pageNumber: page,
+          sortBy: $("detailSort").value,
+          sortOrder: "DESC",
+          systemSubmitted: detailWho() === "ai",
+        }));
+        const batch = resp?.results || [];
+        items.push(...batch);
+        if (batch.length < FETCH_PAGE_SIZE) break;
+        if (page === MAX_DETAIL_PAGES) truncated = true;
+        $rows.innerHTML =
+          `<tr><td colspan="9" class="dq-bar-empty">Loading… ${items.length.toLocaleString()} so far</td></tr>`;
+      }
       const hint = items.length ? null : otherSideHint();
       if (hint) { $note.textContent = hint; $note.hidden = false; }
       const lookups = filters.getLookups();
@@ -934,27 +969,27 @@ export default function renderScores({ me, api, orgContext, access }) {
       // and a second attach would inject a second set of buttons beside the
       // first, leaving the live ones bound to rows no longer in the document.
       // Emptying the row first is what keeps one attach per render.
+      // The header row is also the filter row, so it must be stripped of the
+      // previous render's controls before the next attach — otherwise each
+      // redraw leaves another caret behind, bound to rows no longer present.
       disposeFilters?.();
-      for (const th of $("detailWrap").querySelectorAll(".ll-filter-row th")) {
-        th.replaceChildren();
-        th.className = "";
-      }
-      for (const th of $("detailWrap").querySelectorAll("thead tr:first-child th")) {
+      for (const th of $("detailWrap").querySelectorAll("thead th")) {
+        th.querySelector(".cf-btn")?.remove();
+        th.querySelector(".cf-dropdown")?.remove();
         th.querySelector(".cf-sort-mark")?.remove();
-        th.classList.remove("cf-sortable", "cf-sorted");
+        th.classList.remove("cf-sortable", "cf-sorted", "cf-th");
       }
       disposeFilters = attachColumnFilters($("detailWrap"), {
+        compact: true,
         sortable: true,
         numericCols: [5, 6],
-        countEl: $("detailCount"),
-        totalLabel: "on this page",
+        onChange: (visible) => { detailVisible = visible; detailPage = 1; showPage(); },
       });
-      $("detailCount").textContent = `${items.length} on this page`;
-      $("detailFoot").hidden = false;
 
-      $("detailPage").textContent = `Page ${detailPage}`;
-      $("detailPrev").disabled = detailPage <= 1;
-      $("detailNext").disabled = items.length < detailSize;
+      detailVisible = Array.from($rows.querySelectorAll("tr"));
+      detailPage = 1;
+      showPage(truncated ? items.length : 0);
+      $("detailFoot").hidden = false;
     } catch (err) {
       $rows.innerHTML = '<tr><td colspan="9" class="dq-bar-empty">Could not load evaluations.</td></tr>';
       $note.textContent = err.status === 403
