@@ -509,11 +509,11 @@ The page now separates two different jobs:
 ```
 tiles · trend · distribution        the shape — everyone, never truncated
 By form  |  By media type           small breakdowns, always visible
-▸ Agent scores                      fold: every agent, filterable
+▸ Agent average scores              fold: every agent, filterable
 ▸ Evaluations                       fold: the rows
 ```
 
-**Agent scores** replaces both "Lowest-scoring agents" and the separate
+**Agent average scores** replaces both "Lowest-scoring agents" and the separate
 "Critical scores" panel. Those were the same agents drawn twice with a different
 metric, so they are one fold with a **Total / Critical** toggle instead — the
 page loses a panel while gaining one. It carries an order toggle, a name filter

@@ -128,7 +128,7 @@ export default function renderScores({ me, api, orgContext, access }) {
 
       <details class="dq-panel dq-fold" data-c="agentFold">
         <summary class="dq-fold-summary">
-          <span class="dq-panel-title">Agent scores</span>
+          <span class="dq-panel-title">Agent average scores</span>
           <span class="dq-fold-hint" data-c="agentHint"></span>
         </summary>
         <p class="dq-panel-sub">

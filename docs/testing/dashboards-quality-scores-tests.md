@@ -36,12 +36,12 @@ is new.
 | 1.3a | If any filter is set | The bar reads "n filters active" and **Clear filters** is highlighted — selections persist across pages for the session, so this is how you spot one you set earlier | | |
 | 1.3b | Click **Clear filters** | The count and the highlight both go | | |
 | 1.4 | Set a scope on Coverage, then come here | The same scope is already applied | | |
-| 1.5 | Panel order | Average score over time, Score distribution, By form + By media type, Agent scores, Weakest question groups, Evaluations | | |
+| 1.5 | Panel order | Average score over time, Score distribution, By form + By media type, Agent average scores, Weakest question groups, Evaluations | | |
 | 1.5a | **By media type** | Average score per media type, lowest first, named (Call, Callback, Email) not raw ids. **Call, never Voice** — evaluations use a different enum from conversations | | |
-| 1.5b | There is **no** separate Critical scores panel | It is the Total/Critical toggle inside Agent scores | | |
+| 1.5b | There is **no** separate Critical scores panel | It is the Total/Critical toggle inside Agent average scores | | |
 | 1.6 | **Evaluations** and **Critical scores** | Both start **folded** — they grow with the size of the programme | | |
 | 1.7 | Their summaries while folded | Carry a count: "16 in this period", "12 agent(s)" — or "needs a range of 3 months or less" | | |
-| 1.8 | Open **Agent scores** | Content is already there — it costs no extra request | | |
+| 1.8 | Open **Agent average scores** | Content is already there — it costs no extra request | | |
 | 1.8a | Default order | **Lowest first** | | |
 | 1.8b | **Order** → Highest first | Reverses; the same agents, other end first | | |
 | 1.8c | **Score** → Critical | Redraws with critical scores; order may differ from Total | | |
