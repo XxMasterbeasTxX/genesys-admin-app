@@ -48,7 +48,7 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 3.1 | Read the tiles | Auto-evaluated · Scoring failures · Disputed · Rescored | | |
-| 3.2 | **Auto-evaluated** | The count of evaluations Virtual Supervisor submitted. Cross-check against Evaluation Scores filtered to AI for the same period | | |
+| 3.2 | **Auto-evaluated** ★ | The count of evaluations Virtual Supervisor submitted. **Cross-check against Evaluation Scores for the same filters and period — they must agree.** This tile read 0 against a real 18 until 2026-09-01 | | |
 | 3.3 | **Scoring failures** | A count *and* a share of auto-evaluations | | |
 | 3.4 | A period where AI ran cleanly | Failures reads 0 with "none in this period", not "—" | | |
 | 3.5 | A period with **no** auto-evaluations | A note explains the whole lane is zero by definition rather than by failure | | |
@@ -58,7 +58,7 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 4.1 | Read the panel | One bar per failure cause, largest first | | |
-| 4.2 | Causes are in plain English | "Quota reached", not `QuotaReached` | | |
+| 4.2 | Causes are in plain English ★ | "Quota reached" and "Service error" — never the raw `serviceerror`. The live API lower-cases these, which defeated the label lookup until 2026-09-01 | | |
 | 4.3 | Quota reached is present | The sub-line frames it as a commercial limit, not a fault | | |
 | 4.4 | No failures in the period | "No AI scoring failures in this period." | | |
 
@@ -69,13 +69,13 @@ This is one of the two bands the rebuild exists for.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 5.1 | Read the panel | Columns over time, faint gridlines every 25%, axis text underneath | | |
-| 5.2 | Read the wording | "Disputes and rescores **per auto-evaluation**" — not a percentage of evaluations overturned. They are event counts and one evaluation can be disputed twice | | |
+| 5.2 | Read the unit | Counted **per 100 auto-evaluations**, not as a percentage. These are events and one evaluation can be disputed twice, so the figure can legitimately exceed 100 — a percentage would read as a bug | | |
 | 5.3 | Hover a column | Date, the rate, and "n of m auto-evaluations" | | |
 | 5.4 | A period containing a day with **no** auto-evaluations | That day is a flat neutral tick, **not** a zero-height bar, and its tooltip says so. "Nothing happened" and "0%" must not look the same | | |
 | 5.5 | Compare two different periods | The bars are comparable — the axis is fixed 0–100%, it does not rescale to the data | | |
 | 5.6 | A range ending today | The last column is hatched and the axis says it is still filling | | |
 | 5.7 | Nothing disputed or rescored at all | A note says so under the chart | | |
-| 5.8 | Sanity | The overall figure in the axis should agree with the Disputed and Rescored tiles | | |
+| 5.8 | Sanity | The axis figure should agree with the Disputed and Rescored tiles, and its denominator with the Auto-evaluated tile | | |
 
 ## 6. Evaluation Assistance — tiles
 

@@ -689,13 +689,15 @@ export async function aggregateAcrossWindows(filters, runOne, months = 3) {
   const windows = splitInterval(filters.from, filters.to, months);
   if (!windows.length) return { aggregations: {}, windows: 0 };
   const responses = await Promise.all(windows.map((w) => runOne(w)));
+  // NO `total` here, deliberately. The response carries one, but every request
+  // this function makes is an aggregation request and `toSearchRequest` pins
+  // those to `pageSize: 0` — whereupon `total` comes back 0 no matter how many
+  // evaluations matched. A caller wanting a count must aggregate for it (a
+  // TERM on `evaluationStatus` and its bucket counts summed is the cheap way);
+  // reading it off the response looks right, works in a stub, and reports zero
+  // against the live API.
   return {
     aggregations: mergeAggregations(responses.map(parseSearchAggregations)),
-    // Windows are disjoint, so the row totals add exactly. Worth carrying: it
-    // is the only count of matching evaluations a pure aggregation request
-    // gets back, and fetching it separately would be a second request for a
-    // number already in the response.
-    total: responses.reduce((s, r) => s + (r?.total || 0), 0),
     windows: windows.length,
   };
 }

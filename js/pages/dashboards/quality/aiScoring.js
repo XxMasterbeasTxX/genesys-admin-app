@@ -53,6 +53,11 @@ function intervalLabel(ci) {
   return ci === "1h" ? "Hourly" : ci === "1d" ? "Daily" : "Weekly";
 }
 
+/** Every document a TERM aggregation bucketed — i.e. how many matched. */
+function bucketTotal(agg) {
+  return (agg?.buckets || []).reduce((s, b) => s + b.count, 0);
+}
+
 /** A percentage, or null when the denominator is nothing. */
 function share(n, d) {
   return d > 0 ? `${((n / d) * 100).toFixed(1)}%` : null;
@@ -65,9 +70,19 @@ function share(n, d) {
  * means the org has scored as much as it bought. Labelling it like an error
  * would send someone hunting for a fault that does not exist.
  */
+const FAILURE_LABELS_LC = new Map(
+  Object.entries(AI_FAILURE_LABELS).map(([k, v]) => [k.toLowerCase(), v]),
+);
+
 function failureLabel(raw) {
   if (!raw) return "Unknown";
-  return AI_FAILURE_LABELS[raw] || raw.replace(/([a-z])([A-Z])/g, "$1 $2");
+  // The live API returns these lower-cased ("serviceerror"), not in the
+  // PascalCase the schema enumerates, so an exact-key lookup misses every time
+  // and the raw value reaches the screen. Match on case-folded keys.
+  const hit = FAILURE_LABELS_LC.get(String(raw).toLowerCase());
+  if (hit) return hit;
+  const spaced = String(raw).replace(/([a-z])([A-Z])/g, "$1 $2");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 /**
@@ -278,7 +293,21 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
    * @param {Array<{key:string, num:number, den:number}>} points
    */
   function renderRateTrend($trend, $axis, points, opts) {
-    const { ci, partial, fill = "", noun, verb } = opts;
+    const { ci, partial, fill = "", noun, verb, unit = "percent" } = opts;
+
+    // Two units, because only one of these ratios is bounded.
+    //
+    // Assistance acceptance cannot exceed 100%: every accepted suggestion was
+    // first an offered one. Disputes and rescores CAN, because they are event
+    // counts against an evaluation count and one evaluation can be disputed
+    // twice — so rendering that as a percentage produces "116.7% overturned",
+    // which reads as a bug rather than as the true fact it is. Per-100 says
+    // the same thing and stays legible above the line.
+    const fmt = (n, d) => {
+      if (!(d > 0)) return "—";
+      const r = (n / d) * 100;
+      return unit === "per100" ? `${r.toFixed(1)} per 100` : `${r.toFixed(1)}%`;
+    };
     $trend.innerHTML = "";
     $axis.innerHTML = "";
 
@@ -296,8 +325,8 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
         (hasRate ? "" : " is-nodata") + (isLast && hasRate ? " is-partial" : "");
       col.style.height = hasRate ? `${Math.max(Math.min(rate, 100), rate > 0 ? 2 : 0)}%` : "";
       col.title = hasRate
-        ? `${bucketStamp(p.key, ci)}: ${rate.toFixed(1)}% — ` +
-          `${p.num.toLocaleString()} of ${p.den.toLocaleString()} ${noun}` +
+        ? `${bucketStamp(p.key, ci)}: ${fmt(p.num, p.den)} — ` +
+          `${p.num.toLocaleString()} against ${p.den.toLocaleString()} ${noun}` +
           (isLast ? " (still in progress)" : "")
         : `${bucketStamp(p.key, ci)}: no ${noun}`;
       $trend.append(col);
@@ -307,8 +336,8 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
     const den = points.reduce((s, p) => s + p.den, 0);
     $axis.innerHTML =
       `<span>${escapeHtml(bucketStamp(points[0].key, ci))}</span>` +
-      `<span>${escapeHtml(share(num, den) ?? "—")} ${escapeHtml(verb)} overall · ` +
-      `${num.toLocaleString()} of ${den.toLocaleString()} ${escapeHtml(noun)}` +
+      `<span>${escapeHtml(fmt(num, den))} ${escapeHtml(verb)} overall · ` +
+      `${num.toLocaleString()} against ${den.toLocaleString()} ${escapeHtml(noun)}` +
       `${partial ? " · last bucket still filling" : ""}</span>` +
       `<span>${escapeHtml(bucketStamp(points[points.length - 1].key, ci))}</span>`;
   }
@@ -438,6 +467,12 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
       const [autoRes, autoTrendRes, eaRes, eaTrendRes] = await Promise.allSettled([
         // R1 — auto-evaluation totals. Evaluation-level fields only (§8.2a).
         run(true, [
+          // `status` is here to be COUNTED, not read. An aggregation request
+          // is sent with pageSize 0, so the response's own `total` is always
+          // zero and cannot be the lane's denominator; summing the buckets of
+          // a low-cardinality TERM gives the true number of matching
+          // evaluations in the same request as the rest of the tiles.
+          termAggregation("status", "evaluationStatus"),
           termAggregation("failureType", "aiScoringFailureType"),
           sumAggregation("disputes", "disputeCount"),
           sumAggregation("rescores", "rescoreCount"),
@@ -489,7 +524,7 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
         $("failures").innerHTML = '<div class="dq-bar-empty">Not available.</div>';
       } else {
         const A = autoRes.value.aggregations;
-        const scored = autoRes.value.total;
+        const scored = bucketTotal(A.status);
         const failures = (A.failureType?.buckets || []).reduce((s, b) => s + b.count, 0);
         const disputes = readSum(A.disputes);
         const rescores = readSum(A.rescores);
@@ -497,7 +532,9 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
         $("autoTiles").innerHTML = [
           tile("Auto-evaluated", scored.toLocaleString(), "submitted by Virtual Supervisor"),
           tile("Scoring failures", failures.toLocaleString(),
-            share(failures, scored) ? `${share(failures, scored)} of them` : "none in this period"),
+            failures === 0 ? "none in this period"
+              : share(failures, scored) ? `${share(failures, scored)} of them`
+              : "AI could not score these"),
           tile("Disputed", disputes.toLocaleString(), "disputes raised against them"),
           tile("Rescored", rescores.toLocaleString(), "scored again by a person"),
         ].join("");
@@ -526,7 +563,9 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
       // ── Lane A trend, its own request ─────────────
       $("overturnSub").textContent =
         `Disputes and rescores per auto-evaluation, ${intervalLabel(ci).toLowerCase()}. ` +
-        "A line that climbs means people are trusting the model less over time." + windowNote;
+        "A line that climbs means people are trusting the model less over time. " +
+        "Counted per 100 rather than as a percentage: these are events, and one " +
+        "evaluation can be disputed more than once." + windowNote;
       if (autoTrendRes.status === "rejected") {
         trendFailed("overturnTrend", "overturnAxis", "overturnNote", autoTrendRes.reason);
       } else {
@@ -542,7 +581,8 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
           }))
           .sort((a, b) => (bucketDate(a.key) || 0) - (bucketDate(b.key) || 0));
         renderRateTrend($("overturnTrend"), $("overturnAxis"), points,
-          { ci, partial, fill: "is-warnfill", noun: "auto-evaluations", verb: "overturned" });
+          { ci, partial, fill: "is-warnfill", noun: "auto-evaluations",
+            verb: "dispute/rescore events", unit: "per100" });
       }
 
       // ── Lane B — evaluation assistance ────────────

@@ -952,8 +952,17 @@ The histogram buckets on the SAME field the range was filtered on, via
 chosen one would let the chart describe a different period from the one the
 filter bar names, silently.
 
-Counts come from `EvaluationSearchResponse.total`, summed across windows --
-disjoint windows, so it adds exactly. `aggregateAcrossWindows` carries it.
+Counts do NOT come from `EvaluationSearchResponse.total`. That field looks like
+the obvious source and is wrong here: `toSearchRequest` sends every aggregation
+request with `pageSize: 0`, and the endpoint then reports `total: 0` however
+many evaluations matched. The first build of the rebuild read it, and the
+Auto-evaluated tile showed 0 for a period Evaluation Scores reported 18 for --
+while the lane's own trend, which counts documents per bucket, showed all 18.
+
+The lane count is therefore a summed `TERM evaluationStatus`, which rides in the
+same request as the rest of the tiles and needs no extra round trip.
+`aggregateAcrossWindows` deliberately does not expose `total` at all, so the
+trap cannot be walked into again.
 
 ### 8.2b Two honesty rules the rate bands follow
 
@@ -967,9 +976,21 @@ two periods can be compared; an axis that rescales to the sample destroys that.
 Gridlines every 25% make the scale visible, because an undrawn axis is an
 invisible one and a 14% column then reads as arbitrary.
 
-One wording consequence worth keeping: disputes and rescores are EVENT counts --
-one evaluation can be disputed twice -- so the auto lane's band is "disputes and
-rescores per auto-evaluation", never "percentage of evaluations overturned".
+**Only one of the two ratios is bounded, so they carry different units.**
+Assistance acceptance cannot exceed 100%: every accepted suggestion was first an
+offered one. Disputes and rescores can, because they are EVENT counts against an
+evaluation count and one evaluation can be disputed twice. Rendered as a
+percentage that produces "116.7% overturned", which reads as a bug rather than
+as the true fact it is -- so the auto lane counts **per 100 auto-evaluations**
+and the assistance lane stays a percentage.
+
+### 8.2d Enum values come back lower-cased
+
+The schema enumerates `QuotaReached`, `ServiceError` and the rest in PascalCase.
+The live API returns `quotareached`, `serviceerror`. An exact-key lookup against
+the label map therefore misses every time and the raw value reaches the screen,
+which is what "serviceerror" appearing as a bar label was. Labels are matched
+case-folded now. Assume the same of any other enum this endpoint returns.
 
 The failure-type enum is worth labelling properly rather than echoing:
 `QuotaReached`, `ParsingError`, `ServiceError`, `InvalidRequest`,
