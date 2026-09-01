@@ -7,6 +7,10 @@ const K_EXPIRES_AT    = "gc_expires_at";     // epoch ms
 const K_PKCE_VERIFIER = "pkce_verifier";
 const K_OAUTH_STATE   = "oauth_state";
 const K_ORG_HINT      = "gc_org_hint";
+// Which org this session was minted FOR ("" = internal). Not the org the token
+// turned out to belong to — the server verifies that. This answers only "which
+// login target produced this session", which is what the reuse check below needs.
+const K_SESSION_ORG   = "gc_session_org";
 // Login target chosen at redirect time (customer org or internal default). These
 // keep the authorize redirect, the token exchange, and users/me consistent so a
 // customer authenticates against — and is validated in — their OWN Genesys region.
@@ -62,6 +66,20 @@ export function getOrgHint() {
   return (sessionStorage.getItem(K_ORG_HINT) || "").trim() || null;
 }
 
+/**
+ * The org the CURRENT URL explicitly asks for, with no fallback to the stored
+ * hint — "" when the URL carries no `?org=`.
+ *
+ * Distinct from `getOrgHint()` on purpose. `clearQueryPreserveHash()` strips the
+ * query right after login, so a legitimate customer spends almost all of their
+ * time on a URL with no `?org=` and a stored hint that supplies it. A missing
+ * param therefore means "this navigation expresses no opinion", NOT "internal" —
+ * reading it as internal would sign every customer out on their first reload.
+ */
+function urlOrgParam() {
+  return (qp().get("org") || "").trim();
+}
+
 // --- LOGIN TARGET (internal default vs customer org) ---
 function storeLoginTarget(region, clientId) {
   sessionStorage.setItem(K_LOGIN_REGION, region);
@@ -109,6 +127,9 @@ function clearAuthSession() {
   sessionStorage.removeItem(K_EXPIRES_AT);
   sessionStorage.removeItem(K_PKCE_VERIFIER);
   sessionStorage.removeItem(K_OAUTH_STATE);
+  // Goes with the token: a session marker outliving its session would tell the
+  // next one it belongs to an org it never authenticated against.
+  sessionStorage.removeItem(K_SESSION_ORG);
 }
 
 // --- PKCE HELPERS ---
@@ -405,6 +426,11 @@ export async function ensureAuthenticatedWithMe() {
     try {
       const token = await exchangeCodeForToken(code);
       setToken(token);
+      // Stamp the session with the org it was minted for, BEFORE the query is
+      // stripped. On this leg the URL carries `?code=`, not `?org=` — the hint
+      // survives in storage from the boot that started the login, which is why
+      // getOrgHint() (with its fallback) is right here and urlOrgParam() is not.
+      sessionStorage.setItem(K_SESSION_ORG, getOrgHint() || "");
       clearQueryPreserveHash(); // avoid re-exchange on refresh
 
       // Clean transient
@@ -424,9 +450,33 @@ export async function ensureAuthenticatedWithMe() {
     }
   }
 
-  // B) Reuse existing token
+  // B) Reuse existing token — but only if it belongs to the org being asked for.
+  //
+  // Without this check, opening a customer deep link in a tab that already holds
+  // an INTERNAL session silently kept the internal session: the token is valid,
+  // users/me answers on the stored internal region, and classifyCaller then quite
+  // correctly reports "internal" because that is genuinely whose token it is. The
+  // `?org=` was never consulted. Staff saw the internal app — customer list and
+  // all — on a URL that asks for one locked customer.
+  //
+  // Only an EXPLICIT `?org=` in the URL triggers the check (see urlOrgParam), and
+  // a session with no marker is a pre-existing one from before this check shipped:
+  // treated as a mismatch, costing one re-login, after which it is self-healing.
+  //
+  // No loop guard is needed and none is used: clearAuthSession() drops the token,
+  // so the next boot has nothing to reuse and lands in branch C's sign-in gate.
+  // This branch cannot fire twice in a row, and every new token stamps a marker.
   const existing = getValidAccessToken();
   if (existing) {
+    const requested = urlOrgParam();
+    if (requested && requested !== sessionStorage.getItem(K_SESSION_ORG)) {
+      // The stored hint is deliberately NOT cleared: it is the target the next
+      // login must use, and it is what carries `?org=` across the redirect leg,
+      // where the URL no longer has it.
+      clearAuthSession();
+      return { status: "needs-login" };
+    }
+
     try {
       const me = await usersMe(existing);
       return {

@@ -410,6 +410,38 @@ never from a request field:
        endpoint → `403 endpoint_not_available_for_customer`.
    - Prereq for 5d: a PKCE client in the customer org; its `clientId` added to `CUSTOMER_REGISTRY_JSON`.
      **[DONE for Test IE on dev]**
+   - 5e: **session reuse must respect the requested org.** `ensureAuthenticatedWithMe` branch B used to
+     reuse any unexpired token without asking whether it belonged to the org in `?org=`. Opening a customer
+     deep link in a tab already holding an INTERNAL session silently stayed internal — valid token, `users/me`
+     answering on the stored internal region, and `classifyCaller` correctly reporting "internal" because that
+     is genuinely whose token it is. Staff got the internal app, customer list and all, on a URL asking for one
+     locked customer. Fixed by stamping each session with the org it was minted for (`gc_session_org`) and
+     refusing reuse when an **explicit** `?org=` disagrees.
+     - Only an explicit URL `?org=` triggers the check. `clearQueryPreserveHash()` strips the query right
+       after login, so a customer's normal steady state is no `?org=` plus a stored hint — reading a missing
+       param as "internal" would sign every customer out on their first reload.
+     - The stored hint is deliberately not cleared on mismatch: it is the target the next login must use, and
+       it is what carries the org across the redirect leg, where the URL has only `?code=`.
+     - No loop guard: clearing the session removes the token, so the next boot has nothing to reuse and lands
+       in the sign-in gate. The branch cannot fire twice running, and every new token stamps a marker.
+
+     | # | Session | URL | Expected |
+     |---|---|---|---|
+     | 1 | internal (`gc_session_org=""`) | `?org=test-ie` | token dropped → sign-in gate → customer mode |
+     | 2 | customer (`test-ie`) | `?org=test-ie` | reused, no re-login |
+     | 3 | customer (`test-ie`) | no `?org=` (post-login steady state) | reused — **the regression to watch** |
+     | 4 | internal | no `?org=` | reused, internal unchanged |
+     | 5 | pre-existing, no marker | `?org=test-ie` | one forced re-login, then self-healing |
+     | 6 | none (after #1 or #5) | `?org=test-ie` | sign-in gate, not a loop |
+     | 7 | customer (`dktv`) | `?org=test-ie` | token dropped → re-login as Test IE |
+     | 8 | login return leg, hint `test-ie` in storage | `?code=…&state=…` | stamps `gc_session_org="test-ie"` |
+     | 9 | login return leg, no hint | `?code=…&state=…` | stamps `gc_session_org=""` |
+
+     **[DONE — all nine verified 2026-09-01](against the real `authService.js` with only its imports and the
+     DOM stubbed; cases 1–7 drive `ensureAuthenticatedWithMe` branch B, 8–9 the branch A login leg.)**
+     Not fixed, by design: the mirror case — an internal user opening the bare origin in a tab holding a
+     customer session keeps the stored hint and stays in customer mode. It fails toward *less* access, and
+     fixing it means deciding a bare URL means "internal", which is exactly what breaks case 3.
 6. **Data-store isolation** (§10). **[DONE — validated on dev 2026-07-17]**
    - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
      from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or
