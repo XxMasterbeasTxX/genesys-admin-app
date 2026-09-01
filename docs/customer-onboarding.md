@@ -62,9 +62,15 @@ entry (Step 4) — the backend expands them into access-key prefixes automatical
 | `user-access` | `users.*`, `roles.*`, `divisions.*` |
 | `configuration` | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
 | `gdpr` | `gdpr.*` (add-on) |
+| `demo` | `*` — every module a customer may hold (**internal demo/eval only, not sellable**) |
 
 > Internal-only features (Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports) are
-> **never** in a package and are blocked server-side + hidden in customer mode.
+> **never** in a package and are blocked server-side + hidden in customer mode. This holds for `demo`
+> too — the `*` wildcard is applied *before* the customer-exclusion list, so it cannot reach them.
+>
+> ⚠ **`demo` is not a sellable package.** It grants every customer-facing module, including ones no
+> package sells yet, and it will pick up future modules automatically with no review. Use it for the
+> reference customer and sales demos; give paying customers named packages.
 > (Advanced: an entry may also include an explicit `entitlements` array of prefixes; it is unioned with
 > the expanded packages. Prefer packages.)
 
@@ -167,7 +173,7 @@ Repeat Step 1 redirect URI (prod origin), then Steps 3–6 against the **prod** 
   "orgId": "fa184a47-28ac-4532-bf31-d8da9de9c8cf",
   "region": "mypurecloud.ie",
   "clientId": "e439fc4f-3b8c-49be-a403-09280ec95510",
-  "packages": ["insights", "interaction-ops", "user-access", "configuration", "gdpr"],
+  "packages": ["insights", "interaction-ops", "user-access", "configuration", "gdpr", "demo"],
   "enabled": true
 }
 ```

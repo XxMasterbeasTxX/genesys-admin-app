@@ -28,6 +28,25 @@ const PACKAGES = {
     "phones.*",
   ],
   "gdpr": ["gdpr.*"],
+
+  // Demo/evaluation bundle: every module a customer is allowed to hold.
+  //
+  // "*" is the wildcard both gates already understand — `resolveCustomerAccess`
+  // in js/services/accessService.js short-circuits on it, and
+  // `entitlementGrants` in ./entitlementAllowlist.js treats it as matching any
+  // module key. It is NOT a bypass of the customer boundary: CUSTOMER_EXCLUDED_KEYS
+  // (Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports,
+  // flows.delete) is applied *after* the wildcard, and the proxy deny list is
+  // independent of entitlements entirely.
+  //
+  // Deliberately a wildcard rather than the union of the packages above: it also
+  // covers the customer-suitable modules no package sells yet (dashboards.*,
+  // data-actions.test, export.documentation.*, export.licenses.*,
+  // export.roles.singleOrg), and it stays complete as modules are added. The
+  // flip side is that it grants each new customer-facing module on the day it
+  // ships, with no review — which is why this is a demo bundle, not a sellable
+  // tier. Do not hand it to a paying customer.
+  "demo": ["*"],
 };
 
 /**
