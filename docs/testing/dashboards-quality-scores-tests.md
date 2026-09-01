@@ -5,19 +5,22 @@ Design: [dashboards-quality-design.md](../dashboards-quality-design.md) §7
 Environment: **dev**
 Tester: ______________________  Date: ______________________
 
-## What is in this build, and what is not
+## What is in this build
 
-This is the aggregate-backed half of the page: tiles, trend, distribution, and
-the agent/form breakdowns. It has **no date-range limit**.
+The whole page. Tiles, trend, distribution and the agent/form breakdowns come
+from the aggregate domain and work at **any date range**. Two bands lower down
+come from the evaluation search endpoint:
 
-Two bands from §7 are deliberately **not here yet**, because both need
-`quality/evaluations/search` and its 3-month cap:
+- **Weakest question groups** — needs exactly one form selected. Chunks across
+  3-month windows, so it works at any range too.
+- **Evaluations** (the row-level table) — the one part limited to three months,
+  because paged sorted rows cannot be stitched across windows.
 
-- the question-group breakdown (§7.3), which needs a single form selected
-- the row-level detail table (§7.4)
+Both also need `quality:evaluation:searchAny`, which is **not** the page's own
+permission: without it the charts still work and the two bands say so.
 
-Don't raise those as failures. The filter bar itself was covered by the
-Coverage pass, so this form only checks what is new.
+The filter bar was covered by the Coverage pass, so this form only checks what
+is new.
 
 ---
 
@@ -106,14 +109,40 @@ counts. This is the one arithmetic error the data shape invites.
 | 8.3 | Time a 12-month load on your biggest org | Well under 45 seconds | | ______ s |
 | 8.4 | Light mode | Band colours still readable; bar tracks visible | | |
 
-## 9. Overall
+## 9. Weakest question groups (§7.3)
 
-Anything wrong or worth changing before the question-level band and the detail
-table are added:
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 9.1 | Load with **no** form selected | The band asks you to select exactly one form; no search runs | | |
+| 9.2 | Select **two** forms | It says so, and explains groups are not comparable across forms | | |
+| 9.3 | Select **one** form and load | Bars per question group, weakest first, with **real group names** not GUIDs | | |
+| 9.4 | Check the order | Lowest average first | | |
+| 9.5 | Set a range over three months | The sub-line says how many windows it combined, and it still returns data | | |
+| 9.6 | Compare a 12-month result against four separate 3-month loads | Counts should add up and the weighted average should match | | |
+| 9.7 | If the band errors | **Report the exact message.** The open question is whether the endpoint accepts our form CONTEXT id where its docs say "a single formID" | | Message: ______ |
+
+## 10. The evaluations table (§7.4)
+
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 10.1 | Load a range of three months or less | The table appears with rows | | |
+| 10.2 | Columns | Agent, Evaluator, Form, Conversation, Submitted, Score, Critical, Status, Released | | |
+| 10.3 | An AI-scored row | Evaluator reads **Virtual Supervisor** | | |
+| 10.4 | **Scored by** — switch between "A person" and "AI" | The rows change; page resets to 1 | | |
+| 10.5 | **The open question.** Compare the two counts against the AI-scored tile | Does "A person" + "AI" equal the total, or does one of them already include both? | | Answer: ______ |
+| 10.6 | **Sort by** — change it | Rows re-sort; page resets to 1 | | |
+| 10.7 | **Next** / **Previous** | Paging works; Previous disabled on page 1; Next disabled on a short last page | | |
+| 10.8 | Set a range over three months | The table hides and explains that only this part is capped | | |
+| 10.9 | Narrow the range again | It comes back | | |
+| 10.10 | Any row you lack permission for | Shows as "An evaluation you do not have permission to see", not omitted | | |
+
+## 11. Overall
+
+Anything wrong or worth changing:
 
 ```
 
 
 ```
 
-Ready for §7.3 and §7.4?   Yes / Not yet
+Ready to move on to AI Scoring?   Yes / Not yet

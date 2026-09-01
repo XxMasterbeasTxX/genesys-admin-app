@@ -435,8 +435,15 @@ export function sumAggregation(name, field) {
 }
 
 /** A STATS aggregation — use instead of AVERAGE, always. */
-export function statsAggregation(name, field) {
-  return { name, field, type: "STATS" };
+export function statsAggregation(name, field, subAggregations) {
+  const a = { name, field, type: "STATS" };
+  if (subAggregations?.length) a.subAggregations = subAggregations;
+  return a;
+}
+
+/** A TERM aggregation carrying nested aggregations. */
+export function termAggregationWith(name, field, subAggregations, size = 100) {
+  return { name, field, type: "TERM", size, subAggregations };
 }
 
 /** A DATE_HISTOGRAM aggregation. */
@@ -485,6 +492,12 @@ function normaliseAgg(agg) {
       min: b.minimum ?? null,
       max: b.maximum ?? null,
       value: b.value ?? null,
+      // Nested aggregations, normalised the same way — a TERM on
+      // questionGroupId carries its STATS sub-aggregation here, which is where
+      // the per-group score actually lives.
+      sub: Object.fromEntries(
+        Object.entries(b.subAggregations || {}).map(([n, a]) => [n, normaliseAgg(a)]),
+      ),
     })),
   };
 }
@@ -556,6 +569,35 @@ function mergeBuckets(into, from) {
     if (typeof b.value === "number") {
       t.value = typeof t.value === "number" ? t.value + b.value : b.value;
     }
+    mergeSub(t, b);
+  }
+}
+
+/**
+ * Fold one bucket's nested aggregations into another's.
+ *
+ * Without this a windowed TERM-with-STATS silently reports only the FIRST
+ * window's sub-totals while its own count covers them all — the per-group score
+ * would be right for January and wrong for the year.
+ */
+function mergeSub(target, source) {
+  if (!source.sub) return;
+  target.sub = target.sub || {};
+  for (const [name, agg] of Object.entries(source.sub)) {
+    const prev = target.sub[name];
+    if (!prev) {
+      target.sub[name] = { ...agg, buckets: (agg.buckets || []).map((x) => ({ ...x })) };
+      continue;
+    }
+    prev.count += agg.count;
+    prev.sum += agg.sum;
+    prev.truncated += agg.truncated;
+    prev.min = prev.min == null ? agg.min : agg.min == null ? prev.min : Math.min(prev.min, agg.min);
+    prev.max = prev.max == null ? agg.max : agg.max == null ? prev.max : Math.max(prev.max, agg.max);
+    if (typeof agg.value === "number") {
+      prev.value = typeof prev.value === "number" ? prev.value + agg.value : agg.value;
+    }
+    mergeBuckets(prev.buckets, agg.buckets || []);
   }
 }
 

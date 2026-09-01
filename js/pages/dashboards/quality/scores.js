@@ -5,23 +5,35 @@
  *
  * The question: how are people scoring, and where are the failures concentrated?
  *
- * Everything on this page is answered by the analytics aggregate domain, so it
- * carries no date-range limit. The question-level breakdown and the row-level
- * detail table (§7.3, §7.4) need `quality/evaluations/search` and its 3-month
- * cap; they are separate build-order steps and are not here yet.
+ * The tiles, trend, distribution and breakdowns come from the analytics
+ * aggregate domain and carry no date-range limit. Two bands lower down come
+ * from `quality/evaluations/search` instead, and inherit its constraints:
+ *
+ *   - Question groups (§7.3) needs exactly one form selected, because a
+ *     question group is only comparable within the form that defines it.
+ *   - The detail table (§7.4) is the only part that cannot be chunked across
+ *     3-month windows, so it hides itself on a longer range.
+ *
+ * Both additionally need `quality:evaluation:searchAny`, which is NOT the
+ * page's gate — without it the charts still work and the two bands say so.
  *
  *   POST /api/v2/analytics/evaluations/aggregates/query
+ *   POST /api/v2/quality/evaluations/search
  *
  * Read-only, so no Activity Log entry.
  */
 
 import { createEvaluationFilters } from "../../../components/evaluationFilters.js";
 import {
-  toAggregateQuery, parseGroupedAggregate, parseAggregateTotal,
-  parseAggregateSeries, parseAggregateViews, statsMapToSorted, statsAverage,
-  scoreBandViews, SCORE_BANDS, hasScopeFilters,
+  toAggregateQuery, toSearchRequest, parseGroupedAggregate, parseAggregateTotal,
+  parseAggregateSeries, parseAggregateViews,
+  statsMapToSorted, statsAverage, statsAggregation, termAggregationWith,
+  scoreBandViews, SCORE_BANDS, hasScopeFilters, exceedsSearchWindow,
+  aggregateAcrossWindows,
 } from "../../../lib/evaluationQuery.js";
-import { queryEvaluationAggregates } from "../../../services/genesysApi.js";
+import {
+  queryEvaluationAggregates, searchEvaluations, fetchEvaluationFormsByContext,
+} from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
 
@@ -109,6 +121,60 @@ export default function renderScores({ me, api, orgContext, access }) {
       </div>
 
       <div class="dq-panel">
+        <h3 class="dq-panel-title">Weakest question groups</h3>
+        <p class="dq-panel-sub" data-c="groupSub"></p>
+        <div class="dq-bars" data-c="byGroup"></div>
+        <div class="dq-panel-note" data-c="groupNote" hidden></div>
+      </div>
+
+      <div class="dq-panel">
+        <h3 class="dq-panel-title">Evaluations</h3>
+        <p class="dq-panel-sub" data-c="detailSub"></p>
+        <div class="dq-detail-controls" data-c="detailControls" hidden>
+          <div class="cs-control-group">
+            <label class="cs-label">Scored by</label>
+            <select class="input" data-c="detailWho">
+              <option value="human">A person</option>
+              <option value="ai">AI (Virtual Supervisor)</option>
+            </select>
+          </div>
+          <div class="cs-control-group">
+            <label class="cs-label">Sort by</label>
+            <select class="input" data-c="detailSort">
+              <option value="conversationDate">Conversation date</option>
+              <option value="submittedDate">Submitted</option>
+              <option value="createdDate">Created</option>
+              <option value="releaseDate">Released</option>
+            </select>
+          </div>
+          <div class="cs-control-group">
+            <label class="cs-label">&nbsp;</label>
+            <button class="btn btn-sm" data-c="detailPrev">Previous</button>
+          </div>
+          <div class="cs-control-group">
+            <label class="cs-label">&nbsp;</label>
+            <button class="btn btn-sm" data-c="detailNext">Next</button>
+          </div>
+          <div class="cs-control-group">
+            <label class="cs-label">&nbsp;</label>
+            <span class="dq-detail-page" data-c="detailPage"></span>
+          </div>
+        </div>
+        <div class="dq-table-wrap" data-c="detailWrap" hidden>
+          <table class="dq-table">
+            <thead><tr>
+              <th>Agent</th><th>Evaluator</th><th>Form</th>
+              <th>Conversation</th><th>Submitted</th>
+              <th class="is-num">Score</th><th class="is-num">Critical</th>
+              <th>Status</th><th>Released</th>
+            </tr></thead>
+            <tbody data-c="detailRows"></tbody>
+          </table>
+        </div>
+        <div class="dq-panel-note" data-c="detailNote" hidden></div>
+      </div>
+
+      <div class="dq-panel">
         <h3 class="dq-panel-title">Critical scores</h3>
         <p class="dq-panel-sub">
           Average critical score per agent, lowest first. A critical score can
@@ -137,6 +203,39 @@ export default function renderScores({ me, api, orgContext, access }) {
   // sessionStorage state — one scope across the three pages, set in one place.
   const filters = createEvaluationFilters({ api });
   $("filters").append(filters.el);
+
+  // The two search-backed bands need a permission the PAGE does not require.
+  // Absent it the charts still work and the bands say why, per the composite
+  // page rule in docs/customer-facing-plan.md §6.
+  const canSearch = access && access.can
+    ? access.can("dashboards.quality.scores", "detail")
+    : true;
+
+  const DETAIL_PAGE_SIZE = 25;
+  let detailPage = 1;
+  let lastLoaded = null;   // filters of the last successful load
+
+  for (const c of ["detailWho", "detailSort"]) {
+    $(c).addEventListener("change", () => {
+      detailPage = 1;
+      if (lastLoaded) {
+        const org = currentOrg();
+        if (org) renderDetail(org.id, lastLoaded);
+      }
+    });
+  }
+  $("detailPrev").addEventListener("click", () => {
+    if (detailPage <= 1 || !lastLoaded) return;
+    detailPage -= 1;
+    const org = currentOrg();
+    if (org) renderDetail(org.id, lastLoaded);
+  });
+  $("detailNext").addEventListener("click", () => {
+    if (!lastLoaded) return;
+    detailPage += 1;
+    const org = currentOrg();
+    if (org) renderDetail(org.id, lastLoaded);
+  });
 
   let optionsOrgId = null;
   async function ensureOptions(orgId) {
@@ -414,6 +513,14 @@ export default function renderScores({ me, api, orgContext, access }) {
       $why.textContent = why;
       $why.hidden = !why;
 
+      // Search-backed bands, run after the aggregate ones are on screen and
+      // never allowed to fail the page: they need a permission this page does
+      // not require, and one of them needs a single form selected.
+      detailPage = 1;
+      lastLoaded = f;
+      await renderQuestionGroups(org.id, f);
+      await renderDetail(org.id, f);
+
       $("rangeLine").textContent =
         `${formatRange(f.from, f.to)} · ${count.toLocaleString()} evaluations` +
         (score.count ? ` · average ${statsAverage(score).toFixed(1)}%` : "");
@@ -428,6 +535,207 @@ export default function renderScores({ me, api, orgContext, access }) {
       filters.setEnabled(true);
     }
   });
+
+  // ── §7.3 Question groups ────────────────────────────
+
+  /**
+   * Average score per question group, weakest first.
+   *
+   * Requires EXACTLY ONE form. A question group is only comparable within the
+   * form that defines it — "Compliance" on two forms is two different sets of
+   * questions, and averaging across them yields a number describing nothing.
+   * The search endpoint enforces its own version of the same rule.
+   */
+  async function renderQuestionGroups(orgId, f) {
+    const $bars = $("byGroup");
+    const $sub = $("groupSub");
+    const $note = $("groupNote");
+    $bars.innerHTML = "";
+    $note.hidden = true;
+
+    if (!canSearch) {
+      $sub.textContent = "Needs the quality:evaluation:searchAny permission.";
+      $bars.innerHTML = '<div class="dq-bar-empty">Not available with your permissions.</div>';
+      return;
+    }
+    if (f.formContextIds.length !== 1) {
+      $sub.textContent = f.formContextIds.length === 0
+        ? "Select exactly one form in the filter bar to break its scores down by question group."
+        : `Select exactly one form — ${f.formContextIds.length} are selected, and question groups are not comparable across forms.`;
+      $bars.innerHTML = '<div class="dq-bar-empty">No single form selected.</div>';
+      return;
+    }
+
+    const windows = splitCount(f);
+    $sub.textContent = "Average score per question group, weakest first." +
+      (windows > 1 ? ` Queried in ${windows} three-month windows and combined.` : "");
+    try {
+      // The search endpoint caps each request at three months, but this
+      // aggregation is TERM with a STATS child — both recombine across
+      // consecutive windows exactly (§9.2), and questionGroupId is far below
+      // the 100-bucket TERM limit that makes chunking unsafe for high-
+      // cardinality fields. So a long range becomes several requests rather
+      // than a refusal, and this band keeps working where the row-level table
+      // below genuinely cannot.
+      const [merged, forms] = await Promise.all([
+        aggregateAcrossWindows(f, (w) => searchEvaluations(api, orgId, toSearchRequest(f, {
+          window: w,
+          systemSubmitted: detailWho() === "ai",
+          aggregations: [termAggregationWith("byGroup", "questionGroupId",
+            [statsAggregation("score", "questionGroupScorePercentage")])],
+        }))),
+        // Names, not GUIDs: a list of question-group ids is not a finding
+        // anyone can act on. Failure here degrades the labels, not the band.
+        fetchEvaluationFormsByContext(api, orgId, f.formContextIds).catch(() => []),
+      ]);
+
+      const names = new Map();
+      for (const form of forms) {
+        for (const g of form.questionGroups || []) {
+          if (g.id) names.set(g.id, g.name || g.id);
+        }
+      }
+
+      const buckets = merged.aggregations.byGroup?.buckets || [];
+      const rows = buckets
+        .map((b) => {
+          const st = b.sub?.score;
+          const avg = st && st.count ? st.sum / st.count : null;
+          return avg == null ? null : {
+            label: names.get(b.key) || `Question group (${shortId(b.key)})`,
+            value: avg,
+            stats: { count: b.count },
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.value - b.value);
+
+      renderScoreBars($bars, rows);
+      if (!rows.length) {
+        $note.textContent = "The search returned no question-group scores for this form and period.";
+        $note.hidden = false;
+      }
+    } catch (err) {
+      $bars.innerHTML = '<div class="dq-bar-empty">Could not load question groups.</div>';
+      $note.textContent = err.status === 403
+        ? "Needs the quality:evaluation:searchAny permission."
+        : `The question-group query was rejected: ${err.message}`;
+      $note.hidden = false;
+    }
+  }
+
+  // ── §7.4 Detail table ───────────────────────────────
+
+  function detailWho() { return $("detailWho").value; }
+
+  /** How many 3-month windows a range needs. */
+  function splitCount(f) {
+    return exceedsSearchWindow(f.from, f.to)
+      ? Math.ceil(dayCount(f.from, f.to) / 90)
+      : 1;
+  }
+
+  /**
+   * The row-level table.
+   *
+   * The one part of this feature that genuinely cannot exceed three months.
+   * Aggregations recombine across consecutive windows exactly; a paged, sorted
+   * list does not — merging sorted pages across windows means either fetching
+   * every row to sort them, or paging that jumps between windows. So the table
+   * hides itself on a longer range and says why, rather than showing a list
+   * that is silently only the first quarter of the answer.
+   */
+  async function renderDetail(orgId, f) {
+    const $sub = $("detailSub");
+    const $wrap = $("detailWrap");
+    const $rows = $("detailRows");
+    const $note = $("detailNote");
+    const $controls = $("detailControls");
+    $note.hidden = true;
+
+    if (!canSearch) {
+      $sub.textContent = "Individual evaluations need the quality:evaluation:searchAny permission.";
+      $wrap.hidden = true;
+      $controls.hidden = true;
+      return;
+    }
+    if (exceedsSearchWindow(f.from, f.to)) {
+      $sub.textContent = "";
+      $wrap.hidden = true;
+      $controls.hidden = true;
+      $note.textContent =
+        "Individual evaluations are shown for ranges of three months or less. " +
+        "Everything above works at any range; this table is the one part that cannot, " +
+        "because a paged, sorted list cannot be stitched across several queries the way " +
+        "totals can. Narrow the date range to see the rows.";
+      $note.hidden = false;
+      return;
+    }
+
+    $controls.hidden = false;
+    $wrap.hidden = false;
+    $sub.textContent = "Individual evaluations in this period.";
+    $rows.innerHTML = '<tr><td colspan="9" class="dq-bar-empty">Loading…</td></tr>';
+
+    try {
+      const resp = await searchEvaluations(api, orgId, toSearchRequest(f, {
+        pageSize: DETAIL_PAGE_SIZE,
+        pageNumber: detailPage,
+        sortBy: $("detailSort").value,
+        sortOrder: "DESC",
+        systemSubmitted: detailWho() === "ai",
+      }));
+
+      const items = resp?.results || [];
+      $rows.innerHTML = "";
+      if (!items.length) {
+        $rows.innerHTML = '<tr><td colspan="9" class="dq-bar-empty">No evaluations on this page.</td></tr>';
+      }
+      for (const it of items) {
+        const tr = document.createElement("tr");
+        if (it.redacted) {
+          // Shown rather than dropped: a table that silently omits rows the
+          // caller may not see reports a smaller programme than exists.
+          tr.innerHTML = '<td colspan="9" class="dq-redacted">An evaluation you do not have permission to see</td>';
+          $rows.append(tr);
+          continue;
+        }
+        const score = it.answers?.totalScore;
+        const crit = it.answers?.totalCriticalScore;
+        tr.innerHTML = `
+          <td>${escapeHtml(it.agent?.name || "—")}</td>
+          <td>${escapeHtml(it.evaluator?.name || "Virtual Supervisor")}</td>
+          <td>${escapeHtml(it.evaluationForm?.name || "—")}</td>
+          <td>${escapeHtml(shortDate(it.conversationDate))}</td>
+          <td>${escapeHtml(shortDate(it.submittedDate))}</td>
+          <td class="is-num">${score == null ? "—" : Number(score).toFixed(1) + "%"}</td>
+          <td class="is-num">${crit == null ? "—" : Number(crit).toFixed(1) + "%"}</td>
+          <td>${escapeHtml(it.status || "—")}</td>
+          <td>${it.releaseDate ? "Yes" : "No"}</td>`;
+        $rows.append(tr);
+      }
+
+      $("detailPage").textContent = `Page ${detailPage}`;
+      $("detailPrev").disabled = detailPage <= 1;
+      $("detailNext").disabled = items.length < DETAIL_PAGE_SIZE;
+    } catch (err) {
+      $rows.innerHTML = '<tr><td colspan="9" class="dq-bar-empty">Could not load evaluations.</td></tr>';
+      $note.textContent = err.status === 403
+        ? "Needs the quality:evaluation:searchAny permission."
+        : `The evaluation search was rejected: ${err.message}`;
+      $note.hidden = false;
+      $("detailPrev").disabled = detailPage <= 1;
+      $("detailNext").disabled = true;
+    }
+  }
+
+  function shortDate(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+      ? iso.slice(0, 16).replace("T", " ")
+      : d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  }
 
   return el;
 }

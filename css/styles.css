@@ -5801,3 +5801,19 @@ a.fr-shipped:hover { text-decoration: underline; }
 .dq-fill-bad  { background: #d9534f; }
 .dq-fill-warn { background: #e0a34a; }
 .dq-fill-good { background: #58c4a0; }
+
+.dq-detail-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.dq-detail-page {
+  color: var(--muted);
+  font-size: 12px;
+  padding-top: 8px;
+}
+.dq-redacted {
+  color: var(--muted);
+  font-style: italic;
+}

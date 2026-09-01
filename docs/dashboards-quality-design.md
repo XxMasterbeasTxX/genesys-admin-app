@@ -459,10 +459,27 @@ from anywhere else in this app.
 `evaluations/search` for the question-level breakdown and the row-level table,
 capped at 3 months (§9.1).
 
-**Build status.** The aggregate-backed half is built: tiles, trend,
-distribution, and the agent/form breakdowns, all with no date-range limit. The
-question-group band (§7.3) and the detail table (§7.4) both need
-`quality/evaluations/search` and are separate steps.
+**Build status: complete.** Tiles, trend, distribution and the agent/form
+breakdowns come from the aggregate domain with no date-range limit; the
+question-group band (§7.3) and the detail table (§7.4) come from
+`quality/evaluations/search`.
+
+Those last two split apart on the 3-month cap, and the split is the useful
+finding. **The question band chunks; the detail table cannot.** Its aggregation
+is a `TERM` on `questionGroupId` with a `STATS` child, and both recombine across
+consecutive windows exactly (§9.2) — `questionGroupId` is also far below the
+100-bucket TERM limit that makes chunking unsafe for high-cardinality fields. So
+a 12-month question-group breakdown becomes four requests rather than a refusal,
+and the band says how many windows it combined. The detail table is the only
+part of this whole feature that genuinely cannot be stitched, because merging
+paged, sorted rows across windows means either fetching every row to sort them
+or paging that jumps between windows. It hides itself beyond three months and
+says why.
+
+Chunking the question band required one fix to the shared module:
+`mergeAggregations` folded bucket counts but not their NESTED aggregations, so a
+windowed TERM-with-STATS would have reported the first window's per-group score
+against every window's count — right for January, wrong for the year.
 
 Two things changed against the sketch below, both consequences of §9a. There is
 no "Score by queue" band, because there is no queue on an evaluation. And the

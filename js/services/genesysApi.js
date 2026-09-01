@@ -1358,6 +1358,21 @@ export async function fetchAllEvaluationForms(api, orgId, opts = {}) {
   return fetchAllPages(api, orgId, "/api/v2/quality/publishedforms/evaluations", opts);
 }
 
+/**
+ * The latest published version of each evaluation form, by CONTEXT id.
+ *
+ * The aggregate and search domains group by `questionGroupId`, which is an id
+ * and not a name. This is the only route from a form context — which is what the
+ * filter bar carries — to the question groups inside it.
+ */
+export async function fetchEvaluationFormsByContext(api, orgId, contextIds) {
+  if (!contextIds?.length) return [];
+  const resp = await api.proxyGenesys(orgId, "GET",
+    "/api/v2/quality/forms/evaluations/bulk/contexts",
+    { query: { contextId: contextIds.join(",") } });
+  return Array.isArray(resp) ? resp : (resp?.entities || []);
+}
+
 /** Query the evaluation aggregate domain. */
 export async function queryEvaluationAggregates(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/analytics/evaluations/aggregates/query", { body });
