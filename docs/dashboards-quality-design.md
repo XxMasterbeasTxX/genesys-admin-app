@@ -668,6 +668,19 @@ It needs `analytics:conversationDetail:view`, which is not this page's gate, so
 a refusal leaves the column as em-dashes with a note rather than failing the
 table.
 
+**The query MUST restrict itself to evaluated conversations.** The first
+implementation asked only for an interval, which returns every conversation in
+the period, oldest first — on a real org that is thousands of unevaluated calls,
+and the hundred-odd the table is showing are nowhere in the first pages. Every
+row showed an em-dash, on dev, twice, before anyone could see why. An
+`evaluationFilters` clause of `evaluationId exists` narrows the volume to
+roughly the number of evaluations, which is the point of that filter existing.
+
+It shipped twice because the test stub returned exactly the conversations it was
+asked about regardless of the query — so the code passed by asking the wrong
+question of an obliging fake. The stub now holds 4,000 unevaluated conversations
+that sort earlier than the evaluated ones, and fails the old code.
+
 ### 7.1 Bands
 
 ```
@@ -730,6 +743,14 @@ and sums add; the average is recomputed once over the whole population rather
 than averaged from per-version averages, which would be wrong wherever versions
 carry unequal numbers of evaluations. The sub-line says how many versions it
 covered.
+
+**The versions endpoint does not return `questionGroups`.** The form-list family
+documents that omission ("the detailed information about evaluation form, is
+not returned") and the versions listing behaves the same way, so the first
+attempt at this collected ids from version objects that had no groups on them
+and reported "this form has no question groups" for every form. The version list
+is now used only for its IDS, and each revision is fetched in full by id — at
+most the 20 most recent, one request each.
 
 If the versions call fails the band falls back to the published version alone —
 fewer evaluations, but still an answer.

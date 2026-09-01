@@ -1385,6 +1385,18 @@ export async function fetchEvaluationFormVersions(api, orgId, formId, opts = {})
     `/api/v2/quality/forms/evaluations/${formId}/versions`, opts);
 }
 
+/**
+ * One evaluation form, in full.
+ *
+ * The list and versions endpoints deliberately omit `questionGroups` ("the
+ * detailed information about evaluation form, is not returned"), so a caller
+ * that needs the groups of a specific version has to ask for that version by
+ * id. This is that call.
+ */
+export async function fetchEvaluationForm(api, orgId, formId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/quality/forms/evaluations/${formId}`);
+}
+
 /** Query the evaluation aggregate domain. */
 export async function queryEvaluationAggregates(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/analytics/evaluations/aggregates/query", { body });

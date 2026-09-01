@@ -33,7 +33,7 @@ import {
 } from "../../../lib/evaluationQuery.js";
 import {
   queryEvaluationAggregates, searchEvaluations, fetchEvaluationFormsByContext,
-  queryConversationDetails, fetchEvaluationFormVersions,
+  queryConversationDetails, fetchEvaluationFormVersions, fetchEvaluationForm,
 } from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml, spinHtml } from "../../../utils.js";
@@ -320,6 +320,9 @@ export default function renderScores({ me, api, orgContext, access }) {
   // export after a single sequential page-walk ate 44 of its 47 seconds. The
   // response carries no total, so the walk stops when a batch returns a short
   // page; the cost of that is at most four wasted requests on the last batch.
+  // A form with more revisions than this is asked about at its most recent 20;
+  // one request each, and nobody scores against a version that old.
+  const MAX_FORM_VERSIONS = 20;
   const FETCH_PAGE_SIZE = 100;
   const FETCH_CONCURRENCY = 5;
   const MAX_DETAIL_PAGES = 25;   // 2,500 rows, then the footer says it is partial
@@ -812,12 +815,26 @@ export default function renderScores({ me, api, orgContext, access }) {
       }
 
       // Every revision, so a group that predates the current version is still
-      // covered. A failure here degrades to the current version rather than
-      // failing the band — fewer evaluations, but still an answer.
+      // covered.
+      //
+      // The versions endpoint does NOT return questionGroups — the form-list
+      // family documents that omission explicitly — so each revision has to be
+      // asked for by id to get its groups. Shipping without that check made the
+      // band report "this form has no question groups" for every form, which is
+      // why the version list is now only used for its IDS.
       let versions = [form];
       try {
-        const all = await fetchEvaluationFormVersions(api, orgId, form.id);
-        if (all.length) versions = all;
+        const list = await fetchEvaluationFormVersions(api, orgId, form.id);
+        const ids = [...new Set(list.map((v) => v.id).filter(Boolean))]
+          .slice(0, MAX_FORM_VERSIONS);
+        const full = await Promise.all(ids.map((id) => {
+          if (id === form.id) return form;
+          const known = list.find((v) => v.id === id);
+          if (known?.questionGroups?.length) return known;
+          return fetchEvaluationForm(api, orgId, id).catch(() => null);
+        }));
+        const withGroups = full.filter((v) => v?.questionGroups?.length);
+        if (withGroups.length) versions = withGroups;
       } catch { /* fall back to the published version alone */ }
 
       // groupId → context, and context → name. The id changes per version; the
@@ -1253,10 +1270,20 @@ export default function renderScores({ me, api, orgContext, access }) {
     const dates = items.map((it) => it.conversationDate).filter(Boolean).sort();
     if (!dates.length) return;
 
-    const evaluationFilters = [];
-    const preds = [];
-    for (const id of lastLoaded?.agentIds || []) preds.push({ dimension: "userId", value: id });
-    if (preds.length) evaluationFilters.push({ type: "or", predicates: preds });
+    // Without this the query asks for every conversation in the period and
+    // takes the first 2,500 by start time — which on a busy org is thousands of
+    // unevaluated calls, and the evaluated ones the table is showing are not
+    // among them. Every row came back with an em-dash for exactly that reason.
+    // `evaluationId exists` narrows it to conversations that were evaluated, so
+    // the volume matches the table rather than the whole contact centre.
+    const clauses = [{
+      type: "or",
+      predicates: [{ dimension: "evaluationId", operator: "exists" }],
+    }];
+    const agentPreds = (lastLoaded?.agentIds || [])
+      .map((id) => ({ dimension: "userId", value: id }));
+    if (agentPreds.length) clauses.push({ type: "or", predicates: agentPreds });
+    const evaluationFilters = [{ type: "and", clauses }];
 
     try {
       // A Genesys interval is half-open, so an end of exactly the latest
@@ -1265,7 +1292,7 @@ export default function renderScores({ me, api, orgContext, access }) {
       const end = new Date(Date.parse(dates[dates.length - 1]) + 1000).toISOString();
       const convs = await queryConversationDetails(api, orgId, {
         interval: `${dates[0]}/${end}`,
-        ...(evaluationFilters.length ? { evaluationFilters } : {}),
+        evaluationFilters,
         order: "asc",
         orderBy: "conversationStart",
       }, { maxPages: MAX_DETAIL_PAGES });
