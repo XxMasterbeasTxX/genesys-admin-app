@@ -84,6 +84,9 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
+| 3.0 | Open the page with **no customer selected** | It says "Please select a customer org from the dropdown above to get started.", Load is disabled, and each dropdown reads "Select a customer to load agents" — never a permanent "Loading…" | ☐ | |
+| 3.0a | Now select a customer | The message clears, Load enables, and the dropdowns fill | ☐ | |
+| 3.0b | Clear the customer again | The prompt comes back and the previous customer’s names go | ☐ | |
 | 3.1 | With **no org selected**, click Load dashboard | Red status: "Please select a customer org from the dropdown above." | ☐ | |
 | 3.2 | Select an org, click Load dashboard | Status progresses: filter options → aggregates → which agents can be evaluated → evaluator activity | ☐ | |
 | 3.3 | While loading | Load button disabled, all filter controls greyed out | ☐ | |

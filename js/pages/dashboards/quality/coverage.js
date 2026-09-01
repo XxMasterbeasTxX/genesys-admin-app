@@ -198,12 +198,23 @@ export default function renderCoverage({ me, api, orgContext, access }) {
    * unready. Failures are silent here: the Load handler reports them properly,
    * and a warning about a list nobody has tried to use yet is just noise.
    */
+  /**
+   * Fill the dropdowns, or explain why they are empty.
+   *
+   * The page is reachable with no customer selected, and every list on it needs
+   * one. Saying so beats five dropdowns that read "Loading…" and never resolve.
+   */
   async function primeOptions() {
     const org = currentOrg();
-    if (!org) return;
-    try {
-      await ensureOptions(org.id);
-    } catch { /* reported on Load, where it matters */ }
+    if (!org) {
+      filters.setAwaitingOrg();
+      $loadBtn.disabled = true;
+      setStatus("Please select a customer org from the dropdown above to get started.");
+      return;
+    }
+    $loadBtn.disabled = false;
+    hideStatus();
+    try { await ensureOptions(org.id); } catch { /* reported on Load, where it matters */ }
   }
 
   // The org can change under the page from the header dropdown. Reload the
@@ -212,6 +223,8 @@ export default function renderCoverage({ me, api, orgContext, access }) {
   const unsubscribe = orgContext?.onChange?.(() => {
     optionsOrgId = null;
     $results.hidden = true;
+    // Both directions: a customer chosen fills the lists, a customer cleared
+    // puts the prompt back rather than leaving the previous one's names up.
     primeOptions();
   });
   if (unsubscribe) el.__destroy = unsubscribe;

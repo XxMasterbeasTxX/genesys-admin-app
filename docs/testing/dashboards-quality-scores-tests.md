@@ -29,6 +29,8 @@ is new.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 1.1 | Open **Dashboards › Quality › Evaluation Scores** | The real page, not "Coming soon" | | |
+| 1.1a | Open it with **no customer selected** | Says to select a customer, Load is disabled, dropdowns read "Select a customer to load …" | | |
+| 1.1b | Select a customer | Message clears, Load enables, dropdowns fill | | |
 | 1.2 | Read the permission note | Names `analytics:evaluationAggregate:view` and the Hourly Interacting warning | | |
 | 1.3 | Look at the filter bar | Same bar as Coverage, but **no "Dates refer to"** — that is set on Coverage and inherited | | |
 | 1.3a | If any filter is set | The bar reads "n filters active" and **Clear filters** is highlighted — selections persist across pages for the session, so this is how you spot one you set earlier | | |

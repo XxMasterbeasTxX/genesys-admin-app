@@ -406,6 +406,22 @@ export function createEvaluationFilters({ api, onChange, showTimeBasis = false }
     },
 
     /**
+     * Say the lists are waiting on something other than the network.
+     *
+     * Without this, a page opened before a customer is chosen leaves five
+     * dropdowns reading "Loading agents…" for ever — which describes a request
+     * in flight, when in fact nothing has been asked for and nothing will be
+     * until an org is picked.
+     */
+    setAwaitingOrg() {
+      for (const [ms, label] of [[agents, "agents"], [teams, "teams"],
+                                 [divisions, "divisions"], [forms, "forms"]]) {
+        ms.setPlaceholder(`Select a customer to load ${label}`);
+        ms.setEnabled(false);
+      }
+    },
+
+    /**
      * Id → name maps for the lists this bar already loaded.
      *
      * Aggregate responses group by id and carry no names, so every page needs
