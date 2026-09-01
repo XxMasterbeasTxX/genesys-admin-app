@@ -794,8 +794,31 @@ as a redacted row rather than dropped, for the same reason as
 **Audience:** whoever owns the AI scoring rollout. Narrow, but this data has no
 good home in the standard Genesys views, which is the argument for the page.
 
-**Backed by:** `evaluations/search` aggregations almost entirely, run over
-chunked windows (§9.2) so the page is **not** limited to a quarter.
+**Build status: complete.**
+
+**Backed by two sources, not one.** The design assumed `evaluations/search`
+almost entirely. In the event the plain counts, the trend and the score
+comparison come from the ANALYTICS aggregate domain instead, because
+`systemSubmitted` is a dimension there — so those come back in one unbounded
+request rather than a walk across 3-month windows, and the trend can use real
+granularity instead of a DATE_HISTOGRAM. The search endpoint keeps everything
+only it knows: failure types, suggestion acceptance, disputes, rescores, and
+which questions the model answered.
+
+That splits the permissions, and the split is deliberate. The page's gate stays
+`quality:evaluation:searchAny`; the aggregate half additionally wants
+`analytics:evaluationAggregate:view`, which is NOT in that gate. Those bands
+degrade on their own and name the missing permission, and every AI-specific band
+still works — the same shape as Coverage's denominator (§6.3).
+
+**Every search request carries `systemSubmitted: true`.** The flag defaults to
+false, so a page about AI scoring that forgot it would report human work under
+an AI heading — silently, and plausibly.
+
+**No by-agent band**, per §8.3: `agentId` is in the aggregation field enum but
+absent from that endpoint's own allowed-fields list, and it was not worth
+building a band that might simply be refused. The test form asks whether a
+per-agent view is wanted before that is investigated.
 
 ### 8.1 Bands
 

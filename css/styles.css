@@ -6058,3 +6058,27 @@ a.fr-shipped:hover { text-decoration: underline; }
 }
 /* Inline throbber for spots that take innerHTML rather than an element. */
 .spin-inline { align-items: center; display: inline-flex; gap: 8px; }
+
+/* AI Scoring: a stacked column, AI over human */
+.dq-stack {
+  border-radius: 2px 2px 0 0;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 1px;
+  min-width: 2px;
+  overflow: hidden;
+}
+.dq-stack-human { background: #58c4a0; width: 100%; }
+.dq-stack-ai { background: #4c8dff; width: 100%; }
+.dq-stack.is-partial { opacity: 0.55; }
+.dq-key {
+  border-radius: 2px;
+  display: inline-block;
+  height: 8px;
+  margin-right: 4px;
+  width: 8px;
+}
+.dq-key--ai { background: #4c8dff; }
+.dq-key--human { background: #58c4a0; }
