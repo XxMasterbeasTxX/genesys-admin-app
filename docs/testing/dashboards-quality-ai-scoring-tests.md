@@ -25,10 +25,10 @@ bands degrade on their own.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 1.1 | Open **Dashboards › Quality › AI Scoring** | The real page, not "Coming soon" | | |
-| 1.2 | Read the permission note | Names `quality:evaluation:searchAny` as the gate and `analytics:evaluationAggregate:view` as the extra, plus the Hourly Interacting warning | | |
 | 1.3 | Open with **no customer selected** | Prompts you to select one; Load disabled; dropdowns say "Select a customer to load …" | | |
 | 1.4 | Filter bar | Same shared bar, no "Dates refer to" — that is set on Coverage | | |
-| 1.5 | Panels | AI and human evaluations over time; Why AI scoring failed; Suggestions offered and accepted; AI-scored against human-scored; After the model answered | | |
+| 1.5 | Panels | AI and human evaluations over time; Why AI scoring failed; Suggestions offered and accepted; AI-scored against human-scored; Which questions the model answered; After the model answered | | |
+| 1.6 | No permission note anywhere on the page | The page describes what it shows and nothing about permissions | | |
 
 ## 2. Tiles
 
@@ -80,18 +80,27 @@ bands degrade on their own.
 | 6.3 | A period with only AI scoring | One bar, and a note saying there is nothing to compare with | | |
 | 6.4 | Cross-check against **Evaluation Scores** | The averages should agree for the same period and filters | | |
 
-## 7. After the model answered
+## 7. Which questions the model answered, and what happened after
+
+Question-level fields can only be aggregated against a single form, so this band
+needs exactly one form selected. See design §8.2a.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 7.1 | Look at the panel | Questions the model answered, questions Assistance answered, answer-level failures, disputes, rescores | | |
-| 7.2 | Sanity | Disputes and rescores should match the tiles | | |
+| 7.1 | Load with **no** form selected | The questions panel asks for one form; **every other panel still loads** | | |
+| 7.2 | Load with **two or more** forms selected | Same, saying how many are selected | | |
+| 7.3 | Select **one** form and load | A bar per question, named, reading "n of m", least-often-answered first | | |
+| 7.4 | Read the sub-line | Names the form and says current published version only | | |
+| 7.5 | Sanity | The "of m" figures should be the same for every question on the form | | |
+| 7.6 | A form AI has never scored | An empty state, not an error | | |
+| 7.7 | "After the model answered" panel | Disputes raised, Rescored by a person | | |
+| 7.8 | Sanity | Disputes and rescores should match the tiles, and **should not both be zero** if the tiles are non-zero | | |
 
 ## 8. Degrading and empty states
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 8.1 | Without `analytics:evaluationAggregate:view` | AI-scored and AI share tiles show "—"; the trend and the comparison say which permission is missing; **failures, suggestions and "after" still work** | | |
+| 8.1 | Without `analytics:evaluationAggregate:view` | AI-scored and AI share tiles show "—"; the trend and the comparison say which permission is missing; **failures, suggestions, questions and "after" still work** | | |
 | 8.2 | Without `quality:evaluation:searchAny` | The page says it needs that permission | | |
 | 8.3 | A period with evaluations but **none AI-scored** | A note explains everything is zero by definition, not by failure | | |
 | 8.4 | A period with nothing at all | Clean empty states, no errors | | |

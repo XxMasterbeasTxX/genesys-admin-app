@@ -30,10 +30,12 @@ import {
   toAggregateQuery, toSearchRequest, dimensionPredicate,
   parseGroupedAggregate, parseAggregateTotal, parseAggregateSeries,
   statsAverage, aggregateAcrossWindows,
-  termAggregation, sumAggregation, statsAggregation,
+  termAggregation, termAggregationWith, sumAggregation, statsAggregation,
   AI_FAILURE_LABELS, exceedsSearchWindow,
 } from "../../../lib/evaluationQuery.js";
-import { queryEvaluationAggregates, searchEvaluations } from "../../../services/genesysApi.js";
+import {
+  queryEvaluationAggregates, searchEvaluations, fetchEvaluationFormsByContext,
+} from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml, spinHtml } from "../../../utils.js";
 
@@ -79,14 +81,6 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
       evaluations, suggestion acceptance, scoring failures by cause, and how
       AI-scored evaluations compare with human-scored ones.
     </p>
-    <p class="page-desc dq-perm-note">
-      Needs <code>quality:evaluation:searchAny</code>. The counts and score
-      comparison additionally use <code>analytics:evaluationAggregate:view</code>
-      — without it those bands say so and the rest still works. Note that
-      <code>analytics:evaluationAggregate:view</code> is on the Hourly
-      Interacting disqualifying list.
-    </p>
-
     <div data-c="filters"></div>
 
     <div class="cs-actions">
@@ -136,6 +130,13 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
         </p>
         <div class="dq-bars" data-c="compare"></div>
         <div class="dq-panel-note" data-c="compareNote" hidden></div>
+      </div>
+
+      <div class="dq-panel">
+        <h3 class="dq-panel-title">Which questions the model answered</h3>
+        <p class="dq-panel-sub" data-c="questionSub"></p>
+        <div class="dq-bars" data-c="questions"></div>
+        <div class="dq-panel-note" data-c="questionNote" hidden></div>
       </div>
 
       <div class="dq-panel">
@@ -288,6 +289,81 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
       `<span>${escapeHtml(stamp(points[points.length - 1][0]))}</span>`;
   }
 
+  /**
+   * How often AI answered each question on a form.
+   *
+   * The interesting AI-scoring question that nothing else answers: a model that
+   * scores 90% of questions but never touches three of them is telling you
+   * something about those three.
+   *
+   * Question-level fields are only aggregatable alongside a top-level TERM on
+   * `questionId` and a query scoped to one form, so this needs a single form
+   * selected — the same constraint the Weakest question groups band lives under
+   * (§7.3a). It is its own request, so a refusal costs this band and nothing
+   * else on the page.
+   */
+  async function renderPerQuestion(orgId, f) {
+    const $bars = $("questions");
+    const $sub = $("questionSub");
+    const $note = $("questionNote");
+    $note.hidden = true;
+
+    if (f.formContextIds.length !== 1) {
+      $sub.textContent = f.formContextIds.length === 0
+        ? "Select exactly one form in the filter bar to see which of its questions AI answered."
+        : `Select exactly one form — ${f.formContextIds.length} are selected, and questions are not comparable across forms.`;
+      $bars.innerHTML = '<div class="dq-bar-empty">No single form selected.</div>';
+      return;
+    }
+
+    $sub.textContent = "How often AI answered each question, least often first.";
+    $bars.innerHTML = `<div class="dq-bar-empty">${spinHtml("Loading questions…")}</div>`;
+
+    try {
+      const forms = await fetchEvaluationFormsByContext(api, orgId, f.formContextIds);
+      const form = forms[0];
+      if (!form?.id) {
+        $bars.innerHTML = '<div class="dq-bar-empty">Could not resolve that form.</div>';
+        return;
+      }
+      const names = new Map();
+      for (const g of form.questionGroups || []) {
+        for (const q of g.questions || []) if (q.id) names.set(q.id, q.text || q.id);
+      }
+
+      const merged = await aggregateAcrossWindows(f, (w) => searchEvaluations(api, orgId,
+        toSearchRequest({ ...f, formContextIds: [] }, {
+          window: w,
+          systemSubmitted: true,
+          extraCriteria: [{ type: "EXACT", field: "formId", values: [form.id] }],
+          aggregations: [termAggregationWith("byQuestion", "questionId",
+            [termAggregation("aiScored", "questionAiScored")], 200)],
+        })));
+
+      const rows = (merged.aggregations.byQuestion?.buckets || []).map((b) => {
+        const sub = b.sub?.aiScored;
+        const yes = (sub?.buckets || [])
+          .find((x) => String(x.key).toLowerCase() === "true")?.count || 0;
+        return {
+          label: names.get(b.key) || `Question (${String(b.key).slice(0, 8)}…)`,
+          count: yes,
+          value: `${yes.toLocaleString()} of ${b.count.toLocaleString()}`,
+          total: b.count,
+        };
+      }).sort((a, b) => (a.count / (a.total || 1)) - (b.count / (b.total || 1)));
+
+      renderCountBars($bars, rows,
+        { empty: "No question-level scoring recorded for this form and period." });
+      $sub.textContent =
+        `How often AI answered each question on ${form.name || "this form"}, least often first — ` +
+        "current published version only.";
+    } catch (err) {
+      $bars.innerHTML = '<div class="dq-bar-empty">Could not load questions.</div>';
+      $note.textContent = `The per-question query was rejected: ${err.message}`;
+      $note.hidden = false;
+    }
+  }
+
   // ── Load ────────────────────────────────────────────
   $loadBtn.addEventListener("click", async () => {
     const org = currentOrg();
@@ -321,6 +397,15 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
       // consecutive 3-month windows exactly (§9.2), and every TERM field is a
       // low-cardinality enum — so chunking is safe and this band works at any
       // date range.
+      // EVALUATION-LEVEL fields only.
+      //
+      // The endpoint separates evaluation-level aggregations from QUESTION-level
+      // ones (anything named question*), and the question ones are legal only
+      // alongside a top-level TERM on questionId and a query scoped to a single
+      // form. Asking for both kinds in one request does not degrade — it is
+      // rejected outright, and since every aggregation on this page rode in one
+      // request, three question-level fields took the whole page down with them.
+      // They now live in their own request, below, which can fail alone.
       setStatus("Querying AI scoring…");
       const aiAgg = await aggregateAcrossWindows(f, (w) => searchEvaluations(api, org.id,
         toSearchRequest(f, {
@@ -328,9 +413,6 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
           systemSubmitted: true,
           aggregations: [
             termAggregation("failureType", "aiScoringFailureType"),
-            termAggregation("answerFailure", "questionAiAnswerFailureType"),
-            termAggregation("aiScored", "questionAiScored"),
-            termAggregation("eaScored", "questionEaScored"),
             sumAggregation("aiSuggested", "aiSuggestionCount"),
             sumAggregation("aiAccepted", "aiAcceptedSuggestionCount"),
             sumAggregation("eaSuggested", "eaSuggestionCount"),
@@ -341,7 +423,12 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
           ],
         })));
       const A = aiAgg.aggregations;
-      const sum = (name) => A[name]?.sum ?? A[name]?.value ?? 0;
+      // `value` first, not `sum`. A SUM aggregation answers in `value` and
+      // leaves `sum` unset (EvaluationSearchAggregationResponse), and the
+      // normaliser defaults an unset `sum` to 0 — so reading `sum` first meant
+      // every suggestion, dispute and rescore count on this page read zero no
+      // matter what came back. `sum` stays as the fallback for STATS.
+      const sum = (name) => A[name]?.value ?? A[name]?.sum ?? 0;
 
       // ── The counting half: aggregates, unbounded ──
       setStatus("Counting AI and human evaluations…");
@@ -471,16 +558,13 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
       }
 
       // ── After the model answered ──────────────────
-      const bool = (agg, key) =>
-        (agg?.buckets || []).find((b) => String(b.key).toLowerCase() === key)?.count || 0;
       renderCountBars($("after"), [
-        { label: "Questions the model answered", count: bool(A.aiScored, "true") },
-        { label: "Questions Evaluation Assistance answered", count: bool(A.eaScored, "true") },
-        { label: "Answer-level failures", count:
-            (A.answerFailure?.buckets || []).reduce((s, b) => s + b.count, 0), fill: "dq-fill-warn" },
         { label: "Disputes raised", count: sum("disputes"), fill: "dq-fill-warn" },
         { label: "Rescored by a person", count: sum("rescores"), fill: "dq-fill-warn" },
-      ], { empty: "Nothing recorded against AI-scored evaluations in this period." });
+      ], { empty: "No disputes or rescores against AI-scored evaluations in this period." });
+
+      // ── Per question (needs one form) ─────────────
+      await renderPerQuestion(org.id, f);
 
       // ── Range line and empty state ────────────────
       $("rangeLine").textContent =

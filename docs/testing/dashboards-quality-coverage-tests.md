@@ -30,8 +30,8 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 | 1.3 | Expand Quality | Three leaves: Evaluation Coverage, Evaluation Scores, AI Scoring | ☐ | |
 | 1.4 | Click **Evaluation Scores** | "Coming soon" placeholder — it is not built yet | ☐ | |
 | 1.5 | Click **AI Scoring** | "Coming soon" placeholder | ☐ | |
-| 1.6 | Click **Evaluation Coverage** | The real page loads: heading, description, permission note, filter bar, Load button | ☐ | |
-| 1.7 | Read the permission note under the description | It names both permissions **and** warns that `analytics:evaluationAggregate:view` disqualifies the user from an Hourly Interacting licence | ☐ | |
+| 1.6 | Click **Evaluation Coverage** | The real page loads: heading, description, filter bar, Load button | ☐ | |
+| 1.7 | Look under the description | No permission note — the page describes what it shows and nothing about permissions | ☐ | |
 | 1.8 | Log in as a **Support** group member | Dashboards does **not** appear — Support was deliberately not granted it | ☐ | |
 
 > **Decision for you after 1.8:** should Support get `dashboards.*`? They already

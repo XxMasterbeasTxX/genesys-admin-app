@@ -83,14 +83,6 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       were completed, how they are spread across forms, agents and evaluators,
       and whether evaluators are keeping up with what they have been assigned.
     </p>
-    <p class="page-desc dq-perm-note">
-      Needs <code>analytics:evaluationAggregate:view</code> and
-      <code>quality:evaluation:view</code>. Note that
-      <code>analytics:evaluationAggregate:view</code> is on the Hourly
-      Interacting disqualifying list — granting it makes that user ineligible
-      for an Hourly Interacting licence.
-    </p>
-
     <div data-c="filters"></div>
 
     <div class="cs-actions">

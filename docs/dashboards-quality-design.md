@@ -133,9 +133,13 @@ list this app already ships in
 [`js/lib/hourlyDisqualifyingPermissions.js`](../js/lib/hourlyDisqualifyingPermissions.js).
 Anyone granted Coverage or Scores loses eligibility for that licence.
 
-This is not a blocker, but it must be said on the page rather than discovered on
-an invoice — Roles › Permissions vs. Users exists partly to surface exactly this
-class of surprise. One line in each page description, naming the permission.
+This is not a blocker, and it is not disclosed on the page. An earlier revision
+put a line in each page description naming the permission; that was removed on
+2026-09-01 at Thomas's request, along with the rest of the per-page permission
+notes. The reasoning: the audience for these dashboards is a supervisor reading
+numbers, not the person deciding who gets which role, and Roles › Permissions vs.
+Users already surfaces this class of surprise to the person who *is* making that
+decision. The fact is recorded here so whoever grants access knows it.
 
 ## 4. The APIs, and what each is actually for
 
@@ -838,6 +842,8 @@ per-agent view is wanted before that is investigated.
 ├───────────────────────────┴──────────────────────────────────────┤
 │  Score comparison — AI-scored vs human-scored (STATS on both)    │
 ├──────────────────────────────────────────────────────────────────┤
+│  Which questions the model answered  (needs ONE form — §8.2a)    │
+├──────────────────────────────────────────────────────────────────┤
 │  Rescores and disputes on AI-scored evaluations                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -856,6 +862,38 @@ per-agent view is wanted before that is investigated.
 
 Every one recombines exactly across windows (§9.2), and every `TERM` field here
 is a low-cardinality enum or boolean, so the 100-bucket cap cannot bite.
+
+### 8.2a Question-level fields cannot share a request
+
+The last row of that table is not like the others, and the first build got it
+wrong. The search endpoint treats anything named `question*` as a QUESTION-level
+field, legal only when the request carries a single top-level `TERM` on
+`questionId` **and** is scoped to one `formId`, one `questionGroupId` or a list
+of `questionIds`. Mixing a question-level field with an evaluation-level one is
+not degraded — it is rejected outright:
+
+> Aggregating against question level fields require either a single top level
+> Term aggregation for questionId and querying by either a single formId, a
+> single questionGroupId or list of questionIds OR querying by a single
+> questionId
+
+Because every aggregation on the page originally rode in one request,
+`questionAiAnswerFailureType`, `questionAiScored` and `questionEaScored` took the
+whole page down with them. They now live in a second request of their own —
+`TERM questionId` with a nested `TERM questionAiScored`, scoped by an EXACT
+`formId` criterion — which fails alone and leaves the rest of the page standing.
+
+The consequence for the user is the same constraint the Weakest question groups
+band lives under (§7.3a): the band needs **exactly one form** selected in the
+filter bar, and says so when it does not have one. Questions are not comparable
+across forms anyway, so this is a real constraint rather than only a technical
+one. The band reads least-often-answered first — a model that scores most
+questions but never touches three of them is saying something about those three.
+
+`questionAiAnswerFailureType` was dropped rather than moved. Its only home would
+be a third request under the same one-form constraint, and answer-level failure
+causes are already visible in aggregate as the evaluation-level
+`aiScoringFailureType` band.
 
 The failure-type enum is worth labelling properly rather than echoing:
 `QuotaReached`, `ParsingError`, `ServiceError`, `InvalidRequest`,
@@ -1013,7 +1051,8 @@ recorded**.
 - **Permission-filtered under-reporting.** Both `numEvaluationsWithoutViewPermission`
   (§4.3) and `redacted` rows (§7.4) are surfaced rather than dropped.
 - **The Hourly Interacting licence consequence** (§3.3) is a real cost to the
-  customer, disclosed on the page.
+  customer. It is recorded here and visible in Roles › Permissions vs. Users
+  rather than on the dashboards themselves.
 
 ## 11. Not in scope
 

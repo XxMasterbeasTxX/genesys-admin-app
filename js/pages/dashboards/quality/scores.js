@@ -76,12 +76,6 @@ export default function renderScores({ me, api, orgContext, access }) {
       the average and its spread over time, how scores are distributed across
       bands, and which agents and forms sit at the bottom.
     </p>
-    <p class="page-desc dq-perm-note">
-      Needs <code>analytics:evaluationAggregate:view</code>, which is on the
-      Hourly Interacting disqualifying list — granting it makes that user
-      ineligible for an Hourly Interacting licence.
-    </p>
-
     <div data-c="filters"></div>
 
     <div class="cs-actions">

@@ -5781,14 +5781,6 @@ a.fr-shipped:hover { text-decoration: underline; }
   font-size: 13px;
   margin-bottom: 10px;
 }
-.dq-perm-note {
-  color: var(--muted);
-  font-size: 12px;
-}
-.dq-perm-note code {
-  font-size: 11px;
-}
-
 /* A trend bucket that is still filling — the range runs up to now. Hatched
    rather than solid so a partial final column cannot be read as a real drop. */
 .dq-trend-col.is-partial {
