@@ -118,7 +118,8 @@ bands need exactly one form selected (design §8.2a).
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 9.1 | Without `quality:evaluation:searchAny` | The page says it needs that permission | | |
-| 9.2 | If one lane's query fails | That lane says why; **the other lane still works in full** | | |
+| 9.2 | If one lane's totals query fails | That lane says why; **the other lane still works in full** | | |
+| 9.2a | If one lane's trend query fails | Only that chart says so — the lane's tiles and its other panels are unaffected | | |
 | 9.3 | If a per-question query fails | That band alone says so; its lane's other panels are unaffected | | |
 | 9.4 | A period with nothing at all | Clean empty states in both lanes, no errors | | |
 | 9.5 | Filters that match nothing | Same | | |
@@ -128,10 +129,11 @@ bands need exactly one form selected (design §8.2a).
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 10.1 | Network tab on Load | Two search requests, plus one per per-question band when a form is selected. **No call to `analytics/evaluations/aggregates/query`** — the rebuild removed that dependency | | |
-| 10.2 | The two lane requests differ | One carries `systemSubmitted: true`, the other `false`. This is the fix for the old page's bug | | |
-| 10.3 | A range longer than 3 months | Sub-lines say it was queried in n windows and combined; figures stay coherent | | |
-| 10.4 | Nothing appears in the Activity Log | Read-only page | | |
+| 10.1 | Network tab on Load | Four search requests — a totals and a trend request per lane — plus one per per-question band when a form is selected. **No call to `analytics/evaluations/aggregates/query`** | | |
+| 10.2 | The lane requests differ | Two carry `systemSubmitted: true`, two `false`. This is the fix for the old page's bug | | |
+| 10.3 | Why totals and trend are separate requests | The endpoint allows only one top-level aggregation when sub-aggregations are used, so the histogram must travel alone. The upside: a lane's tiles survive its trend being refused | | |
+| 10.4 | A range longer than 3 months | Sub-lines say it was queried in n windows and combined; figures stay coherent | | |
+| 10.5 | Nothing appears in the Activity Log | Read-only page | | |
 
 ## 11. ★ Open questions
 

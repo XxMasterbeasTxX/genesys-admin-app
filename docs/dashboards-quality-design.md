@@ -912,14 +912,34 @@ does not have.
 
 ### 8.2 Aggregations used
 
-Four requests, each of which fails alone.
+Six requests, each of which fails alone.
 
 | # | Lane | `systemSubmitted` | Aggregations |
 |---|---|---|---|
-| R1 | Auto | `true` | `TERM aiScoringFailureType`; `SUM disputeCount`, `SUM rescoreCount`; `DATE_HISTOGRAM` on the time basis field with `SUM disputeCount` + `SUM rescoreCount` sub-aggregations |
-| R2 | Assistance | `false` | `SUM eaSuggestionCount`, `SUM eaAcceptedSuggestionCount`; `DATE_HISTOGRAM` on the time basis field with both as sub-aggregations |
+| R1 | Auto, totals | `true` | `TERM aiScoringFailureType`; `SUM disputeCount`, `SUM rescoreCount` |
+| R1b | Auto, trend | `true` | `DATE_HISTOGRAM` on the time basis field, with `SUM disputeCount` + `SUM rescoreCount` sub-aggregations |
+| R2 | Assistance, totals | `false` | `SUM eaSuggestionCount`, `SUM eaAcceptedSuggestionCount` |
+| R2b | Assistance, trend | `false` | `DATE_HISTOGRAM` on the time basis field, with both as sub-aggregations |
 | R3 | Auto, per question | `true` | `TERM questionId` -> `TERM questionAiScored` (one form, section 8.2a) |
 | R4 | Assistance, per question | `false` | `TERM questionId` -> `TERM questionEaScored` (one form, section 8.2a) |
+
+### 8.2c Sub-aggregations forbid company
+
+Each lane is two requests rather than one because of a rule that appears
+nowhere in the schema and only surfaces at runtime:
+
+> When using sub-aggregations, only one top-level aggregation is allowed
+
+A histogram carrying `SUM` sub-aggregations is the only way to express a rate
+per bucket, and it therefore has to travel alone. The first build of the rebuild
+put the histogram alongside the lane's flat aggregations and was refused
+outright, taking the lane's tiles down with the chart.
+
+Splitting them is not merely a workaround. It means a lane's totals survive its
+trend being refused and the other way round, which is the same failure
+philosophy as R3/R4 (section 8.2a). Note the two rules interact: R3 and R4
+already satisfy this one, since a lone `TERM questionId` with a nested `TERM`
+is exactly one top-level aggregation.
 
 `EvaluationSearchSubAggregationDTO` permits the full type set including `SUM`
 under a `DATE_HISTOGRAM` parent, which is what makes the rate bands possible at

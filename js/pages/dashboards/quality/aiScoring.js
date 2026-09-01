@@ -418,41 +418,50 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
 
       $("failures").innerHTML = `<div class="dq-bar-empty">${spinHtml("Loading failures…")}</div>`;
 
-      // Both lanes in parallel. They are separate requests because they are
-      // separate POPULATIONS — systemSubmitted true and false — not merely for
-      // tidiness, and either can fail without taking the other down.
+      // FOUR requests, not two, and the reason is a rule the endpoint does not
+      // document in its schema: "When using sub-aggregations, only one
+      // top-level aggregation is allowed."
+      //
+      // So a histogram carrying SUM sub-aggregations — the only way to express
+      // a rate per bucket — has to travel alone. Each lane therefore splits in
+      // two: a flat request for its totals, and a histogram request for its
+      // trend. That is not just a workaround; it means a lane's tiles survive
+      // its trend being refused, and vice versa.
+      //
+      // The lanes themselves are separate because they are separate
+      // POPULATIONS — systemSubmitted true and false — not for tidiness.
+      const run = (systemSubmitted, aggregations) => aggregateAcrossWindows(
+        f, (w) => searchEvaluations(api, org.id,
+          toSearchRequest(f, { window: w, systemSubmitted, aggregations })));
+
       setStatus("Querying auto-evaluation and assistance…");
-      const [autoRes, eaRes] = await Promise.allSettled([
-        // R1 — auto-evaluation. Evaluation-level fields only (§8.2a).
-        aggregateAcrossWindows(f, (w) => searchEvaluations(api, org.id,
-          toSearchRequest(f, {
-            window: w,
-            systemSubmitted: true,
-            aggregations: [
-              termAggregation("failureType", "aiScoringFailureType"),
-              sumAggregation("disputes", "disputeCount"),
-              sumAggregation("rescores", "rescoreCount"),
-              dateHistogramAggregation("overTime", dateField, ci, [
-                sumAggregation("disputes", "disputeCount"),
-                sumAggregation("rescores", "rescoreCount"),
-              ]),
-            ],
-          }))),
-        // R2 — assistance. Attached to evaluations a PERSON submitted, which is
-        // why this cannot ride along with the request above.
-        aggregateAcrossWindows(f, (w) => searchEvaluations(api, org.id,
-          toSearchRequest(f, {
-            window: w,
-            systemSubmitted: false,
-            aggregations: [
-              sumAggregation("offered", "eaSuggestionCount"),
-              sumAggregation("accepted", "eaAcceptedSuggestionCount"),
-              dateHistogramAggregation("overTime", dateField, ci, [
-                sumAggregation("offered", "eaSuggestionCount"),
-                sumAggregation("accepted", "eaAcceptedSuggestionCount"),
-              ]),
-            ],
-          }))),
+      const [autoRes, autoTrendRes, eaRes, eaTrendRes] = await Promise.allSettled([
+        // R1 — auto-evaluation totals. Evaluation-level fields only (§8.2a).
+        run(true, [
+          termAggregation("failureType", "aiScoringFailureType"),
+          sumAggregation("disputes", "disputeCount"),
+          sumAggregation("rescores", "rescoreCount"),
+        ]),
+        // R1b — auto-evaluation trend. One top-level aggregation, alone.
+        run(true, [
+          dateHistogramAggregation("overTime", dateField, ci, [
+            sumAggregation("disputes", "disputeCount"),
+            sumAggregation("rescores", "rescoreCount"),
+          ]),
+        ]),
+        // R2 — assistance totals. Attached to evaluations a PERSON submitted,
+        // which is why these cannot ride along with the requests above.
+        run(false, [
+          sumAggregation("offered", "eaSuggestionCount"),
+          sumAggregation("accepted", "eaAcceptedSuggestionCount"),
+        ]),
+        // R2b — assistance trend.
+        run(false, [
+          dateHistogramAggregation("overTime", dateField, ci, [
+            sumAggregation("offered", "eaSuggestionCount"),
+            sumAggregation("accepted", "eaAcceptedSuggestionCount"),
+          ]),
+        ]),
       ]);
 
       // `value` first, not `sum`. A SUM aggregation answers in `value` and
@@ -462,6 +471,15 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
       // came back. `sum` stays as the fallback for STATS.
       const readSum = (agg) => agg?.value ?? agg?.sum ?? 0;
 
+      /** Report a refused trend in its own panel, leaving the lane's tiles alone. */
+      function trendFailed(trendKey, axisKey, noteKey, reason) {
+        $(trendKey).innerHTML =
+          '<div class="dq-bar-empty">Trend not available.</div>';
+        $(axisKey).innerHTML = "";
+        $(noteKey).textContent = `The trend query was rejected: ${reason?.message || reason}`;
+        $(noteKey).hidden = false;
+      }
+
       // ── Lane A — auto-evaluation ──────────────────
       if (autoRes.status === "rejected") {
         $("autoTiles").innerHTML = "";
@@ -469,7 +487,6 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
           `Auto-evaluation figures could not be loaded: ${autoRes.reason?.message || autoRes.reason}`;
         $("autoEmpty").hidden = false;
         $("failures").innerHTML = '<div class="dq-bar-empty">Not available.</div>';
-        renderRateTrend($("overturnTrend"), $("overturnAxis"), [], { ci, partial, noun: "", verb: "" });
       } else {
         const A = autoRes.value.aggregations;
         const scored = autoRes.value.total;
@@ -499,27 +516,33 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
             .sort((a, b) => b.count - a.count),
           { empty: "No AI scoring failures in this period." });
 
+        $("overturnNote").hidden = !!(disputes + rescores);
+        if (!(disputes + rescores)) {
+          $("overturnNote").textContent =
+            "Nothing was disputed or rescored in this period.";
+        }
+      }
+
+      // ── Lane A trend, its own request ─────────────
+      $("overturnSub").textContent =
+        `Disputes and rescores per auto-evaluation, ${intervalLabel(ci).toLowerCase()}. ` +
+        "A line that climbs means people are trusting the model less over time." + windowNote;
+      if (autoTrendRes.status === "rejected") {
+        trendFailed("overturnTrend", "overturnAxis", "overturnNote", autoTrendRes.reason);
+      } else {
         // Disputes and rescores are EVENT counts — one evaluation can be
         // disputed twice — so this is events per evaluation, not a share of
         // evaluations, and the wording says so rather than implying a
         // percentage of evaluations that were overturned.
-        const points = (A.overTime?.buckets || [])
+        const points = (autoTrendRes.value.aggregations.overTime?.buckets || [])
           .map((b) => ({
             key: b.key,
             num: readSum(b.sub?.disputes) + readSum(b.sub?.rescores),
             den: b.count,
           }))
           .sort((a, b) => (bucketDate(a.key) || 0) - (bucketDate(b.key) || 0));
-        $("overturnSub").textContent =
-          `Disputes and rescores per auto-evaluation, ${intervalLabel(ci).toLowerCase()}. ` +
-          "A line that climbs means people are trusting the model less over time." + windowNote;
         renderRateTrend($("overturnTrend"), $("overturnAxis"), points,
           { ci, partial, fill: "is-warnfill", noun: "auto-evaluations", verb: "overturned" });
-        $("overturnNote").hidden = !!(disputes + rescores);
-        if (!(disputes + rescores)) {
-          $("overturnNote").textContent =
-            "Nothing was disputed or rescored in this period.";
-        }
       }
 
       // ── Lane B — evaluation assistance ────────────
@@ -528,7 +551,6 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
         $("eaEmpty").textContent =
           `Assistance figures could not be loaded: ${eaRes.reason?.message || eaRes.reason}`;
         $("eaEmpty").hidden = false;
-        renderRateTrend($("acceptTrend"), $("acceptAxis"), [], { ci, partial, noun: "", verb: "" });
       } else {
         const B = eaRes.value.aggregations;
         const offered = readSum(B.offered);
@@ -553,20 +575,26 @@ export default function renderAiScoring({ me, api, orgContext, access }) {
             "switched on for these forms, or no human evaluations were submitted.";
         }
 
-        const points = (B.overTime?.buckets || [])
+      }
+
+      // ── Lane B trend, its own request ─────────────
+      $("acceptSub").textContent =
+        `Share of suggestions the evaluator kept, ${intervalLabel(ci).toLowerCase()}. ` +
+        "This is the clearest signal on the page: it is people voting on the model's " +
+        "answers one question at a time." + windowNote;
+      if (eaTrendRes.status === "rejected") {
+        trendFailed("acceptTrend", "acceptAxis", "acceptNote", eaTrendRes.reason);
+      } else {
+        $("acceptNote").hidden = true;
+        const points = (eaTrendRes.value.aggregations.overTime?.buckets || [])
           .map((b) => ({
             key: b.key,
             num: readSum(b.sub?.accepted),
             den: readSum(b.sub?.offered),
           }))
           .sort((a, b) => (bucketDate(a.key) || 0) - (bucketDate(b.key) || 0));
-        $("acceptSub").textContent =
-          `Share of suggestions the evaluator kept, ${intervalLabel(ci).toLowerCase()}. ` +
-          "This is the clearest signal on the page: it is people voting on the model's " +
-          "answers one question at a time." + windowNote;
         renderRateTrend($("acceptTrend"), $("acceptAxis"), points,
           { ci, partial, fill: "is-goodfill", noun: "suggestions", verb: "accepted" });
-        $("acceptNote").hidden = true;
       }
 
       // ── Per-question bands, one per lane ──────────
