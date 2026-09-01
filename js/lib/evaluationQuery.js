@@ -416,8 +416,16 @@ export function toSearchRequest(filters, opts = {}) {
   }
 
   if (aggregations?.length) body.aggregations = aggregations;
-  if (pageSize) body.pageSize = pageSize;
-  if (pageNumber) body.pageNumber = pageNumber;
+
+  // `pageNumber` is REQUIRED even on a pure aggregation request. The endpoint's
+  // own docs say only "omit or set pageSize = 0" for aggregations, which reads
+  // as though paging is irrelevant there; omitting the page number is rejected
+  // with "Page number cannot be null". So it is always sent, and an aggregation
+  // request pins pageSize to 0 to ask for no rows alongside the totals.
+  body.pageNumber = pageNumber || 1;
+  if (aggregations?.length) body.pageSize = 0;
+  else if (pageSize) body.pageSize = pageSize;
+
   if (sortBy) body.sortBy = sortBy;
   if (sortOrder) body.sortOrder = sortOrder;
 

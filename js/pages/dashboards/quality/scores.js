@@ -645,6 +645,27 @@ export default function renderScores({ me, api, orgContext, access }) {
    * hides itself on a longer range and says why, rather than showing a list
    * that is silently only the first quarter of the answer.
    */
+  /**
+   * A name for a person or form on a detail row.
+   *
+   * The row may carry a populated object, or only an id, depending on the
+   * field. Every other band on this page resolves ids through the lists the
+   * filter bar already loaded, and the row-level table has no reason to be
+   * different — an em-dash where a name belongs is a lookup this page declined
+   * to do, not a fact about the evaluation.
+   */
+  function resolveName(ref, lookup, extraKeys = []) {
+    if (!ref) return null;
+    if (typeof ref === "string") return lookup?.get(ref) || shortId(ref);
+    if (ref.name) return ref.name;
+    for (const key of ["id", "contextId", ...extraKeys]) {
+      const v = ref[key];
+      if (v && lookup?.get(v)) return lookup.get(v);
+    }
+    const id = ref.id || ref.contextId;
+    return id ? shortId(id) : null;
+  }
+
   async function renderDetail(orgId, f) {
     const $sub = $("detailSub");
     const $wrap = $("detailWrap");
@@ -687,6 +708,8 @@ export default function renderScores({ me, api, orgContext, access }) {
       }));
 
       const items = resp?.results || [];
+      const lookups = filters.getLookups();
+      let unresolved = null;
       $rows.innerHTML = "";
       if (!items.length) {
         $rows.innerHTML = '<tr><td colspan="9" class="dq-bar-empty">No evaluations on this page.</td></tr>';
@@ -702,10 +725,21 @@ export default function renderScores({ me, api, orgContext, access }) {
         }
         const score = it.answers?.totalScore;
         const crit = it.answers?.totalCriticalScore;
+
+        const agentName = resolveName(it.agent ?? it.agentId, lookups.agents);
+        const formName = resolveName(it.evaluationForm ?? it.formId, lookups.forms);
+        // Only claim Virtual Supervisor when AI rows were asked for. A human
+        // evaluation whose name failed to resolve is a lookup miss, and saying
+        // "Virtual Supervisor" there would invent a scorer.
+        const evaluatorName = resolveName(it.evaluator ?? it.evaluatorId, lookups.agents)
+          || (detailWho() === "ai" ? "Virtual Supervisor" : "—");
+
+        if (!agentName || !formName) unresolved = unresolved || it;
+
         tr.innerHTML = `
-          <td>${escapeHtml(it.agent?.name || "—")}</td>
-          <td>${escapeHtml(it.evaluator?.name || "Virtual Supervisor")}</td>
-          <td>${escapeHtml(it.evaluationForm?.name || "—")}</td>
+          <td>${escapeHtml(agentName || "—")}</td>
+          <td>${escapeHtml(evaluatorName)}</td>
+          <td>${escapeHtml(formName || "—")}</td>
           <td>${escapeHtml(shortDate(it.conversationDate))}</td>
           <td>${escapeHtml(shortDate(it.submittedDate))}</td>
           <td class="is-num">${score == null ? "—" : Number(score).toFixed(1) + "%"}</td>
@@ -713,6 +747,15 @@ export default function renderScores({ me, api, orgContext, access }) {
           <td>${escapeHtml(it.status || "—")}</td>
           <td>${it.releaseDate ? "Yes" : "No"}</td>`;
         $rows.append(tr);
+      }
+
+      // If a row still cannot be named, say what the row DID carry rather than
+      // leaving a silent em-dash. One line, and it names the field to fix.
+      if (unresolved) {
+        $note.textContent =
+          "Some rows have no agent or form name. The evaluation record carried: " +
+          Object.keys(unresolved).filter((k) => !["answers", "versionHistory"].includes(k)).join(", ");
+        $note.hidden = false;
       }
 
       $("detailPage").textContent = `Page ${detailPage}`;
