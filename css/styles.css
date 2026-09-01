@@ -5796,6 +5796,20 @@ a.fr-shipped:hover { text-decoration: underline; }
 .dq-table th.is-num { text-align: right; }
 .dq-table tbody tr:hover { background: rgba(255,255,255,0.03); }
 
+/* A secondary fact inside a table cell - the share an answer accounted for, or
+   the reason a figure is absent. Quiet enough not to compete with the number
+   it qualifies. */
+.dq-muted { color: var(--muted); }
+
+/* A cell worth a second look: AI is switched on for that question and answered
+   it under half the time, which is the one AI signal nothing else reports. */
+.dq-flag {
+  background: rgba(224, 163, 74, 0.16);
+  border-radius: 3px;
+  color: #e0a34a;
+  padding: 1px 5px;
+}
+
 /* ── Light mode ──────────────────────────────────────── */
 @media (prefers-color-scheme: light) {
   .dq-bar-track { background: #e5e7eb; }
@@ -6021,8 +6035,10 @@ a.fr-shipped:hover { text-decoration: underline; }
 .cf-th.cf-sortable { white-space: nowrap; }
 /* A column filter's dropdown hangs below the header inside this scroll box, so
    the box must stay tall enough to show one even when every row is filtered
-   out — otherwise the control that hid the rows becomes unreachable. */
-.dq-table-wrap { min-height: 260px; }
+   out — otherwise the control that hid the rows becomes unreachable.
+   Scoped to boxes that HAVE filters: an unfiltered table (the per-question one
+   on Scores) would otherwise carry 260px of dead space under three rows. */
+.dq-table-wrap.has-filters { min-height: 260px; }
 .dq-empty-row[hidden] { display: none; }
 
 /* Agent scores fold: metric, order, name and range controls in one row */

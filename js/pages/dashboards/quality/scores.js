@@ -27,7 +27,7 @@ import { createEvaluationFilters } from "../../../components/evaluationFilters.j
 import {
   toAggregateQuery, toSearchRequest, parseGroupedAggregate, parseAggregateTotal,
   parseAggregateSeries, parseAggregateViews,
-  statsMapToSorted, statsAverage, statsAggregation, termAggregationWith,
+  statsMapToSorted, statsAverage, statsAggregation, termAggregation, termAggregationWith,
   scoreBandViews, SCORE_BANDS, hasScopeFilters, exceedsSearchWindow,
   aggregateAcrossWindows,
 } from "../../../lib/evaluationQuery.js";
@@ -198,6 +198,15 @@ export default function renderScores({ me, api, orgContext, access }) {
         <div class="dq-panel-note" data-c="groupNote" hidden></div>
       </div>
 
+      <div class="dq-panel">
+        <h3 class="dq-panel-title">Weakest questions</h3>
+        <p class="dq-panel-sub" data-c="questionSub"></p>
+        <div class="dq-table-wrap">
+          <table class="dq-table" data-c="byQuestion"></table>
+        </div>
+        <div class="dq-panel-note" data-c="questionNote" hidden></div>
+      </div>
+
       <details class="dq-panel dq-fold" data-c="detailFold">
         <summary class="dq-fold-summary">
           <span class="dq-panel-title">Evaluations</span>
@@ -215,7 +224,7 @@ export default function renderScores({ me, api, orgContext, access }) {
             </select>
           </div>
         </div>
-        <div class="dq-table-wrap" data-c="detailWrap" hidden>
+        <div class="dq-table-wrap has-filters" data-c="detailWrap" hidden>
           <table class="dq-table">
             <thead>
               <tr>
@@ -335,7 +344,10 @@ export default function renderScores({ me, api, orgContext, access }) {
     whoChosen = true;
     detailPage = 1;
     const org = currentOrg();
-    if (org && lastLoaded) renderQuestionGroups(org.id, lastLoaded);
+    if (org && lastLoaded) {
+      renderQuestionGroups(org.id, lastLoaded);
+      renderQuestions(org.id, lastLoaded);
+    }
     detailDirty = true;
     requestDetail();
   });
@@ -733,6 +745,7 @@ export default function renderScores({ me, api, orgContext, access }) {
       detailPage = 1;
       lastLoaded = f;
       await renderQuestionGroups(org.id, f);
+      await renderQuestions(org.id, f);
       detailDirty = true;
       requestDetail();
 
@@ -761,6 +774,53 @@ export default function renderScores({ me, api, orgContext, access }) {
    * questions, and averaging across them yields a number describing nothing.
    * The search endpoint enforces its own version of the same rule.
    */
+  /**
+   * The form, and every revision of it that carries question groups.
+   *
+   * Two bands need this now, and it costs a form lookup plus one request per
+   * revision — so it is resolved once per Load and shared. The cache key is the
+   * org and the selected form: anything else that changes (dates, agents) does
+   * not alter the form definition.
+   *
+   * Why every revision rather than the published one: scoping a search to a
+   * single formId scopes it to a single form VERSION, and evaluations scored on
+   * an earlier revision fall out. That is what made the groups band report one
+   * evaluation per group while the rest of the page reported eight.
+   */
+  let formCache = { key: null, promise: null };
+
+  function loadFormVersions(orgId, f) {
+    const key = `${orgId}|${f.formContextIds.join(",")}`;
+    if (formCache.key === key && formCache.promise) return formCache.promise;
+    formCache = { key, promise: (async () => {
+      const forms = await fetchEvaluationFormsByContext(api, orgId, f.formContextIds);
+      const form = forms[0];
+      if (!form?.id) return { form: null, versions: [] };
+
+      // The versions endpoint does NOT return questionGroups — the form-list
+      // family documents that omission explicitly — so each revision has to be
+      // asked for by id to get its groups. Shipping without that check made the
+      // groups band report "this form has no question groups" for every form,
+      // which is why the version list is only used for its IDS.
+      let versions = [form];
+      try {
+        const list = await fetchEvaluationFormVersions(api, orgId, form.id);
+        const ids = [...new Set(list.map((v) => v.id).filter(Boolean))]
+          .slice(0, MAX_FORM_VERSIONS);
+        const full = await Promise.all(ids.map((id) => {
+          if (id === form.id) return form;
+          const known = list.find((v) => v.id === id);
+          if (known?.questionGroups?.length) return known;
+          return fetchEvaluationForm(api, orgId, id).catch(() => null);
+        }));
+        const withGroups = full.filter((v) => v?.questionGroups?.length);
+        if (withGroups.length) versions = withGroups;
+      } catch { /* fall back to the published version alone */ }
+      return { form, versions };
+    })() };
+    return formCache.promise;
+  }
+
   async function renderQuestionGroups(orgId, f) {
     const $bars = $("byGroup");
     const $sub = $("groupSub");
@@ -798,8 +858,7 @@ export default function renderScores({ me, api, orgContext, access }) {
       // buckets are merged back together on the group's `contextId`, which is
       // the one identifier a question group keeps across versions. The band
       // then covers the same evaluations as the rest of the page.
-      const forms = await fetchEvaluationFormsByContext(api, orgId, f.formContextIds);
-      const form = forms[0];
+      const { form, versions } = await loadFormVersions(orgId, f);
       if (!form?.id) {
         $sub.textContent = "Average score per question group, weakest first.";
         $bars.innerHTML = '<div class="dq-bar-empty">Could not resolve that form.</div>';
@@ -807,29 +866,6 @@ export default function renderScores({ me, api, orgContext, access }) {
         $note.hidden = false;
         return;
       }
-
-      // Every revision, so a group that predates the current version is still
-      // covered.
-      //
-      // The versions endpoint does NOT return questionGroups — the form-list
-      // family documents that omission explicitly — so each revision has to be
-      // asked for by id to get its groups. Shipping without that check made the
-      // band report "this form has no question groups" for every form, which is
-      // why the version list is now only used for its IDS.
-      let versions = [form];
-      try {
-        const list = await fetchEvaluationFormVersions(api, orgId, form.id);
-        const ids = [...new Set(list.map((v) => v.id).filter(Boolean))]
-          .slice(0, MAX_FORM_VERSIONS);
-        const full = await Promise.all(ids.map((id) => {
-          if (id === form.id) return form;
-          const known = list.find((v) => v.id === id);
-          if (known?.questionGroups?.length) return known;
-          return fetchEvaluationForm(api, orgId, id).catch(() => null);
-        }));
-        const withGroups = full.filter((v) => v?.questionGroups?.length);
-        if (withGroups.length) versions = withGroups;
-      } catch { /* fall back to the published version alone */ }
 
       // groupId → context, and context → name. The id changes per version; the
       // context does not, which is what lets the buckets merge.
@@ -911,6 +947,282 @@ export default function renderScores({ me, api, orgContext, access }) {
         : `The question-group query was rejected: ${err.message}`;
       $note.hidden = false;
     }
+  }
+
+
+  // ── Weakest questions ───────────────────────────────
+
+  /**
+   * Every question on the form, weakest score first.
+   *
+   * This is the drill-down under the question-group band, and it absorbs what
+   * the AI Scoring page used to carry on its own: when "Scored by" is AI, the
+   * table gains an "AI answered" column, which is the one AI figure nothing
+   * else in the app reports.
+   *
+   * That column only means something next to the form's own AI settings.
+   * `EvaluationForm.aiScoring` carries a per-question `enabled` flag, and
+   * without it a question AI never answered is unreadable — it could be a
+   * question AI is not configured for, a free-text question it cannot answer,
+   * or a question it tried and failed on. Only the third is a finding, and the
+   * table separates the three rather than showing one bare number.
+   *
+   * Question-level aggregation rules (§8.2a of the design doc) apply: a lone
+   * top-level TERM on `questionId`, scoped to questions of one form.
+   */
+  async function renderQuestions(orgId, f) {
+    const $table = $("byQuestion");
+    const $sub = $("questionSub");
+    const $note = $("questionNote");
+    $table.innerHTML = "";
+    $note.hidden = true;
+
+    const wantAi = detailWho() === "ai";
+
+    if (!canSearch) {
+      $sub.textContent = "Needs the quality:evaluation:searchAny permission.";
+      return;
+    }
+    if (f.formContextIds.length !== 1) {
+      $sub.textContent = f.formContextIds.length === 0
+        ? "Select exactly one form in the filter bar to break its scores down by question."
+        : `Select exactly one form — ${f.formContextIds.length} are selected, and questions are not comparable across forms.`;
+      return;
+    }
+
+    $sub.textContent = "Loading…";
+    $table.innerHTML = `<tbody><tr><td>${spinHtml("Loading questions…")}</td></tr></tbody>`;
+
+    try {
+      const { form, versions } = await loadFormVersions(orgId, f);
+      if (!form?.id) {
+        $sub.textContent = "Average score per question, weakest first.";
+        $table.innerHTML = "";
+        $note.textContent = "The form could not be looked up.";
+        $note.hidden = false;
+        return;
+      }
+
+      // questionId → context, plus everything the form knows about a question.
+      // The id changes per version; the context does not, which is what lets
+      // buckets from different revisions merge into one row.
+      const contextOf = new Map();
+      const meta = new Map();     // context → { text, group, type, naEnabled }
+      const answerText = new Map(); // answerOption id → text
+      const questionIds = [];
+      for (const v of versions) {
+        for (const g of v.questionGroups || []) {
+          for (const q of g.questions || []) {
+            if (!q.id) continue;
+            const ctx = q.contextId || q.id;
+            contextOf.set(q.id, ctx);
+            if (!meta.has(ctx)) {
+              meta.set(ctx, {
+                text: q.text || ctx,
+                group: g.name || "",
+                type: q.type || "",
+              });
+            }
+            for (const a of q.answerOptions || []) {
+              if (a.id) answerText.set(a.id, a.text ?? String(a.value ?? ""));
+            }
+            questionIds.push(q.id);
+          }
+        }
+      }
+      if (!questionIds.length) {
+        $sub.textContent = "Average score per question, weakest first.";
+        $table.innerHTML = "";
+        $note.textContent = "This form has no questions.";
+        $note.hidden = false;
+        return;
+      }
+
+      // Which questions AI scoring is switched on for, by question context.
+      // Absent settings mean "not configured", which is a different fact from
+      // "configured and silent" — the column says which.
+      const aiEnabled = new Map();
+      for (const g of form.aiScoring?.questionGroupSettings || []) {
+        for (const q of g.questionSettings || []) {
+          if (q.questionContextId) {
+            aiEnabled.set(q.questionContextId, !!q.settings?.enabled);
+          }
+        }
+      }
+      const haveAiSettings = aiEnabled.size > 0;
+
+      const subs = [statsAggregation("score", "questionScore"),
+                    termAggregation("answer", "questionAnswerId")];
+      if (wantAi) subs.push(termAggregation("aiScored", "questionAiScored"));
+
+      const query = (aggregations) => aggregateAcrossWindows(f, (w) =>
+        searchEvaluations(api, orgId, toSearchRequest({ ...f, formContextIds: [] }, {
+          window: w,
+          systemSubmitted: wantAi,
+          extraCriteria: [{ type: "EXACT", field: "questionId", values: questionIds }],
+          aggregations,
+        })));
+
+      // One request carrying every sub-aggregation, falling back to one request
+      // each. Several children under a single TERM parent is what the schema
+      // describes, but this endpoint has refused several things its schema
+      // permits, and a refusal here would otherwise cost the whole band.
+      let merged;
+      try {
+        merged = await query([termAggregationWith("byQuestion", "questionId", subs, 100)]);
+      } catch (err) {
+        const parts = await Promise.all(subs.map((sub) =>
+          query([termAggregationWith("byQuestion", "questionId", [sub], 100)])
+            .catch(() => null)));
+        if (!parts.some(Boolean)) throw err;
+        merged = mergeQuestionParts(parts);
+        $note.textContent =
+          "This form's questions were fetched one measure at a time: the search " +
+          `refused them in a single request (${err.message}).`;
+        $note.hidden = false;
+      }
+
+      const buckets = merged.aggregations.byQuestion?.buckets || [];
+      const truncated = merged.aggregations.byQuestion?.truncated || 0;
+
+      // Merge version-specific buckets onto the question context.
+      const byContext = new Map();
+      for (const b of buckets) {
+        const ctx = contextOf.get(b.key) || b.key;
+        const row = byContext.get(ctx)
+          || { evals: 0, count: 0, sum: 0, answers: new Map(), aiYes: 0, aiSeen: 0 };
+        row.evals += b.count || 0;
+        const st = b.sub?.score;
+        if (st?.count) { row.count += st.count; row.sum += st.sum; }
+        for (const a of b.sub?.answer?.buckets || []) {
+          row.answers.set(a.key, (row.answers.get(a.key) || 0) + a.count);
+        }
+        for (const a of b.sub?.aiScored?.buckets || []) {
+          row.aiSeen += a.count;
+          if (String(a.key).toLowerCase() === "true") row.aiYes += a.count;
+        }
+        byContext.set(ctx, row);
+      }
+
+      const rows = [...byContext.entries()].map(([ctx, r]) => {
+        const m = meta.get(ctx) || { text: `Question (${shortId(ctx)})`, group: "", type: "" };
+        const top = [...r.answers.entries()].sort((a, b) => b[1] - a[1])[0];
+        return {
+          text: m.text,
+          group: m.group,
+          type: m.type,
+          avg: r.count ? r.sum / r.count : null,
+          evals: r.evals,
+          answer: top ? (answerText.get(top[0]) || `(${shortId(top[0])})`) : null,
+          answerShare: top && r.evals ? top[1] / r.evals : null,
+          aiYes: r.aiYes,
+          aiSeen: r.aiSeen || r.evals,
+          aiOn: aiEnabled.get(ctx),
+        };
+      }).sort((a, b) => {
+        if (a.avg == null) return 1;
+        if (b.avg == null) return -1;
+        return a.avg - b.avg;
+      });
+
+      renderQuestionTable($table, rows, { wantAi, haveAiSettings });
+
+      $sub.textContent =
+        `Average score per question, weakest first — ${form.name || "this form"}, ` +
+        `across ${versions.length} form version${versions.length === 1 ? "" : "s"}` +
+        (wantAi ? ", AI-scored evaluations only." : ", human-scored evaluations only.") +
+        (splitCount(f) > 1
+          ? ` Queried in ${splitCount(f)} three-month windows and combined.` : "");
+
+      if (!rows.length) {
+        $note.textContent = otherSideHint()
+          || "The search returned no question scores for this form and period.";
+        $note.hidden = false;
+      } else if (wantAi && !haveAiSettings) {
+        $note.textContent =
+          "This form carries no per-question AI scoring settings, so a question AI never " +
+          "answered cannot be told apart from one AI was never configured to answer.";
+        $note.hidden = false;
+      } else if (truncated) {
+        $note.textContent =
+          `${truncated.toLocaleString()} question result(s) did not fit the 100-bucket ` +
+          "limit and are missing from this table. A form with many questions across many " +
+          "versions can exceed it.";
+        $note.hidden = false;
+      }
+    } catch (err) {
+      $table.innerHTML = "";
+      $sub.textContent = "Average score per question, weakest first.";
+      $note.textContent = err.status === 403
+        ? "Needs the quality:evaluation:searchAny permission."
+        : `The question query was rejected: ${err.message}`;
+      $note.hidden = false;
+    }
+  }
+
+  /** Fold several single-measure responses back into one bucket set. */
+  function mergeQuestionParts(parts) {
+    const byKey = new Map();
+    for (const part of parts) {
+      for (const b of part?.aggregations?.byQuestion?.buckets || []) {
+        const prev = byKey.get(b.key);
+        if (!prev) { byKey.set(b.key, { ...b, sub: { ...(b.sub || {}) } }); continue; }
+        // `count` is the same population in every part, so it is not added.
+        Object.assign(prev.sub, b.sub || {});
+      }
+    }
+    return { aggregations: { byQuestion: { buckets: [...byKey.values()], truncated: 0 } } };
+  }
+
+  function renderQuestionTable($table, rows, { wantAi, haveAiSettings }) {
+    if (!rows.length) { $table.innerHTML = ""; return; }
+
+    const head = ["Question", "Group", "Evaluations", "Average", "Most common answer"];
+    if (wantAi) head.push("AI answered");
+
+    const cell = (r) => {
+      const cells = [
+        `<td>${escapeHtml(r.text)}</td>`,
+        `<td>${escapeHtml(r.group)}</td>`,
+        `<td class="is-num">${r.evals.toLocaleString()}</td>`,
+        `<td class="is-num">${r.avg == null ? "—" : `${r.avg.toFixed(1)}%`}</td>`,
+        `<td>${r.answer == null ? "—" : escapeHtml(r.answer)
+          + (r.answerShare != null
+            ? ` <span class="dq-muted">${(r.answerShare * 100).toFixed(0)}%</span>` : "")}</td>`,
+      ];
+      if (wantAi) cells.push(`<td class="is-num">${questionAiCell(r, haveAiSettings)}</td>`);
+      return `<tr>${cells.join("")}</tr>`;
+    };
+
+    $table.innerHTML =
+      `<thead><tr>${head.map((h, i) =>
+        `<th${i >= 2 && i <= 3 || (wantAi && i === head.length - 1)
+          ? ' class="is-num"' : ""}>${escapeHtml(h)}</th>`).join("")}</tr></thead>` +
+      `<tbody>${rows.map(cell).join("")}</tbody>`;
+  }
+
+  /**
+   * The AI column, which has to distinguish three situations a single count
+   * cannot: AI is switched off for this question, AI is on and answering, and
+   * AI is on and silent. Only the last is a finding.
+   */
+  function questionAiCell(r, haveAiSettings) {
+    if (haveAiSettings && r.aiOn === false) {
+      return '<span class="dq-muted" title="AI scoring is not enabled for this question">off</span>';
+    }
+    if (!r.aiSeen) return "—";
+    const share = (r.aiYes / r.aiSeen) * 100;
+    const txt = `${r.aiYes.toLocaleString()} of ${r.aiSeen.toLocaleString()}`;
+    if (share >= 50) return txt;
+
+    // Mostly silent is worth a flag, but WHY is only knowable with the form's
+    // settings. Without them the flag must not claim the question is enabled —
+    // it may simply be one AI was never asked to score.
+    const why = haveAiSettings
+      ? "AI is enabled for this question but answered it under half the time"
+      : "AI answered this under half the time. This form carries no per-question "
+        + "AI settings, so it cannot be told apart from a question AI is not configured for";
+    return `<span class="dq-flag" title="${escapeHtml(why)}">${txt}</span>`;
   }
 
   // ── §7.4 Detail table ───────────────────────────────
