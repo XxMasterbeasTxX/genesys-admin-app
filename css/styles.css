@@ -6056,3 +6056,5 @@ a.fr-shipped:hover { text-decoration: underline; }
   margin-top: 4px;
   white-space: pre-wrap;
 }
+/* Inline throbber for spots that take innerHTML rather than an element. */
+.spin-inline { align-items: center; display: inline-flex; gap: 8px; }

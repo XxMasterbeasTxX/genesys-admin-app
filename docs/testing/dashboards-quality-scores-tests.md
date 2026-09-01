@@ -128,6 +128,8 @@ counts. This is the one arithmetic error the data shape invites.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
+| 8.0 | Every waiting state | A **spinning ring**, not bare "Loading…" text — main status, question groups, the evaluations table, and both drawer panes | | |
+| 8.0a | On a slow org, while the table loads | The ring shows beside "Loading evaluations… n so far" | | |
 | 8.1 | DevTools → Console | No errors, no unhandled rejections | | |
 | 8.2 | Network, filter `genesys-proxy`, load once | Six aggregate calls, fired in parallel | | Count: ______ |
 | 8.3 | Time a 12-month load on your biggest org | Well under 45 seconds | | ______ s |

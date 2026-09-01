@@ -18,7 +18,7 @@
  * failing whole.
  */
 
-import { escapeHtml } from "../utils.js";
+import { escapeHtml, spinHtml } from "../utils.js";
 
 /** Speaker purpose → the word a reader expects. */
 const SPEAKER = { customer: "Customer", agent: "Agent", external: "External", ivr: "IVR" };
@@ -198,8 +198,8 @@ export function createEvaluationDetail({ api }) {
     $("title").textContent = summary?.agent ? `${summary.agent}` : "Evaluation";
     $("sub").textContent = [summary?.form, summary?.conversation, summary?.score]
       .filter(Boolean).join(" · ");
-    $("transcript").innerHTML = `<p class="dq-bar-empty">Loading…</p>`;
-    $("form").innerHTML = `<p class="dq-bar-empty">Loading…</p>`;
+    $("transcript").innerHTML = `<p class="dq-bar-empty">${spinHtml("Loading transcript…")}</p>`;
+    $("form").innerHTML = `<p class="dq-bar-empty">${spinHtml("Loading scored form…")}</p>`;
 
     // The scored form. Its own permission, its own failure.
     api.proxyGenesys(orgId, "GET",

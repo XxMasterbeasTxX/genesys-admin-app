@@ -35,7 +35,7 @@ import {
   queryEvaluationAggregates, searchEvaluations, fetchEvaluationFormsByContext,
 } from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
-import { makeStatus, escapeHtml } from "../../../utils.js";
+import { makeStatus, escapeHtml, spinHtml } from "../../../utils.js";
 import { mediaLabel } from "../../../lib/evaluationQuery.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
@@ -783,6 +783,10 @@ export default function renderScores({ me, api, orgContext, access }) {
     }
 
     const windows = splitCount(f);
+    // This band fetches a form definition and then one search per 3-month
+    // window, so on a long range it is the slowest thing on the page. It said
+    // nothing at all while it worked.
+    $bars.innerHTML = `<div class="dq-bar-empty">${spinHtml("Loading question groups…")}</div>`;
     try {
       // The endpoint is explicit about what it will accept here: "a single top
       // level Term aggregation for questionGroupId and querying by either a
@@ -1019,7 +1023,7 @@ export default function renderScores({ me, api, orgContext, access }) {
     $controls.hidden = false;
     $wrap.hidden = false;
     $sub.textContent = "Individual evaluations in this period.";
-    $rows.innerHTML = '<tr><td colspan="10" class="dq-bar-empty">Loading…</td></tr>';
+    $rows.innerHTML = `<tr><td colspan="10" class="dq-bar-empty">${spinHtml("Loading evaluations…")}</td></tr>`;
 
     try {
       // Every evaluation in the range, not one page of it.
@@ -1052,7 +1056,8 @@ export default function renderScores({ me, api, orgContext, access }) {
         if (done) break;
         if (first + FETCH_CONCURRENCY > MAX_DETAIL_PAGES) truncated = true;
         $rows.innerHTML =
-          `<tr><td colspan="10" class="dq-bar-empty">Loading… ${items.length.toLocaleString()} so far</td></tr>`;
+          `<tr><td colspan="10" class="dq-bar-empty">${spinHtml(
+             `Loading evaluations… ${items.length.toLocaleString()} so far`)}</td></tr>`;
       }
       const hint = items.length ? null : otherSideHint();
       if (hint) { $note.textContent = hint; $note.hidden = false; }
