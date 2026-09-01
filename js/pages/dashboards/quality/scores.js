@@ -33,6 +33,7 @@ import {
 } from "../../../lib/evaluationQuery.js";
 import {
   queryEvaluationAggregates, searchEvaluations, fetchEvaluationFormsByContext,
+  queryConversationDetails,
 } from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml, spinHtml } from "../../../utils.js";
@@ -225,7 +226,7 @@ export default function renderScores({ me, api, orgContext, access }) {
             <thead>
               <tr>
                 <th>Agent</th><th>Details</th><th>Evaluator</th><th>Form</th>
-                <th>Conversation</th><th>Submitted</th>
+                <th>Conversation</th><th>Direction</th><th>Submitted</th>
                 <th class="is-num">Score</th><th class="is-num">Critical</th>
                 <th>Status</th><th>Released</th>
               </tr>
@@ -297,7 +298,7 @@ export default function renderScores({ me, api, orgContext, access }) {
         agent: cells[0]?.textContent.trim(),
         form: cells[3]?.textContent.trim(),
         conversation: cells[4]?.textContent.trim(),
-        score: cells[6]?.textContent.trim(),
+        score: cells[7]?.textContent.trim(),
       },
     });
   });
@@ -1023,7 +1024,7 @@ export default function renderScores({ me, api, orgContext, access }) {
     $controls.hidden = false;
     $wrap.hidden = false;
     $sub.textContent = "Individual evaluations in this period.";
-    $rows.innerHTML = `<tr><td colspan="10" class="dq-bar-empty">${spinHtml("Loading evaluations…")}</td></tr>`;
+    $rows.innerHTML = `<tr><td colspan="11" class="dq-bar-empty">${spinHtml("Loading evaluations…")}</td></tr>`;
 
     try {
       // Every evaluation in the range, not one page of it.
@@ -1056,7 +1057,7 @@ export default function renderScores({ me, api, orgContext, access }) {
         if (done) break;
         if (first + FETCH_CONCURRENCY > MAX_DETAIL_PAGES) truncated = true;
         $rows.innerHTML =
-          `<tr><td colspan="10" class="dq-bar-empty">${spinHtml(
+          `<tr><td colspan="11" class="dq-bar-empty">${spinHtml(
              `Loading evaluations… ${items.length.toLocaleString()} so far`)}</td></tr>`;
       }
       const hint = items.length ? null : otherSideHint();
@@ -1065,14 +1066,14 @@ export default function renderScores({ me, api, orgContext, access }) {
       let unresolved = null;
       $rows.innerHTML = "";
       if (!items.length) {
-        $rows.innerHTML = '<tr><td colspan="10" class="dq-bar-empty">No evaluations on this page.</td></tr>';
+        $rows.innerHTML = '<tr><td colspan="11" class="dq-bar-empty">No evaluations on this page.</td></tr>';
       }
       for (const it of items) {
         const tr = document.createElement("tr");
         if (it.redacted) {
           // Shown rather than dropped: a table that silently omits rows the
           // caller may not see reports a smaller programme than exists.
-          tr.innerHTML = '<td colspan="10" class="dq-redacted">An evaluation you do not have permission to see</td>';
+          tr.innerHTML = '<td colspan="11" class="dq-redacted">An evaluation you do not have permission to see</td>';
           $rows.append(tr);
           continue;
         }
@@ -1097,6 +1098,7 @@ export default function renderScores({ me, api, orgContext, access }) {
           <td>${escapeHtml(evaluatorName)}</td>
           <td>${escapeHtml(formName || "—")}</td>
           <td data-value="${escapeHtml(it.conversationDate || "")}">${escapeHtml(shortDate(it.conversationDate))}</td>
+          <td data-dir-for="${escapeHtml(it.conversation?.id || it.conversationId || "")}">—</td>
           <td data-value="${escapeHtml(it.submittedDate || "")}">${escapeHtml(shortDate(it.submittedDate))}</td>
           <td class="is-num">${score == null ? "—" : Number(score).toFixed(1) + "%"}</td>
           <td class="is-num">${crit == null ? "—" : Number(crit).toFixed(1) + "%"}</td>
@@ -1122,6 +1124,12 @@ export default function renderScores({ me, api, orgContext, access }) {
       // and a second attach would inject a second set of buttons beside the
       // first, leaving the live ones bound to rows no longer in the document.
       // Emptying the row first is what keeps one attach per render.
+      // Direction, joined on from the conversation domain (§7.6). Filled BEFORE
+      // the column filters attach, because the filter builds its value list by
+      // reading the cells — attach first and Direction would offer a list of
+      // em-dashes for ever.
+      await fillDirections(orgId, items);
+
       // The header row is also the filter row, so it must be stripped of the
       // previous render's controls before the next attach — otherwise each
       // redraw leaves another caret behind, bound to rows no longer present.
@@ -1141,13 +1149,13 @@ export default function renderScores({ me, api, orgContext, access }) {
         sortable: true,
         skipCols: [1],
         noSortCols: [1],
-        numericCols: [6, 7],
+        numericCols: [7, 8],
         // Score and Critical are measured quantities: their distinct values run
         // to nearly one per row, so they get a FROM/TO range rather than a
         // hundred checkboxes. The two date columns get a date range for the
         // same reason — every row has its own timestamp.
-        rangeCols: [6, 7],
-        dateCols: [4, 5],
+        rangeCols: [7, 8],
+        dateCols: [4, 6],
         onChange: (visible) => { detailVisible = visible; detailPage = 1; showPage(); },
       });
 
@@ -1160,7 +1168,7 @@ export default function renderScores({ me, api, orgContext, access }) {
       // being used and makes the filter impossible to undo.
       const emptyRow = document.createElement("tr");
       emptyRow.className = "dq-empty-row";
-      emptyRow.innerHTML = '<td colspan="10" class="dq-bar-empty">No rows match these filters.</td>';
+      emptyRow.innerHTML = '<td colspan="11" class="dq-bar-empty">No rows match these filters.</td>';
       emptyRow.hidden = true;
       $rows.append(emptyRow);
 
@@ -1168,13 +1176,72 @@ export default function renderScores({ me, api, orgContext, access }) {
       showPage(truncated ? items.length : 0);
       $("detailFoot").hidden = false;
     } catch (err) {
-      $rows.innerHTML = '<tr><td colspan="10" class="dq-bar-empty">Could not load evaluations.</td></tr>';
+      $rows.innerHTML = '<tr><td colspan="11" class="dq-bar-empty">Could not load evaluations.</td></tr>';
       $note.textContent = err.status === 403
         ? "Needs the quality:evaluation:searchAny permission."
         : `The evaluation search was rejected: ${err.message}`;
       $note.hidden = false;
       $("detailPrev").disabled = detailPage <= 1;
       $("detailNext").disabled = true;
+    }
+  }
+
+  /**
+   * Fill the Direction column by asking the conversation domain.
+   *
+   * An evaluation carries no direction anywhere (§7.6), so it has to be joined
+   * from the conversation that was evaluated. `conversations/details/query`
+   * takes `evaluationFilters`, so this asks for exactly the conversations that
+   * have evaluations rather than every conversation in the period.
+   *
+   * The interval is derived from the rows themselves — their earliest and
+   * latest conversation date — rather than from the filter bar. That matters
+   * whenever "Dates refer to" is Created or Released: the rows are then chosen
+   * by evaluation date, and their conversations can have started well outside
+   * the range the user picked. Deriving it from the data is exact where padding
+   * a guessed margin would not be.
+   *
+   * Needs `analytics:conversationDetail:view`, which is NOT this page's gate, so
+   * a refusal leaves the column as em-dashes and says why rather than failing
+   * the table.
+   */
+  async function fillDirections(orgId, items) {
+    const $note = $("detailNote");
+    const dates = items.map((it) => it.conversationDate).filter(Boolean).sort();
+    if (!dates.length) return;
+
+    const evaluationFilters = [];
+    const preds = [];
+    for (const id of lastLoaded?.agentIds || []) preds.push({ dimension: "userId", value: id });
+    if (preds.length) evaluationFilters.push({ type: "or", predicates: preds });
+
+    try {
+      // A Genesys interval is half-open, so an end of exactly the latest
+      // conversation start would exclude that conversation — the newest row on
+      // the page, silently, every time. One second past it closes the gap.
+      const end = new Date(Date.parse(dates[dates.length - 1]) + 1000).toISOString();
+      const convs = await queryConversationDetails(api, orgId, {
+        interval: `${dates[0]}/${end}`,
+        ...(evaluationFilters.length ? { evaluationFilters } : {}),
+        order: "asc",
+        orderBy: "conversationStart",
+      }, { maxPages: MAX_DETAIL_PAGES });
+
+      const byId = new Map();
+      for (const c of convs) {
+        if (c.conversationId && c.originatingDirection) {
+          byId.set(c.conversationId, c.originatingDirection);
+        }
+      }
+      for (const td of $("detailRows").querySelectorAll("[data-dir-for]")) {
+        const dir = byId.get(td.dataset.dirFor);
+        td.textContent = dir ? dir.charAt(0).toUpperCase() + dir.slice(1) : "—";
+      }
+    } catch (err) {
+      $note.textContent = err.status === 403
+        ? "Direction is blank: it comes from the conversation domain, which needs analytics:conversationDetail:view."
+        : `Could not load direction: ${err.message}`;
+      $note.hidden = false;
     }
   }
 

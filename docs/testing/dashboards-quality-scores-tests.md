@@ -155,6 +155,10 @@ counts. This is the one arithmetic error the data shape invites.
 | 10.1 | Load a range of three months or less | The table appears with rows | | |
 | 10.2 | Columns | Agent, Evaluator, Form, Conversation, Submitted, Score, Critical, Status, Released | | |
 | 10.2a | Agent and Form columns | **Names, never GUIDs** | | |
+| 10.2c | **Direction** column | Inbound / Outbound per row, with a value-list filter | | |
+| 10.2d | Without `analytics:conversationDetail:view` | Direction is em-dashes and a note says why; **every other column still works** | | |
+| 10.2e | Set **Dates refer to** = Created, then load | Direction still resolves — the join interval comes from the rows, not the filter bar | | |
+| 10.2f | The newest row on the page | Has a direction, not an em-dash (the half-open interval is closed by a second) | | |
 | 10.2b | **Score** and **Critical** headings | Right-aligned, sitting directly over their own numbers — not over the next column | | |
 | 10.3 | An AI-scored row | Evaluator reads **Virtual Supervisor** | | |
 | 10.4 | **Scored by** — switch between "A person" and "AI" | Both the question-group band AND this table change; page resets to 1 | | |

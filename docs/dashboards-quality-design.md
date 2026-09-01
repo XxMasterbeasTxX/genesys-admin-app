@@ -612,8 +612,46 @@ taken.
 
 **But the drawer fetches the conversation anyway**, for the transcript's
 communication id — so direction is free exactly there, and is shown in the
-drawer's sub-line. A fact about the interaction in front of you, rather than a
-dimension the domain cannot support.
+drawer's sub-line.
+
+### 7.6a Direction as a column, and why the table was NOT rebuilt on it
+
+`POST /api/v2/analytics/conversations/details/query` takes an
+**`evaluationFilters`** array, and returns `AnalyticsConversation` carrying both
+`originatingDirection` and its own `evaluations[]`. So direction is obtainable
+in bulk, one paged query, rather than per row.
+
+That opened a real question: `AnalyticsEvaluation` carries `userId`,
+`evaluatorId`, **`formName`** (a name, not an id), `oTotalScore`,
+`oTotalCriticalScore`, `evaluationStatus`, `released`, `rescored` and
+`systemSubmitted` — nearly every column the Evaluations table shows, plus
+direction natively, plus form names with no lookup. It could have replaced
+`quality/evaluations/search` as the table's source outright.
+
+**It was not, for one decisive reason.** That endpoint anchors on
+*conversation start* — "results will only include conversations that started on
+a day touched by the interval" — and it can order only by
+`conversationStart` / `conversationEnd` / `segmentStart` / `segmentEnd`. The
+page's **Dates refer to** control (§6.4) offers conversation date, created and
+released, and the search endpoint honours all three. Rebuilding the table on the
+conversation domain would have silently redefined what the date range means for
+two of those three settings — the numbers would still look plausible, which is
+what makes it dangerous.
+
+So the table keeps its source, and direction is **joined on** as a column with
+an ordinary value-list filter.
+
+**The interval for that join comes from the rows, not the filter bar.** Whenever
+the basis is Created or Released the rows are chosen by evaluation date, and
+their conversations can have started well outside the range the user picked;
+the earliest and latest `conversationDate` actually present are exact where a
+padded guess would not be. The end is pushed one second past the latest, because
+a Genesys interval is half-open and would otherwise drop the newest row on every
+page.
+
+It needs `analytics:conversationDetail:view`, which is not this page's gate, so
+a refusal leaves the column as em-dashes with a note rather than failing the
+table.
 
 ### 7.1 Bands
 
