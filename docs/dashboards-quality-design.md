@@ -498,6 +498,39 @@ the track whenever nobody beat it, reading as excellent when it is only the best
 of a poor field. The trend uses a fixed 0–100 axis for the same reason: an
 average-score chart that rescales itself hides the decline it exists to show.
 
+### 7.0a Layout: shape at the top, browsing below
+
+Settled 2026-09-01, after "Lowest-scoring agents" turned out to have no answer
+for an org with 400 agents — it drew the worst 25 and printed "…and 375 more",
+with no way to reach them and no way to look anyone up.
+
+The page now separates two different jobs:
+
+```
+tiles · trend · distribution        the shape — everyone, never truncated
+By form  |  By media type           small breakdowns, always visible
+▸ Agent scores                      fold: every agent, filterable
+▸ Evaluations                       fold: the rows
+```
+
+**Agent scores** replaces both "Lowest-scoring agents" and the separate
+"Critical scores" panel. Those were the same agents drawn twice with a different
+metric, so they are one fold with a **Total / Critical** toggle instead — the
+page loses a panel while gaining one. It carries an order toggle, a name filter
+and a score range, and every one of those redraws from the by-agent aggregate
+already fetched, so none of them costs a request.
+
+Default order stays **lowest first**: the bottom of a score distribution is the
+end anyone can act on. It is one click to reverse.
+
+**By media type** fills the slot beside By form — average score per media type,
+which nothing else on either page answers. A conversation carrying more than one
+media type counts under each, which the panel says.
+
+*By evaluator* — average score GIVEN, as a read on evaluator severity — was the
+other candidate for that slot and was not taken. It remains the most obvious
+unanswered question in this feature if a calibration view is ever wanted.
+
 ### 7.1 Bands
 
 ```

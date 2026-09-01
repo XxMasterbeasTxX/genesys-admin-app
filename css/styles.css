@@ -5953,3 +5953,9 @@ a.fr-shipped:hover { text-decoration: underline; }
    out — otherwise the control that hid the rows becomes unreachable. */
 .dq-table-wrap { min-height: 260px; }
 .dq-empty-row[hidden] { display: none; }
+
+/* Agent scores fold: metric, order, name and range controls in one row */
+.dq-agent-controls { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; }
+.dq-agent-controls .input { width: auto; }
+.dq-agent-range { align-items: center; display: flex; gap: 6px; }
+.dq-agent-range .input { width: 80px; }

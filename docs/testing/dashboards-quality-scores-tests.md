@@ -36,16 +36,21 @@ is new.
 | 1.3a | If any filter is set | The bar reads "n filters active" and **Clear filters** is highlighted — selections persist across pages for the session, so this is how you spot one you set earlier | | |
 | 1.3b | Click **Clear filters** | The count and the highlight both go | | |
 | 1.4 | Set a scope on Coverage, then come here | The same scope is already applied | | |
-| 1.5 | Count the panels | Average score over time, Score distribution, Lowest-scoring agents, By form, Weakest question groups, Evaluations, Critical scores | | |
+| 1.5 | Panel order | Average score over time, Score distribution, By form + By media type, Agent scores, Weakest question groups, Evaluations | | |
+| 1.5a | **By media type** | Average score per media type, lowest first, named (Voice, Chat, Email) not raw ids | | |
+| 1.5b | There is **no** separate Critical scores panel | It is the Total/Critical toggle inside Agent scores | | |
 | 1.6 | **Evaluations** and **Critical scores** | Both start **folded** — they grow with the size of the programme | | |
 | 1.7 | Their summaries while folded | Carry a count: "16 in this period", "12 agent(s)" — or "needs a range of 3 months or less" | | |
-| 1.8 | Open **Critical scores** | Content is already there — it costs no extra request | | |
-| 1.8a | **Agents shown** at the bottom of Critical scores | 25 / 50 / 100 / 200; changes how many bars are drawn, with no new request | | |
-| 1.8b | Its count line | Reads "Showing n of m agent(s)" | | |
-| 1.8c | **Filter agents** box in Critical scores | Type part of a name; the bars narrow live | | |
-| 1.8d | Its count while filtering | Reads "Showing n of m matching — k agent(s) in total" | | |
-| 1.8e | Type something that matches nobody | "No agent matches …" rather than an empty panel | | |
-| 1.8f | Clear the box | All agents return | | |
+| 1.8 | Open **Agent scores** | Content is already there — it costs no extra request | | |
+| 1.8a | Default order | **Lowest first** | | |
+| 1.8b | **Order** → Highest first | Reverses; the same agents, other end first | | |
+| 1.8c | **Score** → Critical | Redraws with critical scores; order may differ from Total | | |
+| 1.8d | **Filter agents** | Type part of a name; bars narrow live | | |
+| 1.8e | **Score between** From/To | Only agents in that band remain | | |
+| 1.8f | A combination matching nobody | "No agent matches these filters" | | |
+| 1.8g | **Agents shown** | 25 / 50 / 100 / 200 | | |
+| 1.8h | Network tab while using any of these | **No new requests** — all of it redraws from data already fetched | | |
+| 1.8i | With 200+ agents | The fold keeps the page short; the count says how many of how many | | |
 | 1.9 | Network tab: load with **Evaluations** folded | **No** row search fires; the folded table costs nothing | | |
 | 1.10 | Open **Evaluations** | One row search fires then | | |
 | 1.11 | Fold and unfold it again without changing anything | No further request — folding is navigation, not a new question | | |

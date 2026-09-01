@@ -36,7 +36,11 @@ import {
 } from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
+import { MEDIA_TYPES } from "../../../lib/evaluationQuery.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
+
+/** Media type id → the name a person would use for it. */
+const MEDIA_LABELS = new Map(MEDIA_TYPES.map((m) => [m.id, m.label]));
 
 /** Hourly for a day or two, daily to about two months, weekly beyond. */
 function pickGranularity(from, to) {
@@ -110,16 +114,72 @@ export default function renderScores({ me, api, orgContext, access }) {
 
       <div class="dq-grid-2">
         <div class="dq-panel">
-          <h3 class="dq-panel-title">Lowest-scoring agents</h3>
-          <p class="dq-panel-sub" data-c="byAgentSub">Average score per agent, lowest first.</p>
-          <div class="dq-bars" data-c="byAgent"></div>
-        </div>
-        <div class="dq-panel">
           <h3 class="dq-panel-title">By form</h3>
           <p class="dq-panel-sub">Average score per evaluation form, lowest first.</p>
           <div class="dq-bars" data-c="byForm"></div>
         </div>
+        <div class="dq-panel">
+          <h3 class="dq-panel-title">By media type</h3>
+          <p class="dq-panel-sub">
+            Average score per media type, lowest first. A conversation carrying
+            more than one counts under each.
+          </p>
+          <div class="dq-bars" data-c="byMedia"></div>
+        </div>
       </div>
+
+      <details class="dq-panel dq-fold" data-c="agentFold">
+        <summary class="dq-fold-summary">
+          <span class="dq-panel-title">Agent scores</span>
+          <span class="dq-fold-hint" data-c="agentHint"></span>
+        </summary>
+        <p class="dq-panel-sub">
+          Average score per agent. Lowest first, because the bottom of a score
+          distribution is the end anyone can act on — reverse it to see the top.
+        </p>
+        <div class="dq-agent-controls">
+          <div class="cs-control-group">
+            <label class="cs-label">Score</label>
+            <select class="input" data-c="agentMetric">
+              <option value="total">Total</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+          <div class="cs-control-group">
+            <label class="cs-label">Order</label>
+            <select class="input" data-c="agentOrder">
+              <option value="asc">Lowest first</option>
+              <option value="desc">Highest first</option>
+            </select>
+          </div>
+          <div class="cs-control-group">
+            <label class="cs-label" for="dqAgentFilter">Filter agents</label>
+            <input class="input" id="dqAgentFilter" type="search" data-c="agentFilter"
+                   placeholder="Type part of a name…" autocomplete="off">
+          </div>
+          <div class="cs-control-group">
+            <label class="cs-label">Score between</label>
+            <span class="dq-agent-range">
+              <input class="input" type="number" data-c="agentMin" placeholder="0">
+              <span>–</span>
+              <input class="input" type="number" data-c="agentMax" placeholder="100">
+            </span>
+          </div>
+        </div>
+        <div class="dq-bars" data-c="byAgent"></div>
+        <div class="dq-foot">
+          <span class="dq-foot-count" data-c="agentCount"></span>
+          <label class="dq-foot-size">
+            Agents shown
+            <select class="input" data-c="agentSize">
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </label>
+        </div>
+      </details>
 
       <div class="dq-panel dq-scored-by">
         <h3 class="dq-panel-title">The two sections below read individual evaluations</h3>
@@ -195,34 +255,6 @@ export default function renderScores({ me, api, orgContext, access }) {
         <div class="dq-panel-note" data-c="detailNote" hidden></div>
       </details>
 
-      <details class="dq-panel dq-fold" data-c="criticalFold">
-        <summary class="dq-fold-summary">
-          <span class="dq-panel-title">Critical scores</span>
-          <span class="dq-fold-hint" data-c="criticalHint"></span>
-        </summary>
-        <p class="dq-panel-sub">
-          Average critical score per agent, lowest first. A critical score can
-          fall while the total score holds up, which is the case worth catching.
-        </p>
-        <div class="dq-bar-filter">
-          <label class="cs-label" for="dqCriticalFilter">Filter agents</label>
-          <input class="input" id="dqCriticalFilter" type="search" data-c="criticalFilter"
-                 placeholder="Type part of a name…" autocomplete="off">
-        </div>
-        <div class="dq-bars" data-c="byAgentCritical"></div>
-        <div class="dq-foot">
-          <span class="dq-foot-count" data-c="criticalCount"></span>
-          <label class="dq-foot-size">
-            Agents shown
-            <select class="input" data-c="criticalSize">
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-              <option value="200">200</option>
-            </select>
-          </label>
-        </div>
-      </details>
     </div>
   `;
 
@@ -266,7 +298,7 @@ export default function renderScores({ me, api, orgContext, access }) {
   const MAX_DETAIL_PAGES = 25;   // 2,500 rows, then the footer says it is partial
   let detailSize = 25;
   let detailVisible = [];
-  let criticalRows = [];
+  let agentRows = { total: [], critical: [] };
   let detailPage = 1;
   let aiCount = 0;
   let humanCount = 0;
@@ -292,14 +324,15 @@ export default function renderScores({ me, api, orgContext, access }) {
 
   // Critical scores needs no request for this — the by-agent aggregate already
   // holds every agent, so the selector only decides how many bars are drawn.
-  $("criticalSize").addEventListener("change", () => {
-    renderCritical();
-  });
-
-  // A name filter rather than a value list: this panel stays a bar chart, and
-  // the question it answers is "where is this one person" among agents whose
-  // scores are all distinct numbers.
-  $("criticalFilter").addEventListener("input", () => renderCritical());
+  // Every control on this panel re-draws from data already in hand: the
+  // by-agent aggregate carries both scores for every agent, so switching
+  // metric, order, filter or size costs no request.
+  for (const c of ["agentMetric", "agentOrder", "agentSize"]) {
+    $(c).addEventListener("change", () => renderAgents());
+  }
+  for (const c of ["agentFilter", "agentMin", "agentMax"]) {
+    $(c).addEventListener("input", () => renderAgents());
+  }
 
   $("detailSort").addEventListener("change", () => {
     detailPage = 1;
@@ -532,13 +565,14 @@ export default function renderScores({ me, api, orgContext, access }) {
 
       const SCORE = ["nEvaluations", "oTotalScore", "oTotalCriticalScore"];
 
-      const [totalResp, trendResp, distResp, agentResp, formResp, rescoreResp, systemResp] =
+      const [totalResp, trendResp, distResp, agentResp, formResp, mediaResp, rescoreResp, systemResp] =
         await Promise.all([
           q({ metrics: SCORE }),
           q({ metrics: ["oTotalScore"], granularity }),
           q({ metrics: ["oTotalScore"], views: scoreBandViews("oTotalScore") }),
           q({ metrics: ["oTotalScore", "oTotalCriticalScore"], groupBy: ["userId"] }),
           q({ metrics: ["oTotalScore"], groupBy: ["contextId"] }),
+          q({ metrics: ["oTotalScore"], groupBy: ["mediaType"] }),
           q({ metrics: ["nEvaluationsRescored"] }),
           q({ metrics: ["nEvaluations"], groupBy: ["systemSubmitted"] }),
         ]);
@@ -597,25 +631,27 @@ export default function renderScores({ me, api, orgContext, access }) {
       const agentScores = parseGroupedAggregate(agentResp, "userId", "oTotalScore");
       const agentCritical = parseGroupedAggregate(agentResp, "userId", "oTotalCriticalScore");
 
-      renderScoreBars($("byAgent"),
-        toScoreRows(agentScores, lookups.agents,
-          { unknownLabel: "Unknown user", emptyLabel: "No agent recorded" }));
-      $("byAgentSub").textContent =
-        `Average score per agent, lowest first — ${agentScores.size.toLocaleString()} agent(s) scored.`;
-
       renderScoreBars($("byForm"),
         toScoreRows(parseGroupedAggregate(formResp, "contextId", "oTotalScore"), lookups.forms,
           { unknownLabel: "Unknown form", emptyLabel: "No form recorded" }));
 
-      criticalRows = toScoreRows(agentCritical, lookups.agents,
-        { unknownLabel: "Unknown user", emptyLabel: "No agent recorded" });
-      renderCritical();
+      agentRows = {
+        total: toScoreRows(agentScores, lookups.agents,
+          { unknownLabel: "Unknown user", emptyLabel: "No agent recorded" }),
+        critical: toScoreRows(agentCritical, lookups.agents,
+          { unknownLabel: "Unknown user", emptyLabel: "No agent recorded" }),
+      };
+      renderAgents();
 
       // A collapsed panel that says nothing is just a thing to click. The
       // summary carries the count so it is worth reading shut.
-      $("criticalHint").textContent = criticalRows.length
-        ? `${criticalRows.length.toLocaleString()} agent(s)`
+      $("agentHint").textContent = agentRows.total.length
+        ? `${agentRows.total.length.toLocaleString()} agent(s)`
         : "nothing scored";
+
+      renderScoreBars($("byMedia"),
+        toScoreRows(parseGroupedAggregate(mediaResp, "mediaType", "oTotalScore"), MEDIA_LABELS,
+          { unknownLabel: "Unknown media", emptyLabel: "No media recorded" }));
       $("detailHint").textContent = exceedsSearchWindow(f.from, f.to)
         ? "needs a range of 3 months or less"
         : `${count.toLocaleString()} in this period`;
@@ -835,27 +871,40 @@ export default function renderScores({ me, api, orgContext, access }) {
     $("detailNext").disabled = detailPage >= pages;
   }
 
-  /** Draw the critical-score bars at the currently chosen size. */
-  function renderCritical() {
-    const size = Number($("criticalSize").value) || 25;
-    const term = ($("criticalFilter").value || "").trim().toLowerCase();
-    const rows = term
-      ? criticalRows.filter((r) => r.label.toLowerCase().includes(term))
-      : criticalRows;
+  /**
+   * Draw the agent bars for whichever metric, order, filter and size are set.
+   *
+   * All of it comes from the by-agent aggregate already fetched, so none of
+   * these controls costs a request — which is what makes a name filter and a
+   * score range worth having here rather than a fixed "worst 25".
+   */
+  function renderAgents() {
+    const metric = $("agentMetric").value === "critical" ? "critical" : "total";
+    const size = Number($("agentSize").value) || 25;
+    const term = ($("agentFilter").value || "").trim().toLowerCase();
+    const min = $("agentMin").value === "" ? null : Number($("agentMin").value);
+    const max = $("agentMax").value === "" ? null : Number($("agentMax").value);
 
-    renderScoreBars($("byAgentCritical"), rows, { limit: size });
+    const all = agentRows[metric] || [];
+    let rows = term ? all.filter((r) => r.label.toLowerCase().includes(term)) : all;
+    if (min != null) rows = rows.filter((r) => r.value >= min);
+    if (max != null) rows = rows.filter((r) => r.value <= max);
 
-    if (!criticalRows.length) {
-      $("criticalCount").textContent = "";
+    // toScoreRows sorts ascending; reversing is cheaper and keeps one source
+    // of truth for the ordering.
+    if ($("agentOrder").value === "desc") rows = [...rows].reverse();
+
+    renderScoreBars($("byAgent"), rows, { limit: size });
+
+    const narrowed = term || min != null || max != null;
+    if (!all.length) {
+      $("agentCount").textContent = "";
     } else if (!rows.length) {
-      $("criticalCount").textContent = `No agent matches “${term}”`;
+      $("agentCount").textContent = "No agent matches these filters";
     } else {
-      // Both numbers, when a filter is on: how many are drawn, how many matched,
-      // and how many there are — a bar chart capped at 25 otherwise looks like
-      // the whole answer.
-      $("criticalCount").textContent =
+      $("agentCount").textContent =
         `Showing ${Math.min(size, rows.length).toLocaleString()} of ${rows.length.toLocaleString()}` +
-        (term ? ` matching — ${criticalRows.length.toLocaleString()} agent(s) in total` : " agent(s)");
+        (narrowed ? ` matching \u2014 ${all.length.toLocaleString()} agent(s) in total` : " agent(s)");
     }
   }
 
