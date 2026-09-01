@@ -5761,6 +5761,10 @@ a.fr-shipped:hover { text-decoration: underline; }
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+/* The heading must follow its values. Right-aligned numbers under a
+   left-aligned heading sit closer to the NEXT column's name than their own,
+   which reads as though the figure belongs to that column. */
+.dq-table th.is-num { text-align: right; }
 .dq-table tbody tr:hover { background: rgba(255,255,255,0.03); }
 
 /* ── Light mode ──────────────────────────────────────── */
