@@ -614,6 +614,21 @@ taken.
 communication id — so direction is free exactly there, and is shown in the
 drawer's sub-line.
 
+### 7.5a The evaluation lifecycle is four timestamps, and the table shows all four
+
+Conversation, Created, Submitted, Released — each a date column with a date
+range filter, in that order. Released was a Yes/No; it is the release date now,
+blank when unreleased, which reads the same way and says more.
+
+The gaps are the point. For a human evaluation they spread out, and the distance
+from call to scored, and from scored to released to the agent, is a QM health
+signal nothing else in the app surfaces. For an AI-scored evaluation all four sit
+within minutes of each other, which is itself the evidence that AI scored it
+immediately.
+
+`createdDate` and `releaseDate` were already in every search response and simply
+unused, so this cost no extra request.
+
 ### 7.6a Direction as a column, and why the table was NOT rebuilt on it
 
 `POST /api/v2/analytics/conversations/details/query` takes an
@@ -700,10 +715,24 @@ does not silently exclude evaluations scored on its other versions. This one
 band cannot have that, so it resolves the context to the id of its latest
 published version and scopes the query to that.
 
-**The consequence is stated on screen** rather than hidden: the band's sub-line
-names the form and says "current published version only". Evaluations scored on
-an earlier version are not in it. That is the trade the context id exists to
-avoid everywhere else, and the band is the one place it cannot be avoided.
+**Corrected 2026-09-01: it takes the other branch instead.** Scoping to a single
+`formId` scopes to a single form VERSION, and every evaluation scored on an
+earlier revision falls out. That showed up on dev as this band reporting **one**
+evaluation per question group while every other band on the page reported
+**eight** — a discrepancy visible on screen, which is the only reason it was
+caught.
+
+The rule allows "a single formID **or list of questionGroupIds**", so the band
+now fetches every revision of the form, puts every question group id across all
+of them into the query, and merges the buckets back together on the group's
+`contextId` — the one identifier a question group keeps across versions. Counts
+and sums add; the average is recomputed once over the whole population rather
+than averaged from per-version averages, which would be wrong wherever versions
+carry unequal numbers of evaluations. The sub-line says how many versions it
+covered.
+
+If the versions call fails the band falls back to the published version alone —
+fewer evaluations, but still an answer.
 
 **A related fix the same screenshot forced.** The detail table showed a GUID in
 its Form column, because the lookup was keyed on context ids while an evaluation

@@ -33,7 +33,7 @@ import {
 } from "../../../lib/evaluationQuery.js";
 import {
   queryEvaluationAggregates, searchEvaluations, fetchEvaluationFormsByContext,
-  queryConversationDetails,
+  queryConversationDetails, fetchEvaluationFormVersions,
 } from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml, spinHtml } from "../../../utils.js";
@@ -226,7 +226,8 @@ export default function renderScores({ me, api, orgContext, access }) {
             <thead>
               <tr>
                 <th>Agent</th><th>Details</th><th>Evaluator</th><th>Form</th>
-                <th>Conversation</th><th>Direction</th><th>Submitted</th>
+                <th>Conversation</th><th>Direction</th>
+                <th>Created</th><th>Submitted</th>
                 <th class="is-num">Score</th><th class="is-num">Critical</th>
                 <th>Status</th><th>Released</th>
               </tr>
@@ -298,7 +299,7 @@ export default function renderScores({ me, api, orgContext, access }) {
         agent: cells[0]?.textContent.trim(),
         form: cells[3]?.textContent.trim(),
         conversation: cells[4]?.textContent.trim(),
-        score: cells[7]?.textContent.trim(),
+        score: cells[8]?.textContent.trim(),
       },
     });
   });
@@ -789,17 +790,17 @@ export default function renderScores({ me, api, orgContext, access }) {
     // nothing at all while it worked.
     $bars.innerHTML = `<div class="dq-bar-empty">${spinHtml("Loading question groups…")}</div>`;
     try {
-      // The endpoint is explicit about what it will accept here: "a single top
-      // level Term aggregation for questionGroupId and querying by either a
-      // single formId or a list of questionGroupIds". A form CONTEXT id — which
-      // is what the filter bar carries, and what every other band uses — is
-      // rejected. So the context is resolved to the id of its latest published
-      // VERSION and the query is scoped to that.
+      // The endpoint accepts "a single formId OR a list of questionGroupIds".
+      // Scoping to a single formId means a single form VERSION, and an
+      // evaluation scored on any earlier revision falls out — which showed up
+      // as this band reporting one evaluation per group while every other band
+      // on the page reported eight.
       //
-      // The consequence is real and is stated on screen: this band covers the
-      // current published version of the form only. Evaluations scored on an
-      // earlier version are not in it, which is exactly the trade the context
-      // id exists to avoid everywhere else.
+      // So it takes the other branch. Every revision of the form is fetched,
+      // every question group id across all of them goes into the query, and the
+      // buckets are merged back together on the group's `contextId`, which is
+      // the one identifier a question group keeps across versions. The band
+      // then covers the same evaluations as the rest of the page.
       const forms = await fetchEvaluationFormsByContext(api, orgId, f.formContextIds);
       const form = forms[0];
       if (!form?.id) {
@@ -810,14 +811,38 @@ export default function renderScores({ me, api, orgContext, access }) {
         return;
       }
 
-      const names = new Map();
-      for (const g of form.questionGroups || []) {
-        if (g.id) names.set(g.id, g.name || g.id);
+      // Every revision, so a group that predates the current version is still
+      // covered. A failure here degrades to the current version rather than
+      // failing the band — fewer evaluations, but still an answer.
+      let versions = [form];
+      try {
+        const all = await fetchEvaluationFormVersions(api, orgId, form.id);
+        if (all.length) versions = all;
+      } catch { /* fall back to the published version alone */ }
+
+      // groupId → context, and context → name. The id changes per version; the
+      // context does not, which is what lets the buckets merge.
+      const contextOf = new Map();
+      const nameOf = new Map();
+      const groupIds = [];
+      for (const v of versions) {
+        for (const g of v.questionGroups || []) {
+          if (!g.id) continue;
+          const ctx = g.contextId || g.id;
+          contextOf.set(g.id, ctx);
+          if (!nameOf.has(ctx)) nameOf.set(ctx, g.name || ctx);
+          groupIds.push(g.id);
+        }
+      }
+      if (!groupIds.length) {
+        $sub.textContent = "Average score per question group, weakest first.";
+        $bars.innerHTML = '<div class="dq-bar-empty">This form has no question groups.</div>';
+        return;
       }
 
       $sub.textContent =
         `Average score per question group, weakest first — ${form.name || "this form"}, ` +
-        "current published version only." +
+        `across ${versions.length} form version${versions.length === 1 ? "" : "s"}.` +
         (windows > 1 ? ` Queried in ${windows} three-month windows and combined.` : "");
 
       // The search endpoint caps each request at three months, but this
@@ -831,23 +856,35 @@ export default function renderScores({ me, api, orgContext, access }) {
         toSearchRequest({ ...f, formContextIds: [] }, {
           window: w,
           systemSubmitted: detailWho() === "ai",
-          extraCriteria: [{ type: "EXACT", field: "formId", values: [form.id] }],
+          extraCriteria: [{ type: "EXACT", field: "questionGroupId", values: groupIds }],
           aggregations: [termAggregationWith("byGroup", "questionGroupId",
-            [statsAggregation("score", "questionGroupScorePercentage")])],
+            [statsAggregation("score", "questionGroupScorePercentage")], 200)],
         })));
 
-      const buckets = merged.aggregations.byGroup?.buckets || [];
-      const rows = buckets
-        .map((b) => {
-          const st = b.sub?.score;
-          const avg = st && st.count ? st.sum / st.count : null;
-          return avg == null ? null : {
-            label: names.get(b.key) || `Question group (${shortId(b.key)})`,
-            value: avg,
-            stats: { count: b.count },
-          };
-        })
-        .filter(Boolean)
+      // One row per question group CONTEXT, folding together the buckets its
+      // several version-specific ids produced. Counts and sums add; the average
+      // is recomputed once over the whole population rather than averaged from
+      // the per-version averages, which would be wrong wherever the versions
+      // carry unequal numbers of evaluations.
+      const byContext = new Map();
+      for (const b of merged.aggregations.byGroup?.buckets || []) {
+        const ctx = contextOf.get(b.key) || b.key;
+        const st = b.sub?.score;
+        if (!st || !st.count) continue;
+        const prev = byContext.get(ctx) || { count: 0, sum: 0, evals: 0 };
+        byContext.set(ctx, {
+          count: prev.count + st.count,
+          sum: prev.sum + st.sum,
+          evals: prev.evals + (b.count || 0),
+        });
+      }
+
+      const rows = [...byContext.entries()]
+        .map(([ctx, st]) => ({
+          label: nameOf.get(ctx) || `Question group (${shortId(ctx)})`,
+          value: st.sum / st.count,
+          stats: { count: st.evals },
+        }))
         .sort((a, b) => a.value - b.value);
 
       renderScoreBars($bars, rows);
@@ -1024,7 +1061,7 @@ export default function renderScores({ me, api, orgContext, access }) {
     $controls.hidden = false;
     $wrap.hidden = false;
     $sub.textContent = "Individual evaluations in this period.";
-    $rows.innerHTML = `<tr><td colspan="11" class="dq-bar-empty">${spinHtml("Loading evaluations…")}</td></tr>`;
+    $rows.innerHTML = `<tr><td colspan="12" class="dq-bar-empty">${spinHtml("Loading evaluations…")}</td></tr>`;
 
     try {
       // Every evaluation in the range, not one page of it.
@@ -1057,7 +1094,7 @@ export default function renderScores({ me, api, orgContext, access }) {
         if (done) break;
         if (first + FETCH_CONCURRENCY > MAX_DETAIL_PAGES) truncated = true;
         $rows.innerHTML =
-          `<tr><td colspan="11" class="dq-bar-empty">${spinHtml(
+          `<tr><td colspan="12" class="dq-bar-empty">${spinHtml(
              `Loading evaluations… ${items.length.toLocaleString()} so far`)}</td></tr>`;
       }
       const hint = items.length ? null : otherSideHint();
@@ -1066,14 +1103,14 @@ export default function renderScores({ me, api, orgContext, access }) {
       let unresolved = null;
       $rows.innerHTML = "";
       if (!items.length) {
-        $rows.innerHTML = '<tr><td colspan="11" class="dq-bar-empty">No evaluations on this page.</td></tr>';
+        $rows.innerHTML = '<tr><td colspan="12" class="dq-bar-empty">No evaluations on this page.</td></tr>';
       }
       for (const it of items) {
         const tr = document.createElement("tr");
         if (it.redacted) {
           // Shown rather than dropped: a table that silently omits rows the
           // caller may not see reports a smaller programme than exists.
-          tr.innerHTML = '<td colspan="11" class="dq-redacted">An evaluation you do not have permission to see</td>';
+          tr.innerHTML = '<td colspan="12" class="dq-redacted">An evaluation you do not have permission to see</td>';
           $rows.append(tr);
           continue;
         }
@@ -1099,11 +1136,13 @@ export default function renderScores({ me, api, orgContext, access }) {
           <td>${escapeHtml(formName || "—")}</td>
           <td data-value="${escapeHtml(it.conversationDate || "")}">${escapeHtml(shortDate(it.conversationDate))}</td>
           <td data-dir-for="${escapeHtml(it.conversation?.id || it.conversationId || "")}">—</td>
+          <td data-value="${escapeHtml(it.createdDate || "")}">${escapeHtml(shortDate(it.createdDate))}</td>
           <td data-value="${escapeHtml(it.submittedDate || "")}">${escapeHtml(shortDate(it.submittedDate))}</td>
           <td class="is-num">${score == null ? "—" : Number(score).toFixed(1) + "%"}</td>
           <td class="is-num">${crit == null ? "—" : Number(crit).toFixed(1) + "%"}</td>
           <td>${escapeHtml(it.status || "—")}</td>
-          <td>${it.releaseDate ? "Yes" : "No"}</td>`;
+          <td data-value="${escapeHtml(it.releaseDate || "")}">${
+            it.releaseDate ? escapeHtml(shortDate(it.releaseDate)) : "—"}</td>`;
         $rows.append(tr);
       }
 
@@ -1149,13 +1188,17 @@ export default function renderScores({ me, api, orgContext, access }) {
         sortable: true,
         skipCols: [1],
         noSortCols: [1],
-        numericCols: [7, 8],
+        numericCols: [8, 9],
         // Score and Critical are measured quantities: their distinct values run
         // to nearly one per row, so they get a FROM/TO range rather than a
         // hundred checkboxes. The two date columns get a date range for the
         // same reason — every row has its own timestamp.
-        rangeCols: [7, 8],
-        dateCols: [4, 6],
+        rangeCols: [8, 9],
+        // Conversation, Created, Submitted, Released — the whole lifecycle, so
+        // the lag between any two of them is visible per row. On an AI-scored
+        // evaluation they sit within minutes of each other, which is itself the
+        // evidence that AI scored it immediately.
+        dateCols: [4, 6, 7, 11],
         onChange: (visible) => { detailVisible = visible; detailPage = 1; showPage(); },
       });
 
@@ -1168,7 +1211,7 @@ export default function renderScores({ me, api, orgContext, access }) {
       // being used and makes the filter impossible to undo.
       const emptyRow = document.createElement("tr");
       emptyRow.className = "dq-empty-row";
-      emptyRow.innerHTML = '<td colspan="11" class="dq-bar-empty">No rows match these filters.</td>';
+      emptyRow.innerHTML = '<td colspan="12" class="dq-bar-empty">No rows match these filters.</td>';
       emptyRow.hidden = true;
       $rows.append(emptyRow);
 
@@ -1176,7 +1219,7 @@ export default function renderScores({ me, api, orgContext, access }) {
       showPage(truncated ? items.length : 0);
       $("detailFoot").hidden = false;
     } catch (err) {
-      $rows.innerHTML = '<tr><td colspan="11" class="dq-bar-empty">Could not load evaluations.</td></tr>';
+      $rows.innerHTML = '<tr><td colspan="12" class="dq-bar-empty">Could not load evaluations.</td></tr>';
       $note.textContent = err.status === 403
         ? "Needs the quality:evaluation:searchAny permission."
         : `The evaluation search was rejected: ${err.message}`;

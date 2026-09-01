@@ -144,6 +144,8 @@ counts. This is the one arithmetic error the data shape invites.
 | 9.3 | Select **one** form and load | Bars per question group, weakest first, with **real group names** not GUIDs | | |
 | 9.4 | Check the order | Lowest average first | | |
 | 9.5 | Set a range over three months | The sub-line says how many windows it combined, and it still returns data | | |
+| 9.5a | **Cross-check the eval counts** | The per-group counts must reconcile with the Evaluations total — 8 everywhere means 8 here, not 1 | | |
+| 9.5b | The sub-line | Says how many form versions it covered | | |
 | 9.6 | Compare a 12-month result against four separate 3-month loads | Counts should add up and the weighted average should match | | |
 | 9.7 | Read the band’s sub-line | Names the form and says "current published version only" — the endpoint rejects a form context id, so this band is scoped to one version. **Answered 2026-09-01** | | |
 | 9.8 | If your org has several versions of a form | Counts here may be lower than the By form band, which spans every version. Expected, not a fault | | |
@@ -156,6 +158,9 @@ counts. This is the one arithmetic error the data shape invites.
 | 10.2 | Columns | Agent, Evaluator, Form, Conversation, Submitted, Score, Critical, Status, Released | | |
 | 10.2a | Agent and Form columns | **Names, never GUIDs** | | |
 | 10.2c | **Direction** column | Inbound / Outbound per row, with a value-list filter | | |
+| 10.2g | **Created** and **Released** columns | Dates, each with a date-range filter; Released is blank when unreleased | | |
+| 10.2h | On a human-scored row | Conversation → Created is usually days; Created → Released usually longer | | |
+| 10.2i | On an AI-scored row | All four timestamps within minutes of each other | | |
 | 10.2d | Without `analytics:conversationDetail:view` | Direction is em-dashes and a note says why; **every other column still works** | | |
 | 10.2e | Set **Dates refer to** = Created, then load | Direction still resolves — the join interval comes from the rows, not the filter bar | | |
 | 10.2f | The newest row on the page | Has a direction, not an em-dash (the half-open interval is closed by a second) | | |

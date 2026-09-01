@@ -1373,6 +1373,18 @@ export async function fetchEvaluationFormsByContext(api, orgId, contextIds) {
   return Array.isArray(resp) ? resp : (resp?.entities || []);
 }
 
+/**
+ * Every revision of an evaluation form.
+ *
+ * A question group has a different `id` in every version of its form but keeps
+ * one `contextId`, so covering all versions means collecting the ids from each
+ * revision and merging the results back together on the context.
+ */
+export async function fetchEvaluationFormVersions(api, orgId, formId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    `/api/v2/quality/forms/evaluations/${formId}/versions`, opts);
+}
+
 /** Query the evaluation aggregate domain. */
 export async function queryEvaluationAggregates(api, orgId, body) {
   return api.proxyGenesys(orgId, "POST", "/api/v2/analytics/evaluations/aggregates/query", { body });
