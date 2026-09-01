@@ -195,7 +195,7 @@ mean `alternateTimeDimension` is not being applied.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 7.5 | Click **Today**, set basis to **Conversation date**, load | In an org with AI scoring on, this is **populated** — AI scores a conversation almost immediately | ☐ | |
-| 7.6 | If it comes back empty | A note explains that these dates match the conversation, that human evaluation lags by days, and suggests Created or Released | ☐ | |
+| 7.6 | If it comes back empty | Reads simply "Nothing here yet." | ☐ | |
 | 7.7 | Switch that same Today view to **Created** | Shows the evaluation work actually done today, of conversations from any date | ☐ | |
 
 ---

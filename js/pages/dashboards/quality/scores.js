@@ -542,10 +542,7 @@ export default function renderScores({ me, api, orgContext, access }) {
           "or not released. The counts above are real; the score bands are empty because " +
           "there is nothing scored to average.";
       } else if (count === 0 && f.timeBasis === "conversation" && dayCount(f.from, f.to) <= 7) {
-        why = "Nothing here yet. These dates are matched against the CONVERSATION, " +
-          "and a conversation is usually evaluated days after it happens — only AI " +
-          "scoring lands the same day. Switch “Dates refer to” to Created or Released " +
-          "to see the evaluation work done in this period.";
+        why = "Nothing here yet.";
       }
       $why.textContent = why;
       $why.hidden = !why;

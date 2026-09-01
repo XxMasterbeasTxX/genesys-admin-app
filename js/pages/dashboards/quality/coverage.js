@@ -487,9 +487,9 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       // Driven by the RESULT, not by which preset was clicked. A short range
       // on the conversation basis is perfectly meaningful where AI scoring is
       // on — those evaluations land against the conversation almost
-      // immediately. It is only when such a range comes back empty that the
-      // basis is worth explaining, because human evaluation lags a call by
-      // days and the page would otherwise look broken.
+      // immediately, so an empty one is worth marking but not lecturing about.
+      // The reasoning lives in docs/dashboards-quality-design.md §5.4; the page
+      // says only that there is nothing here.
       const $why = $("emptyWhy");
       let why = "";
 
@@ -501,11 +501,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
           "but none match the filters you set. Try clearing them one at a time to see " +
           "which one excludes everything.";
       } else if (total === 0 && f.timeBasis === "conversation" && dayCount(f.from, f.to) <= 7) {
-        why =
-          "Nothing here yet. These dates are matched against the CONVERSATION, " +
-          "and a conversation is usually evaluated days after it happens — only " +
-          "AI scoring lands the same day. Switch “Dates refer to” to Created " +
-          "or Released to see the evaluation work done in this period.";
+        why = "Nothing here yet.";
       }
 
       $why.textContent = why;

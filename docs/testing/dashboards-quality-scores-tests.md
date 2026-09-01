@@ -99,7 +99,7 @@ counts. This is the one arithmetic error the data shape invites.
 | 7.1 | A period with no evaluations at all | Tiles show "—", every band says "No scored evaluations in this period." | | |
 | 7.2 | A period with evaluations that are **not yet scored** | Counts are real, score tiles show "—", and a note says they carry no score yet | | |
 | 7.3 | A filter that matches nothing | A note says how many evaluations exist and to clear filters one at a time | | |
-| 7.4 | Short range on Conversation date with nothing back | The note explains the conversation-date lag and suggests Created/Released | | |
+| 7.4 | Short range on Conversation date with nothing back | Reads simply "Nothing here yet." | | |
 | 7.5 | Switch org mid-page | Results hide; reloading uses the new org's agents and forms | | |
 
 ## 8. Console and cost
