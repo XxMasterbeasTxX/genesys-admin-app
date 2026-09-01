@@ -39,6 +39,7 @@ import { makeStatus, escapeHtml } from "../../../utils.js";
 import { mediaLabel } from "../../../lib/evaluationQuery.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
+import { createEvaluationDetail } from "../../../components/evaluationDetail.js";
 
 /** Hourly for a day or two, daily to about two months, weekly beyond. */
 function pickGranularity(from, to) {
@@ -223,7 +224,7 @@ export default function renderScores({ me, api, orgContext, access }) {
           <table class="dq-table">
             <thead>
               <tr>
-                <th>Agent</th><th>Evaluator</th><th>Form</th>
+                <th>Agent</th><th>Details</th><th>Evaluator</th><th>Form</th>
                 <th>Conversation</th><th>Submitted</th>
                 <th class="is-num">Score</th><th class="is-num">Critical</th>
                 <th>Status</th><th>Released</th>
@@ -273,6 +274,33 @@ export default function renderScores({ me, api, orgContext, access }) {
   // sessionStorage state — one scope across the three pages, set in one place.
   const filters = createEvaluationFilters({ api });
   $("filters").append(filters.el);
+
+  const detail = createEvaluationDetail({ api });
+  el.append(detail.el);
+
+  // Delegated, because the tbody is rebuilt on every load and page turn — a
+  // listener per button would have to be re-attached each time and leak the
+  // ones it replaced.
+  $("detailRows").addEventListener("click", (e) => {
+    const btn = e.target.closest(".dq-detail-btn");
+    if (!btn) return;
+    const org = currentOrg();
+    const cid = btn.dataset.cid;
+    const eid = btn.dataset.eid;
+    if (!org || !cid || !eid) return;
+    const cells = btn.closest("tr").querySelectorAll("td");
+    detail.open({
+      orgId: org.id,
+      conversationId: cid,
+      evaluationId: eid,
+      summary: {
+        agent: cells[0]?.textContent.trim(),
+        form: cells[3]?.textContent.trim(),
+        conversation: cells[4]?.textContent.trim(),
+        score: cells[6]?.textContent.trim(),
+      },
+    });
+  });
 
   // The two search-backed bands need a permission the PAGE does not require.
   // Absent it the charts still work and the bands say why, per the composite
@@ -991,7 +1019,7 @@ export default function renderScores({ me, api, orgContext, access }) {
     $controls.hidden = false;
     $wrap.hidden = false;
     $sub.textContent = "Individual evaluations in this period.";
-    $rows.innerHTML = '<tr><td colspan="9" class="dq-bar-empty">Loading…</td></tr>';
+    $rows.innerHTML = '<tr><td colspan="10" class="dq-bar-empty">Loading…</td></tr>';
 
     try {
       // Every evaluation in the range, not one page of it.
@@ -1024,7 +1052,7 @@ export default function renderScores({ me, api, orgContext, access }) {
         if (done) break;
         if (first + FETCH_CONCURRENCY > MAX_DETAIL_PAGES) truncated = true;
         $rows.innerHTML =
-          `<tr><td colspan="9" class="dq-bar-empty">Loading… ${items.length.toLocaleString()} so far</td></tr>`;
+          `<tr><td colspan="10" class="dq-bar-empty">Loading… ${items.length.toLocaleString()} so far</td></tr>`;
       }
       const hint = items.length ? null : otherSideHint();
       if (hint) { $note.textContent = hint; $note.hidden = false; }
@@ -1032,14 +1060,14 @@ export default function renderScores({ me, api, orgContext, access }) {
       let unresolved = null;
       $rows.innerHTML = "";
       if (!items.length) {
-        $rows.innerHTML = '<tr><td colspan="9" class="dq-bar-empty">No evaluations on this page.</td></tr>';
+        $rows.innerHTML = '<tr><td colspan="10" class="dq-bar-empty">No evaluations on this page.</td></tr>';
       }
       for (const it of items) {
         const tr = document.createElement("tr");
         if (it.redacted) {
           // Shown rather than dropped: a table that silently omits rows the
           // caller may not see reports a smaller programme than exists.
-          tr.innerHTML = '<td colspan="9" class="dq-redacted">An evaluation you do not have permission to see</td>';
+          tr.innerHTML = '<td colspan="10" class="dq-redacted">An evaluation you do not have permission to see</td>';
           $rows.append(tr);
           continue;
         }
@@ -1058,6 +1086,9 @@ export default function renderScores({ me, api, orgContext, access }) {
 
         tr.innerHTML = `
           <td>${escapeHtml(agentName || "—")}</td>
+          <td><button class="btn btn-sm dq-detail-btn" type="button"
+                data-cid="${escapeHtml(it.conversation?.id || it.conversationId || "")}"
+                data-eid="${escapeHtml(it.id || "")}">Show details</button></td>
           <td>${escapeHtml(evaluatorName)}</td>
           <td>${escapeHtml(formName || "—")}</td>
           <td data-value="${escapeHtml(it.conversationDate || "")}">${escapeHtml(shortDate(it.conversationDate))}</td>
@@ -1096,16 +1127,22 @@ export default function renderScores({ me, api, orgContext, access }) {
         th.querySelector(".cf-sort-mark")?.remove();
         th.classList.remove("cf-sortable", "cf-sorted", "cf-th");
       }
+      // Column 1 is the Show details button: no filter, no sort, no arrow, no
+      // tab stop. Every other index below is one higher than it was before that
+      // column existed — get one wrong and Score silently gets a list of a
+      // hundred values where a range belongs, with no error to notice.
       disposeFilters = attachColumnFilters($("detailWrap"), {
         compact: true,
         sortable: true,
-        numericCols: [5, 6],
+        skipCols: [1],
+        noSortCols: [1],
+        numericCols: [6, 7],
         // Score and Critical are measured quantities: their distinct values run
         // to nearly one per row, so they get a FROM/TO range rather than a
         // hundred checkboxes. The two date columns get a date range for the
         // same reason — every row has its own timestamp.
-        rangeCols: [5, 6],
-        dateCols: [3, 4],
+        rangeCols: [6, 7],
+        dateCols: [4, 5],
         onChange: (visible) => { detailVisible = visible; detailPage = 1; showPage(); },
       });
 
@@ -1118,7 +1155,7 @@ export default function renderScores({ me, api, orgContext, access }) {
       // being used and makes the filter impossible to undo.
       const emptyRow = document.createElement("tr");
       emptyRow.className = "dq-empty-row";
-      emptyRow.innerHTML = '<td colspan="9" class="dq-bar-empty">No rows match these filters.</td>';
+      emptyRow.innerHTML = '<td colspan="10" class="dq-bar-empty">No rows match these filters.</td>';
       emptyRow.hidden = true;
       $rows.append(emptyRow);
 
@@ -1126,7 +1163,7 @@ export default function renderScores({ me, api, orgContext, access }) {
       showPage(truncated ? items.length : 0);
       $("detailFoot").hidden = false;
     } catch (err) {
-      $rows.innerHTML = '<tr><td colspan="9" class="dq-bar-empty">Could not load evaluations.</td></tr>';
+      $rows.innerHTML = '<tr><td colspan="10" class="dq-bar-empty">Could not load evaluations.</td></tr>';
       $note.textContent = err.status === 403
         ? "Needs the quality:evaluation:searchAny permission."
         : `The evaluation search was rejected: ${err.message}`;

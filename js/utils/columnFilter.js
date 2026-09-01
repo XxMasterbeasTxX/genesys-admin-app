@@ -20,6 +20,11 @@
  *                                           already use this keep the behaviour they shipped with.
  * @param {number[]}    [opts.numericCols] - Columns to compare as numbers when sorting.
  *                                           Only meaningful with `sortable`.
+ * @param {number[]}    [opts.noSortCols]  - Columns that must not become sortable. Without
+ *                                           this every header is a sort target, so a column
+ *                                           of buttons would get a pointer, a tab stop and an
+ *                                           arrow, and clicking it would clear the sort you
+ *                                           had while reordering nothing.
  * @param {boolean}     [opts.compact]     - Put the filter control IN the header cell
  *                                           instead of a second row, so the column is
  *                                           named once. Needs no `ll-filter-row`.
@@ -451,7 +456,9 @@ export function attachColumnFilters(tableWrap, opts = {}) {
       applyFilters();
     }
 
+    const noSort = new Set(opts.noSortCols || []);
     headerCells.forEach((th, colIdx) => {
+      if (noSort.has(colIdx)) return;
       th.classList.add("cf-sortable");
       if (!th.dataset.label) th.dataset.label = (th.textContent || "").trim();
       th.tabIndex = 0;

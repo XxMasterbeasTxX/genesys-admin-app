@@ -557,6 +557,64 @@ unknown — a word this app has not seen is still Genesys' word for something.
 dimension shared by name between two Genesys domains is not necessarily shared
 by value. Draw the values out with a groupBy before offering them as a filter.
 
+### 7.5 The evaluation detail drawer
+
+A **Show details** button opens a right-hand drawer holding the transcript and
+the scored form side by side.
+
+**Second column, and inert.** The table scrolls horizontally at nine columns, so
+a trailing action column would be the first thing pushed out of reach; column
+two keeps it always visible and reads naturally — find the person, then act. Its
+header carries no filter caret, no sort class, no tab stop and no arrow: a
+filter listing "Show details" two hundred times helps nobody, and a sort on a
+column of identical values reorders nothing while clearing the sort you had.
+`columnFilter` gained `noSortCols` for this; `skipCols` already covered the
+filter half.
+
+Adding that column shifted every other index by one, which is a silent failure
+mode rather than a loud one — get it wrong and Score quietly renders a
+hundred-value checkbox list where a range belongs. The current mapping is
+`dateCols: [4, 5]`, `numericCols`/`rangeCols`: `[6, 7]`, `skipCols`/`noSortCols`:
+`[1]`, and the test pass asserts the Score filter is a range so it cannot
+regress unnoticed.
+
+**A drawer, not a modal or an inline expansion.** Two panes want width, and an
+inline expansion inside a fold inside a long page would shove everything below
+it down. The table stays visible behind, so a reviewer works down the rows
+without losing their place. Escape and the scrim both close it.
+
+**The two halves fail separately.** The form needs `quality:evaluation:view`;
+the transcript needs `recording:recording:view` AND
+`speechAndTextAnalytics:data:view`. Neither is this page's own gate, so a
+reviewer entitled to one and not the other still gets that one — each pane
+reports its own missing permission rather than the drawer failing whole. Not
+every evaluation has a transcript either (no recording retained, no speech and
+text analytics, or an interaction with nothing to transcribe), and that is a
+stated absence rather than a spinner.
+
+The scored form is rendered from `answers` joined to the expanded
+`evaluationForm`, so it shows question text and the chosen answer's text rather
+than ids — with the critical and kill flags, failed kill questions marked, per
+question comments, and, where AI scored it, the model's answer whenever it
+differs from the recorded one.
+
+### 7.6 Direction: the one place it can be shown
+
+§9a records that an evaluation carries no queue. It carries no **direction**
+either — not as an aggregate dimension, not as a search field, not as a property
+on the record or its conversation reference. The conversation domain has both
+`direction` and `originatingDirection`; the evaluation domain inherits neither.
+
+Filtering or grouping by direction would therefore mean resolving evaluations to
+their conversations and asking the other domain — thousands of predicates in one
+body, a permission this page does not hold, and only within the row cap. Not
+taken.
+
+**But the drawer fetches the conversation anyway**, for the transcript's
+communication id — so direction is free exactly there, and is shown in the
+drawer's sub-line. A fact about the interaction in front of you, rather than a
+dimension the domain cannot support.
+
 ### 7.1 Bands
 
 ```
