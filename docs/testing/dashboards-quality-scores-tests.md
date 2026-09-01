@@ -34,7 +34,14 @@ is new.
 | 1.3a | If any filter is set | The bar reads "n filters active" and **Clear filters** is highlighted — selections persist across pages for the session, so this is how you spot one you set earlier | | |
 | 1.3b | Click **Clear filters** | The count and the highlight both go | | |
 | 1.4 | Set a scope on Coverage, then come here | The same scope is already applied | | |
-| 1.5 | Count the panels | Average score over time, Score distribution, Lowest-scoring agents, By form, Critical scores | | |
+| 1.5 | Count the panels | Average score over time, Score distribution, Lowest-scoring agents, By form, Weakest question groups, Evaluations, Critical scores | | |
+| 1.6 | **Evaluations** and **Critical scores** | Both start **folded** — they grow with the size of the programme | | |
+| 1.7 | Their summaries while folded | Carry a count: "16 in this period", "12 agent(s)" — or "needs a range of 3 months or less" | | |
+| 1.8 | Open **Critical scores** | Content is already there — it costs no extra request | | |
+| 1.9 | Network tab: load with **Evaluations** folded | **No** row search fires; the folded table costs nothing | | |
+| 1.10 | Open **Evaluations** | One row search fires then | | |
+| 1.11 | Fold and unfold it again without changing anything | No further request — folding is navigation, not a new question | | |
+| 1.12 | Change Scored by or Sort while it is folded, then open it | It fetches on open with the new setting | | |
 
 ## 2. Tiles
 

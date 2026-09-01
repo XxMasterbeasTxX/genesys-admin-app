@@ -144,8 +144,11 @@ export default function renderScores({ me, api, orgContext, access }) {
         <div class="dq-panel-note" data-c="groupNote" hidden></div>
       </div>
 
-      <div class="dq-panel">
-        <h3 class="dq-panel-title">Evaluations</h3>
+      <details class="dq-panel dq-fold" data-c="detailFold">
+        <summary class="dq-fold-summary">
+          <span class="dq-panel-title">Evaluations</span>
+          <span class="dq-fold-hint" data-c="detailHint"></span>
+        </summary>
         <p class="dq-panel-sub" data-c="detailSub"></p>
         <div class="dq-detail-controls" data-c="detailControls" hidden>
           <div class="cs-control-group">
@@ -182,16 +185,19 @@ export default function renderScores({ me, api, orgContext, access }) {
           </table>
         </div>
         <div class="dq-panel-note" data-c="detailNote" hidden></div>
-      </div>
+      </details>
 
-      <div class="dq-panel">
-        <h3 class="dq-panel-title">Critical scores</h3>
+      <details class="dq-panel dq-fold" data-c="criticalFold">
+        <summary class="dq-fold-summary">
+          <span class="dq-panel-title">Critical scores</span>
+          <span class="dq-fold-hint" data-c="criticalHint"></span>
+        </summary>
         <p class="dq-panel-sub">
           Average critical score per agent, lowest first. A critical score can
           fall while the total score holds up, which is the case worth catching.
         </p>
         <div class="dq-bars" data-c="byAgentCritical"></div>
-      </div>
+      </details>
     </div>
   `;
 
@@ -234,28 +240,46 @@ export default function renderScores({ me, api, orgContext, access }) {
     whoChosen = true;
     detailPage = 1;
     const org = currentOrg();
-    if (org && lastLoaded) {
-      renderQuestionGroups(org.id, lastLoaded);
-      renderDetail(org.id, lastLoaded);
-    }
+    if (org && lastLoaded) renderQuestionGroups(org.id, lastLoaded);
+    detailDirty = true;
+    requestDetail();
   });
 
   $("detailSort").addEventListener("change", () => {
     detailPage = 1;
-    const org = currentOrg();
-    if (org && lastLoaded) renderDetail(org.id, lastLoaded);
+    detailDirty = true;
+    requestDetail();
   });
-  $("detailPrev").addEventListener("click", () => {
-    if (detailPage <= 1 || !lastLoaded) return;
-    detailPage -= 1;
+
+  // Collapsed by default, so the rows are fetched when the panel is opened
+  // rather than on every load. A table nobody unfolds should not cost a query
+  // — and unlike the Critical scores fold, whose data is already in hand from
+  // the by-agent aggregate, this one is a request of its own.
+  let detailDirty = true;
+  $("detailFold").addEventListener("toggle", () => {
+    // Only when something has actually changed since the last render. Folding
+    // a table shut and open again is navigation, not a new question.
+    if ($("detailFold").open && detailDirty) requestDetail();
+  });
+
+  /** Render the table if it is open; otherwise remember that it is stale. */
+  function requestDetail() {
     const org = currentOrg();
-    if (org) renderDetail(org.id, lastLoaded);
+    if (!org || !lastLoaded) return;
+    if (!$("detailFold").open) { detailDirty = true; return; }
+    detailDirty = false;
+    renderDetail(org.id, lastLoaded);
+  }
+  $("detailPrev").addEventListener("click", () => {
+    if (detailPage <= 1) return;
+    detailPage -= 1;
+    detailDirty = true;
+    requestDetail();
   });
   $("detailNext").addEventListener("click", () => {
-    if (!lastLoaded) return;
     detailPage += 1;
-    const org = currentOrg();
-    if (org) renderDetail(org.id, lastLoaded);
+    detailDirty = true;
+    requestDetail();
   });
 
   let optionsOrgId = null;
@@ -510,9 +534,18 @@ export default function renderScores({ me, api, orgContext, access }) {
         toScoreRows(parseGroupedAggregate(formResp, "contextId", "oTotalScore"), lookups.forms,
           { unknownLabel: "Unknown form", emptyLabel: "No form recorded" }));
 
-      renderScoreBars($("byAgentCritical"),
-        toScoreRows(agentCritical, lookups.agents,
-          { unknownLabel: "Unknown user", emptyLabel: "No agent recorded" }));
+      const criticalRows = toScoreRows(agentCritical, lookups.agents,
+        { unknownLabel: "Unknown user", emptyLabel: "No agent recorded" });
+      renderScoreBars($("byAgentCritical"), criticalRows);
+
+      // A collapsed panel that says nothing is just a thing to click. The
+      // summary carries the count so it is worth reading shut.
+      $("criticalHint").textContent = criticalRows.length
+        ? `${criticalRows.length.toLocaleString()} agent(s)`
+        : "nothing scored";
+      $("detailHint").textContent = exceedsSearchWindow(f.from, f.to)
+        ? "needs a range of 3 months or less"
+        : `${count.toLocaleString()} in this period`;
 
       // ── Empty-state explanation ───────────────────
       let excludedByFilters = 0;
@@ -553,7 +586,8 @@ export default function renderScores({ me, api, orgContext, access }) {
       detailPage = 1;
       lastLoaded = f;
       await renderQuestionGroups(org.id, f);
-      await renderDetail(org.id, f);
+      detailDirty = true;
+      requestDetail();
 
       $("rangeLine").textContent =
         `${formatRange(f.from, f.to)} · ${count.toLocaleString()} evaluations` +

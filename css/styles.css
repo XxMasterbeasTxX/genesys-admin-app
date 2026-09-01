@@ -5819,3 +5819,31 @@ a.fr-shipped:hover { text-decoration: underline; }
 }
 .cs-label.is-active { color: var(--accent); font-weight: 700; }
 .dq-scored-by .cs-control-group { max-width: 280px; }
+
+/* Collapsible panels — the row-level table and the per-agent critical scores
+   both grow with the size of the QM programme, so they start folded. */
+.dq-fold > summary {
+  align-items: baseline;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  list-style: none;
+}
+.dq-fold > summary::-webkit-details-marker { display: none; }
+.dq-fold > summary::before {
+  color: var(--muted);
+  content: "▸";
+  font-size: 11px;
+}
+.dq-fold[open] > summary::before { content: "▾"; }
+.dq-fold > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.dq-fold-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.dq-fold[open] > summary { margin-bottom: 8px; }
