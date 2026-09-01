@@ -22,10 +22,11 @@ import { createEvaluationFilters } from "../../../components/evaluationFilters.j
 import {
   toAggregateQuery, parseGroupedAggregate, parseAggregateTotal,
   parseAggregateSeries, statsMapToSorted, hasScopeFilters,
+  toSearchRequest, aggregateAcrossWindows, termAggregation, AI_FAILURE_LABELS,
 } from "../../../lib/evaluationQuery.js";
 import {
   queryEvaluationAggregates, fetchEvaluatorActivity,
-  fetchRolesWithPermission, fetchRoleUsers,
+  fetchRolesWithPermission, fetchRoleUsers, searchEvaluations,
 } from "../../../services/genesysApi.js";
 import { dayCount, formatRange, includesToday } from "../../../utils/dateRanges.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
@@ -38,6 +39,25 @@ import { makeStatus, escapeHtml } from "../../../utils.js";
  * At the other end, "Today" at P1D is a single column: a chart with one bar,
  * which is not a chart. PT1H gives it 24.
  */
+/**
+ * A failure cause as a person would read it.
+ *
+ * Matched case-folded: the schema enumerates these in PascalCase and the live
+ * API returns them lower-cased, so an exact-key lookup misses every time and
+ * the raw value ("serviceerror") reaches the screen.
+ */
+const FAILURE_LABELS_LC = new Map(
+  Object.entries(AI_FAILURE_LABELS).map(([k, v]) => [k.toLowerCase(), v]),
+);
+
+function failureLabel(raw) {
+  if (!raw) return "Unknown";
+  const hit = FAILURE_LABELS_LC.get(String(raw).toLowerCase());
+  if (hit) return hit;
+  const spaced = String(raw).replace(/([a-z])([A-Z])/g, "$1 $2");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 function pickGranularity(from, to) {
   const days = dayCount(from, to);
   if (days <= 2) return "PT1H";
@@ -96,6 +116,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       <div class="dq-panel-note" data-c="emptyWhy" hidden></div>
 
       <div class="dq-tiles" data-c="tiles"></div>
+      <div class="dq-panel-note" data-c="aiFailNote" hidden></div>
 
       <div class="dq-panel">
         <h3 class="dq-panel-title">Evaluations over time</h3>
@@ -331,6 +352,47 @@ export default function renderCoverage({ me, api, orgContext, access }) {
     }));
   }
 
+  /**
+   * Evaluations AI attempted and could not score, by cause.
+   *
+   * The only thing on this page that comes from `evaluations/search` rather
+   * than the aggregate domain: `aiScoringFailureType` exists nowhere else. It
+   * therefore needs `quality:evaluation:searchAny`, which the rest of Coverage
+   * does not, so it degrades on its own and names the permission — the same
+   * shape as the eligible-agent denominator above.
+   *
+   * A failed AI scoring attempt is a COVERAGE failure: work that should have
+   * been evaluated and was not. That is the argument for it being here rather
+   * than on a page about how AI scores.
+   */
+  async function fetchAiFailures(orgId, f) {
+    const none = { available: false, total: 0, causes: [], note: "" };
+    try {
+      const merged = await aggregateAcrossWindows(f, (w) => searchEvaluations(api, orgId,
+        toSearchRequest(f, {
+          window: w,
+          systemSubmitted: true,
+          aggregations: [termAggregation("failureType", "aiScoringFailureType")],
+        })));
+      const causes = (merged.aggregations.failureType?.buckets || [])
+        .filter((b) => b.count > 0)
+        .sort((a, b) => b.count - a.count);
+      return {
+        available: true,
+        total: causes.reduce((n, b) => n + b.count, 0),
+        causes,
+        note: "",
+      };
+    } catch (err) {
+      return {
+        ...none,
+        note: err.status === 403
+          ? "needs quality:evaluation:searchAny"
+          : "could not be loaded",
+      };
+    }
+  }
+
   // ── Load ────────────────────────────────────────────
   $loadBtn.addEventListener("click", async () => {
     const org = currentOrg();
@@ -392,6 +454,7 @@ export default function renderCoverage({ me, api, orgContext, access }) {
 
       setStatus("Working out which agents can be evaluated…");
       const eligible = await fetchEligibleAgents(org.id);
+      const aiFail = await fetchAiFailures(org.id, f);
 
       const pct = (n, d) => (d > 0 ? `${Math.round((n / d) * 100)}%` : null);
 
@@ -420,7 +483,25 @@ export default function renderCoverage({ me, api, orgContext, access }) {
           `${released.toLocaleString()} of ${total.toLocaleString()}`),
         tile("AI-scored", total > 0 ? pct(aiCount, aiCount + humanCount) : null,
           `${aiCount.toLocaleString()} AI · ${humanCount.toLocaleString()} human`),
+        // An evaluation AI could not score is a coverage failure - work that
+        // should have been evaluated and was not - which is why this sits here
+        // rather than on a page of its own.
+        tile("AI could not score", aiFail.available ? aiFail.total.toLocaleString() : null,
+          aiFail.available
+            ? (aiFail.total ? "attempts that produced nothing" : "no AI scoring failures")
+            : aiFail.note),
       ].join("");
+
+      const $aiNote = $("aiFailNote");
+      $aiNote.hidden = !aiFail.causes.length;
+      if (aiFail.causes.length) {
+        $aiNote.innerHTML = "AI could not score " +
+          `${aiFail.total.toLocaleString()} evaluation(s): ` +
+          aiFail.causes.map((c) =>
+            `${escapeHtml(failureLabel(c.key))} \u00d7 ${c.count.toLocaleString()}`).join(" · ") +
+          ". Quota reached is a commercial limit rather than a fault \u2014 it means the org " +
+          "has scored as much as it bought.";
+      }
 
       // ── Trend ─────────────────────────────────────
       const partial = includesToday(f.to);
