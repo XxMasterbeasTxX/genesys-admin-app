@@ -48,7 +48,6 @@
  *   DASHBOARDS  (read-only; no writes of any kind)
  *   dashboards.quality.coverage        Quality — Evaluation Coverage
  *   dashboards.quality.scores          Quality — Evaluation Scores
- *   dashboards.quality.aiScoring       Quality — AI Scoring
  *
  *   DEPLOYMENT
  *   deployment.basic                   Basic

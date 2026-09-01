@@ -41,7 +41,6 @@ export const NAV_TREE = [
         children: [
           { label: "Evaluation Coverage", path: "coverage",   enabled: true, access: "dashboards.quality.coverage"  },
           { label: "Evaluation Scores",   path: "scores",     enabled: true, access: "dashboards.quality.scores"    },
-          { label: "AI Scoring",          path: "ai-scoring", enabled: true, access: "dashboards.quality.aiScoring" },
         ],
       },
     ],

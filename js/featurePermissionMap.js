@@ -173,7 +173,6 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // The analytics domain cannot answer a single question on this page — AI
   // scoring failure types, suggestion acceptance and disputes exist only as
   // search aggregations — so searchAny alone is the gate.
-  "dashboards.quality.aiScoring": { view: ["quality:evaluation:searchAny"] },
 
   // ── Deployment ───────────────────────────────────────
   "deployment.test.testCases": { view: ["architect:flow:view"] },

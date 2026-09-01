@@ -765,6 +765,40 @@ record names its form by VERSION id. The lookup now answers to both — the two
 point at the same name, and a row showing a GUID for a form the filter bar is
 displaying by name is a lookup this page declined to do.
 
+### 7.3b Weakest questions: the drill-down under the groups
+
+**Added 2026-09-02**, when the AI Scoring page was folded away (section 8.4).
+
+Weakest question groups names the group dragging a score down and then stops.
+This table goes one level further: every question on the form, weakest first,
+with its average, the answer chosen most often, and - under Scored by = AI - how
+often AI answered it at all.
+
+| Question | Group | Evaluations | Average | Most common answer | AI answered |
+
+**Three measures, one parent term.** `STATS questionScore`,
+`TERM questionAnswerId` and `TERM questionAiScored` all hang off a single
+`TERM questionId`, scoped by a list of question ids across every form version -
+the same shape and the same version-merging as the groups band (7.3a), for the
+same reason.
+
+**With a fallback.** Several children under one parent is what the schema
+describes, but this endpoint has refused several things its schema permits
+(sections 8.2a, 8.2c), and a refusal would cost the whole table. So it asks once
+for all three and, if refused, once per measure, folding the parts back together
+and saying in a note that it did so.
+
+**The AI column is meaningless without the form's AI settings** - see section
+8.2e, which is kept in the historical section because that is where it was
+learnt. Summary: `EvaluationForm.aiScoring` carries a per-question `enabled`
+flag, the column reads "off" where AI is not configured, and flags only the case
+where AI is enabled and still answered under half the time.
+
+**The 100-bucket cap can bite here** where it cannot on question groups. A form
+with many questions across many versions can exceed 100 question ids, and the
+band surfaces `sumOtherDocumentCount` as a note rather than under-reporting
+silently.
+
 ### 7.3 The question-level band needs a single form
 
 Per §4.2, question-group aggregations require the query to constrain a
@@ -791,7 +825,67 @@ as a redacted row rather than dropped, for the same reason as
 `systemSubmitted: true` must be set explicitly to include AI evaluations
 (§4.2) — the table has a three-way toggle: All / Human / AI, defaulting to All.
 
-## 8. Page 3 — AI Scoring
+## 8. Page 3 — AI Scoring (REMOVED — folded into Coverage and Scores)
+
+> **This page no longer exists.** It was built, rebuilt, and then folded into
+> the other two pages on 2026-09-02. Everything below is kept because the API
+> knowledge in it is expensive and still correct, and because if AI scoring ever
+> becomes a programme rather than a POC the page can be re-cut from it. Section
+> 8.4 records why it went.
+
+### 8.4 Why the page was folded away
+
+Three rounds of rebuilding kept arriving at the same problem: almost everything
+the page reported was already reported better somewhere else.
+
+- **Evaluation Scores already has a "Scored by: AI / human" toggle**, and it
+  scopes the question-group band and the evaluations table. So "how does AI
+  score" was answered there, by a page people were already on.
+- **Evaluation Coverage already has an AI-scored tile.** So "how much is AI
+  doing" was answered there.
+
+Strip those away and exactly three things existed only on this page:
+
+| What | Where it went |
+|---|---|
+| `aiScoringFailureType` — scoring failures by cause | **Coverage**, as a tile plus a cause breakdown. A failed AI scoring attempt is a coverage failure: work that should have been evaluated and was not. |
+| `questionAiScored` — which questions AI answered | **Scores**, as the per-question table under Weakest question groups, where it gains an "AI answered" column under Scored by = AI. |
+| `ea*` — Evaluation Assistance suggestion acceptance | **Nowhere, for now.** Parked rather than moved: it is unverified whether the org uses Assistance at all, and §8.0 records how to build it if so. |
+
+Two further findings killed the auto lane's own trust story outright:
+
+- **You cannot rescore an auto-evaluation.** Genesys does not permit it, so
+  `rescoreCount` against `systemSubmitted: true` is structurally zero and the
+  "Did it stick?" band had no data behind it. Disputes alone were not enough to
+  keep a band, let alone a page.
+- The remaining figure, per-question abstention, is **only readable next to the
+  form's AI settings** (§8.2e) — and once it needs the form definition anyway,
+  it belongs beside the other per-question data on Scores rather than on its own.
+
+The honest summary: the page was one good band and one small operational one.
+That is a section, not a page.
+
+### 8.2e The per-question band needs the form's AI settings
+
+`EvaluationForm.aiScoring` carries `questionGroupSettings[].questionSettings[]`,
+each with a per-question `enabled` flag keyed by question **contextId**. Without
+it, "AI answered this question 5 times out of 11" is unreadable, because three
+completely different situations produce a low number:
+
+1. AI scoring is not enabled for that question — nothing to act on.
+2. It is a `freeTextQuestion` — AI cannot answer it. `EvaluationQuestion.type`
+   says so.
+3. It is enabled and AI still could not answer it — **the finding**.
+
+Only the third is worth anyone's time, so the table separates them rather than
+showing one bare count. Note there is **no GET** for these settings: the only
+endpoint is `PUT /quality/forms/evaluations/{formId}/aiscoring/settings`, so
+they are read off the form definition, which the band fetches anyway. Where a
+form carries none, the table says so instead of guessing.
+
+---
+
+## 8 (historical). The AI Scoring page
 
 **Question:** is AI doing the work, is it succeeding, and is anyone letting it
 stand?

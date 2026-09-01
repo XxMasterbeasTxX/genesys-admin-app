@@ -27,9 +27,8 @@ anything, §8 is the one that matters and the rest will legitimately be empty.
 |---|---|---|---|---|
 | 1.1 | Log in as a Master Admin / Admin group member | **Dashboards** appears in the sidebar, between Data Tables and Divisions | ☐ | |
 | 1.2 | Expand Dashboards | One child folder, **Quality** | ☐ | |
-| 1.3 | Expand Quality | Three leaves: Evaluation Coverage, Evaluation Scores, AI Scoring | ☐ | |
+| 1.3 | Expand Quality | Two leaves: Evaluation Coverage, Evaluation Scores | ☐ | |
 | 1.4 | Click **Evaluation Scores** | "Coming soon" placeholder — it is not built yet | ☐ | |
-| 1.5 | Click **AI Scoring** | "Coming soon" placeholder | ☐ | |
 | 1.6 | Click **Evaluation Coverage** | The real page loads: heading, description, filter bar, Load button | ☐ | |
 | 1.7 | Look under the description | No permission note — the page describes what it shows and nothing about permissions | ☐ | |
 | 1.8 | Log in as a **Support** group member | Dashboards does **not** appear — Support was deliberately not granted it | ☐ | |
@@ -133,6 +132,20 @@ nobody, or `quality:evaluation:participate` is not the right string. Check in
 Genesys under Roles whether any role has Quality › Evaluation › Participate
 ticked; if one does and the app still says (b), the string is wrong and I need
 the real one.
+
+## 4a. AI could not score (moved here from the AI Scoring page)
+
+An evaluation AI attempted and failed to score is a coverage failure — work that
+should have been evaluated and was not.
+
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 4a.1 | Find the **AI could not score** tile | Last in the tile row, next to AI-scored | ☐ | |
+| 4a.2 | A period with failures | The tile shows the count, and a line under the tiles breaks it down by cause, largest first | ☐ | |
+| 4a.3 | Causes read in plain English | "Quota reached", "Service error" — never the raw `serviceerror` | ☐ | |
+| 4a.4 | Quota reached is present | The line says it is a commercial limit rather than a fault | ☐ | |
+| 4a.5 | A clean period | Reads "0 — no AI scoring failures", **not a dash**. A clean period must not look like a missing permission | ☐ | |
+| 4a.6 | ★ Without `quality:evaluation:searchAny` | The tile alone shows "—" and names the permission; **every other tile and band still works** | ☐ | |
 
 ## 5. The results — charts and bands
 

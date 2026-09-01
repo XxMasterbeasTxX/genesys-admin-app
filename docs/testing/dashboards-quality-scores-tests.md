@@ -36,7 +36,7 @@ is new.
 | 1.3a | If any filter is set | The bar reads "n filters active" and **Clear filters** is highlighted — selections persist across pages for the session, so this is how you spot one you set earlier | | |
 | 1.3b | Click **Clear filters** | The count and the highlight both go | | |
 | 1.4 | Set a scope on Coverage, then come here | The same scope is already applied | | |
-| 1.5 | Panel order | Average score over time, Score distribution, By form + By media type, Agent average scores, Weakest question groups, Evaluations | | |
+| 1.5 | Panel order | Average score over time, Score distribution, By form + By media type, Agent average scores, Weakest question groups, Weakest questions, Evaluations | | |
 | 1.5a | **By media type** | Average score per media type, lowest first, named (Call, Callback, Email) not raw ids. **Call, never Voice** — evaluations use a different enum from conversations | | |
 | 1.5b | There is **no** separate Critical scores panel | It is the Total/Critical toggle inside Agent average scores | | |
 | 1.6 | **Evaluations** and **Critical scores** | Both start **folded** — they grow with the size of the programme | | |
@@ -150,6 +150,27 @@ counts. This is the one arithmetic error the data shape invites.
 | 9.7 | Read the band’s sub-line | Names the form and says "current published version only" — the endpoint rejects a form context id, so this band is scoped to one version. **Answered 2026-09-01** | | |
 | 9.8 | If your org has several versions of a form | Counts here may be lower than the By form band, which spans every version. Expected, not a fault | | |
 
+## 9a. Weakest questions — the per-question drill-down (§7.3b)
+
+New on 2026-09-02, and it absorbed the only band worth keeping from the removed
+AI Scoring page. Like the groups band above, it needs exactly one form selected.
+
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 9a.1 | Load with **no** form selected | Asks for one form; no search runs; every other panel still loads | | |
+| 9a.2 | Select **one** form and load | A row per question, weakest average first, with real question text | | |
+| 9a.3 | Columns | Question, Group, Evaluations, Average, Most common answer — plus **AI answered** only when Scored by = AI | | |
+| 9a.4 | **Most common answer** | The answer's own text ("Ja"/"Nej"), never a GUID, with the share it accounted for | | |
+| 9a.5 | Cross-check | The Evaluations count per question should reconcile with the rest of the page, not be multiplied by the number of form versions | | |
+| 9a.6 | Switch **Scored by** to AI | The AI answered column appears and the table reloads against AI-scored evaluations only | | |
+| 9a.7 | ★ A question AI scoring is **not enabled** for | Reads "off", greyed — not "0 of n". These are different facts | | |
+| 9a.8 | ★ A question AI **is** enabled for but answers under half the time | Highlighted amber. **This is the finding the whole table exists for** — reword that question or accept it needs a human | | |
+| 9a.9 | Hover a highlighted cell | Explains why it is flagged | | |
+| 9a.10 | A form with no per-question AI settings | A note says so, and the flag tooltip stops claiming the question is enabled | | |
+| 9a.11 | A form with many questions across many versions | If the 100-bucket cap bites, a note says how many results are missing rather than under-reporting silently | | |
+| 9a.12 | Watch the network tab | One request for all three measures. If it is refused, three requests instead and a note explaining | | |
+| 9a.13 | Sanity against the groups band | A group's weakest questions should be consistent with that group's average | | |
+
 ## 10. The evaluations table (§7.4)
 
 | # | Do this | Expect | Result | Notes |
@@ -229,4 +250,4 @@ Anything wrong or worth changing:
 
 ```
 
-Ready to move on to AI Scoring?   Yes / Not yet
+Ready to move on?   Yes / Not yet
