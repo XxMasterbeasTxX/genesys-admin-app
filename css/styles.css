@@ -5691,9 +5691,20 @@ a.fr-shipped:hover { text-decoration: underline; }
    ellipsises to the same prefix ("Oplyste agenten …"), which is worse than no
    label at all: the rows become unidentifiable and the band unreadable. Wrap
    to two lines against a much wider column instead. */
-.dq-bars.is-long-label .dq-bar-row {
-  grid-template-columns: minmax(240px, 45%) 1fr auto;
+/* One grid for the whole list rather than one per row. A per-row grid can only
+   use a fixed label column - fit-content would size each row independently and
+   the bars would start at a different x on every line. Promoting the list to a
+   single grid and letting the rows be display:contents lets fit-content() size
+   the column to the LONGEST label and still align every row against it, so a
+   list of short labels gets a narrow column and a list of long ones is capped
+   at 45% and wraps. */
+.dq-bars.is-long-label {
+  align-items: center;
+  display: grid;
+  gap: 6px 10px;
+  grid-template-columns: fit-content(45%) 1fr auto;
 }
+.dq-bars.is-long-label .dq-bar-row { display: contents; }
 .dq-bars.is-long-label .dq-bar-label {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
