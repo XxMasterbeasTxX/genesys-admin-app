@@ -132,7 +132,11 @@ counts. This is the one arithmetic error the data shape invites.
 | 10.2 | Columns | Agent, Evaluator, Form, Conversation, Submitted, Score, Critical, Status, Released | | |
 | 10.2a | Agent and Form columns | **Names, never GUIDs** | | |
 | 10.3 | An AI-scored row | Evaluator reads **Virtual Supervisor** | | |
-| 10.4 | **Scored by** — switch between "A person" and "AI" | The rows change; page resets to 1 | | |
+| 10.4 | **Scored by** — switch between "A person" and "AI" | Both the question-group band AND this table change; page resets to 1 | | |
+| 10.4a | Where the control lives | Above the question-group band, not inside this table — it governs both | | |
+| 10.4b | On first load | It opens on whichever side has the data, and a line reads "n scored by a person · n scored by AI" | | |
+| 10.4c | Switch to the side with nothing | Both bands say the other side has the data and to switch back — never a bare empty | | |
+| 10.4d | Reload and switch manually | Your choice sticks; the page stops picking for you | | |
 | 10.5 | **The open question.** Compare the two counts against the AI-scored tile | Does "A person" + "AI" equal the total, or does one of them already include both? | | Answer: ______ |
 | 10.6 | **Sort by** — change it | Rows re-sort; page resets to 1 | | |
 | 10.7 | **Next** / **Previous** | Paging works; Previous disabled on page 1; Next disabled on a short last page | | |

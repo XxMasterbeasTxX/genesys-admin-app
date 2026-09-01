@@ -5818,3 +5818,4 @@ a.fr-shipped:hover { text-decoration: underline; }
   font-style: italic;
 }
 .cs-label.is-active { color: var(--accent); font-weight: 700; }
+.dq-scored-by .cs-control-group { max-width: 280px; }

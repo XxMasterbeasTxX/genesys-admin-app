@@ -120,6 +120,23 @@ export default function renderScores({ me, api, orgContext, access }) {
         </div>
       </div>
 
+      <div class="dq-panel dq-scored-by">
+        <h3 class="dq-panel-title">The two sections below read individual evaluations</h3>
+        <p class="dq-panel-sub">
+          Everything above counts every evaluation. These two can show
+          human-scored or AI-scored evaluations, but not both at once — the
+          evaluation search takes one or the other.
+        </p>
+        <div class="cs-control-group">
+          <label class="cs-label">Scored by</label>
+          <select class="input" data-c="detailWho">
+            <option value="human">A person</option>
+            <option value="ai">AI (Virtual Supervisor)</option>
+          </select>
+        </div>
+        <div class="dq-panel-note" data-c="whoNote" hidden></div>
+      </div>
+
       <div class="dq-panel">
         <h3 class="dq-panel-title">Weakest question groups</h3>
         <p class="dq-panel-sub" data-c="groupSub"></p>
@@ -131,13 +148,6 @@ export default function renderScores({ me, api, orgContext, access }) {
         <h3 class="dq-panel-title">Evaluations</h3>
         <p class="dq-panel-sub" data-c="detailSub"></p>
         <div class="dq-detail-controls" data-c="detailControls" hidden>
-          <div class="cs-control-group">
-            <label class="cs-label">Scored by</label>
-            <select class="input" data-c="detailWho">
-              <option value="human">A person</option>
-              <option value="ai">AI (Virtual Supervisor)</option>
-            </select>
-          </div>
           <div class="cs-control-group">
             <label class="cs-label">Sort by</label>
             <select class="input" data-c="detailSort">
@@ -213,17 +223,28 @@ export default function renderScores({ me, api, orgContext, access }) {
 
   const DETAIL_PAGE_SIZE = 25;
   let detailPage = 1;
+  let aiCount = 0;
+  let humanCount = 0;
   let lastLoaded = null;   // filters of the last successful load
 
-  for (const c of ["detailWho", "detailSort"]) {
-    $(c).addEventListener("change", () => {
-      detailPage = 1;
-      if (lastLoaded) {
-        const org = currentOrg();
-        if (org) renderDetail(org.id, lastLoaded);
-      }
-    });
-  }
+  // Once the user picks a side, the page stops choosing for them.
+  let whoChosen = false;
+
+  $("detailWho").addEventListener("change", () => {
+    whoChosen = true;
+    detailPage = 1;
+    const org = currentOrg();
+    if (org && lastLoaded) {
+      renderQuestionGroups(org.id, lastLoaded);
+      renderDetail(org.id, lastLoaded);
+    }
+  });
+
+  $("detailSort").addEventListener("change", () => {
+    detailPage = 1;
+    const org = currentOrg();
+    if (org && lastLoaded) renderDetail(org.id, lastLoaded);
+  });
   $("detailPrev").addEventListener("click", () => {
     if (detailPage <= 1 || !lastLoaded) return;
     detailPage -= 1;
@@ -414,7 +435,7 @@ export default function renderScores({ me, api, orgContext, access }) {
 
       const SCORE = ["nEvaluations", "oTotalScore", "oTotalCriticalScore"];
 
-      const [totalResp, trendResp, distResp, agentResp, formResp, rescoreResp] =
+      const [totalResp, trendResp, distResp, agentResp, formResp, rescoreResp, systemResp] =
         await Promise.all([
           q({ metrics: SCORE }),
           q({ metrics: ["oTotalScore"], granularity }),
@@ -422,7 +443,23 @@ export default function renderScores({ me, api, orgContext, access }) {
           q({ metrics: ["oTotalScore", "oTotalCriticalScore"], groupBy: ["userId"] }),
           q({ metrics: ["oTotalScore"], groupBy: ["contextId"] }),
           q({ metrics: ["nEvaluationsRescored"] }),
+          q({ metrics: ["nEvaluations"], groupBy: ["systemSubmitted"] }),
         ]);
+
+      // The two search-backed bands can only ask about one side at a time, and
+      // a page that defaults to the empty side looks broken through no fault of
+      // the query. So the default follows the data: if every evaluation in this
+      // period was scored by AI, that is what those bands open on. A choice the
+      // user has made is never overridden.
+      const systemMap = parseGroupedAggregate(systemResp, "systemSubmitted");
+      aiCount = systemMap.get("true")?.count || 0;
+      humanCount = systemMap.get("false")?.count || 0;
+      if (!whoChosen) {
+        $("detailWho").value = aiCount > humanCount ? "ai" : "human";
+      }
+      $("whoNote").textContent =
+        `${humanCount.toLocaleString()} scored by a person · ${aiCount.toLocaleString()} scored by AI in this period.`;
+      $("whoNote").hidden = false;
 
       const count = parseAggregateTotal(totalResp, "nEvaluations").count;
       const score = parseAggregateTotal(totalResp, "oTotalScore");
@@ -631,7 +668,8 @@ export default function renderScores({ me, api, orgContext, access }) {
 
       renderScoreBars($bars, rows);
       if (!rows.length) {
-        $note.textContent = "The search returned no question-group scores for this form and period.";
+        $note.textContent = otherSideHint()
+          || "The search returned no question-group scores for this form and period.";
         $note.hidden = false;
       }
     } catch (err) {
@@ -646,6 +684,20 @@ export default function renderScores({ me, api, orgContext, access }) {
   // ── §7.4 Detail table ───────────────────────────────
 
   function detailWho() { return $("detailWho").value; }
+
+  /**
+   * When a search band comes back empty, say whether the OTHER side has the
+   * data. Nothing else on the page distinguishes "no evaluations" from "none
+   * of the kind you asked for", and the two look identical.
+   */
+  function otherSideHint() {
+    const wantAi = detailWho() === "ai";
+    const other = wantAi ? humanCount : aiCount;
+    if (!other) return null;
+    return wantAi
+      ? `No AI-scored evaluations here, but ${other.toLocaleString()} were scored by a person — switch “Scored by” above.`
+      : `No evaluations scored by a person here, but ${other.toLocaleString()} were scored by AI — switch “Scored by” above.`;
+  }
 
   /** How many 3-month windows a range needs. */
   function splitCount(f) {
@@ -727,6 +779,8 @@ export default function renderScores({ me, api, orgContext, access }) {
       }));
 
       const items = resp?.results || [];
+      const hint = items.length ? null : otherSideHint();
+      if (hint) { $note.textContent = hint; $note.hidden = false; }
       const lookups = filters.getLookups();
       let unresolved = null;
       $rows.innerHTML = "";
