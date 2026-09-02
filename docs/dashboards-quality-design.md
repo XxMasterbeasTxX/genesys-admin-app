@@ -1365,10 +1365,13 @@ Each step is its own commit, pushed and testable on dev before the next.
 
 ## 13. Page 3 (second attempt) - Evaluation Gaps
 
-**Status: step one built and shipped to dev, 2026-09-02.** The configuration
-half (13.2 steps 1-5) is live as `js/pages/dashboards/quality/gaps.js`. The
-per-agent half (13.0a) is designed but not built - it waits on the three
-questions in 13.5, which the test form asks the first pass to answer.
+**Status: step one built and shipped to dev, 2026-09-02**, as
+**Dashboards > Quality > Evaluation Setup**
+(`js/pages/dashboards/quality/evaluationSetup.js`). The per-agent half (13.0a)
+is designed but not built - it waits on the three questions in 13.5.
+
+The page was called Evaluation Gaps for a few hours and renamed the same day;
+13.7 records why.
 
 **Question:** which agents should have been evaluated and were not, and why?
 
@@ -1646,6 +1649,30 @@ attribute an evaluation.
   `analytics:speechAndTextAnalyticsAggregates:view` and
   `analytics:conversationDetail:view`. Each band degrades on its own and names
   what it wants, as elsewhere.
+
+### 13.7 Why the page is called Evaluation Setup
+
+It shipped as Evaluation Gaps and was renamed within the day, on Thomas's
+observation that it "has turned more into an overview of the configuration
+settings".
+
+He was right, and the name was writing a cheque the page had not cashed.
+Everything on it is settings - programs, mappings, scoring rules, transcription,
+Speech and Text Analytics. "Gaps" promised a list of agents who were missed,
+which is the half that is designed and not built. A page named for a question it
+does not answer sends the reader looking for a table that is not there.
+
+**When the per-agent list lands, revisit this.** Two shapes are defensible:
+
+1. Keep one page, named for the question again once it answers it, with the
+   configuration as the evidence below the list - which is what 13.4 draws.
+2. Split: Evaluation Setup keeps the configuration, and a second page carries
+   the per-agent and per-interaction gaps.
+
+Option 1 is the design as written and stays the default. Option 2 only becomes
+right if the configuration grows enough to swamp the list, which is exactly the
+argument that removed the AI Scoring page (8.4) and should be applied with the
+same suspicion.
 
 ### 13.6 What changes on Coverage
 

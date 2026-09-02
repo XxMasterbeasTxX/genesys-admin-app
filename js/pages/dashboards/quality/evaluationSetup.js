@@ -1,11 +1,15 @@
 /**
- * Dashboards › Quality › Evaluation Gaps
+ * Dashboards › Quality › Evaluation Setup
  *
  * See docs/dashboards-quality-design.md §13.
  *
- * The question: which agents should have been evaluated and were not, and why?
+ * The question behind the feature is "which agents should have been evaluated
+ * and were not, and why?" — and this page answers the half of it that is pure
+ * configuration, which is also the half that is exact.
  *
- * STEP ONE OF TWO. This is the configuration half — the part that is exact.
+ * Named for what it holds rather than for the question. Everything here is
+ * settings, so calling it Evaluation Gaps promised a list of missed agents that
+ * this page does not yet contain (§13.7).
  * It reads the chain an interaction must pass for its agent to be evaluated
  * (§13.2) and reports every link that is switched off:
  *
@@ -33,6 +37,7 @@ import {
   fetchAgentScoringRules, fetchTranscriptionSettings, fetchAllQueues,
   fetchAllEvaluationForms, fetchProgramInsightsSettings,
   fetchProgramTranscriptionEngines, fetchSpeechTextAnalyticsSettings,
+  fetchProgram,
 } from "../../../services/genesysApi.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
 
@@ -58,15 +63,15 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   el.className = "card";
 
   el.innerHTML = `
-    <h1 class="h1">Dashboards — Quality — Evaluation Gaps</h1>
+    <h1 class="h1">Dashboards — Quality — Evaluation Setup</h1>
     <hr class="hr">
 
     <p class="page-desc">
-      Why agents who should be evaluated are not. An automatic evaluation only
-      happens if a chain of settings all hold — transcription is on, the queue
-      or flow is covered by a published program, and that program has an
-      enabled scoring rule. This page reads that chain and shows every link
-      that is broken.
+      Everything that decides whether an interaction gets evaluated
+      automatically. An evaluation only happens if a chain of settings all hold
+      — transcription is on, the queue or flow is covered by a published
+      program, and that program has an enabled scoring rule. This page reads
+      that chain and shows every link that is broken.
     </p>
 
     <div class="cs-actions">
@@ -88,12 +93,13 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       </div>
 
       <div class="dq-panel">
-        <h3 class="dq-panel-title">Org-wide settings</h3>
+        <h3 class="dq-panel-title">Speech and Text Analytics</h3>
         <p class="dq-panel-sub">
-          These apply to every program. Genesys shows Agent Empathy and Customer
-          Sentiment as per-program checkboxes, but only the org-wide values are
-          readable through the API — which matches its own note that
-          organisation-level settings override program-level configuration.
+          Organisation-level settings, which override program-level
+          configuration — Genesys says so on the program editor itself. Agent
+          Empathy Analysis and Customer Sentiment Analysis appear there as
+          per-program checkboxes, but no per-program value is readable through
+          the API.
         </p>
         <div class="eg-facts" data-c="orgFacts"></div>
         <div class="dq-panel-note" data-c="orgNote" hidden></div>
@@ -562,11 +568,27 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           programsRes.status === "fulfilled" ? "speech and text analytics" : why(programsRes)),
         tile("Live scoring rules", ruleFailures ? null : liveRuleCount.toLocaleString(),
           ruleFailures ? "some could not be read" : "enabled and published"),
-        tile("Transcription", mode ? mode.replace(/([a-z])([A-Z])/g, "$1 $2") : null,
-          mode ? "org-wide setting" : why(settingsRes)),
+        // No Transcription tile: the mode is a Speech and Text Analytics
+        // setting and now sits in that panel, where the rest of its family is.
       ].join("");
 
       renderFindings($("findings"), findings);
+
+      // The default program comes back as an AddressableEntityRef, which
+      // carries an id and a selfUri and NO name. Resolving it against the
+      // program list covers the normal case; when the list does not hold it —
+      // which happens on a live org — it is fetched by id rather than shown as
+      // an opaque "(set)".
+      let defaultProgramName = null;
+      if (sta?.defaultProgram?.id) {
+        defaultProgramName = programs.find((x) => x.id === sta.defaultProgram.id)?.name || null;
+        if (!defaultProgramName) {
+          try {
+            defaultProgramName = (await fetchProgram(api, org.id, sta.defaultProgram.id))?.name
+              || null;
+          } catch { /* leave it unresolved; the id is not worth showing */ }
+        }
+      }
 
       const modeWords = mode ? mode.replace(/([a-z])([A-Z])/g, "$1 $2") : null;
       renderOrgFacts($("orgFacts"), [
@@ -578,27 +600,34 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
             : mode === "EnabledGlobally" ? "on everywhere" : why(settingsRes) || "",
         },
         {
-          label: "Text analytics",
+          label: "Text Analytics on Digital Interactions",
           html: sta ? yesNo(!!sta.textAnalyticsEnabled) : '<span class="dq-muted">—</span>',
           sub: sta ? "" : why(staRes) || "",
         },
         {
-          label: "Agent empathy",
+          label: "Agent Empathy Analysis",
           html: sta ? yesNo(!!sta.agentEmpathyEnabled) : '<span class="dq-muted">—</span>',
           sub: sta ? "" : why(staRes) || "",
         },
         {
-          // "none" is a fact and must not be printed when the settings call was
-          // refused - not knowing whether a default program is set is a
+          // Shown rather than quietly omitted. Genesys has this setting; its
+          // API does not expose it anywhere — not on the settings resource in
+          // GET, PUT or PATCH, and not on any other endpoint. Leaving the card
+          // out would look like an oversight; printing a value would be a lie.
+          label: "Customer Sentiment Analysis",
+          html: '<span class="dq-muted">—</span>',
+          sub: "Genesys has this setting, but it is not exposed by the API",
+        },
+        {
+          // "None" is a fact and must not be printed when the settings call was
+          // refused — not knowing whether a default program is set is a
           // different thing from knowing there is none.
           label: "Default program",
           html: !sta ? '<span class="dq-muted">—</span>'
-            : sta.defaultProgram
-              ? escapeHtml(programs.find((x) => x.id === sta.defaultProgram.id)?.name
-                  || sta.defaultProgram.name || "(set)")
-              : '<span class="dq-muted">none</span>',
+            : defaultProgramName ? escapeHtml(defaultProgramName)
+            : '<span class="dq-muted">None</span>',
           sub: !sta ? (why(staRes) || "")
-            : sta.defaultProgram ? "used for topic detection where nothing else matches"
+            : defaultProgramName ? "used for topic detection where nothing else matches"
             : "nothing catches interactions no program covers",
         },
       ]);

@@ -1507,6 +1507,12 @@ export async function fetchAgentScoringRules(api, orgId, programId, opts = {}) {
     `/api/v2/quality/programs/${programId}/agentscoringrules`, opts);
 }
 
+/** One program by id. Used to name a default program the list did not carry. */
+export async function fetchProgram(api, orgId, programId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/speechandtextanalytics/programs/${programId}`);
+}
+
 /**
  * Whether AI Summary, Insights & Outline is on, for every program at once.
  *
