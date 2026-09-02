@@ -33,7 +33,7 @@ import {
   fetchAgentScoringRules, fetchTranscriptionSettings, fetchAllQueues,
   fetchAllEvaluationForms,
 } from "../../../services/genesysApi.js";
-import { makeStatus, escapeHtml, spinHtml } from "../../../utils.js";
+import { makeStatus, escapeHtml } from "../../../utils.js";
 
 /** A finding's severity. `blocker` stops evaluations outright. */
 const SEVERITY = Object.freeze({
@@ -228,7 +228,10 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
 
     $loadBtn.disabled = true;
     $results.hidden = true;
-    setStatus(spinHtml("Reading the quality automation configuration…"));
+    // Plain text, not spinHtml: makeStatus owns the throbber and inserts it
+    // itself whenever the message ends in an ellipsis. Handing it markup as
+    // well printed the span tags on screen, since it escapes what it is given.
+    setStatus("Reading the quality automation configuration…");
 
     try {
       // Every call is independent and each one degrades on its own: a customer
@@ -297,7 +300,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       const unpublishedIds = new Set(unpublished.map((p) => p.id).filter(Boolean));
 
       // ── 3. Scoring rules, one call per program ───
-      setStatus(spinHtml("Reading scoring rules…"));
+      setStatus("Reading scoring rules…");
       const ruleResults = await Promise.allSettled(
         programs.map((p) => fetchAgentScoringRules(api, org.id, p.id)));
       // A program whose rules could NOT be read is not a program with no rules.
