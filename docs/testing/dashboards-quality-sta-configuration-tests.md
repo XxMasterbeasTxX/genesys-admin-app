@@ -34,47 +34,32 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 1.1 | Open **Dashboards › Quality › STA Configuration** | Page loads, no console errors | | |
 | 1.2 | Quality has three leaves | Evaluation Coverage, Evaluation Scores, STA Configuration | | |
 | 1.3 | Before choosing an org | The button is disabled and it asks you to pick a customer org | | |
-| 1.4 | Pick an org, press **Check configuration** | A spinner, then tiles and three panels | | |
+| 1.4 | Pick an org, press **Check configuration** | A spinner, then tiles and four panels | | |
 | 1.5 | There is no date filter | Correct — this reads current configuration, not a period | | |
+| 1.6a | There is no findings or blockers panel | Correct — this page describes the setup. Diagnosing missed evaluations is Evaluation Gaps | | |
 | 1.6 | Switch org | Results clear; a fresh check runs against the new org | | |
 
 ## 2. The tiles
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 2.1 | Read the tiles | Blocking findings · Worth checking · Programs · Live scoring rules | | |
-| 2.2 | **Blocking findings** | Counts only things that stop evaluations outright | | |
-| 2.4 | **Live scoring rules** | Rules that are both enabled and published, across all programs | | |
+| 2.1 | Read the tiles | Programs · Queues covered · Flows covered · Scoring rules · Transcription off | | |
+| 2.2 | The tiles describe, they do not judge | Counts of what is configured. Nothing here says an evaluation was missed — that is Evaluation Gaps | | |
+| 2.4 | **Scoring rules** | Rules that are both enabled and published, across all programs | | |
 
-## 3. What is stopping evaluations ★
-
-The point of the page.
-
-| # | Do this | Expect | Result | Notes |
-|---|---|---|---|---|
-| 3.1 | Read the findings | Blocking first, then Worth checking. Each has a title, an explanation and a line saying where to fix it | | |
-| 3.2 | A program that is not published | Flagged blocking, naming how many queues and flows it covers | | |
-| 3.3 | A program with no scoring rule | Flagged blocking | | |
-| 3.4 | A rule that is disabled or unpublished | Flagged blocking, saying which and what it would have scored | | |
-| 3.5 | A program mapped to nothing | Flagged Worth checking, not blocking — it is wrong, but it is not stopping anything that would otherwise happen | | |
-| 3.6 | ★ A program queue with transcription off | Flagged blocking, naming the queues | | |
-| 3.7 | ★ A queue with transcription off that **no program covers** | **Not flagged.** It is not stopping any evaluation that was ever going to happen | | |
-| 3.8 | If nothing is wrong | An explicit "nothing in the configuration is stopping evaluations", **not an empty box** | | |
-| 3.9 | Does the wording tell you what to do? | Each fix line should name the Genesys screen. Say so if any is vague | | |
-
-## 3a. Org-wide settings
+## 3. Speech and Text Analytics
 
 Four values that apply to every program.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 3a.1 | Read the panel, titled **Speech and Text Analytics** | Transcription · Text Analytics on Digital Interactions · Agent Empathy Analysis · Customer Sentiment Analysis · Default program | | |
-| 3a.2 | Cross-check against Admin | Labels and values should match the Genesys Speech and Text Analytics settings screen | | |
-| 3a.3 | ★ **Customer Sentiment Analysis** | Reads em-dash, with a line saying Genesys has the setting but the API does not expose it. Confirmed absent from the settings resource on GET, PUT and PATCH, and from every other endpoint | | |
-| 3a.4 | **Default program** | The program's name. Its ref carries only an id, so the name is resolved from the program list or fetched by id | | |
-| 3a.5 | No default program set | Reads **None** | | |
-| 3a.6 | With the settings call refused | Every value reads em-dash with the reason — **never “No” or “None”**. Not knowing is not the same as knowing it is off | | |
-| 3a.7 | The tiles no longer carry Transcription | It lives in this panel now, with the rest of its family | | |
+| 3.1 | Read the panel, titled **Speech and Text Analytics** | Transcription · Text Analytics on Digital Interactions · Agent Empathy Analysis · Customer Sentiment Analysis · Default program | | |
+| 3.2 | Cross-check against Admin | Labels and values should match the Genesys Speech and Text Analytics settings screen | | |
+| 3.3 | ★ **Customer Sentiment Analysis** | Reads em-dash, with a line saying Genesys has the setting but the API does not expose it. Confirmed absent from the settings resource on GET, PUT and PATCH, and from every other endpoint | | |
+| 3.4 | **Default program** | The program's name. Its ref carries only an id, so the name is resolved from the program list or fetched by id | | |
+| 3.5 | No default program set | Reads **None** | | |
+| 3.6 | With the settings call refused | Every value reads em-dash with the reason — **never “No” or “None”**. Not knowing is not the same as knowing it is off | | |
+| 3.7 | The tiles no longer carry Transcription | It lives in this panel now, with the rest of its family | | |
 
 ## 4. Programs and their scoring rules
 

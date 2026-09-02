@@ -44,18 +44,6 @@ import {
 } from "../../../services/genesysApi.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
 
-/** A finding's severity. `blocker` stops evaluations outright. */
-const SEVERITY = Object.freeze({
-  blocker: { label: "Blocking", cls: "eg-sev-blocker" },
-  warn: { label: "Worth checking", cls: "eg-sev-warn" },
-  ok: { label: "Fine", cls: "eg-sev-ok" },
-});
-
-function pill(sev) {
-  const s = SEVERITY[sev] || SEVERITY.ok;
-  return `<span class="eg-pill ${s.cls}">${escapeHtml(s.label)}</span>`;
-}
-
 /** `n thing` / `n things`, because "1 queues" is the kind of thing people notice. */
 function plural(n, one, many = `${one}s`) {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
@@ -85,15 +73,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
 
     <div data-c="results" hidden>
       <div class="dq-tiles" data-c="tiles"></div>
-
-      <div class="dq-panel">
-        <h3 class="dq-panel-title">What is stopping evaluations</h3>
-        <p class="dq-panel-sub">
-          Every broken link in the chain, worst first. A blocking finding means
-          no evaluation can be created for the interactions it covers.
-        </p>
-        <div data-c="findings"></div>
-      </div>
 
       <div class="dq-panel">
         <h3 class="dq-panel-title">Speech and Text Analytics</h3>
@@ -182,35 +161,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       </div>`;
   }
 
-  /**
-   * The findings list.
-   *
-   * Ordered blockers first, then warnings, because the reader's question is
-   * "what do I fix" and a blocker is always the answer over a warning. A clean
-   * result says so explicitly rather than rendering an empty box — "nothing
-   * found" and "nothing checked" must not look the same.
-   */
-  function renderFindings(container, findings) {
-    const rank = { blocker: 0, warn: 1, ok: 2 };
-    const rows = [...findings].sort((a, b) => rank[a.sev] - rank[b.sev]);
-    if (!rows.length) {
-      container.innerHTML =
-        '<div class="eg-clean">Nothing in the configuration is stopping evaluations. ' +
-        'Every program is published, has an enabled scoring rule, and its queues have ' +
-        'transcription switched on.</div>';
-      return;
-    }
-    container.innerHTML = rows.map((f) => `
-      <div class="eg-finding">
-        <div class="eg-finding-head">
-          ${pill(f.sev)}
-          <span class="eg-finding-title">${escapeHtml(f.title)}</span>
-        </div>
-        <div class="eg-finding-body">${escapeHtml(f.detail)}</div>
-        ${f.fix ? `<div class="eg-finding-fix">${escapeHtml(f.fix)}</div>` : ""}
-      </div>`).join("");
-  }
-
   /** A yes/no cell where "no" is worth noticing but is not necessarily a fault. */
   function yesNo(v, { flagNo = false } = {}) {
     if (v == null) return '<span class="dq-muted">—</span>';
@@ -290,9 +240,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         <tr>
           <td>${escapeHtml(r.name)}</td>
           <td>${escapeHtml(r.program)}</td>
-          <td>${r.on
-            ? "On"
-            : '<span class="dq-flag">Off — nothing here can be scored</span>'}</td>
+          <td>${r.on ? "On" : '<span class="dq-flag">Off</span>'}</td>
         </tr>`).join("")}</tbody>`;
   }
 
@@ -343,7 +291,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       const sta = val(staRes);
       const insights = val(insightsRes) || [];
 
-      const findings = [];
       const failures = [];
       for (const [name, r] of [
         ["transcription settings", settingsRes], ["programs", programsRes],
@@ -354,19 +301,9 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         if (r.status === "rejected") failures.push(`${name} (${why(r)})`);
       }
 
-      // ── 1. Org transcription mode ────────────────
       const mode = settings?.transcription || null;
-      if (mode === "Disabled") {
-        findings.push({
-          sev: "blocker",
-          title: "Transcription is switched off for the whole org",
-          detail: "Nothing is transcribed anywhere, so AI scoring cannot run on any "
-            + "interaction. Every other setting below is moot until this changes.",
-          fix: "Admin → Quality → Speech and Text Analytics → Transcription.",
-        });
-      }
 
-      // ── 2. Program mappings ──────────────────────
+      // ── Program mappings ─────────────────────────
       // `TopicsDefinitionsProgramMappings`: { program: {id}, queues: [{id}],
       // flows: [{id}] }. Entity refs, not id strings — the id-string shape is
       // the PUT body, and assuming the response matched it is what made this
@@ -424,7 +361,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       });
       const engineFailures = engineResults.filter((r) => r.status === "rejected").length;
 
-      // ── Per-program findings and rows ────────────
+      // ── Per-program rows ─────────────────────────
       const programRows = [];
       const ruleRows = [];
       const coveredQueueIds = new Set();
@@ -440,52 +377,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
 
         const isPublished = p.published !== false && !unpublishedIds.has(p.id);
         const scopeCount = map.queueIds.length + map.flowIds.length;
-
-        if (!isPublished && scopeCount > 0) {
-          findings.push({
-            sev: "blocker",
-            title: `Program “${p.name || p.id}” is not published`,
-            detail: `It covers ${plural(map.queueIds.length, "queue")} and `
-              + `${plural(map.flowIds.length, "flow")}, but an unpublished program does `
-              + "nothing at all — no interaction it would cover is scored.",
-            fix: "Publish the program, or remove its mappings if it is not meant to run.",
-          });
-        }
-
-        if (isPublished && scopeCount === 0) {
-          findings.push({
-            sev: "warn",
-            title: `Program “${p.name || p.id}” covers no queues or flows`,
-            detail: "It is published but mapped to nothing, so it can never match an "
-              + "interaction.",
-            fix: "Map it to the queues or flows it is meant to cover.",
-          });
-        }
-
-        if (rulesKnown && isPublished && scopeCount > 0 && rules.length === 0) {
-          findings.push({
-            sev: "blocker",
-            title: `Program “${p.name || p.id}” has no scoring rule`,
-            detail: "It covers interactions but has no Agent Scoring Rule, so nothing "
-              + "creates an evaluation from them.",
-            fix: "Add a scoring rule naming the evaluation form to use.",
-          });
-        }
-
-        for (const r of rules) {
-          if (!r.enabled || !r.published) {
-            findings.push({
-              sev: "blocker",
-              title: `A scoring rule on “${p.name || p.id}” is ${
-                !r.enabled ? "disabled" : "unpublished"}`,
-              detail: `It would score ${r.samplingType === "Percentage"
-                ? `${r.samplingPercentage}% of interactions` : "every interaction"}`
-                + ` using ${formName.get(r.evaluationFormContextId) || "a form"}, but it `
-                + "is not running.",
-              fix: !r.enabled ? "Enable the rule." : "Publish the rule.",
-            });
-          }
-        }
 
         const engines = enginesOf.get(p.id);
         programRows.push({
@@ -520,62 +411,52 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         }
       }
 
-      if (programs.length === 0 && programsRes.status === "fulfilled") {
-        findings.push({
-          sev: "blocker",
-          title: "There are no Speech and Text Analytics programs",
-          detail: "Auto-evaluation is driven entirely by programs, so with none defined "
-            + "no interaction can be automatically evaluated.",
-          fix: "Create a program, map it to queues or flows, and give it a scoring rule.",
-        });
-      }
-
-      // ── 4. Per-queue transcription ───────────────
+      // ── Per-queue transcription ───────────────
       // Only meaningful when the org is on EnabledQueueFlow — under
       // EnabledGlobally the per-queue flag does not gate anything.
+      let transcriptionOffCount = 0;
       const queueRows = [];
       if (mode === "EnabledQueueFlow") {
-        const offQueues = [];
         for (const qid of coveredQueueIds) {
           const q = queueById.get(qid);
           if (!q) continue;
           const on = q.enableTranscription !== false;
-          const program = programs.find((p) => (mapOf.get(p.id)?.queueIds || []).includes(qid));
+          if (!on) transcriptionOffCount++;
+          const program = programs.find((pr) => (mapOf.get(pr.id)?.queueIds || []).includes(qid));
           queueRows.push({ name: q.name || qid, program: program?.name || "—", on });
-          if (!on) offQueues.push(q.name || qid);
         }
         queueRows.sort((a, b) => (a.on === b.on ? a.name.localeCompare(b.name) : a.on ? 1 : -1));
-        if (offQueues.length) {
-          findings.push({
-            sev: "blocker",
-            title: `${plural(offQueues.length, "program queue")} ${
-              offQueues.length === 1 ? "has" : "have"} transcription switched off`,
-            detail: `${offQueues.slice(0, 6).join(", ")}${
-              offQueues.length > 6 ? `, and ${offQueues.length - 6} more` : ""}. `
-              + "A program covers these queues, but without a transcript AI cannot score "
-              + "the interaction, so their agents go unevaluated.",
-            fix: "Admin → Contact Center → Queues → the queue → Voice Transcription.",
-          });
-        }
       }
 
-      // ── Tiles ────────────────────────────────────
-      const blockers = findings.filter((f) => f.sev === "blocker").length;
-      const warns = findings.filter((f) => f.sev === "warn").length;
+      // ── Tiles ────────────────────────────────────────
+      // Counts of what IS configured, not a verdict on it. Whether a setting is
+      // costing evaluations belongs on Evaluation Gaps (§14), which can say which
+      // interactions it actually cost; this page describes the setup and leaves
+      // the reader to draw the conclusion.
+      const coveredFlowIds = new Set();
+      for (const prog of programs) {
+        for (const f of (mapOf.get(prog.id)?.flowIds || [])) coveredFlowIds.add(f);
+      }
+      const publishedCount = programs.filter(
+        (x) => x.published !== false && !unpublishedIds.has(x.id)).length;
       $("tiles").innerHTML = [
-        tile("Blocking findings", blockers.toLocaleString(),
-          blockers ? "no evaluations can be created" : "nothing is switched off"),
-        tile("Worth checking", warns.toLocaleString(), "not blocking, but probably wrong"),
         tile("Programs", programsRes.status === "fulfilled"
           ? programs.length.toLocaleString() : null,
-          programsRes.status === "fulfilled" ? "speech and text analytics" : why(programsRes)),
-        tile("Live scoring rules", ruleFailures ? null : liveRuleCount.toLocaleString(),
+          programsRes.status === "fulfilled"
+            ? `${publishedCount.toLocaleString()} published` : why(programsRes)),
+        tile("Queues covered", mappingsRes.status === "fulfilled"
+          ? coveredQueueIds.size.toLocaleString() : null,
+          mappingsRes.status === "fulfilled" ? "mapped to a program" : why(mappingsRes)),
+        tile("Flows covered", mappingsRes.status === "fulfilled"
+          ? coveredFlowIds.size.toLocaleString() : null,
+          mappingsRes.status === "fulfilled" ? "mapped to a program" : why(mappingsRes)),
+        tile("Scoring rules", ruleFailures ? null : liveRuleCount.toLocaleString(),
           ruleFailures ? "some could not be read" : "enabled and published"),
-        // No Transcription tile: the mode is a Speech and Text Analytics
-        // setting and now sits in that panel, where the rest of its family is.
+        tile("Transcription off", mode === "EnabledQueueFlow"
+          ? transcriptionOffCount.toLocaleString() : null,
+          mode === "EnabledQueueFlow" ? "of the covered queues"
+            : mode ? "set globally, not per queue" : why(settingsRes)),
       ].join("");
-
-      renderFindings($("findings"), findings);
 
       // The default program comes back as an AddressableEntityRef, which
       // carries an id and a selfUri and NO name. Resolving it against the
