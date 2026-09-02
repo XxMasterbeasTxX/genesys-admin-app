@@ -1650,29 +1650,26 @@ attribute an evaluation.
   `analytics:conversationDetail:view`. Each band degrades on its own and names
   what it wants, as elsewhere.
 
-### 13.7 Why the page is called Evaluation Setup
+### 13.7 Why the page is called STA Configuration
 
-It shipped as Evaluation Gaps and was renamed within the day, on Thomas's
-observation that it "has turned more into an overview of the configuration
-settings".
+Two renames in a day, both from Thomas and both right.
 
-He was right, and the name was writing a cheque the page had not cashed.
-Everything on it is settings - programs, mappings, scoring rules, transcription,
-Speech and Text Analytics. "Gaps" promised a list of agents who were missed,
-which is the half that is designed and not built. A page named for a question it
-does not answer sends the reader looking for a table that is not there.
+It shipped as **Evaluation Gaps**. He observed it "has turned more into an
+overview of the configuration settings" - and the name was writing a cheque the
+page had not cashed. Everything on it is settings; "Gaps" promised a list of
+missed agents, and a page named for a question it does not answer sends the
+reader looking for a table that is not there. So: **Evaluation Setup**.
 
-**When the per-agent list lands, revisit this.** Two shapes are defensible:
+Then: "Its not only about evaluations." Also right. Transcription, AI summary
+and insights, agent empathy, transcription engines and program mappings are
+Speech and Text Analytics configuration, and evaluations are one consequence of
+it rather than its subject. So: **STA Configuration**, named for what it holds.
 
-1. Keep one page, named for the question again once it answers it, with the
-   configuration as the evidence below the list - which is what 13.4 draws.
-2. Split: Evaluation Setup keeps the configuration, and a second page carries
-   the per-agent and per-interaction gaps.
-
-Option 1 is the design as written and stays the default. Option 2 only becomes
-right if the configuration grows enough to swamp the list, which is exactly the
-argument that removed the AI Scoring page (8.4) and should be applied with the
-same suspicion.
+That freed the name **Evaluation Gaps** for the page that earns it - the
+per-interaction list, now section 14. The split settled the question this
+section used to leave open: two pages, because the configuration is instant at
+any org size and the interaction walk scales with volume, and pairing them would
+make the cheap half wait for the expensive one.
 
 ### 13.6 What changes on Coverage
 
@@ -1687,3 +1684,129 @@ as a reason rather than a gate, so the two pages divide as:
 Splitting a symptom from its diagnosis across two pages is the mistake 8.4
 records; the guard against repeating it is that Coverage must always say enough
 to be useful alone.
+
+
+## 14. Page 4 - Evaluation Gaps
+
+**Status: design only. Not built.**
+
+**Question:** which individual interactions should have been evaluated and were
+not, and why each one was missed?
+
+Page 3 (STA Configuration, section 13) answers "is anything switched off". This
+answers "and which interactions did that cost me". They are separate pages
+because they are separate costs: section 13 reads configuration and is instant
+at any org size, while this walks conversation rows and scales with volume.
+Putting them together would make the cheap half wait for the expensive one.
+
+### 14.1 Everything is read, nothing is inferred
+
+The design went through three rounds of me claiming a figure was unobtainable
+and Thomas pointing out it was not. The corrections, because each was a case of
+checking one level of the response and stopping:
+
+| I claimed | Actually |
+|---|---|
+| Recording is filterable but not readable | `AnalyticsSession.recording` is a boolean on the SESSION. I had looked at `AnalyticsConversationSegment`, which has no such field. |
+| Evaluations carry no usable queue, so per-queue attribution is impossible | `AnalyticsConversation.evaluations[]` carries `AnalyticsEvaluation` with `userId`, `queueId`, `systemSubmitted`, `formName`, `evaluationStatus` and the scores - on the conversation row itself |
+| `agentToScore: Last` cannot be resolved without reading rows | We ARE reading rows. `session.segments[]` carries `segmentStart`/`segmentEnd`, so segment order says who was last |
+| Transcript status is not available per conversation | `analytics/transcripts/aggregates/query` takes `conversationId` as a documented dimension, so one grouped call returns the analysed set to diff against |
+
+The lesson, which is the same one as section 13.4a and the stub memory: a "not
+available" conclusion drawn from one definition is a guess about the others.
+
+### 14.2 The eight reasons, and where each is read from
+
+| Reason | Source | Kind |
+|---|---|---|
+| The agent lacks `quality:evaluation:participate` | Roles, as Coverage resolves | Config |
+| Not recorded | `session.recording === false` | Read off the row |
+| Too short | `segmentEnd - segmentStart` on the agent segment | Read off the row |
+| Not transcribed | Transcript aggregate grouped by `conversationId`, diffed | Read, in bulk |
+| The queue has transcription off | Queue config (section 13) | Config |
+| No program covers the queue or flow | Program mappings (section 13) | Config |
+| No live scoring rule, or the program is unpublished | Scoring rules (section 13) | Config |
+| Another agent was the one the rule scores | Segment order vs `agentToScore` | Read off the row |
+| **Unexplained** | Everything above ruled out | The residue |
+
+Whether an interaction WAS evaluated is read from `conversation.evaluations[]`,
+matched on the agent's `userId` - not reconciled against a separate count. That
+is what makes a per-interaction verdict possible at all.
+
+### 14.2a The duration threshold is shown, never assumed
+
+Thomas reported that Genesys does not transcribe interactions under 30 seconds.
+**That could not be verified.** The Resource Center page that exists to list
+these - *Limitations with speech and text analytics* - names ACD agent consult
+recordings, consult segments in acoustic analysis, a BYOC 10-hour cap and
+dual-channel requirement, and in-queue flow language changes. It does not
+mention a minimum. Voicemail over 5 minutes is excluded and AI outlines need 30
+minutes, but neither is this. The AI scoring best-practices page states no
+minimum either, and the developer centre is an SPA that returns an empty shell
+to a fetch.
+
+So the threshold is a **visible, adjustable number on the page**, defaulting to
+30 seconds and labelled as a threshold rather than a rule. Interactions below it
+are grouped under "shorter than the threshold", and the distribution is shown
+alongside. If the rule is real it becomes obvious in the data; if it is not,
+nothing false has been asserted. Hard-coding an unverifiable constant into a
+page whose whole purpose is explaining absences would be the same fault as the
+quota-reached line on Coverage, at larger scale.
+
+### 14.3 Cost, and telling the user before spending it
+
+This pages conversation rows, so it scales with interactions where nothing else
+in this feature does.
+
+- `AnalyticsConversationQueryResponse.totalHits` gives the count up front, so
+  the page reports "n interactions in scope, roughly m requests" and waits.
+- Nothing loads on arrival. A date range and the covered queues are chosen, then
+  an explicit action starts the walk.
+- `/analytics/conversations/details/jobs` (submit, poll, fetch) exists for large
+  pulls, the same shape as the documentation export. Worth using above some
+  threshold rather than paging synchronously.
+- The 45-second `/api` cap applies as everywhere: fan out from the browser, do
+  not assemble server-side.
+
+### 14.4 Bands
+
+```
++------------------------------------------------------------------+
+|  [ dates, queues (defaulted to the program's), agents, threshold ]|
++------------------------------------------------------------------+
+|  n interactions in scope . m evaluated . k missing   [ Find gaps ]|
++------------------------------------------------------------------+
+|  WHY, ACROSS THE PERIOD                     (bars, largest first) |
+|    one row per reason from 14.2, Unexplained last                 |
++------------------------------------------------------------------+
+|  THE INTERACTIONS                                                 |
+|   Date | Queue | Agent | Duration | Recorded | Transcribed | Why  |
+|                                                                   |
+|   Filterable by reason. A row links to the interaction in Genesys |
+|   and, for one row at a time, can check transcripturls directly.  |
++------------------------------------------------------------------+
+```
+
+### 14.5 Still to confirm against a live org
+
+Neither blocks the design, both change the implementation:
+
+1. **Transcript group cardinality.** Grouping the transcript aggregate by
+   `conversationId` over a busy month may exceed whatever cap that endpoint
+   applies. Chunking by day is the fallback and the page already walks windows.
+2. **Whether `speechandtextanalytics/transcripts/search` is cheaper.** Its
+   criteria are generic `fields`/`values` and the response is an untyped
+   `ArrayNode`; the spec does not enumerate the field names and the developer
+   centre cannot be fetched. It may be the better route - it is not designed on
+   until someone has seen it answer.
+3. **Page size on `conversations/details/query`.** `PagingSpec` documents no
+   maximum; the practical cap is discovered, not read.
+
+### 14.6 What this page is not
+
+- **Not a policy simulator.** Media retention policies decide recording, but
+  which policy wins for a given interaction is Genesys's own evaluation order
+  and is not reimplemented here (13.2a). The page reports what happened, not
+  what should have.
+- **Not a second configuration page.** Where a cause is a setting, it names the
+  setting and links to STA Configuration rather than restating it.

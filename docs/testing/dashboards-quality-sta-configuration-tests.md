@@ -1,4 +1,4 @@
-# Test pass — Dashboards › Quality › Evaluation Setup
+# Test pass — Dashboards › Quality › STA Configuration
 
 **Step one of two.** This is the configuration half: it reads the chain an
 interaction must pass for its agent to be evaluated, and reports every link that
@@ -31,8 +31,8 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 1.1 | Open **Dashboards › Quality › Evaluation Setup** | Page loads, no console errors | | |
-| 1.2 | Quality now has three leaves | Evaluation Coverage, Evaluation Scores, Evaluation Setup | | |
+| 1.1 | Open **Dashboards › Quality › STA Configuration** | Page loads, no console errors | | |
+| 1.2 | Quality has three leaves | Evaluation Coverage, Evaluation Scores, STA Configuration | | |
 | 1.3 | Before choosing an org | The button is disabled and it asks you to pick a customer org | | |
 | 1.4 | Pick an org, press **Check configuration** | A spinner, then tiles and three panels | | |
 | 1.5 | There is no date filter | Correct — this reads current configuration, not a period | | |

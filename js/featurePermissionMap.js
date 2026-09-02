@@ -170,12 +170,12 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // table, which is a coherent page rather than a denial.
   "dashboards.quality.scores":    { view:   ["analytics:evaluationAggregate:view"],
                                     detail: ["quality:evaluation:searchAny"] },
-  // Evaluation Setup gates on the program list alone: without it there is no
+  // STA Configuration gates on the program list alone: without it there is no
   // chain to walk and the page has nothing to say. Scoring rules, transcription
   // settings and queues each degrade band by band and name what they want, so
   // putting them in the gate would deny a page that would still be useful.
   // Design §13.5.
-  "dashboards.quality.setup":     { view: ["speechAndTextAnalytics:program:view"] },
+  "dashboards.quality.staConfiguration": { view: ["speechAndTextAnalytics:program:view"] },
 
   // ── Deployment ───────────────────────────────────────
   "deployment.test.testCases": { view: ["architect:flow:view"] },

@@ -1,15 +1,18 @@
 /**
- * Dashboards › Quality › Evaluation Setup
+ * Dashboards › Quality › STA Configuration
  *
  * See docs/dashboards-quality-design.md §13.
  *
- * The question behind the feature is "which agents should have been evaluated
- * and were not, and why?" — and this page answers the half of it that is pure
- * configuration, which is also the half that is exact.
+ * Every Speech & Text Analytics setting that decides what happens to an
+ * interaction: whether it is transcribed, which program covers it, what that
+ * program analyses, and whether a scoring rule turns it into an evaluation.
  *
- * Named for what it holds rather than for the question. Everything here is
- * settings, so calling it Evaluation Gaps promised a list of missed agents that
- * this page does not yet contain (§13.7).
+ * Named for what it holds rather than for one of its consequences. It shipped
+ * as Evaluation Gaps, was renamed to Evaluation Setup when it turned out to be
+ * settings rather than gaps, and renamed again because transcription, insights,
+ * empathy and engines are not about evaluations at all (§13.7). The list of
+ * interactions that should have been evaluated and were not is its own page
+ * (§14).
  * It reads the chain an interaction must pass for its agent to be evaluated
  * (§13.2) and reports every link that is switched off:
  *
@@ -63,15 +66,15 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   el.className = "card";
 
   el.innerHTML = `
-    <h1 class="h1">Dashboards — Quality — Evaluation Setup</h1>
+    <h1 class="h1">Dashboards — Quality — STA Configuration</h1>
     <hr class="hr">
 
     <p class="page-desc">
-      Everything that decides whether an interaction gets evaluated
-      automatically. An evaluation only happens if a chain of settings all hold
-      — transcription is on, the queue or flow is covered by a published
-      program, and that program has an enabled scoring rule. This page reads
-      that chain and shows every link that is broken.
+      Your Speech and Text Analytics configuration, and what it is doing to
+      your interactions. Transcription, the programs that cover each queue and
+      flow, what those programs analyse, and the scoring rules that turn an
+      interaction into an evaluation. Where a setting is stopping something from
+      happening, it is called out.
     </p>
 
     <div class="cs-actions">
