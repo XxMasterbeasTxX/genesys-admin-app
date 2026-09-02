@@ -1529,24 +1529,25 @@ The configuration band is evidence, not a separate audit: a reader who sees
 **Found on dev, 2026-09-02**, with a program showing 0 queues against nine in
 the Genesys UI.
 
-| | Shape |
+| Direction | Shape |
 |---|---|
-|  | :  - id strings |
-|  | :  - entity refs |
+| `PUT /speechandtextanalytics/programs/{id}/mappings` | `ProgramMappingsRequest`: `{queueIds, flowIds}` — id strings |
+| `GET /speechandtextanalytics/programs/mappings` | `TopicsDefinitionsProgramMappings`: `{program, queues, flows}` — entity refs |
 
 The first build read the request definition and assumed the response matched.
-The harness stub was written to the same assumption, so it passed. Shape a
-fixture from the endpoint's own  schema, never from its request
-body and never from what the calling code reads.
+The harness stub was written to the same assumption, so it passed locally and
+failed on the first real org. Shape a fixture from the endpoint's own
+`responses[200]` schema — never from its request body, and never from what the
+calling code happens to read.
 
-The listing is also paged by ** / **, which is a third paging
-style in this API -  walks  and 
-walks , and neither fits.  follows 
-itself, lifting the token out rather than reconstructing it, and stops if the
-same token comes back twice.
+The listing is also paged by **`nextPage` / `nextUri`**, which is a third paging
+style in this API: `fetchAllPages` walks `pageNumber`, `fetchAllCursor` walks
+`cursor`, and neither fits. `fetchProgramMappings` follows `nextUri` itself,
+lifting the token out rather than reconstructing a format that is not
+documented, and stopping if the same token comes back twice.
 
-Note  carries only uid=197609(thoma) gid=197609 groups=197609 and  - no name - so queue
-names still have to come from the queue list.
+Note that `AddressableEntityRef` carries only an id and a `selfUri` — no name —
+so queue names still have to come from the queue list.
 
 ### 13.5 Honest limits
 
