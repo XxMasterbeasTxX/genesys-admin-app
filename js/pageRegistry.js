@@ -39,6 +39,8 @@ const registry = {
     import("./pages/dashboards/quality/coverage.js").then((m) => m.default(ctx)),
   "/dashboards/quality/scores": (ctx) =>
     import("./pages/dashboards/quality/scores.js").then((m) => m.default(ctx)),
+  "/dashboards/quality/gaps": (ctx) =>
+    import("./pages/dashboards/quality/evaluationGaps.js").then((m) => m.default(ctx)),
   "/dashboards/quality/sta-configuration": (ctx) =>
     import("./pages/dashboards/quality/staConfiguration.js").then((m) => m.default(ctx)),
 

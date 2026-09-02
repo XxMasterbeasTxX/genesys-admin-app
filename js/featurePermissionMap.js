@@ -176,6 +176,12 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // putting them in the gate would deny a page that would still be useful.
   // Design §13.5.
   "dashboards.quality.staConfiguration": { view: ["speechAndTextAnalytics:program:view"] },
+  // Evaluation Gaps needs the conversation rows above all - without them there
+  // is no interaction to explain. The program view is what turns a queue into a
+  // covered queue, so both are the gate; the transcript aggregate and the role
+  // lookup degrade on their own and the page says which reason it lost.
+  "dashboards.quality.gaps":      { view: { all: ["analytics:conversationDetail:view",
+                                                 "speechAndTextAnalytics:program:view"] } },
 
   // ── Deployment ───────────────────────────────────────
   "deployment.test.testCases": { view: ["architect:flow:view"] },

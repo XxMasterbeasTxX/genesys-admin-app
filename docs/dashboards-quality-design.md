@@ -1688,7 +1688,8 @@ to be useful alone.
 
 ## 14. Page 4 - Evaluation Gaps
 
-**Status: design only. Not built.**
+**Status: built and shipped to dev, 2026-09-02**, as
+`js/pages/dashboards/quality/evaluationGaps.js`.
 
 **Question:** which individual interactions should have been evaluated and were
 not, and why each one was missed?

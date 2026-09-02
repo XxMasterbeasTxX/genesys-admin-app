@@ -1507,6 +1507,19 @@ export async function fetchAgentScoringRules(api, orgId, programId, opts = {}) {
     `/api/v2/quality/programs/${programId}/agentscoringrules`, opts);
 }
 
+/**
+ * Transcript aggregates.
+ *
+ * Grouped by `conversationId` this returns the set of conversations that were
+ * actually analysed, which is how Evaluation Gaps decides "not transcribed"
+ * without a per-conversation call. Needs
+ * `analytics:speechAndTextAnalyticsAggregates:view`.
+ */
+export async function queryTranscriptAggregates(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST",
+    "/api/v2/analytics/transcripts/aggregates/query", { body });
+}
+
 /** One program by id. Used to name a default program the list did not carry. */
 export async function fetchProgram(api, orgId, programId) {
   return api.proxyGenesys(orgId, "GET",

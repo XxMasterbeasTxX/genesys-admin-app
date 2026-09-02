@@ -48,6 +48,7 @@
  *   DASHBOARDS  (read-only; no writes of any kind)
  *   dashboards.quality.coverage        Quality — Evaluation Coverage
  *   dashboards.quality.scores          Quality — Evaluation Scores
+ *   dashboards.quality.gaps            Quality — Evaluation Gaps
  *   dashboards.quality.staConfiguration  Quality — STA Configuration
  *
  *   DEPLOYMENT
