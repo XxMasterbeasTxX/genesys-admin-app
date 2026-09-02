@@ -1362,3 +1362,201 @@ Each step is its own commit, pushed and testable on dev before the next.
 10. **Release note.** One entry covering Dashboards › Quality as a whole — three
     pages shipped over several commits are one feature to a reader, and
     iterations fold into that entry rather than cutting a version per page.
+
+## 13. Page 3 (second attempt) - Evaluation Gaps
+
+**Status: design only. Not built, not approved for build.**
+
+**Question:** which agents should have been evaluated and were not, and why?
+
+**Audience:** whoever owns the quality automation. The person who reads Coverage
+asks "are we evaluating enough"; this answers "and here is what is stopping us",
+which is a different job on the same subject.
+
+### 13.0 The unit is the AGENT; interactions are the evidence
+
+Agents are what the reader cares about and what the answer is delivered in.
+Interactions are how an agent becomes eligible and where every cause actually
+attaches - a queue with transcription off, a conversation in no program.
+
+Getting this backwards in either direction breaks the page:
+
+- **Agents alone** cannot be attributed. "This agent has no evaluations" has no
+  cause attached to it; the causes live on their interactions.
+- **Interactions alone** answer the wrong question. Most interactions are not
+  supposed to be evaluated - sampling sees to that - so a count of unevaluated
+  interactions is a large, alarming and meaningless number.
+
+So: walk the interactions to find the causes, then report per agent.
+
+### 13.0a "Missed" is an expectation, not an absence
+
+This is the design's centre and it falls out of the previous section.
+
+An agent with 50 qualifying interactions under a 5% sampling rule who received
+two evaluations is **correctly handled**. An agent with 50 qualifying
+interactions and zero is not. The difference is not whether interactions went
+unevaluated - almost all of them did, by design - but whether the agent received
+what the configuration implies.
+
+    expected(agent) = qualifying interactions x samplingPercentage
+                      (x 1 for agentToScore Each; an upper bound for First/Last)
+
+    missed(agent)   = expected >= 1 and actual = 0
+
+This converts sampling from an un-attributable caveat into the most useful
+number on the page. It also means the page must not flag an agent whose expected
+count is 0.4 - absence there is unremarkable, and saying otherwise would be the
+cry-wolf failure again.
+
+For `agentToScore: First` or `Last`, only one agent per conversation is
+scoreable, so `expected` is an upper bound rather than a figure - which the
+column has to say, not imply.
+
+### 13.1 Why this is a page when AI Scoring was not
+
+The same four questions that folded AI Scoring away (8.4), asked again:
+
+| | AI Scoring | Evaluation Gaps |
+|---|---|---|
+| Does anything else answer it? | Yes - Scores and Coverage both | **No.** Nothing in the app reads STA programs, scoring rules or transcription settings |
+| Distinct audience? | No - the same supervisor | **Yes** - whoever configures the automation |
+| Fills a screen? | One good band | **Yes** - agents, causes, and the configuration behind them |
+| Different cadence? | No | **Yes** - read after a change, or when something looks wrong |
+
+AI Scoring failed three of the four. The difference is overlap, not enthusiasm
+for a new page: its content already existed elsewhere and this content exists
+nowhere.
+
+### 13.2 The chain an interaction must pass for its agent to be evaluated
+
+Established from the spec, 2026-09-02. Every step is a place an interaction
+silently drops out, and therefore a reason an agent goes unevaluated.
+
+| # | Requirement | Source | Certain? |
+|---|---|---|---|
+| 1 | Org transcription not `Disabled` | `GET /routing/settings/transcription` | Yes |
+| 2 | If mode is `EnabledQueueFlow`, the queue has `enableTranscription` | `Queue.enableTranscription`, already on the queue list | Yes |
+| 3 | The conversation's queue **or flow** is mapped to a program | `GET /speechandtextanalytics/programs/mappings` (all programs, one call) | Yes |
+| 4 | The program is published | `GET /speechandtextanalytics/programs/unpublished` | Yes |
+| 5 | An Agent Scoring Rule on it is `enabled` and `published` | `GET /quality/programs/{programId}/agentscoringrules` | Yes |
+| 6 | Sampling picks the interaction | `samplingType` / `samplingPercentage` | **Expectation, not fact** |
+| 7 | `agentToScore` selects this agent | `First` / `Last` / `Each` | **Expectation, not fact** |
+| 8 | The agent holds `quality:evaluation:participate` | Roles, as Coverage already resolves | Yes |
+| 9 | AI scoring does not fail | `aiScoringFailureType` - already on Coverage | Yes |
+
+**Auto-evaluation comes only from a program.** A media retention policy's
+`assignEvaluations` cannot do it: policy conditions carry `forQueues` and no
+flows, and the rule governing automated submission
+(`AgentScoringRule.submissionType: Automated`) hangs off a program. Confirmed
+against the spec after getting it wrong once.
+
+Steps 1-5, 8 and 9 are faults with a named fix. Steps 6 and 7 are the
+configuration working as intended, and feed `expected` (13.0a) rather than the
+fault list.
+
+### 13.3 What can be counted, and how
+
+Each figure is a difference between two cheap queries rather than a walk over
+conversations.
+
+| Figure | How |
+|---|---|
+| Qualifying interactions, per agent | `conversations/details/query`, `segmentFilters` OR-ing `queueId in [program queues]` with `flowId in [program flows]`, faceted on `userId` |
+| Evaluations received, per agent | `analytics/evaluations/aggregates/query`, `nEvaluations` grouped by `userId` - already what Coverage does |
+| Interactions never transcribed | Qualifying count minus `nSpeechTextAnalyzedConversations` from `analytics/transcripts/aggregates/query` over the same queues/flows |
+| Interactions in NO program | Total handled per agent minus qualifying |
+| Agent lacks Participate | Roles, as Coverage resolves today |
+| AI tried and failed | `aiScoringFailureType`, already on Coverage |
+| **expected / missed** | Derived per 13.0a from the rule's sampling and the qualifying count |
+
+`SegmentDetailQueryPredicate` carries `queueId`, `flowId`, `userId`, `purpose`
+and `teamId` together, which is what makes the queue-mapped and flow-mapped
+cases one query instead of two incompatible ones. The conversation AGGREGATE
+domain cannot do this - it has no `flowId` at all (9a) - so the detail domain is
+the right instrument here despite being the heavier one.
+
+### 13.4 Bands
+
+```
++------------------------------------------------------------------+
+|  [ filter bar - section 5.2, plus a Program selector ]           |
++------------------------------------------------------------------+
+|  Agents handling | Should have been | Were | MISSED | Unexplained |
++------------------------------------------------------------------+
+|  AGENTS NOT EVALUATED            <- the page, one row per agent   |
+|    Agent | Interactions | In a program | Expected | Got | Why     |
+|                                                                   |
+|    Sorted by expected-but-absent, largest first: the agent the    |
+|    configuration most clearly implies should have been evaluated  |
+|    and was not, at the top.                                       |
++------------------------------------------------------------------+
+|  WHY, ACROSS ALL AGENTS                     (bars, largest first) |
+|    No program covers the queue or flow            certain        |
+|    Transcription off (org, or that queue)         certain        |
+|    Scoring rule disabled or unpublished           certain        |
+|    Agent lacks Participate                        certain        |
+|    AI tried and could not score                   certain        |
+|    - - - - - - - - - - - - - - - - - - - - - - - - - - - - -     |
+|    Unexplained                          <- the one that matters  |
++------------------------------------------------------------------+
+|  THE CONFIGURATION BEHIND IT                                      |
+|    Org transcription mode                                         |
+|    Per program: published, queues, flows, rules (sampling,        |
+|    agentToScore, form, enabled/published)                         |
+|    Mapped queues with transcription switched off                  |
++------------------------------------------------------------------+
+```
+
+The agent table leads because agents are the subject. The cause breakdown is the
+same population summarised the other way, for someone who wants to know what to
+fix rather than who to chase.
+
+**Unexplained is the figure that justifies the page.** Everything above it is
+either a fault with a named fix or expected behaviour with a named reason. What
+is left - agents the configuration says should have been evaluated, whose
+interactions passed every check, with no evaluation - is the only number here
+that needs investigating, and nothing in the app surfaces it today.
+
+The configuration band is evidence, not a separate audit: a reader who sees
+"transcription off" needs to know which queues, on the same screen.
+
+### 13.5 Honest limits
+
+- **Sampling is an expectation.** `expected` is a projection, so `missed` is a
+  residue after an estimate and has to say so rather than implying precision it
+  lacks. An agent whose expected count is below 1 must not be flagged.
+- **`agentToScore: First`/`Last` makes `expected` an upper bound**, because
+  knowing a rule scores the first agent does not say which agent that was
+  without reading each conversation's participants.
+- **Three things to verify against a live org before trusting the numbers**
+  (none block the configuration band):
+  1. Whether a `termFrequency` facet on `userId` counts conversations or
+     segments - an agent with three segments on one conversation must not count
+     three times.
+  2. Whether the facet needs `purpose = agent` to exclude customer and IVR
+     participants.
+  3. How common `agentToScore: Each` is in practice - if every rule uses it,
+     the upper-bound caveat is noise and can be de-emphasised.
+- **Volume.** Only facet counts are needed, not rows, so requests stay small -
+  but this is the heaviest of the three pages and the build should confirm that
+  before committing to the layout.
+- **Permissions.** Adds `speechAndTextAnalytics:program:view`,
+  `quality:scoringRule:view`, `routing:transcriptionSettings:view`,
+  `analytics:speechAndTextAnalyticsAggregates:view` and
+  `analytics:conversationDetail:view`. Each band degrades on its own and names
+  what it wants, as elsewhere.
+
+### 13.6 What changes on Coverage
+
+Coverage's **Not evaluated** tile starts from agents who *hold*
+`quality:evaluation:participate`. Thomas asked that a missing permission appear
+as a reason rather than a gate, so the two pages divide as:
+
+- **Coverage** keeps the tile and gains a one-line cause summary plus a link
+  here. The symptom stays where people already look.
+- **Evaluation Gaps** carries the full attribution.
+
+Splitting a symptom from its diagnosis across two pages is the mistake 8.4
+records; the guard against repeating it is that Coverage must always say enough
+to be useful alone.
