@@ -685,6 +685,58 @@ function mergeSub(target, source) {
  *
  * @param {Function} runOne  (window) => Promise<rawSearchResponse>
  */
+/**
+ * How many values one search criterion will accept.
+ *
+ * Undocumented, and it bites precisely where this feature needs long lists: the
+ * question and question-group bands query by a LIST of ids gathered across every
+ * revision of a form (§7.3a), which passes 50 on any form with a few groups and
+ * a few versions. Exceeding it is refused outright:
+ *
+ *   Search criteria values exceeded limit of 50.
+ */
+export const CRITERIA_VALUE_LIMIT = 50;
+
+/** Split a criterion's values into lists the search will accept. */
+export function chunkCriteriaValues(values, size = CRITERIA_VALUE_LIMIT) {
+  const out = [];
+  for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+  return out.length ? out : [[]];
+}
+
+/**
+ * Run an aggregation over a list of ids too long for one criterion, and hand
+ * back one merged result.
+ *
+ * Chunks are disjoint by construction — an id appears in exactly one — so the
+ * buckets they return are disjoint too and merging is exact. Each chunk still
+ * walks its own 3-month windows, and every request runs in parallel.
+ *
+ * @param {Function} runOne  (window, idChunk) => Promise<rawSearchResponse>
+ */
+export async function aggregateAcrossValues(filters, ids, runOne, months = 3) {
+  const chunks = chunkCriteriaValues(ids);
+  const parts = [];
+  // Chunks in batches, because the two parallelisms multiply: each chunk fans
+  // out over its own date windows, so a 30-question form across 12 versions on
+  // a 12-month range is 8 chunks x 4 windows = 32 simultaneous proxy calls.
+  // Batching the outer loop keeps that near the five-at-a-time shape the
+  // documentation export settled on, at the cost of a little wall time.
+  for (let i = 0; i < chunks.length; i += CHUNK_CONCURRENCY) {
+    parts.push(...await Promise.all(
+      chunks.slice(i, i + CHUNK_CONCURRENCY).map((chunk) =>
+        aggregateAcrossWindows(filters, (w) => runOne(w, chunk), months))));
+  }
+  return {
+    aggregations: mergeAggregations(parts.map((p) => p.aggregations)),
+    windows: parts[0]?.windows || 0,
+    chunks: chunks.length,
+  };
+}
+
+/** How many value-chunks to have in flight at once. */
+const CHUNK_CONCURRENCY = 4;
+
 export async function aggregateAcrossWindows(filters, runOne, months = 3) {
   const windows = splitInterval(filters.from, filters.to, months);
   if (!windows.length) return { aggregations: {}, windows: 0 };

@@ -146,6 +146,7 @@ counts. This is the one arithmetic error the data shape invites.
 | 9.5 | Set a range over three months | The sub-line says how many windows it combined, and it still returns data | | |
 | 9.5a | **Cross-check the eval counts** | The per-group counts must reconcile with the Evaluations total — 8 everywhere means 8 here, not 1 | | |
 | 9.5b | The sub-line | Says how many form versions it covered | | |
+| 9.5c | A form with many groups across many versions | Still loads — the group id list is chunked at 50 the same way the question band's is | | |
 | 9.6 | Compare a 12-month result against four separate 3-month loads | Counts should add up and the weighted average should match | | |
 | 9.7 | Read the band’s sub-line | Names the form and says "current published version only" — the endpoint rejects a form context id, so this band is scoped to one version. **Answered 2026-09-01** | | |
 | 9.8 | If your org has several versions of a form | Counts here may be lower than the By form band, which spans every version. Expected, not a fault | | |
@@ -168,6 +169,8 @@ AI Scoring page. Like the groups band above, it needs exactly one form selected.
 | 9a.9 | Hover a highlighted cell | Explains why it is flagged | | |
 | 9a.10 | A form with no per-question AI settings | A note says so, and the flag tooltip stops claiming the question is enabled | | |
 | 9a.11 | A form with many questions across many versions | If the 100-bucket cap bites, a note says how many results are missing rather than under-reporting silently | | |
+| 9a.11a | ★ A form whose questions across all versions exceed 50 ids | Still loads. The search caps a criterion at 50 values and refuses the whole request over it, so the band chunks the list and merges — this is what "The question query was rejected: Search criteria values exceeded limit of 50" was, on 2026-09-02 | | |
+| 9a.11b | Same, on a range over three months | Still loads, and does not stall: chunks run four at a time rather than all at once | | |
 | 9a.12 | Watch the network tab | One request for all three measures. If it is refused, three requests instead and a note explaining | | |
 | 9a.13 | Sanity against the groups band | A group's weakest questions should be consistent with that group's average | | |
 

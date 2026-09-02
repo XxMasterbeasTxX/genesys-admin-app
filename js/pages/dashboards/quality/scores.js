@@ -28,8 +28,8 @@ import {
   toAggregateQuery, toSearchRequest, parseGroupedAggregate, parseAggregateTotal,
   parseAggregateSeries, parseAggregateViews,
   statsMapToSorted, statsAverage, statsAggregation, termAggregation, termAggregationWith,
+  aggregateAcrossValues,
   scoreBandViews, SCORE_BANDS, hasScopeFilters, exceedsSearchWindow,
-  aggregateAcrossWindows,
 } from "../../../lib/evaluationQuery.js";
 import {
   queryEvaluationAggregates, searchEvaluations, fetchEvaluationFormsByContext,
@@ -899,13 +899,17 @@ export default function renderScores({ me, api, orgContext, access }) {
       // cardinality fields. So a long range becomes several requests rather
       // than a refusal, and this band keeps working where the row-level table
       // below genuinely cannot.
-      const merged = await aggregateAcrossWindows(f, (w) => searchEvaluations(api, orgId,
-        toSearchRequest({ ...f, formContextIds: [] }, {
+      // Chunked: gathering group ids across every form revision passes the
+      // 50-value criteria limit on any form with a few groups and a few
+      // versions, and the search refuses the whole request rather than
+      // truncating the list.
+      const merged = await aggregateAcrossValues(f, groupIds, (w, ids) =>
+        searchEvaluations(api, orgId, toSearchRequest({ ...f, formContextIds: [] }, {
           window: w,
           systemSubmitted: detailWho() === "ai",
-          extraCriteria: [{ type: "EXACT", field: "questionGroupId", values: groupIds }],
+          extraCriteria: [{ type: "EXACT", field: "questionGroupId", values: ids }],
           aggregations: [termAggregationWith("byGroup", "questionGroupId",
-            [statsAggregation("score", "questionGroupScorePercentage")], 200)],
+            [statsAggregation("score", "questionGroupScorePercentage")], 100)],
         })));
 
       // One row per question group CONTEXT, folding together the buckets its
@@ -1055,11 +1059,14 @@ export default function renderScores({ me, api, orgContext, access }) {
                     termAggregation("answer", "questionAnswerId")];
       if (wantAi) subs.push(termAggregation("aiScored", "questionAiScored"));
 
-      const query = (aggregations) => aggregateAcrossWindows(f, (w) =>
+      // Chunked for the same reason as the groups band: a form's questions
+      // across all its revisions pass the 50-value criteria limit easily —
+      // eleven questions and five versions is already 55.
+      const query = (aggregations) => aggregateAcrossValues(f, questionIds, (w, ids) =>
         searchEvaluations(api, orgId, toSearchRequest({ ...f, formContextIds: [] }, {
           window: w,
           systemSubmitted: wantAi,
-          extraCriteria: [{ type: "EXACT", field: "questionId", values: questionIds }],
+          extraCriteria: [{ type: "EXACT", field: "questionId", values: ids }],
           aggregations,
         })));
 

@@ -799,6 +799,32 @@ with many questions across many versions can exceed 100 question ids, and the
 band surfaces `sumOtherDocumentCount` as a note rather than under-reporting
 silently.
 
+### 7.3c A criterion takes at most 50 values
+
+**Found on dev, 2026-09-02.** Undocumented, and it lands exactly where this
+feature is most exposed:
+
+> Search criteria values exceeded limit of 50.
+
+Both question bands query by a LIST of ids gathered across every revision of a
+form (7.3a), and that list passes 50 easily - eleven questions and five versions
+is already 55. The search refuses the whole request rather than truncating, so
+the band showed nothing at all.
+
+Both bands now chunk their id list at 50 and merge the results. The chunks are
+disjoint by construction, so their buckets are disjoint and the merge is exact -
+the same reasoning that makes the 3-month window walk safe (9.2).
+
+**The two parallelisms multiply.** Each chunk fans out over its own date
+windows, so a 30-question form across 12 versions on a 12-month range is 8
+chunks x 4 windows = 32 simultaneous proxy calls. Chunks therefore run four at a
+time, keeping the fan-out near the five-at-a-time shape the documentation export
+settled on.
+
+This limit applies to any criterion, not just these two. Anything built later
+that filters on a long id list needs `chunkCriteriaValues` or the same refusal
+will arrive.
+
 ### 7.3 The question-level band needs a single form
 
 Per §4.2, question-group aggregations require the query to constrain a
