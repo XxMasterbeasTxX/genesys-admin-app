@@ -5852,6 +5852,23 @@ a.fr-shipped:hover { text-decoration: underline; }
   font-size: 13px;
   max-width: 90ch;
 }
+
+/* Org-wide facts: a handful of single values that apply to every program, so
+   they get a compact row rather than a table with one data line. */
+.eg-facts {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+.eg-fact {
+  background: var(--panel-2, rgba(255,255,255,0.03));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.eg-fact-label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+.eg-fact-value { font-size: 16px; font-weight: 600; margin-top: 2px; }
+.eg-fact-sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
 /* A findings panel is the only place a blocker should be red on this page; the
    severity border repeats the pill so a scan down the left edge works. */
 .eg-finding:has(.eg-sev-blocker) { border-left-color: #d9534f; }

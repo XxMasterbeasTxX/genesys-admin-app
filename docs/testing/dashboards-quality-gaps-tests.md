@@ -63,11 +63,28 @@ The point of the page.
 | 3.8 | If nothing is wrong | An explicit "nothing in the configuration is stopping evaluations", **not an empty box** | | |
 | 3.9 | Does the wording tell you what to do? | Each fix line should name the Genesys screen. Say so if any is vague | | |
 
+## 3a. Org-wide settings
+
+Four values that apply to every program.
+
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 3a.1 | Read the panel | Transcription, Text analytics, Agent empathy, Default program | | |
+| 3a.2 | Cross-check against Admin | Should match Speech and Text Analytics settings | | |
+| 3a.3 | Read the sub-line | Explains that Genesys shows empathy and sentiment per program, but only org-wide values exist in the API | | |
+| 3a.4 | With the settings call refused | Every value reads em-dash with the reason — **never “No” or “none”**. Not knowing is not the same as knowing it is off | | |
+
 ## 4. Programs and their scoring rules
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 4.1 | Read the table | Program, Published, Queues, Flows, Scoring rules, Sampling, Scores | | |
+| 4.1 | Read the Programs table | Program, Published, Queues, Flows, Transcription engines, AI summary and insights, Scoring rules | | |
+| 4.1a | **Transcription engines** | The engine and its dialects, e.g. “Extended Voice Transcription Services (da-DK)” | | |
+| 4.1b | **AI summary and insights** | Yes/No per program | | |
+| 4.1c | Read the **Agent scoring rules** table | One row per rule: Program, State, Selects, Agents scored, Submission, Form, Evaluator | | |
+| 4.1d | A program with two rules | Two rows, not one summarised row | | |
+| 4.1e | **Form** | The form name, not a GUID | | |
+| 4.1f | **Submission** | Automated or Manual | | |
 | 4.2 | Cross-check against Genesys | Queue and flow counts should match the program's mappings in Admin | | |
 | 4.3 | **Sampling** | The rule's own setting — `All`, or a percentage | | |
 | 4.4 | **Scores** | `Each`, `First` or `Last` | | |

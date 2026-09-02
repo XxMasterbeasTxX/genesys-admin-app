@@ -31,7 +31,8 @@
 import {
   fetchPrograms, fetchUnpublishedPrograms, fetchProgramMappings,
   fetchAgentScoringRules, fetchTranscriptionSettings, fetchAllQueues,
-  fetchAllEvaluationForms,
+  fetchAllEvaluationForms, fetchProgramInsightsSettings,
+  fetchProgramTranscriptionEngines, fetchSpeechTextAnalyticsSettings,
 } from "../../../services/genesysApi.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
 
@@ -87,7 +88,19 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       </div>
 
       <div class="dq-panel">
-        <h3 class="dq-panel-title">Programs and their scoring rules</h3>
+        <h3 class="dq-panel-title">Org-wide settings</h3>
+        <p class="dq-panel-sub">
+          These apply to every program. Genesys shows Agent Empathy and Customer
+          Sentiment as per-program checkboxes, but only the org-wide values are
+          readable through the API — which matches its own note that
+          organisation-level settings override program-level configuration.
+        </p>
+        <div class="eg-facts" data-c="orgFacts"></div>
+        <div class="dq-panel-note" data-c="orgNote" hidden></div>
+      </div>
+
+      <div class="dq-panel">
+        <h3 class="dq-panel-title">Programs</h3>
         <p class="dq-panel-sub" data-c="programSub"></p>
         <div class="dq-table-wrap">
           <table class="dq-table" data-c="programs"></table>
@@ -96,7 +109,16 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       </div>
 
       <div class="dq-panel">
-        <h3 class="dq-panel-title">Transcription</h3>
+        <h3 class="dq-panel-title">Agent scoring rules</h3>
+        <p class="dq-panel-sub" data-c="ruleSub"></p>
+        <div class="dq-table-wrap">
+          <table class="dq-table" data-c="rules"></table>
+        </div>
+        <div class="dq-panel-note" data-c="ruleNote" hidden></div>
+      </div>
+
+      <div class="dq-panel">
+        <h3 class="dq-panel-title">Queue transcription</h3>
         <p class="dq-panel-sub" data-c="transcriptionSub"></p>
         <div class="dq-table-wrap">
           <table class="dq-table" data-c="queues"></table>
@@ -180,24 +202,71 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       </div>`).join("");
   }
 
+  /** A yes/no cell where "no" is worth noticing but is not necessarily a fault. */
+  function yesNo(v, { flagNo = false } = {}) {
+    if (v == null) return '<span class="dq-muted">—</span>';
+    if (v) return "Yes";
+    return flagNo ? '<span class="dq-flag">No</span>' : "No";
+  }
+
+  function renderOrgFacts(container, facts) {
+    container.innerHTML = facts.map((f) => `
+      <div class="eg-fact">
+        <div class="eg-fact-label">${escapeHtml(f.label)}</div>
+        <div class="eg-fact-value">${f.html}</div>
+        ${f.sub ? `<div class="eg-fact-sub">${escapeHtml(f.sub)}</div>` : ""}
+      </div>`).join("");
+  }
+
   function renderProgramTable($table, rows) {
     if (!rows.length) {
       $table.innerHTML = "";
       return;
     }
-    const head = ["Program", "Published", "Queues", "Flows", "Scoring rules", "Sampling", "Scores"];
+    const head = ["Program", "Published", "Queues", "Flows",
+                  "Transcription engines", "AI summary & insights", "Scoring rules"];
     $table.innerHTML =
       `<thead><tr>${head.map((h, i) =>
-        `<th${i >= 2 && i <= 4 ? ' class="is-num"' : ""}>${escapeHtml(h)}</th>`).join("")}</tr></thead>` +
+        `<th${(i >= 2 && i <= 3) || i === 6 ? ' class="is-num"' : ""}>${escapeHtml(h)}</th>`)
+        .join("")}</tr></thead>` +
       `<tbody>${rows.map((r) => `
         <tr>
           <td>${escapeHtml(r.name)}</td>
-          <td>${r.published ? "Yes" : '<span class="dq-flag">No</span>'}</td>
+          <td>${yesNo(r.published, { flagNo: true })}</td>
           <td class="is-num">${r.queues.toLocaleString()}</td>
           <td class="is-num">${r.flows.toLocaleString()}</td>
+          <td>${escapeHtml(r.engines)}</td>
+          <td>${r.insights == null
+            ? '<span class="dq-muted">—</span>' : yesNo(r.insights)}</td>
           <td class="is-num">${escapeHtml(r.rules)}</td>
-          <td>${escapeHtml(r.sampling)}</td>
-          <td>${escapeHtml(r.scores)}</td>
+        </tr>`).join("")}</tbody>`;
+  }
+
+  /**
+   * One row per RULE, not per program.
+   *
+   * A program can carry several rules with different forms, sampling and
+   * targets, and folding them into one cell of the program table loses exactly
+   * the detail someone came here for.
+   */
+  function renderRuleTable($table, rows) {
+    if (!rows.length) {
+      $table.innerHTML = "";
+      return;
+    }
+    const head = ["Program", "State", "Selects", "Agents scored", "Submission",
+                  "Form", "Evaluator"];
+    $table.innerHTML =
+      `<thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>` +
+      `<tbody>${rows.map((r) => `
+        <tr>
+          <td>${escapeHtml(r.program)}</td>
+          <td>${r.live ? "Live" : `<span class="dq-flag">${escapeHtml(r.state)}</span>`}</td>
+          <td>${escapeHtml(r.selects)}</td>
+          <td>${escapeHtml(r.agents)}</td>
+          <td>${escapeHtml(r.submission)}</td>
+          <td>${escapeHtml(r.form)}</td>
+          <td>${escapeHtml(r.evaluator)}</td>
         </tr>`).join("")}</tbody>`;
   }
 
@@ -238,7 +307,8 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       // may hold the quality permissions and not the routing ones, or the
       // reverse, and a page that fails whole because one of five was refused
       // would be useless to both.
-      const [settingsRes, programsRes, unpublishedRes, mappingsRes, queuesRes, formsRes] =
+      const [settingsRes, programsRes, unpublishedRes, mappingsRes, queuesRes, formsRes,
+             staRes, insightsRes] =
         await Promise.allSettled([
           fetchTranscriptionSettings(api, org.id),
           fetchPrograms(api, org.id),
@@ -246,6 +316,8 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           fetchProgramMappings(api, org.id),
           fetchAllQueues(api, org.id),
           fetchAllEvaluationForms(api, org.id),
+          fetchSpeechTextAnalyticsSettings(api, org.id),
+          fetchProgramInsightsSettings(api, org.id),
         ]);
 
       const val = (r) => (r.status === "fulfilled" ? r.value : null);
@@ -259,6 +331,8 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       const mappings = val(mappingsRes) || [];
       const queues = val(queuesRes) || [];
       const forms = val(formsRes) || [];
+      const sta = val(staRes);
+      const insights = val(insightsRes) || [];
 
       const findings = [];
       const failures = [];
@@ -266,6 +340,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         ["transcription settings", settingsRes], ["programs", programsRes],
         ["unpublished programs", unpublishedRes], ["program mappings", mappingsRes],
         ["queues", queuesRes], ["evaluation forms", formsRes],
+        ["analytics settings", staRes], ["AI insights settings", insightsRes],
       ]) {
         if (r.status === "rejected") failures.push(`${name} (${why(r)})`);
       }
@@ -300,9 +375,11 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       const unpublishedIds = new Set(unpublished.map((p) => p.id).filter(Boolean));
 
       // ── 3. Scoring rules, one call per program ───
-      setStatus("Reading scoring rules…");
-      const ruleResults = await Promise.allSettled(
-        programs.map((p) => fetchAgentScoringRules(api, org.id, p.id)));
+      setStatus("Reading scoring rules and transcription engines…");
+      const [ruleResults, engineResults] = await Promise.all([
+        Promise.allSettled(programs.map((p) => fetchAgentScoringRules(api, org.id, p.id))),
+        Promise.allSettled(programs.map((p) => fetchProgramTranscriptionEngines(api, org.id, p.id))),
+      ]);
       // A program whose rules could NOT be read is not a program with no rules.
       // `rulesOf` holds only what was actually returned, so "has no scoring
       // rule" can never be asserted from a refused request.
@@ -317,8 +394,30 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       const formName = new Map(forms.map((f) => [f.contextId || f.id, f.name]));
       const queueById = new Map(queues.map((q) => [q.id, q]));
 
+      // `{program, enabled}` per ProgramInsightsSettingsEntityListing.
+      const insightsOf = new Map();
+      for (const i of insights) {
+        if (i?.program?.id) insightsOf.set(i.program.id, !!i.enabled);
+      }
+
+      // ProgramTranscriptionEngines.transcriptionEngines[] is
+      // `{engine, dialects, engineIntegration}`; the dialects are what a reader
+      // actually recognises, so both are shown.
+      const enginesOf = new Map();
+      programs.forEach((p, i) => {
+        const r = engineResults[i];
+        if (r.status !== "fulfilled") return;
+        const list = r.value?.transcriptionEngines || [];
+        enginesOf.set(p.id, list.map((e) => {
+          const dialects = Array.isArray(e.dialects) ? e.dialects.join(", ") : e.dialects;
+          return dialects ? `${e.engine || "engine"} (${dialects})` : (e.engine || "engine");
+        }));
+      });
+      const engineFailures = engineResults.filter((r) => r.status === "rejected").length;
+
       // ── Per-program findings and rows ────────────
       const programRows = [];
+      const ruleRows = [];
       const coveredQueueIds = new Set();
       let liveRuleCount = 0;
 
@@ -379,20 +478,37 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           }
         }
 
-        const samplings = [...new Set(live.map((r) => r.samplingType === "Percentage"
-          ? `${r.samplingPercentage}%` : "All"))];
-        const scores = [...new Set(live.map((r) => r.agentToScore).filter(Boolean))];
-
+        const engines = enginesOf.get(p.id);
         programRows.push({
           name: p.name || p.id,
           published: isPublished,
           queues: map.queueIds.length,
           flows: map.flowIds.length,
+          engines: engines == null ? "—" : (engines.length ? engines.join(" · ") : "none"),
+          insights: insightsRes.status === "fulfilled"
+            ? (insightsOf.has(p.id) ? insightsOf.get(p.id) : false)
+            : null,
           rules: !rulesKnown ? "—"
             : rules.length ? `${live.length} of ${rules.length} live` : "none",
-          sampling: samplings.join(", ") || "—",
-          scores: scores.join(", ") || "—",
         });
+
+        for (const r of rules) {
+          ruleRows.push({
+            program: p.name || p.id,
+            live: !!(r.enabled && r.published),
+            state: !r.enabled ? "Disabled" : !r.published ? "Unpublished" : "Live",
+            // "Selection criteria" on the rule is sampling and nothing else —
+            // the API exposes no media, direction or wrap-up condition here.
+            selects: r.samplingType === "Percentage"
+              ? `${r.samplingPercentage}% of interactions`
+              : r.samplingType === "All" ? "Every interaction" : (r.samplingType || "—"),
+            agents: r.agentToScore || "—",
+            submission: r.submissionType || "—",
+            form: formName.get(r.evaluationFormContextId)
+              || (r.evaluationFormContextId ? "(unknown form)" : "—"),
+            evaluator: r.evaluator?.name || (r.evaluator?.id ? "(set)" : "—"),
+          });
+        }
       }
 
       if (programs.length === 0 && programsRes.status === "fulfilled") {
@@ -452,17 +568,83 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
 
       renderFindings($("findings"), findings);
 
+      const modeWords = mode ? mode.replace(/([a-z])([A-Z])/g, "$1 $2") : null;
+      renderOrgFacts($("orgFacts"), [
+        {
+          label: "Transcription",
+          html: modeWords ? escapeHtml(modeWords) : '<span class="dq-muted">—</span>',
+          sub: mode === "Disabled" ? "nothing is transcribed anywhere"
+            : mode === "EnabledQueueFlow" ? "set per queue and flow"
+            : mode === "EnabledGlobally" ? "on everywhere" : why(settingsRes) || "",
+        },
+        {
+          label: "Text analytics",
+          html: sta ? yesNo(!!sta.textAnalyticsEnabled) : '<span class="dq-muted">—</span>',
+          sub: sta ? "" : why(staRes) || "",
+        },
+        {
+          label: "Agent empathy",
+          html: sta ? yesNo(!!sta.agentEmpathyEnabled) : '<span class="dq-muted">—</span>',
+          sub: sta ? "" : why(staRes) || "",
+        },
+        {
+          // "none" is a fact and must not be printed when the settings call was
+          // refused - not knowing whether a default program is set is a
+          // different thing from knowing there is none.
+          label: "Default program",
+          html: !sta ? '<span class="dq-muted">—</span>'
+            : sta.defaultProgram
+              ? escapeHtml(programs.find((x) => x.id === sta.defaultProgram.id)?.name
+                  || sta.defaultProgram.name || "(set)")
+              : '<span class="dq-muted">none</span>',
+          sub: !sta ? (why(staRes) || "")
+            : sta.defaultProgram ? "used for topic detection where nothing else matches"
+            : "nothing catches interactions no program covers",
+        },
+      ]);
+      $("orgNote").hidden = staRes.status !== "rejected";
+      if (staRes.status === "rejected") {
+        $("orgNote").textContent =
+          `Org-wide analytics settings could not be read (${why(staRes)}). `
+          + "Needs speechAndTextAnalytics:settings:view.";
+      }
+
       renderProgramTable($("programs"), programRows);
       $("programSub").textContent = programRows.length
-        ? "Every program, what it covers, and whether a rule is actually running. "
-          + "Sampling and Scores are the rule's own settings — they decide how much of "
-          + "the covered work is meant to be evaluated at all."
+        ? "What each program covers, which transcription engines it uses, and whether "
+          + "a scoring rule is actually running on it."
         : "No programs to show.";
-      $("programNote").hidden = !ruleFailures;
+
+      renderRuleTable($("rules"), ruleRows);
+      $("ruleSub").textContent = ruleRows.length
+        ? "One row per rule. Selects and Agents scored decide how much of the covered "
+          + "work is meant to be evaluated at all — a rule sampling 20% is supposed to "
+          + "leave most interactions unevaluated, and one scoring First or Last is "
+          + "supposed to skip the other agents on a conversation."
+        : (rulesOf.size ? "No scoring rules are configured on any program."
+                        : "Scoring rules could not be read.");
+      const programNotes = [];
       if (ruleFailures) {
-        $("programNote").textContent =
-          `Scoring rules could not be read for ${plural(ruleFailures, "program")}. `
-          + "That usually means the quality:scoringRule:view permission is missing.";
+        programNotes.push(
+          `Scoring rules could not be read for ${plural(ruleFailures, "program")} `
+          + "(usually a missing quality:scoringRule:view).");
+      }
+      if (engineFailures) {
+        programNotes.push(
+          `Transcription engines could not be read for ${plural(engineFailures, "program")}.`);
+      }
+      if (insightsRes.status === "rejected") {
+        programNotes.push(
+          "AI summary and insights settings could not be read "
+          + "(needs speechAndTextAnalytics:insightsSettings:view), so that column is blank.");
+      }
+      $("programNote").hidden = !programNotes.length;
+      $("programNote").textContent = programNotes.join(" ");
+      $("ruleNote").hidden = !ruleFailures;
+      if (ruleFailures) {
+        $("ruleNote").textContent =
+          `${plural(ruleFailures, "program")} could not be read, so rules on `
+          + "them are missing from this table.";
       }
 
       renderQueueTable($("queues"), queueRows);

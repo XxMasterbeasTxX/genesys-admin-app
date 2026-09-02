@@ -1508,6 +1508,50 @@ export async function fetchAgentScoringRules(api, orgId, programId, opts = {}) {
 }
 
 /**
+ * Whether AI Summary, Insights & Outline is on, for every program at once.
+ *
+ * `ProgramInsightsSettingsEntityListing`: entities of `{program, enabled}`.
+ * The per-program endpoint exists too; this one avoids the fan-out.
+ *
+ * Needs `speechAndTextAnalytics:insightsSettings:view` ON TOP of the program
+ * view permission, so it fails separately from the program list.
+ */
+export async function fetchProgramInsightsSettings(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    "/api/v2/speechandtextanalytics/programs/settings/insights", opts);
+}
+
+/**
+ * The transcription engines configured for one program.
+ *
+ * `ProgramTranscriptionEngines.transcriptionEngines[]` is
+ * `{engine, dialects, engineIntegration}`. Per-program only — there is no
+ * listing across programs — so callers fan out over the program list.
+ */
+export async function fetchProgramTranscriptionEngines(api, orgId, programId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/speechandtextanalytics/programs/${programId}/transcriptionengines`);
+}
+
+/**
+ * Org-wide Speech & Text Analytics settings.
+ *
+ * `{ defaultProgram, expectedDialects, textAnalyticsEnabled, agentEmpathyEnabled }`.
+ *
+ * NOTE: Agent Empathy and Customer Sentiment are ONLY available here. The
+ * Genesys program editor shows them as per-program checkboxes, but no
+ * per-program equivalent exists anywhere in the API — consistent with that
+ * screen's own note that organisation-level settings override program-level
+ * configuration. Report them as org-wide facts; do not attribute them to a
+ * program.
+ *
+ * Needs `speechAndTextAnalytics:settings:view`.
+ */
+export async function fetchSpeechTextAnalyticsSettings(api, orgId) {
+  return api.proxyGenesys(orgId, "GET", "/api/v2/speechandtextanalytics/settings");
+}
+
+/**
  * Org-wide transcription setting.
  *
  * `transcription` is Disabled | EnabledGlobally | EnabledQueueFlow. Disabled
