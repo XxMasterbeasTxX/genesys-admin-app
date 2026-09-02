@@ -5810,6 +5810,53 @@ a.fr-shipped:hover { text-decoration: underline; }
   padding: 1px 5px;
 }
 
+/* ── Evaluation Gaps: findings ─────────────────────────
+   A findings list rather than a chart, because each row is a thing to go and
+   fix rather than a quantity to compare. Severity leads the row: the reader's
+   question is "what do I fix first", and a blocker always outranks a warning
+   however interesting the warning is. */
+.eg-finding {
+  border-left: 3px solid var(--border);
+  margin-bottom: 12px;
+  padding: 2px 0 2px 12px;
+}
+.eg-finding:last-child { margin-bottom: 0; }
+.eg-finding-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.eg-finding-title { font-size: 14px; font-weight: 600; }
+.eg-finding-body { color: var(--muted); font-size: 13px; max-width: 90ch; }
+/* The fix is set apart from the diagnosis: a reader who already understands the
+   problem should be able to skip straight to the line that says where to go. */
+.eg-finding-fix {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+  opacity: 0.85;
+}
+.eg-pill {
+  border-radius: 10px;
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+}
+.eg-sev-blocker { background: rgba(217, 83, 79, 0.18); color: #ff8b87; }
+.eg-sev-warn    { background: rgba(224, 163, 74, 0.18); color: #e0a34a; }
+.eg-sev-ok      { background: rgba(88, 196, 160, 0.18); color: #58c4a0; }
+.eg-clean {
+  color: #58c4a0;
+  font-size: 13px;
+  max-width: 90ch;
+}
+/* A findings panel is the only place a blocker should be red on this page; the
+   severity border repeats the pill so a scan down the left edge works. */
+.eg-finding:has(.eg-sev-blocker) { border-left-color: #d9534f; }
+.eg-finding:has(.eg-sev-warn)    { border-left-color: #e0a34a; }
+
 /* ── Light mode ──────────────────────────────────────── */
 @media (prefers-color-scheme: light) {
   .dq-bar-track { background: #e5e7eb; }

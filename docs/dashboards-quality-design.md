@@ -1365,7 +1365,10 @@ Each step is its own commit, pushed and testable on dev before the next.
 
 ## 13. Page 3 (second attempt) - Evaluation Gaps
 
-**Status: design only. Not built, not approved for build.**
+**Status: step one built and shipped to dev, 2026-09-02.** The configuration
+half (13.2 steps 1-5) is live as `js/pages/dashboards/quality/gaps.js`. The
+per-agent half (13.0a) is designed but not built - it waits on the three
+questions in 13.5, which the test form asks the first pass to answer.
 
 **Question:** which agents should have been evaluated and were not, and why?
 

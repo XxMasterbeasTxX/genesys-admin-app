@@ -170,9 +170,11 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // table, which is a coherent page rather than a denial.
   "dashboards.quality.scores":    { view:   ["analytics:evaluationAggregate:view"],
                                     detail: ["quality:evaluation:searchAny"] },
-  // The analytics domain cannot answer a single question on this page — AI
-  // scoring failure types, suggestion acceptance and disputes exist only as
-  // search aggregations — so searchAny alone is the gate.
+  // Gaps gates on the program list alone: without it there is no chain to walk
+  // and the page has nothing to say. Scoring rules, transcription settings and
+  // queues each degrade band by band and name what they want, so putting them
+  // in the gate would deny a page that would still be useful. Design §13.5.
+  "dashboards.quality.gaps":      { view: ["speechAndTextAnalytics:program:view"] },
 
   // ── Deployment ───────────────────────────────────────
   "deployment.test.testCases": { view: ["architect:flow:view"] },

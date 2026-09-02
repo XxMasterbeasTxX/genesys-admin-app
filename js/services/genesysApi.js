@@ -1431,6 +1431,62 @@ export async function fetchEvaluatorActivity(api, orgId, opts = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Quality automation — programs, scoring rules, transcription
+// ─────────────────────────────────────────────────────────────────────
+//
+// An auto-evaluation exists only if a Speech & Text Analytics PROGRAM covers
+// the conversation and an Agent Scoring Rule on that program fires. A media
+// retention policy cannot do it: its conditions carry queues and no flows, and
+// `submissionType: Automated` lives on the scoring rule. See design §13.2.
+
+/** Every Speech & Text Analytics program. */
+export async function fetchPrograms(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/speechandtextanalytics/programs", opts);
+}
+
+/**
+ * Programs that exist but have never been published.
+ *
+ * An unpublished program does nothing at all, silently — which is exactly the
+ * kind of thing this page exists to surface.
+ */
+export async function fetchUnpublishedPrograms(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/speechandtextanalytics/programs/unpublished", opts);
+}
+
+/**
+ * Every program's queue and flow mappings, in ONE call.
+ *
+ * The per-program endpoint exists too, but this one avoids a fan-out and is
+ * what decides whether a conversation is covered by any program at all.
+ */
+export async function fetchProgramMappings(api, orgId) {
+  return api.proxyGenesys(orgId, "GET", "/api/v2/speechandtextanalytics/programs/mappings");
+}
+
+/**
+ * The Agent Scoring Rules for one program.
+ *
+ * There is no cross-program listing, so callers fan out over the program list.
+ * Programs are few, so that is cheap.
+ */
+export async function fetchAgentScoringRules(api, orgId, programId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    `/api/v2/quality/programs/${programId}/agentscoringrules`, opts);
+}
+
+/**
+ * Org-wide transcription setting.
+ *
+ * `transcription` is Disabled | EnabledGlobally | EnabledQueueFlow. Disabled
+ * means nothing anywhere is transcribed, so no AI scoring can happen at all;
+ * EnabledQueueFlow means it depends on each queue's `enableTranscription`.
+ */
+export async function fetchTranscriptionSettings(api, orgId) {
+  return api.proxyGenesys(orgId, "GET", "/api/v2/routing/settings/transcription");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Groups / Divisions
 // ─────────────────────────────────────────────────────────────────────
 
