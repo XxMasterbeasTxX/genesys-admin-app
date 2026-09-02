@@ -141,9 +141,11 @@ should have been evaluated and was not.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 4a.1 | Find the **AI could not score** tile | Last in the tile row, next to AI-scored | ☐ | |
-| 4a.2 | A period with failures | The tile shows the count, and a line under the tiles breaks it down by cause, largest first | ☐ | |
+| 4a.2 | A period with failures | A **Why AI could not score** panel appears under the tiles, with a bar per cause, largest first | ☐ | |
 | 4a.3 | Causes read in plain English | "Quota reached", "Service error" — never the raw `serviceerror` | ☐ | |
-| 4a.4 | Quota reached is present | The line says it is a commercial limit rather than a fault | ☐ | |
+| 4a.4 | ★ Quota reached is **among** the causes | A line under the bars explains it is a commercial limit rather than a fault | ☐ | |
+| 4a.4a | ★ Quota reached is **not** among the causes | **No mention of quota at all.** Explaining a limit you have not hit sends you hunting for a problem that does not exist | ☐ | |
+| 4a.4b | No failures at all | The panel is absent entirely — not an empty panel | ☐ | |
 | 4a.5 | A clean period | Reads "0 — no AI scoring failures", **not a dash**. A clean period must not look like a missing permission | ☐ | |
 | 4a.6 | ★ Without `quality:evaluation:searchAny` | The tile alone shows "—" and names the permission; **every other tile and band still works** | ☐ | |
 

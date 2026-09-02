@@ -116,7 +116,15 @@ export default function renderCoverage({ me, api, orgContext, access }) {
       <div class="dq-panel-note" data-c="emptyWhy" hidden></div>
 
       <div class="dq-tiles" data-c="tiles"></div>
-      <div class="dq-panel-note" data-c="aiFailNote" hidden></div>
+
+      <!-- Only rendered when AI actually failed at something. A panel that is
+           empty in a healthy org is clutter the rest of the year. -->
+      <div class="dq-panel" data-c="aiFailPanel" hidden>
+        <h3 class="dq-panel-title">Why AI could not score</h3>
+        <p class="dq-panel-sub" data-c="aiFailSub"></p>
+        <div class="dq-bars" data-c="aiFailBars"></div>
+        <div class="dq-panel-note" data-c="aiFailNote" hidden></div>
+      </div>
 
       <div class="dq-panel">
         <h3 class="dq-panel-title">Evaluations over time</h3>
@@ -492,15 +500,31 @@ export default function renderCoverage({ me, api, orgContext, access }) {
             : aiFail.note),
       ].join("");
 
-      const $aiNote = $("aiFailNote");
-      $aiNote.hidden = !aiFail.causes.length;
+      // The panel appears only when there is something to explain.
+      const $panel = $("aiFailPanel");
+      $panel.hidden = !aiFail.causes.length;
       if (aiFail.causes.length) {
-        $aiNote.innerHTML = "AI could not score " +
-          `${aiFail.total.toLocaleString()} evaluation(s): ` +
-          aiFail.causes.map((c) =>
-            `${escapeHtml(failureLabel(c.key))} \u00d7 ${c.count.toLocaleString()}`).join(" · ") +
-          ". Quota reached is a commercial limit rather than a fault \u2014 it means the org " +
-          "has scored as much as it bought.";
+        renderBars($("aiFailBars"),
+          aiFail.causes.map((c) => ({ label: failureLabel(c.key), value: c.count })),
+          { fill: "dq-fill-bad" });
+
+        $("aiFailSub").textContent =
+          `AI attempted ${aiFail.total.toLocaleString()} evaluation(s) it could not produce a ` +
+          "score for, broken down by cause. Unless a person picked those conversations up, " +
+          "they went unevaluated.";
+
+        // Quota is the one cause that is not a fault, and saying so when it is
+        // not among the causes is noise that makes the reader hunt for a
+        // commercial limit they have not hit. Only mention it when it is there.
+        const quota = aiFail.causes.find((c) => /quota/i.test(String(c.key)));
+        const $note = $("aiFailNote");
+        $note.hidden = !quota;
+        if (quota) {
+          $note.textContent =
+            `Quota reached (${quota.count.toLocaleString()}) is a commercial limit rather than ` +
+            "a fault: the org has scored as much AI evaluation as it bought. The others are " +
+            "faults worth chasing.";
+        }
       }
 
       // ── Trend ─────────────────────────────────────
