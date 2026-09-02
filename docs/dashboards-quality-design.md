@@ -1438,6 +1438,7 @@ silently drops out, and therefore a reason an agent goes unevaluated.
 
 | # | Requirement | Source | Certain? |
 |---|---|---|---|
+| 0 | **The interaction was recorded** | Measured: `conversations/details/query` with a `recording` segment filter (13.2a) | Yes, measured |
 | 1 | Org transcription not `Disabled` | `GET /routing/settings/transcription` | Yes |
 | 2 | If mode is `EnabledQueueFlow`, the queue has `enableTranscription` | `Queue.enableTranscription`, already on the queue list | Yes |
 | 3 | The conversation's queue **or flow** is mapped to a program | `GET /speechandtextanalytics/programs/mappings` (all programs, one call) | Yes |
@@ -1447,6 +1448,38 @@ silently drops out, and therefore a reason an agent goes unevaluated.
 | 7 | `agentToScore` selects this agent | `First` / `Last` / `Each` | **Expectation, not fact** |
 | 8 | The agent holds `quality:evaluation:participate` | Roles, as Coverage already resolves | Yes |
 | 9 | AI scoring does not fail | `aiScoringFailureType` - already on Coverage | Yes |
+
+### 13.2a Recording is measured, never derived from policies
+
+Added 2026-09-02, on Thomas's point that a missing transcript may be caused by
+a missing recording. Without audio there is nothing to transcribe, so this sits
+before transcription in the chain rather than inside it.
+
+`GET /api/v2/recording/mediaretentionpolicies` (`recording:retentionPolicy:view`)
+returns policies split per media - `callPolicy`, `chatPolicy`, `emailPolicy`,
+`messagePolicy` - each with `actions.retainRecording` and conditions on
+`forQueues`, `forUsers`, `teams`, `directions`, `wrapupCodes`, `languages`,
+`duration` and `timeAllowed`.
+
+**Deriving "will this interaction be recorded" from those is refused.** Policies
+carry an order, their conditions overlap, and any one of them can match; working
+out which wins is simulating Genesys's own policy engine, and this page has
+already been wrong twice from reasoning ahead of the data. What the
+configuration section reports instead is narrower and true: which enabled
+policies retain recordings, whether any of them name the program's queues, and
+whether any policy is in error - the list endpoint offers a `hasErrors` filter
+and `Policy.policyErrors` carries the messages, which is a cheap exact finding
+on its own.
+
+**Whether an interaction WAS recorded is measured exactly.**
+`SegmentDetailQueryPredicate` carries a `recording` dimension alongside
+`queueId`, `flowId`, `userId` and `purpose`, so one `conversations/details/query`
+asks "interactions in program scope, on the agent segment, not recorded",
+faceted by agent. Recording therefore becomes a row in the cause list like any
+other, rather than an inference.
+
+Note `Queue.suppressInQueueCallRecording` exists but governs in-queue recording,
+not the agent segment, and must not be read as "this queue is not recorded".
 
 **Auto-evaluation comes only from a program.** A media retention policy's
 `assignEvaluations` cannot do it: policy conditions carry `forQueues` and no
@@ -1463,15 +1496,38 @@ fault list.
 Each figure is a difference between two cheap queries rather than a walk over
 conversations.
 
-| Figure | How |
-|---|---|
-| Qualifying interactions, per agent | `conversations/details/query`, `segmentFilters` OR-ing `queueId in [program queues]` with `flowId in [program flows]`, faceted on `userId` |
-| Evaluations received, per agent | `analytics/evaluations/aggregates/query`, `nEvaluations` grouped by `userId` - already what Coverage does |
-| Interactions never transcribed | Qualifying count minus `nSpeechTextAnalyzedConversations` from `analytics/transcripts/aggregates/query` over the same queues/flows |
-| Interactions in NO program | Total handled per agent minus qualifying |
-| Agent lacks Participate | Roles, as Coverage resolves today |
-| AI tried and failed | `aiScoringFailureType`, already on Coverage |
-| **expected / missed** | Derived per 13.0a from the rule's sampling and the qualifying count |
+| Figure | How | Cost |
+|---|---|---|
+| Who is a member of a covered queue | `GET /routing/queues/{id}/members` (`routing:queue:view`, already needed) | one per covered queue |
+| Interactions handled in scope, per agent | Conversation aggregates, `queueId` filter with `userId` grouping - **queue-mapped programs** | one call |
+| ...for flow-mapped programs | `conversations/details/query`, `segmentFilters` on `flowId`, faceted on `userId` - conversation aggregates carry no `flowId` (9a) | one call |
+| Not recorded | Same detail query with a `recording` segment filter (13.2a) | one call |
+| Not transcribed | `nSpeechTextAnalyzedConversations` from `analytics/transcripts/aggregates/query` over the same scope | one call |
+| Evaluations received, per agent | `analytics/evaluations/aggregates/query`, `nEvaluations` grouped by `userId` - already what Coverage does | one call |
+| Agent lacks Participate | Roles, as Coverage resolves today | two calls |
+| AI tried and failed | `aiScoringFailureType`, already on Coverage | one call |
+| **expected / missed** | Derived per 13.0a from the rule's sampling and the qualifying count | free |
+
+**Queue membership cannot stand alone.** An agent who belongs to a covered queue
+and handled nothing has not been missed, so membership establishes scope and the
+handled count establishes eligibility. Reporting on membership alone would flag
+every idle member as a fault.
+
+### 13.3a Three groups, not one list
+
+The output separates three populations that a single "not evaluated" list would
+blur into a false alarm:
+
+| Group | Meaning | What the reader does |
+|---|---|---|
+| **Missed** | Handled work in scope, every setting in order, no evaluation | Investigate. This is the list. |
+| **Explained** | No Participate, queue transcription off, not recorded, no live rule, sampled out, or another agent was the one scored | Fix the named cause, or accept it |
+| **In scope but idle** | A member of a covered queue who handled nothing | Nothing. Must never be counted as missed |
+
+Thomas's org makes the first group unusually clean: the live rule on the AI
+Scoring program samples **All**, so there is no sampling ambiguity - every
+qualifying interaction should produce an evaluation. `agentToScore: Last` is the
+only remaining softness, and only on conversations with more than one agent.
 
 `SegmentDetailQueryPredicate` carries `queueId`, `flowId`, `userId`, `purpose`
 and `teamId` together, which is what makes the queue-mapped and flow-mapped
@@ -1566,9 +1622,25 @@ so queue names still have to come from the queue list.
      participants.
   3. How common `agentToScore: Each` is in practice - if every rule uses it,
      the upper-bound caveat is noise and can be de-emphasised.
+- **Recording is measured, not predicted.** The page can say an interaction was
+  not recorded; it cannot say in advance that a queue's interactions will not
+  be. See 13.2a.
 - **Volume.** Only facet counts are needed, not rows, so requests stay small -
   but this is the heaviest of the three pages and the build should confirm that
   before committing to the layout.
+
+### 13.5a The inverse question, and where it would live
+
+`EvaluationSearchItemResponse.evaluationSource` is `{id, name, type}` with type
+`Policy | User | Unknown | Program`, so for an evaluation that DOES exist the
+API can name what caused it. It is a row-level field - not filterable, not
+aggregatable - so it is a column on the Evaluation Scores table rather than
+anything countable here.
+
+Not built: asked about on 2026-09-02 and confirmed to be a slip for "aren't
+evaluated". Recorded because it is cheap, it is the exact inverse of this page,
+and `type: Unknown` is what the Genesys interactions view shows when it cannot
+attribute an evaluation.
 - **Permissions.** Adds `speechAndTextAnalytics:program:view`,
   `quality:scoringRule:view`, `routing:transcriptionSettings:view`,
   `analytics:speechAndTextAnalyticsAggregates:view` and
