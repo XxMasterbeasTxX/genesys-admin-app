@@ -1455,13 +1455,45 @@ export async function fetchUnpublishedPrograms(api, orgId, opts = {}) {
 }
 
 /**
- * Every program's queue and flow mappings, in ONE call.
+ * Every program's queue and flow mappings.
  *
- * The per-program endpoint exists too, but this one avoids a fan-out and is
- * what decides whether a conversation is covered by any program at all.
+ * Returns `TopicsDefinitionsProgramMappings[]`, each
+ * `{ program: {id, name}, queues: [{id}], flows: [{id}] }`.
+ *
+ * NOTE THE SHAPE. The PUT body for this resource is `{queueIds, flowIds}` and
+ * the GET response is `{queues, flows}` — entity refs, not id strings. Reading
+ * the request definition and assuming the response matched is what made this
+ * page report "0 queues" for a program with nine of them.
+ *
+ * Paged by `nextPage`/`nextUri` rather than `pageNumber` or `cursor`, so
+ * neither shared pager fits and it walks the pages itself.
  */
-export async function fetchProgramMappings(api, orgId) {
-  return api.proxyGenesys(orgId, "GET", "/api/v2/speechandtextanalytics/programs/mappings");
+export async function fetchProgramMappings(api, orgId, opts = {}) {
+  const { pageSize = 100 } = opts;
+  const path = "/api/v2/speechandtextanalytics/programs/mappings";
+  const all = [];
+  const seen = new Set();
+  let nextPage = null;
+
+  while (true) {
+    const query = { pageSize: String(pageSize) };
+    if (nextPage) query.nextPage = nextPage;
+    const resp = await api.proxyGenesys(orgId, "GET", path, { query });
+    all.push(...(resp?.entities || []));
+
+    // The token is lifted out of `nextUri` rather than derived, because its
+    // format is not documented and is not ours to reconstruct.
+    const m = /[?&]nextPage=([^&]+)/.exec(resp?.nextUri || "");
+    if (!m) break;
+    const token = decodeURIComponent(m[1]);
+    // A server that keeps handing back the same token would otherwise spin
+    // forever against a customer org.
+    if (seen.has(token)) break;
+    seen.add(token);
+    nextPage = token;
+  }
+
+  return all;
 }
 
 /**

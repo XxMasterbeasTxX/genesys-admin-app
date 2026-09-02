@@ -253,7 +253,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       const settings = val(settingsRes);
       const programs = val(programsRes) || [];
       const unpublished = val(unpublishedRes) || [];
-      const mappings = val(mappingsRes);
+      const mappings = val(mappingsRes) || [];
       const queues = val(queuesRes) || [];
       const forms = val(formsRes) || [];
 
@@ -280,16 +280,18 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       }
 
       // ── 2. Program mappings ──────────────────────
-      // The mappings response shape is not pinned down by the spec beyond
-      // queueIds/flowIds, so it is read defensively: an array of per-program
-      // entries, or one object keyed by program.
-      const mapList = Array.isArray(mappings) ? mappings
-        : Array.isArray(mappings?.entities) ? mappings.entities
-        : mappings ? [mappings] : [];
+      // `TopicsDefinitionsProgramMappings`: { program: {id}, queues: [{id}],
+      // flows: [{id}] }. Entity refs, not id strings — the id-string shape is
+      // the PUT body, and assuming the response matched it is what made this
+      // page report a program with nine queues as covering none.
       const mapOf = new Map();
-      for (const m of mapList) {
-        const id = m.programId || m.program?.id || m.id;
-        if (id) mapOf.set(id, { queueIds: m.queueIds || [], flowIds: m.flowIds || [] });
+      for (const m of mappings || []) {
+        const id = m.program?.id;
+        if (!id) continue;
+        mapOf.set(id, {
+          queueIds: (m.queues || []).map((q) => q.id).filter(Boolean),
+          flowIds: (m.flows || []).map((f) => f.id).filter(Boolean),
+        });
       }
 
       const unpublishedIds = new Set(unpublished.map((p) => p.id).filter(Boolean));
