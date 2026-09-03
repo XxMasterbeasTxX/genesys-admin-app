@@ -1520,6 +1520,27 @@ export async function queryTranscriptAggregates(api, orgId, body) {
     "/api/v2/analytics/transcripts/aggregates/query", { body });
 }
 
+/**
+ * The recordings that EXIST for a conversation, with their file state.
+ *
+ * `RecordingMetadata[]` - each carrying `fileState` (AVAILABLE, ARCHIVED,
+ * DELETED, RESTORED, RESTORING, UPLOADING, ERROR), `media`, `mediaSubtype`
+ * and the archive/delete dates.
+ *
+ * This answers a different question from `AnalyticsSession.recording`, which is
+ * documented as "flag determining if an audio recording was STARTED". A policy
+ * that does not retain the recording leaves that flag true and no recording
+ * behind - which is exactly what a wrap-up code like "Do not save recording"
+ * does. Only this endpoint can tell the two apart.
+ *
+ * One call per conversation, so callers should ask only about conversations
+ * whose answer actually changes something.
+ */
+export async function fetchRecordingMetadata(api, orgId, conversationId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/conversations/${conversationId}/recordingmetadata`);
+}
+
 /** One program by id. Used to name a default program the list did not carry. */
 export async function fetchProgram(api, orgId, programId) {
   return api.proxyGenesys(orgId, "GET",

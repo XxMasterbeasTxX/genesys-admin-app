@@ -57,8 +57,10 @@ transcribed" in any useful sense.
 | 3.4 | **No program covers the queue** | Only appears if you selected a queue no program maps | | |
 | 3.5 | **No live scoring rule** | The covering program has no enabled *and* published rule | | |
 | 3.6 | **Queue transcription off** | Only when the org is on Enabled Queue Flow | | |
-| 3.7 | ★ **Not recorded** | Cross-check one against the interaction in Genesys — it should genuinely have no recording | | |
-| 3.7a | ★ No row says **Not recorded** while Transcribed reads **Yes** | Impossible by definition: a transcript needs audio. This combination was the bug found on 2026-09-03, caused by reading the recording flag from the agent'''s leg instead of the call'''s | | |
+| 3.7 | ★ **Recording not kept** | Started and then discarded. Cross-check: Genesys should say “There is no recording for this interaction”, and the Wrap-up column usually names the cause | | |
+| 3.7a | ★ **Recording never started** | No recording was started at all — a different problem from the above, fixed in a different place | | |
+| 3.7b | The Recording column | Yes / Not kept / Never started / Not checked. “Not checked” is honest rather than a failure: the page only asks where the answer changes something, and stops at a cap | | |
+| 3.7c | ★ A row with **Recording: Not kept** and **Transcribed: Yes** | Legitimate — a recording can be deleted after it has been transcribed. Its reason must NOT be “recording not kept”: the transcript proves the audio did its job, so the failure is downstream | | |
 | 3.8 | ★ **Shorter than the threshold** | Change the threshold and reload; rows should move between this and other reasons | | |
 | 3.9 | **Not transcribed** | Recorded, long enough, and no transcript | | |
 | 3.10 | **Another agent was the one scored** | Only on multi-agent conversations, and only when the rule scores First or Last. This is *working as configured*, not a fault | | |
@@ -68,7 +70,8 @@ transcribed" in any useful sense.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 4.1 | Read the columns | Agent, Queue, Time, Duration, Recorded, Transcribed, Why — in that order | | |
+| 4.1 | Read the columns | Agent, Queue, Time, Duration, Recording, Transcribed, Wrap-up, Why — in that order | | |
+| 4.1f | **Wrap-up** | The wrap-up code's name. On rows with no recording it usually names the cause | | |
 | 4.1a | Sort by any column | Clicking a header sorts by it; clicking again reverses | | |
 | 4.1b | ★ Sort by **Duration** | Sorts as a number, not as text: 12s before 45s before 10m. Text order would put 10m first | | |
 | 4.1c | **Time** filter | A From/To date range, not a list of timestamps | | |

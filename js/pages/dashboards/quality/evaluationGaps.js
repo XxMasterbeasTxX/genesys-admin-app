@@ -35,6 +35,7 @@ import {
   fetchAgentScoringRules, fetchTranscriptionSettings, fetchAllQueues,
   fetchRolesWithPermission, fetchRoleUsers, fetchAllUsers,
   countConversationDetails, queryConversationDetails, queryTranscriptAggregates,
+  fetchRecordingMetadata, fetchAllWrapupCodes,
 } from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import {
@@ -48,6 +49,27 @@ const PARTICIPATE_PERMISSION = "quality:evaluation:participate";
 
 /** How many pages of 100 conversations to walk before stopping and saying so. */
 const MAX_PAGES = 40;
+
+/**
+ * How many conversations to ask about recordings, and how many at once.
+ *
+ * `recordingmetadata` is one call per conversation, so it is asked only for
+ * conversations whose answer changes something - those that got past the
+ * permission, program, rule and queue-transcription checks. On a healthy org
+ * that is most of them, hence the cap: past it the column reads "not checked"
+ * rather than inventing a verdict.
+ */
+const MAX_RECORDING_LOOKUPS = 300;
+const RECORDING_CONCURRENCY = 6;
+
+/**
+ * File states that mean a recording is actually there.
+ *
+ * DELETED and ERROR are the two that are not: the first was kept and removed,
+ * the second never made it. Both leave nothing for speech and text analytics.
+ */
+const RECORDING_PRESENT = new Set(
+  ["AVAILABLE", "ARCHIVED", "RESTORED", "RESTORING", "UPLOADING"]);
 
 /**
  * The reasons, in the order the chain breaks (§13.2).
@@ -69,8 +91,13 @@ const REASONS = Object.freeze([
   { key: "queueTranscriptionOff", label: "Queue transcription off", fill: "dq-fill-bad",
     hint: "The queue has voice transcription switched off, so nothing here is "
       + "transcribed and nothing can be AI scored." },
-  { key: "notRecorded", label: "Not recorded", fill: "dq-fill-warn",
-    hint: "No audio recording was started, so there was nothing to transcribe." },
+  { key: "recordingNeverStarted", label: "Recording never started", fill: "dq-fill-warn",
+    hint: "No recording was started on this interaction, so there was never any audio "
+      + "to transcribe. That is a recording policy question." },
+  { key: "recordingNotKept", label: "Recording not kept", fill: "dq-fill-warn",
+    hint: "A recording was started and then discarded - by a retention policy, often "
+      + "driven by the wrap-up code. Nothing was left to transcribe. That is a "
+      + "retention question, not a recording one." },
   { key: "tooShort", label: "Shorter than the threshold", fill: "dq-fill-warn",
     hint: "The agent was on the interaction for less than the threshold set above." },
   { key: "notTranscribed", label: "Not transcribed", fill: "dq-fill-warn",
@@ -90,6 +117,31 @@ function secs(ms) {
   if (ms == null) return "—";
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+}
+
+/**
+ * The recording cell.
+ *
+ * Four states, because "no" was hiding two different problems and a third
+ * possibility - that nobody asked. Started-and-discarded is a retention
+ * question; never-started is a recording question; they are fixed in different
+ * places and must not share a word.
+ */
+const RECORDING_CELL = Object.freeze({
+  exists: { text: "Yes", cls: "" },
+  notKept: { text: "Not kept", cls: "dq-flag",
+    title: "A recording was started and then discarded, so nothing was left to "
+      + "transcribe. Usually a retention policy, often driven by the wrap-up code." },
+  neverStarted: { text: "Never started", cls: "dq-flag",
+    title: "No recording was started on this interaction." },
+  unknown: { text: "Not checked", cls: "dq-muted",
+    title: "This page only asks about recordings where the answer changes something, "
+      + "and stops asking past a cap. Not asked is not the same as not there." },
+});
+
+function recordingCell(state) {
+  const c = RECORDING_CELL[state] || RECORDING_CELL.unknown;
+  return `<span class="${c.cls}"${c.title ? ` title="${c.title}"` : ""}>${c.text}</span>`;
 }
 
 function shortDate(iso) {
@@ -252,7 +304,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     if (configOrgId === orgId && config) return config;
     setStatus("Reading configuration…");
 
-    const [progRes, unpubRes, mapRes, queueRes, settingsRes, usersRes] =
+    const [progRes, unpubRes, mapRes, queueRes, settingsRes, usersRes, wrapRes] =
       await Promise.allSettled([
         fetchPrograms(api, orgId),
         fetchUnpublishedPrograms(api, orgId),
@@ -260,6 +312,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         fetchAllQueues(api, orgId),
         fetchTranscriptionSettings(api, orgId),
         fetchAllUsers(api, orgId, { query: { state: "active" } }),
+        fetchAllWrapupCodes(api, orgId),
       ]);
     const val = (r) => (r.status === "fulfilled" ? r.value : null);
 
@@ -269,6 +322,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     const queues = val(queueRes) || [];
     const mode = val(settingsRes)?.transcription || null;
     const users = val(usersRes) || [];
+    const wrapUps = val(wrapRes) || [];
 
     // queueId → the program covering it, and that program's live rules.
     const programOfQueue = new Map();
@@ -306,6 +360,9 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       programs, unpublished, mapOf, programOfQueue, liveRulesOf, mode,
       queueById: new Map(queues.map((q) => [q.id, q])),
       userName: new Map(users.map((u) => [u.id, u.name || u.email || u.id])),
+      // The segment carries a wrap-up id; the name is what points at the cause,
+      // "Do not save recording" being the one that matters here.
+      wrapUpName: new Map(wrapUps.map((w) => [w.id, w.name || w.id])),
       coveredQueueIds: [...programOfQueue.keys()],
       participants,
     };
@@ -486,8 +543,34 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         transcribed = null;
       }
 
-      const rows = classify(conversations, c, s, transcribed);
-      render(rows, c, s, transcribed, conversations.length);
+      const { rows, needRecording, alsoUseful } = buildRows(conversations, c, s, transcribed);
+
+      // Conversations that MUST be checked come first; if there is room under
+      // the cap, the already-explained ones are checked too so the column is
+      // populated rather than a column of dashes. A big result set spends its
+      // budget on correctness instead.
+      const toCheck = new Map(needRecording);
+      for (const [id, started] of alsoUseful) {
+        if (toCheck.size >= MAX_RECORDING_LOOKUPS) break;
+        if (!toCheck.has(id)) toCheck.set(id, started);
+      }
+
+      let recordingInfo = { states: new Map(), capped: false, asked: 0 };
+      if (toCheck.size) {
+        setStatus("Checking recordings…");
+        recordingInfo = await lookUpRecordings(org.id, toCheck);
+      }
+      settleRows(rows, recordingInfo.states);
+
+      // Rows decided before the recording question still show what was found,
+      // when it was looked up as part of the spare budget.
+      for (const row of rows) {
+        if (row.recording == null && recordingInfo.states.has(row.conversationId)) {
+          row.recording = recordingInfo.states.get(row.conversationId);
+        }
+      }
+
+      render(rows, c, s, transcribed, conversations.length, recordingInfo);
 
       $results.hidden = false;
       hideStatus();
@@ -500,15 +583,22 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   });
 
   /**
-   * One row per (interaction, agent) that has no evaluation.
+   * One row per (interaction, agent) that has no evaluation, in two passes.
    *
    * An agent who WAS evaluated on the interaction is not a gap and produces no
-   * row at all — `conversation.evaluations[]` says so directly, matched on the
+   * row at all - `conversation.evaluations[]` says so directly, matched on the
    * agent's userId, which is the whole reason a per-interaction verdict is
    * possible.
+   *
+   * Pass one decides everything readable from the conversation and the
+   * configuration, and marks the rows whose next question is "does a recording
+   * exist" - which needs a call per conversation and so cannot be answered
+   * inline. Pass two settles those once the lookups are back.
    */
-  function classify(conversations, c, s, transcribed) {
+  function buildRows(conversations, c, s, transcribed) {
     const rows = [];
+    const needRecording = new Map();   // conversationId -> was a recording started
+    const alsoUseful = new Map();      // conversations worth checking if there is room
     const thresholdMs = s.threshold * 1000;
     const wanted = new Set(s.queueIds);
 
@@ -516,36 +606,27 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       const evaluatedUserIds = new Set(
         (conv.evaluations || []).filter((e) => !e.deleted).map((e) => e.userId));
 
-      // RECORDING IS A PROPERTY OF THE CONVERSATION, NOT OF THE AGENT'S LEG.
-      //
-      // `AnalyticsSession.recording` is "flag determining if an audio recording
-      // was started", and it is set on the leg that carries the audio - which is
-      // the external one. Reading it only from the agent participant reported
-      // recorded calls as unrecorded: Thomas found a row saying "Not recorded"
-      // next to "Transcribed: Yes", which cannot both be true, since a
-      // transcript needs audio. The contradiction was the tell.
-      //
-      // Any session on any participant carrying the flag means the interaction
-      // was recorded, which is the granularity the question needs: was there
-      // audio for speech and text analytics to work on.
-      let recorded = false;
+      // Whether a recording was STARTED - true of the call, not of one leg, and
+      // not the same question as whether one still exists (see recordingState).
+      let started = false;
       for (const part of conv.participants || []) {
         for (const sess of part.sessions || []) {
-          if (sess.recording) { recorded = true; break; }
+          if (sess.recording) { started = true; break; }
         }
-        if (recorded) break;
+        if (started) break;
       }
 
-      // Agent participants, with the queue segment they were on and how long.
       const agents = [];
       for (const part of conv.participants || []) {
         if (part.purpose !== "agent" || !part.userId) continue;
         let queueId = null;
         let ms = 0;
         let lastEnd = null;
+        let wrapUpCode = null;
         for (const sess of part.sessions || []) {
           for (const seg of sess.segments || []) {
             if (seg.queueId && wanted.has(seg.queueId)) queueId = seg.queueId;
+            if (seg.wrapUpCode) wrapUpCode = seg.wrapUpCode;
             const a = Date.parse(seg.segmentStart || "");
             const b = Date.parse(seg.segmentEnd || "");
             if (!Number.isNaN(a) && !Number.isNaN(b) && b > a) {
@@ -555,7 +636,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           }
         }
         if (!queueId) continue;   // this agent was not on a queue we asked about
-        agents.push({ userId: part.userId, queueId, ms, lastEnd });
+        agents.push({ userId: part.userId, queueId, ms, lastEnd, wrapUpCode });
       }
       if (!agents.length) continue;
 
@@ -572,43 +653,84 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         const rule = liveRules[0] || null;
         const queue = c.queueById.get(a.queueId);
 
-        // First broken link in the chain wins — see REASONS.
-        let reason;
-        if (c.participants && !c.participants.has(a.userId)) reason = "noPermission";
-        else if (!programId) reason = "noProgram";
-        else if (!liveRules.length) reason = "noRule";
-        else if (c.mode === "EnabledQueueFlow" && queue && queue.enableTranscription === false) {
-          reason = "queueTranscriptionOff";
-        } else if (!recorded) reason = "notRecorded";
-        else if (thresholdMs > 0 && a.ms > 0 && a.ms < thresholdMs) reason = "tooShort";
-        else if (transcribed && !transcribed.has(conv.conversationId)) reason = "notTranscribed";
-        else if (rule && rule.agentToScore === "First" && a.userId !== firstAgentId) {
-          reason = "notScoredAgent";
-        } else if (rule && rule.agentToScore === "Last" && a.userId !== lastAgentId) {
-          reason = "notScoredAgent";
-        } else reason = "unexplained";
-
-        rows.push({
+        const row = {
           conversationId: conv.conversationId,
           when: conv.conversationStart,
           queue: queue?.name || a.queueId,
           agent: c.userName.get(a.userId) || a.userId,
           ms: a.ms,
-          recorded,
+          wrapUp: a.wrapUpCode ? (c.wrapUpName.get(a.wrapUpCode) || a.wrapUpCode) : null,
+          recording: null,          // filled in pass two, or left unchecked
           transcribed: transcribed ? transcribed.has(conv.conversationId) : null,
-          reason,
-        });
+          reason: null,
+        };
+
+        // First broken link in the chain wins - see REASONS.
+        if (c.participants && !c.participants.has(a.userId)) row.reason = "noPermission";
+        else if (!programId) row.reason = "noProgram";
+        else if (!liveRules.length) row.reason = "noRule";
+        else if (c.mode === "EnabledQueueFlow" && queue && queue.enableTranscription === false) {
+          row.reason = "queueTranscriptionOff";
+        } else {
+          // Everything from here needs to know whether a recording exists.
+          const scoredMismatch = !!(rule
+            && ((rule.agentToScore === "First" && a.userId !== firstAgentId)
+              || (rule.agentToScore === "Last" && a.userId !== lastAgentId)));
+          row.pending = { started, scoredMismatch, thresholdMs };
+          needRecording.set(conv.conversationId, started);
+        }
+
+        if (row.reason && !alsoUseful.has(conv.conversationId)) {
+          alsoUseful.set(conv.conversationId, started);
+        }
+        rows.push(row);
       }
+    }
+    return { rows, needRecording, alsoUseful };
+  }
+
+  /**
+   * Finish the rows that were waiting on a recording lookup.
+   *
+   * An unknown state - the lookup failed, or the cap was reached - does NOT
+   * become a reason. The check is skipped and the row carries on down the
+   * chain, because "we did not ask" is not evidence of anything.
+   */
+  function settleRows(rows, states) {
+    for (const row of rows) {
+      if (!row.pending) continue;
+      const { started, scoredMismatch, thresholdMs } = row.pending;
+      const state = states.get(row.conversationId) || "unknown";
+      row.recording = state;
+
+      if (row.transcribed === true) {
+        // A TRANSCRIPT SETTLES EVERYTHING BEFORE IT. If one exists, the audio
+        // existed and was long enough, whatever the recording now says - a
+        // recording can be deleted after it has been transcribed, which is why
+        // "Not kept" and "Transcribed: Yes" can both be true on one row. Blaming
+        // the missing evaluation on retention there would send someone to fix a
+        // policy that did its job; the failure is downstream of it.
+        row.reason = scoredMismatch ? "notScoredAgent" : "unexplained";
+      } else if (state === "notKept") row.reason = "recordingNotKept";
+      else if (state === "neverStarted") row.reason = "recordingNeverStarted";
+      else if (!started && state === "unknown") row.reason = "recordingNeverStarted";
+      else if (thresholdMs > 0 && row.ms > 0 && row.ms < thresholdMs) row.reason = "tooShort";
+      else if (row.transcribed === false) row.reason = "notTranscribed";
+      else if (scoredMismatch) row.reason = "notScoredAgent";
+      else row.reason = "unexplained";
+
+      delete row.pending;
     }
     return rows;
   }
+
 
   // ── Rendering ───────────────────────────────────────
 
   let allRows = [];
   let detachFilters = null;
 
-  function render(rows, c, s, transcribed, convCount) {
+  function render(rows, c, s, transcribed, convCount, recordingInfo) {
     allRows = rows;
 
     const counts = new Map();
@@ -657,15 +779,65 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         + "Transcript status could not be read, so no row is attributed to a missing "
         + "transcript.";
 
-    $("tableNote").hidden = !!transcribed;
+    const notes = [];
     if (!transcribed) {
-      $("tableNote").textContent =
-        "The transcript aggregate could not be read (needs "
+      notes.push("The transcript aggregate could not be read (needs "
         + "analytics:speechAndTextAnalyticsAggregates:view), so “not transcribed” is "
-        + "absent from the reasons and those interactions fall into Unexplained.";
+        + "absent from the reasons and those interactions fall into Unexplained.");
     }
+    if (recordingInfo?.capped) {
+      notes.push(`Recordings were checked for ${recordingInfo.asked.toLocaleString()} `
+        + "conversations, the most this page will ask for in one go. The rest read "
+        + "“not checked” rather than being guessed at — narrow the range for a "
+        + "complete answer.");
+    }
+    $("tableNote").hidden = !notes.length;
+    $("tableNote").textContent = notes.join(" ");
 
     drawTable();
+  }
+
+  /**
+   * Does a recording actually exist for this conversation?
+   *
+   * `AnalyticsSession.recording` says only that one was STARTED. A retention
+   * policy - typically keyed on the wrap-up code, "Do not save recording" being
+   * the obvious one - can discard it afterwards, leaving that flag true and no
+   * audio behind. Genesys then shows "There is no recording for this
+   * interaction" while this page said "Recorded: Yes".
+   *
+   * Screen recordings are excluded: a screen capture is not audio and cannot be
+   * transcribed, so counting one would answer the wrong question again.
+   *
+   * @returns {"exists"|"notKept"|"neverStarted"|"unknown"}
+   */
+  async function recordingState(orgId, conversationId, started) {
+    try {
+      const meta = await fetchRecordingMetadata(api, orgId, conversationId);
+      const list = (Array.isArray(meta) ? meta : [])
+        .filter((m) => m.mediaSubtype !== "Screen");
+      if (list.some((m) => RECORDING_PRESENT.has(m.fileState))) return "exists";
+      // Nothing usable. Whether it was ever started decides which of the two
+      // very different problems this is, and they get fixed in different places.
+      return started ? "notKept" : "neverStarted";
+    } catch {
+      return "unknown";
+    }
+  }
+
+  /** Look recordings up for the conversations that need one, a few at a time. */
+  async function lookUpRecordings(orgId, needed) {
+    const out = new Map();
+    const list = [...needed.entries()].slice(0, MAX_RECORDING_LOOKUPS);
+    for (let i = 0; i < list.length; i += RECORDING_CONCURRENCY) {
+      const batch = list.slice(i, i + RECORDING_CONCURRENCY);
+      const states = await Promise.all(
+        batch.map(([id, started]) => recordingState(orgId, id, started)));
+      batch.forEach(([id], n) => out.set(id, states[n]));
+      setStatus(`Checking recordings… ${Math.min(i + batch.length, list.length)
+        .toLocaleString()} of ${list.length.toLocaleString()}`);
+    }
+    return { states: out, capped: needed.size > list.length, asked: list.length };
   }
 
   /**
@@ -734,8 +906,8 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     // waiting to happen.
     $t.innerHTML =
       "<thead><tr><th>Agent</th><th>Queue</th><th>Time</th>"
-      + '<th class="is-num">Duration</th><th>Recorded</th><th>Transcribed</th>'
-      + "<th>Why</th></tr></thead>"
+      + '<th class="is-num">Duration</th><th>Recording</th><th>Transcribed</th>'
+      + "<th>Wrap-up</th><th>Why</th></tr></thead>"
       + `<tbody>${shown.map((r) => {
         const reason = REASON_BY_KEY.get(r.reason);
         const seconds = r.ms != null ? Math.round(r.ms / 1000) : "";
@@ -745,9 +917,10 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           <td data-value="${escapeHtml(r.when || "")}" title="${
             escapeHtml(r.conversationId || "")}">${escapeHtml(shortDate(r.when))}</td>
           <td class="is-num" data-value="${seconds}">${escapeHtml(secs(r.ms))}</td>
-          <td>${r.recorded ? "Yes" : '<span class="dq-flag">No</span>'}</td>
+          <td>${recordingCell(r.recording)}</td>
           <td>${r.transcribed == null ? '<span class="dq-muted">—</span>'
             : r.transcribed ? "Yes" : '<span class="dq-flag">No</span>'}</td>
+          <td>${r.wrapUp ? escapeHtml(r.wrapUp) : '<span class="dq-muted">—</span>'}</td>
           <td title="${escapeHtml(reason?.hint || "")}">${escapeHtml(reason?.label || r.reason)}</td>
         </tr>`;
       }).join("")}</tbody>`;
