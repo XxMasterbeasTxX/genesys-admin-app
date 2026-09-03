@@ -216,13 +216,14 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
             <label class="ac-filter-label">Quick ranges</label>
             <div class="ac-presets" data-c="presets"></div>
           </div>
-          <div class="ac-filter-actions">
-            <button class="btn btn-sm" data-c="count">Count interactions</button>
-            <button class="btn btn-sm btn-primary" data-c="load" disabled>Load checklists</button>
-          </div>
         </div>
 
         <div class="ac-filter-row ac-status-bar" data-c="statusFilters"></div>
+
+        <div class="ac-filter-row ac-filter-actions">
+          <button class="btn btn-sm" data-c="count">Count interactions</button>
+          <button class="btn btn-sm btn-primary" data-c="load" disabled>Load checklists</button>
+        </div>
       </div>
 
       <div class="ac-chart-wrap" data-c="chartPanel" hidden>

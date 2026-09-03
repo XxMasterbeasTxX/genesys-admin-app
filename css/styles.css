@@ -6551,16 +6551,10 @@ a.fr-shipped:hover { text-decoration: underline; }
    label's height to sit level with the inputs beside them. */
 .ac-filter-row > .btn { margin-top: 20px; }
 .ac-status-bar > .btn { margin-top: 0; }
-/* The actions are not more presets. A gap and a rule separate them from the
-   quick ranges, the same way the status bar sets Agent Checked apart. */
-.ac-filter-actions {
-  border-left: 1px solid var(--border);
-  display: flex;
-  gap: 6px;
-  margin-left: 6px;
-  margin-top: 20px;
-  padding-left: 12px;
-}
+/* The actions get their own row under the status filters rather than sitting
+   inline with the quick ranges, where they read as two more presets. */
+.ac-filter-actions { gap: 6px; }
+.ac-filter-actions > .btn { margin-top: 0; }
 .ac-filter-group {
   display: flex;
   flex-direction: column;
