@@ -114,6 +114,34 @@ Used by: Interaction Search (Recent + Historical), Disconnect Interactions, Move
 | POST | `/api/v2/conversations/{id}/disconnect` | Force-disconnect an active conversation |
 | POST | `/api/v2/conversations/{id}/participants/{participantId}/replace` | Blind transfer (move interaction to a different queue) |
 
+### 2.1 The interval cap depends on whether the query is filtered
+
+Undocumented, and not in the OpenAPI spec — the `interval` field on
+`ConversationQuery` states its format and no maximum. Measured against a live org
+on 2026-09-03, `pageSize: 1`, varying only the interval:
+
+| Query | Maximum interval | Genesys' own error text |
+| --- | --- | --- |
+| No filters | **7 days** | "…a search interval as part of your query that does not exceed 7 days" |
+| Any `segmentFilters` present | **31 days** | "…that does not exceed 31 days" |
+
+The API changes the number in its own message depending on the query, which is
+why one probe alone is misleading: an unfiltered test reports a 7-day rule that
+does not apply to any of our pages, since every one of them filters. 31 days is
+the number that binds in practice; 8, 14 and 31 days all succeed with a filter
+and 32 fails.
+
+Two consequences worth keeping in mind:
+
+- A guard sized at 7 days would be four times too strict for a filtered query,
+  and one sized at 31 would be four times too loose for an unfiltered one. The
+  cap belongs with the query, not with the page.
+- The cap is not the binding constraint on the pages that walk rows. On the org
+  measured, 31 days of voice alone was 124,077 interactions; an unfiltered week
+  was 58,774. Anything enriching per conversation runs out of time and quota
+  long before it runs out of interval, so cost gates do the real limiting —
+  see the Agent Copilot and Evaluation Gaps designs.
+
 ---
 
 ## 3. Audits

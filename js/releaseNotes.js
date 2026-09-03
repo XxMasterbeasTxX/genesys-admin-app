@@ -21,6 +21,38 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "5.0",
+    date: "2026-09-03",
+    title: "Dashboards \u2014 Agent Copilot: did the checklist actually get finished, and by whom",
+    changes: [
+      "New menu: Dashboards \u203a Agent Copilot \u2014 Checklists & Summaries. Read-only, like "
+        + "the rest of Dashboards.",
+      "Find the interactions that ran with an Agent Copilot checklist. Choose one or more "
+        + "copilots and a date range; queues and agents are there to narrow it further but are "
+        + "not required, because the copilot is read from the interaction itself.",
+      "Agent ticks and AI ticks are shown apart, everywhere. A checklist the model completed on "
+        + "its own still counts as complete \u2014 but it tells you the agent never touched it, "
+        + "and that is a different thing worth knowing. The \u270b Agent Checked filter isolates "
+        + "the interactions where someone actually worked the list.",
+      "A checklist that carries no items is reported as undetermined rather than incomplete. An "
+        + "empty checklist is not a failed one, and counting it as a failure would invent a "
+        + "problem you do not have.",
+      "Open any interaction for its checklist item by item \u2014 with each item's agent tick, AI "
+        + "tick, importance flag and description \u2014 alongside the AI summary and the call "
+        + "recording. Where an agent edited a summary field, the edit is shown with the "
+        + "original struck through beneath it. Transferred interactions show every agent's "
+        + "checklist, including two agents who ran the same one.",
+      "Recordings play in the page: audio for calls, video for screen recordings, one part per "
+        + "segment on a transferred call. This is the first recording playback in the app.",
+      "Export to Excel in three sheets \u2014 a per agent, queue, copilot and checklist summary, "
+        + "the interactions, and every checklist item. The file always matches the filters on "
+        + "screen, so the download cannot disagree with what you are looking at.",
+      "Checklists have to be read one interaction at a time \u2014 Genesys offers no summary of "
+        + "them \u2014 so the page counts first and tells you how many requests it will take and "
+        + "roughly how long, before it spends anything. Nothing loads until you ask for it.",
+    ],
+  },
+  {
     version: "4.9",
     date: "2026-09-03",
     title: "Dashboards \u2014 Quality: what got evaluated, how it scored, and what was missed",

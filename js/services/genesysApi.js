@@ -2118,3 +2118,228 @@ export async function fetchAuditQueryResults(api, orgId, transactionId, opts = {
 
   return all;
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Agent Copilot — assistants, checklists, summaries, recordings
+// See docs/dashboards-agent-copilot-design.md §4.
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Walk a listing by following its own `nextUri`, rather than by guessing the
+ * paging parameter.
+ *
+ * A third paging style, alongside `pageNumber` (`fetchAllPages`) and `cursor`
+ * (`fetchAllCursor`). The assistants endpoints page with an opaque `after`
+ * token, and `agentchecklists` declares NO query parameters at all in the spec
+ * yet still returns a `nextUri` — so there is no parameter name to reconstruct
+ * in either case. Following the URI the server hands back needs neither.
+ *
+ * `nextUri` may come back absolute or relative; only its path and query are
+ * kept, because the host is the proxy's business and not ours.
+ *
+ * @param {Object} api
+ * @param {string} orgId
+ * @param {string} path   First page, query string included.
+ * @param {Object} [opts]
+ * @param {string} [opts.entitiesKey="entities"]
+ * @param {number} [opts.maxPages=50]  Stop rather than walk an unbounded listing.
+ * @returns {Promise<Object[]>}
+ */
+async function fetchAllFollowingNextUri(api, orgId, path, opts = {}) {
+  const { entitiesKey = "entities", maxPages = 50 } = opts;
+  const all = [];
+  const seen = new Set();
+  let next = path;
+
+  for (let page = 0; next && page < maxPages; page++) {
+    // A server that keeps handing back the same URI would otherwise spin
+    // forever against a customer org.
+    if (seen.has(next)) break;
+    seen.add(next);
+
+    const resp = await api.proxyGenesys(orgId, "GET", next);
+    all.push(...(resp?.[entitiesKey] || []));
+
+    const raw = resp?.nextUri || null;
+    if (!raw) break;
+    // Absolute or relative — keep path + query, drop the host.
+    next = raw.startsWith("http")
+      ? (() => { const u = new URL(raw); return u.pathname + u.search; })()
+      : raw;
+  }
+
+  return all;
+}
+
+/**
+ * Assistants that actually have copilot switched on.
+ *
+ * `expand=copilot` is what carries the `Copilot` block; without it every
+ * assistant looks identical and none look enabled. An assistant counts when
+ * `copilot.enabled` is true OR `copilot.liveOnQueue` is true — the second is
+ * what "live on selected queue" sets, and an assistant can be live on a queue
+ * without the first flag, so testing only `enabled` silently loses assistants
+ * that are running right now.
+ *
+ * Returns whole assistants; callers take `id` and `name`.
+ */
+export async function fetchCopilotAssistants(api, orgId, opts = {}) {
+  const { pageSize = 200 } = opts;
+  const assistants = await fetchAllFollowingNextUri(api, orgId,
+    `/api/v2/assistants?expand=copilot&pageSize=${pageSize}`);
+  return assistants.filter(
+    (a) => a?.copilot?.enabled === true || a?.copilot?.liveOnQueue === true);
+}
+
+/**
+ * The queues one assistant is assigned to.
+ *
+ * There is no listing across assistants, so callers fan out. Returns
+ * `AssistantQueue[]`, whose `id` IS the queue id — the queue's name needs a
+ * separate routing lookup.
+ */
+export async function fetchAssistantQueues(api, orgId, assistantId, opts = {}) {
+  const { pageSize = 200 } = opts;
+  return fetchAllFollowingNextUri(api, orgId,
+    `/api/v2/assistants/${assistantId}/queues?pageSize=${pageSize}`);
+}
+
+/**
+ * Users by id, in bulk.
+ *
+ * `AnalyticsParticipant.participantName` is optional and frequently absent —
+ * outbound rows in particular arrive with a bare `userId` — so a page that
+ * relies on it alone prints GUIDs in the Agent column. This resolves the ids
+ * that were not named any other way.
+ *
+ * `id` is `collectionFormat: multi`, so the parameter is REPEATED rather than
+ * comma-joined; the ids are chunked because a URL has a length limit and the
+ * endpoint has a page size.
+ *
+ * `state` is deliberately not constrained: an interaction handled by someone
+ * since made inactive still needs their name.
+ */
+export async function fetchUsersByIds(api, orgId, ids, opts = {}) {
+  const { chunk = 50 } = opts;
+  const unique = [...new Set((ids || []).filter(Boolean))];
+  const out = [];
+  for (let i = 0; i < unique.length; i += chunk) {
+    const part = unique.slice(i, i + chunk);
+    const qs = part.map((id) => `id=${encodeURIComponent(id)}`).join("&");
+    const resp = await api.proxyGenesys(orgId, "GET",
+      `/api/v2/users?pageSize=${chunk}&${qs}`);
+    out.push(...(resp?.entities || []));
+  }
+  return out;
+}
+
+/**
+ * Wrap-up codes by id, in bulk.
+ *
+ * `/routing/wrapupcodes` on its own does not return every code an interaction
+ * can carry: Genesys built-ins come back from the segment as ids the routing
+ * list has never heard of. Same repeated-parameter and chunking rules as
+ * fetchUsersByIds.
+ */
+export async function fetchWrapupCodesByIds(api, orgId, ids, opts = {}) {
+  const { chunk = 50 } = opts;
+  const unique = [...new Set((ids || []).filter(Boolean))];
+  const out = [];
+  for (let i = 0; i < unique.length; i += chunk) {
+    const part = unique.slice(i, i + chunk);
+    const qs = part.map((id) => `id=${encodeURIComponent(id)}`).join("&");
+    const resp = await api.proxyGenesys(orgId, "GET",
+      `/api/v2/routing/wrapupcodes?pageSize=${chunk}&${qs}`);
+    out.push(...(resp?.entities || []));
+  }
+  return out;
+}
+
+/**
+ * One wrap-up code by id.
+ *
+ * The last resort for a code the list endpoint will not return - Genesys system
+ * codes such as `ININ-WRAP-UP-TIMEOUT` among them. Called only for the few ids
+ * left unnamed after the bulk lookup.
+ */
+export async function fetchWrapupCodeById(api, orgId, id) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/routing/wrapupcodes/${encodeURIComponent(id)}`);
+}
+
+/**
+ * The members of one queue.
+ *
+ * Used to populate the agent filter from the queues a copilot covers, so the
+ * list offers the people who could plausibly appear rather than every user in
+ * the org. `pageNumber` style, so the shared pager fits.
+ */
+export async function fetchQueueMembers(api, orgId, queueId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    `/api/v2/routing/queues/${queueId}/members`, opts);
+}
+
+/**
+ * The agent checklists on one communication.
+ *
+ * Conversation-scoped despite the path: a single conversation can hold several
+ * checklists, including the SAME template run by different agents across a
+ * transfer, which is why each is attributed by its own `agentId` rather than by
+ * the communication it was fetched through.
+ *
+ * 404 means "no checklists here", which is ordinary and not an error — the
+ * caller decides, because it knows whether other communications answered.
+ *
+ * The listing carries a `nextUri` that the app this was ported from never
+ * followed, silently losing everything past the first page.
+ */
+export async function fetchAgentChecklists(api, orgId, conversationId, communicationId) {
+  return fetchAllFollowingNextUri(api, orgId,
+    `/api/v2/conversations/${conversationId}` +
+    `/communications/${communicationId}/agentchecklists`);
+}
+
+/**
+ * AI conversation summaries.
+ *
+ * Returns the raw `{conversation, summary, sessionSummaries}` — flattening is
+ * the caller's job, because de-duplicating `summary` against `sessionSummaries`
+ * needs the caller's knowledge of how many sessions there were.
+ */
+export async function fetchConversationSummaries(api, orgId, conversationId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/conversations/${conversationId}/summaries`);
+}
+
+/**
+ * Recording stubs for a conversation — metadata only, no audio.
+ *
+ * `maxWaitMs` bounds how long Genesys blocks while it looks; the response is
+ * a bare array, not a listing.
+ */
+export async function fetchConversationRecordings(api, orgId, conversationId, opts = {}) {
+  const { maxWaitMs = 5000 } = opts;
+  const resp = await api.proxyGenesys(orgId, "GET",
+    `/api/v2/conversations/${conversationId}/recordings`,
+    { query: { maxWaitMs: String(maxWaitMs) } });
+  return Array.isArray(resp) ? resp : (resp?.entities || []);
+}
+
+/**
+ * One recording, with a presigned playback URL.
+ *
+ * Asking for a format is what triggers transcoding, so the first call for a
+ * long recording often comes back with no `mediaUris` at all and has to be
+ * repeated. `estimatedTranscodeTimeMs` rides on that empty response and is the
+ * server's own estimate of how long to wait — better than a fixed retry delay.
+ *
+ * `mediaUris` is a MAP of format to `{mediaUri}`, not a flat field.
+ */
+export async function fetchConversationRecording(
+  api, orgId, conversationId, recordingId, formatId = "MP3", opts = {},
+) {
+  const { maxWaitMs = 5000 } = opts;
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/conversations/${conversationId}/recordings/${recordingId}`,
+    { query: { formatId, maxWaitMs: String(maxWaitMs) } });
+}

@@ -45,6 +45,14 @@ export const NAV_TREE = [
           { label: "STA Configuration",   path: "sta-configuration", enabled: true, access: "dashboards.quality.staConfiguration" },
         ],
       },
+      {
+        label: "Agent Copilot",
+        path: "agent-copilot",
+        enabled: true,
+        children: [
+          { label: "Checklists & Summaries", path: "checklists", enabled: true, access: "dashboards.agentCopilot.checklists" },
+        ],
+      },
     ],
   },
   {

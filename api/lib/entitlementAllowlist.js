@@ -48,9 +48,18 @@ const CUSTOMER_DENY_RULES = [
 const PATH_MODULE_RULES = [
   { test: /^\/api\/v2\/billing\b/i, modules: ["export.billing"] },
   { test: /^\/api\/v2\/audits\b/i, modules: ["audit"] },
-  { test: /^\/api\/v2\/(analytics\/conversations|conversations)\b/i, modules: ["interactions"] },
-  { test: /^\/api\/v2\/recording\b/i, modules: ["interactions"] },
-  { test: /^\/api\/v2\/speechandtextanalytics\b/i, modules: ["interactions"] },
+  { test: /^\/api\/v2\/(analytics\/conversations|conversations)\b/i, modules: ["interactions", "dashboards"] },
+  { test: /^\/api\/v2\/recording\b/i, modules: ["interactions", "dashboards"] },
+  { test: /^\/api\/v2\/speechandtextanalytics\b/i, modules: ["interactions", "dashboards"] },
+  // Dashboards. Every one of these was unmapped, and an unmapped path fails
+  // closed - so with the flag on, the whole Dashboards module was dead rather
+  // than degraded: Agent Copilot could not even list its assistants, and the
+  // Quality pages could not read the evaluation aggregates they are built on.
+  // The conversation and recording rules above gained "dashboards" for the same
+  // reason; Agent Copilot reads both.
+  { test: /^\/api\/v2\/assistants\b/i, modules: ["dashboards"] },
+  { test: /^\/api\/v2\/quality\b/i, modules: ["dashboards"] },
+  { test: /^\/api\/v2\/analytics\/(evaluations|transcripts|summaries|agentcopilots)\b/i, modules: ["dashboards"] },
   { test: /^\/api\/v2\/flows\/datatables\b/i, modules: ["data-tables", "export"] },
   { test: /^\/api\/v2\/flows\b/i, modules: ["flows", "divisions", "export"] },
   { test: /^\/api\/v2\/integrations\/actions\b/i, modules: ["data-actions", "export"] },
@@ -64,15 +73,15 @@ const PATH_MODULE_RULES = [
 
   // Configuration reads behind the Divisions pages, shared with the features
   // that also list the same objects.
-  { test: /^\/api\/v2\/routing\/wrapupcodes\b/i, modules: ["wrapupCodes", "divisions", "export"] },
-  { test: /^\/api\/v2\/routing\b/i, modules: ["divisions", "users", "interactions", "export"] },
+  { test: /^\/api\/v2\/routing\/wrapupcodes\b/i, modules: ["wrapupCodes", "divisions", "export", "dashboards"] },
+  { test: /^\/api\/v2\/routing\b/i, modules: ["divisions", "users", "interactions", "export", "dashboards"] },
   { test: /^\/api\/v2\/outbound\b/i, modules: ["divisions", "wrapupCodes", "export"] },
   { test: /^\/api\/v2\/telephony\b/i, modules: ["divisions", "phones", "export"] },
   { test: /^\/api\/v2\/stations\b/i, modules: ["phones", "export"] },
   { test: /^\/api\/v2\/workforcemanagement\b/i, modules: ["divisions", "export"] },
   { test: /^\/api\/v2\/(workitems|taskmanagement)\b/i, modules: ["divisions", "export"] },
   { test: /^\/api\/v2\/scripts\b/i, modules: ["divisions", "export"] },
-  { test: /^\/api\/v2\/(users|groups|teams)\b/i, modules: ["users", "divisions", "roles", "phones", "interactions", "gdpr", "export"] },
+  { test: /^\/api\/v2\/(users|groups|teams)\b/i, modules: ["users", "divisions", "roles", "phones", "interactions", "gdpr", "export", "dashboards"] },
 ];
 
 function normalizePath(path) {

@@ -6233,3 +6233,381 @@ a.fr-shipped:hover { text-decoration: underline; }
 }
 .dq-key--ai { background: #4c8dff; }
 .dq-key--human { background: #58c4a0; }
+
+/* ── Agent Copilot: drill-down (checklists, summaries, recording) ──
+   The panel opens under the table rather than beside it: the table is nine
+   columns wide already, and a side-by-side split left both halves too narrow
+   to read on a laptop. */
+.dq-panel-head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.dq-panel-head .dq-panel-title { margin: 0; }
+.dq-panel-head .dq-panel-sub {
+  flex: 1;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  margin: 0;
+}
+.dq-panel-block {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+.dq-panel-block:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
+
+
+/* ── Agent Copilot: collapsibles and the open row ─────────────────
+   Opening an interaction collapses the results table, so both the table
+   header and each drill-down section are toggles. */
+.ac-results-toggle,
+.ac-collapse-toggle {
+  align-items: center;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+.ac-collapse-toggle {
+  font-size: 13px;
+  font-weight: 700;
+}
+.ac-results-toggle .dq-panel-title { margin: 0; }
+.ac-results-toggle:hover .dq-panel-title,
+.ac-collapse-toggle:hover { color: #9dc1ff; }
+.ac-chevron {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  width: 10px;
+}
+
+/* The row whose detail is open. It stays marked while the table is hidden, so
+   re-opening the table shows where you were. */
+.dq-table tbody tr.is-active {
+  background: rgba(76, 141, 255, 0.14);
+  box-shadow: inset 2px 0 0 #4c8dff;
+}
+.dq-table tbody tr[data-conversation] { cursor: pointer; }
+
+@media (prefers-color-scheme: light) {
+  .dq-table tbody tr.is-active { background: rgba(29, 78, 216, 0.10); }
+}
+
+/* ── Agent Copilot: checklist items and summaries ─────────────────
+   Item layout mirrors the source app: overall tick, name, important flag,
+   then the agent's tick and the model's tick side by side. The two ticks are
+   the point of the view and must never collapse into one. */
+.ac-checklist,
+.ac-summary {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  padding: 10px 12px;
+}
+.ac-checklist-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ac-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.ac-items {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.ac-item {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0;
+}
+.ac-items li:first-child { border-top: 0; }
+.ac-item-icon { font-size: 13px; line-height: 1; }
+/* The name takes the slack so the two tick readouts stay right-aligned
+   together and can be compared down the column. */
+.ac-item-name { flex: 1; min-width: 160px; }
+.ac-important { font-size: 12px; }
+.ac-eval {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ac-tick--yes { color: #58c4a0; font-weight: 700; }
+.ac-tick--no { color: #e06c6c; font-weight: 700; }
+.ac-item-desc {
+  color: var(--muted);
+  flex-basis: 100%;
+  font-size: 12px;
+  padding-left: 22px;
+}
+
+.ac-sum-label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.ac-sum-headline {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.ac-sum-field { font-size: 13px; margin-top: 6px; }
+.ac-sum-field.is-sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+  padding-left: 12px;
+}
+.ac-sum-field.is-original,
+.ac-sum-text.is-original {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.ac-sum-text { font-size: 13px; margin-top: 8px; }
+.ac-strike { text-decoration: line-through; }
+.ac-edited {
+  color: #e0a34a;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: light) {
+  .ac-checklist, .ac-summary { background: #fff; }
+  .ac-tick--yes { color: #14805e; }
+  .ac-tick--no { color: #b3261e; }
+  .ac-edited { color: #8a5a00; }
+}
+
+/* ── Agent Copilot: completion chart, badges, recordings ────────
+   Two vertical bars, as the source app drew them with Chart.js. Built in CSS
+   because this app vendors its libraries and two bars do not earn one. */
+.ac-chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  text-align: center;
+}
+/* STRETCH, not flex-end. Aligning the columns to the bottom made each one only
+   as tall as its own content, so the track's flex:1 had no space to grow into
+   and every bar collapsed to its min-height - 1 and 94 drew identically. With
+   the columns stretched the track gets a real height and the bar's percentage
+   finally has something to resolve against. */
+.ac-chart-plot {
+  align-items: stretch;
+  display: flex;
+  flex: 1;
+  gap: 6%;
+  justify-content: center;
+  min-height: 0;
+  padding: 0 12px;
+}
+.ac-col {
+  align-items: center;
+  display: flex;
+  flex: 0 1 120px;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: flex-end;
+  min-width: 40px;
+}
+.ac-col-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+/* A fixed-height track with the bar growing from its floor, so the two bars
+   share a baseline and their heights can be compared directly. */
+.ac-col-track {
+  align-items: flex-end;
+  background: rgba(255,255,255,0.04);
+  border-radius: 4px;
+  display: flex;
+  flex: 1;
+  min-height: 20px;
+  width: 100%;
+}
+.ac-col-bar {
+  border-radius: 4px 4px 0 0;
+  min-height: 2px;
+  transition: height 0.25s ease;
+  width: 100%;
+}
+.ac-col-bar.is-complete { background: rgba(74,222,128,0.7); border: 1px solid rgba(74,222,128,1); }
+.ac-col-bar.is-incomplete { background: rgba(251,191,36,0.7); border: 1px solid rgba(251,191,36,1); }
+.ac-col-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Status badges in the results table. */
+.ac-badge {
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.ac-badge.is-complete { background: rgba(74,222,128,0.16); color: #7ee2a8; }
+.ac-badge.is-incomplete { background: rgba(251,191,36,0.16); color: #e8bf6a; }
+.ac-badge.is-none,
+.ac-badge.is-loading { color: var(--muted); }
+.ac-badge.is-error { background: rgba(224,108,108,0.16); color: #e88; cursor: help; }
+
+/* Recordings. */
+.ac-recordings { margin-top: 8px; }
+.ac-recording-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+/* Capped so a screen recording cannot push the rest of the panel off-screen;
+   audio ignores the height and takes the width. */
+.ac-recording-media {
+  border-radius: var(--radius);
+  display: block;
+  margin-bottom: 8px;
+  max-height: 360px;
+  max-width: 100%;
+  width: 100%;
+}
+
+@media (prefers-color-scheme: light) {
+  .ac-col-track { background: #eef0f3; }
+  .ac-badge.is-complete { background: #dcf5e6; color: #14805e; }
+  .ac-badge.is-incomplete { background: #fdf0d5; color: #8a5a00; }
+  .ac-badge.is-error { background: #fbe3e1; color: #b3261e; }
+}
+
+/* Agent Copilot: header row (title left, export right) and the separator that
+   sets the independent Agent Checked toggle apart from the status filters. */
+.ac-header {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+.ac-header .h1 { margin: 0; }
+.ac-filter-sep {
+  align-self: center;
+  color: var(--border);
+  padding: 0 2px;
+}
+
+/* ── Agent Copilot: the top area ──────────────────────────
+   Ported from the source app's own layout: the filter stack on the left at its
+   natural width, the completion chart filling the space beside it.
+
+   These do NOT reuse .dq-filter-band, which is a two-column grid expecting a
+   WHEN/WHERE caption in its first 72px track. Dropping the caption to flatten
+   the bar put every control into that 72px column and crushed the page into a
+   single narrow strip - which is exactly what happened. */
+.ac-top-area {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+}
+.ac-filters {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+}
+/* Top-aligned, NOT flex-end.
+   The source aligns its rows on flex-end, which works because none of its
+   controls carry anything beneath them. The Queues control here has a hint line
+   under it, and on flex-end that hint counted as part of the group's height -
+   so the group sat lower and its dropdown floated above its neighbours. Aligning
+   on the top puts every label and every input on the same line and lets a hint
+   simply hang below its own control. */
+.ac-filter-row {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+/* The buttons on the date row have no label above them, so they need the
+   label's height to sit level with the inputs beside them. */
+.ac-filter-row > .btn { margin-top: 20px; }
+.ac-status-bar > .btn { margin-top: 0; }
+/* The actions get their own row under the status filters rather than sitting
+   inline with the quick ranges, where they read as two more presets. */
+.ac-filter-actions { gap: 6px; }
+.ac-filter-actions > .btn { margin-top: 0; }
+.ac-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ac-filter-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ac-filter-group .ms-dropdown { min-width: 190px; }
+.ac-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.ac-status-bar { gap: 6px; }
+.ac-preset { font-size: 12px; }
+.ac-preset.is-active {
+  background: rgba(59,130,246,0.22);
+  border-color: rgba(59,130,246,0.45);
+  color: #93bbfd;
+}
+
+/* The chart box: beside the filters, its own frame, a fixed height so the bars
+   have a consistent scale to be read against. */
+/* Grows with the window: flex:1 against the filter stack, no width cap, and a
+   height that follows the viewport between sensible bounds so the bars keep a
+   readable scale on a laptop and use the room on a large screen. */
+.ac-chart-wrap {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  flex: 1 1 320px;
+  height: clamp(160px, 22vh, 280px);
+  min-width: 0;
+  padding: 10px;
+}
+.ac-chart {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Below roughly a tablet the two halves stack rather than squeeze. */
+@media (max-width: 1100px) {
+  .ac-top-area { flex-direction: column; }
+  .ac-chart-wrap { align-self: stretch; width: 100%; }
+}
+
+@media (prefers-color-scheme: light) {
+  .ac-chart-wrap { background: #fafbfc; }
+  .ac-preset.is-active {
+    background: #e6effd;
+    border-color: #9dc1ff;
+    color: #1d4ed8;
+  }
+}
