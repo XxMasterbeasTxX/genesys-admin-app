@@ -89,9 +89,9 @@ const MAX_TABLE_ROWS = 500;
 
 const STATUS_FILTERS = [
   { key: "all", label: "All" },
-  { key: "complete", label: "Complete" },
-  { key: "incomplete", label: "Incomplete" },
-  { key: "summaries", label: "Has summary" },
+  { key: "complete", label: "✅ Completed" },
+  { key: "incomplete", label: "⚠️ Incomplete" },
+  { key: "summaries", label: "📝 Summaries" },
 ];
 
 /* ── Pure helpers ──────────────────────────────────────── */
@@ -168,7 +168,10 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   el.className = "card";
 
   el.innerHTML = `
-    <h1 class="h1">Dashboards — Agent Copilot — Checklists &amp; Summaries</h1>
+    <div class="ac-header">
+      <h1 class="h1">Dashboards — Agent Copilot — Checklists &amp; Summaries</h1>
+      <button class="btn btn-sm" data-c="export" hidden>⬇ Export Excel</button>
+    </div>
     <hr class="hr">
 
     <p class="page-desc">
@@ -180,7 +183,24 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     </p>
 
     <div class="dq-filter-band">
-      <span class="dq-filter-caption">WHEN</span>
+      <div class="dq-filter-fields">
+        <div class="cs-control-group">
+          <label class="cs-label">Agent Copilots</label>
+          <div data-c="copilotPicker"></div>
+        </div>
+        <div class="cs-control-group">
+          <label class="cs-label">Queues</label>
+          <div data-c="queuePicker"></div>
+          <div class="is-hint" data-c="queueHint"></div>
+        </div>
+        <div class="cs-control-group">
+          <label class="cs-label">Agents</label>
+          <div data-c="agentPicker"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dq-filter-band">
       <div class="dq-filter-fields">
         <div class="cs-control-group">
           <label class="cs-label">From</label>
@@ -198,43 +218,21 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     </div>
 
     <div class="dq-filter-band">
-      <span class="dq-filter-caption">WHERE</span>
-      <div class="dq-filter-fields">
-        <div class="cs-control-group">
-          <label class="cs-label">Copilots</label>
-          <div data-c="copilotPicker"></div>
-        </div>
-        <div class="cs-control-group">
-          <label class="cs-label">Queues (optional)</label>
-          <div data-c="queuePicker"></div>
-          <div class="is-hint" data-c="queueHint"></div>
-        </div>
-        <div class="cs-control-group">
-          <label class="cs-label">Agents (optional)</label>
-          <div data-c="agentPicker"></div>
-        </div>
-      </div>
+      <div class="dq-presets" data-c="statusFilters"></div>
     </div>
 
     <div class="cs-actions">
       <button class="btn" data-c="count">Count interactions</button>
       <button class="btn btn-primary" data-c="load" disabled>Load checklists</button>
-      <button class="btn" data-c="export" hidden>Export to Excel</button>
     </div>
 
     <div class="cs-status" data-c="status" style="display:none"></div>
 
     <div data-c="results" hidden>
       <div class="dq-range-line" data-c="rangeLine"></div>
-      <div class="dq-tiles" data-c="tiles"></div>
 
-      <div class="dq-panel">
-        <h3 class="dq-panel-title">Checklist completion</h3>
-        <p class="dq-panel-sub">
-          Counted from the rows currently shown. A checklist with no items is
-          neither complete nor incomplete and is left out of both bars.
-        </p>
-        <div class="dq-bars" data-c="bars"></div>
+      <div class="dq-panel" data-c="chartPanel" hidden>
+        <div class="ac-chart" data-c="chart"></div>
       </div>
 
       <div class="dq-panel">
@@ -243,10 +241,6 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           <span class="ac-chevron" data-c="resultsChevron">▼</span>
           <span class="dq-panel-title">Search results</span>
         </button>
-        <div class="cs-control-group">
-          <label class="cs-label">Show</label>
-          <div class="dq-presets" data-c="statusFilters"></div>
-        </div>
         <div class="is-hint">
           Tip: Right-click a row to copy the Conversation ID. Click a row to open
           its checklists, summary and recording.
@@ -876,18 +870,25 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     btn.addEventListener("click", () => {
       statusFilter = f.key;
       for (const b of $("statusFilters").children) {
-        if (b.dataset.toggle !== "agent") b.classList.toggle("is-active", b === btn);
+        if (b.tagName !== "BUTTON" || b.dataset.toggle === "agent") continue;
+        b.classList.toggle("is-active", b === btn);
       }
       drawAll();
     });
     $("statusFilters").append(btn);
   }
   {
+    const sep = document.createElement("span");
+    sep.className = "ac-filter-sep";
+    sep.setAttribute("aria-hidden", "true");
+    sep.textContent = "|";
+    $("statusFilters").append(sep);
+
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn btn-sm dq-preset";
     btn.dataset.toggle = "agent";
-    btn.textContent = "Agent checked";
+    btn.textContent = "✋ Agent Checked";
     btn.title = "Only interactions where the agent ticked at least one item themselves.";
     btn.addEventListener("click", () => {
       agentCheckedOnly = !agentCheckedOnly;
@@ -897,7 +898,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     $("statusFilters").append(btn);
   }
 
-  function drawAll() { drawTiles(); drawBars(); drawTable(); highlightRow(); }
+  function drawAll() { drawChart(); drawTable(); highlightRow(); }
 
   /* ── Showing and hiding the results table ─────────────
    *
@@ -922,76 +923,61 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     showTable($("tableArea").hidden);
   });
 
-  function tile(label, value, sub) {
-    return `
-      <div class="dq-tile">
-        <div class="dq-tile-label">${escapeHtml(label)}</div>
-        <div class="dq-tile-value">${escapeHtml(value)}</div>
-        ${sub ? `<div class="dq-tile-sub">${escapeHtml(sub)}</div>` : ""}
-      </div>`;
-  }
-
-  function drawTiles() {
-    const visible = rows.filter(passes);
-    let complete = 0, incomplete = 0, noItems = 0, withSummary = 0, agentTicked = 0;
-    let unread = 0;
-    for (const r of visible) {
-      const info = enriched.get(r.conversationId);
-      if (!info) { unread++; continue; }
-      if (info.completion === "complete") complete++;
-      else if (info.completion === "incomplete") incomplete++;
-      else if (info.checklists.length) noItems++;
-      if (info.summaries.length) withSummary++;
-      if (agentTickedAny(info.checklists)) agentTicked++;
-    }
-    const judged = complete + incomplete;
-    $("tiles").innerHTML =
-      tile("Interactions", visible.length.toLocaleString(),
-        unread ? `${unread.toLocaleString()} not yet read` : "in scope")
-      + tile("Complete", complete.toLocaleString(),
-        judged ? `${Math.round((complete / judged) * 100)}% of those judged` : "—")
-      + tile("Agent ticked", agentTicked.toLocaleString(),
-        "the agent touched the checklist")
-      + tile("With summary", withSummary.toLocaleString(),
-        noItems ? `${noItems.toLocaleString()} checklist(s) had no items` : "AI wrote one");
-  }
-
-  /** Horizontal bars, widths relative to the larger of the two. */
-  function drawBars() {
-    let complete = 0, incomplete = 0;
+  /**
+   * Complete against Incomplete, two vertical bars, as the source shows them.
+   *
+   * Counted from the rows currently shown, so it moves with the filters. A
+   * checklist carrying no items is in NEITHER bar: it is undetermined, and
+   * putting it in Incomplete would invent a failure.
+   *
+   * The source drew this with Chart.js from a CDN. This app vendors its
+   * libraries and a chart of two bars is not worth one.
+   */
+  function drawChart() {
+    let complete = 0;
+    let incomplete = 0;
     for (const r of rows.filter(passes)) {
       const info = enriched.get(r.conversationId);
       if (info?.completion === "complete") complete++;
       else if (info?.completion === "incomplete") incomplete++;
     }
+
     const max = Math.max(complete, incomplete);
-    if (!max) {
-      $("bars").innerHTML =
-        '<div class="dq-bar-empty">No checklist has been judged yet.</div>';
-      return;
-    }
-    const bar = (label, n, fill) => `
-      <div class="dq-bar-row">
-        <span class="dq-bar-label" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
-        <div class="dq-bar-track">
-          <div class="dq-bar-fill ${fill}" style="width:${Math.round((n / max) * 100)}%"></div>
+    $("chartPanel").hidden = !max;
+    if (!max) { $("chart").innerHTML = ""; return; }
+
+    const col = (label, n, cls) => `
+      <div class="ac-col">
+        <div class="ac-col-value">${n.toLocaleString()}</div>
+        <div class="ac-col-track">
+          <div class="ac-col-bar ${cls}" style="height:${Math.round((n / max) * 100)}%"></div>
         </div>
-        <span class="dq-bar-value">${n.toLocaleString()}</span>
+        <div class="ac-col-label">${escapeHtml(label)}</div>
       </div>`;
-    $("bars").innerHTML =
-      bar("Complete", complete, "dq-fill-alt") + bar("Incomplete", incomplete, "dq-fill-warn");
+
+    $("chart").innerHTML =
+      '<div class="ac-chart-title">Checklist Completion</div>'
+      + '<div class="ac-chart-plot">'
+      + col("Complete", complete, "is-complete")
+      + col("Incomplete", incomplete, "is-incomplete")
+      + "</div>";
   }
 
   function statusCell(row) {
     const info = enriched.get(row.conversationId);
-    if (!info) return '<span class="dq-muted">…</span>';
+    if (!info) return '<span class="ac-badge is-loading">…</span>';
     if (info._error) {
-      return `<span class="dq-flag" title="${escapeHtml(info._error)}">Error</span>`;
+      return `<span class="ac-badge is-error" title="${escapeHtml(info._error)}">⚠ Error</span>`;
     }
-    if (!info.checklists.length) return '<span class="dq-muted">No checklist</span>';
-    if (info.completion === "complete") return "Complete";
-    if (info.completion === "incomplete") return '<span class="dq-flag">Incomplete</span>';
-    return '<span class="dq-muted">No items</span>';
+    if (!info.checklists.length) return '<span class="ac-badge is-none">No checklist</span>';
+    if (info.completion === "complete") {
+      return '<span class="ac-badge is-complete">✅ Complete</span>';
+    }
+    if (info.completion === "incomplete") {
+      return '<span class="ac-badge is-incomplete">⚠️ Incomplete</span>';
+    }
+    // A checklist with no items - undetermined, and deliberately not Incomplete.
+    return '<span class="ac-badge is-none">No items</span>';
   }
 
   function drawTable() {
@@ -1011,9 +997,9 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     }
 
     $t.innerHTML =
-      "<thead><tr><th>Agent</th><th>Queue</th><th>Copilot</th><th>Time</th>"
-      + '<th class="is-num">Duration</th><th>Media</th><th>Checklist</th>'
-      + "<th>Wrap-up</th><th>Status</th></tr></thead>"
+      "<thead><tr><th>Time</th><th>Agent</th><th>Queue</th><th>Copilot</th>"
+      + '<th>Media</th><th class="is-num">Duration</th><th>Checklist</th>'
+      + "<th>Wrapup</th><th>Status</th></tr></thead>"
       + `<tbody>${shown.map((r) => {
         const info = enriched.get(r.conversationId);
         const names = info?.checklists?.length
@@ -1021,12 +1007,12 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           : (info ? "—" : "…");
         const seconds = r.ms != null ? Math.round(r.ms / 1000) : "";
         return `<tr data-conversation="${escapeHtml(r.conversationId || "")}">
+          <td data-value="${escapeHtml(r.when || "")}">${escapeHtml(shortDate(r.when))}</td>
           <td>${escapeHtml(agentNames(r))}</td>
           <td>${escapeHtml(queueLabel(r))}</td>
           <td>${escapeHtml(copilotLabel(r))}</td>
-          <td data-value="${escapeHtml(r.when || "")}">${escapeHtml(shortDate(r.when))}</td>
-          <td class="is-num" data-value="${seconds}">${escapeHtml(fmtDuration(r.ms))}</td>
           <td>${escapeHtml(r.media)}</td>
+          <td class="is-num" data-value="${seconds}">${escapeHtml(fmtDuration(r.ms))}</td>
           <td>${escapeHtml(names)}</td>
           <td>${escapeHtml(wrapUpLabel(r))}</td>
           <td>${statusCell(r)}</td>
@@ -1040,9 +1026,9 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     detachFilters = attachColumnFilters($("rowsWrap"), {
       sortable: true,
       compact: true,
-      numericCols: [4],
-      rangeCols: [4],
-      dateCols: [3],
+      numericCols: [5],
+      rangeCols: [5],
+      dateCols: [0],
     });
 
     if (visible.length > shown.length) {
@@ -1056,13 +1042,45 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   // One listener for the life of the page rather than one per redraw: the table
   // element survives every redraw, so re-binding inside drawTable would stack a
   // fresh copy on each one.
+  /**
+   * Copy without assuming the async Clipboard API is there.
+   *
+   * The bug this replaces: `navigator.clipboard?.writeText(id).then(...)`. The
+   * optional chain guards the METHOD, not the call's result, so on any browser
+   * or context without `navigator.clipboard` it threw a TypeError - AFTER
+   * preventDefault had already suppressed the browser's own menu. The gesture
+   * did nothing and reported nothing. Same guard and textarea fallback as
+   * Interactions > Search and Evaluation Gaps.
+   */
+  function copyFallback(text) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
+
+  function copyConversationId(id) {
+    if (!id) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(id).catch(() => copyFallback(id));
+      } else {
+        copyFallback(id);
+      }
+      setStatus(`Copied: ${id}`, "success");
+    } catch {
+      setStatus("Could not copy to clipboard.", "error");
+    }
+  }
+
   $("rows").addEventListener("contextmenu", (e) => {
     const id = e.target?.closest?.("tbody tr")?.dataset?.conversation;
     if (!id) return;
     e.preventDefault();
-    navigator.clipboard?.writeText(id).then(
-      () => setStatus(`Conversation ID copied: ${id}`, "success"),
-      () => setStatus("Could not copy to clipboard.", "error"));
+    copyConversationId(id);
   });
 
   $("rows").addEventListener("click", (e) => {
@@ -1131,31 +1149,36 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     const head = document.createElement("div");
     head.className = "dq-panel-head";
     head.innerHTML =
-      `<h3 class="dq-panel-title">Interaction detail</h3>`
+      `<h3 class="dq-panel-title">Interaction Detail</h3>`
       + `<div class="dq-panel-sub">${escapeHtml(convId)}</div>`;
     const close = document.createElement("button");
     close.type = "button";
     close.className = "btn btn-sm";
-    close.textContent = "Close";
+    close.textContent = "✕";
+    close.title = "Close";
     close.addEventListener("click", closeDetail);
     head.append(close);
     $p.append(head);
 
-    if (!info) {
-      const p = document.createElement("p");
-      p.className = "dq-panel-sub";
-      p.textContent = "This interaction has not been read yet.";
-      $p.append(p);
+    // Nothing to show yet, or nothing to show at all - the source says so and
+    // stops here rather than opening three empty sections.
+    if (!info || (!info.checklists.length && !info.summaries.length)) {
+      const msg = document.createElement("p");
+      msg.className = "dq-panel-sub";
+      msg.textContent = info
+        ? "No checklist or summary data for this interaction."
+        : "Still loading data" + "\u2026";
+      $p.append(msg);
+      if (info?._error) {
+        const err = document.createElement("p");
+        err.className = "dq-panel-sub";
+        err.textContent = `Could not read this interaction: ${info._error}`;
+        $p.append(err);
+      }
       return;
     }
-    if (info._error) {
-      const p = document.createElement("p");
-      p.className = "dq-panel-sub";
-      p.textContent = `Could not read this interaction: ${info._error}`;
-      $p.append(p);
-    }
 
-    $p.append(collapsible("Recording", recordingSection(convId), true));
+    $p.append(collapsible("🎧 Recording", recordingSection(convId), true));
     $p.append(collapsible("Checklists", checklistSection(info.checklists), true));
     // Only when there is one, and titled by count, as the source does.
     if (info.summaries.length) {
@@ -1171,47 +1194,84 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   /**
    * Recordings, fetched only when asked for.
    *
-   * Nothing here loads with the page: a recording stub is one call per
-   * conversation and the audio itself is far heavier, so both wait for a click.
+   * WHAT COUNTS AS USABLE: an id, and a `fileState` that is not DELETED. That
+   * is all, and the "and" I added here before was a bug that hid every
+   * recording in the org.
+   *
+   * The source tests `!r.deletedDate`. No such field exists - the schema calls
+   * it `deleteDate` - so that test never excludes anything and the source is
+   * effectively filtering on `fileState` alone. Correcting the spelling turned
+   * a harmless no-op into a real exclusion: `deleteDate` is the SCHEDULED
+   * deletion date, which a retention policy sets on essentially every
+   * recording, so the corrected version dropped recordings that plainly exist.
+   * The typo was load-bearing. Filtering on fileState alone is the behaviour
+   * that works.
    */
   function recordingSection(convId) {
     const wrap = document.createElement("div");
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn btn-sm";
-    btn.textContent = "Load recordings";
+    const loadBtn = document.createElement("button");
+    loadBtn.type = "button";
+    loadBtn.className = "btn btn-sm";
+    loadBtn.textContent = "🎧 Load Recordings";
     const area = document.createElement("div");
-    area.className = "dq-recordings";
-    wrap.append(btn, area);
+    area.className = "ac-recordings";
+    wrap.append(loadBtn, area);
 
-    btn.addEventListener("click", async () => {
+    const fetchStubs = async () => {
       const org = currentOrg();
-      if (!org) return;
-      btn.disabled = true;
-      btn.textContent = "Loading…";
+      if (!org) return [];
+      let stubs;
       try {
-        let stubs = await fetchConversationRecordings(api, org.id, convId);
-        // Genesys may not have indexed a just-ended call yet.
-        for (let i = 0; !stubs.length && i < 2; i++) {
-          btn.textContent = "Retrying…";
-          await new Promise((r) => setTimeout(r, 3000));
-          stubs = await fetchConversationRecordings(api, org.id, convId);
-        }
-        // `deleteDate` is the real field name. The app this came from tested
-        // `deletedDate`, which never matches anything.
-        const usable = stubs.filter(
-          (r) => r.id && !r.deleteDate && r.fileState !== "DELETED" && r.fileState !== "ERROR");
+        stubs = await fetchConversationRecordings(api, org.id, convId);
+      } catch (e) {
+        // 404 means the conversation has no recordings - ordinary, not an error.
+        if (e?.status === 404 || /\b404\b/.test(e?.message || "")) return [];
+        throw e;
+      }
+      return (stubs || []).filter((r) => r.id && r.fileState !== "DELETED");
+    };
 
-        btn.remove();
-        if (!usable.length) {
-          area.innerHTML = '<span class="dq-muted">No recording for this interaction.</span>';
+    loadBtn.addEventListener("click", async () => {
+      if (loadBtn.dataset.loaded) return;
+      loadBtn.disabled = true;
+      loadBtn.textContent = "⏳ Loading…";
+      try {
+        // Genesys may not have indexed a recording that has only just ended.
+        let available = await fetchStubs();
+        for (let retry = 0; !available.length && retry < 2; retry++) {
+          loadBtn.textContent = "⏳ Retrying…";
+          await new Promise((r) => setTimeout(r, 3000));
+          available = await fetchStubs();
+        }
+        loadBtn.dataset.loaded = "1";
+
+        if (!available.length) {
+          loadBtn.remove();
+          area.innerHTML =
+            '<span class="dq-muted">No recordings for this interaction.</span>';
           return;
         }
-        usable.forEach((stub, i) => {
-          area.append(recordingPlayer(convId, stub, usable.length > 1 ? `Part ${i + 1}` : "Play recording"));
+
+        loadBtn.remove();
+        // Every button on one row, the players stacked beneath - so opening a
+        // second part does not shift the buttons out from under the cursor.
+        const btnRow = document.createElement("div");
+        btnRow.className = "ac-recording-btns";
+        const playerArea = document.createElement("div");
+        const multi = available.length > 1;
+
+        available.forEach((stub, i) => {
+          const label = multi
+            ? "🎧 Part " + (i + 1)
+            : "🎧 Play Recording";
+          const slot = document.createElement("div");
+          slot.hidden = true;
+          btnRow.append(recordingButton(convId, stub, label, slot));
+          playerArea.append(slot);
         });
+        area.append(btnRow, playerArea);
       } catch (e) {
-        btn.remove();
+        loadBtn.remove();
         area.innerHTML =
           `<span class="dq-flag">Could not load recordings: ${escapeHtml(e.message)}</span>`;
       }
@@ -1220,67 +1280,77 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     return wrap;
   }
 
-  /** One recording: a button that fetches, transcodes if needed, then plays. */
-  function recordingPlayer(convId, stub, label) {
-    const row = document.createElement("div");
-    row.className = "dq-recording";
+  /**
+   * One recording: fetch on first click, then toggle.
+   *
+   * Asking for a format is what triggers transcoding, so the first response for
+   * a long call often carries no `mediaUris` at all and has to be repeated.
+   * Five attempts, three seconds apart, as the source does.
+   */
+  function recordingButton(convId, stub, label, slot) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn btn-sm";
     btn.textContent = label;
-    const slot = document.createElement("div");
-    slot.hidden = true;
-    row.append(btn, slot);
 
-    // The Screen enum lives on mediaSubtype; `media` is a free-text field and
-    // testing it is how the source app got screen recordings wrong.
+    // The Screen enum lives on mediaSubtype; `media` is free text. Both are
+    // tested, because only an actual screen recording can match either.
     const isScreen = (stub.mediaSubtype || "").toLowerCase() === "screen"
-      || (stub.media || "").toLowerCase() === "screen";
+      || (stub.media || stub.mediaType || "").toLowerCase() === "screen";
 
     btn.addEventListener("click", async () => {
-      if (slot.dataset.loaded) {           // already fetched — just toggle
+      if (slot.dataset.loaded) {
         slot.hidden = !slot.hidden;
         btn.classList.toggle("is-active", !slot.hidden);
         return;
       }
       if (stub.fileState === "ARCHIVED") {
-        slot.innerHTML = '<span class="dq-muted">Archived — not directly playable.</span>';
+        slot.innerHTML =
+          '<span class="dq-muted">Archived — not directly playable.</span>';
         slot.dataset.loaded = "1";
         slot.hidden = false;
+        btn.classList.add("is-active");
         return;
       }
 
       const org = currentOrg();
       if (!org) return;
       btn.disabled = true;
-      btn.textContent = "Transcoding…";
+      btn.textContent = "⏳ Transcoding…";
       const format = isScreen ? "WEBM" : "MP3";
       try {
         let uri = null;
-        for (let attempt = 0; attempt < 5 && !uri; attempt++) {
-          const rec = await fetchConversationRecording(
-            api, org.id, convId, stub.id, format);
+        let rec = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          rec = await fetchConversationRecording(api, org.id, convId, stub.id, format);
+          // The asked-for format first, then anything playable that came back.
           uri = rec?.mediaUris?.[format]?.mediaUri
-            || Object.values(rec?.mediaUris || {})[0]?.mediaUri
-            || null;
+            ?? rec?.mediaUris?.MP3?.mediaUri
+            ?? rec?.mediaUris?.WEBM?.mediaUri
+            ?? rec?.mediaUris?.WAV?.mediaUri
+            ?? rec?.mediaUri
+            ?? Object.values(rec?.mediaUris ?? {})[0]?.mediaUri
+            ?? null;
           if (uri) break;
-          // The server's own estimate beats a fixed delay: a long call can take
-          // far more than three seconds, a short one far less.
-          const wait = Math.min(Math.max(rec?.estimatedTranscodeTimeMs || 3000, 1000), 15000);
-          await new Promise((r) => setTimeout(r, wait));
+          if (attempt < 4) await new Promise((r) => setTimeout(r, 3000));
         }
+
         if (!uri) {
           slot.innerHTML =
-            '<span class="dq-muted">Not available yet — still processing.</span>';
+            '<span class="dq-muted">Recording not yet available '
+            + "(may still be processing).</span>";
         } else {
-          const media = document.createElement(isScreen ? "video" : "audio");
+          const screen = isScreen
+            || (rec?.media || rec?.mediaType || "").toLowerCase() === "screen";
+          const media = document.createElement(screen ? "video" : "audio");
           media.controls = true;
           media.src = uri;
-          media.className = "dq-recording-media";
+          media.className = "ac-recording-media";
           slot.replaceChildren(media);
         }
       } catch (e) {
-        slot.innerHTML = `<span class="dq-flag">Could not load: ${escapeHtml(e.message)}</span>`;
+        slot.innerHTML =
+          `<span class="dq-flag">Could not load: ${escapeHtml(e.message || "Unknown error")}</span>`;
       }
       slot.dataset.loaded = "1";
       slot.hidden = false;
@@ -1289,10 +1359,9 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       btn.classList.add("is-active");
     });
 
-    return row;
+    return btn;
   }
 
-  /** Checklist items, agent tick and AI tick shown apart. */
   /**
    * Checklist items, rendered as the source app renders them.
    *

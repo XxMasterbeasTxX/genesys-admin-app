@@ -6258,22 +6258,6 @@ a.fr-shipped:hover { text-decoration: underline; }
 }
 .dq-panel-block:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
 
-/* Recording ------------------------------------------------------- */
-.dq-recordings {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-}
-.dq-recording { display: flex; flex-direction: column; gap: 6px; }
-/* Capped so a screen recording cannot push the rest of the panel off-screen;
-   audio ignores the height and takes the width. */
-.dq-recording-media {
-  border-radius: var(--radius);
-  max-height: 360px;
-  max-width: 100%;
-  width: 100%;
-}
 
 /* ── Agent Copilot: collapsibles and the open row ─────────────────
    Opening an interaction collapses the results table, so both the table
@@ -6412,4 +6396,111 @@ a.fr-shipped:hover { text-decoration: underline; }
   .ac-tick--yes { color: #14805e; }
   .ac-tick--no { color: #b3261e; }
   .ac-edited { color: #8a5a00; }
+}
+
+/* ── Agent Copilot: completion chart, badges, recordings ────────
+   Two vertical bars, as the source app drew them with Chart.js. Built in CSS
+   because this app vendors its libraries and two bars do not earn one. */
+.ac-chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  text-align: center;
+}
+.ac-chart-plot {
+  align-items: flex-end;
+  display: flex;
+  gap: 48px;
+  justify-content: center;
+  padding: 0 12px;
+}
+.ac-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 84px;
+}
+.ac-col-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+/* A fixed-height track with the bar growing from its floor, so the two bars
+   share a baseline and their heights can be compared directly. */
+.ac-col-track {
+  align-items: flex-end;
+  background: rgba(255,255,255,0.04);
+  border-radius: 4px;
+  display: flex;
+  height: 140px;
+  width: 100%;
+}
+.ac-col-bar {
+  border-radius: 4px 4px 0 0;
+  min-height: 2px;
+  transition: height 0.25s ease;
+  width: 100%;
+}
+.ac-col-bar.is-complete { background: rgba(74,222,128,0.7); border: 1px solid rgba(74,222,128,1); }
+.ac-col-bar.is-incomplete { background: rgba(251,191,36,0.7); border: 1px solid rgba(251,191,36,1); }
+.ac-col-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Status badges in the results table. */
+.ac-badge {
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.ac-badge.is-complete { background: rgba(74,222,128,0.16); color: #7ee2a8; }
+.ac-badge.is-incomplete { background: rgba(251,191,36,0.16); color: #e8bf6a; }
+.ac-badge.is-none,
+.ac-badge.is-loading { color: var(--muted); }
+.ac-badge.is-error { background: rgba(224,108,108,0.16); color: #e88; cursor: help; }
+
+/* Recordings. */
+.ac-recordings { margin-top: 8px; }
+.ac-recording-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+/* Capped so a screen recording cannot push the rest of the panel off-screen;
+   audio ignores the height and takes the width. */
+.ac-recording-media {
+  border-radius: var(--radius);
+  display: block;
+  margin-bottom: 8px;
+  max-height: 360px;
+  max-width: 100%;
+  width: 100%;
+}
+
+@media (prefers-color-scheme: light) {
+  .ac-col-track { background: #eef0f3; }
+  .ac-badge.is-complete { background: #dcf5e6; color: #14805e; }
+  .ac-badge.is-incomplete { background: #fdf0d5; color: #8a5a00; }
+  .ac-badge.is-error { background: #fbe3e1; color: #b3261e; }
+}
+
+/* Agent Copilot: header row (title left, export right) and the separator that
+   sets the independent Agent Checked toggle apart from the status filters. */
+.ac-header {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+.ac-header .h1 { margin: 0; }
+.ac-filter-sep {
+  align-self: center;
+  color: var(--border);
+  padding: 0 2px;
 }
