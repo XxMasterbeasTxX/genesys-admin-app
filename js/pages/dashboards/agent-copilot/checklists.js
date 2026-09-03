@@ -61,18 +61,32 @@ const MEDIA_KEYS = [
 const PURPOSE_AGENT = "agent";
 const TICKED = "Ticked";
 
-/** How many pages of 100 conversations to walk before stopping and saying so. */
-const MAX_PAGES = 40;
+/**
+ * How many pages of 100 conversations to walk before stopping and saying so.
+ *
+ * The source's ceiling, and the only one it has: 50 pages of 100. Past it the
+ * result set is reported as partial rather than presented as complete.
+ */
+const MAX_PAGES = 50;
 
 /**
- * How many conversations to enrich in one run, and how many at once.
+ * How many conversations to enrich at once.
  *
- * Enrichment is 3-4 calls per conversation and cannot be aggregated - there is
- * no checklist metric anywhere in the API - so this is the real limit on the
- * page. Past the cap the remaining rows say "not loaded" rather than being
- * quietly presented as having no checklist.
+ * A SIZE, NOT A BUDGET. Everything that was read gets enriched, however long
+ * that takes - the source has no enrichment ceiling and a user asking about
+ * 5,000 interactions is entitled to an answer about 5,000 interactions.
+ *
+ * An earlier revision capped this at 400. That was mine, not the source's, and
+ * it silently turned "here is your answer" into "here is the first tenth of
+ * your answer". Enrichment is 3-4 calls per conversation and cannot be
+ * aggregated - there is no checklist metric anywhere in the API - so a large
+ * range genuinely takes a long time. The Count step states the cost before a
+ * single request is spent; deciding it is too expensive is the reader's call to
+ * make, not this page's to make for them.
+ *
+ * Five at a time matches the source's own concurrency, and each one runs its
+ * three or four calls in sequence - so five requests are in flight, not twenty.
  */
-const MAX_ENRICH = 400;
 const ENRICH_CONCURRENCY = 5;
 
 /**
@@ -155,6 +169,21 @@ function shortDate(iso) {
     year: "numeric", month: "short", day: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
+}
+
+/**
+ * Roughly how long enriching `n` conversations will take, in words.
+ *
+ * Genesys rate-limits an org at about 300 requests a minute and enrichment is
+ * three to four calls each, so the wall clock follows the request count rather
+ * than the concurrency. Deliberately vague - it is a warning, not a promise.
+ */
+function estimateMinutes(n) {
+  const mins = Math.round((n * 3.5) / 300);
+  if (mins < 1) return "under a minute";
+  if (mins < 60) return `about ${mins} minute${mins === 1 ? "" : "s"}`;
+  const hours = Math.round((mins / 60) * 10) / 10;
+  return `about ${hours} hour${hours === 1 ? "" : "s"} — consider a shorter range`;
 }
 
 /** The text of a summary field, which may be a string or a wrapped object. */
@@ -565,7 +594,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
         return;
       }
       const willRead = total == null ? null : Math.min(total, MAX_PAGES * 100);
-      const willEnrich = willRead == null ? null : Math.min(willRead, MAX_ENRICH);
+      const willEnrich = willRead;
       $("load").disabled = false;
       setStatus(
         total == null
@@ -576,7 +605,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
             + `Loading reads ${willRead.toLocaleString()} and fetches checklists for `
             + `${willEnrich.toLocaleString()} of them — roughly `
             + `${(willEnrich * 3).toLocaleString()}–${(willEnrich * 4).toLocaleString()} `
-            + "requests, so it takes a few minutes.");
+            + `requests, about ${estimateMinutes(willEnrich)}.`);
     } catch (e) {
       setStatus(`Could not count interactions: ${e.message}`, "error");
     }
@@ -781,7 +810,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
    * as answers arrive, so the page is usable throughout rather than after.
    */
   async function enrichAll(orgId, signal, ticket) {
-    const todo = rows.slice(0, MAX_ENRICH);
+    const todo = rows;
     let done = 0;
     let withChecklist = 0;
     let failed = 0;
@@ -812,10 +841,6 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     let msg = `${rows.length.toLocaleString()} interaction(s) — `
       + `${withChecklist.toLocaleString()} with a checklist`;
     if (failed) msg += `, ${failed.toLocaleString()} could not be read`;
-    if (rows.length > todo.length) {
-      msg += `. Checklists were fetched for the first ${todo.length.toLocaleString()}; `
-        + "narrow the range to cover the rest";
-    }
     if (truncated) msg += ". The result set is partial";
     setStatus(msg + ".", failed ? "" : "success");
     $("export").hidden = !withChecklist;

@@ -311,12 +311,19 @@ calls, which at Genesys's rate limit is **5–7 minutes**.
 
 Handling:
 
-- The count and the estimate are shown **before** anything is spent (§6.2).
+- The count and the estimate are shown **before** anything is spent (§6.2), and
+  the estimate names a duration rather than a vague "few minutes".
 - The table renders from the analytics rows immediately; enrichment fills the
   Checklist and Status columns progressively, so the page is usable throughout.
-- Bounded concurrency, following `RECORDING_CONCURRENCY` on Evaluation Gaps.
-- A hard cap on conversations enriched per run; past it the page says the rest
-  were not enriched rather than inventing a verdict.
+- Five conversations at a time, each running its three or four calls in
+  sequence — the source's own concurrency.
+- **No enrichment ceiling.** Everything read gets enriched, as in the source. An
+  earlier revision capped it at 400, which was not in the source and silently
+  turned "here is your answer" into "here is the first tenth of it". Someone
+  asking about 5,000 interactions is entitled to an answer about 5,000
+  interactions; the cost is stated up front and spending it is their call.
+- The only ceiling is the read: 50 pages of 100, the source's own limit, past
+  which the result set is reported as partial.
 - A new search aborts in-flight enrichment through an `AbortSignal`, and a batch
   already in flight checks `signal.aborted` **before writing** — otherwise it
   lands in the next search's state and shows stale checklists for any

@@ -178,8 +178,9 @@ Remove one at a time. The page must lose that band and no more.
 | 12.1 | ★ Load, then start a **second load** before the first finishes | No stale rows. Checklists from the old run must not appear against the new one, including for conversations both runs share | | |
 | 12.2 | ★ Load, then navigate away mid-enrichment | Requests **stop**. Watch the network tab — nothing keeps firing after the page has gone | | |
 | 12.3 | Load, then switch customer org | Run aborts; the page resets to needing a count | | |
-| 12.4 | A range with more than 400 interactions | Checklists fetched for the first 400; the status line says the rest were not fetched. Remaining rows read "…", **never** "No checklist" | | |
-| 12.5 | More than 4,000 interactions | Reads the first 4,000 and says the set is partial | | |
+| 12.4 | ★ A large range (1,000+) | **Every** interaction read is enriched — there is no ceiling, as in the source. It takes as long as it takes; the table stays usable and the status line counts up | | |
+| 12.5 | More than 5,000 interactions | Reads the first 5,000 (50 pages, the source's ceiling) and says the set is partial | | |
+| 12.5a | Press **Count interactions** on a large range | The estimate names a duration — "about 29 minutes", and for anything over an hour it suggests a shorter range. Deciding it is too expensive is the reader's call, made before a request is spent | | |
 | 12.6 | Watch request pacing during enrichment | A few at a time, not a flood — no 429s | | |
 
 ## 13. Cross-checks against Genesys ★
