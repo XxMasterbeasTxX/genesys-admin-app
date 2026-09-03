@@ -35,6 +35,9 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 1.5b | Pick several programs, none covering a queue | Same message, worded for several | | |
 | 1.6 | Watch the network tab on open | One call: the programs. Mappings follow when you pick a program; everything else waits for Find gaps | | |
 | 1.7 | Only short quick-ranges are offered | Today, Yesterday, This week, Last Week. No 12-month button, because that is a walk nobody should start by accident | | |
+| 1.8 | Click a quick range | The button you clicked is **marked as selected**, as on the other dashboards | | |
+| 1.9 | ★ With results already on screen, click a quick range or change any filter | The results **stay**. They were true when fetched and the range line says which period they cover. Find gaps disables, because the count is now stale | | |
+| 1.10 | ★ With results on screen, switch customer org | The results **clear**. One org's interactions must never sit under another org's name | | |
 
 ## 2. Counting before spending ★
 

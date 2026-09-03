@@ -272,7 +272,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       if (!r) return;
       $("from").value = r.from;
       $("to").value = r.to;
-      for (const b of $("presets").children) b.classList.toggle("is-on", b === btn);
+      for (const b of $("presets").children) b.classList.toggle("is-active", b === btn);
       invalidate();
     });
     $("presets").append(btn);
@@ -289,11 +289,22 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   $("from").addEventListener("change", invalidate);
   $("to").addEventListener("change", invalidate);
 
-  /** Any filter change invalidates a count, because the count was of the old scope. */
+  /**
+   * A filter changed, so the count no longer describes the selection.
+   *
+   * Deliberately does NOT clear the results. They were true when they were
+   * fetched and the range line above them says which period they cover, so
+   * throwing them away on the way to setting up the next query loses work the
+   * reader may still be reading. Only the count and the button that spends it
+   * are invalidated.
+   *
+   * The ONE case that must still clear is a change of org - handled where that
+   * happens, because showing one customer's interactions under another
+   * customer's name is a different kind of wrong.
+   */
   function invalidate() {
     counted = null;
     $("find").disabled = true;
-    $results.hidden = true;
   }
 
   // ── Loading, in two stages ──────────────────────────
@@ -515,6 +526,9 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     mappingsOrgId = null;
     programs = [];
     invalidate();
+    // The results belong to the org that was selected when they were fetched.
+    // invalidate() no longer clears them, so this must.
+    $results.hidden = true;
     primePrograms();
   });
   el.__destroy = () => {
