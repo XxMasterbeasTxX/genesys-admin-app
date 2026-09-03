@@ -168,7 +168,8 @@ Remove one at a time. The page must lose that band and no more.
 | 11.6 | `conversation:summary:view` | Summary section says so; checklists unaffected | | |
 | 11.7 | `recording:recording:view` | Recording section says so; the rest is unaffected | | |
 | 11.8 | `routing:wrapupCode:view` | Wrap-up column falls back to ids rather than blanking | | |
-| 11.9 | ★ Any of the above | A missing value is never reported as a zero | | |
+| 11.9 | ★ Any of the above | A missing value is never reported as a zero. The band says what it wants **before** you press its control, not after it fails | | |
+| 11.10 | ★ Customer mode with a `dashboards.*` entitlement and `ENFORCE_ENTITLEMENT_ALLOWLIST=true` | Every endpoint the page uses is allowed by the proxy. `/assistants` was unmapped and failed closed, which made the page dead rather than degraded | | |
 
 ## 12. Cost, cancellation and teardown ★
 

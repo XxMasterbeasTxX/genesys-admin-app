@@ -191,8 +191,24 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // themselves (conversation:agentchecklist:view, which is its OWN permission
   // and not the conversation one), summaries, recordings and wrap-up names.
   // Design §8.
-  "dashboards.agentCopilot.checklists": { view: { all: ["assistants:assistant:view",
-                                                        "analytics:conversationDetail:view"] } },
+  // The gate is both, because neither substitutes for the other: without the
+  // assistant list there is no scope to choose, and without the conversation
+  // rows there are no interactions to describe.
+  //
+  // The rest are declared as ACTIONS so each band can say what it wants before
+  // it fails rather than after. Checklists are the page's substance and are
+  // `all`: the checklist call needs its own permission AND the conversation
+  // read that finds the communications to call it on. Design section 8.
+  "dashboards.agentCopilot.checklists": {
+    view:       { all: ["assistants:assistant:view",
+                        "analytics:conversationDetail:view"] },
+    cascade:    ["assistants:queue:view"],
+    checklists: { all: ["conversation:agentchecklist:view",
+                        "conversation:communication:view"] },
+    summaries:  ["conversation:summary:view"],
+    recordings: ["recording:recording:view", "recording:recordingSegment:view",
+                 "recording:screenRecording:view"],
+  },
 
   // ── Deployment ───────────────────────────────────────
   "deployment.test.testCases": { view: ["architect:flow:view"] },

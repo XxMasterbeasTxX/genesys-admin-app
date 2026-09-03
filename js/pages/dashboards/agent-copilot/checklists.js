@@ -271,6 +271,20 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
   const currentOrg = () => orgContext?.getDetails?.() || null;
 
+  /**
+   * What this session may read, band by band.
+   *
+   * The page gate (assistants + conversation detail) is enforced before render;
+   * these are the finer actions, so a band that cannot work says what it wants
+   * INSTEAD of offering a control that fails when pressed. In customer mode
+   * `can` is always true - Genesys enforces on the forwarded token - so the
+   * runtime handling underneath still has to stand on its own.
+   */
+  const may = (action) =>
+    (access && typeof access.can === "function")
+      ? access.can("dashboards.agentCopilot.checklists", action)
+      : true;
+
   // ── State ───────────────────────────────────────────
   let assistantName = new Map();   // assistantId → name
   let queueName = new Map();       // queueId → name
@@ -401,6 +415,14 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       agentPicker.setItems([]);
       agentPicker.setEnabled(false);
       $("queueHint").textContent = "";
+      return;
+    }
+
+    if (!may("cascade")) {
+      queuePicker.setPlaceholder("Queues unavailable");
+      $("queueHint").textContent =
+        "Queue assignments need assistants:queue:view. Searching by copilot "
+        + "alone still works, and covers the same interactions.";
       return;
     }
 
@@ -825,6 +847,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
       let summaries = [];
       try {
+        if (!may("summaries")) throw new Error("skip");
         const res = await fetchConversationSummaries(api, orgId, convId);
         summaries = parseSummaries(res);
         for (const s of summaries) {
@@ -1236,6 +1259,11 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
    */
   function recordingSection(convId) {
     const wrap = document.createElement("div");
+    if (!may("recordings")) {
+      wrap.innerHTML =
+        '<span class="dq-muted">Recordings need recording:recording:view.</span>';
+      return wrap;
+    }
     const loadBtn = document.createElement("button");
     loadBtn.type = "button";
     loadBtn.className = "btn btn-sm";
@@ -1400,8 +1428,12 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   function checklistSection(checklists) {
     const wrap = document.createElement("div");
     if (!checklists.length) {
-      wrap.insertAdjacentHTML("beforeend",
-        '<span class="dq-muted">No checklist ran on this interaction.</span>');
+      // "None ran" and "you may not see them" are different answers, and
+      // reporting the second as the first would be a blank shown as a zero.
+      wrap.insertAdjacentHTML("beforeend", may("checklists")
+        ? '<span class="dq-muted">No checklist ran on this interaction.</span>'
+        : '<span class="dq-muted">Checklists need conversation:agentchecklist:view '
+          + "and conversation:communication:view.</span>");
       return wrap;
     }
 
@@ -1480,8 +1512,9 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   function summarySection(summaries) {
     const wrap = document.createElement("div");
     if (!summaries.length) {
-      wrap.insertAdjacentHTML("beforeend",
-        '<span class="dq-muted">No AI summary was written for this interaction.</span>');
+      wrap.insertAdjacentHTML("beforeend", may("summaries")
+        ? '<span class="dq-muted">No AI summary was written for this interaction.</span>'
+        : '<span class="dq-muted">Summaries need conversation:summary:view.</span>');
       return wrap;
     }
 
