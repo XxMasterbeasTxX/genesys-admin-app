@@ -1341,6 +1341,268 @@ export async function fetchAllExternalContacts(api, orgId, opts = {}) {
 
 
 // ─────────────────────────────────────────────────────────────────────
+// Quality / Evaluations
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch the published evaluation forms.
+ *
+ * Published rather than all: an unpublished form has never scored anything, so
+ * offering one as a filter can only ever return nothing.
+ *
+ * Each entry carries both `id` (this VERSION of the form) and `contextId`
+ * (shared across every version). Filters key on `contextId` — see the note in
+ * js/lib/evaluationQuery.js on why filtering by version is the wrong default.
+ */
+export async function fetchAllEvaluationForms(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/quality/publishedforms/evaluations", opts);
+}
+
+/**
+ * The latest published version of each evaluation form, by CONTEXT id.
+ *
+ * The aggregate and search domains group by `questionGroupId`, which is an id
+ * and not a name. This is the only route from a form context — which is what the
+ * filter bar carries — to the question groups inside it.
+ */
+export async function fetchEvaluationFormsByContext(api, orgId, contextIds) {
+  if (!contextIds?.length) return [];
+  const resp = await api.proxyGenesys(orgId, "GET",
+    "/api/v2/quality/forms/evaluations/bulk/contexts",
+    { query: { contextId: contextIds.join(",") } });
+  return Array.isArray(resp) ? resp : (resp?.entities || []);
+}
+
+/**
+ * Every revision of an evaluation form.
+ *
+ * A question group has a different `id` in every version of its form but keeps
+ * one `contextId`, so covering all versions means collecting the ids from each
+ * revision and merging the results back together on the context.
+ */
+export async function fetchEvaluationFormVersions(api, orgId, formId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    `/api/v2/quality/forms/evaluations/${formId}/versions`, opts);
+}
+
+/**
+ * One evaluation form, in full.
+ *
+ * The list and versions endpoints deliberately omit `questionGroups` ("the
+ * detailed information about evaluation form, is not returned"), so a caller
+ * that needs the groups of a specific version has to ask for that version by
+ * id. This is that call.
+ */
+export async function fetchEvaluationForm(api, orgId, formId) {
+  return api.proxyGenesys(orgId, "GET", `/api/v2/quality/forms/evaluations/${formId}`);
+}
+
+/** Query the evaluation aggregate domain. */
+export async function queryEvaluationAggregates(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/analytics/evaluations/aggregates/query", { body });
+}
+
+/** Search evaluations — rows, aggregations, or both. Max 3-month range. */
+export async function searchEvaluations(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST", "/api/v2/quality/evaluations/search", { body });
+}
+
+/** Per-agent evaluation activity: counts, average and extreme scores. */
+export async function fetchAgentActivity(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/quality/agents/activity", opts);
+}
+
+/**
+ * Roles that carry a given permission string.
+ *
+ * `GET /api/v2/authorization/roles?permission=…` filters server-side, which is
+ * how Roles › Permissions vs. Users already answers this question.
+ */
+export async function fetchRolesWithPermission(api, orgId, permission, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/authorization/roles", {
+    ...opts,
+    query: { ...(opts.query || {}), permission },
+  });
+}
+
+/** Per-evaluator activity: assigned/started/completed, evaluations and calibrations. */
+export async function fetchEvaluatorActivity(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/quality/evaluators/activity", opts);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Quality automation — programs, scoring rules, transcription
+// ─────────────────────────────────────────────────────────────────────
+//
+// An auto-evaluation exists only if a Speech & Text Analytics PROGRAM covers
+// the conversation and an Agent Scoring Rule on that program fires. A media
+// retention policy cannot do it: its conditions carry queues and no flows, and
+// `submissionType: Automated` lives on the scoring rule. See design §13.2.
+
+/** Every Speech & Text Analytics program. */
+export async function fetchPrograms(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/speechandtextanalytics/programs", opts);
+}
+
+/**
+ * Programs that exist but have never been published.
+ *
+ * An unpublished program does nothing at all, silently — which is exactly the
+ * kind of thing this page exists to surface.
+ */
+export async function fetchUnpublishedPrograms(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/speechandtextanalytics/programs/unpublished", opts);
+}
+
+/**
+ * Every program's queue and flow mappings.
+ *
+ * Returns `TopicsDefinitionsProgramMappings[]`, each
+ * `{ program: {id, name}, queues: [{id}], flows: [{id}] }`.
+ *
+ * NOTE THE SHAPE. The PUT body for this resource is `{queueIds, flowIds}` and
+ * the GET response is `{queues, flows}` — entity refs, not id strings. Reading
+ * the request definition and assuming the response matched is what made this
+ * page report "0 queues" for a program with nine of them.
+ *
+ * Paged by `nextPage`/`nextUri` rather than `pageNumber` or `cursor`, so
+ * neither shared pager fits and it walks the pages itself.
+ */
+export async function fetchProgramMappings(api, orgId, opts = {}) {
+  const { pageSize = 100 } = opts;
+  const path = "/api/v2/speechandtextanalytics/programs/mappings";
+  const all = [];
+  const seen = new Set();
+  let nextPage = null;
+
+  while (true) {
+    const query = { pageSize: String(pageSize) };
+    if (nextPage) query.nextPage = nextPage;
+    const resp = await api.proxyGenesys(orgId, "GET", path, { query });
+    all.push(...(resp?.entities || []));
+
+    // The token is lifted out of `nextUri` rather than derived, because its
+    // format is not documented and is not ours to reconstruct.
+    const m = /[?&]nextPage=([^&]+)/.exec(resp?.nextUri || "");
+    if (!m) break;
+    const token = decodeURIComponent(m[1]);
+    // A server that keeps handing back the same token would otherwise spin
+    // forever against a customer org.
+    if (seen.has(token)) break;
+    seen.add(token);
+    nextPage = token;
+  }
+
+  return all;
+}
+
+/**
+ * The Agent Scoring Rules for one program.
+ *
+ * There is no cross-program listing, so callers fan out over the program list.
+ * Programs are few, so that is cheap.
+ */
+export async function fetchAgentScoringRules(api, orgId, programId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    `/api/v2/quality/programs/${programId}/agentscoringrules`, opts);
+}
+
+/**
+ * Transcript aggregates.
+ *
+ * Grouped by `conversationId` this returns the set of conversations that were
+ * actually analysed, which is how Evaluation Gaps decides "not transcribed"
+ * without a per-conversation call. Needs
+ * `analytics:speechAndTextAnalyticsAggregates:view`.
+ */
+export async function queryTranscriptAggregates(api, orgId, body) {
+  return api.proxyGenesys(orgId, "POST",
+    "/api/v2/analytics/transcripts/aggregates/query", { body });
+}
+
+/**
+ * The recordings that EXIST for a conversation, with their file state.
+ *
+ * `RecordingMetadata[]` - each carrying `fileState` (AVAILABLE, ARCHIVED,
+ * DELETED, RESTORED, RESTORING, UPLOADING, ERROR), `media`, `mediaSubtype`
+ * and the archive/delete dates.
+ *
+ * This answers a different question from `AnalyticsSession.recording`, which is
+ * documented as "flag determining if an audio recording was STARTED". A policy
+ * that does not retain the recording leaves that flag true and no recording
+ * behind - which is exactly what a wrap-up code like "Do not save recording"
+ * does. Only this endpoint can tell the two apart.
+ *
+ * One call per conversation, so callers should ask only about conversations
+ * whose answer actually changes something.
+ */
+export async function fetchRecordingMetadata(api, orgId, conversationId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/conversations/${conversationId}/recordingmetadata`);
+}
+
+/** One program by id. Used to name a default program the list did not carry. */
+export async function fetchProgram(api, orgId, programId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/speechandtextanalytics/programs/${programId}`);
+}
+
+/**
+ * Whether AI Summary, Insights & Outline is on, for every program at once.
+ *
+ * `ProgramInsightsSettingsEntityListing`: entities of `{program, enabled}`.
+ * The per-program endpoint exists too; this one avoids the fan-out.
+ *
+ * Needs `speechAndTextAnalytics:insightsSettings:view` ON TOP of the program
+ * view permission, so it fails separately from the program list.
+ */
+export async function fetchProgramInsightsSettings(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    "/api/v2/speechandtextanalytics/programs/settings/insights", opts);
+}
+
+/**
+ * The transcription engines configured for one program.
+ *
+ * `ProgramTranscriptionEngines.transcriptionEngines[]` is
+ * `{engine, dialects, engineIntegration}`. Per-program only — there is no
+ * listing across programs — so callers fan out over the program list.
+ */
+export async function fetchProgramTranscriptionEngines(api, orgId, programId) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/speechandtextanalytics/programs/${programId}/transcriptionengines`);
+}
+
+/**
+ * Org-wide Speech & Text Analytics settings.
+ *
+ * `{ defaultProgram, expectedDialects, textAnalyticsEnabled, agentEmpathyEnabled }`.
+ *
+ * NOTE: Agent Empathy and Customer Sentiment are ONLY available here. The
+ * Genesys program editor shows them as per-program checkboxes, but no
+ * per-program equivalent exists anywhere in the API — consistent with that
+ * screen's own note that organisation-level settings override program-level
+ * configuration. Report them as org-wide facts; do not attribute them to a
+ * program.
+ *
+ * Needs `speechAndTextAnalytics:settings:view`.
+ */
+export async function fetchSpeechTextAnalyticsSettings(api, orgId) {
+  return api.proxyGenesys(orgId, "GET", "/api/v2/speechandtextanalytics/settings");
+}
+
+/**
+ * Org-wide transcription setting.
+ *
+ * `transcription` is Disabled | EnabledGlobally | EnabledQueueFlow. Disabled
+ * means nothing anywhere is transcribed, so no AI scoring can happen at all;
+ * EnabledQueueFlow means it depends on each queue's `enableTranscription`.
+ */
+export async function fetchTranscriptionSettings(api, orgId) {
+  return api.proxyGenesys(orgId, "GET", "/api/v2/routing/settings/transcription");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Groups / Divisions
 // ─────────────────────────────────────────────────────────────────────
 

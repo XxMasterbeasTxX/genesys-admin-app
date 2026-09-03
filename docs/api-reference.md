@@ -38,6 +38,7 @@ All Genesys Cloud calls are proxied through `POST /api/genesys-proxy` on the Azu
 28. [Journey](#28-journey)
 29. [Billing](#29-billing)
 30. [Onboarding Deployment](#30-onboarding-deployment)
+31. [Quality — Evaluations & Scoring](#31-quality--evaluations--scoring)
 
 ---
 
@@ -411,11 +412,12 @@ Used by: GDPR — Subject Request, GDPR — Request Status
 
 ## 15. Recording
 
-Used by: Documentation Export
+Used by: Documentation Export, Dashboards — Quality › Evaluation Gaps
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/recording/mediaretentionpolicies` | List media retention policies |
+| GET | `/api/v2/conversations/{conversationId}/recordingmetadata` | Whether a recording actually EXISTS, and its `fileState` (AVAILABLE, ARCHIVED, DELETED, RESTORED, RESTORING, UPLOADING, ERROR). Not the same question as `AnalyticsSession.recording`, which only says a recording was **started** — a retention policy can discard it afterwards, leaving that flag true and no audio behind. One call per conversation, so Evaluation Gaps asks only where the answer changes a verdict, deduplicated by conversation and capped. Screen recordings are filtered out: a screen capture is not audio and cannot be transcribed. |
 
 ---
 
@@ -552,10 +554,16 @@ Used by: Deployment — Basic (Schedule Groups timezone validation), Utilities �
 
 ## 27. Speech & Text Analytics
 
-Used by: Transcript Search
+Used by: Transcript Search, Dashboards — Quality › STA Configuration, Dashboards — Quality › Evaluation Gaps
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/api/v2/speechandtextanalytics/programs` | List programs. Evaluation Gaps loads **only** this on open — scope is chosen by program, and the rest follows. |
+| GET | `/api/v2/speechandtextanalytics/programs/unpublished` | Programs that exist but were never published. An unpublished program does nothing at all, silently. |
+| GET | `/api/v2/speechandtextanalytics/programs/mappings` | Every program's queues and flows in one call. **Note the shape:** the GET returns `{program, queues, flows}` — entity refs — while the PUT body is `{queueIds, flowIds}`, id strings. Paged by `nextPage`/`nextUri`, a third paging style neither shared pager covers. |
+| GET | `/api/v2/speechandtextanalytics/programs/{programId}/transcriptionengines` | The program's transcription engines and their dialects. Per program only; no listing across programs. |
+| GET | `/api/v2/speechandtextanalytics/programs/settings/insights` | AI Summary, Insights & Outline per program, for every program at once. Needs `speechAndTextAnalytics:insightsSettings:view` on top of the program view permission. |
+| GET | `/api/v2/speechandtextanalytics/settings` | Org-wide: default program, expected dialects, text analytics, agent empathy. **Customer Sentiment Analysis is not exposed** — the Genesys program editor shows it as a per-program checkbox, but no field for it exists on this resource in GET, PUT or PATCH, nor anywhere else in the API. |
 | GET | `/api/v2/speechandtextanalytics/conversations/{id}/communications/{commId}/transcripturl` | Check whether a STA transcript exists for a specific communication. HTTP 200 = transcript exists and returns a pre-signed S3 URL; HTTP 404 = no transcript. Called in parallel batches of 10 per conversation result row. |
 | GET | `{s3PreSignedUrl}` | Fetch the full transcript JSON content from AWS S3 using the pre-signed URL returned above. Direct browser request — no Authorization header. Called on-demand when the user expands a row to read the transcript. |
 
@@ -635,3 +643,48 @@ The runner authenticates to each org with client credentials (`GENESYS_<ORG>_CLI
 - **Registered export handlers**: The `api/lib/exportHandlers.js` registry maps export type strings to handler modules. Registered types: `allGroups`, `allRoles`, `billingAllOrgsLatest`, `billingCalendarYear`, `billingSingleOrg`, `documentation`, `filteredRoles`, `interactionTotals`, `licensesConsumption`, `rolesSingleOrg`, `lastLogin`, `trustee`, `skillTemplates`.
 - **Outbound email**: every message the app sends goes through `api/lib/mailer.js`, the single Mailjet caller. `POST /api/send-email` is the HTTP front for it (token required, callers choose recipients); the scheduled runner calls the module directly with no HTTP hop. Note that Mailjet fails in two ways — the request can fail, and a `200` can still carry `Messages[0].Status === "error"` — and the module reports both as `{ success: false, error, reason }`. A caller that checks only the HTTP status reports success for mail that was never sent.
 - **Billing trustee resolution**: Billing exports require the call to be authenticated as the **trustee** customer for the target org. The mapping is stored in `api/lib/customers.json::trusteeForOrg`. If the target customer is itself a trustee (no entry), the export is blocked client-side (`isTrusteeOrg(orgId)` in `js/utils/billingTrustees.js`).
+
+---
+
+## 31. Quality — Evaluations & Scoring
+
+Used by: Dashboards — Quality (Evaluation Coverage, Evaluation Scores, STA Configuration, Evaluation Gaps)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/v2/analytics/evaluations/aggregates/query` | Evaluation counts and scores. No date-range limit. Dimensions include `userId`, `evaluatorId`, `divisionId`, `teamId`, `formId`, `contextId`, `mediaType`, `released`, `rescored`, `systemSubmitted`; metrics `nEvaluations`, `nEvaluationsRescored`, `oTotalScore`, `oTotalCriticalScore`. A `queueId` dimension exists but returns nothing, which is why no page filters evaluations by queue. |
+| POST | `/api/v2/quality/evaluations/search` | Rows *and* aggregations. **Hard 3-month cap per request**, so long ranges are walked in windows and merged. Several undocumented rules apply — see below. |
+| GET | `/api/v2/quality/publishedforms/evaluations` | Published evaluation forms, keyed on `contextId` so a filter covers every version of a form. |
+| GET | `/api/v2/quality/forms/evaluations/bulk/contexts` | Forms by context id, in full — the only route from a form context to the question groups inside it. |
+| GET | `/api/v2/quality/forms/evaluations/{formId}/versions` | Every revision of a form. Does **not** return `questionGroups`; the ids are used to fetch each revision in full. |
+| GET | `/api/v2/quality/forms/evaluations/{formId}` | One form revision, with its question groups, questions, answer options, and the per-question `aiScoring.enabled` flags. |
+| GET | `/api/v2/quality/programs/{programId}/agentscoringrules` | The Agent Scoring Rules that create automatic evaluations: `enabled`, `published`, `samplingType`/`samplingPercentage`, `submissionType`, `agentToScore` (First/Last/Each), `evaluationFormContextId`, `evaluator`. No cross-program listing, so callers fan out over the program list. |
+| GET | `/api/v2/quality/evaluators/activity` | Per-evaluator assigned/started/completed counts. |
+| POST | `/api/v2/analytics/transcripts/aggregates/query` | `nSpeechTextAnalyzedConversations` — which conversations speech and text analytics actually processed. Grouped by `conversationId` it gives the analysed set to diff against, so transcript status per interaction needs no per-conversation call. Needs `analytics:speechAndTextAnalyticsAggregates:view`. |
+
+### 31.1 Undocumented rules on `quality/evaluations/search`
+
+Each of these is enforced at runtime and appears nowhere in the schema. All were
+found by being refused.
+
+| Rule | Consequence |
+| --- | --- |
+| `pageNumber` is required even for a pure aggregation request | Omitting it fails with "Page number cannot be null" |
+| `pageSize` may not exceed 100 | Rows are fetched five pages at a time instead |
+| An aggregation request is sent with `pageSize: 0`, and the response `total` is then **0** regardless of what matched | Counts must come from an aggregation (a summed `TERM` on `evaluationStatus`), never from `total` |
+| Question-level fields (anything named `question*`) need a lone top-level `TERM` on `questionId` **and** a query scoped to one form | Mixing one with an evaluation-level field is refused outright, not degraded |
+| Using sub-aggregations allows **only one** top-level aggregation | A histogram carrying `SUM` children must travel alone |
+| A search criterion takes at most **50 values** | Id lists gathered across form revisions are chunked at 50 and merged |
+| Enum values come back **lower-cased** (`serviceerror`, not `ServiceError`) | Labels are matched case-folded |
+
+### 31.2 Reading an interaction's own record
+
+`POST /api/v2/analytics/conversations/details/query` carries more than its name
+suggests, and Evaluation Gaps depends on all of it:
+
+- `conversation.evaluations[]` — the evaluations on the row itself, with the agent (`userId`), the `queueId`, `systemSubmitted`, form and status. "Was this evaluated" is therefore read, not reconciled against a separate count.
+- `session.recording` — a boolean on the **session**, not the segment. It sits on the leg carrying the audio, which is the external one.
+- `session.segments[]` — `queueId`, `wrapUpCode`, `segmentStart`/`segmentEnd`. Segment order settles `agentToScore: Last`.
+- `session.flow.flowId` — how a flow-mapped program's interactions are recognised.
+- `segmentFilters` accept `queueId`, `flowId`, `userId` and `purpose` together, which is what lets one query cover queue-mapped and flow-mapped programs at once. A flow segment is not an agent segment, so the two cannot be ANDed.
+- `totalHits` on any page gives the count up front, so cost can be reported before rows are walked.

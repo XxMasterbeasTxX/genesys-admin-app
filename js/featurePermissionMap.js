@@ -157,6 +157,32 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // ── Audit ────────────────────────────────────────────
   "audit.search":              { view: { all: ["audits:audit:view"] } },
 
+  // ── Dashboards › Quality ─────────────────────────────
+  // Coverage is `all:` because it aggregates two genuinely distinct datasets:
+  // the analytics evaluation aggregates, and the agent/evaluator activity
+  // listings from the quality domain. Neither substitutes for the other, so
+  // under ANY someone holding only quality:evaluation:view would be handed the
+  // analytics aggregates as well.
+  "dashboards.quality.coverage":  { view: { all: ["analytics:evaluationAggregate:view",
+                                                  "quality:evaluation:view"] } },
+  // Scores gates the page on the data it exists to show, and its row-level
+  // drill-down separately: without searchAny you get the charts and no detail
+  // table, which is a coherent page rather than a denial.
+  "dashboards.quality.scores":    { view:   ["analytics:evaluationAggregate:view"],
+                                    detail: ["quality:evaluation:searchAny"] },
+  // STA Configuration gates on the program list alone: without it there is no
+  // chain to walk and the page has nothing to say. Scoring rules, transcription
+  // settings and queues each degrade band by band and name what they want, so
+  // putting them in the gate would deny a page that would still be useful.
+  // Design §13.5.
+  "dashboards.quality.staConfiguration": { view: ["speechAndTextAnalytics:program:view"] },
+  // Evaluation Gaps needs the conversation rows above all - without them there
+  // is no interaction to explain. The program view is what turns a queue into a
+  // covered queue, so both are the gate; the transcript aggregate and the role
+  // lookup degrade on their own and the page says which reason it lost.
+  "dashboards.quality.gaps":      { view: { all: ["analytics:conversationDetail:view",
+                                                 "speechAndTextAnalytics:program:view"] } },
+
   // ── Deployment ───────────────────────────────────────
   "deployment.test.testCases": { view: ["architect:flow:view"] },
 

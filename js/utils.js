@@ -137,6 +137,19 @@ export function makeStatus($el, baseClass) {
  * A centred throbber block for a panel, an outlet or a table that has nothing
  * to show yet. Returns the element; the caller decides where it goes.
  */
+/**
+ * Throbber markup for a spot that takes innerHTML rather than an element —
+ * a table cell, a drawer pane, a panel body.
+ *
+ * The same `.spin` ring `makeStatus` and `spinPanel` use, so every waiting
+ * state in the app turns the same way. Text without a spinner reads as a
+ * result ("Loading…" is a sentence); the ring is what says it is still moving.
+ */
+export function spinHtml(message = "Loading…") {
+  return `<span class="spin-inline"><span class="spin" aria-hidden="true"></span>` +
+    `<span>${escapeHtml(message)}</span></span>`;
+}
+
 export function spinPanel(message = "Loading…") {
   const wrap = document.createElement("div");
   wrap.className = "spin-panel";

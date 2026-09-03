@@ -217,6 +217,11 @@ export function createMultiSelect({ placeholder = "Select…", searchable = fals
       return new Set(selected);
     },
 
+    /** How many items the dropdown holds. Zero means clicking it does nothing. */
+    count() {
+      return items.length;
+    },
+
     /** Programmatically set the selection. */
     setSelected(ids) {
       selected = new Set(ids);

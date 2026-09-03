@@ -21,6 +21,41 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "4.9",
+    date: "2026-09-03",
+    title: "Dashboards \u2014 Quality: what got evaluated, how it scored, and what was missed",
+    changes: [
+      "New menu: Dashboards \u203a Quality, with four pages. Everything in it is read-only.",
+      "Evaluation Coverage \u2014 are you evaluating enough, and evenly? Evaluations over time, "
+        + "by form, by agent and by evaluator, against the agents who can actually be evaluated "
+        + "rather than against everyone. It also reports the evaluations AI attempted and could "
+        + "not produce a score for, broken down by cause, because an interaction AI failed to "
+        + "score is work that went unevaluated.",
+      "Evaluation Scores \u2014 how people are scoring and where the low scores sit. Average over "
+        + "time, the distribution across fixed score bands so two periods can be compared, and "
+        + "breakdowns by form, media type and agent. Underneath, Weakest question groups and a "
+        + "per-question table showing the average, the answer chosen most often, and \u2014 for "
+        + "AI-scored evaluations \u2014 how often AI answered each question at all. Individual "
+        + "evaluations open in a drawer with the transcript beside the scored form.",
+      "STA Configuration \u2014 your Speech and Text Analytics setup on one screen: "
+        + "transcription, the programs covering each queue and flow, what those programs "
+        + "analyse, their transcription engines, and the agent scoring rules that turn an "
+        + "interaction into an evaluation.",
+      "Evaluation Gaps \u2014 the individual interactions that should have been evaluated and "
+        + "were not, one row per agent, each with the reason: the agent lacks the Participate "
+        + "permission, no live scoring rule, the queue has transcription switched off, no "
+        + "recording was started, the recording was not kept, it was shorter than your "
+        + "threshold, it was never transcribed, or another agent was the one the rule scores. "
+        + "What is left is Unexplained, and that is the list worth investigating.",
+      "Evaluation Gaps reads conversation records, so it asks before it spends: choose the "
+        + "programs and a date range, see how many interactions that covers, and only then run "
+        + "it. Right-click any row to copy its Conversation ID.",
+      "Every figure is read from the interaction or from your configuration. Where something "
+        + "could not be read \u2014 a missing permission, a query the API refused \u2014 the page says "
+        + "so and carries on, rather than reporting a blank as a zero.",
+    ],
+  },
+  {
     version: "4.8",
     date: "2026-08-28",
     title: "Data Actions — Test: run an action without being able to change it",

@@ -30,6 +30,24 @@ export const NAV_TREE = [
     ],
   },
   {
+    label: "Dashboards",
+    path: "dashboards",
+    enabled: true,
+    children: [
+      {
+        label: "Quality",
+        path: "quality",
+        enabled: true,
+        children: [
+          { label: "Evaluation Coverage", path: "coverage",   enabled: true, access: "dashboards.quality.coverage"  },
+          { label: "Evaluation Scores",   path: "scores",     enabled: true, access: "dashboards.quality.scores"    },
+          { label: "Evaluation Gaps",     path: "gaps",       enabled: true, access: "dashboards.quality.gaps" },
+          { label: "STA Configuration",   path: "sta-configuration", enabled: true, access: "dashboards.quality.staConfiguration" },
+        ],
+      },
+    ],
+  },
+  {
     label: "Divisions",
     path: "divisions",
     enabled: true,

@@ -5558,3 +5558,678 @@ a.fr-shipped:hover { text-decoration: underline; }
 @media (prefers-color-scheme: light) {
   .fr-waiting { color: #8a5a00; border-color: rgba(138,90,0,0.35); }
 }
+
+/* ══════════════════════════════════════════════════════════
+   Dashboards › Quality  (dq-* prefix)
+   docs/dashboards-quality-design.md §5.3
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Filter bar ──────────────────────────────────────── */
+/* Three captioned bands rather than one wrapping row. The caption is what
+   turns a wall of dropdowns into a form: it names the question each row
+   answers, and it stops the grouping changing with window width — the exact
+   fault documented in docs/interactions-search-redesign.md §3.1. */
+.dq-filters {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+}
+.dq-filter-band {
+  align-items: flex-start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 72px 1fr;
+}
+.dq-filter-caption {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding-top: 20px;
+  text-transform: uppercase;
+}
+.dq-filter-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.dq-filter-fields .ms-dropdown { min-width: 190px; }
+.dq-filter-reset { justify-content: flex-end; }
+.dq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.dq-preset.is-active {
+  border-color: #4c8dff;
+  color: #9dc1ff;
+}
+.dq-filter-note {
+  color: #ffd28a;
+  font-size: 12px;
+  padding-left: 84px;
+}
+
+/* ── Stat tiles ──────────────────────────────────────── */
+.dq-tiles {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin-bottom: 18px;
+}
+.dq-tile {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.dq-tile-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.dq-tile-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-top: 4px;
+}
+.dq-tile-sub {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.dq-tile-value.is-empty { color: var(--muted); font-size: 20px; }
+
+/* ── Chart groups ────────────────────────────────────── */
+.dq-grid-2 {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+.dq-panel {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  padding: 14px;
+}
+.dq-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.dq-panel-sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 10px;
+}
+.dq-panel-note {
+  color: #ffd28a;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* ── Horizontal bars (generalised from .it-bar-*) ────── */
+.dq-bars { display: flex; flex-direction: column; gap: 6px; }
+.dq-bar-row {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(120px, 200px) 1fr auto;
+}
+.dq-bar-label {
+  color: var(--text);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A bar list whose labels are sentences rather than words — question text,
+   chiefly. Against the default 200px column every question on a real form
+   ellipsises to the same prefix ("Oplyste agenten …"), which is worse than no
+   label at all: the rows become unidentifiable and the band unreadable. Wrap
+   to two lines against a much wider column instead. */
+/* One grid for the whole list rather than one per row. A per-row grid can only
+   use a fixed label column - fit-content would size each row independently and
+   the bars would start at a different x on every line. Promoting the list to a
+   single grid and letting the rows be display:contents lets fit-content() size
+   the column to the LONGEST label and still align every row against it, so a
+   list of short labels gets a narrow column and a list of long ones is capped
+   at 45% and wraps. */
+.dq-bars.is-long-label {
+  align-items: center;
+  display: grid;
+  gap: 6px 10px;
+  grid-template-columns: fit-content(45%) 1fr auto;
+}
+.dq-bars.is-long-label .dq-bar-row { display: contents; }
+.dq-bars.is-long-label .dq-bar-label {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  line-clamp: 2;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.dq-bar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+  height: 14px;
+  overflow: hidden;
+}
+.dq-bar-fill {
+  background: #4c8dff;
+  border-radius: 999px;
+  height: 100%;
+  min-width: 2px;
+  transition: width 0.25s ease;
+}
+.dq-fill-alt { background: #58c4a0; }
+.dq-fill-warn { background: #e0a34a; }
+.dq-bar-value {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 96px;
+  text-align: right;
+}
+.dq-bar-empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 10px 0;
+}
+
+/* ── Trend (sparkline-style column chart) ────────────── */
+.dq-trend {
+  align-items: flex-end;
+  display: flex;
+  gap: 2px;
+  height: 120px;
+  width: 100%;
+}
+.dq-trend-col {
+  background: #4c8dff;
+  border-radius: 2px 2px 0 0;
+  flex: 1 1 0;
+  min-height: 1px;
+  min-width: 2px;
+}
+.dq-trend-axis {
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+/* ── Tables ──────────────────────────────────────────── */
+.dq-table-wrap { overflow-x: auto; }
+.dq-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 100%;
+  width: 100%;
+}
+.dq-table th {
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+.dq-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+}
+.dq-table td.is-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* The heading must follow its values. Right-aligned numbers under a
+   left-aligned heading sit closer to the NEXT column's name than their own,
+   which reads as though the figure belongs to that column. */
+.dq-table th.is-num { text-align: right; }
+.dq-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+
+/* A secondary fact inside a table cell - the share an answer accounted for, or
+   the reason a figure is absent. Quiet enough not to compete with the number
+   it qualifies. */
+.dq-muted { color: var(--muted); }
+
+/* A cell worth a second look: AI is switched on for that question and answered
+   it under half the time, which is the one AI signal nothing else reports. */
+.dq-flag {
+  background: rgba(224, 163, 74, 0.16);
+  border-radius: 3px;
+  color: #e0a34a;
+  padding: 1px 5px;
+}
+
+/* ── Evaluation Gaps: findings ─────────────────────────
+   A findings list rather than a chart, because each row is a thing to go and
+   fix rather than a quantity to compare. Severity leads the row: the reader's
+   question is "what do I fix first", and a blocker always outranks a warning
+   however interesting the warning is. */
+.eg-finding {
+  border-left: 3px solid var(--border);
+  margin-bottom: 12px;
+  padding: 2px 0 2px 12px;
+}
+.eg-finding:last-child { margin-bottom: 0; }
+.eg-finding-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.eg-finding-title { font-size: 14px; font-weight: 600; }
+.eg-finding-body { color: var(--muted); font-size: 13px; max-width: 90ch; }
+/* The fix is set apart from the diagnosis: a reader who already understands the
+   problem should be able to skip straight to the line that says where to go. */
+.eg-finding-fix {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+  opacity: 0.85;
+}
+.eg-pill {
+  border-radius: 10px;
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+}
+.eg-sev-blocker { background: rgba(217, 83, 79, 0.18); color: #ff8b87; }
+.eg-sev-warn    { background: rgba(224, 163, 74, 0.18); color: #e0a34a; }
+.eg-sev-ok      { background: rgba(88, 196, 160, 0.18); color: #58c4a0; }
+.eg-clean {
+  color: #58c4a0;
+  font-size: 13px;
+  max-width: 90ch;
+}
+
+/* Org-wide facts: a handful of single values that apply to every program, so
+   they get a compact row rather than a table with one data line. */
+.eg-facts {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+.eg-fact {
+  background: var(--panel-2, rgba(255,255,255,0.03));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.eg-fact-label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+.eg-fact-value { font-size: 16px; font-weight: 600; margin-top: 2px; }
+.eg-fact-sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+/* A findings panel is the only place a blocker should be red on this page; the
+   severity border repeats the pill so a scan down the left edge works. */
+.eg-finding:has(.eg-sev-blocker) { border-left-color: #d9534f; }
+.eg-finding:has(.eg-sev-warn)    { border-left-color: #e0a34a; }
+
+/* ── Light mode ──────────────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  .dq-bar-track { background: #e5e7eb; }
+  .dq-filter-note, .dq-panel-note { color: #8a5a00; }
+  .dq-preset.is-active { color: #1d4ed8; border-color: #1d4ed8; }
+  .dq-table tbody tr:hover { background: rgba(0,0,0,0.03); }
+}
+
+/* Coverage page extras */
+.dq-range-line {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+/* ── AI Scoring lanes ──────────────────────────────────
+   Auto-evaluation and Evaluation Assistance are separate features measured on
+   separate populations, so the page keeps them in visibly separate lanes. The
+   rule above each is doing real work: it is what stops a reader carrying a
+   number from one lane into the other. */
+.dq-lane { margin-top: 26px; }
+.dq-lane + .dq-lane { border-top: 1px solid var(--border); padding-top: 22px; }
+.dq-lane-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+.dq-lane-sub {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 14px;
+  max-width: 70ch;
+}
+
+/* A rate column, plotted against a fixed 0-100% axis. A bucket with a zero
+   denominator has NO rate: it draws as a flat tick rather than a zero-height
+   bar, because "nothing was offered here" and "everything here was rejected"
+   are opposite facts and a zero-height bar states the second one. */
+.dq-trend-col.is-warnfill { background: #e0a34a; }
+.dq-trend-col.is-goodfill { background: #58c4a0; }
+.dq-trend-col.is-warnfill.is-partial {
+  background: repeating-linear-gradient(135deg,
+    #e0a34a, #e0a34a 3px, rgba(224, 163, 74, 0.35) 3px, rgba(224, 163, 74, 0.35) 6px);
+}
+.dq-trend-col.is-goodfill.is-partial {
+  background: repeating-linear-gradient(135deg,
+    #58c4a0, #58c4a0 3px, rgba(88, 196, 160, 0.35) 3px, rgba(88, 196, 160, 0.35) 6px);
+}
+/* A rate chart is plotted against a FIXED 0-100% axis so two periods can be
+   compared, which only works if the axis is visible - otherwise a 14% column
+   here and a 60% column on a data-scaled chart look much the same. Gridlines
+   every 25%, from the bottom. */
+.dq-trend.is-rate {
+  background-image: repeating-linear-gradient(
+    to top, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 25%);
+}
+
+/* Last, so it beats the fill colours above on equal specificity: a no-data
+   bucket must not be painted in the colour of the metric it has no value for. */
+.dq-trend-col.is-nodata {
+  align-self: flex-end;
+  background: rgba(255, 255, 255, 0.14);
+  height: 2px;
+}
+/* A trend bucket that is still filling — the range runs up to now. Hatched
+   rather than solid so a partial final column cannot be read as a real drop. */
+.dq-trend-col.is-partial {
+  background: repeating-linear-gradient(
+    135deg,
+    #4c8dff, #4c8dff 3px,
+    rgba(76, 141, 255, 0.35) 3px, rgba(76, 141, 255, 0.35) 6px
+  );
+}
+
+
+/* Score bars are coloured by the band they fall in, so a chart of percentages
+   reads at a glance rather than needing the number at the end of every row. */
+.dq-fill-bad  { background: #d9534f; }
+.dq-fill-warn { background: #e0a34a; }
+.dq-fill-good { background: #58c4a0; }
+
+.dq-detail-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.dq-detail-page {
+  color: var(--muted);
+  font-size: 12px;
+  padding-top: 8px;
+}
+.dq-redacted {
+  color: var(--muted);
+  font-style: italic;
+}
+.cs-label.is-active { color: var(--accent); font-weight: 700; }
+.dq-scored-by .cs-control-group { max-width: 280px; }
+
+/* Collapsible panels — the row-level table and the per-agent critical scores
+   both grow with the size of the QM programme, so they start folded. */
+.dq-fold > summary {
+  align-items: baseline;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  list-style: none;
+}
+.dq-fold > summary::-webkit-details-marker { display: none; }
+.dq-fold > summary::before {
+  color: var(--muted);
+  content: "▸";
+  font-size: 11px;
+}
+.dq-fold[open] > summary::before { content: "▾"; }
+.dq-fold > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.dq-fold-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.dq-fold[open] > summary { margin-bottom: 8px; }
+
+/* Sortable headers (opt-in via attachColumnFilters { sortable: true }) */
+.cf-sortable { cursor: pointer; user-select: none; }
+.cf-sortable:hover { color: var(--text); }
+.cf-sortable:focus-visible { outline: 2px solid #4c8dff; outline-offset: -2px; }
+.cf-sorted { color: #4c8dff; }
+.cf-sort-mark { font-size: 10px; }
+
+/* Panel footer: row count on the left, page size on the right */
+.dq-foot {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+.dq-foot-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.dq-foot-size {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+}
+.dq-foot-size .input { padding: 4px 8px; width: auto; }
+
+/* Compact filter: the header names the column once, and carries a caret that
+   opens its value list. Clicking the cell sorts; clicking the caret filters. */
+.cf-btn--compact {
+  align-items: center;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  font-size: 10px;
+  height: 20px;
+  justify-content: center;
+  margin-left: 6px;
+  min-width: 22px;
+  padding: 0;
+  vertical-align: middle;
+}
+.cf-btn--compact:hover { background: rgba(76,141,255,0.22); border-color: #4c8dff; color: #9dc1ff; }
+.cf-btn--compact:focus-visible { outline: 2px solid #4c8dff; outline-offset: 1px; }
+.cf-btn--compact.cf-btn--active {
+  background: rgba(76,141,255,0.28);
+  border-color: #4c8dff;
+  color: #9dc1ff;
+}
+@media (prefers-color-scheme: light) {
+  .cf-btn--compact { background: rgba(0,0,0,0.05); }
+  .cf-btn--compact:hover,
+  .cf-btn--compact.cf-btn--active { background: rgba(29,78,216,0.12); color: #1d4ed8; }
+}
+.dq-foot-pager { align-items: center; display: flex; gap: 8px; }
+
+/* Numeric column filter: a FROM/TO range instead of a value list */
+.cf-dropdown--range { min-width: 210px; padding: 10px; }
+.cf-range { display: flex; gap: 8px; }
+.cf-range label {
+  color: var(--muted);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  font-size: 11px;
+  gap: 4px;
+}
+.cf-range input {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 5px 7px;
+  width: 100%;
+}
+.cf-range input:focus { border-color: #4c8dff; outline: none; }
+.cf-range-hint {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 8px;
+}
+.dq-bar-filter { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; max-width: 280px; }
+/* A sortable header carrying a filter control needs the two to sit together
+   without the caret wrapping under the label. */
+.cf-th.cf-sortable { white-space: nowrap; }
+/* A column filter's dropdown hangs below the header inside this scroll box, so
+   the box must stay tall enough to show one even when every row is filtered
+   out — otherwise the control that hid the rows becomes unreachable.
+   Scoped to boxes that HAVE filters: an unfiltered table (the per-question one
+   on Scores) would otherwise carry 260px of dead space under three rows. */
+.dq-table-wrap.has-filters { min-height: 260px; }
+.dq-empty-row[hidden] { display: none; }
+
+/* Agent scores fold: metric, order, name and range controls in one row */
+.dq-agent-controls { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; }
+.dq-agent-controls .input { width: auto; }
+.dq-agent-range { align-items: center; display: flex; gap: 6px; }
+.dq-agent-range .input { width: 80px; }
+
+/* ── Evaluation detail drawer ─────────────────────────── */
+.dq-drawer { inset: 0; position: fixed; z-index: 400; }
+.dq-drawer-scrim { background: rgba(0,0,0,0.45); inset: 0; position: absolute; }
+.dq-drawer-panel {
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  bottom: 0;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  max-width: 1100px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 88vw;
+}
+.dq-drawer-head {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+.dq-drawer-title { font-size: 18px; margin: 0; }
+.dq-drawer-sub { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+.dq-drawer-body {
+  display: grid;
+  gap: 0;
+  grid-template-columns: 1fr 1fr;
+  min-height: 0;
+  flex: 1;
+}
+.dq-drawer-pane { overflow-y: auto; padding: 16px 20px; }
+.dq-drawer-pane + .dq-drawer-pane { border-left: 1px solid var(--border); }
+@media (max-width: 900px) {
+  .dq-drawer-body { grid-template-columns: 1fr; }
+  .dq-drawer-pane + .dq-drawer-pane { border-left: none; border-top: 1px solid var(--border); }
+}
+
+/* Transcript */
+.dq-transcript { display: flex; flex-direction: column; gap: 8px; }
+.dq-phrase { display: grid; gap: 4px; grid-template-columns: 76px 1fr; }
+.dq-phrase-who {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.dq-phrase-text { font-size: 13.5px; line-height: 1.5; }
+.dq-phrase--agent .dq-phrase-who { color: #4c8dff; }
+.dq-phrase--customer .dq-phrase-who { color: #58c4a0; }
+
+/* Scored form */
+.dq-q-group { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; }
+.dq-q-group-head {
+  align-items: baseline;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+.dq-q-group-name { font-size: 13px; font-weight: 700; }
+.dq-q-group-score { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.dq-q { border-bottom: 1px solid var(--border); padding: 10px 12px; }
+.dq-q:last-child { border-bottom: none; }
+.dq-q.is-kill { background: rgba(217,83,79,0.12); }
+.dq-q-text { font-size: 13px; }
+.dq-q-tag {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+}
+.dq-q-answer {
+  align-items: baseline;
+  color: var(--muted);
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.dq-q-score { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+.dq-q-na { font-style: italic; }
+.dq-q-flag { color: #d9534f; font-size: 12px; font-weight: 600; margin-top: 4px; }
+.dq-q-ai, .dq-q-comment {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+/* Inline throbber for spots that take innerHTML rather than an element. */
+.spin-inline { align-items: center; display: inline-flex; gap: 8px; }
+
+/* AI Scoring: a stacked column, AI over human */
+.dq-stack {
+  border-radius: 2px 2px 0 0;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 1px;
+  min-width: 2px;
+  overflow: hidden;
+}
+.dq-stack-human { background: #58c4a0; width: 100%; }
+.dq-stack-ai { background: #4c8dff; width: 100%; }
+.dq-stack.is-partial { opacity: 0.55; }
+.dq-key {
+  border-radius: 2px;
+  display: inline-block;
+  height: 8px;
+  margin-right: 4px;
+  width: 8px;
+}
+.dq-key--ai { background: #4c8dff; }
+.dq-key--human { background: #58c4a0; }
