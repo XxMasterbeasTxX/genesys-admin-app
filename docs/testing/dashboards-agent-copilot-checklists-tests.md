@@ -34,6 +34,8 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 1.4 | ★ Pick an org, watch the network tab | **Only the assistants call fires.** No queues, no conversations, no wrap-up codes | | |
 | 1.5 | An org with no copilot-enabled assistants | Says so plainly and names the condition (copilot enabled, or live on a queue) rather than showing an empty dropdown | | |
 | 1.6 | Only short quick-ranges are offered | Today, Yesterday, This week, Last week. Nothing longer, because the enrichment cost makes a long range a walk nobody should start by accident | | |
+| 1.7 | ★ With results already on screen, change a filter | The results and the Export button **stay**. Load disables, because the count is stale | | |
+| 1.8 | ★ With results on screen, switch customer org | Results, export and any open detail **clear**. One org's interactions must never sit under another org's name | | |
 
 ## 2. The cascade ★
 

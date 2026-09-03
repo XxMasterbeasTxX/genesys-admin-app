@@ -393,12 +393,19 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   $("from").addEventListener("change", invalidate);
   $("to").addEventListener("change", invalidate);
 
-  /** Any filter change invalidates the count, because it counted the old scope. */
+  /**
+   * A filter changed, so the count no longer describes the selection.
+   *
+   * Does NOT clear the results, and does not take the export away with them:
+   * both were true when they were fetched, the range line says which period
+   * they cover, and the export follows what is on screen. Only the count and
+   * the button that spends it are invalidated.
+   *
+   * A change of ORG is the exception, and is handled where that happens.
+   */
   function invalidate() {
     counted = null;
     $("load").disabled = true;
-    $results.hidden = true;
-    $("export").hidden = true;
   }
 
   // ── Stage 1: the copilot list, and nothing else ─────
@@ -1765,6 +1772,12 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     abort?.abort();
     runSeq++;
     invalidate();
+    // These rows are the previous org's. invalidate() leaves results alone now,
+    // so the org change has to take them down itself.
+    $results.hidden = true;
+    $("export").hidden = true;
+    openRowId = null;
+    $("detailPanel").hidden = true;
   });
   el.__destroy = () => {
     // An in-flight enrichment run keeps making calls long after the page has
