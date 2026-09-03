@@ -123,10 +123,17 @@ Four things the source gets wrong or leaves out, fixed in the port:
    (type ALL). Someone can hold the conversation permission and still get
    nothing. Gated and reported separately here.
 
-2. **`deletedDate` does not exist.** The source filters recording stubs with
-   `!r.deletedDate`; the field is **`deleteDate`**. The test never excludes
-   anything. `fileState === "DELETED"` catches most of it, which is why it has
-   not been noticed. Fixed to `deleteDate`.
+2. **`deletedDate` does not exist — and that typo is load-bearing.** The source
+   filters recording stubs with `!r.deletedDate`. No such field exists; the
+   schema calls it `deleteDate`. So the test never excludes anything and the
+   source is effectively filtering on `fileState` alone.
+
+   I "corrected" the spelling, and it hid every recording in the org.
+   `deleteDate` is the **scheduled** deletion date, which a retention policy
+   sets on essentially every recording — so the corrected filter rejected
+   recordings that plainly exist and were downloadable in Genesys. **Filter on
+   `fileState` alone.** This is the entry that most needs to survive: it looks
+   exactly like a bug worth fixing, and fixing it breaks the page.
 
 3. **Screen recordings have their own field.** The source detects a screen
    recording with `media`/`mediaType` lowercased, but the spec's enum lives on
@@ -229,8 +236,10 @@ Right-click a row copies the Conversation ID, as on Evaluation Gaps.
 ### 6.4 Completion band
 
 The source draws a Chart.js bar chart of Complete vs Incomplete. This app has no
-chart library and does not need one: the Quality pages' `dq-bars` CSS bars carry
-the same information. **No new dependency.**
+chart library and does not need one: the same two bars, drawn vertically in CSS
+under the title "Checklist Completion", carry the same information. **No new
+dependency** — this app vendors its libraries, and a chart of two bars does not
+earn one.
 
 Undetermined records (`completion === null` — a checklist carrying no items)
 belong to neither bar and are counted separately. An empty checklist is not a
@@ -248,9 +257,10 @@ audio or video player anywhere in it today (`interactions/recordings/` is bulk
    not indexed them yet.
 2. One button per recording — "Play Recording", or "Part 1…n" across transfers.
 3. First click requests the recording with `formatId` MP3, or WEBM for a screen
-   recording, and retries while transcoding finishes. `estimatedTranscodeTimeMs`
-   comes back on the response and is used to pace the wait rather than retrying
-   blind at a fixed 3s.
+   recording, and retries while transcoding finishes — **five attempts, three
+   seconds apart**, as the source does. An earlier revision paced this on the
+   server's own `estimatedTranscodeTimeMs`, which is arguably better and was
+   nobody's request; the port follows the source.
 4. The presigned `mediaUri` goes to an `<audio>` (or `<video>` for screen)
    element. Playback streams from Genesys straight to the browser; the proxy
    carries only the JSON. This app sets no CSP, so nothing blocks the media
@@ -345,7 +355,7 @@ A blank is never reported as a zero.
 | Date range | `js/utils/dateRanges.js` |
 | Sortable/filterable table | `js/utils/columnFilter.js` |
 | Excel | `js/lib/xlsx.bundle.js` + `js/utils/excelStyles.js` |
-| Bars | `dq-bars` CSS from the Quality pages |
+| Bars | CSS, in the shape the source drew with Chart.js |
 | Queues / users / wrap-ups | existing `fetchAll*` helpers |
 | Status line | `makeStatus` (which owns its own throbber — pass plain text) |
 | Multi-org | org context, free |

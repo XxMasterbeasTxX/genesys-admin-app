@@ -102,7 +102,7 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 |---|---|---|---|---|
 | 7.1 | Read the bars | Complete (green) and Incomplete (amber), widths relative to the larger | | |
 | 7.2 | Before enrichment finishes | Says nothing has been judged yet rather than drawing empty bars | | |
-| 7.3 | ★ Bars agree with the tiles and the table | Same population, same numbers, one definition behind all three | | |
+| 7.3 | ★ Bars agree with the table | Same population, same numbers, one definition behind both | | |
 
 ## 8. Drill-down — checklists and summaries
 
@@ -135,9 +135,10 @@ New to this app — there was no media player anywhere in it before.
 | 9.6 | Press the same button again | Player hides. Again — reappears **without re-fetching** | | |
 | 9.7 | ★ A **screen** recording | Renders as `<video>`, not audio. Detection is on `mediaSubtype`, so a recording whose free-text `media` field says something else must still be caught | | |
 | 9.8 | ★ An **ARCHIVED** recording | "Archived — not directly playable". No dead player | | |
-| 9.9 | ★ A long recording still transcoding | Retries, pacing itself by the server's own estimate. If it never arrives, a plain message — never a broken player | | |
+| 9.9 | ★ A long recording still transcoding | Retries five times, three seconds apart. If it never arrives, a plain message — never a broken player | | |
 | 9.10 | An interaction with no recording | "No recording for this interaction." | | |
 | 9.11 | A deleted recording | Not offered at all | | |
+| 9.12 | ★★ A recording with a future **Delete Date** in Genesys (a retention policy sets one on nearly all of them) | **Offered and plays.** This shipped broken: filtering on `deleteDate` hid every recording in the org. Only `fileState` may be filtered on — design §5.2 | | |
 
 ## 10. Export ★
 
