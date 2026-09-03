@@ -93,7 +93,7 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 6.2 | **Has summary** | Only interactions with an AI summary | | |
 | 6.3 | ★ **Agent checked** on its own | Only interactions where the agent ticked at least one item personally. An interaction the model completed alone must NOT appear | | |
 | 6.4 | ★ **Agent checked** combined with **Incomplete** | Both applied together — the toggle is independent of the status buttons, not a fifth option | | |
-| 6.5 | Change a filter | Tiles, bars and table all update together | | |
+| 6.5 | Change a filter | Chart and table update together | | |
 | 6.6 | A filter matching nothing | Says so rather than showing an empty table | | |
 
 ## 7. Completion bars
@@ -108,8 +108,10 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 8.1 | Click a row | Detail panel opens below with the conversation ID | | |
-| 8.2 | Each item shows **Agent** and **AI** in separate columns | Yes — never merged into one tick | | |
+| 8.1 | Click a row | The results table **collapses** and the detail opens, with the conversation ID. The row stays marked | | |
+| 8.1a | Click the same row again | Detail closes and the table comes back | | |
+| 8.1b | Press the **Search results** chevron | Table folds and unfolds on its own | | |
+| 8.2 | ★ Each item shows an overall ✅/❌, then `Agent: ✓/✗` and `AI: ✓/✗` beside it | Three readings, never merged into one tick | | |
 | 8.3 | An item flagged important | Marked as such | | |
 | 8.4 | An item with a description | Shown under the item name | | |
 | 8.5 | ★ A **transferred** interaction where two agents ran the **same** checklist template | **Both** checklists appear, each titled with its own agent. Neither is de-duplicated away | | |

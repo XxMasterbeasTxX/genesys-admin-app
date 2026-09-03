@@ -1,6 +1,6 @@
 # Dashboards › Agent Copilot — design
 
-Status: **design, awaiting go-ahead**. Nothing built yet.
+Status: **built, awaiting the test pass**. Ported 2026-09-03.
 
 This feature is a port. It already exists as a whole standalone app,
 `genesys-copilot-app`, and lands here as one page under a new
