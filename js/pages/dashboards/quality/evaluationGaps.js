@@ -516,16 +516,34 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       const evaluatedUserIds = new Set(
         (conv.evaluations || []).filter((e) => !e.deleted).map((e) => e.userId));
 
+      // RECORDING IS A PROPERTY OF THE CONVERSATION, NOT OF THE AGENT'S LEG.
+      //
+      // `AnalyticsSession.recording` is "flag determining if an audio recording
+      // was started", and it is set on the leg that carries the audio - which is
+      // the external one. Reading it only from the agent participant reported
+      // recorded calls as unrecorded: Thomas found a row saying "Not recorded"
+      // next to "Transcribed: Yes", which cannot both be true, since a
+      // transcript needs audio. The contradiction was the tell.
+      //
+      // Any session on any participant carrying the flag means the interaction
+      // was recorded, which is the granularity the question needs: was there
+      // audio for speech and text analytics to work on.
+      let recorded = false;
+      for (const part of conv.participants || []) {
+        for (const sess of part.sessions || []) {
+          if (sess.recording) { recorded = true; break; }
+        }
+        if (recorded) break;
+      }
+
       // Agent participants, with the queue segment they were on and how long.
       const agents = [];
       for (const part of conv.participants || []) {
         if (part.purpose !== "agent" || !part.userId) continue;
-        let recorded = false;
         let queueId = null;
         let ms = 0;
         let lastEnd = null;
         for (const sess of part.sessions || []) {
-          if (sess.recording) recorded = true;
           for (const seg of sess.segments || []) {
             if (seg.queueId && wanted.has(seg.queueId)) queueId = seg.queueId;
             const a = Date.parse(seg.segmentStart || "");
@@ -537,7 +555,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           }
         }
         if (!queueId) continue;   // this agent was not on a queue we asked about
-        agents.push({ userId: part.userId, queueId, recorded, ms, lastEnd });
+        agents.push({ userId: part.userId, queueId, ms, lastEnd });
       }
       if (!agents.length) continue;
 
@@ -561,7 +579,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         else if (!liveRules.length) reason = "noRule";
         else if (c.mode === "EnabledQueueFlow" && queue && queue.enableTranscription === false) {
           reason = "queueTranscriptionOff";
-        } else if (!a.recorded) reason = "notRecorded";
+        } else if (!recorded) reason = "notRecorded";
         else if (thresholdMs > 0 && a.ms > 0 && a.ms < thresholdMs) reason = "tooShort";
         else if (transcribed && !transcribed.has(conv.conversationId)) reason = "notTranscribed";
         else if (rule && rule.agentToScore === "First" && a.userId !== firstAgentId) {
@@ -576,7 +594,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           queue: queue?.name || a.queueId,
           agent: c.userName.get(a.userId) || a.userId,
           ms: a.ms,
-          recorded: a.recorded,
+          recorded,
           transcribed: transcribed ? transcribed.has(conv.conversationId) : null,
           reason,
         });

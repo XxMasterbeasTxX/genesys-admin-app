@@ -58,6 +58,7 @@ transcribed" in any useful sense.
 | 3.5 | **No live scoring rule** | The covering program has no enabled *and* published rule | | |
 | 3.6 | **Queue transcription off** | Only when the org is on Enabled Queue Flow | | |
 | 3.7 | ★ **Not recorded** | Cross-check one against the interaction in Genesys — it should genuinely have no recording | | |
+| 3.7a | ★ No row says **Not recorded** while Transcribed reads **Yes** | Impossible by definition: a transcript needs audio. This combination was the bug found on 2026-09-03, caused by reading the recording flag from the agent'''s leg instead of the call'''s | | |
 | 3.8 | ★ **Shorter than the threshold** | Change the threshold and reload; rows should move between this and other reasons | | |
 | 3.9 | **Not transcribed** | Recorded, long enough, and no transcript | | |
 | 3.10 | **Another agent was the one scored** | Only on multi-agent conversations, and only when the rule scores First or Last. This is *working as configured*, not a fault | | |
