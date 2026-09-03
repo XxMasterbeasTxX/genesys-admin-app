@@ -307,7 +307,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   let counted = null;
   let configOrgId = null;
   let programs = [];
-  let mappingsByProgram = null;   // programId -> queueId[]
+  let mappingsByProgram = null;   // programId -> { queueIds, flowIds }
   let mappingsOrgId = null;
 
   async function loadConfig(orgId) {
@@ -330,10 +330,13 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     const users = val(usersRes) || [];
     const wrapUps = val(wrapRes) || [];
 
-    // queueId -> the program covering it, from the mappings already loaded.
+    // queueId -> the program covering it, and flowId -> likewise, from the
+    // mappings already loaded. A program can cover either or both.
     const programOfQueue = new Map();
-    for (const [id, queueIds] of mappingsByProgram || []) {
-      for (const qid of queueIds) if (!programOfQueue.has(qid)) programOfQueue.set(qid, id);
+    const programOfFlow = new Map();
+    for (const [id, map] of mappingsByProgram || []) {
+      for (const qid of map.queueIds) if (!programOfQueue.has(qid)) programOfQueue.set(qid, id);
+      for (const fid of map.flowIds) if (!programOfFlow.has(fid)) programOfFlow.set(fid, id);
     }
 
     const ruleResults = await Promise.allSettled(
@@ -358,7 +361,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     }
 
     config = {
-      unpublished, programOfQueue, liveRulesOf, mode,
+      unpublished, programOfQueue, programOfFlow, liveRulesOf, mode,
       queueById: new Map(queues.map((q) => [q.id, q])),
       userName: new Map(users.map((u) => [u.id, u.name || u.email || u.id])),
       // The segment carries a wrap-up id; the name is what points at the cause,
@@ -372,14 +375,16 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   }
 
   /** The queues the picked programs cover - the actual scope of the query. */
-  function selectedQueueIds() {
+  function selectedScope() {
     const picked = programPicker.getSelected();
-    const ids = new Set();
-    for (const [programId, queueIds] of mappingsByProgram || []) {
+    const queueIds = new Set();
+    const flowIds = new Set();
+    for (const [programId, map] of mappingsByProgram || []) {
       if (!picked.has(programId)) continue;
-      for (const q of queueIds) ids.add(q);
+      for (const q of map.queueIds) queueIds.add(q);
+      for (const f of map.flowIds) flowIds.add(f);
     }
-    return [...ids];
+    return { queueIds: [...queueIds], flowIds: [...flowIds] };
   }
 
   /**
@@ -408,11 +413,19 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         return;
       }
     }
-    const n = selectedQueueIds().length;
-    $n.textContent = n
-      ? `${n} queue${n === 1 ? "" : "s"} in ${picked.size === 1 ? "that program"
-        : `those ${picked.size} programs`}`
-      : noQueueMessage(picked);
+    const { queueIds, flowIds } = selectedScope();
+    const where = picked.size === 1 ? "that program" : `those ${picked.size} programs`;
+    const parts = [];
+    if (queueIds.length) parts.push(`${queueIds.length} queue${queueIds.length === 1 ? "" : "s"}`);
+    if (flowIds.length) parts.push(`${flowIds.length} flow${flowIds.length === 1 ? "" : "s"}`);
+
+    if (!parts.length) { $n.textContent = noScopeMessage(picked); return; }
+    $n.textContent = `${parts.join(" and ")} in ${where}`
+      // A flow is not tied to a queue, so anything that came through it counts
+      // wherever it was answered. Worth saying, because the queue number alone
+      // then understates the scope.
+      + (flowIds.length
+        ? ". Interactions through those flows count whatever queue answered them." : "");
   }
 
   /**
@@ -424,16 +437,17 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
    * it can never evaluate anything - so the message says where to fix it rather
    * than only that there is nothing to show.
    */
-  function noQueueMessage(picked) {
+  function noScopeMessage(picked) {
     const name = picked.size === 1
       ? (programs.find((pr) => pr.id === [...picked][0])?.name || "That program")
       : null;
     return name
-      ? `“${name}” covers no queues, so nothing on it can be evaluated. Map queues to `
-        + "the program in Genesys — STA Configuration shows the current mappings."
-      : `Those ${picked.size} programs cover no queues between them, so nothing on them `
-        + "can be evaluated. Map queues to them in Genesys — STA Configuration shows the "
-        + "current mappings.";
+      ? `“${name}” covers no queues or flows, so nothing on it can be evaluated. Map `
+        + "queues or flows to the program in Genesys — STA Configuration shows the "
+        + "current mappings."
+      : `Those ${picked.size} programs cover no queues or flows between them, so nothing `
+        + "on them can be evaluated. Map queues or flows to them in Genesys — STA "
+        + "Configuration shows the current mappings.";
   }
 
   /**
@@ -487,7 +501,12 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     for (const m of mappings || []) {
       const id = m.program?.id;
       if (!id) continue;
-      byProgram.set(id, (m.queues || []).map((q) => q.id).filter(Boolean));
+      byProgram.set(id, {
+        queueIds: (m.queues || []).map((q) => q.id).filter(Boolean),
+        // A program can cover FLOWS instead of, or as well as, queues. Ignoring
+        // them made a flow-only program look like it covered nothing.
+        flowIds: (m.flows || []).map((f) => f.id).filter(Boolean),
+      });
     }
     mappingsByProgram = byProgram;
     mappingsOrgId = orgId;
@@ -518,7 +537,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       to: $("to").value,
       programIds: [...programPicker.getSelected()],
       // The queues are a consequence of the programs, not a choice.
-      queueIds: selectedQueueIds(),
+      ...selectedScope(),
       threshold: Number($("threshold").value) || 0,
     };
   }
@@ -526,21 +545,26 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   /**
    * Conversations on the chosen queues, agent segments only.
    *
-   * `segmentFilters` carries queueId, userId and purpose together, which is
-   * what lets one query cover every queue at once instead of one per queue.
+   * QUEUE OR FLOW, and no `purpose` constraint on the clause.
+   *
+   * A flow segment is not an agent segment, so ANDing purpose=agent with a flow
+   * predicate would match nothing and a flow-mapped program would come back
+   * empty. Selecting the CONVERSATION on either scope and picking the agents out
+   * of it afterwards is what makes both kinds of mapping work through one query.
+   * Conversations with no agent at all - abandoned in queue - come back too and
+   * produce no rows, which is correct.
    */
-  function detailBody({ from, to, queueIds }) {
+  function detailBody({ from, to, queueIds, flowIds }) {
     return {
       interval: `${utcIso(from)}/${utcIso(to, true)}`,
       order: "asc",
       orderBy: "conversationStart",
       segmentFilters: [{
-        type: "and",
-        predicates: [{ dimension: "purpose", value: "agent" }],
-        clauses: [{
-          type: "or",
-          predicates: queueIds.map((id) => ({ dimension: "queueId", value: id })),
-        }],
+        type: "or",
+        predicates: [
+          ...queueIds.map((id) => ({ dimension: "queueId", value: id })),
+          ...flowIds.map((id) => ({ dimension: "flowId", value: id })),
+        ],
       }],
     };
   }
@@ -560,8 +584,8 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       await ensureMappings(org.id);
       reflectQueueCount();
       const s = scope();
-      if (!s.queueIds.length) {
-        setStatus(noQueueMessage(programPicker.getSelected()), "error");
+      if (!s.queueIds.length && !s.flowIds.length) {
+        setStatus(noScopeMessage(programPicker.getSelected()), "error");
         return;
       }
       if (s.from > s.to) {
@@ -691,9 +715,22 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     const needRecording = new Map();   // conversationId -> was a recording started
     const alsoUseful = new Map();      // conversations worth checking if there is room
     const thresholdMs = s.threshold * 1000;
-    const wanted = new Set(s.queueIds);
+    const wantedQueues = new Set(s.queueIds);
+    const wantedFlows = new Set(s.flowIds);
 
     for (const conv of conversations) {
+      // Which flow the conversation ran through, if any. A conversation that
+      // qualified through a flow puts every agent on it in scope, whatever queue
+      // answered - a flow is not tied to one.
+      let matchedFlowId = null;
+      for (const part of conv.participants || []) {
+        for (const sess of part.sessions || []) {
+          const fid = sess.flow?.flowId;
+          if (fid && wantedFlows.has(fid)) { matchedFlowId = fid; break; }
+        }
+        if (matchedFlowId) break;
+      }
+
       const evaluatedUserIds = new Set(
         (conv.evaluations || []).filter((e) => !e.deleted).map((e) => e.userId));
 
@@ -718,15 +755,20 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         if (part.purpose !== "agent" || !part.userId) continue;
         for (const sess of part.sessions || []) {
           for (const seg of sess.segments || []) {
-            const onWanted = seg.queueId && wanted.has(seg.queueId);
+            const onWanted = !!matchedFlowId
+              || (seg.queueId && wantedQueues.has(seg.queueId));
             const a = Date.parse(seg.segmentStart || "");
             const b = Date.parse(seg.segmentEnd || "");
             const dur = (!Number.isNaN(a) && !Number.isNaN(b) && b > a) ? b - a : 0;
             if (!onWanted && !byAgent.has(part.userId)) continue;
 
             const cur = byAgent.get(part.userId)
-              || { userId: part.userId, queueId: null, ms: 0, lastEnd: null, wrapUpCode: null };
-            if (onWanted) cur.queueId = seg.queueId;
+              || { userId: part.userId, queueId: null, ms: 0, lastEnd: null,
+                   wrapUpCode: null, inScope: false };
+            // On a flow-matched conversation the queue is recorded for display
+            // but is not what qualified the agent.
+            if (onWanted && seg.queueId) cur.queueId = seg.queueId;
+            if (onWanted) cur.inScope = true;
             if (seg.wrapUpCode) cur.wrapUpCode = seg.wrapUpCode;
             cur.ms += dur;
             if (dur && (cur.lastEnd == null || b > cur.lastEnd)) cur.lastEnd = b;
@@ -735,7 +777,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         }
       }
       // Only agents who were actually on a queue we asked about.
-      const agents = [...byAgent.values()].filter((a) => a.queueId);
+      const agents = [...byAgent.values()].filter((a) => a.inScope);
       if (!agents.length) continue;
 
       // Who the rule would score, when it scores only one of them.
@@ -746,7 +788,8 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       for (const a of agents) {
         if (evaluatedUserIds.has(a.userId)) continue;
 
-        const programId = c.programOfQueue.get(a.queueId) || null;
+        const programId = c.programOfQueue.get(a.queueId)
+          || (matchedFlowId ? c.programOfFlow.get(matchedFlowId) : null) || null;
         const liveRules = programId ? (c.liveRulesOf.get(programId) || []) : [];
         const rule = liveRules[0] || null;
         const queue = c.queueById.get(a.queueId);
@@ -754,7 +797,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         const row = {
           conversationId: conv.conversationId,
           when: conv.conversationStart,
-          queue: queue?.name || a.queueId,
+          queue: queue?.name || a.queueId || (matchedFlowId ? "(via flow)" : "—"),
           agent: c.userName.get(a.userId) || a.userId,
           ms: a.ms,
           wrapUp: a.wrapUpCode ? (c.wrapUpName.get(a.wrapUpCode) || a.wrapUpCode) : null,
