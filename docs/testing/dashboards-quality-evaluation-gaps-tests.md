@@ -67,12 +67,17 @@ transcribed" in any useful sense.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 4.1 | Read the columns | When, Queue, Agent, Agent time, Recorded, Transcribed, Why | | |
+| 4.1 | Read the columns | Agent, Queue, Time, Duration, Recorded, Transcribed, Why — in that order | | |
+| 4.1a | Sort by any column | Clicking a header sorts by it; clicking again reverses | | |
+| 4.1b | ★ Sort by **Duration** | Sorts as a number, not as text: 12s before 45s before 10m. Text order would put 10m first | | |
+| 4.1c | **Time** filter | A From/To date range, not a list of timestamps | | |
+| 4.1d | **Duration** filter | A From/To range in seconds, not a list of durations | | |
+| 4.1e | Filter Duration to 40–200 | Only rows in that band remain | | |
 | 4.2 | An interaction that **was** evaluated | **No row at all.** Evaluated agents are not gaps | | |
 | 4.3 | A conversation with two agents, one evaluated | Only the unevaluated agent gets a row | | |
 | 4.4 | Filter by reason | The table narrows; the count in the dropdown matches | | |
-| 4.5 | Hover a When cell | The conversation id, for looking it up in Genesys | | |
-| 4.6 | Agent time | The agent's own segment time, not the whole conversation | | |
+| 4.5 | Hover a Time cell | The conversation id, for looking it up in Genesys | | |
+| 4.6 | Duration | The agent's own segment time, not the whole conversation | | |
 | 4.7 | Over 500 rows | Shows the first 500 and says so | | |
 
 ## 5. Cross-checks ★

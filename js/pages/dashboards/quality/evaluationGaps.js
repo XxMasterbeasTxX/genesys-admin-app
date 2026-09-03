@@ -41,6 +41,7 @@ import {
   RANGE_PRESETS, resolvePreset, latestSelectableDay, utcIso, yesterday,
   formatRange, dayCount,
 } from "../../../utils/dateRanges.js";
+import { attachColumnFilters } from "../../../utils/columnFilter.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
 
 const PARTICIPATE_PERMISSION = "quality:evaluation:participate";
@@ -147,13 +148,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       </div>
     </div>
 
-    <div class="dq-panel-note" data-c="thresholdNote">
-      The threshold is yours to set. Genesys is widely said not to transcribe very
-      short interactions, but no minimum is stated in its documentation — not on
-      the page that lists transcription limitations, nor in the AI scoring
-      guidance — so this is a number you choose, not a rule being enforced.
-    </div>
-
     <div class="cs-actions">
       <button class="btn" data-c="count">Count interactions</button>
       <button class="btn btn-primary" data-c="find" disabled>Find gaps</button>
@@ -181,7 +175,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           <label class="cs-label">Show</label>
           <select class="input" data-c="reasonFilter"></select>
         </div>
-        <div class="dq-table-wrap">
+        <div class="dq-table-wrap has-filters" data-c="rowsWrap">
           <table class="dq-table" data-c="rows"></table>
         </div>
         <div class="dq-panel-note" data-c="tableNote" hidden></div>
@@ -365,7 +359,10 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     invalidate();
     primeQueues();
   });
-  if (unsubscribe) el.__destroy = unsubscribe;
+  el.__destroy = () => {
+    unsubscribe?.();
+    detachFilters?.();
+  };
 
   primeQueues();
 
@@ -588,6 +585,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   // ── Rendering ───────────────────────────────────────
 
   let allRows = [];
+  let detachFilters = null;
 
   function render(rows, c, s, transcribed, convCount) {
     allRows = rows;
@@ -660,34 +658,63 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
 
   $("reasonFilter").addEventListener("change", drawTable);
 
+  /**
+   * Redraw, then re-attach the column filters.
+   *
+   * The whole table is rewritten on every reason change, so the previous
+   * attachment is detached first: it registers a document-level listener and
+   * would otherwise accumulate one per redraw, each bound to rows that are no
+   * longer in the document.
+   */
   function drawTable() {
     const pick = $("reasonFilter").value;
     const rows = pick ? allRows.filter((r) => r.reason === pick) : allRows;
     const shown = rows.slice(0, 500);
     const $t = $("rows");
 
+    detachFilters?.();
+    detachFilters = null;
+
     if (!rows.length) {
       $t.innerHTML = "";
       return;
     }
 
+    // Agent leads: the reader is looking for a person, not a timestamp.
+    // Duration rather than "Agent time" now that Time sits beside it — two
+    // columns a glance apart called Time and Agent time is a reading error
+    // waiting to happen.
     $t.innerHTML =
-      "<thead><tr><th>When</th><th>Queue</th><th>Agent</th>"
-      + '<th class="is-num">Agent time</th><th>Recorded</th><th>Transcribed</th>'
+      "<thead><tr><th>Agent</th><th>Queue</th><th>Time</th>"
+      + '<th class="is-num">Duration</th><th>Recorded</th><th>Transcribed</th>'
       + "<th>Why</th></tr></thead>"
       + `<tbody>${shown.map((r) => {
         const reason = REASON_BY_KEY.get(r.reason);
+        const seconds = r.ms != null ? Math.round(r.ms / 1000) : "";
         return `<tr>
-          <td title="${escapeHtml(r.conversationId || "")}">${escapeHtml(shortDate(r.when))}</td>
-          <td>${escapeHtml(r.queue)}</td>
           <td>${escapeHtml(r.agent)}</td>
-          <td class="is-num">${escapeHtml(secs(r.ms))}</td>
+          <td>${escapeHtml(r.queue)}</td>
+          <td data-value="${escapeHtml(r.when || "")}" title="${
+            escapeHtml(r.conversationId || "")}">${escapeHtml(shortDate(r.when))}</td>
+          <td class="is-num" data-value="${seconds}">${escapeHtml(secs(r.ms))}</td>
           <td>${r.recorded ? "Yes" : '<span class="dq-flag">No</span>'}</td>
           <td>${r.transcribed == null ? '<span class="dq-muted">—</span>'
             : r.transcribed ? "Yes" : '<span class="dq-flag">No</span>'}</td>
           <td title="${escapeHtml(reason?.hint || "")}">${escapeHtml(reason?.label || r.reason)}</td>
         </tr>`;
       }).join("")}</tbody>`;
+
+    // Time and Duration are both measured quantities — nearly one distinct value
+    // per row — so both get a FROM/TO range rather than a list of checkboxes.
+    // Time reads its real timestamp from data-value, since the displayed text is
+    // formatted for people and does not parse back.
+    detachFilters = attachColumnFilters($("rowsWrap"), {
+      sortable: true,
+      compact: true,
+      numericCols: [3],
+      rangeCols: [3],
+      dateCols: [2],
+    });
 
     if (rows.length > shown.length) {
       $("tableNote").textContent =
