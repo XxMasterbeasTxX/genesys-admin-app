@@ -1541,19 +1541,6 @@ export async function fetchRecordingMetadata(api, orgId, conversationId) {
     `/api/v2/conversations/${conversationId}/recordingmetadata`);
 }
 
-/**
- * Wrap-up codes by id.
- *
- * `/routing/wrapupcodes` on its own does not return every code an interaction
- * can carry - Genesys built-ins come back from the segment as ids the list has
- * never heard of - so the ones left unnamed are asked for directly.
- */
-export async function fetchWrapupCodesByIds(api, orgId, ids) {
-  if (!ids?.length) return [];
-  return fetchAllPages(api, orgId, "/api/v2/routing/wrapupcodes",
-    { query: { id: ids.join(",") } });
-}
-
 /** One program by id. Used to name a default program the list did not carry. */
 export async function fetchProgram(api, orgId, programId) {
   return api.proxyGenesys(orgId, "GET",

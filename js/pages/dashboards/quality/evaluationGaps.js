@@ -35,7 +35,7 @@ import {
   fetchAgentScoringRules, fetchTranscriptionSettings, fetchAllQueues,
   fetchRolesWithPermission, fetchRoleUsers, fetchAllUsers,
   countConversationDetails, queryConversationDetails, queryTranscriptAggregates,
-  fetchRecordingMetadata, fetchAllWrapupCodes, fetchWrapupCodesByIds,
+  fetchRecordingMetadata,
 } from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import {
@@ -314,13 +314,12 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     if (configOrgId === orgId && config) return config;
     setStatus("Reading configuration…");
 
-    const [unpubRes, queueRes, settingsRes, usersRes, wrapRes] =
+    const [unpubRes, queueRes, settingsRes, usersRes] =
       await Promise.allSettled([
         fetchUnpublishedPrograms(api, orgId),
         fetchAllQueues(api, orgId),
         fetchTranscriptionSettings(api, orgId),
         fetchAllUsers(api, orgId, { query: { state: "active" } }),
-        fetchAllWrapupCodes(api, orgId),
       ]);
     const val = (r) => (r.status === "fulfilled" ? r.value : null);
 
@@ -328,7 +327,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     const queues = val(queueRes) || [];
     const mode = val(settingsRes)?.transcription || null;
     const users = val(usersRes) || [];
-    const wrapUps = val(wrapRes) || [];
 
     // queueId -> the program covering it, and flowId -> likewise, from the
     // mappings already loaded. A program can cover either or both.
@@ -364,9 +362,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       unpublished, programOfQueue, programOfFlow, liveRulesOf, mode,
       queueById: new Map(queues.map((q) => [q.id, q])),
       userName: new Map(users.map((u) => [u.id, u.name || u.email || u.id])),
-      // The segment carries a wrap-up id; the name is what points at the cause,
-      // "Do not save recording" being the one that matters here.
-      wrapUpName: new Map(wrapUps.map((w) => [w.id, w.name || w.id])),
 
       participants,
     };
@@ -678,23 +673,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       }
       settleRows(rows, recordingInfo.states);
 
-      // Genesys built-in wrap-up codes come back from the segment as ids the
-      // routing list has never heard of, and an id in that column tells the
-      // reader nothing. The unnamed ones are asked for by id - one request,
-      // however many there are.
-      const unnamed = [...new Set(rows.map((r) => r.wrapUpId)
-        .filter((id) => id && !c.wrapUpName.has(id)))];
-      if (unnamed.length) {
-        try {
-          for (const w of await fetchWrapupCodesByIds(api, org.id, unnamed.slice(0, 100))) {
-            if (w?.id) c.wrapUpName.set(w.id, w.name || w.id);
-          }
-        } catch { /* the id stays on screen, which is still better than blank */ }
-        for (const row of rows) {
-          if (row.wrapUpId) row.wrapUp = c.wrapUpName.get(row.wrapUpId) || row.wrapUpId;
-        }
-      }
-
       // Rows decided before the recording question still show what was found,
       // when it was looked up as part of the spare budget.
       for (const row of rows) {
@@ -785,12 +763,11 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
 
             const cur = byAgent.get(part.userId)
               || { userId: part.userId, queueId: null, ms: 0, lastEnd: null,
-                   wrapUpCode: null, inScope: false };
+                   inScope: false };
             // On a flow-matched conversation the queue is recorded for display
             // but is not what qualified the agent.
             if (onWanted && seg.queueId) cur.queueId = seg.queueId;
             if (onWanted) cur.inScope = true;
-            if (seg.wrapUpCode) cur.wrapUpCode = seg.wrapUpCode;
             cur.ms += dur;
             if (dur && (cur.lastEnd == null || b > cur.lastEnd)) cur.lastEnd = b;
             byAgent.set(part.userId, cur);
@@ -822,8 +799,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           queue: queue?.name || a.queueId || (matchedFlowId ? "(via flow)" : "—"),
           agent: c.userName.get(a.userId) || a.userId,
           ms: a.ms,
-          wrapUpId: a.wrapUpCode || null,
-          wrapUp: a.wrapUpCode ? (c.wrapUpName.get(a.wrapUpCode) || a.wrapUpCode) : null,
           recording: null,          // filled in pass two, or left unchecked
           transcribed: transcribed ? transcribed.has(conv.conversationId) : null,
           reason: null,
@@ -915,7 +890,9 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
 
     $("rangeLine").textContent =
       `${formatRange(s.from, s.to)} · ${convCount.toLocaleString()} interaction(s) read`
-      + (s.total != null && s.total > convCount ? ` of ${s.total.toLocaleString()}` : "");
+      + (s.total != null && s.total > convCount ? ` of ${s.total.toLocaleString()}` : "")
+      + (withAgents !== convCount
+        ? `, ${withAgents.toLocaleString()} with an agent in scope` : "");
 
     $("tiles").innerHTML = [
       // Conversations with an agent in scope, not everything the query
@@ -925,10 +902,10 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       // and counting them here made the denominator jump for no visible reason.
       // The raw fetched figure stays on the range line above, where it belongs:
       // it describes the cost, not the population.
-      tile("Interactions", withAgents.toLocaleString(),
-        withAgents === convCount
-          ? "with an agent in scope"
-          : `with an agent in scope, of ${convCount.toLocaleString()} read`),
+      // One number per tile. The fetched figure lives on the range line above:
+      // repeating it here put four interaction counts on one screen and turned
+      // a dashboard into a puzzle.
+      tile("Interactions", withAgents.toLocaleString(), "with an agent in scope"),
       // Says what it is counting, because more missing evaluations than
       // interactions read looks wrong until you know the grain: a conversation
       // handled by two agents can be two missing evaluations.
@@ -1097,7 +1074,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     $t.innerHTML =
       "<thead><tr><th>Agent</th><th>Queue</th><th>Time</th>"
       + '<th class="is-num">Duration</th><th>Recording</th><th>Transcribed</th>'
-      + "<th>Wrap-up</th><th>Why</th></tr></thead>"
+      + "<th>Why</th></tr></thead>"
       + `<tbody>${shown.map((r) => {
         const reason = REASON_BY_KEY.get(r.reason);
         const seconds = r.ms != null ? Math.round(r.ms / 1000) : "";
@@ -1110,7 +1087,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           <td>${recordingCell(r.recording)}</td>
           <td>${r.transcribed == null ? '<span class="dq-muted">—</span>'
             : r.transcribed ? "Yes" : '<span class="dq-flag">No</span>'}</td>
-          <td>${r.wrapUp ? escapeHtml(r.wrapUp) : '<span class="dq-muted">—</span>'}</td>
           <td title="${escapeHtml(reason?.hint || "")}">${escapeHtml(reason?.label || r.reason)}</td>
         </tr>`;
       }).join("")}</tbody>`;

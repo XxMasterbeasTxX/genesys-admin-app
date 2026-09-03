@@ -61,7 +61,7 @@ transcribed" in any useful sense.
 | 3.4 | ~~No program covers the queue~~ | Gone. Scope is chosen by program now, so every queue in view is covered by construction. A queue no program covers is a configuration question — STA Configuration answers it | | |
 | 3.5 | **No live scoring rule** | The covering program has no enabled *and* published rule | | |
 | 3.6 | **Queue transcription off** | Only when the org is on Enabled Queue Flow | | |
-| 3.7 | ★ **Recording not kept** | Started and then discarded. Cross-check: Genesys should say “There is no recording for this interaction”, and the Wrap-up column usually names the cause | | |
+| 3.7 | ★ **Recording not kept** | Started and then discarded. Cross-check: Genesys should say “There is no recording for this interaction” | | |
 | 3.7a | ★ **Recording never started** | No recording was started at all — a different problem from the above, fixed in a different place | | |
 | 3.7b | The Recording column | Yes / Not kept / Never started / Not checked. “Not checked” is honest rather than a failure: the page only asks where the answer changes something, and stops at a cap | | |
 | 3.7c | ★ A row with **Recording: Not kept** and **Transcribed: Yes** | Legitimate — a recording can be deleted after it has been transcribed. Its reason must NOT be “recording not kept”: the transcript proves the audio did its job, so the failure is downstream | | |
@@ -74,14 +74,13 @@ transcribed" in any useful sense.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 4.1 | Read the columns | Agent, Queue, Time, Duration, Recording, Transcribed, Wrap-up, Why — in that order | | |
-| 4.1f | ★ **Wrap-up** | The code’s name, never a GUID. Genesys built-ins are not in the routing list and are looked up by id | | |
+| 4.1 | Read the columns | Agent, Queue, Time, Duration, Recording, Transcribed, Why — in that order | | |
 | 4.1a | Sort by any column | Clicking a header sorts by it; clicking again reverses | | |
 | 4.1b | ★ Sort by **Duration** | Sorts as a number, not as text: 12s before 45s before 10m. Text order would put 10m first | | |
 | 4.1c | **Time** filter | A From/To date range, not a list of timestamps | | |
 | 4.1d | **Duration** filter | A From/To range in seconds, not a list of durations | | |
 | 4.1e | Filter Duration to 40–200 | Only rows in that band remain | | |
-| 4.1§ | ★ The **Interactions** tile against the range line | The tile counts interactions with an agent in scope; the range line counts everything fetched. They differ because the query returns abandoned calls and interactions answered elsewhere, which produce no rows | | |
+| 4.1§ | ★ The **Interactions** tile against the range line | The tile carries one number — interactions with an agent in scope. The range line carries the fetched count. They differ because the query returns abandoned calls and interactions answered elsewhere, which produce no rows | | |
 | 4.1g | ★ Missing evaluations exceeds interactions read | Expected — one row per agent, so a conversation two agents handled counts twice. The tile says “across N interaction(s)” so the two numbers can be reconciled | | |
 | 4.1h | ★ One agent on one interaction | Appears **once**, even if they were a participant several times — a transfer back or a consult. Their time is merged | | |
 | 4.2 | An interaction that **was** evaluated | **No row at all.** Evaluated agents are not gaps | | |
