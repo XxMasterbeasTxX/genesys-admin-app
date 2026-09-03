@@ -310,6 +310,12 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       $("to").value = r.to;
       for (const b of $("presets").children) b.classList.toggle("is-active", b === btn);
       invalidate();
+      // The source searches on a preset click rather than waiting for a button.
+      // Counting is the cheap half of that - one request - so pressing a range
+      // tells you the size straight away, and Load stays the deliberate step
+      // that spends the enrichment budget. Silent when no copilot is chosen
+      // yet: picking a date is not the moment to be told off for it.
+      if (copilotPicker.getSelected().size) runCount().catch(() => {});
     });
     $("presets").append(btn);
   }
@@ -510,7 +516,15 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     };
   }
 
-  $("count").addEventListener("click", async () => {
+  $("count").addEventListener("click", () => { runCount().catch(() => {}); });
+
+  /**
+   * Count the interactions in scope and report the cost.
+   *
+   * One request at pageSize 1. Cheap enough to run on its own, which is what
+   * lets a preset click do something immediately.
+   */
+  async function runCount() {
     const org = currentOrg();
     if (!org) { setStatus("Select a customer organisation first.", "error"); return; }
     const s = currentScope();
@@ -541,7 +555,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     } catch (e) {
       setStatus(`Could not count interactions: ${e.message}`, "error");
     }
-  });
+  }
 
   $("load").addEventListener("click", () => { load().catch(() => {}); });
 
