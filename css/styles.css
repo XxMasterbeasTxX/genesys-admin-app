@@ -6257,55 +6257,6 @@ a.fr-shipped:hover { text-decoration: underline; }
   padding-top: 12px;
 }
 .dq-panel-block:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
-.dq-block-title {
-  font-size: 13px;
-  font-weight: 700;
-  margin: 0 0 8px;
-}
-
-/* Checklists ------------------------------------------------------ */
-.dq-checklist {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  margin-bottom: 10px;
-  padding: 10px 12px;
-}
-.dq-checklist-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-/* The two tick columns are narrow and read as a pair; the item column takes
-   whatever is left so a long description still wraps sensibly. */
-.dq-checklist-items { margin-top: 8px; width: 100%; }
-.dq-checklist-items th:nth-child(2),
-.dq-checklist-items th:nth-child(3),
-.dq-checklist-items td:nth-child(2),
-.dq-checklist-items td:nth-child(3) {
-  text-align: center;
-  white-space: nowrap;
-  width: 72px;
-}
-
-/* Summaries ------------------------------------------------------- */
-.dq-summary {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  margin-bottom: 10px;
-  padding: 10px 12px;
-}
-.dq-summary-field { margin-top: 8px; }
-.dq-summary-label {
-  color: var(--muted);
-  display: inline-block;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  margin-right: 6px;
-  text-transform: uppercase;
-}
-.dq-summary-field s { opacity: 0.75; }
 
 /* Recording ------------------------------------------------------- */
 .dq-recordings {
@@ -6322,10 +6273,6 @@ a.fr-shipped:hover { text-decoration: underline; }
   max-height: 360px;
   max-width: 100%;
   width: 100%;
-}
-
-@media (prefers-color-scheme: light) {
-  .dq-checklist, .dq-summary { background: #fff; }
 }
 
 /* ── Agent Copilot: collapsibles and the open row ─────────────────
@@ -6370,4 +6317,99 @@ a.fr-shipped:hover { text-decoration: underline; }
 
 @media (prefers-color-scheme: light) {
   .dq-table tbody tr.is-active { background: rgba(29, 78, 216, 0.10); }
+}
+
+/* ── Agent Copilot: checklist items and summaries ─────────────────
+   Item layout mirrors the source app: overall tick, name, important flag,
+   then the agent's tick and the model's tick side by side. The two ticks are
+   the point of the view and must never collapse into one. */
+.ac-checklist,
+.ac-summary {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  padding: 10px 12px;
+}
+.ac-checklist-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ac-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.ac-items {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.ac-item {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0;
+}
+.ac-items li:first-child { border-top: 0; }
+.ac-item-icon { font-size: 13px; line-height: 1; }
+/* The name takes the slack so the two tick readouts stay right-aligned
+   together and can be compared down the column. */
+.ac-item-name { flex: 1; min-width: 160px; }
+.ac-important { font-size: 12px; }
+.ac-eval {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ac-tick--yes { color: #58c4a0; font-weight: 700; }
+.ac-tick--no { color: #e06c6c; font-weight: 700; }
+.ac-item-desc {
+  color: var(--muted);
+  flex-basis: 100%;
+  font-size: 12px;
+  padding-left: 22px;
+}
+
+.ac-sum-label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.ac-sum-headline {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.ac-sum-field { font-size: 13px; margin-top: 6px; }
+.ac-sum-field.is-sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+  padding-left: 12px;
+}
+.ac-sum-field.is-original,
+.ac-sum-text.is-original {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.ac-sum-text { font-size: 13px; margin-top: 8px; }
+.ac-strike { text-decoration: line-through; }
+.ac-edited {
+  color: #e0a34a;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: light) {
+  .ac-checklist, .ac-summary { background: #fff; }
+  .ac-tick--yes { color: #14805e; }
+  .ac-tick--no { color: #b3261e; }
+  .ac-edited { color: #8a5a00; }
 }

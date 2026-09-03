@@ -1157,10 +1157,14 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
     $p.append(collapsible("Recording", recordingSection(convId), true));
     $p.append(collapsible("Checklists", checklistSection(info.checklists), true));
-    $p.append(collapsible(
-      "Conversation summary"
-        + (info.summaries.length > 1 ? ` (${info.summaries.length})` : ""),
-      summarySection(info.summaries), false));
+    // Only when there is one, and titled by count, as the source does.
+    if (info.summaries.length) {
+      $p.append(collapsible(
+        info.summaries.length === 1
+          ? "Conversation Summary"
+          : `Conversation Summaries (${info.summaries.length})`,
+        summarySection(info.summaries), false));
+    }
     $p.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
@@ -1289,6 +1293,14 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   }
 
   /** Checklist items, agent tick and AI tick shown apart. */
+  /**
+   * Checklist items, rendered as the source app renders them.
+   *
+   * Each item shows THREE things, and they are not the same thing: an overall
+   * tick (agent OR model), then the agent's own tick and the model's own tick
+   * side by side. A single merged tick would hide exactly what this page exists
+   * to show - whether a person worked the checklist or the model closed it.
+   */
   function checklistSection(checklists) {
     const wrap = document.createElement("div");
     if (!checklists.length) {
@@ -1298,46 +1310,77 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     }
 
     for (const cl of checklists) {
-      const box = document.createElement("div");
-      box.className = "dq-checklist";
-      const title = cl._agentName
-        ? `${cl.name || "Checklist"} — ${cl._agentName}`
-        : (cl.name || "Checklist");
-      const meta = [
-        cl.status,
-        cl.evaluationStartDate ? `started ${shortDate(cl.evaluationStartDate)}` : null,
-        cl.evaluationFinalizedDate ? `finalised ${shortDate(cl.evaluationFinalizedDate)}` : null,
-      ].filter(Boolean).join(" · ");
+      const section = document.createElement("div");
+      section.className = "ac-checklist";
 
-      box.innerHTML =
-        `<div class="dq-checklist-title">${escapeHtml(title)}</div>`
-        + (meta ? `<div class="dq-panel-sub">${escapeHtml(meta)}</div>` : "")
-        + `<table class="dq-table dq-checklist-items">
-             <thead><tr><th>Item</th><th>Agent</th><th>AI</th></tr></thead>
-             <tbody>${(cl.checklistItems || []).map((it) => `
-               <tr>
-                 <td>
-                   ${it.important ? '<span class="dq-flag" title="Important">!</span> ' : ""}
-                   ${escapeHtml(it.name || "—")}
-                   ${it.description
-                      ? `<div class="dq-panel-sub">${escapeHtml(it.description)}</div>` : ""}
-                 </td>
-                 <td>${it.stateFromAgent === TICKED ? "Yes" : '<span class="dq-muted">No</span>'}</td>
-                 <td>${it.stateFromModel === TICKED ? "Yes" : '<span class="dq-muted">No</span>'}</td>
-               </tr>`).join("")}
-             </tbody>
-           </table>`;
-      if (!(cl.checklistItems || []).length) {
-        box.insertAdjacentHTML("beforeend",
-          '<span class="dq-muted">This checklist carries no items, so it is '
-          + "neither complete nor incomplete.</span>");
+      const label = cl.name || "Checklist";
+      const title = document.createElement("div");
+      title.className = "ac-checklist-title";
+      title.textContent = cl._agentName ? `${label} (Agent: ${cl._agentName})` : label;
+      section.append(title);
+
+      const parts = [];
+      if (cl.status) parts.push(`Status: ${cl.status}`);
+      if (cl.evaluationStartDate) parts.push(`Started: ${shortDate(cl.evaluationStartDate)}`);
+      if (cl.evaluationFinalizedDate) {
+        parts.push(`Finalized: ${shortDate(cl.evaluationFinalizedDate)}`);
       }
-      wrap.append(box);
+      if (parts.length) {
+        const meta = document.createElement("div");
+        meta.className = "ac-meta";
+        meta.textContent = parts.join(" \u00b7 ");
+        section.append(meta);
+      }
+
+      const list = document.createElement("ul");
+      list.className = "ac-items";
+      for (const item of cl.checklistItems || []) {
+        const agentTicked = item.stateFromAgent === TICKED;
+        const modelTicked = item.stateFromModel === TICKED;
+        const ticked = agentTicked || modelTicked;
+
+        const li = document.createElement("li");
+        li.className = "ac-item " + (ticked ? "is-ticked" : "is-unticked");
+        li.innerHTML =
+          `<span class="ac-item-icon">${ticked ? "\u2705" : "\u274c"}</span>`
+          + `<span class="ac-item-name">${escapeHtml(item.name || "")}</span>`
+          + (item.important
+            ? '<span class="ac-important" title="Important">\u26a1</span>' : "")
+          + `<span class="ac-eval" title="Agent: ${agentTicked ? "Ticked" : "Unticked"}">`
+          + `Agent: <span class="${agentTicked ? "ac-tick--yes" : "ac-tick--no"}">`
+          + `${agentTicked ? "\u2713" : "\u2717"}</span></span>`
+          + `<span class="ac-eval" title="AI: ${modelTicked ? "Ticked" : "Unticked"}">`
+          + `AI: <span class="${modelTicked ? "ac-tick--yes" : "ac-tick--no"}">`
+          + `${modelTicked ? "\u2713" : "\u2717"}</span></span>`;
+
+        if (item.description) {
+          const desc = document.createElement("div");
+          desc.className = "ac-item-desc";
+          desc.textContent = item.description;
+          li.append(desc);
+        }
+        list.append(li);
+      }
+      section.append(list);
+      wrap.append(section);
     }
     return wrap;
   }
 
-  /** AI summaries, with the original shown where an agent edited a field. */
+  /**
+   * AI summaries, rendered as the source app renders them.
+   *
+   * Two things here are easy to get wrong and were: the headline lives on
+   * `headline`, NOT on `text` (which is the full summary shown at the bottom),
+   * and an edited field lives in its own top-level `editedReason` /
+   * `editedResolution` / `editedFollowup`, NOT inside `editedSummary` - that one
+   * holds only the edited full text. None of the edited fields nor `headline`
+   * appear in the OpenAPI spec; they are read because the working app reads
+   * them, and an absent field simply renders nothing.
+   *
+   * Unknown keys are rendered too. Copilot can return topics beyond Reason,
+   * Resolution and Followup, and a fixed list would silently drop them.
+   */
   function summarySection(summaries) {
     const wrap = document.createElement("div");
     if (!summaries.length) {
@@ -1346,44 +1389,141 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       return wrap;
     }
 
-    summaries.forEach((s, i) => {
-      const box = document.createElement("div");
-      box.className = "dq-summary";
-      const label = summaries.length > 1 ? `Summary ${i + 1} of ${summaries.length}` : "Summary";
-      const who = s._agentName ? ` — ${s._agentName}` : "";
-      const edited = s.editedSummary || {};
+    const hasEdited = (v) => v && typeof v === "object" && Object.keys(v).length > 0;
 
-      const field = (name, original, key) => {
-        const orig = fieldText(original);
-        const ed = fieldText(edited?.[key]);
-        if (!orig && !ed) return "";
-        return `<div class="dq-summary-field">
-          <span class="dq-summary-label">${escapeHtml(name)}</span>
-          ${ed
-            ? `<span class="dq-flag">edited</span>
-               <div>${escapeHtml(ed)}</div>
-               ${orig ? `<div class="dq-muted"><s>${escapeHtml(orig)}</s></div>` : ""}`
-            : `<div>${escapeHtml(orig)}</div>`}
-        </div>`;
+    summaries.forEach((sum, idx) => {
+      const card = document.createElement("div");
+      card.className = "ac-summary";
+
+      if (summaries.length > 1) {
+        const bits = [`Summary ${idx + 1} of ${summaries.length}`];
+        if (sum._agentName) bits.push(`Agent: ${sum._agentName}`);
+        const l = document.createElement("div");
+        l.className = "ac-sum-label";
+        l.textContent = bits.join(" \u2014 ");
+        card.append(l);
+      } else if (sum._agentName) {
+        const l = document.createElement("div");
+        l.className = "ac-sum-label";
+        l.textContent = `Agent: ${sum._agentName}`;
+        card.append(l);
+      }
+
+      /** A field, with the edit promoted and the original struck through under it. */
+      const renderField = (label, original, edited) => {
+        const origText = fieldText(original);
+        const editText = hasEdited(edited) ? fieldText(edited) : null;
+        if (!origText && !editText) return;
+
+        if (editText) {
+          const w = document.createElement("div");
+          w.className = "ac-sum-field";
+          w.innerHTML =
+            `<strong>${escapeHtml(label)}:</strong> ${escapeHtml(editText)} `
+            + '<span class="ac-edited" title="Edited by agent">\u270f\ufe0f Edited</span>';
+          card.append(w);
+          if (origText && origText !== editText) {
+            const o = document.createElement("div");
+            o.className = "ac-sum-field is-original";
+            o.innerHTML =
+              `<strong>Original:</strong> <span class="ac-strike">${escapeHtml(origText)}</span>`;
+            card.append(o);
+          }
+        } else {
+          const r = document.createElement("div");
+          r.className = "ac-sum-field";
+          r.innerHTML = `<strong>${escapeHtml(label)}:</strong> ${escapeHtml(origText)}`;
+          card.append(r);
+        }
       };
 
-      const codes = (s.predictedWrapupCodes || [])
-        .map((c) => wrapUpName.get(c?.wrapupCode?.id ?? c?.id) || c?.wrapupCode?.name || c?.name)
-        .filter(Boolean);
+      /** A field plus the description and outcome that ride alongside it. */
+      const renderTopic = (label, original, edited) => {
+        renderField(label, original, edited);
+        if (original && typeof original === "object") {
+          if (original.description) {
+            const d = document.createElement("div");
+            d.className = "ac-sum-field is-sub";
+            d.textContent = original.description;
+            card.append(d);
+          }
+          if (original.outcome) {
+            const o = document.createElement("div");
+            o.className = "ac-sum-field is-sub";
+            o.innerHTML = `<strong>Outcome:</strong> ${escapeHtml(original.outcome)}`;
+            card.append(o);
+          }
+        }
+      };
 
-      box.innerHTML =
-        `<div class="dq-checklist-title">${escapeHtml(label + who)}</div>`
-        + field("Headline", s.text, "text")
-        + field("Reason", s.reason, "reason")
-        + field("Resolution", s.resolution, "resolution")
-        + field("Follow-up", s.followup, "followup")
-        + (codes.length
-          ? `<div class="dq-summary-field">
-               <span class="dq-summary-label">Suggested wrap-up</span>
-               <div>${escapeHtml(codes.join(", "))}</div>
-             </div>`
-          : "");
-      wrap.append(box);
+      const headline = fieldText(sum.headline);
+      if (headline) {
+        const h = document.createElement("div");
+        h.className = "ac-sum-headline";
+        h.textContent = headline;
+        card.append(h);
+      }
+
+      renderTopic("Reason", sum.reason, sum.editedReason);
+      renderTopic("Resolution", sum.resolution, sum.editedResolution);
+      renderTopic("Followup", sum.followup, sum.editedFollowup);
+
+      const editedText = hasEdited(sum.editedSummary) ? fieldText(sum.editedSummary) : null;
+
+      // Anything Copilot returned that is not part of the known set.
+      const known = new Set([
+        "id", "text", "description", "confidence", "status", "mediaType",
+        "language", "headline", "reason", "resolution", "followup",
+        "editedSummary", "editedReason", "editedResolution", "editedFollowup",
+        "predictedWrapupCodes", "dateCreated", "extractedEntities",
+        "communication", "communicationId", "participants", "selfUri",
+        "conversation", "_agentName",
+      ]);
+      for (const [key, val] of Object.entries(sum)) {
+        if (known.has(key)) continue;
+        if (!fieldText(val)) continue;
+        const editedKey = `edited${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+        renderTopic(key.charAt(0).toUpperCase() + key.slice(1), val, sum[editedKey]);
+        known.add(editedKey);
+      }
+
+      const fullText = fieldText(sum.text) || fieldText(sum.description);
+      if (editedText) {
+        const t = document.createElement("div");
+        t.className = "ac-sum-text";
+        t.innerHTML = `${escapeHtml(editedText)} `
+          + '<span class="ac-edited" title="Edited by agent">\u270f\ufe0f Edited</span>';
+        card.append(t);
+        if (fullText && fullText !== editedText) {
+          const o = document.createElement("div");
+          o.className = "ac-sum-text is-original";
+          o.innerHTML =
+            `<strong>Original:</strong> <span class="ac-strike">${escapeHtml(fullText)}</span>`;
+          card.append(o);
+        }
+      } else if (fullText) {
+        const t = document.createElement("div");
+        t.className = "ac-sum-text";
+        t.textContent = fullText;
+        card.append(t);
+      }
+
+      if (sum.status) {
+        const m = document.createElement("div");
+        m.className = "ac-meta";
+        m.textContent = `Status: ${sum.status}`;
+        card.append(m);
+      }
+
+      if (Array.isArray(sum.predictedWrapupCodes) && sum.predictedWrapupCodes.length) {
+        const w = document.createElement("div");
+        w.className = "ac-sum-field";
+        w.innerHTML = "<strong>Suggested wrapup:</strong> "
+          + escapeHtml(sum.predictedWrapupCodes.map((c) => c.name).filter(Boolean).join(", "));
+        card.append(w);
+      }
+
+      wrap.append(card);
     });
     return wrap;
   }
