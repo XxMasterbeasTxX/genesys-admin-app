@@ -175,6 +175,9 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           <label class="cs-label">Show</label>
           <select class="input" data-c="reasonFilter"></select>
         </div>
+        <div class="is-hint">
+          Tip: Right-click a row to copy the Conversation ID to clipboard.
+        </div>
         <div class="dq-table-wrap has-filters" data-c="rowsWrap">
           <table class="dq-table" data-c="rows"></table>
         </div>
@@ -647,6 +650,33 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     drawTable();
   }
 
+  /**
+   * Clipboard fallback for contexts where the async API is unavailable — an
+   * iframe, or a browser that has not granted clipboard-write. Same approach as
+   * Interactions > Search, which is also where the right-click gesture and its
+   * wording come from: a reader who has learnt it there should not have to
+   * learn it again here.
+   */
+  function copyFallback(text) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
+
+  function copyConversationId(id) {
+    if (!id) return;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(id).catch(() => copyFallback(id));
+    } else {
+      copyFallback(id);
+    }
+    setStatus(`Copied: ${id}`, "success");
+  }
+
   function tile(label, value, sub) {
     return `
       <div class="dq-tile">
@@ -691,7 +721,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       + `<tbody>${shown.map((r) => {
         const reason = REASON_BY_KEY.get(r.reason);
         const seconds = r.ms != null ? Math.round(r.ms / 1000) : "";
-        return `<tr>
+        return `<tr data-conversation="${escapeHtml(r.conversationId || "")}">
           <td>${escapeHtml(r.agent)}</td>
           <td>${escapeHtml(r.queue)}</td>
           <td data-value="${escapeHtml(r.when || "")}" title="${
@@ -703,6 +733,17 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           <td title="${escapeHtml(reason?.hint || "")}">${escapeHtml(reason?.label || r.reason)}</td>
         </tr>`;
       }).join("")}</tbody>`;
+
+    // One listener on the body rather than one per row: the table is redrawn on
+    // every sort, filter and reason change, and per-row listeners would be
+    // rebound each time.
+    $t.addEventListener("contextmenu", (e) => {
+      const tr = e.target?.closest?.("tbody tr");
+      const id = tr?.dataset?.conversation;
+      if (!id) return;
+      e.preventDefault();
+      copyConversationId(id);
+    });
 
     // Time and Duration are both measured quantities — nearly one distinct value
     // per row — so both get a FROM/TO range rather than a list of checkboxes.

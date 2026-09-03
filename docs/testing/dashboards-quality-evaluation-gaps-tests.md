@@ -77,6 +77,11 @@ transcribed" in any useful sense.
 | 4.3 | A conversation with two agents, one evaluated | Only the unevaluated agent gets a row | | |
 | 4.4 | Filter by reason | The table narrows; the count in the dropdown matches | | |
 | 4.5 | Hover a Time cell | The conversation id, for looking it up in Genesys | | |
+| 4.5a | ★ Right-click any row | Copies the Conversation ID; a line confirms which. The browser's own menu does not appear | | |
+| 4.5b | Paste it into Genesys | Finds the interaction | | |
+| 4.5c | Right-click a **header** | Copies nothing — the browser menu behaves normally there | | |
+| 4.5d | Sort or filter, then right-click again | Still copies. The gesture survives a redraw | | |
+| 4.5e | The tip above the table | Says right-click copies the Conversation ID | | |
 | 4.6 | Duration | The agent's own segment time, not the whole conversation | | |
 | 4.7 | Over 500 rows | Shows the first 500 and says so | | |
 
