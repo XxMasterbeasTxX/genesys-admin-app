@@ -61,7 +61,7 @@ transcribed" in any useful sense.
 | 3.7a | ★ **Recording never started** | No recording was started at all — a different problem from the above, fixed in a different place | | |
 | 3.7b | The Recording column | Yes / Not kept / Never started / Not checked. “Not checked” is honest rather than a failure: the page only asks where the answer changes something, and stops at a cap | | |
 | 3.7c | ★ A row with **Recording: Not kept** and **Transcribed: Yes** | Legitimate — a recording can be deleted after it has been transcribed. Its reason must NOT be “recording not kept”: the transcript proves the audio did its job, so the failure is downstream | | |
-| 3.8 | ★ **Shorter than the threshold** | Change the threshold and reload; rows should move between this and other reasons | | |
+| 3.8 | ★ **Shorter than the threshold** | Genesys does not evaluate below the threshold, so this is checked BEFORE recording and transcript: a short call is not evaluated however well it was recorded. Change the threshold and reload; rows should move | | |
 | 3.9 | **Not transcribed** | Recorded, long enough, and no transcript | | |
 | 3.10 | **Another agent was the one scored** | Only on multi-agent conversations, and only when the rule scores First or Last. This is *working as configured*, not a fault | | |
 | 3.11 | ★ **Unexplained** | Everything checked was in order. **These are the ones to investigate** — tell me what you find, because they are what the page exists for | | |
@@ -77,6 +77,8 @@ transcribed" in any useful sense.
 | 4.1c | **Time** filter | A From/To date range, not a list of timestamps | | |
 | 4.1d | **Duration** filter | A From/To range in seconds, not a list of durations | | |
 | 4.1e | Filter Duration to 40–200 | Only rows in that band remain | | |
+| 4.1g | ★ Missing evaluations exceeds interactions read | Expected — one row per agent, so a conversation two agents handled counts twice. The tile says “across N interaction(s)” so the two numbers can be reconciled | | |
+| 4.1h | ★ One agent on one interaction | Appears **once**, even if they were a participant several times — a transfer back or a consult. Their time is merged | | |
 | 4.2 | An interaction that **was** evaluated | **No row at all.** Evaluated agents are not gaps | | |
 | 4.3 | A conversation with two agents, one evaluated | Only the unevaluated agent gets a row | | |
 | 4.4 | Filter by reason | The table narrows; the count in the dropdown matches | | |

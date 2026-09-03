@@ -91,6 +91,11 @@ const REASONS = Object.freeze([
   { key: "queueTranscriptionOff", label: "Queue transcription off", fill: "dq-fill-bad",
     hint: "The queue has voice transcription switched off, so nothing here is "
       + "transcribed and nothing can be AI scored." },
+  { key: "tooShort", label: "Shorter than the threshold", fill: "dq-fill-warn",
+    hint: "Genesys does not evaluate interactions below the threshold, so nothing "
+      + "downstream matters - a short call is not evaluated however well it was "
+      + "recorded and transcribed. No minimum is stated in the documentation, which is "
+      + "why the threshold is a field you set rather than a constant." },
   { key: "recordingNeverStarted", label: "Recording never started", fill: "dq-fill-warn",
     hint: "No recording was started on this interaction, so there was never any audio "
       + "to transcribe. That is a recording policy question." },
@@ -98,8 +103,6 @@ const REASONS = Object.freeze([
     hint: "A recording was started and then discarded - by a retention policy, often "
       + "driven by the wrap-up code. Nothing was left to transcribe. That is a "
       + "retention question, not a recording one." },
-  { key: "tooShort", label: "Shorter than the threshold", fill: "dq-fill-warn",
-    hint: "The agent was on the interaction for less than the threshold set above." },
   { key: "notTranscribed", label: "Not transcribed", fill: "dq-fill-warn",
     hint: "Recorded and long enough, but speech and text analytics produced no "
       + "transcript for it." },
@@ -616,28 +619,35 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         if (started) break;
       }
 
-      const agents = [];
+      // KEYED ON THE AGENT, NOT ON THE PARTICIPANT ENTRY. One person can appear
+      // as several participants on one conversation - a transfer back, a
+      // consult, a reconnect - and one row each would list the same
+      // agent-interaction pair two or three times and inflate the count. Their
+      // segments are merged instead: time adds up, and the latest end is what
+      // decides who was last.
+      const byAgent = new Map();
       for (const part of conv.participants || []) {
         if (part.purpose !== "agent" || !part.userId) continue;
-        let queueId = null;
-        let ms = 0;
-        let lastEnd = null;
-        let wrapUpCode = null;
         for (const sess of part.sessions || []) {
           for (const seg of sess.segments || []) {
-            if (seg.queueId && wanted.has(seg.queueId)) queueId = seg.queueId;
-            if (seg.wrapUpCode) wrapUpCode = seg.wrapUpCode;
+            const onWanted = seg.queueId && wanted.has(seg.queueId);
             const a = Date.parse(seg.segmentStart || "");
             const b = Date.parse(seg.segmentEnd || "");
-            if (!Number.isNaN(a) && !Number.isNaN(b) && b > a) {
-              ms += b - a;
-              if (lastEnd == null || b > lastEnd) lastEnd = b;
-            }
+            const dur = (!Number.isNaN(a) && !Number.isNaN(b) && b > a) ? b - a : 0;
+            if (!onWanted && !byAgent.has(part.userId)) continue;
+
+            const cur = byAgent.get(part.userId)
+              || { userId: part.userId, queueId: null, ms: 0, lastEnd: null, wrapUpCode: null };
+            if (onWanted) cur.queueId = seg.queueId;
+            if (seg.wrapUpCode) cur.wrapUpCode = seg.wrapUpCode;
+            cur.ms += dur;
+            if (dur && (cur.lastEnd == null || b > cur.lastEnd)) cur.lastEnd = b;
+            byAgent.set(part.userId, cur);
           }
         }
-        if (!queueId) continue;   // this agent was not on a queue we asked about
-        agents.push({ userId: part.userId, queueId, ms, lastEnd, wrapUpCode });
       }
+      // Only agents who were actually on a queue we asked about.
+      const agents = [...byAgent.values()].filter((a) => a.queueId);
       if (!agents.length) continue;
 
       // Who the rule would score, when it scores only one of them.
@@ -671,12 +681,22 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         else if (!liveRules.length) row.reason = "noRule";
         else if (c.mode === "EnabledQueueFlow" && queue && queue.enableTranscription === false) {
           row.reason = "queueTranscriptionOff";
+        } else if (thresholdMs > 0 && a.ms > 0 && a.ms < thresholdMs) {
+          // BEFORE the recording and transcript tests, not after. Genesys does
+          // not evaluate an interaction below the threshold at all, so a short
+          // call is not evaluated however well it was recorded and transcribed
+          // - reporting "not transcribed" there would send someone chasing a
+          // pipeline that was never going to produce an evaluation anyway.
+          //
+          // It also means a short row costs no recording lookup, since nothing
+          // after this point can change the answer.
+          row.reason = "tooShort";
         } else {
           // Everything from here needs to know whether a recording exists.
           const scoredMismatch = !!(rule
             && ((rule.agentToScore === "First" && a.userId !== firstAgentId)
               || (rule.agentToScore === "Last" && a.userId !== lastAgentId)));
-          row.pending = { started, scoredMismatch, thresholdMs };
+          row.pending = { started, scoredMismatch };
           needRecording.set(conv.conversationId, started);
         }
 
@@ -699,23 +719,21 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   function settleRows(rows, states) {
     for (const row of rows) {
       if (!row.pending) continue;
-      const { started, scoredMismatch, thresholdMs } = row.pending;
+      const { started, scoredMismatch } = row.pending;
       const state = states.get(row.conversationId) || "unknown";
       row.recording = state;
 
-      if (row.transcribed === true) {
-        // A TRANSCRIPT SETTLES EVERYTHING BEFORE IT. If one exists, the audio
-        // existed and was long enough, whatever the recording now says - a
-        // recording can be deleted after it has been transcribed, which is why
-        // "Not kept" and "Transcribed: Yes" can both be true on one row. Blaming
-        // the missing evaluation on retention there would send someone to fix a
-        // policy that did its job; the failure is downstream of it.
-        row.reason = scoredMismatch ? "notScoredAgent" : "unexplained";
-      } else if (state === "notKept") row.reason = "recordingNotKept";
-      else if (state === "neverStarted") row.reason = "recordingNeverStarted";
-      else if (!started && state === "unknown") row.reason = "recordingNeverStarted";
-      else if (thresholdMs > 0 && row.ms > 0 && row.ms < thresholdMs) row.reason = "tooShort";
-      else if (row.transcribed === false) row.reason = "notTranscribed";
+      // A transcript settles the recording question. A recording can be deleted
+      // after being transcribed, which is why "Not kept" and "Transcribed: Yes"
+      // sit on one row honestly - and blaming the missing evaluation on
+      // retention there would send someone to fix a policy that did its job.
+      const noRecording = row.transcribed !== true
+        && (state === "notKept" || state === "neverStarted"
+          || (!started && state === "unknown"));
+
+      if (noRecording) {
+        row.reason = state === "notKept" ? "recordingNotKept" : "recordingNeverStarted";
+      } else if (row.transcribed === false) row.reason = "notTranscribed";
       else if (scoredMismatch) row.reason = "notScoredAgent";
       else row.reason = "unexplained";
 
@@ -746,7 +764,12 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       tile("Interactions read", convCount.toLocaleString(),
         s.total != null && s.total > convCount
           ? `capped at ${(MAX_PAGES * 100).toLocaleString()}` : "all in scope"),
-      tile("Missing evaluations", rows.length.toLocaleString(), "agent-interaction pairs"),
+      // Says what it is counting, because more missing evaluations than
+      // interactions read looks wrong until you know the grain: a conversation
+      // handled by two agents can be two missing evaluations.
+      tile("Missing evaluations", rows.length.toLocaleString(),
+        `across ${new Set(rows.map((r) => r.conversationId)).size.toLocaleString()} `
+        + "interaction(s)"),
       tile("Working as configured", expected.toLocaleString(),
         "another agent was the one scored"),
       tile("Unexplained", unexplained.toLocaleString(),
@@ -774,7 +797,9 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         .join("");
 
     $("tableSub").textContent = transcribed
-      ? "One row per agent who was on the interaction and has no evaluation for it."
+      ? "One row per agent who was on the interaction and has no evaluation for it — "
+        + "so a conversation two agents handled appears twice, once per agent. One "
+        + "agent is never listed twice for the same interaction."
       : "One row per agent who was on the interaction and has no evaluation for it. "
         + "Transcript status could not be read, so no row is attributed to a missing "
         + "transcript.";
