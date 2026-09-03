@@ -191,11 +191,11 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           <div class="ac-filter-group">
             <label class="ac-filter-label">Agent Copilots</label>
             <div data-c="copilotPicker"></div>
-            <div class="is-hint" data-c="queueHint"></div>
           </div>
           <div class="ac-filter-group">
             <label class="ac-filter-label">Queues</label>
             <div data-c="queuePicker"></div>
+            <div class="is-hint" data-c="queueHint"></div>
           </div>
           <div class="ac-filter-group">
             <label class="ac-filter-label">Agents</label>

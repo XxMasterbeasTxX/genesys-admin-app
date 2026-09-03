@@ -6527,14 +6527,23 @@ a.fr-shipped:hover { text-decoration: underline; }
   flex-direction: column;
   gap: 10px;
 }
-/* flex-end so a control with a hint under it still lines its input up with the
-   others on the row. */
+/* Top-aligned, NOT flex-end.
+   The source aligns its rows on flex-end, which works because none of its
+   controls carry anything beneath them. The Queues control here has a hint line
+   under it, and on flex-end that hint counted as part of the group's height -
+   so the group sat lower and its dropdown floated above its neighbours. Aligning
+   on the top puts every label and every input on the same line and lets a hint
+   simply hang below its own control. */
 .ac-filter-row {
-  align-items: flex-end;
+  align-items: flex-start;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
+/* The buttons on the date row have no label above them, so they need the
+   label's height to sit level with the inputs beside them. */
+.ac-filter-row > .btn { margin-top: 20px; }
+.ac-status-bar > .btn { margin-top: 0; }
 .ac-filter-group {
   display: flex;
   flex-direction: column;
