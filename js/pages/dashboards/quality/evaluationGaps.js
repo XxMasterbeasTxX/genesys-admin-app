@@ -412,7 +412,28 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     $n.textContent = n
       ? `${n} queue${n === 1 ? "" : "s"} in ${picked.size === 1 ? "that program"
         : `those ${picked.size} programs`}`
-      : "Those programs cover no queues, so there is nothing to look at.";
+      : noQueueMessage(picked);
+  }
+
+  /**
+   * What to say when the chosen programs cover nothing.
+   *
+   * Named rather than counted when there is one of them: "Those programs" for a
+   * single selection is the kind of wrong that makes a reader doubt the rest of
+   * the numbers. A program covering nothing is also a real finding in itself -
+   * it can never evaluate anything - so the message says where to fix it rather
+   * than only that there is nothing to show.
+   */
+  function noQueueMessage(picked) {
+    const name = picked.size === 1
+      ? (programs.find((pr) => pr.id === [...picked][0])?.name || "That program")
+      : null;
+    return name
+      ? `“${name}” covers no queues, so nothing on it can be evaluated. Map queues to `
+        + "the program in Genesys — STA Configuration shows the current mappings."
+      : `Those ${picked.size} programs cover no queues between them, so nothing on them `
+        + "can be evaluated. Map queues to them in Genesys — STA Configuration shows the "
+        + "current mappings.";
   }
 
   /**
@@ -540,8 +561,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       reflectQueueCount();
       const s = scope();
       if (!s.queueIds.length) {
-        setStatus("The selected programs cover no queues, so there is nothing to "
-          + "look at.", "error");
+        setStatus(noQueueMessage(programPicker.getSelected()), "error");
         return;
       }
       if (s.from > s.to) {

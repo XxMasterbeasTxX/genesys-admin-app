@@ -29,6 +29,8 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 1.3 | Before choosing an org | Buttons disabled, message asks for a customer org | | |
 | 1.4 | ★ Pick an org | **Only the program list loads** — one request. Nothing else, so an org with many programs opens instantly | | |
 | 1.5 | ★ Pick a program | A line under the picker says how many queues that program covers. The queues are a consequence of the program, not a separate choice | | |
+| 1.5a | ★ Pick a program that covers **no** queues | It says so by name — “X covers no queues, so nothing on it can be evaluated” — and points at where to map them. Pressing Count says the same rather than running an empty query | | |
+| 1.5b | Pick several programs, none covering a queue | Same message, worded for several | | |
 | 1.6 | Watch the network tab on open | One call: the programs. Mappings follow when you pick a program; everything else waits for Find gaps | | |
 | 1.7 | Only short quick-ranges are offered | Today, Yesterday, This week, Last Week. No 12-month button, because that is a walk nobody should start by accident | | |
 
