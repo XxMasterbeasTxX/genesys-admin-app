@@ -182,58 +182,56 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       touched it.
     </p>
 
-    <div class="dq-filter-band">
-      <div class="dq-filter-fields">
-        <div class="cs-control-group">
-          <label class="cs-label">Agent Copilots</label>
-          <div data-c="copilotPicker"></div>
+    <!-- Filters left, chart right, side by side - the source's top area.
+         The chart is not a panel below the results: it sits beside the controls
+         and is the first thing the filters change. -->
+    <div class="ac-top-area">
+      <div class="ac-filters">
+        <div class="ac-filter-row">
+          <div class="ac-filter-group">
+            <label class="ac-filter-label">Agent Copilots</label>
+            <div data-c="copilotPicker"></div>
+            <div class="is-hint" data-c="queueHint"></div>
+          </div>
+          <div class="ac-filter-group">
+            <label class="ac-filter-label">Queues</label>
+            <div data-c="queuePicker"></div>
+          </div>
+          <div class="ac-filter-group">
+            <label class="ac-filter-label">Agents</label>
+            <div data-c="agentPicker"></div>
+          </div>
         </div>
-        <div class="cs-control-group">
-          <label class="cs-label">Queues</label>
-          <div data-c="queuePicker"></div>
-          <div class="is-hint" data-c="queueHint"></div>
+
+        <div class="ac-filter-row">
+          <div class="ac-filter-group">
+            <label class="ac-filter-label">From</label>
+            <input class="input is-date" type="date" data-c="from">
+          </div>
+          <div class="ac-filter-group">
+            <label class="ac-filter-label">To</label>
+            <input class="input is-date" type="date" data-c="to">
+          </div>
+          <div class="ac-filter-group">
+            <label class="ac-filter-label">Quick ranges</label>
+            <div class="ac-presets" data-c="presets"></div>
+          </div>
+          <button class="btn btn-sm" data-c="count">Count interactions</button>
+          <button class="btn btn-sm btn-primary" data-c="load" disabled>Load checklists</button>
         </div>
-        <div class="cs-control-group">
-          <label class="cs-label">Agents</label>
-          <div data-c="agentPicker"></div>
-        </div>
+
+        <div class="ac-filter-row ac-status-bar" data-c="statusFilters"></div>
       </div>
-    </div>
 
-    <div class="dq-filter-band">
-      <div class="dq-filter-fields">
-        <div class="cs-control-group">
-          <label class="cs-label">From</label>
-          <input class="input is-date" type="date" data-c="from">
-        </div>
-        <div class="cs-control-group">
-          <label class="cs-label">To</label>
-          <input class="input is-date" type="date" data-c="to">
-        </div>
-        <div class="cs-control-group">
-          <label class="cs-label">Quick ranges</label>
-          <div class="dq-presets" data-c="presets"></div>
-        </div>
+      <div class="ac-chart-wrap" data-c="chartPanel" hidden>
+        <div class="ac-chart" data-c="chart"></div>
       </div>
-    </div>
-
-    <div class="dq-filter-band">
-      <div class="dq-presets" data-c="statusFilters"></div>
-    </div>
-
-    <div class="cs-actions">
-      <button class="btn" data-c="count">Count interactions</button>
-      <button class="btn btn-primary" data-c="load" disabled>Load checklists</button>
     </div>
 
     <div class="cs-status" data-c="status" style="display:none"></div>
 
     <div data-c="results" hidden>
       <div class="dq-range-line" data-c="rangeLine"></div>
-
-      <div class="dq-panel" data-c="chartPanel" hidden>
-        <div class="ac-chart" data-c="chart"></div>
-      </div>
 
       <div class="dq-panel">
         <button type="button" class="ac-results-toggle" data-c="resultsToggle"
@@ -303,7 +301,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     (x) => ["today", "yesterday", "thisWeek", "lastWeek"].includes(x.key))) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "btn btn-sm dq-preset";
+    btn.className = "btn btn-sm ac-preset";
     btn.textContent = preset.label;
     btn.addEventListener("click", () => {
       const r = resolvePreset(preset.key);
@@ -865,7 +863,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   for (const f of STATUS_FILTERS) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "btn btn-sm dq-preset" + (f.key === "all" ? " is-active" : "");
+    btn.className = "btn btn-sm ac-preset" + (f.key === "all" ? " is-active" : "");
     btn.textContent = f.label;
     btn.addEventListener("click", () => {
       statusFilter = f.key;
@@ -886,7 +884,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "btn btn-sm dq-preset";
+    btn.className = "btn btn-sm ac-preset";
     btn.dataset.toggle = "agent";
     btn.textContent = "✋ Agent Checked";
     btn.title = "Only interactions where the agent ticked at least one item themselves.";

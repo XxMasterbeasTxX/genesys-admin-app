@@ -6410,8 +6410,10 @@ a.fr-shipped:hover { text-decoration: underline; }
 .ac-chart-plot {
   align-items: flex-end;
   display: flex;
+  flex: 1;
   gap: 48px;
   justify-content: center;
+  min-height: 0;
   padding: 0 12px;
 }
 .ac-col {
@@ -6433,7 +6435,8 @@ a.fr-shipped:hover { text-decoration: underline; }
   background: rgba(255,255,255,0.04);
   border-radius: 4px;
   display: flex;
-  height: 140px;
+  flex: 1;
+  min-height: 40px;
   width: 100%;
 }
 .ac-col-bar {
@@ -6503,4 +6506,87 @@ a.fr-shipped:hover { text-decoration: underline; }
   align-self: center;
   color: var(--border);
   padding: 0 2px;
+}
+
+/* ── Agent Copilot: the top area ──────────────────────────
+   Ported from the source app's own layout: the filter stack on the left at its
+   natural width, the completion chart filling the space beside it.
+
+   These do NOT reuse .dq-filter-band, which is a two-column grid expecting a
+   WHEN/WHERE caption in its first 72px track. Dropping the caption to flatten
+   the bar put every control into that 72px column and crushed the page into a
+   single narrow strip - which is exactly what happened. */
+.ac-top-area {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+}
+.ac-filters {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+}
+/* flex-end so a control with a hint under it still lines its input up with the
+   others on the row. */
+.ac-filter-row {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ac-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ac-filter-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ac-filter-group .ms-dropdown { min-width: 190px; }
+.ac-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.ac-status-bar { gap: 6px; }
+.ac-preset { font-size: 12px; }
+.ac-preset.is-active {
+  background: rgba(59,130,246,0.22);
+  border-color: rgba(59,130,246,0.45);
+  color: #93bbfd;
+}
+
+/* The chart box: beside the filters, its own frame, a fixed height so the bars
+   have a consistent scale to be read against. */
+.ac-chart-wrap {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  flex: 1;
+  height: 200px;
+  margin: 0 auto;
+  max-width: 880px;
+  min-width: 0;
+  padding: 10px;
+}
+.ac-chart {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Below roughly a tablet the two halves stack rather than squeeze. */
+@media (max-width: 1100px) {
+  .ac-top-area { flex-direction: column; }
+  .ac-chart-wrap { align-self: stretch; width: 100%; }
+}
+
+@media (prefers-color-scheme: light) {
+  .ac-chart-wrap { background: #fafbfc; }
+  .ac-preset.is-active {
+    background: #e6effd;
+    border-color: #9dc1ff;
+    color: #1d4ed8;
+  }
 }
