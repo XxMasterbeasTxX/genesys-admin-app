@@ -2256,6 +2256,18 @@ export async function fetchWrapupCodesByIds(api, orgId, ids, opts = {}) {
 }
 
 /**
+ * One wrap-up code by id.
+ *
+ * The last resort for a code the list endpoint will not return - Genesys system
+ * codes such as `ININ-WRAP-UP-TIMEOUT` among them. Called only for the few ids
+ * left unnamed after the bulk lookup.
+ */
+export async function fetchWrapupCodeById(api, orgId, id) {
+  return api.proxyGenesys(orgId, "GET",
+    `/api/v2/routing/wrapupcodes/${encodeURIComponent(id)}`);
+}
+
+/**
  * The members of one queue.
  *
  * Used to populate the agent filter from the queues a copilot covers, so the

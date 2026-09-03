@@ -31,7 +31,7 @@ import {
   fetchAgentChecklists, fetchConversationSummaries,
   fetchConversationRecordings, fetchConversationRecording,
   getConversation, fetchAllQueues, fetchAllWrapupCodes,
-  fetchUsersByIds, fetchWrapupCodesByIds,
+  fetchUsersByIds, fetchWrapupCodesByIds, fetchWrapupCodeById,
   countConversationDetails, queryConversationDetails,
 } from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
@@ -216,8 +216,10 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
             <label class="ac-filter-label">Quick ranges</label>
             <div class="ac-presets" data-c="presets"></div>
           </div>
-          <button class="btn btn-sm" data-c="count">Count interactions</button>
-          <button class="btn btn-sm btn-primary" data-c="load" disabled>Load checklists</button>
+          <div class="ac-filter-actions">
+            <button class="btn btn-sm" data-c="count">Count interactions</button>
+            <button class="btn btn-sm btn-primary" data-c="load" disabled>Load checklists</button>
+          </div>
         </div>
 
         <div class="ac-filter-row ac-status-bar" data-c="statusFilters"></div>
@@ -732,6 +734,18 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           if (w?.id) wrapUpName.set(w.id, w.name || w.id);
         }
       } catch { /* ids stay on screen */ }
+
+      // Genesys SYSTEM wrap-up codes (ININ-WRAP-UP-TIMEOUT and friends) are not
+      // in the routing list and do not come back from a filtered list query
+      // either, so whatever is still unnamed is asked for one at a time. There
+      // are only ever a handful, and the alternative is a GUID on screen.
+      const stillUnknown = codeIds.filter((id) => !wrapUpName.has(id));
+      for (const id of stillUnknown.slice(0, 20)) {
+        try {
+          const w = await fetchWrapupCodeById(api, orgId, id);
+          if (w?.name) wrapUpName.set(id, w.name);
+        } catch { /* this one keeps its id */ }
+      }
     }
   }
 

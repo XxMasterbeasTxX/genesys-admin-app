@@ -6407,21 +6407,28 @@ a.fr-shipped:hover { text-decoration: underline; }
   margin-bottom: 10px;
   text-align: center;
 }
+/* STRETCH, not flex-end. Aligning the columns to the bottom made each one only
+   as tall as its own content, so the track's flex:1 had no space to grow into
+   and every bar collapsed to its min-height - 1 and 94 drew identically. With
+   the columns stretched the track gets a real height and the bar's percentage
+   finally has something to resolve against. */
 .ac-chart-plot {
-  align-items: flex-end;
+  align-items: stretch;
   display: flex;
   flex: 1;
-  gap: 48px;
+  gap: 6%;
   justify-content: center;
   min-height: 0;
   padding: 0 12px;
 }
 .ac-col {
-  display: flex;
-  flex-direction: column;
   align-items: center;
+  display: flex;
+  flex: 0 1 120px;
+  flex-direction: column;
   gap: 4px;
-  width: 84px;
+  justify-content: flex-end;
+  min-width: 40px;
 }
 .ac-col-value {
   font-size: 12px;
@@ -6436,7 +6443,7 @@ a.fr-shipped:hover { text-decoration: underline; }
   border-radius: 4px;
   display: flex;
   flex: 1;
-  min-height: 40px;
+  min-height: 20px;
   width: 100%;
 }
 .ac-col-bar {
@@ -6544,6 +6551,16 @@ a.fr-shipped:hover { text-decoration: underline; }
    label's height to sit level with the inputs beside them. */
 .ac-filter-row > .btn { margin-top: 20px; }
 .ac-status-bar > .btn { margin-top: 0; }
+/* The actions are not more presets. A gap and a rule separate them from the
+   quick ranges, the same way the status bar sets Agent Checked apart. */
+.ac-filter-actions {
+  border-left: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+  margin-left: 6px;
+  margin-top: 20px;
+  padding-left: 12px;
+}
 .ac-filter-group {
   display: flex;
   flex-direction: column;
@@ -6568,14 +6585,15 @@ a.fr-shipped:hover { text-decoration: underline; }
 
 /* The chart box: beside the filters, its own frame, a fixed height so the bars
    have a consistent scale to be read against. */
+/* Grows with the window: flex:1 against the filter stack, no width cap, and a
+   height that follows the viewport between sensible bounds so the bars keep a
+   readable scale on a laptop and use the room on a large screen. */
 .ac-chart-wrap {
   background: rgba(255,255,255,0.03);
   border: 1px solid var(--border);
   border-radius: 10px;
-  flex: 1;
-  height: 200px;
-  margin: 0 auto;
-  max-width: 880px;
+  flex: 1 1 320px;
+  height: clamp(160px, 22vh, 280px);
   min-width: 0;
   padding: 10px;
 }
