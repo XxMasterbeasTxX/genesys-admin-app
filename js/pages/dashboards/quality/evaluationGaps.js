@@ -885,6 +885,8 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
 
     const counts = new Map();
     for (const r of rows) counts.set(r.reason, (counts.get(r.reason) || 0) + 1);
+    const affectedAgents = new Set(
+      rows.filter((r) => r.reason !== "notScoredAgent").map((r) => r.agent)).size;
     const unexplained = counts.get("unexplained") || 0;
     const expected = counts.get("notScoredAgent") || 0;
 
@@ -895,23 +897,22 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         ? `, ${withAgents.toLocaleString()} with an agent in scope` : "");
 
     $("tiles").innerHTML = [
-      // Conversations with an agent in scope, not everything the query
-      // returned. Dropping the purpose=agent constraint - which had to go for
-      // flow-mapped programs to work at all - means abandoned calls and
-      // interactions answered elsewhere now come back too. They produce no rows,
-      // and counting them here made the denominator jump for no visible reason.
-      // The raw fetched figure stays on the range line above, where it belongs:
-      // it describes the cost, not the population.
-      // One number per tile. The fetched figure lives on the range line above:
-      // repeating it here put four interaction counts on one screen and turned
-      // a dashboard into a puzzle.
-      tile("Interactions", withAgents.toLocaleString(), "with an agent in scope"),
       // Says what it is counting, because more missing evaluations than
       // interactions read looks wrong until you know the grain: a conversation
       // handled by two agents can be two missing evaluations.
       tile("Missing evaluations", rows.length.toLocaleString(),
         `across ${new Set(rows.map((r) => r.conversationId)).size.toLocaleString()} `
         + "interaction(s)"),
+      // Agents rather than a third interaction count. The interaction figures
+      // live on the range line above; this is the one number nowhere else can
+      // give, and it changes what you do: 193 missing across three agents is a
+      // different problem from 193 across forty.
+      //
+      // "Working as configured" rows do not count as affected - an agent the
+      // rule was never going to score has not been missed. Where that reason
+      // does not occur, which is most orgs, the two definitions coincide.
+      tile("Agents affected", affectedAgents.toLocaleString(),
+        "at least one missing evaluation"),
       tile("Working as configured", expected.toLocaleString(),
         "another agent was the one scored"),
       tile("Unexplained", unexplained.toLocaleString(),

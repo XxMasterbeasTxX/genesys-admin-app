@@ -80,7 +80,8 @@ transcribed" in any useful sense.
 | 4.1c | **Time** filter | A From/To date range, not a list of timestamps | | |
 | 4.1d | **Duration** filter | A From/To range in seconds, not a list of durations | | |
 | 4.1e | Filter Duration to 40–200 | Only rows in that band remain | | |
-| 4.1§ | ★ The **Interactions** tile against the range line | The tile carries one number — interactions with an agent in scope. The range line carries the fetched count. They differ because the query returns abandoned calls and interactions answered elsewhere, which produce no rows | | |
+| 4.1§ | The interaction counts | The range line carries them — fetched, and how many had an agent in scope. The tiles do not repeat them | | |
+| 4.1¶ | ★ **Agents affected** | Distinct agents with at least one missing evaluation. An agent whose only row is “another agent was the one scored” does NOT count — the rule was never going to score them | | |
 | 4.1g | ★ Missing evaluations exceeds interactions read | Expected — one row per agent, so a conversation two agents handled counts twice. The tile says “across N interaction(s)” so the two numbers can be reconciled | | |
 | 4.1h | ★ One agent on one interaction | Appears **once**, even if they were a participant several times — a transfer back or a consult. Their time is merged | | |
 | 4.2 | An interaction that **was** evaluated | **No row at all.** Evaluated agents are not gaps | | |
