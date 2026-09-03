@@ -75,12 +75,13 @@ transcribed" in any useful sense.
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
 | 4.1 | Read the columns | Agent, Queue, Time, Duration, Recording, Transcribed, Wrap-up, Why — in that order | | |
-| 4.1f | **Wrap-up** | The wrap-up code's name. On rows with no recording it usually names the cause | | |
+| 4.1f | ★ **Wrap-up** | The code’s name, never a GUID. Genesys built-ins are not in the routing list and are looked up by id | | |
 | 4.1a | Sort by any column | Clicking a header sorts by it; clicking again reverses | | |
 | 4.1b | ★ Sort by **Duration** | Sorts as a number, not as text: 12s before 45s before 10m. Text order would put 10m first | | |
 | 4.1c | **Time** filter | A From/To date range, not a list of timestamps | | |
 | 4.1d | **Duration** filter | A From/To range in seconds, not a list of durations | | |
 | 4.1e | Filter Duration to 40–200 | Only rows in that band remain | | |
+| 4.1§ | ★ The **Interactions** tile against the range line | The tile counts interactions with an agent in scope; the range line counts everything fetched. They differ because the query returns abandoned calls and interactions answered elsewhere, which produce no rows | | |
 | 4.1g | ★ Missing evaluations exceeds interactions read | Expected — one row per agent, so a conversation two agents handled counts twice. The tile says “across N interaction(s)” so the two numbers can be reconciled | | |
 | 4.1h | ★ One agent on one interaction | Appears **once**, even if they were a participant several times — a transfer back or a consult. Their time is merged | | |
 | 4.2 | An interaction that **was** evaluated | **No row at all.** Evaluated agents are not gaps | | |

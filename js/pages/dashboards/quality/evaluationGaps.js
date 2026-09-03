@@ -35,7 +35,7 @@ import {
   fetchAgentScoringRules, fetchTranscriptionSettings, fetchAllQueues,
   fetchRolesWithPermission, fetchRoleUsers, fetchAllUsers,
   countConversationDetails, queryConversationDetails, queryTranscriptAggregates,
-  fetchRecordingMetadata, fetchAllWrapupCodes,
+  fetchRecordingMetadata, fetchAllWrapupCodes, fetchWrapupCodesByIds,
 } from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import {
@@ -658,7 +658,8 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         transcribed = null;
       }
 
-      const { rows, needRecording, alsoUseful } = buildRows(conversations, c, s, transcribed);
+      const { rows, needRecording, alsoUseful, withAgents } =
+        buildRows(conversations, c, s, transcribed);
 
       // Conversations that MUST be checked come first; if there is room under
       // the cap, the already-explained ones are checked too so the column is
@@ -677,6 +678,23 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       }
       settleRows(rows, recordingInfo.states);
 
+      // Genesys built-in wrap-up codes come back from the segment as ids the
+      // routing list has never heard of, and an id in that column tells the
+      // reader nothing. The unnamed ones are asked for by id - one request,
+      // however many there are.
+      const unnamed = [...new Set(rows.map((r) => r.wrapUpId)
+        .filter((id) => id && !c.wrapUpName.has(id)))];
+      if (unnamed.length) {
+        try {
+          for (const w of await fetchWrapupCodesByIds(api, org.id, unnamed.slice(0, 100))) {
+            if (w?.id) c.wrapUpName.set(w.id, w.name || w.id);
+          }
+        } catch { /* the id stays on screen, which is still better than blank */ }
+        for (const row of rows) {
+          if (row.wrapUpId) row.wrapUp = c.wrapUpName.get(row.wrapUpId) || row.wrapUpId;
+        }
+      }
+
       // Rows decided before the recording question still show what was found,
       // when it was looked up as part of the spare budget.
       for (const row of rows) {
@@ -685,7 +703,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         }
       }
 
-      render(rows, c, s, transcribed, conversations.length, recordingInfo);
+      render(rows, c, s, transcribed, conversations.length, recordingInfo, withAgents);
 
       $results.hidden = false;
       hideStatus();
@@ -717,6 +735,9 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     const thresholdMs = s.threshold * 1000;
     const wantedQueues = new Set(s.queueIds);
     const wantedFlows = new Set(s.flowIds);
+    // Conversations that actually had an agent this page can speak for. The
+    // query returns more than that by design (see the Interactions tile).
+    let withAgents = 0;
 
     for (const conv of conversations) {
       // Which flow the conversation ran through, if any. A conversation that
@@ -779,6 +800,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       // Only agents who were actually on a queue we asked about.
       const agents = [...byAgent.values()].filter((a) => a.inScope);
       if (!agents.length) continue;
+      withAgents++;
 
       // Who the rule would score, when it scores only one of them.
       const ordered = [...agents].sort((a, b) => (a.lastEnd || 0) - (b.lastEnd || 0));
@@ -800,6 +822,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
           queue: queue?.name || a.queueId || (matchedFlowId ? "(via flow)" : "—"),
           agent: c.userName.get(a.userId) || a.userId,
           ms: a.ms,
+          wrapUpId: a.wrapUpCode || null,
           wrapUp: a.wrapUpCode ? (c.wrapUpName.get(a.wrapUpCode) || a.wrapUpCode) : null,
           recording: null,          // filled in pass two, or left unchecked
           transcribed: transcribed ? transcribed.has(conv.conversationId) : null,
@@ -840,7 +863,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         rows.push(row);
       }
     }
-    return { rows, needRecording, alsoUseful };
+    return { rows, needRecording, alsoUseful, withAgents };
   }
 
   /**
@@ -882,7 +905,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   let allRows = [];
   let detachFilters = null;
 
-  function render(rows, c, s, transcribed, convCount, recordingInfo) {
+  function render(rows, c, s, transcribed, convCount, recordingInfo, withAgents) {
     allRows = rows;
 
     const counts = new Map();
@@ -895,9 +918,17 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       + (s.total != null && s.total > convCount ? ` of ${s.total.toLocaleString()}` : "");
 
     $("tiles").innerHTML = [
-      tile("Interactions read", convCount.toLocaleString(),
-        s.total != null && s.total > convCount
-          ? `capped at ${(MAX_PAGES * 100).toLocaleString()}` : "all in scope"),
+      // Conversations with an agent in scope, not everything the query
+      // returned. Dropping the purpose=agent constraint - which had to go for
+      // flow-mapped programs to work at all - means abandoned calls and
+      // interactions answered elsewhere now come back too. They produce no rows,
+      // and counting them here made the denominator jump for no visible reason.
+      // The raw fetched figure stays on the range line above, where it belongs:
+      // it describes the cost, not the population.
+      tile("Interactions", withAgents.toLocaleString(),
+        withAgents === convCount
+          ? "with an agent in scope"
+          : `with an agent in scope, of ${convCount.toLocaleString()} read`),
       // Says what it is counting, because more missing evaluations than
       // interactions read looks wrong until you know the grain: a conversation
       // handled by two agents can be two missing evaluations.
