@@ -6327,3 +6327,47 @@ a.fr-shipped:hover { text-decoration: underline; }
 @media (prefers-color-scheme: light) {
   .dq-checklist, .dq-summary { background: #fff; }
 }
+
+/* ── Agent Copilot: collapsibles and the open row ─────────────────
+   Opening an interaction collapses the results table, so both the table
+   header and each drill-down section are toggles. */
+.ac-results-toggle,
+.ac-collapse-toggle {
+  align-items: center;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+.ac-collapse-toggle {
+  font-size: 13px;
+  font-weight: 700;
+}
+.ac-results-toggle .dq-panel-title { margin: 0; }
+.ac-results-toggle:hover .dq-panel-title,
+.ac-collapse-toggle:hover { color: #9dc1ff; }
+.ac-chevron {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  width: 10px;
+}
+
+/* The row whose detail is open. It stays marked while the table is hidden, so
+   re-opening the table shows where you were. */
+.dq-table tbody tr.is-active {
+  background: rgba(76, 141, 255, 0.14);
+  box-shadow: inset 2px 0 0 #4c8dff;
+}
+.dq-table tbody tr[data-conversation] { cursor: pointer; }
+
+@media (prefers-color-scheme: light) {
+  .dq-table tbody tr.is-active { background: rgba(29, 78, 216, 0.10); }
+}

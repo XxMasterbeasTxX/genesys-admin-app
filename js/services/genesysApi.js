@@ -2205,6 +2205,57 @@ export async function fetchAssistantQueues(api, orgId, assistantId, opts = {}) {
 }
 
 /**
+ * Users by id, in bulk.
+ *
+ * `AnalyticsParticipant.participantName` is optional and frequently absent —
+ * outbound rows in particular arrive with a bare `userId` — so a page that
+ * relies on it alone prints GUIDs in the Agent column. This resolves the ids
+ * that were not named any other way.
+ *
+ * `id` is `collectionFormat: multi`, so the parameter is REPEATED rather than
+ * comma-joined; the ids are chunked because a URL has a length limit and the
+ * endpoint has a page size.
+ *
+ * `state` is deliberately not constrained: an interaction handled by someone
+ * since made inactive still needs their name.
+ */
+export async function fetchUsersByIds(api, orgId, ids, opts = {}) {
+  const { chunk = 50 } = opts;
+  const unique = [...new Set((ids || []).filter(Boolean))];
+  const out = [];
+  for (let i = 0; i < unique.length; i += chunk) {
+    const part = unique.slice(i, i + chunk);
+    const qs = part.map((id) => `id=${encodeURIComponent(id)}`).join("&");
+    const resp = await api.proxyGenesys(orgId, "GET",
+      `/api/v2/users?pageSize=${chunk}&${qs}`);
+    out.push(...(resp?.entities || []));
+  }
+  return out;
+}
+
+/**
+ * Wrap-up codes by id, in bulk.
+ *
+ * `/routing/wrapupcodes` on its own does not return every code an interaction
+ * can carry: Genesys built-ins come back from the segment as ids the routing
+ * list has never heard of. Same repeated-parameter and chunking rules as
+ * fetchUsersByIds.
+ */
+export async function fetchWrapupCodesByIds(api, orgId, ids, opts = {}) {
+  const { chunk = 50 } = opts;
+  const unique = [...new Set((ids || []).filter(Boolean))];
+  const out = [];
+  for (let i = 0; i < unique.length; i += chunk) {
+    const part = unique.slice(i, i + chunk);
+    const qs = part.map((id) => `id=${encodeURIComponent(id)}`).join("&");
+    const resp = await api.proxyGenesys(orgId, "GET",
+      `/api/v2/routing/wrapupcodes?pageSize=${chunk}&${qs}`);
+    out.push(...(resp?.entities || []));
+  }
+  return out;
+}
+
+/**
  * The members of one queue.
  *
  * Used to populate the agent filter from the queues a copilot covers, so the

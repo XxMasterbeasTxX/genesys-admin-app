@@ -31,6 +31,7 @@ import {
   fetchAgentChecklists, fetchConversationSummaries,
   fetchConversationRecordings, fetchConversationRecording,
   getConversation, fetchAllQueues, fetchAllWrapupCodes,
+  fetchUsersByIds, fetchWrapupCodesByIds,
   countConversationDetails, queryConversationDetails,
 } from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
@@ -237,7 +238,11 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       </div>
 
       <div class="dq-panel">
-        <h3 class="dq-panel-title">The interactions</h3>
+        <button type="button" class="ac-results-toggle" data-c="resultsToggle"
+                aria-expanded="true">
+          <span class="ac-chevron" data-c="resultsChevron">▼</span>
+          <span class="dq-panel-title">Search results</span>
+        </button>
         <div class="cs-control-group">
           <label class="cs-label">Show</label>
           <div class="dq-presets" data-c="statusFilters"></div>
@@ -246,10 +251,12 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           Tip: Right-click a row to copy the Conversation ID. Click a row to open
           its checklists, summary and recording.
         </div>
-        <div class="dq-table-wrap has-filters" data-c="rowsWrap">
-          <table class="dq-table" data-c="rows"></table>
+        <div data-c="tableArea">
+          <div class="dq-table-wrap has-filters" data-c="rowsWrap">
+            <table class="dq-table" data-c="rows"></table>
+          </div>
+          <div class="dq-panel-note" data-c="tableNote" hidden></div>
         </div>
-        <div class="dq-panel-note" data-c="tableNote" hidden></div>
       </div>
 
       <div class="dq-panel" data-c="detailPanel" hidden></div>
@@ -283,6 +290,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   let statusFilter = "all";
   let agentCheckedOnly = false;
   let detachFilters = null;
+  let openRowId = null;            // the interaction whose detail is showing
   let abort = null;                // aborts an in-flight load/enrichment
 
   /** Bumped by every new load, so a stale run cannot write into fresh state. */
@@ -564,7 +572,9 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     agentCheckedOnly = false;
     $results.hidden = true;
     $("export").hidden = true;
+    openRowId = null;
     $("detailPanel").hidden = true;
+    showTable(true);
     $("load").disabled = true;
     $("count").disabled = true;
 
@@ -591,6 +601,13 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       } catch { /* the column falls back to ids */ }
 
       rows = convs.map(buildRow).filter(Boolean);
+
+      // Before the first draw, so the table does not visibly flip from GUIDs
+      // to names a moment later.
+      setStatus("Resolving names…");
+      await resolveNames(org.id, rows);
+      if (ticket !== runSeq) return;
+
       $("rangeLine").textContent =
         `${formatRange(s.from, s.to)} · ${convs.length.toLocaleString()} interaction(s) read`
         + (truncated ? ` of ${counted.toLocaleString()}` : "");
@@ -654,15 +671,62 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       conversationId: conv.conversationId,
       when: conv.conversationStart || null,
       agents: [...byUser.keys()],
-      agent: [...byUser.keys()].map((id) => userName.get(id) || id).join(", "),
       queueId,
-      queue: queueId ? (queueName.get(queueId) || queueId) : "—",
       assistantId,
-      copilot: assistantId ? (assistantName.get(assistantId) || assistantId) : "—",
       media: mediaType || "—",
       ms: [...byUser.values()].reduce((a, b) => a + b, 0),
-      wrapUp: [...wrapUps].map((id) => wrapUpName.get(id) || id).join(", ") || "—",
+      wrapUpIds: [...wrapUps],
     };
+  }
+
+  /* ── Names ────────────────────────────────────────
+   *
+   * Rows carry ids and are named here, so a lookup that finishes after the
+   * table is drawn still reaches the screen. Every id falls back to itself:
+   * a GUID on screen is poor, but blank would be worse.
+   */
+  const agentNames = (r) =>
+    r.agents.map((id) => userName.get(id) || id).join(", ") || "—";
+  const queueLabel = (r) =>
+    r.queueId ? (queueName.get(r.queueId) || r.queueId) : "—";
+  const copilotLabel = (r) =>
+    r.assistantId ? (assistantName.get(r.assistantId) || r.assistantId) : "—";
+  const wrapUpLabel = (r) =>
+    r.wrapUpIds.map((id) => wrapUpName.get(id) || id).join(", ") || "—";
+
+  /**
+   * Look up the ids nothing has named yet.
+   *
+   * Agent names reached the page two ways before this: `participantName` when
+   * the analytics row happened to carry it, and queue members when queues
+   * happened to be selected. Neither is reliable - outbound rows in particular
+   * arrive with a bare userId - so the Agent column printed GUIDs. The same is
+   * true of wrap-up codes, where Genesys built-ins are absent from the routing
+   * list entirely.
+   *
+   * Best-effort by design: a failure here leaves ids on screen, which is worse
+   * than names and much better than losing the rows.
+   */
+  async function resolveNames(orgId, rowsToName) {
+    const userIds = [...new Set(rowsToName.flatMap((r) => r.agents))]
+      .filter((id) => id && !userName.has(id));
+    const codeIds = [...new Set(rowsToName.flatMap((r) => r.wrapUpIds))]
+      .filter((id) => id && !wrapUpName.has(id));
+
+    if (userIds.length) {
+      try {
+        for (const u of await fetchUsersByIds(api, orgId, userIds)) {
+          if (u?.id) userName.set(u.id, u.name || u.email || u.id);
+        }
+      } catch { /* ids stay on screen */ }
+    }
+    if (codeIds.length) {
+      try {
+        for (const w of await fetchWrapupCodesByIds(api, orgId, codeIds)) {
+          if (w?.id) wrapUpName.set(w.id, w.name || w.id);
+        }
+      } catch { /* ids stay on screen */ }
+    }
   }
 
   // ── Enrichment ──────────────────────────────────────
@@ -833,7 +897,30 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     $("statusFilters").append(btn);
   }
 
-  function drawAll() { drawTiles(); drawBars(); drawTable(); }
+  function drawAll() { drawTiles(); drawBars(); drawTable(); highlightRow(); }
+
+  /* ── Showing and hiding the results table ─────────────
+   *
+   * Opening an interaction collapses the table rather than pushing the detail
+   * below it. Nine columns and a drill-down do not fit on one screen together,
+   * and scrolling past the whole table to reach the detail you just asked for
+   * is worse than losing sight of the table you had finished with.
+   */
+  function showTable(on) {
+    $("tableArea").hidden = !on;
+    $("resultsToggle").setAttribute("aria-expanded", String(on));
+    $("resultsChevron").textContent = on ? "▼" : "▶";
+  }
+
+  function highlightRow() {
+    for (const tr of $("rows").querySelectorAll("tbody tr")) {
+      tr.classList.toggle("is-active", tr.dataset.conversation === openRowId);
+    }
+  }
+
+  $("resultsToggle").addEventListener("click", () => {
+    showTable($("tableArea").hidden);
+  });
 
   function tile(label, value, sub) {
     return `
@@ -934,14 +1021,14 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           : (info ? "—" : "…");
         const seconds = r.ms != null ? Math.round(r.ms / 1000) : "";
         return `<tr data-conversation="${escapeHtml(r.conversationId || "")}">
-          <td>${escapeHtml(r.agent)}</td>
-          <td>${escapeHtml(r.queue)}</td>
-          <td>${escapeHtml(r.copilot)}</td>
+          <td>${escapeHtml(agentNames(r))}</td>
+          <td>${escapeHtml(queueLabel(r))}</td>
+          <td>${escapeHtml(copilotLabel(r))}</td>
           <td data-value="${escapeHtml(r.when || "")}">${escapeHtml(shortDate(r.when))}</td>
           <td class="is-num" data-value="${seconds}">${escapeHtml(fmtDuration(r.ms))}</td>
           <td>${escapeHtml(r.media)}</td>
           <td>${escapeHtml(names)}</td>
-          <td>${escapeHtml(r.wrapUp)}</td>
+          <td>${escapeHtml(wrapUpLabel(r))}</td>
           <td>${statusCell(r)}</td>
         </tr>`;
       }).join("")}</tbody>`;
@@ -980,14 +1067,64 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
   $("rows").addEventListener("click", (e) => {
     const id = e.target?.closest?.("tbody tr")?.dataset?.conversation;
-    if (id) openDetail(id);
+    if (!id) return;
+    // Clicking the row that is already open closes it again, so the row is a
+    // toggle rather than a one-way door.
+    if (openRowId === id) closeDetail();
+    else openDetail(id);
   });
 
+  function closeDetail() {
+    openRowId = null;
+    $("detailPanel").hidden = true;
+    showTable(true);
+    highlightRow();
+  }
+
   // ── Drill-down ──────────────────────────────────────
+
+  /**
+   * A collapsible block: a chevron header and a body that folds away.
+   *
+   * Recording and Checklists open, Summary closed — the same defaults the
+   * source shipped, on the reasoning that a summary is prose you go looking
+   * for while a checklist is what you came to see.
+   */
+  function collapsible(title, content, expanded = true) {
+    const wrap = document.createElement("div");
+    wrap.className = "dq-panel-block";
+
+    const chevron = document.createElement("span");
+    chevron.className = "ac-chevron";
+    chevron.textContent = expanded ? "▼" : "▶";
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "ac-collapse-toggle";
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.append(chevron, document.createTextNode(" " + title));
+
+    const body = document.createElement("div");
+    body.hidden = !expanded;
+    body.append(content);
+
+    toggle.addEventListener("click", () => {
+      const open = !body.hidden;
+      body.hidden = open;
+      toggle.setAttribute("aria-expanded", String(!open));
+      chevron.textContent = open ? "▶" : "▼";
+    });
+
+    wrap.append(toggle, body);
+    return wrap;
+  }
 
   function openDetail(convId) {
     const info = enriched.get(convId);
     const $p = $("detailPanel");
+    openRowId = convId;
+    highlightRow();
+    showTable(false);
     $p.hidden = false;
     $p.innerHTML = "";
 
@@ -1000,7 +1137,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     close.type = "button";
     close.className = "btn btn-sm";
     close.textContent = "Close";
-    close.addEventListener("click", () => { $p.hidden = true; });
+    close.addEventListener("click", closeDetail);
     head.append(close);
     $p.append(head);
 
@@ -1018,9 +1155,12 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       $p.append(p);
     }
 
-    $p.append(recordingSection(convId));
-    $p.append(checklistSection(info.checklists));
-    $p.append(summarySection(info.summaries));
+    $p.append(collapsible("Recording", recordingSection(convId), true));
+    $p.append(collapsible("Checklists", checklistSection(info.checklists), true));
+    $p.append(collapsible(
+      "Conversation summary"
+        + (info.summaries.length > 1 ? ` (${info.summaries.length})` : ""),
+      summarySection(info.summaries), false));
     $p.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
@@ -1032,9 +1172,6 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
    */
   function recordingSection(convId) {
     const wrap = document.createElement("div");
-    wrap.className = "dq-panel-block";
-    wrap.innerHTML = `<h4 class="dq-block-title">Recording</h4>`;
-
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn btn-sm";
@@ -1154,9 +1291,6 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   /** Checklist items, agent tick and AI tick shown apart. */
   function checklistSection(checklists) {
     const wrap = document.createElement("div");
-    wrap.className = "dq-panel-block";
-    wrap.innerHTML = `<h4 class="dq-block-title">Checklists</h4>`;
-
     if (!checklists.length) {
       wrap.insertAdjacentHTML("beforeend",
         '<span class="dq-muted">No checklist ran on this interaction.</span>');
@@ -1206,9 +1340,6 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   /** AI summaries, with the original shown where an agent edited a field. */
   function summarySection(summaries) {
     const wrap = document.createElement("div");
-    wrap.className = "dq-panel-block";
-    wrap.innerHTML = `<h4 class="dq-block-title">Conversation summary</h4>`;
-
     if (!summaries.length) {
       wrap.insertAdjacentHTML("beforeend",
         '<span class="dq-muted">No AI summary was written for this interaction.</span>');
@@ -1286,10 +1417,12 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       const status = info.completion === "complete" ? "Complete"
         : info.completion === "incomplete" ? "Incomplete" : "No items";
 
+      const wrap = wrapUpLabel(r);
       interactions.push([
-        r.conversationId, r.when ? new Date(r.when) : "", r.agent, r.queue,
-        r.copilot, r.media, r.ms ? Math.round(r.ms / 1000) : 0, names,
-        r.wrapUp === "—" ? "" : r.wrapUp, status,
+        r.conversationId, r.when ? new Date(r.when) : "", agentNames(r),
+        queueLabel(r), copilotLabel(r), r.media,
+        r.ms ? Math.round(r.ms / 1000) : 0, names,
+        wrap === "—" ? "" : wrap, status,
       ]);
 
       for (const cl of info.checklists) {
@@ -1304,10 +1437,10 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
         }
       }
 
-      const key = `${r.agent}|${r.queue}|${r.copilot}|${names}`;
+      const key = `${agentNames(r)}|${queueLabel(r)}|${copilotLabel(r)}|${names}`;
       const p = pivot.get(key)
-        || { agent: r.agent, queue: r.queue, copilot: r.copilot, checklist: names,
-             total: 0, complete: 0, incomplete: 0 };
+        || { agent: agentNames(r), queue: queueLabel(r), copilot: copilotLabel(r),
+             checklist: names, total: 0, complete: 0, incomplete: 0 };
       p.total++;
       if (status === "Complete") p.complete++;
       else if (status === "Incomplete") p.incomplete++;
