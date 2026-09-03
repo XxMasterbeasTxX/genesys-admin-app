@@ -162,11 +162,31 @@ for the same reason: this walks conversation rows, so offering "Last 12 Months"
 offers a walk nobody should start by accident. Custom dates are allowed and
 guarded at 31 days.
 
-> The 31-day cap is inherited from the source, which calls it a Genesys limit. I
-> could not find it stated in the spec, and our own Evaluation Gaps queries the
-> same endpoint with no such guard — but it never exceeds a week either, so the
-> limit has never been tested here. The guard stays as cheap insurance on custom
-> ranges; it should never bind, because the presets keep well under it.
+#### The 31-day cap is real, and it is conditional — measured 2026-09-03
+
+The source inherits this number without a source, and the spec documents no
+maximum on `interval`. It was measured against a live org instead, varying only
+the interval at `pageSize: 1`:
+
+| Query | Maximum interval |
+| --- | --- |
+| No filters | **7 days** |
+| Any `segmentFilters` present | **31 days** |
+
+Genesys changes the number in its own error message depending on the query. The
+first probe sent no filters, reported a 7-day rule, and was misleading: this page
+always filters by copilot, so **31 days is the number that binds**, and the
+source's guard is correct for its usage after all.
+
+Recorded in `docs/api-reference.md` §2.1, because it applies to every page here
+that queries conversation detail, not only this one.
+
+The cap is not what limits this page, though. On the org measured, a single
+unfiltered week was 58,774 interactions and 31 days of voice alone was 124,077.
+At 3–4 enrichment calls each (§7), the interval runs out of usefulness long
+before it runs out of days — which is why the presets stay short and the cost
+gate in §6.2, not the guard, does the real limiting. The guard exists so a custom
+range fails fast with a clear message instead of a raw 400.
 
 ### 6.2 Nothing loads on arrival, and the cost is stated first
 
