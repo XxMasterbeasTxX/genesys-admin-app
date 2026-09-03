@@ -1365,13 +1365,16 @@ Each step is its own commit, pushed and testable on dev before the next.
 
 ## 13. Page 3 (second attempt) - Evaluation Gaps
 
-**Status: step one built and shipped to dev, 2026-09-02**, as
-**Dashboards > Quality > Evaluation Setup**
-(`js/pages/dashboards/quality/evaluationSetup.js`). The per-agent half (13.0a)
-is designed but not built - it waits on the three questions in 13.5.
+**Status: shipped to production, 2026-09-03**, as
+**Dashboards > Quality > STA Configuration**
+(`js/pages/dashboards/quality/staConfiguration.js`). Release 4.9.
 
-The page was called Evaluation Gaps for a few hours and renamed the same day;
-13.7 records why.
+The per-agent and per-interaction half became its own page, section 14. This one
+is now purely a description of the setup: the findings panel it shipped with was
+removed, because judging that a setting cost you something needs to name what it
+cost, and section 14 is where that can be said.
+
+Two renames in a day; 13.7 records both.
 
 **Question:** which agents should have been evaluated and were not, and why?
 
@@ -1688,8 +1691,8 @@ to be useful alone.
 
 ## 14. Page 4 - Evaluation Gaps
 
-**Status: built and shipped to dev, 2026-09-02**, as
-`js/pages/dashboards/quality/evaluationGaps.js`.
+**Status: shipped to production, 2026-09-03**, as
+`js/pages/dashboards/quality/evaluationGaps.js`. Release 4.9.
 
 **Question:** which individual interactions should have been evaluated and were
 not, and why each one was missed?
