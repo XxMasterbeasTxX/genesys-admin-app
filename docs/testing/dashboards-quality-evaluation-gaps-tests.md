@@ -27,16 +27,16 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 1.1 | Open **Dashboards › Quality › Evaluation Gaps** | Page loads, no console errors | | |
 | 1.2 | Quality has four leaves | Evaluation Coverage, Evaluation Scores, Evaluation Gaps, STA Configuration | | |
 | 1.3 | Before choosing an org | Buttons disabled, message asks for a customer org | | |
-| 1.4 | Pick an org | Queues load; the ones covered by a program are pre-selected | | |
-| 1.5 | ★ The queue list contains **every** queue, not only covered ones | Deliberate — "no program covers this queue" is a real reason and would be unreachable if only covered queues were offered | | |
-| 1.6 | Nothing loads by itself | Correct — this page reads conversation rows and asks before spending | | |
+| 1.4 | ★ Pick an org | **Only the program list loads** — one request. Nothing else, so an org with many programs opens instantly | | |
+| 1.5 | ★ Pick a program | A line under the picker says how many queues that program covers. The queues are a consequence of the program, not a separate choice | | |
+| 1.6 | Watch the network tab on open | One call: the programs. Mappings follow when you pick a program; everything else waits for Find gaps | | |
 | 1.7 | Only short quick-ranges are offered | Today, Yesterday, This week, Last Week. No 12-month button, because that is a walk nobody should start by accident | | |
 
 ## 2. Counting before spending ★
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 2.1 | Press **Count interactions** | A count, and roughly how many requests the walk will take | | |
+| 2.1 | Press **Count interactions** | The count and the period, nothing else | | |
 | 2.2 | **Find gaps** is disabled until you have counted | Yes | | |
 | 2.3 | Change any filter after counting | Find gaps disables again — the count was of the old scope | | |
 | 2.4 | A range with no interactions | Says so; Find gaps stays disabled | | |
@@ -54,7 +54,7 @@ transcribed" in any useful sense.
 | 3.1 | Read the bars | One row per reason that occurred, largest first | | |
 | 3.2 | Hover a reason | An explanation of what it means | | |
 | 3.3 | **Agent lacks Participate** | Agents without `quality:evaluation:participate` | | |
-| 3.4 | **No program covers the queue** | Only appears if you selected a queue no program maps | | |
+| 3.4 | ~~No program covers the queue~~ | Gone. Scope is chosen by program now, so every queue in view is covered by construction. A queue no program covers is a configuration question — STA Configuration answers it | | |
 | 3.5 | **No live scoring rule** | The covering program has no enabled *and* published rule | | |
 | 3.6 | **Queue transcription off** | Only when the org is on Enabled Queue Flow | | |
 | 3.7 | ★ **Recording not kept** | Started and then discarded. Cross-check: Genesys should say “There is no recording for this interaction”, and the Wrap-up column usually names the cause | | |

@@ -40,7 +40,7 @@ import {
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import {
   RANGE_PRESETS, resolvePreset, latestSelectableDay, utcIso, yesterday,
-  formatRange, dayCount,
+  formatRange,
 } from "../../../utils/dateRanges.js";
 import { attachColumnFilters } from "../../../utils/columnFilter.js";
 import { makeStatus, escapeHtml } from "../../../utils.js";
@@ -83,9 +83,6 @@ const REASONS = Object.freeze([
   { key: "noPermission", label: "Agent lacks Participate", fill: "dq-fill-bad",
     hint: "The agent does not hold quality:evaluation:participate, so no evaluation "
       + "can be created against them at all." },
-  { key: "noProgram", label: "No program covers the queue", fill: "dq-fill-bad",
-    hint: "Nothing maps this queue to a Speech and Text Analytics program, so no "
-      + "scoring rule can fire." },
   { key: "noRule", label: "No live scoring rule", fill: "dq-fill-bad",
     hint: "The covering program has no enabled and published Agent Scoring Rule." },
   { key: "queueTranscriptionOff", label: "Queue transcription off", fill: "dq-fill-bad",
@@ -192,8 +189,9 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       <span class="dq-filter-caption">WHERE</span>
       <div class="dq-filter-fields">
         <div class="cs-control-group">
-          <label class="cs-label">Queues</label>
-          <div data-c="queuePicker"></div>
+          <label class="cs-label">Programs</label>
+          <div data-c="programPicker"></div>
+          <div class="is-hint" data-c="queueCount"></div>
         </div>
         <div class="cs-control-group">
           <label class="cs-label">Too short below (seconds)</label>
@@ -280,12 +278,12 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     $("presets").append(btn);
   }
 
-  const queuePicker = createMultiSelect({
-    placeholder: "Loading queues…",
-    onChange: invalidate,
+  const programPicker = createMultiSelect({
+    placeholder: "Loading programs…",
+    onChange: () => { invalidate(); reflectQueueCount(); },
   });
-  $("queuePicker").append(queuePicker.el);
-  queuePicker.setEnabled(false);
+  $("programPicker").append(programPicker.el);
+  programPicker.setEnabled(false);
 
   $("threshold").addEventListener("change", invalidate);
   $("from").addEventListener("change", invalidate);
@@ -298,20 +296,27 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     $results.hidden = true;
   }
 
-  // ── Config, loaded once per org ─────────────────────
+  // ── Loading, in two stages ──────────────────────────
+  //
+  // Opening the page reads the PROGRAM LIST and nothing else. An org with many
+  // programs was previously handed the whole configuration and every queue in
+  // it before it knew which programs were even of interest, which buried the
+  // thing being looked for. Mappings follow when a program is picked, and the
+  // rest of the configuration only when gaps are actually asked for.
   let config = null;
   let counted = null;
   let configOrgId = null;
+  let programs = [];
+  let mappingsByProgram = null;   // programId -> queueId[]
+  let mappingsOrgId = null;
 
   async function loadConfig(orgId) {
     if (configOrgId === orgId && config) return config;
     setStatus("Reading configuration…");
 
-    const [progRes, unpubRes, mapRes, queueRes, settingsRes, usersRes, wrapRes] =
+    const [unpubRes, queueRes, settingsRes, usersRes, wrapRes] =
       await Promise.allSettled([
-        fetchPrograms(api, orgId),
         fetchUnpublishedPrograms(api, orgId),
-        fetchProgramMappings(api, orgId),
         fetchAllQueues(api, orgId),
         fetchTranscriptionSettings(api, orgId),
         fetchAllUsers(api, orgId, { query: { state: "active" } }),
@@ -319,32 +324,25 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       ]);
     const val = (r) => (r.status === "fulfilled" ? r.value : null);
 
-    const programs = val(progRes) || [];
     const unpublished = new Set((val(unpubRes) || []).map((p) => p.id));
-    const mappings = val(mapRes) || [];
     const queues = val(queueRes) || [];
     const mode = val(settingsRes)?.transcription || null;
     const users = val(usersRes) || [];
     const wrapUps = val(wrapRes) || [];
 
-    // queueId → the program covering it, and that program's live rules.
+    // queueId -> the program covering it, from the mappings already loaded.
     const programOfQueue = new Map();
-    const mapOf = new Map();
-    for (const m of mappings) {
-      const id = m.program?.id;
-      if (!id) continue;
-      const queueIds = (m.queues || []).map((q) => q.id).filter(Boolean);
-      mapOf.set(id, queueIds);
+    for (const [id, queueIds] of mappingsByProgram || []) {
       for (const qid of queueIds) if (!programOfQueue.has(qid)) programOfQueue.set(qid, id);
     }
 
     const ruleResults = await Promise.allSettled(
-      programs.map((p) => fetchAgentScoringRules(api, orgId, p.id)));
+      programs.map((pr) => fetchAgentScoringRules(api, orgId, pr.id)));
     const liveRulesOf = new Map();
-    programs.forEach((p, i) => {
+    programs.forEach((pr, i) => {
       const r = ruleResults[i];
       if (r.status !== "fulfilled") return;
-      liveRulesOf.set(p.id, (r.value || []).filter((x) => x.enabled && x.published));
+      liveRulesOf.set(pr.id, (r.value || []).filter((x) => x.enabled && x.published));
     });
 
     // Agents who may be evaluated at all.
@@ -360,84 +358,148 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
     }
 
     config = {
-      programs, unpublished, mapOf, programOfQueue, liveRulesOf, mode,
+      unpublished, programOfQueue, liveRulesOf, mode,
       queueById: new Map(queues.map((q) => [q.id, q])),
       userName: new Map(users.map((u) => [u.id, u.name || u.email || u.id])),
       // The segment carries a wrap-up id; the name is what points at the cause,
       // "Do not save recording" being the one that matters here.
       wrapUpName: new Map(wrapUps.map((w) => [w.id, w.name || w.id])),
-      coveredQueueIds: [...programOfQueue.keys()],
+
       participants,
     };
     configOrgId = orgId;
     return config;
   }
 
-  async function primeQueues() {
+  /** The queues the picked programs cover - the actual scope of the query. */
+  function selectedQueueIds() {
+    const picked = programPicker.getSelected();
+    const ids = new Set();
+    for (const [programId, queueIds] of mappingsByProgram || []) {
+      if (!picked.has(programId)) continue;
+      for (const q of queueIds) ids.add(q);
+    }
+    return [...ids];
+  }
+
+  /**
+   * Say how many queues the choice of programs came to.
+   *
+   * The queues are no longer chosen, they are a consequence - so the number is
+   * reported rather than listed. Someone who wants to see WHICH has STA
+   * Configuration for that.
+   */
+  async function reflectQueueCount() {
+    const picked = programPicker.getSelected();
+    const $n = $("queueCount");
+    if (!picked.size) { $n.textContent = "Select at least one program."; return; }
+
+    // The mappings arrive the first time a program is picked, not on page open:
+    // that is the whole point of loading programs alone, and the count has to
+    // be there when the choice is made rather than after pressing Count.
+    if (!mappingsByProgram) {
+      const org = currentOrg();
+      if (!org) return;
+      $n.textContent = "Reading the program's queues…";
+      try {
+        await ensureMappings(org.id);
+      } catch (err) {
+        $n.textContent = `The program's queues could not be read: ${err.message}`;
+        return;
+      }
+    }
+    const n = selectedQueueIds().length;
+    $n.textContent = n
+      ? `${n} queue${n === 1 ? "" : "s"} in ${picked.size === 1 ? "that program"
+        : `those ${picked.size} programs`}`
+      : "Those programs cover no queues, so there is nothing to look at.";
+  }
+
+  /**
+   * Opening the page loads the PROGRAM LIST and nothing else.
+   *
+   * Mappings follow the first time a program is picked; the rest of the
+   * configuration waits until gaps are asked for. On an org with many programs
+   * that is the difference between a page that opens and one that grinds.
+   */
+  async function primePrograms() {
     const org = currentOrg();
     if (!org) {
-      queuePicker.setPlaceholder("Select a customer org first");
-      queuePicker.setEnabled(false);
+      programPicker.setPlaceholder("Select a customer org first");
+      programPicker.setEnabled(false);
       $("count").disabled = true;
+      $("queueCount").textContent = "";
       setStatus("Please select a customer org from the dropdown above to get started.");
       return;
     }
     $("count").disabled = false;
-    hideStatus();
+    setStatus("Reading programs…");
     try {
-      const c = await loadConfig(org.id);
-      // EVERY queue is offered, not just the covered ones, and the covered ones
-      // are pre-selected. "No program covers this queue" is the first link in
-      // the chain and a real reason an agent goes unevaluated - scoping the
-      // picker to covered queues would make it unreachable by construction.
-      const items = [...c.queueById.values()]
-        .map((q) => ({ id: q.id, label: q.name || q.id }))
+      programs = await fetchPrograms(api, org.id);
+      const items = programs
+        .map((pr) => ({ id: pr.id, label: pr.name || pr.id }))
         .sort((a, b) => a.label.localeCompare(b.label));
       if (!items.length) {
-        queuePicker.setPlaceholder("No queues");
-        queuePicker.setEnabled(false);
+        programPicker.setPlaceholder("No programs");
+        programPicker.setEnabled(false);
+        setStatus("This org has no Speech and Text Analytics programs, so no interaction "
+          + "can be automatically evaluated at all. STA Configuration has the detail.",
+          "error");
         return;
       }
-      queuePicker.setItems(items);
-      queuePicker.setSelected(c.coveredQueueIds.length
-        ? c.coveredQueueIds : items.map((i) => i.id));
-      queuePicker.setPlaceholder("Select queues");
-      queuePicker.setEnabled(true);
-      if (!c.coveredQueueIds.length) {
-        setStatus("No queue is mapped to a Speech and Text Analytics program, so nothing "
-          + "on any of them can be automatically evaluated. STA Configuration shows the "
-          + "mappings.", "error");
-      } else {
-        hideStatus();
-      }
+      programPicker.setItems(items);
+      programPicker.setPlaceholder("Select programs");
+      programPicker.setEnabled(true);
+      hideStatus();
+      reflectQueueCount();
     } catch (err) {
-      queuePicker.setPlaceholder("Queues could not be loaded");
-      setStatus(`Configuration could not be read: ${err.message}`, "error");
+      programPicker.setPlaceholder("Programs could not be loaded");
+      setStatus(`Programs could not be read: ${err.message}`, "error");
     }
+  }
+
+  /** Mappings, fetched once and only when a program has been chosen. */
+  async function ensureMappings(orgId) {
+    if (mappingsOrgId === orgId && mappingsByProgram) return mappingsByProgram;
+    const mappings = await fetchProgramMappings(api, orgId);
+    const byProgram = new Map();
+    for (const m of mappings || []) {
+      const id = m.program?.id;
+      if (!id) continue;
+      byProgram.set(id, (m.queues || []).map((q) => q.id).filter(Boolean));
+    }
+    mappingsByProgram = byProgram;
+    mappingsOrgId = orgId;
+    return byProgram;
   }
 
   const unsubscribe = orgContext?.onChange?.(() => {
     config = null;
     configOrgId = null;
+    mappingsByProgram = null;
+    mappingsOrgId = null;
+    programs = [];
     invalidate();
-    primeQueues();
+    primePrograms();
   });
   el.__destroy = () => {
     unsubscribe?.();
     detachFilters?.();
   };
 
-  primeQueues();
+  primePrograms();
 
   // ── The query ───────────────────────────────────────
 
   function scope() {
-    const from = $("from").value;
-    const to = $("to").value;
-    // getSelected() hands back a Set; everything downstream wants an array it
-    // can map into predicates.
-    const queueIds = [...queuePicker.getSelected()];
-    return { from, to, queueIds, threshold: Number($("threshold").value) || 0 };
+    return {
+      from: $("from").value,
+      to: $("to").value,
+      programIds: [...programPicker.getSelected()],
+      // The queues are a consequence of the programs, not a choice.
+      queueIds: selectedQueueIds(),
+      threshold: Number($("threshold").value) || 0,
+    };
   }
 
   /**
@@ -465,18 +527,27 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   $("count").addEventListener("click", async () => {
     const org = currentOrg();
     if (!org) return;
-    const s = scope();
-    if (!s.queueIds.length) {
-      setStatus("Select at least one queue.", "error");
-      return;
-    }
-    if (s.from > s.to) {
-      setStatus("The From date is after the To date.", "error");
+    if (!programPicker.getSelected().size) {
+      setStatus("Select at least one program.", "error");
       return;
     }
     $("count").disabled = true;
     setStatus("Counting interactions…");
     try {
+      // Mappings are fetched here rather than on page open, so an org with many
+      // programs is not made to wait for something it may not need.
+      await ensureMappings(org.id);
+      reflectQueueCount();
+      const s = scope();
+      if (!s.queueIds.length) {
+        setStatus("The selected programs cover no queues, so there is nothing to "
+          + "look at.", "error");
+        return;
+      }
+      if (s.from > s.to) {
+        setStatus("The From date is after the To date.", "error");
+        return;
+      }
       // Returns null when the response carried no usable totalHits - "could not
       // tell" rather than "none" - in which case the walk is still offered and
       // the cost simply is not known in advance.
@@ -484,20 +555,17 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       counted = { ...s, total };
       if (total == null) {
         $("find").disabled = false;
-        setStatus("The interaction count came back empty, so the cost is not known "
-          + "in advance. Find gaps will read up to "
+        setStatus("The interaction count came back empty. Find gaps will read up to "
           + `${(MAX_PAGES * 100).toLocaleString()} interactions.`);
         return;
       }
-      const pages = Math.min(Math.ceil(total / 100), MAX_PAGES);
       $("find").disabled = total === 0;
       setStatus(total === 0
-        ? `No interactions on those queues in ${formatRange(s.from, s.to)}.`
-        : `${total.toLocaleString()} interaction(s) in scope over ${
-          dayCount(s.from, s.to)} day(s) — about ${pages} request(s) to walk them`
+        ? `No interactions in ${formatRange(s.from, s.to)}.`
+        : `${total.toLocaleString()} interaction(s) in ${formatRange(s.from, s.to)}`
           + (total > MAX_PAGES * 100
             ? `. Only the first ${(MAX_PAGES * 100).toLocaleString()} will be read; `
-              + "narrow the range or the queues for a complete answer." : "."));
+              + "narrow the range or the programs for a complete answer." : "."));
     } catch (err) {
       setStatus(`Could not count: ${err.message}`, "error");
     } finally {
@@ -676,9 +744,12 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         };
 
         // First broken link in the chain wins - see REASONS.
+        // No "no program covers this queue" reason: scope is chosen BY program
+        // now, so every queue here is covered by construction and the branch
+        // could never fire. A queue no program covers is a configuration
+        // question, and STA Configuration is where it is answered.
         if (c.participants && !c.participants.has(a.userId)) row.reason = "noPermission";
-        else if (!programId) row.reason = "noProgram";
-        else if (!liveRules.length) row.reason = "noRule";
+        else if (!programId || !liveRules.length) row.reason = "noRule";
         else if (c.mode === "EnabledQueueFlow" && queue && queue.enableTranscription === false) {
           row.reason = "queueTranscriptionOff";
         } else if (thresholdMs > 0 && a.ms > 0 && a.ms < thresholdMs) {
