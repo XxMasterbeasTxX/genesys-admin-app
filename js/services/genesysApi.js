@@ -2205,6 +2205,18 @@ export async function fetchAssistantQueues(api, orgId, assistantId, opts = {}) {
 }
 
 /**
+ * The members of one queue.
+ *
+ * Used to populate the agent filter from the queues a copilot covers, so the
+ * list offers the people who could plausibly appear rather than every user in
+ * the org. `pageNumber` style, so the shared pager fits.
+ */
+export async function fetchQueueMembers(api, orgId, queueId, opts = {}) {
+  return fetchAllPages(api, orgId,
+    `/api/v2/routing/queues/${queueId}/members`, opts);
+}
+
+/**
  * The agent checklists on one communication.
  *
  * Conversation-scoped despite the path: a single conversation can hold several

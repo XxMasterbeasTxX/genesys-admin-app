@@ -44,6 +44,10 @@ const registry = {
   "/dashboards/quality/sta-configuration": (ctx) =>
     import("./pages/dashboards/quality/staConfiguration.js").then((m) => m.default(ctx)),
 
+  // ── Dashboards › Agent Copilot ────────────────────────
+  "/dashboards/agent-copilot/checklists": (ctx) =>
+    import("./pages/dashboards/agent-copilot/checklists.js").then((m) => m.default(ctx)),
+
   // ── Interactions ─────────────────────────────────────
   "/interactions/search/participant-data/recent": (ctx) =>
     import("./pages/interactions/searchRecent.js").then((m) => m.default(ctx)),

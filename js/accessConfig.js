@@ -50,6 +50,7 @@
  *   dashboards.quality.scores          Quality — Evaluation Scores
  *   dashboards.quality.gaps            Quality — Evaluation Gaps
  *   dashboards.quality.staConfiguration  Quality — STA Configuration
+ *   dashboards.agentCopilot.checklists   Agent Copilot — Checklists & Summaries
  *
  *   DEPLOYMENT
  *   deployment.basic                   Basic

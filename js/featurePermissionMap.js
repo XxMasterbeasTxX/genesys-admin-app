@@ -183,6 +183,17 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   "dashboards.quality.gaps":      { view: { all: ["analytics:conversationDetail:view",
                                                  "speechAndTextAnalytics:program:view"] } },
 
+  // ── Dashboards › Agent Copilot ───────────────────────
+  // Both, because neither substitutes for the other: without the assistant list
+  // there is no scope to choose, and without the conversation rows there are no
+  // interactions to describe. Everything else degrades band by band and names
+  // what it wants - the queue cascade (assistants:queue:view), the checklists
+  // themselves (conversation:agentchecklist:view, which is its OWN permission
+  // and not the conversation one), summaries, recordings and wrap-up names.
+  // Design §8.
+  "dashboards.agentCopilot.checklists": { view: { all: ["assistants:assistant:view",
+                                                        "analytics:conversationDetail:view"] } },
+
   // ── Deployment ───────────────────────────────────────
   "deployment.test.testCases": { view: ["architect:flow:view"] },
 
