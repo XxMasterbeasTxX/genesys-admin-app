@@ -191,6 +191,7 @@ export default function renderRolesSearch({ me, api, orgContext, access }) {
       <button class="rs-mode-btn active" id="rsModeSearch">Permission Search</button>
       <button class="rs-mode-btn" id="rsModeHourly">Hourly Interacting</button>
       <button class="rs-mode-btn" id="rsModeWem">WEM License</button>
+      <button class="rs-mode-btn" id="rsModeSta">STA License</button>
     </div>
 
     <div id="rsSearchSection">
@@ -236,6 +237,7 @@ export default function renderRolesSearch({ me, api, orgContext, access }) {
 
     <div id="rsHourlySection" style="display:none"></div>
     <div id="rsWemSection" style="display:none"></div>
+    <div id="rsStaSection" style="display:none"></div>
   `;
 
   // ── DOM refs ──────────────────────────────────────────────
@@ -687,7 +689,10 @@ export default function renderRolesSearch({ me, api, orgContext, access }) {
   const MODES = [
     // Permission Search and Hourly Interacting read the same things — roles,
     // plus authorization/subjects for source attribution — so they share the
-    // "view" action. The WEM tab reads the licence API and carries its own.
+    // "view" action. The two licence tabs read the licence API and carry their
+    // own, one action each rather than a shared one: they happen to need the
+    // same permissions today, and naming them separately keeps that a
+    // coincidence rather than a coupling.
     { btn: "#rsModeSearch", sect: "#rsSearchSection", action: "view" },
     {
       btn: "#rsModeHourly",
@@ -708,6 +713,15 @@ export default function renderRolesSearch({ me, api, orgContext, access }) {
       load: async (host) => {
         const { renderWemContent } = await import("./wemLicense.js");
         renderWemContent(host, { me, api, orgContext });
+      },
+    },
+    {
+      btn: "#rsModeSta",
+      sect: "#rsStaSection",
+      action: "sta",
+      load: async (host) => {
+        const { renderStaContent } = await import("./staLicense.js");
+        renderStaContent(host, { me, api, orgContext });
       },
     },
   ].map((m) => ({

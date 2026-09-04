@@ -45,6 +45,8 @@
  *                    the base license includes it, or null if never bundled
  *   domPrefix        prefix for element ids, so two tabs can coexist
  *   filePrefix       export filename stem
+ *   supersededBy     RegExp matching an add-on that outranks this one, used
+ *                    only to explain an empty result; omit if nothing does
  */
 import { escapeHtml, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import {
@@ -671,8 +673,27 @@ export function renderAddonContent(container, { me, api, orgContext }, cfg) {
       if (!matchedUsers.length) {
         hideProgress();
         setStatus("");
+
+        // On an org that also holds a superseding add-on, "nobody" is the
+        // answer rather than a failed search, and saying so is the difference
+        // between a result and a blank screen. Genesys assigns each user one
+        // add-on and /license/infer applies the precedence itself, so everyone
+        // who would trigger this licence is counted against the bigger one —
+        // measured on an org holding both, where this tab correctly finds
+        // nobody while the other carries the whole population.
+        const superseder = cfg.supersededBy
+          ? listedDefs.find((d) => cfg.supersededBy.test(d.id || "")
+                                || cfg.supersededBy.test(d.description || ""))
+          : null;
+
         $results.innerHTML = `<div class="rs-empty"><div class="rs-empty-icon">👥</div>
-          <p>No user in this org holds a permission that triggers <strong>${escapeHtml(addonIds.join(", "))}</strong>.</p></div>`;
+          <p>No user in this org holds a permission that triggers <strong>${escapeHtml(addonIds.join(", "))}</strong>.</p>
+          ${superseder ? `<p style="font-size:13px;max-width:52ch;margin:8px auto 0">
+            This org also holds <strong>${escapeHtml(superseder.id)}</strong>, which takes precedence over
+            ${escapeHtml(cfg.name)}. Genesys assigns each user only one add-on, so anyone who would
+            trigger ${escapeHtml(cfg.name)} is counted against <strong>${escapeHtml(superseder.id)}</strong>
+            instead — check that tab rather than this one.
+          </p>` : ""}</div>`;
         return;
       }
 
