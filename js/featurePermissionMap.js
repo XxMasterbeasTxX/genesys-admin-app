@@ -256,8 +256,12 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // Three tabs, two answers. Permission Search and Hourly Interacting read
   // roles; the WEM tab additionally reads the licence API. Gating the page on
   // the union would deny the first two to someone entitled to them.
+  // One action per licence tab. Both read the same three licence endpoints and
+  // so need the same permissions today; naming them separately keeps that a
+  // coincidence rather than something the next licence tab has to inherit.
   "roles.search":              { view: { all: ["authorization:role:view", "authorization:grant:view"] },
-                                 wem:  ["authorization:grant:add", "authorization:license:view"] },
+                                 wem:  ["authorization:grant:add", "authorization:license:view"],
+                                 sta:  ["authorization:grant:add", "authorization:license:view"] },
 
   // ── Utilities ────────────────────────────────────────
   // One action per list, because the page shows ONE list at a time — it is a

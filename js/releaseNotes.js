@@ -21,6 +21,36 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "5.1",
+    date: "2026-09-04",
+    title: "Who is triggering a Speech & Text Analytics licence",
+    changes: [
+      "New mode under Roles › Permissions vs. Users: STA License. The same question the WEM "
+        + "tab answers, for the Speech and Text Analytics add-on — who holds a role carrying a "
+        + "permission that triggers it, which role did it, whether it came directly or through a "
+        + "group, and whether an STA licence is actually assigned to them.",
+      "The verdict comes from Genesys, not from us. POST /api/v2/license/infer is the same "
+        + "inference the admin UI runs when it warns that a role needs a licence, so its answer "
+        + "is the billing answer. Licence definitions are read only to name which permissions "
+        + "were responsible.",
+      "WEM outranks STA, and the page does not have to care. Genesys gives each user one add-on, "
+        + "and 19 of STA's 23 permissions are also in the WEM SKU — but infer applies that "
+        + "precedence itself. On an org holding both add-ons the STA tab therefore finds nobody, "
+        + "which is the correct answer rather than a broken search, and it tells you which "
+        + "licence took precedence instead of showing you an empty table.",
+      "Speech and text analytics is standard on CX 1 and CX 2 and bundled into CX 3, so a CX 3 "
+        + "org is told its base licence already includes it rather than being asked to search "
+        + "for something that cannot exist there.",
+      "Like the WEM tab, it says nothing about what this costs. With named licensing each "
+        + "triggering user is a billable seat; with concurrent licensing they are only eligible "
+        + "and the bill follows the peak logged in at once. No API exposes which model an org is "
+        + "on, so the page reports the mechanism and leaves the arithmetic alone.",
+      "Under the surface the WEM and STA tabs are now one engine configured twice rather than "
+        + "two copies of the same 900 lines. The WEM tab's behaviour, exports and verdicts are "
+        + "unchanged.",
+    ],
+  },
+  {
     version: "5.0",
     date: "2026-09-03",
     title: "Dashboards \u2014 Agent Copilot: did the checklist actually get finished, and by whom",

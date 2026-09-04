@@ -365,20 +365,22 @@ Used by: WebRTC Phones — Create/Change Site, Documentation Export, Divisions �
 
 ## 11. License
 
-Used by: License Consumption Export, WebRTC Phones — Create, Roles — Permissions vs. Users (WEM License mode)
+Used by: License Consumption Export, WebRTC Phones — Create, Roles — Permissions vs. Users (WEM License and STA License modes — one shared engine, `js/pages/roles/addonLicense.js`, configured per add-on)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/license/users` | Licences **currently assigned** per user (paginated). Entities are `{ id, licenses: ["genesysCloudCX2", …] }` — **`licenses` is an array of id strings, not objects**; reading `.name`/`.id` off them yields `undefined`. On a concurrent-licensing org this will **not** reconcile to the bill, which reports peak simultaneous logins rather than holders (observed: 6 assigned vs 13 billed). Genesys' *Concurrent Usage report* is the only source for the users behind a billed figure |
 | GET | `/api/v2/license/definitions` | List all available license definitions. Returns a **flat array, not an `entities` wrapper**. Each is `{ id, description, permissions: { ids: […] }, prerequisites: [{ id }], comprises: […] }`. `permissions` may come back empty on the list — re-fetch by id when you need it |
 | GET | `/api/v2/license/definitions/{licenseId}` | One definition, always with `permissions.ids` populated |
-| POST | `/api/v2/license/infer` | Body is a bare **array of roleIds**, response a bare array of license ids. Genesys' own "what licence does this role require" inference — the one the admin UI runs when it warns about a role. Authoritative for licence attribution; prefer it over comparing permissions against a definition yourself |
+| POST | `/api/v2/license/infer` | Body is a bare **array of roleIds**, response a bare array of license ids. Genesys' own "what licence does this role require" inference — the one the admin UI runs when it warns about a role. Authoritative for licence attribution; prefer it over comparing permissions against a definition yourself. **It also applies Genesys' precedence between add-ons**: a user qualifying for both WEM and STA gets WEM only ("each user can be assigned only one add-on at a time"), and infer returns WEM only. Measured 2026-09-04 — the same role, with identical permissions, infers `gc2WEMupgrade` on an org holding WEM and `gcSTAupgrade` on one that does not. So a permission comparison of your own would report STA triggers that Genesys does not bill |
 
 Requires ANY of `authorization:grant:add`, `authorization:license:view`.
 
 `POST /api/v2/license/infer/permissions` (licences inferred from a list of
 permission strings) exists in the JS SDK reference but is flagged **preview**
 and is absent from the public swagger. Not used.
+
+**STA** is `gcSTAupgrade` — 23 permissions, standard on CX 1 and CX 2, absent on CX 3 which bundles it. 19 of the 23 are also in the WEM SKU; only `billing:user:staUpgrade` and `routing:transcriptionSettings:{view,add,edit}` are STA's alone.
 
 **WEM SKUs follow the CX tier**, and `/license/definitions` returns only what an
 org can actually hold: `cloudCX1` → `gc1WEMupgrade`, `cloudCX2` → `gc2WEMupgrade`,
