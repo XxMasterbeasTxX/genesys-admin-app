@@ -58,13 +58,14 @@ entry (Step 4) — the backend expands them into access-key prefixes automatical
 | Package name (registry value) | Grants (access-key prefixes) |
 |---|---|
 | `insights` | `audit.*`, `interactions.search.*`, `export.users.*`, `export.interactions.*`, `export.scheduled` |
-| `interaction-ops` | `interactions.*` |
+| `interaction-ops` | `interactions.*` — except `interactions.recordings.*`, which is internal-only |
 | `user-access` | `users.*`, `roles.*`, `divisions.*` |
 | `configuration` | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
 | `gdpr` | `gdpr.*` (add-on) |
 | `demo` | `*` — every module a customer may hold (**internal demo/eval only, not sellable**) |
 
-> Internal-only features (Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports) are
+> Internal-only features (Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports,
+> recording export jobs) are
 > **never** in a package and are blocked server-side + hidden in customer mode. This holds for `demo`
 > too — the `*` wildcard is applied *before* the customer-exclusion list, so it cannot reach them.
 >
@@ -137,7 +138,7 @@ and after authentication locks the session to that org with the purchased menu.
    Expect `200` `{ "prelogin": true, "login": { id, name, region, clientId } }` — only these public fields.
 2. **Login** from a fresh/incognito session at `…/?org=<slug>` → redirected to the customer's region login;
    after sign-in the org selector is **locked** to the customer and the menu shows only purchased packages
-   (no Utilities, Deployment, cross-org copies, trustee/all-orgs/billing).
+   (no Utilities, Deployment, cross-org copies, trustee/all-orgs/billing, recording exports).
 3. **Data loads** for a purchased page (proves token-forwarding to the customer region).
 4. **Isolation spot-check** (customer DevTools console, `t = sessionStorage.getItem('gc_access_token')`):
    ```js
