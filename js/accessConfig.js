@@ -84,6 +84,7 @@
  *   divisions.workforce.managementUnit      Workforce Mgmt — Management Units
  *   divisions.task.workbin                  Task Mgmt — Workbins
  *   divisions.task.worktype                 Task Mgmt — Work Types
+ *   divisions.response.library              Response Mgmt — Libraries
  *
  *   EXPORT
  *   export.scheduled                   Scheduled Exports

@@ -66,6 +66,7 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   "divisions.workforce.managementUnit":      { edit: ["wfm:managementUnit:edit"] },
   "divisions.task.workbin":                  { edit: ["workitems:workbin:edit"] },
   "divisions.task.worktype":                 { edit: ["workitems:worktype:edit"] },
+  "divisions.response.library":              { edit: ["responses:library:edit"] },
 
   // ── Interactions ─────────────────────────────────────
   "interactions.disconnect":        { execute: ["conversation:communication:disconnect"] },

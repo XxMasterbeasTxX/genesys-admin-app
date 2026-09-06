@@ -248,6 +248,7 @@ Confirmed against the live demo permission catalog (2026-07-06). Only **write ac
 | Workforce → Management Units | `wfm:managementUnit:edit` |
 | Task → Workbins | `workitems:workbin:edit` |
 | Task → Work Types | `workitems:worktype:edit` |
+| Response Mgmt → Libraries | `responses:library:edit` |
 
 ### Interactions (`interactions.*`)
 | Action | Permission |

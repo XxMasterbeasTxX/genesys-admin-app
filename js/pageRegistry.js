@@ -169,6 +169,9 @@ const registry = {
   "/divisions/architect/data-tables": (ctx) =>
     import("./pages/divisions/dataTables.js").then((m) => m.default(ctx)),
 
+  "/divisions/response/library": (ctx) =>
+    import("./pages/divisions/library.js").then((m) => m.default(ctx)),
+
   // ── GDPR ──────────────────────────────────────────────
   "/gdpr/subject-request": (ctx) =>
     import("./pages/gdpr/subjectRequest.js").then((m) => m.default(ctx)),
