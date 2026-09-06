@@ -78,6 +78,7 @@ Complete guide for deploying the Genesys Admin Tool to a new Azure subscription.
   - **Outbound:** Campaigns — Contact Lists — DNC Lists — Email Campaigns — Messaging Campaigns
   - **Workforce Management:** Business Units — Management Units
   - **Task Management:** Workbins — Work Types
+  - **Response Management:** Libraries
 - **Activity Log** — Internal log of all write/mutative actions performed through the tool. Every create, copy, move, disconnect, publish, and GDPR submit records who did it, for which org, when, and a plain-language description. Visible to all logged-in users at `/activity-log` via the header link. Client-side filters: action type, org (admin only), user (admin only), and free-text search. Entries are stored in Azure Table Storage (`activitylog` table) and fetched via `GET /api/activity-log`. Writes go to `POST /api/activity-log`. Retention is indefinite; the log cannot be cleared from the UI.
 - **Skill Templates — Create Template** — Create reusable templates of roles (with per-role division access), skills (with proficiency levels 1–5), language skills (with proficiency levels 1–5), and queues for bulk user provisioning. Templates are stored in Azure Table Storage (`skilltemplates` table), not in Genesys (which has no native template concept). Two-panel page: left panel lists all templates for the selected org (columns: Name, Roles, Skills, Languages, Queues, Created By, Actions); right panel is an inline editor with four collapsible sections (Roles, Skills, Language Skills, Queues). Roles section shows a role card per added role, each with an embedded division multi-select. Skills section has a searchable multi-select plus per-skill proficiency radio buttons (1–5, default 3). Language Skills section has a searchable multi-select plus per-language proficiency radio buttons (1–5, default 3). Queues section has a searchable multi-select. Full CRUD: create, edit (owner or admin only), delete (owner or admin only). Data is partitioned by org. A 🕐 schedule button in each template row opens an inline schedule panel for automated template application. Access key: `users.rolesSkills.createTemplate`.
 - **Skill Templates — Add Users To Templates** — Assign and remove users, groups, and work teams from skill templates. Two-panel page: left panel lists all templates for the selected org with a search filter (template list shows breakdown by type — e.g. "3 users · 1 group · 2 teams"); right panel shows template details (read-only horizontal collapsible sections for Roles, Skills, Languages, Queues), three side-by-side assigned columns (Users, Groups, Work Teams) with individual remove and bulk-remove via checkboxes, and three equal-width add sections (Add Users, Add Group, Add Work Team). Add Users supports three modes: Search (by name/email), By Group, and By Division. Add Group and Add Work Team use searchable single-select dropdowns (already-assigned entries are excluded). Adding a group or work team fetches all members and applies the template to each member automatically, with a confirm modal listing the member count before proceeding. Removing a group or work team strips the template from all members and deletes the assignment record. Granular progress bar for all operations. Template assignments are stored in Azure Table Storage (`templateassignments` table) with a `type` field (`user`, `group`, or `workteam`) plus entity metadata (`groupId`/`groupName` or `workteamId`/`workteamName`). Access key: `users.rolesSkills.addUsersToTemplates`.
@@ -970,6 +971,7 @@ After pushing the config update:
 | 69 | Divisions — Workforce Mgmt — Management Units | Same layout; loads management units |
 | 70 | Divisions — Task Mgmt — Workbins | Same layout; loads workbins |
 | 71 | Divisions — Task Mgmt — Work Types | Same layout; loads work types |
+| 71a | Divisions — Response Mgmt — Libraries | Same layout; loads response management libraries; moves via the bulk division endpoint (objectType LIBRARY) |
 | 72 | Audit — Search (≤ 14 days, all services) | Auto-runs today on load; no service selected; results appear from all realtime services; blue hint reads "All supported services shown"; rows show Service column |
 | 73 | Audit — Search (≤ 14 days, single realtime service) | Select a service in the realtime map; run search; results from realtime endpoint; 1-day chunking transparent to user |
 | 74 | Audit — Search (≤ 14 days, async fallback service) | Select a service not in realtime map; search runs via async pipeline; result rows populated |
@@ -1333,7 +1335,8 @@ genesys-admin-app/
 │   │   │   ├── businessUnit.js      Workforce Mgmt — Business Units
 │   │   │   ├── managementUnit.js    Workforce Mgmt — Management Units
 │   │   │   ├── workbin.js           Task Mgmt — Workbins
-│   │   │   └── worktype.js          Task Mgmt — Worktypes
+│   │   │   ├── worktype.js          Task Mgmt — Worktypes
+│   │   │   └── library.js           Response Mgmt — Libraries
 │   │   ├── interactions/
 │   │   │   ├── search.js            Historical Interaction Search (>48h, async jobs API, 7-day chunking)
 │   │   │   ├── searchRecent.js      Recent Interaction Search (<48h, sync query API)

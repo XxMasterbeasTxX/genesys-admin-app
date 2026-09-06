@@ -21,6 +21,19 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "5.2",
+    date: "2026-09-06",
+    title: "Divisions: move Response Management libraries",
+    changes: [
+      "New page Divisions › Response Mgmt › Libraries. Genesys has released division support for "
+        + "response management libraries, so they can now be reassigned in bulk like every other "
+        + "object in the section: load, narrow by source division or search by name, tick what to "
+        + "move, pick a target division, apply.",
+      "Libraries were the last object type Genesys accepts on its bulk division endpoint that this "
+        + "section did not cover. Every type that endpoint takes now has a page.",
+    ],
+  },
+  {
     version: "5.1",
     date: "2026-09-04",
     title: "Who is triggering a Speech & Text Analytics licence",

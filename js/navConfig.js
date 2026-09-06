@@ -142,6 +142,15 @@ export const NAV_TREE = [
           { label: "Work Types", path: "worktype", enabled: true, access: "divisions.task.worktype" },
         ],
       },
+      // ── Response Management ───────────────────────────
+      {
+        label: "Response Mgmt",
+        path: "response",
+        enabled: true,
+        children: [
+          { label: "Libraries", path: "library", enabled: true, access: "divisions.response.library" },
+        ],
+      },
     ],
   },
   {
