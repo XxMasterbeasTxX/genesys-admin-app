@@ -324,9 +324,10 @@ export function resolveCustomerAccess(entitlements) {
 /**
 /**
  * Access keys (or prefixes) that are INTERNAL-ONLY and must never be available in
- * customer mode — cross-org copies, trustee/all-orgs/billing exports, and the
- * internal Utilities module (IP Ranges uses client-credentials; Permission
- * Catalog is internal). GDPR is intentionally NOT excluded (open decision O2).
+ * customer mode — cross-org copies, trustee/all-orgs/billing exports, recording
+ * exports, and the internal Utilities module (IP Ranges uses client-credentials;
+ * Permission Catalog is internal). GDPR is intentionally NOT excluded (open
+ * decision O2).
  *
  * `phones.webrtc.delete` is deliberately NOT listed: a customer may have it if
  * their package grants it. Note the consequence — a `phones.*` entitlement
@@ -347,6 +348,13 @@ const CUSTOMER_EXCLUDED_KEYS = [
   // dependencies — irreversibly, with no rollback. Listed explicitly because the
   // wildcard would grant it silently.
   "flows.delete",
+  // Recording export jobs pull the org's actual call recordings out in bulk.
+  // That is customer data egress, not an interaction operation, and it arrived
+  // bundled with Disconnect and Move because `interaction-ops` is the whole
+  // `interactions.*` namespace — so both the package wildcard and `demo` granted
+  // it silently. Same shape as `flows.delete` above: the module is otherwise
+  // customer-suitable, and only the named leaf is held back.
+  "interactions.recordings",
 ];
 
 /** True if a page key is an internal-only feature excluded from customer mode. */

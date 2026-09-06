@@ -456,6 +456,19 @@ never from a request field:
      Not fixed, by design: the mirror case — an internal user opening the bare origin in a tab holding a
      customer session keeps the stored hint and stays in customer mode. It fails toward *less* access, and
      fixing it means deciding a bare URL means "internal", which is exactly what breaks case 3.
+   - 5f: **Interactions → Recordings is internal-only.** Recording export jobs pull the org's actual call
+     recordings out in bulk — customer data egress, not an interaction operation. It reached customers
+     because `interaction-ops` is the whole `interactions.*` namespace, so the package wildcard and `demo`
+     both granted `interactions.recordings.create` / `.jobs` silently. Added `interactions.recordings` to
+     `CUSTOMER_EXCLUDED_KEYS`, the same shape as `flows.delete`.
+     - Verified 2026-09-06 against the real `resolveCustomerAccess`: blocked for every package individually,
+       for all packages together, and for the `*` wildcard; Disconnect, Move, Transcripts, Participant Data
+       and the Documentation export all still reachable. Internal sessions are unaffected — the exclusion
+       list is consulted only from `resolveCustomerAccess`.
+     - Note for any future server-side rule: a blanket deny on `/api/v2/recording` would break the
+       Documentation export, which reads `recording/mediaretentionpolicies`. Only `/api/v2/recording/jobs`
+       belongs to these pages.
+
 6. **Data-store isolation** (§10). **[DONE — validated on dev 2026-07-17]**
    - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
      from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or
@@ -524,13 +537,14 @@ never from a request field:
 A "package" is a named bundle that expands to a list of access-key prefixes. A registry entry lists the
 purchased **package names** in a `packages` field; the backend (`api/lib/packages.js`) expands them into
 the flat `entitlements` the app already uses (an optional explicit `entitlements` array is unioned in).
-Internal-only features (Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports) are
+Internal-only features (Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports,
+recording export jobs) are
 **never** in a package and are additionally blocked server-side + hidden in customer mode (§5, Step 7).
 
 | Package (registry value) | Grants (entitlement prefixes) |
 |---|---|
 | `insights` | `audit.*`, `interactions.search.*`, `export.users.*`, `export.interactions.*`, `export.scheduled` |
-| `interaction-ops` | `interactions.*` |
+| `interaction-ops` | `interactions.*` (recording export jobs excluded — see §5) |
 | `user-access` | `users.*`, `roles.*`, `divisions.*` |
 | `configuration` | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
 | `gdpr` (add-on) | `gdpr.*` |
