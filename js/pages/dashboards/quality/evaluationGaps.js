@@ -234,6 +234,23 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
         <div class="dq-table-wrap has-filters" data-c="rowsWrap">
           <table class="dq-table" data-c="rows"></table>
         </div>
+        <div class="dq-foot" data-c="rowsFoot" hidden>
+          <span class="dq-foot-count" data-c="rowsCount"></span>
+          <span class="dq-foot-pager">
+            <button class="btn btn-sm" data-c="rowsPrev">Previous</button>
+            <span class="dq-detail-page" data-c="rowsPage"></span>
+            <button class="btn btn-sm" data-c="rowsNext">Next</button>
+          </span>
+          <label class="dq-foot-size">
+            Rows per page
+            <select class="input" data-c="rowsSize">
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </label>
+        </div>
         <div class="dq-panel-note" data-c="tableNote" hidden></div>
       </div>
     </div>
@@ -892,6 +909,54 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   // ── Rendering ───────────────────────────────────────
 
   let allRows = [];
+
+  /**
+   * Paging over the rows already drawn.
+   *
+   * Every matching row is in the table; a page turn only changes which are
+   * displayed. That is what lets a column filter or a reason apply across the
+   * whole result set rather than across the fifty that happen to be on screen.
+   *
+   * Fifty by default, as on Evaluation Scores.
+   */
+  let rowsSize = 50;
+  let rowsPage = 1;
+  let rowsVisible = [];
+
+  function showRowsPage() {
+    const total = rowsVisible.length;
+    const pages = Math.max(Math.ceil(total / rowsSize), 1);
+    if (rowsPage > pages) rowsPage = pages;
+    const start = (rowsPage - 1) * rowsSize;
+
+    rowsVisible.forEach((tr, i) => {
+      tr.style.display = i >= start && i < start + rowsSize ? "" : "none";
+    });
+
+    const shown = Math.min(rowsSize, Math.max(total - start, 0));
+    $("rowsFoot").hidden = !total;
+    $("rowsCount").textContent = total
+      ? `Showing ${shown.toLocaleString()} of ${total.toLocaleString()}`
+      : "Nothing matches these filters";
+    $("rowsPage").textContent = `Page ${rowsPage} of ${pages}`;
+    $("rowsPrev").disabled = rowsPage <= 1;
+    $("rowsNext").disabled = rowsPage >= pages;
+  }
+
+  $("rowsPrev").addEventListener("click", () => {
+    if (rowsPage <= 1) return;
+    rowsPage -= 1;
+    showRowsPage();
+  });
+  $("rowsNext").addEventListener("click", () => {
+    rowsPage += 1;
+    showRowsPage();
+  });
+  $("rowsSize").addEventListener("change", () => {
+    rowsSize = Number($("rowsSize").value) || 50;
+    rowsPage = 1;
+    showRowsPage();
+  });
   let detachFilters = null;
 
   function render(rows, c, s, transcribed, convCount, recordingInfo, withAgents) {
@@ -1071,7 +1136,6 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
   function drawTable() {
     const pick = $("reasonFilter").value;
     const rows = pick ? allRows.filter((r) => r.reason === pick) : allRows;
-    const shown = rows.slice(0, 500);
     const $t = $("rows");
 
     detachFilters?.();
@@ -1079,6 +1143,8 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
 
     if (!rows.length) {
       $t.innerHTML = "";
+      rowsVisible = [];
+      $("rowsFoot").hidden = true;
       return;
     }
 
@@ -1090,7 +1156,7 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       "<thead><tr><th>Agent</th><th>Queue</th><th>Time</th>"
       + '<th class="is-num">Duration</th><th>Recording</th><th>Transcribed</th>'
       + "<th>Why</th></tr></thead>"
-      + `<tbody>${shown.map((r) => {
+      + `<tbody>${rows.map((r) => {
         const reason = REASON_BY_KEY.get(r.reason);
         const seconds = r.ms != null ? Math.round(r.ms / 1000) : "";
         return `<tr data-conversation="${escapeHtml(r.conversationId || "")}">
@@ -1127,14 +1193,18 @@ export default function renderEvaluationGaps({ me, api, orgContext, access }) {
       numericCols: [3],
       rangeCols: [3],
       dateCols: [2],
+      // The filter decides which rows exist to be paged over; the pager then
+      // decides which of those are on screen. Going back to page one on every
+      // filter change is the only sane landing place - page nine of the old
+      // result set means nothing in the new one.
+      onChange: (visible) => { rowsVisible = visible; rowsPage = 1; showRowsPage(); },
     });
 
-    if (rows.length > shown.length) {
-      $("tableNote").textContent =
-        `Showing the first ${shown.length.toLocaleString()} of ${rows.length.toLocaleString()}. `
-        + "Filter by reason, or narrow the date range.";
-      $("tableNote").hidden = false;
-    }
+    // Every row that survived the reason filter, in the order drawn. The column
+    // filters narrow this through onChange above.
+    rowsVisible = Array.from($t.querySelectorAll("tbody tr"));
+    rowsPage = 1;
+    showRowsPage();
   }
 
   return el;

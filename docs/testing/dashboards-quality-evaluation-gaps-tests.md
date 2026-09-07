@@ -97,7 +97,13 @@ transcribed" in any useful sense.
 | 4.5d | Sort or filter, then right-click again | Still copies. The gesture survives a redraw | | |
 | 4.5e | The tip above the table | Says right-click copies the Conversation ID | | |
 | 4.6 | Duration | The agent's own segment time, not the whole conversation | | |
-| 4.7 | Over 500 rows | Shows the first 500 and says so | | |
+| 4.7 | ★ Over 500 rows | **Every** row is reachable through the pager. Nothing is cut off | | |
+| 4.7a | Rows per page | Defaults to **50**, as on Evaluation Scores; 25 / 100 / 200 also offered | | |
+| 4.7b | Previous / Next | Turn pages; Previous is disabled on page one and Next on the last | | |
+| 4.7c | ★ Apply a column filter with the pager on page 3 | The filter applies to **all** rows, not the 50 on screen, and the pager returns to page 1 | | |
+| 4.7d | ★ Sort a column while paged | Sorts the whole result set, not just the visible page | | |
+| 4.7e | Change the reason filter | Pager resets to page 1 and the count reflects the new reason | | |
+| 4.7f | ★ A range where recordings were capped or the transcript aggregate failed | That warning is still shown beneath the table. It used to be overwritten by the "first 500" message | | |
 
 ## 5. Cross-checks ★
 
