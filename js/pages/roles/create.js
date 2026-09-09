@@ -269,7 +269,10 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       .rc-status--success { color: #34d399; }
 
       /* ── Footer ── */
-      .rc-footer { display: flex; justify-content: flex-end; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border); margin-top: 24px; }
+      /* Above the permission list, not below it: a template loads well over a
+         thousand permissions, and buttons under that are a long scroll from the
+         fields they act on. */
+      .rc-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); margin: 24px 0 16px; }
       .rc-cancel-btn { padding: 8px 22px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; transition: color .12s, border-color .12s; }
       .rc-cancel-btn:hover { border-color: #6b7280; color: var(--text); }
       .rc-save-btn { padding: 8px 28px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; }
@@ -366,6 +369,13 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         </div>
       </div>
 
+      <div class="rc-actions">
+        <button class="rc-cancel-btn" id="rcCancelBtn">Cancel</button>
+        <button class="rc-save-btn" id="rcSaveBtn" disabled>${isCopy ? "Create Copy" : isEdit ? "Save Changes" : "Create Role"}</button>
+      </div>
+
+      <div class="rc-status" id="rcStatus"></div>
+
       <div class="rc-section">
         <div class="rc-policies-header">
           <span class="rc-policies-title">Permissions</span>
@@ -378,13 +388,6 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         <div class="rc-policy-list" id="rcPolicyList">
           <div class="rc-no-policies">No permissions added yet.</div>
         </div>
-      </div>
-
-      <div class="rc-status" id="rcStatus"></div>
-
-      <div class="rc-footer">
-        <button class="rc-cancel-btn" id="rcCancelBtn">Cancel</button>
-        <button class="rc-save-btn" id="rcSaveBtn" disabled>${isCopy ? "Create Copy" : isEdit ? "Save Changes" : "Create Role"}</button>
       </div>
     </div>
   `;
