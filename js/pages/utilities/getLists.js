@@ -149,10 +149,16 @@ async function fetchWrapupCodes(api, orgId) {
  * one definitions call (and a by-id re-fetch for any definition that arrives
  * without its permissions, which the list endpoint sometimes does).
  *
- * Reading it: because a licence's permission set appears to be cumulative, a
- * permission shows against every tier that includes it. That is the point, not
- * noise — `quality:evaluation:add` ticked for cloudCX2, cloudCX3 and
- * gc1WEMupgrade reads as "bundled from CX 2 up; on CX 1 it needs the add-on".
+ * Reading it: the tiers are NOT cumulative. `cloudCX2` (275 permissions) and
+ * `cloudCX3` (267) overlap by only 14 — each tier lists what it adds, not what
+ * it totals. An earlier version of this comment claimed the opposite; it was
+ * never observable, because an org holds one tier and so only ever sees one.
+ *
+ * What an org's higher tier already covers shows up instead as a permission
+ * with NO licence: 261 of `cloudCX2`'s 275 come back unattributed on a CX 3
+ * org, because there they cost nothing. Same for speech and text analytics —
+ * `gcSTAupgrade` on CX 2, `cloudCX3` on CX 3, which is CX 3 bundling it.
+ * So an empty Licence cell means "free for this org", not "free everywhere".
  *
  * Only what the API says. No help-article cross-referencing and no billing
  * interpretation: what a licence GRANTS and what TRIGGERS a charge are
