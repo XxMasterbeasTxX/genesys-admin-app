@@ -546,7 +546,15 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       $polCount.textContent = "";
       return;
     }
-    $polCount.textContent = `${policies.length} permission${policies.length !== 1 ? "s" : ""}`;
+    // Count permissions, not policy rows. A row is one domain+entity carrying a
+    // set of actions, so "2" for two entities holding four actions each was
+    // wrong by a factor of four — invisible while roles were built an entity at
+    // a time, obvious the moment a template loads 1,675 permissions into 659
+    // rows and the header claims 659.
+    const permCount = policies.reduce((n, p) => n + p.actions.size, 0);
+    $polCount.textContent =
+      `${permCount.toLocaleString()} permission${permCount !== 1 ? "s" : ""}` +
+      ` in ${policies.length.toLocaleString()} ${policies.length !== 1 ? "entities" : "entity"}`;
 
     // Remember which domains were open before re-render
     const prevOpen = new Set();
@@ -1132,16 +1140,15 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   /**
    * Best-effort check BEFORE anything is created.
    *
-   * POST /api/v2/license/infer/permissions takes a permission list, which is the
-   * shape this needs, but it is flagged preview and absent from the public
-   * swagger — so its request body is a GUESS, mirroring /license/infer's bare
-   * array. It has never been observed answering.
+   * POST /api/v2/license/infer/permissions takes a permission list, which is
+   * exactly the shape this needs. Confirmed working 2026-09-09 against a live
+   * org: a bare array of permission strings in, a bare array of licence ids
+   * back, mirroring /license/infer.
    *
-   * That is why every failure is swallowed and nothing depends on it: if the
-   * shape is wrong, or the endpoint is gone, this silently contributes nothing
-   * and the authoritative check still runs after creation. It can only ever add
-   * information, never withhold it. If it does start answering, confirm the
-   * shape before anything is built on top of it.
+   * It is still flagged preview and absent from the public swagger, so nothing
+   * depends on it: every failure is swallowed and the authoritative check runs
+   * on the created role regardless. It adds information when it answers and
+   * costs nothing when it does not.
    */
   async function preflight(t) {
     const org = orgContext?.getDetails?.();
