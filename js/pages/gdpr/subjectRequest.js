@@ -18,14 +18,45 @@ import { escapeHtml, makeStatus } from "../../utils.js";
 import { logAction } from "../../services/activityLogService.js";
 
 // ── Request type definitions ──────────────────────────────────────────
+//
+// `expect` is what Genesys actually does, as distinct from what the article
+// entitles the individual to. The two are not the same, and the gap is not
+// small: an erasure request does not erase. Sources, since Genesys does not
+// document most of this in one place:
+//
+//   • Erasure redacts PII and leaves the interaction record standing —
+//     "GDPR requests redact PII. You cannot erase history." (Genesys staff,
+//     community.genesys.com/discussion/will-gdpr-delete-api-delete-full-interaction-data),
+//     where users also report redaction landing days after the status reads
+//     COMPLETED.
+//   • Access returns a ZIP archive whose contents Genesys has repeatedly
+//     declined to document (community.genesys.com/discussion/use-of-gdpr-apis,
+//     open from 2023 to 2025), and which excludes call recordings even though
+//     erasure covers them.
+//   • Timeframes are from help.genesys.cloud/articles/genesys-cloud-and-gdpr-compliance.
+//
+// This is the page where someone acts on a legal obligation on a real
+// person's behalf. Leaving them to discover the gap afterwards is the one
+// outcome worth engineering against.
 const REQUEST_TYPES = {
   GDPR_DELETE: {
     label:        "Erasure",
     article:      "Article 17",
     articleLabel: "Right to Erasure",
     articleUrl:   "https://gdpr-info.eu/art-17-gdpr/",
-    description:  "Permanently delete or anonymize all personal data Genesys Cloud holds on this individual.",
+    description:  "Redact or anonymise the personal data Genesys Cloud holds on this individual.",
     badgeClass:   "gdpr-badge--delete",
+    expect: [
+      "Genesys <strong>redacts personal data — it does not delete history</strong>. Conversations, "
+        + "interaction records and their metrics survive; the name, phone number, participant data "
+        + "and recording content attached to them are removed or anonymised.",
+      "Call recordings <strong>are</strong> in scope, unlike the Access export.",
+      "Takes <strong>up to 14 days</strong>. Redaction has been reported to land days after the "
+        + "status here reads Completed, so treat Completed as “Genesys accepted it”, not “it is done”.",
+      "Irreversible. There is no undo, and Genesys will not restore the data.",
+    ],
+    expectWarn:   "Do not run this against an active agent or admin. Genesys needs an employee's "
+                + "personal data to function, and redacting a working user can break their account.",
     confirmRequired: true,
     confirmText:  "I confirm this is a valid erasure (right to be forgotten) request and I consent to the deletion proceeding.",
     submitLabel:  "Submit Erasure Request(s)",
@@ -37,11 +68,22 @@ const REQUEST_TYPES = {
     article:      "Article 15",
     articleLabel: "Right of Access",
     articleUrl:   "https://gdpr-info.eu/art-15-gdpr/",
-    description:  "Compile and export a copy of all personal data Genesys Cloud holds on this individual.",
+    description:  "Compile a copy of the personal data Genesys Cloud holds on this individual.",
     badgeClass:   "gdpr-badge--export",
+    expect: [
+      "You get a <strong>ZIP archive</strong>, downloadable from Request Status once the request "
+        + "reads Completed — usually <strong>1–2 business days</strong>. Large exports may arrive as "
+        + "several archives.",
+      "Inside are raw platform exports — reported to include analytics, billing and journey session "
+        + "data, as HTML and CSV. <strong>Genesys does not document the contents</strong>, and it is "
+        + "not a document you can hand to the data subject as-is. Expect to interpret it yourself.",
+      "<strong>Call recordings are not included</strong>, even though erasure covers them.",
+      "Nothing is changed. This request only reads.",
+    ],
+    expectWarn:   null,
     confirmRequired: false,
     submitLabel:  "Submit Access Request(s)",
-    note:         "Genesys will process and make the data available within 1–2 business days. Check Request Status for download links once fulfilled.",
+    note:         null,
     needsReplacement: false,
   },
   GDPR_UPDATE: {
@@ -49,8 +91,19 @@ const REQUEST_TYPES = {
     article:      "Article 16",
     articleLabel: "Right to Rectification",
     articleUrl:   "https://gdpr-info.eu/art-16-gdpr/",
-    description:  "Replace inaccurate personal data (e.g. old name or phone number) across all records.",
+    description:  "Replace inaccurate personal data (e.g. an old name or phone number) across records.",
     badgeClass:   "gdpr-badge--update",
+    expect: [
+      "Genesys finds the <strong>old value</strong> you searched with and writes the <strong>new "
+        + "value</strong> over it wherever it appears.",
+      "It corrects the identifiers themselves — name, address, phone, email, external ID and social "
+        + "handles. It does not rewrite free text, notes or recording content that happens to mention "
+        + "the old value.",
+      "Every selected subject gets the same replacements, so only tick subjects the correction "
+        + "genuinely applies to.",
+      "Irreversible in the same way as erasure: the old value is gone, not archived.",
+    ],
+    expectWarn:   null,
     confirmRequired: false,
     submitLabel:  "Submit Rectification Request(s)",
     note:         null,
@@ -68,10 +121,30 @@ const SEARCH_TYPES = [
   { value: "INSTAGRAM",      label: "Instagram"      },
   { value: "FACEBOOK",       label: "Facebook"       },
   { value: "APPLE_MESSAGES", label: "Apple Messages" },
+  // WHATSAPP is in the spec's searchType and ReplacementTerm enums and was
+  // simply missing here, so WhatsApp identifiers could not be searched at all.
+  { value: "WHATSAPP",       label: "WhatsApp"       },
 ];
 
-// ── Persist identifier values across re-renders (e.g. org change) ──────
-const _savedValues = {};
+// ── Persist identifier values across re-renders, WITHIN one org ───────
+//
+// Re-renders are frequent (any nav back to the page), and retyping nine
+// identifiers each time is its own kind of hostile. But `app.js` re-renders the
+// router on org change too, so a single shared object carried one data
+// subject's name, email and phone into the next customer's tenant — pre-filled
+// and ready to search. The values are that person's own personal data; they do
+// not belong to the org you switched to. Keyed by org id, and the previous
+// org's entry is dropped rather than kept around.
+let _savedOrgId = null;
+let _savedValues = {};
+
+function savedValuesFor(orgId) {
+  if (orgId !== _savedOrgId) {
+    _savedOrgId = orgId;
+    _savedValues = {};
+  }
+  return _savedValues;
+}
 
 // ── Page renderer ─────────────────────────────────────────────────────
 export default function renderSubjectRequest({ route, me, api, orgContext }) {
@@ -106,6 +179,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
           </label>
         `).join("")}
       </div>
+      <div id="gdprTypeHelp"></div>
     </div>
 
     <!-- ── Step 2: Identifiers ───────────────────────────────── -->
@@ -163,6 +237,7 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
 
   // ── DOM refs ───────────────────────────────────────────────────────
   const $typeGrid       = el.querySelector("#gdprTypeGrid");
+  const $typeHelp       = el.querySelector("#gdprTypeHelp");
   const $step2          = el.querySelector("#gdprStep2");
   const $step3          = el.querySelector("#gdprStep3");
   const $step4          = el.querySelector("#gdprStep4");
@@ -179,9 +254,14 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
 
   // ── State ──────────────────────────────────────────────────────────
   let requestType   = null;
-  let foundMatches  = []; // [{ subject, matchedBy: {type, value} }]
+  let foundMatches  = []; // [{ subject, matchedByList: [{type, value}] }]
   let selectedKeys  = new Set();
   let isRunning     = false;
+  // The identifiers the CURRENT results were searched with. Step 4 is built
+  // from this, never from the live inputs: step 2 stays editable after a
+  // search, and a rectification keyed to a since-edited field rewrites the
+  // wrong one. Cleared whenever the results are invalidated.
+  let searchedIdentifiers = [];
 
   // ── Utility ────────────────────────────────────────────────────────
   // This page defaults the level to "info" rather than to no modifier at all;
@@ -193,52 +273,139 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
   function setProgress(pct) { $progressBar.style.width = `${pct}%`; }
   function showProgress() { $progressWrap.hidden = false; }
   function hideProgress() { $progressWrap.hidden = true; setProgress(0); }
-  function unlock(el) { el.classList.remove("gdpr-section--locked"); }
 
+  // `gdpr-section--locked` is opacity + pointer-events, which a keyboard never
+  // sees: Tab reached a locked step's inputs and its controls still fired. The
+  // class carries the look, `inert` carries the meaning.
+  function unlock(el) { el.classList.remove("gdpr-section--locked"); el.inert = false; }
+  function lock(el)   { el.classList.add("gdpr-section--locked");    el.inert = true;  }
+
+  // Steps 2–4 open locked; the markup only carries the class.
+  [$step2, $step3, $step4].forEach(s => { s.inert = true; });
+
+  // GDPRSubject carries no `id`; the identity is whichever of these is set.
+  // journeyCustomer / socialHandle / externalId are what the Twitter, Instagram,
+  // Facebook, Apple Messages and External ID searches come back as — the page
+  // offers all five, so all five have to be addressable here and in the body.
   function matchKey(subject) {
     return subject.userId
       ?? subject.externalContactId
       ?? subject.dialerContactId?.id
-      ?? subject.id
+      ?? subject.journeyCustomer?.id
+      ?? (subject.socialHandle ? `${subject.socialHandle.type}:${subject.socialHandle.value}` : null)
+      ?? subject.externalId
       ?? null;
+  }
+
+  /** The id fields a GDPR request body may carry, in the order they identify a subject. */
+  function subjectIdFields(s) {
+    const out = {};
+    if (s.userId)            out.userId            = s.userId;
+    if (s.externalContactId) out.externalContactId = s.externalContactId;
+    if (s.dialerContactId)   out.dialerContactId   = s.dialerContactId;
+    if (s.journeyCustomer)   out.journeyCustomer   = s.journeyCustomer;
+    if (s.socialHandle)      out.socialHandle      = s.socialHandle;
+    if (s.externalId)        out.externalId        = s.externalId;
+    return out;
   }
 
   function subjectTypeLabel(s) {
     if (s.userId)            return "User";
     if (s.externalContactId) return "External Contact";
     if (s.dialerContactId)   return "Dialer Contact";
+    if (s.journeyCustomer)   return "Journey Customer";
+    if (s.socialHandle)      return searchTypeLabel(s.socialHandle.type);
+    if (s.externalId)        return "External ID";
     return "Unknown";
   }
 
   function subjectDisplayId(s) {
-    return s.userId ?? s.externalContactId ?? s.dialerContactId?.id ?? s.id ?? "—";
+    return s.userId
+        ?? s.externalContactId
+        ?? s.dialerContactId?.id
+        ?? s.journeyCustomer?.id
+        ?? (s.socialHandle ? `${s.socialHandle.type}: ${s.socialHandle.value}` : null)
+        ?? s.externalId
+        ?? "—";
+  }
+
+  /** "APPLE_MESSAGES" → "Apple Messages", using the same labels as the form. */
+  function searchTypeLabel(type) {
+    return SEARCH_TYPES.find(t => t.value === type)?.label ?? type;
   }
 
   function getIdentifiers() {
     return [...$idGrid.querySelectorAll(".gdpr-id-input")]
       .filter(i => i.value.trim())
       .map(i => ({
-        type:        i.dataset.type,
-        value:       i.value.trim(),
-        replacement: "",
+        type:  i.dataset.type,
+        value: i.value.trim(),
       }));
   }
 
   function updateSearchBtn() {
-    $searchBtn.disabled = getIdentifiers().length === 0 || isRunning;
+    // requestType matters: without it, Proceed reads REQUEST_TYPES[null] and
+    // throws. Step 2 being locked used to be the only thing stopping that, and
+    // a locked section is not a guard.
+    $searchBtn.disabled = !requestType || getIdentifiers().length === 0 || isRunning;
+  }
+
+  /**
+   * Drop the current results and everything built on them.
+   *
+   * Step 2 stays editable after a search, so results can outlive the values
+   * that produced them. Leaving steps 3–4 on screen invites acting on a review
+   * list and a rectification table that no longer describe what was searched.
+   */
+  function invalidateResults() {
+    [$step3, $step4].forEach(lock);
+    $subjectsWrap.innerHTML = "";
+    $confirmContent.innerHTML = "";
+    $proceedBtn.disabled = true;
+    $submitBtn.disabled = true;
+    $submitStatus.textContent = "";
+    $submitStatus.className = "te-status";
+    foundMatches = [];
+    searchedIdentifiers = [];
+    selectedKeys.clear();
   }
 
   // ── Init grid inputs: pre-populate from saved state, persist on change ──
+  const saved = savedValuesFor(orgContext?.get?.() ?? null);
   $idGrid.querySelectorAll(".gdpr-id-input").forEach(input => {
-    if (_savedValues[input.dataset.type]) {
-      input.value = _savedValues[input.dataset.type];
+    if (saved[input.dataset.type]) {
+      input.value = saved[input.dataset.type];
     }
     input.addEventListener("input", () => {
-      _savedValues[input.dataset.type] = input.value;
+      saved[input.dataset.type] = input.value;
+      if (foundMatches.length || searchedIdentifiers.length) {
+        invalidateResults();
+        setStatus("Identifiers changed — search again to refresh the results.", "warn");
+      }
       updateSearchBtn();
     });
   });
   updateSearchBtn();
+
+  /**
+   * "What this actually does" for the chosen request type.
+   *
+   * Shown on selection rather than tucked behind a link, because the mismatch
+   * it describes — erasure that redacts, an export nobody can read — is the
+   * thing you need before you commit, not after.
+   */
+  function helpPanelHtml(t) {
+    if (!t?.expect?.length) return "";
+    return `
+      <div class="gdpr-expect">
+        <p class="gdpr-expect-title">What ${escapeHtml(t.label)} actually does</p>
+        <ul class="gdpr-expect-list">
+          ${t.expect.map(line => `<li>${line}</li>`).join("")}
+        </ul>
+        ${t.expectWarn ? `<p class="gdpr-expect-warn">${t.expectWarn}</p>` : ""}
+      </div>
+    `;
+  }
 
   // ── Step 1: Type selection ────────────────────────────────────────
   $typeGrid.addEventListener("change", e => {
@@ -248,17 +415,14 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
     $typeGrid.querySelectorAll(".gdpr-type-card").forEach(c =>
       c.classList.toggle("gdpr-type-card--selected", c.dataset.type === requestType)
     );
+    $typeHelp.innerHTML = helpPanelHtml(REQUEST_TYPES[requestType]);
 
     // Reset downstream steps
-    [$step3, $step4].forEach(s => s.classList.add("gdpr-section--locked"));
-    $subjectsWrap.innerHTML = "";
-    $confirmContent.innerHTML = "";
-    $proceedBtn.disabled = true;
-    foundMatches = [];
-    selectedKeys.clear();
+    invalidateResults();
     setStatus("");
 
     unlock($step2);
+    updateSearchBtn();
   });
 
   // ── Search ────────────────────────────────────────────────────────
@@ -271,9 +435,8 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
 
     isRunning = true;
     $searchBtn.disabled = true;
-    [$step3, $step4].forEach(s => s.classList.add("gdpr-section--locked"));
-    foundMatches = [];
-    selectedKeys.clear();
+    invalidateResults();
+    searchedIdentifiers = identifiers;
     setStatus("Searching\u2026");
     showProgress();
     setProgress(10);
@@ -282,22 +445,36 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       const results = await Promise.allSettled(
         identifiers.map(id =>
           gc.gdprSearchSubjects(api, org.id, id.type, id.value)
-            .then(subjects => ({ identifier: id, subjects }))
+            .then(({ subjects, total }) => ({ identifier: id, subjects, total }))
         )
       );
       setProgress(90);
 
+      // allSettled preserves order, so a rejection can be named. "1 error(s)"
+      // does not tell you that the PHONE leg returned nothing, and on a page
+      // about erasing everything, an unnamed gap reads as no gap.
       const errors = [];
       const allMatches = [];
-      for (const r of results) {
+      const truncated = [];   // Genesys said there were more than it returned
+      results.forEach((r, i) => {
         if (r.status === "fulfilled") {
           for (const s of r.value.subjects) {
             allMatches.push({ subject: s, matchedBy: r.value.identifier });
           }
+          if (r.value.total != null && r.value.total > r.value.subjects.length) {
+            truncated.push({
+              type:      identifiers[i].type,
+              returned:  r.value.subjects.length,
+              total:     r.value.total,
+            });
+          }
         } else {
-          errors.push(r.reason?.message ?? "Unknown error");
+          errors.push({
+            type:    identifiers[i].type,
+            message: r.reason?.message ?? "Unknown error",
+          });
         }
-      }
+      });
 
       // Deduplicate: if the same subject was returned by multiple identifier searches,
       // collapse them into one row and show all matched-by identifiers together.
@@ -313,10 +490,17 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       foundMatches = [...byId.values()];
       setProgress(100);
 
+      const failedTypes = errors.map(e => searchTypeLabel(e.type)).join(", ");
+
       if (errors.length && !foundMatches.length) {
-        setStatus(`Search failed: ${errors[0]}`, "error");
+        setStatus(`Search failed: ${errors[0].message}`, "error");
       } else if (errors.length) {
-        setStatus(`Search completed with ${errors.length} error(s). Showing partial results.`, "warn");
+        setStatus(
+          `${failedTypes} could not be searched (${errors[0].message}). `
+          + `The results below cover the other identifiers only — anyone matching `
+          + `${failedTypes} alone is missing from this list.`,
+          "warn",
+        );
         renderSubjectsTable(foundMatches);
         unlock($step3);
         $proceedBtn.disabled = foundMatches.length === 0;
@@ -325,12 +509,37 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         $subjectsWrap.innerHTML = `<p class="gdpr-empty">No subjects found for the provided identifiers.</p>`;
         unlock($step3);
         $proceedBtn.disabled = true;
+      } else if (truncated.length) {
+        // Genesys reported a higher total than it returned, and the endpoint
+        // takes no paging parameters, so there is no second page to ask for.
+        // Say so rather than presenting a partial list as the whole answer.
+        const t0 = truncated[0];
+        setStatus(
+          `Genesys reports ${t0.total} matches for ${searchTypeLabel(t0.type)} but returned `
+          + `${t0.returned}. The list below is incomplete — narrow the identifier, or treat this `
+          + `as a partial result.`,
+          "warn",
+        );
+        renderSubjectsTable(foundMatches);
+        unlock($step3);
+        $proceedBtn.disabled = false;
       } else {
         setStatus(`Found ${foundMatches.length} unique subject${foundMatches.length !== 1 ? "s" : ""}. Review and deselect any false positives.`, "success");
         renderSubjectsTable(foundMatches);
         unlock($step3);
         $proceedBtn.disabled = false;
       }
+
+      // Looking a named individual up across a customer tenant is the read most
+      // worth a trail. Values are deliberately not logged — the identifiers are
+      // the subject's own personal data.
+      logAction({ me, orgId: org?.id || "", orgName: org?.name || "",
+        action: "gdpr_subject_search",
+        description: `Searched GDPR subjects by ${identifiers.map(i => searchTypeLabel(i.type)).join(", ")}`
+          + ` — ${foundMatches.length} match${foundMatches.length !== 1 ? "es" : ""}`,
+        result: errors.length ? "partial" : "success",
+        errorMessage: errors.length ? `${failedTypes} failed: ${errors[0].message}` : null,
+        count: foundMatches.length });
     } catch (err) {
       setStatus(`Search failed: ${err.message}`, "error");
     } finally {
@@ -401,12 +610,32 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
     $step4.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
+  /** The found matches still ticked in step 3, in table order. */
+  function selectedMatches() {
+    return foundMatches.filter((m, i) =>
+      selectedKeys.has(matchKey(m.subject) ?? `unknown-${i}`)
+    );
+  }
+
+  /** Replacement terms as currently typed, keyed by identifier type. */
+  function collectReplacementTerms() {
+    return [...$confirmContent.querySelectorAll(".gdpr-replacement-input")]
+      .filter(input => input.value.trim())
+      .map(input => ({
+        type:          input.dataset.type,
+        existingValue: input.dataset.existing,
+        updatedValue:  input.value.trim(),
+      }));
+  }
+
   // ── Step 4: Confirmation ──────────────────────────────────────────
   function renderConfirmation() {
     const t     = REQUEST_TYPES[requestType];
     const count = selectedKeys.size;
     $submitBtn.textContent = t.submitLabel;
-    $submitBtn.disabled = t.confirmRequired; // enabled immediately unless confirm required
+    // Erasure waits on the confirm tick; rectification waits on at least one
+    // replacement value. Neither offers a button that only fails on click.
+    $submitBtn.disabled = t.confirmRequired || t.needsReplacement;
     $submitStatus.textContent = "";
     $submitStatus.className = "te-status";
 
@@ -420,12 +649,21 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       </div>
       <p class="gdpr-confirm-count">
         <strong>${count}</strong> request${count !== 1 ? "s" : ""} will be submitted
-        (one per unique subject).
+        (one per unique subject) in
+        <strong class="gdpr-confirm-org">${escapeHtml(orgContext?.getDetails?.()?.name ?? "no org selected")}</strong>.
       </p>
+      <ul class="gdpr-confirm-subjects">
+        ${selectedMatches().map(m => `
+          <li>
+            <span class="gdpr-subject-name">${escapeHtml(m.subject.name ?? "—")}</span>
+            <span class="gdpr-type-pill">${escapeHtml(subjectTypeLabel(m.subject))}</span>
+            <span class="gdpr-mono">${escapeHtml(subjectDisplayId(m.subject))}</span>
+          </li>
+        `).join("")}
+      </ul>
     `;
 
     if (t.needsReplacement) {
-      const identifiers = getIdentifiers();
       html += `
         <p class="gdpr-step-desc">Enter the corrected value for each identifier:</p>
         <table class="gdpr-table gdpr-replace-table">
@@ -433,16 +671,16 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
             <tr><th>Type</th><th>Current value</th><th>Replace with</th></tr>
           </thead>
           <tbody>
-            ${identifiers.map((id, i) => `
+            ${searchedIdentifiers.map(id => `
               <tr>
-                <td>${escapeHtml(id.type)}</td>
+                <td>${escapeHtml(searchTypeLabel(id.type))}</td>
                 <td><em>${escapeHtml(id.value)}</em></td>
                 <td>
                   <input class="gdpr-id-value gdpr-replacement-input"
-                         data-index="${i}"
+                         data-type="${escapeHtml(id.type)}"
+                         data-existing="${escapeHtml(id.value)}"
                          type="text"
-                         placeholder="New value\u2026"
-                         value="${escapeHtml(id.replacement)}" />
+                         placeholder="New value\u2026" />
                 </td>
               </tr>
             `).join("")}
@@ -450,6 +688,10 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         </table>
       `;
     }
+
+    // Repeated here deliberately. Step 1 may have been chosen several minutes
+    // and one search ago, and this is the click that cannot be taken back.
+    html += helpPanelHtml(t);
 
     if (t.note) {
       html += `<p class="gdpr-note">\u2139\ufe0f ${t.note}</p>`;
@@ -471,6 +713,14 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         $submitBtn.disabled = !e.target.checked;
       });
     }
+
+    if (t.needsReplacement) {
+      $confirmContent.querySelectorAll(".gdpr-replacement-input").forEach(input => {
+        input.addEventListener("input", () => {
+          $submitBtn.disabled = collectReplacementTerms().length === 0;
+        });
+      });
+    }
   }
 
   // ── Submit ─────────────────────────────────────────────────────────
@@ -479,53 +729,40 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
     if (!org) { $submitStatus.textContent = "No org selected."; return; }
 
     const t = REQUEST_TYPES[requestType];
-    const selectedMatches = foundMatches.filter((m, i) =>
-      selectedKeys.has(matchKey(m.subject) ?? `unknown-${i}`)
-    );
-    if (!selectedMatches.length) {
+    const chosen = selectedMatches();
+    if (!chosen.length) {
       $submitStatus.textContent = "No subjects selected.";
       return;
     }
 
     // Collect replacement terms for GDPR_UPDATE
-    let replacementTerms = [];
-    if (requestType === "GDPR_UPDATE") {
-      $confirmContent.querySelectorAll(".gdpr-replacement-input").forEach(input => {
-        const idx = parseInt(input.dataset.index, 10);
-        const identifiers = getIdentifiers();
-        if (identifiers[idx] && input.value.trim()) {
-          replacementTerms.push({
-            type:          identifiers[idx].type,
-            existingValue: identifiers[idx].value,
-            updatedValue:  input.value.trim(),
-          });
-        }
-      });
-      if (!replacementTerms.length) {
-        $submitStatus.textContent = "Please enter at least one replacement value.";
-        $submitStatus.className = "te-status te-status--error";
-        return;
-      }
+    const replacementTerms = requestType === "GDPR_UPDATE" ? collectReplacementTerms() : [];
+    if (requestType === "GDPR_UPDATE" && !replacementTerms.length) {
+      $submitStatus.textContent = "Please enter at least one replacement value.";
+      $submitStatus.className = "te-status te-status--error";
+      return;
     }
 
     isRunning = true;
     $submitBtn.disabled = true;
-    $submitStatus.textContent = `Submitting ${selectedMatches.length} request(s)\u2026`;
+    updateSearchBtn();   // a search mid-submit would swap foundMatches under it
+    $submitStatus.textContent = `Submitting ${chosen.length} request(s)\u2026`;
     $submitStatus.className = "te-status";
 
     try {
       const deleteConfirmed = requestType === "GDPR_DELETE";
       const results = await Promise.allSettled(
-        selectedMatches.map(m => {
-          const hasId = m.subject.userId || m.subject.externalContactId || m.subject.dialerContactId;
+        chosen.map(m => {
+          const ids = subjectIdFields(m.subject);
           const body = {
             requestType,
             subject: {
-              // Genesys rejects name when an id field is present
-              ...(!hasId && { name: m.subject.name ?? m.matchedBy.value }),
-              ...(m.subject.userId            && { userId:            m.subject.userId }),
-              ...(m.subject.externalContactId && { externalContactId: m.subject.externalContactId }),
-              ...(m.subject.dialerContactId   && { dialerContactId:   m.subject.dialerContactId }),
+              // Genesys rejects name when an id field is present. With no id at
+              // all, fall back to the value that matched \u2014 matchedByList, since
+              // dedup collapses matches and there is no singular `matchedBy`.
+              ...(Object.keys(ids).length === 0
+                && { name: m.subject.name ?? m.matchedByList[0]?.value }),
+              ...ids,
             },
           };
           if (requestType === "GDPR_UPDATE" && replacementTerms.length) {
@@ -596,13 +833,28 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
           `${succeeded} submitted, ${failed.length} failed: ${failed[0].reason?.message ?? "Unknown error"}`;
         $submitStatus.className = "te-status te-status--error";
         $submitBtn.disabled = false;
+        // A part-succeeded erasure is the case most worth a record, and it used
+        // to be the one case that logged nothing.
+        logAction({ me, orgId: org?.id || "", orgName: org?.name || "",
+          action: "gdpr_request",
+          description: `Submitted ${succeeded} of ${chosen.length} GDPR `
+            + `${t.label} request${chosen.length !== 1 ? "s" : ""}`,
+          result: succeeded ? "partial" : "failure",
+          errorMessage: failed[0].reason?.message ?? "Unknown error",
+          count: succeeded });
       }
     } catch (err) {
       $submitStatus.textContent = `Error: ${err.message}`;
       $submitStatus.className = "te-status te-status--error";
       $submitBtn.disabled = false;
+      logAction({ me, orgId: org?.id || "", orgName: org?.name || "",
+        action: "gdpr_request",
+        description: `GDPR ${t.label} submission failed`,
+        result: "failure",
+        errorMessage: err.message });
     } finally {
       isRunning = false;
+      updateSearchBtn();
     }
   });
 

@@ -21,6 +21,45 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "5.4",
+    date: "2026-09-09",
+    title: "GDPR data subject requests",
+    changes: [
+      "New module GDPR, with two pages: Subject Request and Request Status. Between them they "
+        + "handle all three data subject rights Genesys Cloud supports — Article 15 access, "
+        + "Article 16 rectification and Article 17 erasure — for any customer org you have "
+        + "selected, without dropping to the API.",
+      "Subject Request walks the request in four steps: pick the right, enter every identifier you "
+        + "know for the individual, review exactly who Genesys matched, then confirm. Ten identifier "
+        + "types are searchable — name, address, phone, email, external ID, and the Twitter, "
+        + "Instagram, Facebook, Apple Messages and WhatsApp handles — and the more you give it, the "
+        + "more thorough the search.",
+      "The review step is the point of the page. Genesys matches on identifiers, not on people, so "
+        + "a search can return someone who merely shares a phone number. Every match is listed with "
+        + "its type, its id and the identifier that found it, and anyone who is not the requesting "
+        + "individual can be unticked before anything is submitted.",
+      "Each right explains what Genesys actually does before you commit, because it is not what the "
+        + "article names. Erasure <em>redacts</em> personal data — conversations and their metrics "
+        + "survive, names and phone numbers and recording content do not — and can take 14 days. "
+        + "Access produces a ZIP archive of raw platform data that excludes call recordings and that "
+        + "Genesys does not document, so it is not something you can forward to the data subject "
+        + "unread. That is on the page, up front, rather than left to be discovered after the fact.",
+      "Confirmation names the customer org and lists every subject that will be affected. Erasure "
+        + "additionally holds the submit button behind an explicit consent tick, because it cannot "
+        + "be undone.",
+      "Request Status tracks everything already submitted for the org: what it was, who raised it, "
+        + "where Genesys has got to, and — for completed access requests — the link to the export "
+        + "archive. Filter by type or status, and note that Completed means Genesys has finished "
+        + "processing, not that every record has caught up.",
+      "Searches and export downloads are recorded in the Activity Log. Looking a named individual "
+        + "up across a customer tenant, and pulling their personal data out of it, both leave a "
+        + "trail — with the identifier types searched, never the values, since those are the "
+        + "subject's own personal data.",
+      "Access follows Genesys: the pages need gdpr:subject:view to search and gdpr:request:add to "
+        + "submit, and identifiers you type are never carried across an org switch.",
+    ],
+  },
+  {
     version: "5.3",
     date: "2026-09-09",
     title: "Admin roles that stop at what you already pay for",

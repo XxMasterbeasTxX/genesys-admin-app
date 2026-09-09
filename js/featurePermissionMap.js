@@ -245,6 +245,15 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
 
   // ── GDPR ─────────────────────────────────────────────
   "gdpr.requestStatus":        { view: ["gdpr:request:view"] },
+  // The page's write gate (gdpr:request:add) covers submitting. It does not
+  // cover the search that precedes it: GET /api/v2/gdpr/subjects requires
+  // gdpr:subject:view, and with no read entry here that call was gated by
+  // entitlement alone. Someone with the module and no GDPR permission could
+  // type an email address and enumerate a named individual's user,
+  // external-contact and dialer records across a customer tenant — the read
+  // runs as the org's OAuth client, not as them. Exactly the hole this map
+  // exists to close.
+  "gdpr.subjectRequest":       { view: ["gdpr:subject:view"] },
 
   // ── Interactions ─────────────────────────────────────
   "interactions.recordings.jobs":                    { view: { all: ["recording:job:view"] } },
