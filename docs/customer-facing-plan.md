@@ -486,7 +486,10 @@ never from a request field:
    **[DONE — pending test]**
    - `accessService.js::resolveCustomerAccess` now excludes internal-only keys in customer mode even
      when an entitlement prefix would grant them (`CUSTOMER_EXCLUDED_KEYS`): cross-org copies
-     (`data-actions.copy.betweenOrgs`, `data-tables.copy.betweenOrgs`, `roles.copy.betweenOrgs`),
+     (`data-actions.copy.betweenOrgs`, `data-tables.copy.betweenOrgs`, `roles.copy.betweenOrgs` —
+     re-verified 2026-09-09 against the real `resolveCustomerAccess`: denied for `*`, `roles.*`,
+     `roles.copy.*`, for the key granted explicitly, and for all of those at once, while
+     `roles.copy.singleOrg` still resolves),
      trustee/all-orgs/billing exports (`export.users.trustee`, `export.roles.allOrgs`, `export.billing.*`),
      the internal Utilities module (`utilities.*`), and the **Deployment** module (`deployment.*`).
      GDPR is left available (open decision O2).
