@@ -21,6 +21,32 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "5.3",
+    date: "2026-09-09",
+    title: "Admin roles that stop at what you already pay for",
+    changes: [
+      "New in Roles › Create: a Templates dropdown. Clean Admin builds a role covering "
+        + "everything the org's core licence already includes — and nothing that would "
+        + "quietly invoke an add-on it does not.",
+      "Below it, one clean role per licence the org actually holds, so an STA or WEM admin is "
+        + "something you decide to create rather than something that happens by accident.",
+      "The sets come from the org's own licence definitions, not from a list of ours. That "
+        + "matters because the same permission can be free on one tier and an add-on on another: "
+        + "speech and text analytics is a paid upgrade on CX 2 and part of the base licence on "
+        + "CX 3, and the templates follow whichever is true for the org in front of you.",
+      "A licence template leaves out permissions another add-on also grants, because Genesys "
+        + "gives each user only one add-on and a shared permission cannot be relied on to invoke "
+        + "the one you asked for. On an org holding both WEM and STA, a clean STA role is four "
+        + "permissions rather than twenty-three, and the page tells you WEM holds the rest.",
+      "Nothing is created blind. The template fills the ordinary permission builder, so you can "
+        + "strike anything out first, name the role what you like, and see exactly what will be "
+        + "submitted.",
+      "After it is created the role is checked against Genesys and you are told which licences it "
+        + "actually invokes — and if that check cannot run, you are told that instead of "
+        + "being told it is clean.",
+    ],
+  },
+  {
     version: "5.2",
     date: "2026-09-06",
     title: "Divisions: move Response Management libraries",
