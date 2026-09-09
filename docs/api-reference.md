@@ -365,7 +365,7 @@ Used by: WebRTC Phones — Create/Change Site, Documentation Export, Divisions �
 
 ## 11. License
 
-Used by: License Consumption Export, WebRTC Phones — Create, Roles — Permissions vs. Users (WEM License and STA License modes — one shared engine, `js/pages/roles/addonLicense.js`, configured per add-on)
+Used by: License Consumption Export, WebRTC Phones — Create, Roles — Permissions vs. Users (WEM License and STA License modes — one shared engine, `js/pages/roles/addonLicense.js`, configured per add-on), Roles — Create → Templates (builds the clean permission sets, and verifies the created role)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -378,7 +378,13 @@ Requires ANY of `authorization:grant:add`, `authorization:license:view`.
 
 `POST /api/v2/license/infer/permissions` (licences inferred from a list of
 permission strings) exists in the JS SDK reference but is flagged **preview**
-and is absent from the public swagger. Not used.
+and is absent from the public swagger. Roles — Create → Templates **attempts** it
+as a pre-flight, because checking a permission set before a role exists is the
+shape that feature wants — but its request body is a guess mirroring
+`/license/infer`'s bare array, it has never been observed answering, and every
+failure is swallowed. Nothing depends on it: the authoritative
+`POST /api/v2/license/infer` runs on the created role either way. If it ever does
+answer, confirm the shape before building on it.
 
 **STA** is `gcSTAupgrade` — 23 permissions, standard on CX 1 and CX 2, absent on CX 3 which bundles it. 19 of the 23 are also in the WEM SKU; only `billing:user:staUpgrade` and `routing:transcriptionSettings:{view,add,edit}` are STA's alone.
 

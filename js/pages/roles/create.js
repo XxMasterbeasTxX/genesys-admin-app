@@ -31,8 +31,12 @@ import {
   getAuthorizationRole,
   createAuthorizationRole,
   updateAuthorizationRole,
+  inferLicensesForRoles,
 } from "../../services/genesysApi.js";
 import { HOURLY_DISQUALIFYING_PERMISSIONS } from "../../lib/hourlyDisqualifyingPermissions.js";
+import {
+  loadLicencePermissions, buildTemplates, toPolicies, describeExcluded,
+} from "./cleanRoleTemplates.js";
 
 // ── Permission catalog ────────────────────────────────────────────────────────
 
@@ -158,6 +162,14 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     <style>
       /* ── Layout ── */
       .rc-page { max-width: 860px; }
+      /* ── Templates ── */
+      .rc-tpl-note { margin-top: 8px; font-size: 13px; line-height: 1.55; color: var(--muted);
+                     border-left: 3px solid var(--border); padding: 8px 12px; border-radius: 0 6px 6px 0; }
+      .rc-tpl-note strong { color: #93c5fd; font-weight: 600; }
+      .rc-tpl-note--warn { border-left-color: #f59e0b; background: rgba(245,158,11,.07); }
+      .rc-tpl-note--block { border-left-color: #ef4444; background: rgba(239,68,68,.07); }
+      .rc-tpl-note--ok { border-left-color: #16a34a; background: rgba(22,163,74,.07); }
+      .rc-tpl-count { font-variant-numeric: tabular-nums; }
       .rc-section { margin-bottom: 24px; }
       .rc-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; display: block; }
       .rc-input { width: 100%; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg, var(--panel)); color: var(--text); font: inherit; font-size: 13px; outline: none; box-sizing: border-box; }
@@ -295,6 +307,16 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       </div>
       ` : ""}
 
+      ${(!isEdit && !isCopy) ? `
+      <div class="rc-section">
+        <label class="rc-label" for="rcTemplate">Templates</label>
+        <select class="rc-input" id="rcTemplate" disabled>
+          <option value="">Loading licences…</option>
+        </select>
+        <div class="rc-tpl-note" id="rcTemplateNote" hidden></div>
+      </div>
+      ` : ""}
+
       <div class="rc-section">
         <label class="rc-label" for="rcName">Role Name *</label>
         <input class="rc-input" id="rcName" placeholder="Enter role name" maxlength="200" ${isEdit ? "disabled" : ""}>
@@ -370,6 +392,9 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   // ── DOM refs ──────────────────────────────────────────────────────────────
   const $name       = el.querySelector("#rcName");
   const $desc       = el.querySelector("#rcDesc");
+  const $template     = el.querySelector("#rcTemplate");
+  const $templateNote = el.querySelector("#rcTemplateNote");
+  let templates = [];
   const $domainIn   = el.querySelector("#rcDomainInput");
   const $domainList = el.querySelector("#rcDomainList");
   const $entityIn   = el.querySelector("#rcEntityInput");
@@ -1002,6 +1027,141 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────
+  // ── Templates ─────────────────────────────────────────────────────────────
+  // Preset permission sets that stop at what the org already pays for. The set
+  // is loaded INTO the ordinary builder rather than replacing it, so every
+  // permission can be removed before creating, and everything downstream —
+  // conditions, buildPermissionPolicies, the POST — is unchanged.
+
+  function populateTemplates(licences) {
+    if (!$template) return;
+    if (!licences || !licences.length) {
+      // No licence data means no presets. The page still works by hand, so this
+      // is a missing convenience rather than an error worth shouting about.
+      $template.innerHTML = `<option value="">Licence information unavailable</option>`;
+      $template.disabled = true;
+      return;
+    }
+    templates = buildTemplates(licences, catalog).templates;
+    $template.innerHTML =
+      `<option value="">— none, build by hand —</option>` +
+      templates.map(t => `<option value="${escapeHtml(t.key)}">${escapeHtml(t.label)}</option>`).join("");
+    $template.disabled = false;
+  }
+
+  function showTemplateNote(html, kind) {
+    if (!$templateNote) return;
+    $templateNote.className = `rc-tpl-note${kind ? ` rc-tpl-note--${kind}` : ""}`;
+    $templateNote.innerHTML = html;
+    $templateNote.hidden = false;
+  }
+
+  $template?.addEventListener("change", () => {
+    const t = templates.find(x => x.key === $template.value);
+    if (!t) { $templateNote.hidden = true; return; }
+
+    // A template that would produce nothing is offered like any other — it IS a
+    // licence this org holds — and explains itself here rather than being
+    // greyed in the list before anyone has clicked it.
+    if (t.blocked) {
+      showTemplateNote(
+        `<strong>${escapeHtml(t.licenceId || t.label)}</strong> cannot have a clean role on this org. ` +
+        `All ${t.total} of its permissions are also granted by ` +
+        `<strong>${escapeHtml(describeExcluded(t.excluded))}</strong>, so a role scoped to it alone ` +
+        `would be empty. Use that licence's template instead.`,
+        "block",
+      );
+      $template.value = "";
+      return;
+    }
+
+    if (policies.length && !confirm(
+      `Replace the ${policies.length} permission group(s) already in the builder with this template?`)) {
+      $template.value = "";
+      return;
+    }
+
+    policies = toPolicies(t.permissions, catalog);
+    renderPolicyList();
+    if (!$name.value.trim()) $name.value = t.label;
+
+    const parts = [
+      `<span class="rc-tpl-count"><strong>${t.permissions.size}</strong> permission` +
+      `${t.permissions.size !== 1 ? "s" : ""}</span> loaded into the builder — remove any before creating.`,
+    ];
+    if (t.kind === "admin") {
+      parts.push(`Covers ${escapeHtml(t.detail)}. No add-on licence is invoked.`);
+    } else if (t.excluded.length) {
+      parts.push(
+        `<strong>${t.permissions.size} of ${t.total}</strong>: the other ${t.total - t.permissions.size} ` +
+        `are also granted by <strong>${escapeHtml(describeExcluded(t.excluded))}</strong>. Granting them ` +
+        `could assign that licence instead of this one, so they are left out — build that licence's ` +
+        `template if you need them.`,
+      );
+    }
+    showTemplateNote(parts.join("<br>"), t.excluded.length ? "warn" : "ok");
+    preflight(t);
+  });
+
+  /**
+   * Best-effort check BEFORE anything is created.
+   *
+   * POST /api/v2/license/infer/permissions takes a permission list, which is the
+   * shape this needs, but it is flagged preview and absent from the public
+   * swagger — so its request body is a GUESS, mirroring /license/infer's bare
+   * array. It has never been observed answering.
+   *
+   * That is why every failure is swallowed and nothing depends on it: if the
+   * shape is wrong, or the endpoint is gone, this silently contributes nothing
+   * and the authoritative check still runs after creation. It can only ever add
+   * information, never withhold it. If it does start answering, confirm the
+   * shape before anything is built on top of it.
+   */
+  async function preflight(t) {
+    const org = orgContext?.getDetails?.();
+    if (!org || !t.permissions.size) return;
+    const asked = $template.value;
+    try {
+      const res = await api.proxyGenesys(org.id, "POST", "/api/v2/license/infer/permissions",
+        { body: [...t.permissions] });
+      const ids = Array.isArray(res) ? res : res?.entities;
+      if (!Array.isArray(ids) || !ids.length || $template.value !== asked) return;
+      $templateNote.innerHTML +=
+        `<br>Genesys preview: this set would invoke <strong>${escapeHtml(ids.join(", "))}</strong>.`;
+    } catch {
+      /* preview endpoint unavailable — the post-create check is the real one */
+    }
+  }
+
+  /**
+   * The authoritative check, after the role exists. POST /license/infer takes
+   * role ids, so it cannot run any earlier. Its answer is Genesys' own and it
+   * applies add-on precedence — which is the whole reason a role built from one
+   * licence's permissions can still invoke a different licence.
+   */
+  async function verifyCreatedRole(orgId, roleId, name) {
+    if (!roleId) return;
+    try {
+      const inferred = await inferLicensesForRoles(api, orgId, [roleId]);
+      const named = inferred.length ? inferred.join(", ") : "no licence at all";
+      showTemplateNote(
+        `<strong>${escapeHtml(name)}</strong> created, and verified with Genesys: it invokes ` +
+        `<strong>${escapeHtml(named)}</strong>.` +
+        (inferred.length
+          ? `<br>What that costs still depends on named vs. concurrent licensing, which no API exposes.`
+          : ""),
+        "ok",
+      );
+    } catch (err) {
+      // Never imply the role is clean when the check did not run.
+      showTemplateNote(
+        `Role created, but the licence check could not run (${escapeHtml(err.message)}). ` +
+        `Nothing is known about what it invokes — check Roles › Permissions vs. Users.`,
+        "warn",
+      );
+    }
+  }
+
   $saveBtn.addEventListener("click", async () => {
     const org = orgContext?.getDetails?.();
     if (!org) { setStatus("Please select a customer org first.", "error"); return; }
@@ -1029,7 +1189,10 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         await updateAuthorizationRole(api, org.id, editRoleId, body);
         setStatus("Role updated successfully.", "success");
       } else {
-        await createAuthorizationRole(api, org.id, body);
+        const created = await createAuthorizationRole(api, org.id, body);
+        if (!isCopy && $template?.value) {
+          await verifyCreatedRole(org.id, created?.id, body.name);
+        }
         if (hourlyMode && removed.length > 0) {
           renderHourlySummary(body.name, permPolicies.length, removed);
         } else {
@@ -1040,6 +1203,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         $desc.value = "";
         policies = [];
         renderPolicyList();
+        if ($template) $template.value = "";
         if (isCopy) {
           editRoleId = null;
           roleCombo?.setValue?.("");
@@ -1135,10 +1299,16 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     domainBusy(true);
     if (isEdit || isCopy) roleBusy(true);
     try {
-      const requests = [loadCatalog(api, org.id)];
-      if (isEdit || isCopy) requests.push(fetchAllAuthorizationRoles(api, org.id));
-      const [cat, roles] = await Promise.all(requests);
+      // Licences ride along with the catalog, and a failure there is not fatal:
+      // without them the Templates picker says so and the page still builds
+      // roles by hand.
+      const [cat, roles, licences] = await Promise.all([
+        loadCatalog(api, org.id),
+        (isEdit || isCopy) ? fetchAllAuthorizationRoles(api, org.id) : Promise.resolve(null),
+        (!isEdit && !isCopy) ? loadLicencePermissions(api, org.id).catch(() => null) : Promise.resolve(null),
+      ]);
       catalog = cat;
+      if (!isEdit && !isCopy) populateTemplates(licences);
 
       const domains = Object.keys(catalog).sort();
       domainCombo.setItems(domains);
