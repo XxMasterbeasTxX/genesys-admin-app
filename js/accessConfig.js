@@ -135,7 +135,7 @@
  *   phones.webrtc.delete               WebRTC — Delete (Master Admin; customers by entitlement)
  *
  *   ROLES
- *   roles.copy.singleOrg               Copy — Copy from current org
+ *   roles.copy.singleOrg               Copy (within the selected org)
  *   roles.copy.betweenOrgs             Copy — Copy between orgs
  *   roles.compare                      Compare
  *   roles.search                       Permissions vs. Users

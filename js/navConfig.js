@@ -299,7 +299,7 @@ export const NAV_TREE = [
         path: "copy",
         enabled: true,
         children: [
-          { label: "Copy from current org", path: "single-org",   enabled: true, access: "roles.copy.singleOrg"   },
+          { label: "Copy",                  path: "single-org",   enabled: true, access: "roles.copy.singleOrg"   },
           { label: "Copy between orgs",     path: "between-orgs", enabled: true, access: "roles.copy.betweenOrgs" },
         ],
       },

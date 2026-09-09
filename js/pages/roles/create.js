@@ -153,7 +153,7 @@ function parseConditionNode(node) {
 export default function renderRolesCreate({ me, api, orgContext, mode = "create" }) {
   const isEdit   = mode === "edit";
   const isCopy   = mode === "copySingle";
-  const pageTitle = isCopy ? "Roles — Copy (Same Org)" : isEdit ? "Roles — Edit" : "Roles — Create";
+  const pageTitle = isCopy ? "Roles — Copy" : isEdit ? "Roles — Edit" : "Roles — Create";
 
   const el = document.createElement("section");
   el.className = "card";
