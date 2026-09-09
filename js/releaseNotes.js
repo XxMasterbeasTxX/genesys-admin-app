@@ -44,6 +44,13 @@ export const RELEASE_NOTES = [
       "After it is created the role is checked against Genesys and you are told which licences it "
         + "actually invokes — and if that check cannot run, you are told that instead of "
         + "being told it is clean.",
+      "Create and Cancel now sit above the permission list rather than below it, so they are not a "
+        + "thousand-permission scroll away from the fields they act on. This applies to Edit and "
+        + "Copy as well.",
+      "Fixed a long-standing miscount on the same page: the Permissions header counted rows rather "
+        + "than the permissions inside them, so two entities holding four actions each read as "
+        + "“2 permissions”. It now reads “8 permissions in 2 entities”. "
+        + "Nothing about the roles themselves was ever affected — only the number shown.",
     ],
   },
   {
