@@ -398,6 +398,9 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   const $template     = el.querySelector("#rcTemplate");
   const $templateNote = el.querySelector("#rcTemplateNote");
   let templates = [];
+  // Which template's permissions are actually in the builder. The <select> can
+  // disagree with this mid-change, so this — not the control — is the truth.
+  let loadedTemplate = "";
   const $domainIn   = el.querySelector("#rcDomainInput");
   const $domainList = el.querySelector("#rcDomainList");
   const $entityIn   = el.querySelector("#rcEntityInput");
@@ -1046,6 +1049,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       return;
     }
     templates = buildTemplates(licences, catalog).templates;
+    loadedTemplate = "";
     $template.innerHTML =
       `<option value="">— none, build by hand —</option>` +
       templates.map(t => `<option value="${escapeHtml(t.key)}">${escapeHtml(t.label)}</option>`).join("");
@@ -1060,13 +1064,19 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   }
 
   $template?.addEventListener("change", () => {
-    const t = templates.find(x => x.key === $template.value);
-    if (!t) { $templateNote.hidden = true; return; }
+    const chosen = $template.value;
+    if (chosen === loadedTemplate) return;
+    const t = templates.find(x => x.key === chosen);
+
+    // The dropdown must always name what is actually in the builder. Every path
+    // that declines to load something puts it back to `loadedTemplate` rather
+    // than to blank — otherwise it reads "none" over a full permission list.
+    const keepShowingLoaded = () => { $template.value = loadedTemplate; };
 
     // A template that would produce nothing is offered like any other — it IS a
     // licence this org holds — and explains itself here rather than being
     // greyed in the list before anyone has clicked it.
-    if (t.blocked) {
+    if (t && t.blocked) {
       showTemplateNote(
         `<strong>${escapeHtml(t.licenceId || t.label)}</strong> cannot have a clean role on this org. ` +
         `All ${t.total} of its permissions are also granted by ` +
@@ -1074,18 +1084,31 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         `would be empty. Use that licence's template instead.`,
         "block",
       );
-      $template.value = "";
+      keepShowingLoaded();
       return;
     }
 
+    // Choosing "none" is a change like any other: it means "I will build this by
+    // hand", so it clears the builder and asks first, exactly as switching
+    // between two templates does.
     if (policies.length && !confirm(
-      `Replace the ${policies.length} permission group(s) already in the builder with this template?`)) {
-      $template.value = "";
+      t ? `Replace the ${policies.length} permission group(s) already in the builder with this template?`
+        : `Clear the ${policies.length} permission group(s) currently in the builder?`)) {
+      keepShowingLoaded();
+      return;
+    }
+
+    if (!t) {
+      policies = [];
+      renderPolicyList();
+      $templateNote.hidden = true;
+      loadedTemplate = "";
       return;
     }
 
     policies = toPolicies(t.permissions, catalog);
     renderPolicyList();
+    loadedTemplate = chosen;
     if (!$name.value.trim()) $name.value = t.label;
 
     const parts = [
@@ -1206,7 +1229,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         $desc.value = "";
         policies = [];
         renderPolicyList();
-        if ($template) $template.value = "";
+        if ($template) { $template.value = ""; loadedTemplate = ""; }
         if (isCopy) {
           editRoleId = null;
           roleCombo?.setValue?.("");
