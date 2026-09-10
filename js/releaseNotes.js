@@ -55,6 +55,13 @@ export const RELEASE_NOTES = [
         + "up across a customer tenant, and pulling their personal data out of it, both leave a "
         + "trail — with the identifier types searched, never the values, since those are the "
         + "subject's own personal data.",
+      "Request Status names the person who raised each request. Genesys cannot: the app reaches it "
+        + "through an integration, so every request submitted here is attributed to that integration "
+        + "rather than to a human being. The app records the Genesys request ids against the person "
+        + "who submitted them and reads them back here, so “who erased this individual's data?” is "
+        + "answered on the page that asks it rather than in another log. Requests raised directly in "
+        + "Genesys keep the name Genesys recorded, and the two are marked differently, because they "
+        + "are different kinds of evidence.",
       "Access follows Genesys: the pages need gdpr:subject:view to search and gdpr:request:add to "
         + "submit, and identifiers you type are never carried across an org switch.",
     ],

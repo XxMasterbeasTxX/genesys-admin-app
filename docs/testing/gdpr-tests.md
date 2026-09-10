@@ -240,10 +240,19 @@ fails outright, because nobody finds out.
 - [ ] **8.5** — Look at the Subject column
   - Expect: a person's **name**. Genesys often omits `subject.name` on the listing, so the page resolves the subject's user or external-contact id to a name; only a dialer contact, or an id Genesys will not return, falls back to a truncated mono id on one line.
   - Notes: `______________________`
-- [ ] **8.6** — Check the Submitted by column
-  - Expect: **“API client”** (italic, hover for the id) for anything raised from this app, and a person's **name** for anything raised directly in Genesys admin. Never a bare GUID.
+- [ ] **8.6** — Submit a request, then check the Submitted by column for it
+  - Expect: **your own name**, with a small `·app` marker. Hover it: the tooltip names your email and says the app recorded it.
   - Notes: `______________________`
-  - The app authenticates with the org's OAuth client credentials, so Genesys attributes its requests to the integration, not to a person — which is why every row showed the same id. Per-person attribution lives in **Admin › Activity Log**.
+  - The app authenticates with the org's OAuth client credentials, so Genesys attributes its requests to the integration, not a person. Since 5.4 the submit path writes the Genesys request ids into the Activity Log entry, and this page reads them back.
+- [ ] **8.6a** — Check Submitted by on a request submitted **before 5.4** (any of the nine in Demo)
+  - Expect: **“API client”**, italic. Not retroactive by design — those entries were logged without their request ids.
+  - Notes: `______________________`
+- [ ] **8.6b** — If you can, raise a GDPR request **directly in Genesys admin**, then reload this page
+  - Expect: the Genesys user's **name**, plain, with no `·app` marker — that one Genesys can attribute itself
+  - Notes: `______________________`
+- [ ] **8.6c** — Submit a request while signed in as a **different** app user, then compare rows
+  - Expect: each row names whoever actually submitted it, not whoever is looking
+  - Notes: `______________________`
 - [ ] **8.12** — Find a request whose subject is a user who has since been deactivated or deleted
   - Expect: their **name** still shows. The users lookup asks for `state=any`; the endpoint defaults to `active` and would otherwise drop them silently, leaving a GUID.
   - Notes: `______________________`
@@ -257,8 +266,11 @@ fails outright, because nobody finds out.
   - Expect: the table reloads for the new org — no rows carried over
   - Notes: `______________________`
 - [ ] **8.9** — Find a completed Rectification
-  - Expect: Details reads "N fields updated: EMAIL, PHONE"
+  - Expect: Details reads **“Requested: EMAIL, PHONE”** — the terms the request carried, not a claim about what changed. Genesys never reports which records it rewrote.
   - Notes: `______________________`
+- [ ] **8.9a ★** — For a Completed rectification, check a **conversation** the subject took part in, not their user profile
+  - Expect: unknown. If the conversation shows the new value the rectification worked; if it shows the old one, `existingValue` did not match what Genesys held and nothing was replaced — which still completes.
+  - Answer — which was it? `______________________`
 - [ ] **8.10** — Read the "Reading this page" panel at the top
   - Expect: explains that Completed ≠ fully caught up, and that Access downloads are ZIP archives without recordings
   - Notes: `______________________`

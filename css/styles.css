@@ -3893,6 +3893,25 @@ body {
   border-bottom: 1px dotted var(--border);
   cursor: help;
 }
+/* A name this app recorded itself, as against one Genesys reported. Different
+   strengths of evidence, so they do not look identical — the marker is what
+   says "our record", and the tooltip says whose. */
+.gdpr-attrib-app {
+  border-bottom: 1px dotted rgba(147,197,253,0.5);
+  cursor: help;
+}
+.gdpr-attrib-app::after {
+  content: "·app";
+  font-size: 9px;
+  vertical-align: super;
+  margin-left: 2px;
+  letter-spacing: 0.04em;
+  color: #93c5fd;
+}
+@media (prefers-color-scheme: light) {
+  .gdpr-attrib-app::after { color: #1d4ed8; }
+  .gdpr-attrib-app { border-bottom-color: rgba(29,78,216,0.4); }
+}
 .gdpr-subject-name {
   font-weight: 500;
 }

@@ -7,7 +7,7 @@
  */
 import * as gc from "../../services/genesysApi.js";
 import { escapeHtml, makeStatus } from "../../utils.js";
-import { logAction } from "../../services/activityLogService.js";
+import { logAction, fetchActivityLog } from "../../services/activityLogService.js";
 
 const TYPE_LABELS  = { GDPR_DELETE: "Erasure", GDPR_EXPORT: "Access", GDPR_UPDATE: "Rectification" };
 const TYPE_CLASSES = { GDPR_DELETE: "gdpr-badge--delete", GDPR_EXPORT: "gdpr-badge--export", GDPR_UPDATE: "gdpr-badge--update" };
@@ -63,6 +63,8 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
   const nameCache = new Map();
   // Ids both the directory listing and the single get declined to name.
   const unresolvable = new Set();
+  // GDPR request id → the person who submitted it, from this app's own log.
+  const submitters = new Map();
 
   el.innerHTML = `
     <h2>GDPR — Request Status</h2>
@@ -219,13 +221,21 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
                         : "—";
 
       const completedDate = r.resolutionDate ? new Date(r.resolutionDate).toLocaleString() : "—";
-      const submitterName = r.createdBy?.name
-                         ?? (r.createdBy?.id ? nameCache.get(r.createdBy.id) : null);
-      const submittedHtml = submitterName
-        ? escapeHtml(submitterName)
-        : r.createdBy?.id
-          ? `<span class="gdpr-api-client" title="Genesys returned no user record for ${escapeHtml(r.createdBy.id)}. Requests raised from this app are attributed to its integration rather than to a person — see Admin › Activity Log for who raised this one.">API client</span>`
-          : "—";
+      // Three sources, strongest first. The app's own log is the only one that
+      // names a person for a request raised here; Genesys can only name one
+      // for a request raised elsewhere. They are marked differently because
+      // they are different strengths of evidence, and an audit reader should
+      // not have to guess which they are looking at.
+      const fromLog = submitters.get(r.id);
+      const fromGenesys = r.createdBy?.name
+                       ?? (r.createdBy?.id ? nameCache.get(r.createdBy.id) : null);
+      const submittedHtml = fromLog
+        ? `<span class="gdpr-attrib-app" title="Recorded by this app when the request was submitted${fromLog.email ? ` (${escapeHtml(fromLog.email)})` : ""}. Genesys itself attributes the request to the integration.">${escapeHtml(fromLog.who)}</span>`
+        : fromGenesys
+          ? escapeHtml(fromGenesys)
+          : r.createdBy?.id
+            ? `<span class="gdpr-api-client" title="Genesys returned no user record for ${escapeHtml(r.createdBy.id)}, and this app has no log entry naming who raised it — it predates that record, or was raised by another integration. See Admin › Activity Log.">API client</span>`
+            : "—";
 
       // Details — contextual per request type. `resultsUrl`/`resultsUrls` come
       // back on the listing itself, so no per-row follow-up GET is needed.
@@ -412,6 +422,43 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
   }
 
   /**
+   * Map GDPR request ids to the person who submitted them, from this app's own
+   * activity log.
+   *
+   * Genesys cannot answer this. A request raised here reaches it through the
+   * app's OAuth client, so `createdBy` is the integration on every row — the
+   * app is the only place a human being is recorded against a GDPR request.
+   * Since 5.4 the submit path writes the ids Genesys minted into the log
+   * entry's `details`, and this reads them back.
+   *
+   * Bounded on purpose, and the bounds are why the column degrades rather than
+   * lies: requests submitted before that shipped carry no ids, entries age out
+   * at twelve months, and the read is capped. Anything unmatched falls back to
+   * what Genesys recorded. See docs/gdpr-submitter-attribution-design.md.
+   */
+  async function resolveSubmitters(orgId) {
+    let entries = [];
+    try {
+      entries = await fetchActivityLog({ me, limit: 1000 });
+    } catch {
+      return;   // enrichment only — the page is fine without it
+    }
+    for (const e of entries) {
+      if (e.action !== "gdpr_request") continue;
+      if (orgId && e.orgId && e.orgId !== orgId) continue;
+      const ids = e.details?.gdprRequestIds;
+      if (!Array.isArray(ids)) continue;
+      const who = e.userName || e.userEmail;
+      if (!who) continue;
+      for (const id of ids) {
+        // Newest first, so the first writer of an id wins; an id should only
+        // ever appear once anyway.
+        if (!submitters.has(id)) submitters.set(id, { who, email: e.userEmail || "" });
+      }
+    }
+  }
+
+  /**
    * Top up any completed export that came back without its download URL.
    *
    * The spec says a listing entity is a full GDPRRequest, `resultsUrl` and
@@ -459,6 +506,7 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
       await Promise.all([
         fillMissingResultUrls(org.id),
         resolveNames(org.id),
+        resolveSubmitters(org.id),
       ]);
       setStatus("");
       renderTable();

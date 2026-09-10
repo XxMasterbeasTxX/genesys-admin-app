@@ -775,12 +775,18 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       const succeeded = results.filter(r => r.status === "fulfilled").length;
       const failed    = results.filter(r => r.status === "rejected");
 
-      if (!failed.length) {
-        const submittedIds = results
-          .filter(r => r.status === "fulfilled")
-          .map(r => r.value?.id)
-          .filter(Boolean);
+      // The ids Genesys minted, whether or not every request landed. They are
+      // logged alongside the person who submitted them: Genesys attributes a
+      // request raised here to the app's integration, so this is the only
+      // record that ties a GDPR request to a human being. Request Status reads
+      // it back to fill its Submitted by column.
+      // See docs/gdpr-submitter-attribution-design.md.
+      const submittedIds = results
+        .filter(r => r.status === "fulfilled")
+        .map(r => r.value?.id)
+        .filter(Boolean);
 
+      if (!failed.length) {
         const idRows = submittedIds.map(id => `
           <div class="gdpr-submit-id-row">
             <span class="gdpr-submit-id-label">Request ID</span>
@@ -802,7 +808,8 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
         logAction({ me, orgId: org?.id || "", orgName: org?.name || "",
           action: "gdpr_request",
           description: `Submitted ${succeeded} GDPR ${REQUEST_TYPES[requestType]?.label || requestType} request${succeeded !== 1 ? "s" : ""}`,
-          count: succeeded });
+          count: succeeded,
+          details: { gdprRequestIds: submittedIds, requestType } });
 
         $submitStatus.querySelectorAll(".gdpr-copy-btn").forEach(btn => {
           btn.addEventListener("click", () => {
@@ -841,7 +848,9 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
             + `${t.label} request${chosen.length !== 1 ? "s" : ""}`,
           result: succeeded ? "partial" : "failure",
           errorMessage: failed[0].reason?.message ?? "Unknown error",
-          count: succeeded });
+          count: succeeded,
+          // The ones that did land are still attributable.
+          details: { gdprRequestIds: submittedIds, requestType } });
       }
     } catch (err) {
       $submitStatus.textContent = `Error: ${err.message}`;

@@ -1,6 +1,6 @@
 # GDPR — Submitter attribution
 
-Status: **Proposed — awaiting go-ahead**
+Status: **Implemented** (5.4)
 Author: Genesys Admin App
 Last updated: 2026-09-10
 
@@ -103,11 +103,10 @@ at.
   match. Rejected anyway: a *probable* name in an audit column is worse than an
   honest blank, because nothing downstream can tell the two apart.
 
-## 6. Open question for the go-ahead
+## 6. Settled at go-ahead
 
-Should the join be **read-gated**? The activity log is already readable by
-anyone in the org, so this exposes nothing new — but it does surface a
-colleague's name on a page they may not otherwise open. Recommendation: no
-extra gate, since the same information is one click away under Admin ›
-Activity Log and adding a gate here would only make the column silently empty
-for some readers.
+The join is **not read-gated**. The activity log is already readable by anyone
+in the org, so this exposes nothing new, and the same names sit one click away
+under Admin › Activity Log. A gate here would only make the column silently
+empty for some readers, which is the failure this whole change exists to
+remove.
