@@ -1941,12 +1941,21 @@ export async function fetchAllLibraries(api, orgId, opts = {}) {
 // GDPR
 // ─────────────────────────────────────────────────────────────────────
 
-/** Search for GDPR subjects by a single identifier. */
+/**
+ * Search for GDPR subjects by a single identifier.
+ *
+ * Returns `{ subjects, total }`. The endpoint takes no pageSize/pageNumber —
+ * one call is all there is — but the response is an entity listing carrying a
+ * `total`, and it is worth comparing: on a page whose next step is erasure, a
+ * result set quietly capped below the true match count is the one failure that
+ * must not pass unnoticed. `total` is absent on some responses, in which case
+ * the caller simply has nothing to compare and says nothing.
+ */
 export async function gdprSearchSubjects(api, orgId, searchType, searchValue) {
   const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/gdpr/subjects", {
     query: { searchType, searchValue },
   });
-  return resp.entities || [];
+  return { subjects: resp.entities || [], total: resp.total ?? null };
 }
 
 /** Submit a GDPR request. Pass deleteConfirmed=true for GDPR_DELETE. */
@@ -1955,10 +1964,19 @@ export async function gdprSubmitRequest(api, orgId, body, deleteConfirmed = fals
   return api.proxyGenesys(orgId, "POST", `/api/v2/gdpr/requests${qs}`, { body });
 }
 
-/** Fetch existing GDPR requests for an org. */
-export async function gdprGetRequests(api, orgId) {
-  const resp = await api.proxyGenesys(orgId, "GET", "/api/v2/gdpr/requests?pageSize=50");
-  return resp.entities || [];
+/**
+ * Fetch existing GDPR requests for an org.
+ *
+ * Paged, not capped. This was a hardcoded `?pageSize=50` with no page walk, so
+ * an org past its first fifty requests saw the newest fifty and no sign that
+ * anything else existed — on the page that answers "did we action that
+ * erasure?", a silent truncation is the wrong failure.
+ *
+ * Each entity is a full GDPRRequest, `resultsUrl`/`resultsUrls` included, so
+ * callers do not need a follow-up GET per row to find an export's download.
+ */
+export async function gdprGetRequests(api, orgId, opts = {}) {
+  return fetchAllPages(api, orgId, "/api/v2/gdpr/requests", { pageSize: 100, ...opts });
 }
 
 /** Fetch a single GDPR request by ID (includes resultsUrl for exports). */
@@ -2226,8 +2244,14 @@ export async function fetchUsersByIds(api, orgId, ids, opts = {}) {
   for (let i = 0; i < unique.length; i += chunk) {
     const part = unique.slice(i, i + chunk);
     const qs = part.map((id) => `id=${encodeURIComponent(id)}`).join("&");
+    // `state=any` explicitly. The endpoint defaults it to `active`, so the
+    // paragraph above was an intention the code did not carry out: an inactive
+    // or deleted user was dropped from the response without a word, and the
+    // caller printed the GUID it was trying to resolve. GDPR made it obvious —
+    // the subject of an erasure is exactly the kind of user who is no longer
+    // active — but every caller was affected.
     const resp = await api.proxyGenesys(orgId, "GET",
-      `/api/v2/users?pageSize=${chunk}&${qs}`);
+      `/api/v2/users?pageSize=${chunk}&state=any&${qs}`);
     out.push(...(resp?.entities || []));
   }
   return out;

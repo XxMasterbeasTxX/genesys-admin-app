@@ -46,6 +46,31 @@
  */
 import { withUserToken } from "./apiAuth.js";
 
+/**
+ * Read this organisation's activity log.
+ *
+ * `userEmail` identifies the caller; it does not narrow the result. The
+ * endpoint scopes the read to the caller's own organisation, so what comes
+ * back is the whole org's activity, newest first.
+ *
+ * Resolves to `[]` rather than throwing when there is no caller identity —
+ * callers that use the log to enrich a page should degrade quietly rather than
+ * take the page down with them.
+ *
+ * @param {object}  opts.me     The signed-in user; `email` is required.
+ * @param {number} [opts.limit] Max entries (server default 500, max 1000).
+ * @returns {Promise<Array>}    Log entries, newest first.
+ */
+export async function fetchActivityLog({ me, limit } = {}) {
+  if (!me?.email) return [];
+  const params = new URLSearchParams({ userEmail: me.email });
+  if (limit) params.set("limit", String(limit));
+  const resp = await fetch(`/api/activity-log?${params}`, { headers: withUserToken() });
+  if (!resp.ok) throw new Error(`Activity log read failed: HTTP ${resp.status}`);
+  const data = await resp.json();
+  return data.entries || [];
+}
+
 export function logAction({
   me,
   orgId        = "",

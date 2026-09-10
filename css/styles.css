@@ -2541,6 +2541,15 @@ body {
 }
 .te-status--success { color: #34d399; }
 .te-status--error   { color: #f87171; }
+/* Callers have passed "warn" for a while with nothing to show for it: the
+   class did not exist, so a partial failure rendered in the same muted grey as
+   an ordinary progress line and read as nothing being wrong. Amber, matching
+   .ob-state--warn and .aq-service-hint--warn elsewhere in the sheet. */
+.te-status--warn    { color: #fbbf24; }
+/* #fbbf24 sits near 2:1 on white — the same reason .ob-state--warn darkens. */
+@media (prefers-color-scheme: light) {
+  .te-status--warn  { color: #b45309; }
+}
 .te-progress-wrap {
   height: 4px;
   border-radius: 2px;
@@ -3704,8 +3713,12 @@ body {
   border-top: 1px solid var(--border);
   transition: opacity 0.2s, filter 0.2s;
 }
+/* 0.35 put the step headings under 2:1 against the panel — legible enough to
+   read as content, too faint to read as text. The section is also `inert` from
+   JS now, which is what actually holds the pointer and the keyboard out;
+   pointer-events stays as the visual cue's companion. */
 .gdpr-section--locked {
-  opacity: 0.35;
+  opacity: 0.55;
   pointer-events: none;
   user-select: none;
   filter: grayscale(0.4);
@@ -3867,6 +3880,38 @@ body {
 }
 
 /* ── History subject cell ────────────────────────────── */
+/* An unnamed subject falls back to its id. Already truncated to 24 chars in
+   JS; nowrap stops the remainder breaking over two lines and making the row
+   twice the height of every named one beside it. */
+.gdpr-subject-ref { white-space: nowrap; }
+/* Genesys attributes a request raised through this app to its OAuth client,
+   not to a person. Saying so is more use than printing the client's GUID. */
+.gdpr-api-client {
+  font-style: italic;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 1px dotted var(--border);
+  cursor: help;
+}
+/* A name this app recorded itself, as against one Genesys reported. Different
+   strengths of evidence, so they do not look identical — the marker is what
+   says "our record", and the tooltip says whose. */
+.gdpr-attrib-app {
+  border-bottom: 1px dotted rgba(147,197,253,0.5);
+  cursor: help;
+}
+.gdpr-attrib-app::after {
+  content: "·app";
+  font-size: 9px;
+  vertical-align: super;
+  margin-left: 2px;
+  letter-spacing: 0.04em;
+  color: #93c5fd;
+}
+@media (prefers-color-scheme: light) {
+  .gdpr-attrib-app::after { color: #1d4ed8; }
+  .gdpr-attrib-app { border-bottom-color: rgba(29,78,216,0.4); }
+}
 .gdpr-subject-name {
   font-weight: 500;
 }
@@ -3948,6 +3993,71 @@ body {
 }
 .gdpr-replace-table { margin-top: 8px; margin-bottom: 14px; }
 .gdpr-replace-table td { vertical-align: middle; }
+
+/* "What this actually does" panel. Genesys's behaviour and the article's
+   promise are not the same thing — erasure redacts rather than deletes, and
+   the Access export is an undocumented archive — so the gap is stated on the
+   page rather than left to be discovered afterwards. */
+.gdpr-expect {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid #93c5fd;
+  border-radius: 6px;
+  background: rgba(59,130,246,0.05);
+}
+.gdpr-expect-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #93c5fd;
+}
+.gdpr-expect-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.gdpr-expect-list li { margin-bottom: 5px; }
+.gdpr-expect-list li:last-child { margin-bottom: 0; }
+.gdpr-expect-list strong { color: inherit; font-weight: 700; }
+.gdpr-expect-warn {
+  margin: 10px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #fbbf24;
+}
+@media (prefers-color-scheme: light) {
+  .gdpr-expect       { border-left-color: #1d4ed8; background: rgba(29,78,216,0.04); }
+  .gdpr-expect-title { color: #1d4ed8; }
+  .gdpr-expect-warn  { color: #b45309; }
+}
+
+/* The org and the subjects the confirmation is about. Erasure is the one
+   irreversible action in the app and it used to confirm against a count, with
+   the org a header dropdown away and the names a scroll back up. */
+.gdpr-confirm-org { color: #93c5fd; }
+.gdpr-confirm-subjects {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--border);
+  max-height: 190px;
+  overflow-y: auto;
+}
+.gdpr-confirm-subjects li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 3px 0;
+  font-size: 13px;
+}
 .gdpr-submit-success {
   margin-bottom: 10px;
 }
@@ -4033,7 +4143,18 @@ body {
 }
 
 /* ── Status dots (history) ─────────────────────────────── */
+/* Filters in the Request Status action bar. */
+.gdpr-filter {
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: inherit;
+}
+
 .gdpr-status-dot {
+  white-space: nowrap;   /* "In Progress" wrapped to two lines and doubled the row */
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 8px;
@@ -4098,6 +4219,27 @@ body {
   .gdpr-id-type,
   .gdpr-id-value  { background: rgba(0,0,0,0.04); }
   .gdpr-table th  { background: rgba(0,0,0,0.04); }
+
+  /* The badges, pills and download link were dark-mode tints only: #4ade80,
+     #93c5fd and #fbbf24 all sit near 2:1 on white, so on the Request Status
+     table every status and every Download link read as disabled. Same hues,
+     darkened to carry on a light ground. */
+  .gdpr-badge--delete  { color: #b91c1c; border-color: rgba(185,28,28,0.30); }
+  .gdpr-badge--export  { color: #15803d; border-color: rgba(21,128,61,0.30);  }
+  .gdpr-badge--update  { color: #b45309; border-color: rgba(180,83,9,0.30);   }
+
+  .gdpr-status-dot             { background: rgba(0,0,0,0.05); }
+  .gdpr-status-dot--complete,
+  .gdpr-status-dot--completed  { background: rgba(21,128,61,0.10);  color: #15803d; }
+  .gdpr-status-dot--inprogress { background: rgba(29,78,216,0.10);  color: #1d4ed8; }
+  .gdpr-status-dot--error,
+  .gdpr-status-dot--failed     { background: rgba(185,28,28,0.10);  color: #b91c1c; }
+
+  .gdpr-download-link          { background: rgba(29,78,216,0.10);  color: #1d4ed8; }
+  .gdpr-download-link:hover    { background: rgba(29,78,216,0.18);  color: #1e3a8a; }
+
+  .gdpr-subject-type-badge     { background: rgba(71,85,105,0.10);  color: #475569; }
+  .gdpr-confirm-org            { color: #1d4ed8; }
 }
 
 /* ═══════════════════════════════════════════════════════════

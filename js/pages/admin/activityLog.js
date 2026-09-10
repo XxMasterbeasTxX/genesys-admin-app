@@ -34,6 +34,8 @@ const ACTION_LABELS = {
   schedule_update:        "Schedule Update",
   schedule_delete:        "Schedule Delete",
   gdpr_request:           "GDPR Request",
+  gdpr_subject_search:    "GDPR Subject Search",
+  gdpr_export_download:   "GDPR Export Download",
   export_run:             "Export Run",
 };
 
