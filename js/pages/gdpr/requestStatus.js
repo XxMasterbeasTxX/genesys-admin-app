@@ -91,6 +91,11 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
             arrive through its integration, so Genesys attributes them to the API client rather
             than to a person &mdash; <strong>Admin &rsaquo; Activity Log</strong> is where the
             individual who raised one is recorded.</li>
+        <li><strong>Rectification says what was requested, not what changed.</strong> Genesys
+            reports the terms the request carried, never which records it rewrote, and a request
+            that matched nothing to replace still completes. It also acts on GDPR-scoped data
+            &mdash; conversations, analytics, external contacts &mdash; so a Genesys user's own
+            directory profile is not where to check whether it worked.</li>
       </ul>
     </div>
 
@@ -234,9 +239,16 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
           `Download${urls.length > 1 ? ` (${i + 1})` : ""}</a>`
         ).join("<br>");
       } else if (type === "GDPR_UPDATE" && r.replacementTerms?.length) {
+        // `replacementTerms` is the request's own INPUT echoed back — the terms
+        // that were submitted. Genesys does not report what it actually
+        // changed, so this used to read "1 field updated: NAME" and assert an
+        // outcome nobody had claimed. Paired with a COMPLETED status it made a
+        // rectification that replaced nothing look like one that worked.
         const fieldList = r.replacementTerms.map(t => escapeHtml(t.type ?? "?")).join(", ");
-        detailsHtml = `<span class="gdpr-replacements-summary" title="${fieldList}">` +
-          `${r.replacementTerms.length} field${r.replacementTerms.length !== 1 ? "s" : ""} updated: ${fieldList}</span>`;
+        detailsHtml = `<span class="gdpr-replacements-summary"`
+          + ` title="The fields this request asked Genesys to replace. Genesys does not report`
+          + ` which records it changed, so this is the request, not a confirmation.">`
+          + `Requested: ${fieldList}</span>`;
       }
 
       const reqId = escapeHtml(r.id ?? "—");
