@@ -19,9 +19,9 @@
  */
 
 import { escapeHtml, spinHtml } from "../utils.js";
-
-/** Speaker purpose → the word a reader expects. */
-const SPEAKER = { customer: "Customer", agent: "Agent", external: "External", ivr: "IVR" };
+import {
+  customerCommunicationId, fetchTranscriptJson, renderTranscript,
+} from "./transcript.js";
 
 /**
  * The direction of a conversation, from its own participants.
@@ -36,20 +36,6 @@ function conversationDirection(conv) {
     for (const key of ["calls", "messages", "emails", "callbacks"]) {
       for (const c of p[key] || []) {
         if (c.direction) return c.direction;
-      }
-    }
-  }
-  return null;
-}
-
-/** The customer's communication id, preferring the customer participant. */
-function customerCommunicationId(conv) {
-  const keys = ["calls", "messages", "emails", "callbacks", "chats"];
-  for (const purpose of ["customer", "external", null]) {
-    for (const p of conv?.participants || []) {
-      if (purpose && p.purpose !== purpose) continue;
-      for (const key of keys) {
-        for (const c of p[key] || []) if (c.id) return c.id;
       }
     }
   }
@@ -164,24 +150,6 @@ export function createEvaluationDetail({ api }) {
     return parts.join("");
   }
 
-  /** Render the transcript as speaker-labelled lines. */
-  function renderTranscript(data) {
-    const lines = [];
-    for (const t of data?.transcripts || []) {
-      for (const p of t.phrases || []) {
-        if (p.text) lines.push({ who: p.participantPurpose, text: p.text });
-      }
-    }
-    if (!lines.length) {
-      return `<p class="dq-bar-empty">The transcript is empty.</p>`;
-    }
-    return `<div class="dq-transcript">${lines.map((l) => `
-      <div class="dq-phrase dq-phrase--${escapeHtml((l.who || "other").toLowerCase())}">
-        <span class="dq-phrase-who">${escapeHtml(SPEAKER[l.who] || l.who || "—")}</span>
-        <span class="dq-phrase-text">${escapeHtml(l.text)}</span>
-      </div>`).join("")}</div>`;
-  }
-
   /** Turn an error into the sentence a reader can act on. */
   function reason(err, permissions) {
     if (err?.status === 403) return `You do not have permission for this (needs ${permissions}).`;
@@ -230,17 +198,13 @@ export function createEvaluationDetail({ api }) {
           `<p class="dq-bar-empty">No transcript: this interaction has no communication to transcribe.</p>`;
         return;
       }
-      const urlResp = await api.proxyGenesys(orgId, "GET",
-        `/api/v2/speechandtextanalytics/conversations/${conversationId}/communications/${commId}/transcripturl`);
-      if (!urlResp?.url) {
+      const data = await fetchTranscriptJson(api, orgId, conversationId, commId);
+      if (!data) {
         $("transcript").innerHTML =
           `<p class="dq-bar-empty">No transcript was recorded for this interaction.</p>`;
         return;
       }
-      // A pre-signed URL — fetched directly, without the proxy or a token.
-      const resp = await fetch(urlResp.url);
-      if (!resp.ok) throw new Error(`Transcript fetch failed (${resp.status})`);
-      $("transcript").innerHTML = renderTranscript(await resp.json());
+      $("transcript").innerHTML = renderTranscript(data);
     } catch (err) {
       $("transcript").innerHTML = `<p class="dq-bar-empty">${escapeHtml(
         reason(err, "recording:recording:view and speechAndTextAnalytics:data:view"))}</p>`;

@@ -238,6 +238,7 @@ AI Scoring page. Like the groups band above, it needs exactly one form selected.
 | 10a.9 | A critical or kill question | Tagged; a failed kill question is flagged in red | | |
 | 10a.10 | An AI-scored evaluation where a person changed an answer | Shows what the AI answered, and its explanation | | |
 | 10a.11 | Left pane | The transcript, speaker-labelled | | |
+| 10a.11a | ★ The speaker labels | **Agent** and **Customer** — never "internal" or "External", which is the transcript's own vocabulary and read as jargon. Agent lines blue, Customer lines green | | |
 | 10a.12 | An interaction with no transcript | Says so plainly — never a spinner that never resolves | | |
 | 10a.13 | Without `recording:recording:view` / `speechAndTextAnalytics:data:view` | Transcript pane names the missing permission; **the form still renders** | | |
 | 10a.14 | Without `quality:evaluation:view` | Form pane names it; **the transcript still renders** | | |
