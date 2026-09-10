@@ -83,8 +83,6 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
         <li><strong>Access</strong> downloads are a <strong>ZIP archive</strong> on Genesys's own
             storage &mdash; the link opens in a new tab and the browser saves it. Large exports may
             produce several archives, and each gets its own link. Call recordings are not included.</li>
-        <li>The archive holds raw platform data rather than a report. Genesys does not document its
-            contents, so expect to interpret it before it can go to the data subject.</li>
         <li><strong>Erasure</strong> redacts personal data and leaves the interaction records
             themselves in place, so a completed erasure does not empty the org's history.</li>
         <li>Download links are signed by Genesys and do not last forever. If one stops working,
