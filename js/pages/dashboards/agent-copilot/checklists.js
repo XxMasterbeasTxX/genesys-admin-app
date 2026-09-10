@@ -152,6 +152,28 @@ function agentTickedAny(checklists) {
     (cl) => (cl?.checklistItems || []).some((it) => it.stateFromAgent === TICKED));
 }
 
+/**
+ * How many items are ticked, across every checklist on the interaction.
+ *
+ * "Ticked" is by agent OR model - the same reading Complete uses, so 7/7 and
+ * Complete can never disagree. The agent and AI counts ride alongside because
+ * a bare fraction hides who did the ticking, and that is the page's whole
+ * point. Returns null when there is nothing to count.
+ */
+export function tickCounts(checklists) {
+  const items = (checklists || []).flatMap((cl) => cl?.checklistItems || []);
+  if (!items.length) return null;
+  let ticked = 0, agent = 0, ai = 0;
+  for (const it of items) {
+    const a = it.stateFromAgent === TICKED;
+    const m = it.stateFromModel === TICKED;
+    if (a || m) ticked++;
+    if (a) agent++;
+    if (m) ai++;
+  }
+  return { ticked, total: items.length, agent, ai };
+}
+
 /** Seconds → "3m 07s", or an em dash when there is nothing to show. */
 function fmtDuration(ms) {
   if (!ms) return "—";
@@ -1043,6 +1065,29 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       + "</div>";
   }
 
+  /**
+   * Ticked over total, with a bar beneath and the who-ticked-it in the title.
+   *
+   * data-value carries the percentage, not the fraction text: "4/7" would sort
+   * as the number 4, which puts 4/4 and 4/12 side by side. Sorting by how far
+   * from done is what the column is for.
+   */
+  function checkedCell(row) {
+    const info = enriched.get(row.conversationId);
+    if (!info || info._error) return '<td class="is-num"></td>';
+    const c = tickCounts(info.checklists);
+    if (!c) return '<td class="is-num"><span class="dq-muted">—</span></td>';
+    const pct = Math.round((c.ticked / c.total) * 100);
+    const full = c.ticked === c.total;
+    const title = `${c.ticked} of ${c.total} ticked — `
+      + `${c.agent} by the agent, ${c.ai} by AI`;
+    return `<td class="is-num" data-value="${pct}" title="${escapeHtml(title)}">
+      <span class="ac-checked">${c.ticked}/${c.total}</span>
+      <span class="ac-checked-track"><span class="ac-checked-bar ${full ? "is-full" : ""}"
+        style="width:${pct}%"></span></span>
+    </td>`;
+  }
+
   function statusCell(row) {
     const info = enriched.get(row.conversationId);
     if (!info) return '<span class="ac-badge is-loading">…</span>';
@@ -1079,7 +1124,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     $t.innerHTML =
       "<thead><tr><th>Time</th><th>Agent</th><th>Queue</th><th>Copilot</th>"
       + '<th>Media</th><th class="is-num">Duration</th><th>Checklist</th>'
-      + "<th>Wrapup</th><th>Status</th></tr></thead>"
+      + '<th>Wrapup</th><th class="is-num">Checked</th><th>Status</th></tr></thead>'
       + `<tbody>${shown.map((r) => {
         const info = enriched.get(r.conversationId);
         const names = info?.checklists?.length
@@ -1095,6 +1140,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           <td class="is-num" data-value="${seconds}">${escapeHtml(fmtDuration(r.ms))}</td>
           <td>${escapeHtml(names)}</td>
           <td>${escapeHtml(wrapUpLabel(r))}</td>
+          ${checkedCell(r)}
           <td>${statusCell(r)}</td>
         </tr>`;
       }).join("")}</tbody>`;
@@ -1106,8 +1152,8 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     detachFilters = attachColumnFilters($("rowsWrap"), {
       sortable: true,
       compact: true,
-      numericCols: [5],
-      rangeCols: [5],
+      numericCols: [5, 8],
+      rangeCols: [5, 8],
       dateCols: [0],
     });
 
@@ -1702,7 +1748,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
     const interactions = [[
       "Conversation ID", "Time", "Agent", "Queue", "Copilot", "Media",
-      "Duration (s)", "Checklist", "Wrap-up", "Status",
+      "Duration (s)", "Checklist", "Wrap-up", "Ticked", "Items", "Status",
     ]];
     const items = [[
       "Conversation ID", "Checklist", "Agent", "Item", "Description",
@@ -1717,11 +1763,12 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
         : info.completion === "incomplete" ? "Incomplete" : "No items";
 
       const wrap = wrapUpLabel(r);
+      const tc = tickCounts(info.checklists);
       interactions.push([
         r.conversationId, r.when ? new Date(r.when) : "", agentNames(r),
         queueLabel(r), copilotLabel(r), r.media,
         r.ms ? Math.round(r.ms / 1000) : 0, names,
-        wrap === "—" ? "" : wrap, status,
+        wrap === "—" ? "" : wrap, tc ? tc.ticked : "", tc ? tc.total : "", status,
       ]);
 
       for (const cl of info.checklists) {

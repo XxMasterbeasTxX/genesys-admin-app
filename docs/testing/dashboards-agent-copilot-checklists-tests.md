@@ -73,6 +73,13 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 4.5 | Sort by any column | Sorts; Duration sorts numerically, not as text | | |
 | 4.6 | Filter **Time** and **Duration** | Both offer a FROM/TO range rather than a list of checkboxes | | |
 | 4.7 | Right-click a row | Conversation ID copied, confirmed in the status line | | |
+| 4.7a | ★ The **Checked** column, between Wrapup and Status | Ticked over total, e.g. `4/7`, with a slim bar beneath — green at 7/7, amber otherwise | | |
+| 4.7b | ★ Hover a Checked cell | The tooltip says who ticked what: "4 of 7 ticked — 1 by the agent, 3 by AI" | | |
+| 4.7c | ★ 7/7 and the Status badge | Always agree: a row reading 7/7 is Complete and vice versa, because both use the same reading (agent OR AI) | | |
+| 4.7d | Sort by Checked | Sorts by **how far from done**, not by the first number — 4/4 must not sit beside 4/12 | | |
+| 4.7e | Filter Checked | A FROM/TO range on the percentage, so "under 50%" is one filter | | |
+| 4.7f | No checklist, or no items | Reads `—`, never `0/0` | | |
+| 4.7g | Export | Two numeric columns, **Ticked** and **Items**, so Excel can compute with them | | |
 | 4.8 | More than 500 matching rows | First 500 shown, with a note saying so and what to do | | |
 
 ## 5. Status — the part most likely to be subtly wrong ★
