@@ -75,8 +75,7 @@ const REQUEST_TYPES = {
         + "reads Completed — usually <strong>1–2 business days</strong>. Large exports may arrive as "
         + "several archives.",
       "Inside are raw platform exports — reported to include analytics, billing and journey session "
-        + "data, as HTML and CSV. <strong>Genesys does not document the contents</strong>, and it is "
-        + "not a document you can hand to the data subject as-is. Expect to interpret it yourself.",
+        + "data, as HTML and CSV.",
       "<strong>Call recordings are not included</strong>, even though erasure covers them.",
       "Nothing is changed. This request only reads.",
     ],
