@@ -47,10 +47,14 @@ returns a named individual's records across the whole tenant, so it is gated on
   - Expect: both GDPR leaves appear in the sidebar
   - Notes: `______________________`
 - [ ] **1.2** — Log in holding `gdpr:request:view` but **not** `gdpr:subject:view`
-  - Expect: Request Status appears; **Subject Request does not**
+  - Expect: Subject Request appears **greyed out**, with a tooltip naming `gdpr:subject:view`. Request Status is usable.
   - Notes: `______________________`
 - [ ] **1.3** — Log in holding neither permission
-  - Expect: neither leaf appears
+  - Expect: both leaves appear **greyed out** with tooltips
+  - Notes: `______________________`
+  - The leaf greys rather than disappearing because the app *group* still grants the GDPR module — that is the `denied-no-permission` state. A leaf only vanishes when the group or entitlement does not grant the module at all, which is what 1.3a checks.
+- [ ] **1.3a** — Log in as a group with no `gdpr.*` entitlement
+  - Expect: the GDPR folder is **absent** from the sidebar entirely
   - Notes: `______________________`
 - [ ] **1.4** — With the module entitlement but no GDPR permission, open `#/gdpr/subject-request` directly
   - Expect: denied — not the page with a failing search behind it
@@ -105,11 +109,12 @@ returns a named individual's records across the whole tenant, so it is gated on
   - Expect: "No matching subjects found"; Proceed stays disabled
   - Notes: `______________________`
 - [ ] **3.4** — Search with one identifier deliberately malformed (e.g. Phone = `abc`)
-  - Expect: an **amber** line naming Phone, saying results cover the other identifiers only; the other matches still list
+  - Expect: **"No matching subjects found"** — Genesys treats an unparseable value as a miss, not an error, so this does *not* trigger the partial-failure warning
   - Notes: `______________________`
-- [ ] **3.5** — Compare that amber line to an ordinary progress line
-  - Expect: clearly a different colour — a partial search failure must not read as routine
-  - Notes: `______________________`
+- [ ] **3.5 ★** — Induce a genuine per-identifier failure and watch for the amber partial-result line
+  - The warning fires when one identifier's search returns an HTTP error while others succeed. A malformed value will not do it (3.4). Rate limiting (429) under a burst of identifiers is the most likely real cause.
+  - Answer — did you ever see it fire, and what caused it? `______________________`
+  - This path is verified in a stubbed harness but has never been observed against a live tenant. If it turns out to be unreachable in practice, say so and it can be simplified away.
 - [ ] **3.6** — Untick every subject in step 3
   - Expect: Proceed becomes disabled
   - Notes: `______________________`
@@ -190,10 +195,11 @@ fails outright, because nobody finds out.
 - [ ] **6.4** — Repeat 6.3, but clear the Email box in step 2 before submitting
   - Expect: steps 3–4 grey out and **nothing is submitted at all**
   - Notes: `______________________`
-- [ ] **6.5** — Confirm the result in Genesys admin
+- [ ] **6.5** — Confirm the result in Genesys admin, **after the request reads Completed**
   - Expect: the corrected field is the one you meant
   - Notes: `______________________`
   - ⚠ This is the case that actually proves 6.3. The request body being right is necessary, not sufficient.
+  - **Seeing the old value is expected at first.** Rectification is asynchronous: the request moves INITIATED → SEARCHING → UPDATING → COMPLETED, and records have been reported to catch up for some time after that. Check Request Status first; only treat an unchanged value as a failure once the request has read Completed for a while.
 
 ---
 
@@ -231,11 +237,14 @@ fails outright, because nobody finds out.
 - [ ] **8.4** — Read the Status column
   - Expect: English — Initiated, Searching…, Updating…, Deleting…, Finalizing…, Completed, Error. No raw `IN_PROGRESS`-style shouting
   - Notes: `______________________`
-- [ ] **8.5** — Find a request with no subject name
-  - Expect: the id shows in mono, truncated, on **one** line — not bold body text wrapped over two
+- [ ] **8.5** — Look at the Subject column
+  - Expect: a person's **name**. Genesys often omits `subject.name` on the listing, so the page resolves the subject's user or external-contact id to a name; only a dialer contact, or an id Genesys will not return, falls back to a truncated mono id on one line.
   - Notes: `______________________`
 - [ ] **8.6** — Check the Submitted by column
-  - Expect: names the person who raised the request
+  - Expect: the **name** of the person who raised the request, not a GUID. `createdBy` arrives as a bare id, so the page resolves it.
+  - Notes: `______________________`
+- [ ] **8.11** — Load an org with a good number of requests and watch DevTools → Network
+  - Expect: **one** `/api/v2/users` call for the whole table, however many rows share a submitter — not one call per row
   - Notes: `______________________`
 - [ ] **8.7** — Filter by type, then by status, then reset
   - Expect: counts update; the footer says how many are hidden
@@ -309,17 +318,30 @@ behind the 45-second Static Web Apps cap.
 - [ ] **10.1** — Search with no org selected
   - Expect: "Please select a customer org from the header dropdown"
   - Notes: `______________________`
-- [ ] **10.2** — Force a search failure (revoke the permission mid-session, or use a bad org)
-  - Expect: a red line carrying the Genesys message — not a raw JS TypeError
+> **How to make these fail without touching customer data.** Every Genesys call
+> in this app goes through one endpoint, so you can break them all from the
+> browser rather than by misusing the API:
+>
+> 1. Open DevTools → **Network**.
+> 2. Trigger any action so a request to **`/api/genesys-proxy`** appears.
+> 3. Right-click it → **Block request URL**.
+> 4. Re-run the action. Every proxied call now fails.
+>
+> Un-tick the entry in DevTools → Network → Request blocking when you are done.
+> Nothing reaches Genesys while a request is blocked, so this is safe on any org.
+
+- [ ] **10.2** — Block `/api/genesys-proxy` (recipe above), then run a subject search
+  - Expect: a red line carrying an error message — not a raw JS TypeError, and not a silent nothing
   - Notes: `______________________`
-- [ ] **10.3** — Submit with several subjects where one will fail
-  - Expect: "N submitted, M failed: &lt;reason&gt;"; Submit re-enables
+- [ ] **10.3** — With several subjects selected, block the proxy and then submit
+  - Expect: "N submitted, M failed: &lt;reason&gt;"; Submit re-enables so you can retry
   - Notes: `______________________`
+  - Blocking *after* the page has loaded but *before* you press Submit is what produces a genuine partial: some requests land, later ones do not.
 - [ ] **10.4** — Check the Activity Log after 10.3
-  - Expect: a **GDPR Request** row marked **partial**
+  - Expect: a **GDPR Request** row marked **partial** (or **failure** if none landed)
   - Notes: `______________________`
-- [ ] **10.5** — Make the Request Status load fail
-  - Expect: an error paragraph in the panel; the page stays usable
+- [ ] **10.5** — Block the proxy, then press Load / Refresh on Request Status
+  - Expect: an error paragraph in the panel; the page stays usable and the button re-enables
   - Notes: `______________________`
 - [ ] **10.6** — Watch for `alert()` boxes anywhere in either page
   - Expect: none — every message is an inline status line

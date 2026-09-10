@@ -59,6 +59,8 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
   // Track current org for the download handler
   let currentOrg = null;
   let allRequests = [];
+  // Genesys id → display name, filled in after the listing loads.
+  const nameCache = new Map();
 
   el.innerHTML = `
     <h2>GDPR — Request Status</h2>
@@ -186,11 +188,13 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
                  ?? r.subject?.externalId
                  ?? null;
 
-      // A named subject reads as a name; an unnamed one is an id, and an id in
-      // bold body text wrapped over two lines and pushed the column out. Ids
-      // get the same mono/truncated treatment as the Request ID column.
-      const subjectHtml = r.subject?.name
-        ? `<span class="gdpr-subject-name">${escapeHtml(r.subject.name)}</span>`
+      // A named subject reads as a name; an unnamed one falls back to a name we
+      // resolved from its id, and only then to the id itself — in mono and
+      // truncated, since a GUID in bold body text wrapped over two lines and
+      // pushed the column out.
+      const subjectName = r.subject?.name ?? (rawId ? nameCache.get(rawId) : null);
+      const subjectHtml = subjectName
+        ? `<span class="gdpr-subject-name">${escapeHtml(subjectName)}</span>`
         : rawId
           ? `<span class="gdpr-mono gdpr-subject-ref" title="${escapeHtml(rawId)}">${escapeHtml(truncId(rawId))}</span>`
           : "—";
@@ -204,7 +208,10 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
                         : "—";
 
       const completedDate = r.resolutionDate ? new Date(r.resolutionDate).toLocaleString() : "—";
-      const submittedBy   = r.createdBy?.name ?? r.createdBy?.id ?? "—";
+      const submittedBy = r.createdBy?.name
+                       ?? (r.createdBy?.id ? nameCache.get(r.createdBy.id) : null)
+                       ?? r.createdBy?.id
+                       ?? "—";
 
       // Details — contextual per request type. `resultsUrl`/`resultsUrls` come
       // back on the listing itself, so no per-row follow-up GET is needed.
@@ -310,6 +317,61 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
   }
 
   /**
+   * Resolve the ids Genesys returns into names people recognise.
+   *
+   * `createdBy` comes back as a DomainEntityRef carrying an id and a selfUri
+   * but no name, and `subject.name` is frequently absent on the listing too —
+   * so both the Subject and Submitted by columns printed raw GUIDs. On a page
+   * whose job is to answer "who asked for this, and about whom", a GUID is not
+   * an answer.
+   *
+   * Users go out in one batched call (`fetchUsersByIds` chunks and repeats the
+   * `id` parameter). External contacts have no bulk-by-id endpoint, so they are
+   * fetched individually and capped — a page of them is a handful, and a row
+   * that cannot be resolved simply keeps showing its id.
+   */
+  async function resolveNames(orgId) {
+    const userIds = new Set();
+    const contactIds = new Set();
+    for (const r of allRequests) {
+      if (r.createdBy?.id && !r.createdBy?.name) userIds.add(r.createdBy.id);
+      if (!r.subject?.name) {
+        if (r.subject?.userId) userIds.add(r.subject.userId);
+        else if (r.subject?.externalContactId) contactIds.add(r.subject.externalContactId);
+      }
+    }
+    if (!userIds.size && !contactIds.size) return;
+
+    const jobs = [];
+
+    if (userIds.size) {
+      jobs.push(
+        gc.fetchUsersByIds(api, orgId, [...userIds])
+          .then(users => {
+            for (const u of users) if (u?.id && u?.name) nameCache.set(u.id, u.name);
+          })
+          .catch(() => { /* ids stay as ids */ }),
+      );
+    }
+
+    // Cap the individual gets: a full page of unnamed external contacts should
+    // not turn one page load into fifty requests.
+    for (const id of [...contactIds].slice(0, 25)) {
+      jobs.push(
+        gc.getExternalContact(api, orgId, id)
+          .then(c => {
+            const name = [c?.firstName, c?.lastName].filter(Boolean).join(" ").trim()
+              || c?.name || null;
+            if (name) nameCache.set(id, name);
+          })
+          .catch(() => { /* ids stay as ids */ }),
+      );
+    }
+
+    await Promise.all(jobs);
+  }
+
+  /**
    * Top up any completed export that came back without its download URL.
    *
    * The spec says a listing entity is a full GDPRRequest, `resultsUrl` and
@@ -354,7 +416,10 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
 
     try {
       allRequests = await gc.gdprGetRequests(api, org.id);
-      await fillMissingResultUrls(org.id);
+      await Promise.all([
+        fillMissingResultUrls(org.id),
+        resolveNames(org.id),
+      ]);
       setStatus("");
       renderTable();
     } catch (err) {
