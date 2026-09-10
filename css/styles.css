@@ -3884,6 +3884,15 @@ body {
    JS; nowrap stops the remainder breaking over two lines and making the row
    twice the height of every named one beside it. */
 .gdpr-subject-ref { white-space: nowrap; }
+/* Genesys attributes a request raised through this app to its OAuth client,
+   not to a person. Saying so is more use than printing the client's GUID. */
+.gdpr-api-client {
+  font-style: italic;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 1px dotted var(--border);
+  cursor: help;
+}
 .gdpr-subject-name {
   font-weight: 500;
 }

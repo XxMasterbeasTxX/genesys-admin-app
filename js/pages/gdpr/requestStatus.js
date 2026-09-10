@@ -85,6 +85,10 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
             themselves in place, so a completed erasure does not empty the org's history.</li>
         <li>Download links are signed by Genesys and do not last forever. If one stops working,
             submit a fresh Access request rather than retrying it.</li>
+        <li><strong>Submitted by</strong> is what Genesys recorded. Requests raised from this app
+            arrive through its integration, so Genesys attributes them to the API client rather
+            than to a person &mdash; <strong>Admin &rsaquo; Activity Log</strong> is where the
+            individual who raised one is recorded.</li>
       </ul>
     </div>
 
@@ -208,10 +212,15 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
                         : "—";
 
       const completedDate = r.resolutionDate ? new Date(r.resolutionDate).toLocaleString() : "—";
-      const submittedBy = r.createdBy?.name
-                       ?? (r.createdBy?.id ? nameCache.get(r.createdBy.id) : null)
-                       ?? r.createdBy?.id
-                       ?? "—";
+      const submitterName = r.createdBy?.name
+                         ?? (r.createdBy?.id ? nameCache.get(r.createdBy.id) : null);
+      const submittedHtml = submitterName
+        ? escapeHtml(submitterName)
+        : r.createdBy?.id
+          ? (isOAuthClientRef(r.createdBy)
+              ? `<span class="gdpr-api-client" title="OAuth client ${escapeHtml(r.createdBy.id)} — raised through an integration. See Admin › Activity Log for the person.">API client</span>`
+              : `<span class="gdpr-mono gdpr-subject-ref" title="${escapeHtml(r.createdBy.id)}">${escapeHtml(truncId(r.createdBy.id))}</span>`)
+          : "—";
 
       // Details — contextual per request type. `resultsUrl`/`resultsUrls` come
       // back on the listing itself, so no per-row follow-up GET is needed.
@@ -239,7 +248,7 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
           <td><span class="gdpr-subject-type-badge">${escapeHtml(subjectType)}</span></td>
           <td><span class="gdpr-status-dot gdpr-status-dot--${statusClass}">${escapeHtml(statusLabel)}</span></td>
           <td>${escapeHtml(completedDate)}</td>
-          <td>${escapeHtml(submittedBy)}</td>
+          <td>${submittedHtml}</td>
           <td class="gdpr-details-cell">${detailsHtml}</td>
           <td class="gdpr-mono">${reqId}</td>
         </tr>
@@ -330,11 +339,31 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
    * fetched individually and capped — a page of them is a handful, and a row
    * that cannot be resolved simply keeps showing its id.
    */
+  /**
+   * True when a `createdBy` ref is an OAuth client rather than a person.
+   *
+   * This app talks to Genesys with the org's client credentials, so every
+   * request raised through it comes back attributed to the integration — the
+   * same id on every row, which is exactly what the column showed. Genesys has
+   * no person to name here, and asking `/api/v2/users` for a client id returns
+   * nothing, so the honest thing is to say "API client" and point at the app's
+   * own Activity Log, which does record who pressed the button.
+   *
+   * `createdBy` is still a real user for requests raised outside this app —
+   * directly in Genesys admin, or by another integration — so the ref is
+   * classified by its `selfUri` rather than assumed either way.
+   */
+  function isOAuthClientRef(ref) {
+    return /\/oauth\/clients\//i.test(ref?.selfUri || "");
+  }
+
   async function resolveNames(orgId) {
     const userIds = new Set();
     const contactIds = new Set();
     for (const r of allRequests) {
-      if (r.createdBy?.id && !r.createdBy?.name) userIds.add(r.createdBy.id);
+      if (r.createdBy?.id && !r.createdBy?.name && !isOAuthClientRef(r.createdBy)) {
+        userIds.add(r.createdBy.id);
+      }
       if (!r.subject?.name) {
         if (r.subject?.userId) userIds.add(r.subject.userId);
         else if (r.subject?.externalContactId) contactIds.add(r.subject.externalContactId);

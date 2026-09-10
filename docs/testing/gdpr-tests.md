@@ -241,7 +241,11 @@ fails outright, because nobody finds out.
   - Expect: a person's **name**. Genesys often omits `subject.name` on the listing, so the page resolves the subject's user or external-contact id to a name; only a dialer contact, or an id Genesys will not return, falls back to a truncated mono id on one line.
   - Notes: `______________________`
 - [ ] **8.6** — Check the Submitted by column
-  - Expect: the **name** of the person who raised the request, not a GUID. `createdBy` arrives as a bare id, so the page resolves it.
+  - Expect: **“API client”** (italic, hover for the id) for anything raised from this app, and a person's **name** for anything raised directly in Genesys admin. Never a bare GUID.
+  - Notes: `______________________`
+  - The app authenticates with the org's OAuth client credentials, so Genesys attributes its requests to the integration, not to a person — which is why every row showed the same id. Per-person attribution lives in **Admin › Activity Log**.
+- [ ] **8.12** — Find a request whose subject is a user who has since been deactivated or deleted
+  - Expect: their **name** still shows. The users lookup asks for `state=any`; the endpoint defaults to `active` and would otherwise drop them silently, leaving a GUID.
   - Notes: `______________________`
 - [ ] **8.11** — Load an org with a good number of requests and watch DevTools → Network
   - Expect: **one** `/api/v2/users` call for the whole table, however many rows share a submitter — not one call per row

@@ -2244,8 +2244,14 @@ export async function fetchUsersByIds(api, orgId, ids, opts = {}) {
   for (let i = 0; i < unique.length; i += chunk) {
     const part = unique.slice(i, i + chunk);
     const qs = part.map((id) => `id=${encodeURIComponent(id)}`).join("&");
+    // `state=any` explicitly. The endpoint defaults it to `active`, so the
+    // paragraph above was an intention the code did not carry out: an inactive
+    // or deleted user was dropped from the response without a word, and the
+    // caller printed the GUID it was trying to resolve. GDPR made it obvious —
+    // the subject of an erasure is exactly the kind of user who is no longer
+    // active — but every caller was affected.
     const resp = await api.proxyGenesys(orgId, "GET",
-      `/api/v2/users?pageSize=${chunk}&${qs}`);
+      `/api/v2/users?pageSize=${chunk}&state=any&${qs}`);
     out.push(...(resp?.entities || []));
   }
   return out;
