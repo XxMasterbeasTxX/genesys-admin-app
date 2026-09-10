@@ -53,7 +53,7 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 3.1 | Press **Count interactions** | The count, the period, and an estimate of how many requests loading will take | | |
+| 3.1 | Press **Count interactions** | The count, the period, and roughly how long loading will take. No request count | | |
 | 3.2 | **Load checklists** is disabled until you have counted | Yes | | |
 | 3.3 | Change any filter after counting | Load disables again — the count was of the old scope | | |
 | 3.4 | A range with no interactions | Says so; Load stays disabled | | |

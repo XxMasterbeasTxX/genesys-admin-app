@@ -610,9 +610,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
             + `${(MAX_PAGES * 100).toLocaleString()} interactions.`
           : `${total.toLocaleString()} interaction(s) in ${formatRange(s.from, s.to)}. `
             + `Loading reads ${willRead.toLocaleString()} and fetches checklists for `
-            + `${willEnrich.toLocaleString()} of them — roughly `
-            + `${(willEnrich * 3).toLocaleString()}–${(willEnrich * 4).toLocaleString()} `
-            + `requests, about ${estimateMinutes(willEnrich)}.`);
+            + `${willEnrich.toLocaleString()} of them, ${estimateMinutes(willEnrich)}.`);
     } catch (e) {
       setStatus(`Could not count interactions: ${e.message}`, "error");
     }
