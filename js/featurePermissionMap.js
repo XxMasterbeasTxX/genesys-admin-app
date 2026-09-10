@@ -209,6 +209,9 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
     summaries:  ["conversation:summary:view"],
     recordings: ["recording:recording:view", "recording:recordingSegment:view",
                  "recording:screenRecording:view"],
+    // Both, as the Scores drawer requires: the recording permission gates the
+    // transcript URL, and the STA data permission gates what it points at.
+    transcript: { all: ["recording:recording:view", "speechAndTextAnalytics:data:view"] },
   },
 
   // ── Deployment ───────────────────────────────────────

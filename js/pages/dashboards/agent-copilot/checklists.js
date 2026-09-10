@@ -36,6 +36,10 @@ import {
 } from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import {
+  customerCommunicationId, fetchTranscriptJson, renderTranscript,
+  transcriptFailureReason,
+} from "../../../components/transcript.js";
+import {
   RANGE_PRESETS, resolvePreset, latestSelectableDay, utcIso, yesterday,
   formatRange, dayCount,
 } from "../../../utils/dateRanges.js";
@@ -939,7 +943,13 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
         return true;
       });
 
-      return { checklists, summaries, completion: checklistCompletion(checklists) };
+      return {
+        checklists, summaries, completion: checklistCompletion(checklists),
+        // The transcript hangs off the customer's communication. Found now,
+        // while the conversation is in hand, so opening it later is one call
+        // for the URL and one fetch - not a third read of the conversation.
+        customerCommId: customerCommunicationId(conv),
+      };
     } catch (e) {
       return { ...empty, _error: e.message || String(e) };
     }
@@ -1234,7 +1244,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
    * source shipped, on the reasoning that a summary is prose you go looking
    * for while a checklist is what you came to see.
    */
-  function collapsible(title, content, expanded = true) {
+  function collapsible(title, content, expanded = true, onFirstOpen = null) {
     const wrap = document.createElement("div");
     wrap.className = "dq-panel-block";
 
@@ -1252,11 +1262,15 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     body.hidden = !expanded;
     body.append(content);
 
+    // Fires once, on the first opening - so a section that has to fetch its
+    // content fetches it when it is asked for and not before.
+    let opened = expanded;
     toggle.addEventListener("click", () => {
       const open = !body.hidden;
       body.hidden = open;
       toggle.setAttribute("aria-expanded", String(!open));
       chevron.textContent = open ? "▶" : "▼";
+      if (!open && !opened) { opened = true; onFirstOpen?.(); }
     });
 
     wrap.append(toggle, body);
@@ -1314,7 +1328,44 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           : `Conversation Summaries (${info.summaries.length})`,
         summarySection(info.summaries), false));
     }
+    // Collapsed, and empty until opened: a transcript is one URL call and one
+    // fetch per interaction, spent only for the ones somebody reads.
+    const transcriptBody = document.createElement("div");
+    $p.append(collapsible("📄 Transcript", transcriptBody, false,
+      () => loadTranscript(convId, info, transcriptBody)));
     $p.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  /**
+   * Fetch and show the transcript, the first time its section is opened.
+   *
+   * Same path as the Evaluation Scores drawer, through the shared component:
+   * the customer's communication was kept at enrichment time, so this is the
+   * URL call and the S3 fetch and nothing else. "No transcript" is ordinary
+   * and says so; a refusal names the permissions.
+   */
+  async function loadTranscript(convId, info, body) {
+    const org = currentOrg();
+    if (!org) return;
+    if (!may("transcript")) {
+      body.innerHTML = '<p class="dq-bar-empty">Transcripts need recording:recording:view '
+        + "and speechAndTextAnalytics:data:view.</p>";
+      return;
+    }
+    if (!info.customerCommId) {
+      body.innerHTML = '<p class="dq-bar-empty">No transcript: this interaction has no '
+        + "communication to transcribe.</p>";
+      return;
+    }
+    body.innerHTML = '<p class="dq-bar-empty">Loading transcript' + "…" + "</p>";
+    try {
+      const data = await fetchTranscriptJson(api, org.id, convId, info.customerCommId);
+      body.innerHTML = data
+        ? renderTranscript(data)
+        : '<p class="dq-bar-empty">No transcript was recorded for this interaction.</p>';
+    } catch (e) {
+      body.innerHTML = `<p class="dq-bar-empty">${escapeHtml(transcriptFailureReason(e))}</p>`;
+    }
   }
 
   /**

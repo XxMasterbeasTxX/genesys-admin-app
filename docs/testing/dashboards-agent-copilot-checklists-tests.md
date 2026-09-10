@@ -132,6 +132,21 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 8.11 | A summary with predicted wrap-up codes | Listed at the end, by name where known | | |
 | 8.12 | Close the panel | Closes; the table is untouched | | |
 
+## 8b. Transcript ★
+
+Beneath Conversation Summary. Same path as the Scores drawer, through the shared
+component, so the two cannot disagree about a speaker.
+
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 8b.1 | Open a drill-down | A **Transcript** section sits beneath Conversation Summary, **collapsed**. Watch the network tab: **nothing is fetched** until it is opened | | |
+| 8b.2 | Open it | One `transcripturl` call, then one direct fetch of the URL it returns — no re-read of the conversation, which was kept from enrichment | | |
+| 8b.3 | ★ Read it | Every line is labelled **Agent** or **Customer**, Agent in blue and Customer in green. Never "internal" or "External" | | |
+| 8b.4 | Close and reopen it | No second fetch — it was loaded once | | |
+| 8b.5 | An interaction with no transcript | "No transcript was recorded for this interaction." — never a spinner that never resolves | | |
+| 8b.6 | Without `recording:recording:view` or `speechAndTextAnalytics:data:view` | The section says which it needs, on opening; the rest of the drill-down is unaffected | | |
+| 8b.7 | An interaction with neither checklist nor summary | No drill-down sections at all, Transcript included — the source app opens nothing for such an interaction | | |
+
 ## 9. Recordings ★
 
 New to this app — there was no media player anywhere in it before.
