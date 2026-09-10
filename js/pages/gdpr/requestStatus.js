@@ -61,6 +61,8 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
   let allRequests = [];
   // Genesys id → display name, filled in after the listing loads.
   const nameCache = new Map();
+  // Ids both the directory listing and the single get declined to name.
+  const unresolvable = new Set();
 
   el.innerHTML = `
     <h2>GDPR — Request Status</h2>
@@ -217,9 +219,7 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
       const submittedHtml = submitterName
         ? escapeHtml(submitterName)
         : r.createdBy?.id
-          ? (isOAuthClientRef(r.createdBy)
-              ? `<span class="gdpr-api-client" title="OAuth client ${escapeHtml(r.createdBy.id)} — raised through an integration. See Admin › Activity Log for the person.">API client</span>`
-              : `<span class="gdpr-mono gdpr-subject-ref" title="${escapeHtml(r.createdBy.id)}">${escapeHtml(truncId(r.createdBy.id))}</span>`)
+          ? `<span class="gdpr-api-client" title="Genesys returned no user record for ${escapeHtml(r.createdBy.id)}. Requests raised from this app are attributed to its integration rather than to a person — see Admin › Activity Log for who raised this one.">API client</span>`
           : "—";
 
       // Details — contextual per request type. `resultsUrl`/`resultsUrls` come
@@ -339,31 +339,11 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
    * fetched individually and capped — a page of them is a handful, and a row
    * that cannot be resolved simply keeps showing its id.
    */
-  /**
-   * True when a `createdBy` ref is an OAuth client rather than a person.
-   *
-   * This app talks to Genesys with the org's client credentials, so every
-   * request raised through it comes back attributed to the integration — the
-   * same id on every row, which is exactly what the column showed. Genesys has
-   * no person to name here, and asking `/api/v2/users` for a client id returns
-   * nothing, so the honest thing is to say "API client" and point at the app's
-   * own Activity Log, which does record who pressed the button.
-   *
-   * `createdBy` is still a real user for requests raised outside this app —
-   * directly in Genesys admin, or by another integration — so the ref is
-   * classified by its `selfUri` rather than assumed either way.
-   */
-  function isOAuthClientRef(ref) {
-    return /\/oauth\/clients\//i.test(ref?.selfUri || "");
-  }
-
   async function resolveNames(orgId) {
     const userIds = new Set();
     const contactIds = new Set();
     for (const r of allRequests) {
-      if (r.createdBy?.id && !r.createdBy?.name && !isOAuthClientRef(r.createdBy)) {
-        userIds.add(r.createdBy.id);
-      }
+      if (r.createdBy?.id && !r.createdBy?.name) userIds.add(r.createdBy.id);
       if (!r.subject?.name) {
         if (r.subject?.userId) userIds.add(r.subject.userId);
         else if (r.subject?.externalContactId) contactIds.add(r.subject.externalContactId);
@@ -379,7 +359,7 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
           .then(users => {
             for (const u of users) if (u?.id && u?.name) nameCache.set(u.id, u.name);
           })
-          .catch(() => { /* ids stay as ids */ }),
+          .catch(() => { /* falls through to the single gets below */ }),
       );
     }
 
@@ -398,6 +378,25 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
     }
 
     await Promise.all(jobs);
+
+    // Second pass, for ids the LIST endpoint declined to return.
+    //
+    // `GET /api/v2/users?id=…` and `GET /api/v2/users/{id}` do not answer the
+    // same question. The list filters the directory; the single get resolves an
+    // identity. An OAuth client's identity is the case that matters here —
+    // `createdBy` on a request raised through this app carries a `selfUri` of
+    // `/api/v2/users/<id>`, so Genesys does consider it a user, but the
+    // directory listing has never heard of it. One request per unresolved id,
+    // deduplicated, and in practice that is a single call for the whole table.
+    const stragglers = [...userIds].filter(id => !nameCache.has(id));
+    if (!stragglers.length) return;
+
+    await Promise.all(stragglers.slice(0, 10).map(id =>
+      gc.getUser(api, orgId, id)
+        .then(u => { if (u?.name) nameCache.set(id, u.name); })
+        .catch(() => { unresolvable.add(id); }),
+    ));
+    for (const id of stragglers) if (!nameCache.has(id)) unresolvable.add(id);
   }
 
   /**
