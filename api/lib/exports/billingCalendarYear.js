@@ -24,6 +24,7 @@ const {
 
 // ── Billing trustee lookup — one source, customers.json ─────────────
 const { getTrusteeForOrg, filterBillableCustomers } = require("../billingTrustees");
+const { peakAssigned } = require("../licenseStore");
 
 // ── Genesys API wrapper (per-customer credentials) ───────────────────
 
@@ -132,10 +133,15 @@ async function exportOneOrg(context, customer, year) {
     throw new Error(`no periods in ${year}`);
   }
 
-  const periods = rawPeriods.map((p) => ({
-    label:     p.label,
-    processed: processBillingOverview(p.overview),
-  }));
+  // Apps row per period: named Admin Tool users at that period's peak. A
+  // store failure must not sink the export — the row shows "—" instead.
+  const periods = [];
+  for (const p of rawPeriods) {
+    let adminToolUsers = null;
+    try { adminToolUsers = await peakAssigned(customer.id, p.overview.billingPeriodStartDate, p.overview.billingPeriodEndDate); }
+    catch (err) { context.log.warn(`[billingCalendarYear] Admin Tool count unavailable for ${customer.id}: ${err.message || err}`); }
+    periods.push({ label: p.label, processed: processBillingOverview(p.overview, { adminToolUsers }) });
+  }
 
   return { orgName: customer.name, periods };
 }

@@ -216,12 +216,13 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
       resetProgress();
 
       const ok = periods.filter((p) => !p.error).length;
+      const simNote = periods.some((p) => p.overview && p.overview.simulated) ? "Simulated billing data — the Genesys figures are not real; the Admin Tool count is. " : "";
       if (ok === 0) {
         setStatus(`Could not load any billing periods for ${org.name}.`, "error");
       } else if (ok < periods.length) {
-        setStatus(`Loaded ${ok}/4 billing periods for ${org.name}. Some periods are unavailable.`, "warn");
+        setStatus(`${simNote}Loaded ${ok}/4 billing periods for ${org.name}. Some periods are unavailable.`, "warn");
       } else {
-        setStatus(`Loaded 4 billing periods for ${org.name}. Select one and click Run.`);
+        setStatus(`${simNote}Loaded 4 billing periods for ${org.name}. Select one and click Run.`, simNote ? "warn" : undefined);
       }
       $reloadBtn.disabled = false;
     } catch (err) {

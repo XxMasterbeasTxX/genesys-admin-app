@@ -22,6 +22,7 @@ const { processBillingOverview, buildSingleOrgWorkbook, safeSheetName } = requir
 
 // ── Billing trustee lookup — one source, customers.json ─────────────
 const { getTrusteeForOrg } = require("../billingTrustees");
+const { peakAssigned } = require("../licenseStore");
 
 // ── Genesys API wrapper (per-customer credentials) ───────────────────
 
@@ -100,7 +101,12 @@ async function execute(context, schedule) {
     );
 
     // Step 3: process + build workbook.
-    const processed = processBillingOverview(overview);
+    // Apps row: named Admin Tool users at the period's peak. A store failure
+    // must not sink a scheduled billing export — the row shows "—" instead.
+    let adminToolUsers = null;
+    try { adminToolUsers = await peakAssigned(orgId, overview.billingPeriodStartDate, overview.billingPeriodEndDate); }
+    catch (err) { context.log.warn(`[billingSingleOrg] Admin Tool count unavailable for ${orgId}: ${err.message || err}`); }
+    const processed = processBillingOverview(overview, { adminToolUsers });
     const buffer    = buildSingleOrgWorkbook({ orgName, processed });
 
     const orgSlug   = orgName.replace(/\s+/g, "_");

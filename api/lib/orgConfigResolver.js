@@ -2,6 +2,7 @@ const customers = require("./customers.json");
 const crypto = require("crypto");
 const { expandPackages } = require("./packages");
 const { trusteeFor } = require("./billingTrustees");
+const { isSimulated } = require("./billingSimulation");
 
 const DEFAULT_REGION = process.env.GENESYS_HOME_REGION || "mypurecloud.de";
 const INTERNAL_ORG_SLUG = String(process.env.INTERNAL_ORG_SLUG || "demo").trim();
@@ -255,7 +256,7 @@ async function classifyCaller(context, token, hintId) {
         ? {
             mode: "customer",
             org: homeOrg,
-            customer: { id: matched.id, name: matched.name, region: matched.region, billingTrustee: trusteeFor(matched.id) },
+            customer: { id: matched.id, name: matched.name, region: matched.region, billingTrustee: trusteeFor(matched.id), billingSimulated: isSimulated(matched.id) },
             entitlements: matched.entitlements,
           }
         : { mode: "unrecognized", org: homeOrg };
@@ -278,7 +279,7 @@ async function classifyCaller(context, token, hintId) {
       ? {
           mode: "customer",
           org: custOrg,
-          customer: { id: hintEntry.id, name: hintEntry.name, region: hintEntry.region, billingTrustee: trusteeFor(hintEntry.id) },
+          customer: { id: hintEntry.id, name: hintEntry.name, region: hintEntry.region, billingTrustee: trusteeFor(hintEntry.id), billingSimulated: isSimulated(hintEntry.id) },
           entitlements: hintEntry.entitlements,
         }
       : { mode: "org_mismatch", org: custOrg };
@@ -336,6 +337,9 @@ async function resolveOrgConfig(context, req) {
     billingTrustee: trusteeFor(id),
     registered: registryIds.has(id),
     internal: id === INTERNAL_ORG_SLUG,
+    // billingSimulated: the server answers this org's billing with a synthetic
+    // overview (billingSimulation.js); the client routes it accordingly.
+    billingSimulated: isSimulated(id),
   }));
 
   const classification = await classifyCaller(context, accessToken, orgHint);

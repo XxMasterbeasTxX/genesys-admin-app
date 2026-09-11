@@ -56,6 +56,9 @@
  *   deployment.basic                   Basic
  *   deployment.datatables              Data Tables
  *   deployment.onboarding              Onboarding  (SUPERUSER only — never granted via GROUP_ACCESS)
+ *
+ *   CUSTOMERS  (Master Admin only)
+ *   customers.access                   Access to Admin Tool — who may use this app, per customer
  *   deployment.test.testCases          Test — Test Cases  (read-only; generates a test document from a flow)
  *
  *   DIVISIONS  (reassign objects between divisions)

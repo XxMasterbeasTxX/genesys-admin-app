@@ -138,7 +138,11 @@ function fmtDate(d) {
  * Transform a single `BillingOverview` response into the structured data
  * the Excel builder consumes.
  *
- * @param {object} overview  Raw Genesys BillingOverview response.
+ * @param {object} overview  Raw Genesys BillingOverview response. When the
+ *   billing service fetched it, it carries `adminToolUsers` — the org's named
+ *   Admin Tool users at the period's peak (or null if the count could not be
+ *   read) — and that becomes the Apps row.
+ * @param {{ adminToolUsers?: number|null }} [opts]  Overrides the field above.
  * @returns {{
  *   summary: {
  *     licenseType: "Concurrent" | "Named",
@@ -157,7 +161,10 @@ function fmtDate(d) {
  *   overageRows: Array<{ name, committed, actualUsage, onDemand, overageCost }>,
  * }}
  */
-export function processBillingOverview(overview) {
+export function processBillingOverview(overview, opts) {
+  const fromOpts = opts && Object.prototype.hasOwnProperty.call(opts, "adminToolUsers") ? opts.adminToolUsers : undefined;
+  const raw = fromOpts !== undefined ? fromOpts : overview?.adminToolUsers;
+  const adminToolUsers = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
   const usages = Array.isArray(overview?.usages) ? overview.usages : [];
 
   // ── Pass 1: collect non-AI fair-use allocations ──────────────────
@@ -302,6 +309,21 @@ export function processBillingOverview(overview) {
     });
   }
 
+  // ── Apps: Admin Tool named users ─────────────────────────────────
+  // Every named user is billable — nothing prepaid to net against — so
+  // On-Demand equals Actual Usage, and above zero the row is also written
+  // in the overage section (the same shape as AI Tokens - Billable). A count
+  // that could not be read is "—", never 0: those are different facts.
+  const appsRows = [{
+    name:        "Admin Tool",
+    committed:   "",
+    actualUsage: adminToolUsers === null ? "\u2014" : adminToolUsers,
+    onDemand:    adminToolUsers === null ? "\u2014" : adminToolUsers,
+  }];
+  if (adminToolUsers !== null && adminToolUsers > 0) {
+    overageRows.push({ ...appsRows[0], overageCost: 0 });
+  }
+
   // ── Stable name sort within each section (matches Python sort) ──
   const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   regularRows.sort(byName);
@@ -319,9 +341,11 @@ export function processBillingOverview(overview) {
     hasAi,
     currency:         overview?.currency || "",
     subscriptionType: overview?.subscriptionType || "",
+    adminToolUsers,
+    simulated:        overview?.simulated === true,
   };
 
-  return { summary, regularRows, aiBreakdownRows, overageRows };
+  return { summary, regularRows, aiBreakdownRows, appsRows, overageRows };
 }
 
 // ── Exposed helpers (tests / other variants) ─────────────────────────

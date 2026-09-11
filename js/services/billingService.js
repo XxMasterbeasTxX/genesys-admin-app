@@ -23,9 +23,57 @@
  * functions is unchanged. See docs/customer-billing-design.md.
  */
 
-import { getTrusteeForOrg } from "../utils/billingTrustees.js";
+import { getTrusteeForOrg, isBillingSimulated } from "../utils/billingTrustees.js";
 import { orgContext } from "./orgContext.js";
 import { withUserToken } from "./apiAuth.js";
+
+/**
+ * The org's named Admin Tool users at the overview's period peak, from
+ * /api/licenses/peak — the app's own row on every billing sheet
+ * (docs/billing-apps-section-design.md). Returned as null, never 0, when it
+ * cannot be read: the processor writes "—" for null and a number for 0, and
+ * those must stay different.
+ *
+ * A customer session's customerId is ignored server-side in favour of the
+ * verified org; sending it is harmless and keeps one call shape.
+ */
+export async function fetchAdminToolUsers(customerId, overview) {
+  const start = overview?.billingPeriodStartDate, end = overview?.billingPeriodEndDate;
+  if (!start || !end) return null;
+  try {
+    const qs = new URLSearchParams({ customerId: customerId || "", start, end });
+    const resp = await fetch(`/api/licenses/peak?${qs}`, { headers: withUserToken({ Accept: "application/json" }) });
+    if (!resp.ok) return null;
+    const body = await resp.json().catch(() => ({}));
+    return typeof body.users === "number" ? body.users : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Attach the Admin Tool count to an overview, so every consumer sees it. */
+async function withAdminToolUsers(customerId, overview) {
+  if (!overview || typeof overview !== "object") return overview;
+  overview.adminToolUsers = await fetchAdminToolUsers(customerId, overview);
+  return overview;
+}
+
+/**
+ * A simulated org's overview, from the server. Internal callers name the
+ * org; a customer session's own org is used regardless. Same shape as the
+ * trustee path, flagged `simulated: true`.
+ */
+async function fetchSimulatedOverview(customerId, billingPeriodIndex) {
+  const qs = new URLSearchParams({ customerId, billingPeriodIndex: String(billingPeriodIndex) });
+  const resp = await fetch(`/api/billing-overview?${qs}`, { headers: withUserToken({ Accept: "application/json" }) });
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const err = new Error(`Simulated billing unavailable (${body.error || resp.status}).`);
+    err.code = body.error || "billing_unavailable"; err.status = resp.status;
+    throw err;
+  }
+  return body;
+}
 
 /**
  * Customer mode: one billing period from the server, read as the trustee.
@@ -45,7 +93,7 @@ async function fetchCustomerOverview(billingPeriodIndex) {
     err.status = resp.status;
     throw err;
   }
-  return body;
+  return withAdminToolUsers(orgContext.get(), body);
 }
 
 /** Plain-language text for the server's billing answers. */
@@ -114,6 +162,9 @@ export async function getTrustorOrgId(api, customerId) {
  */
 export async function fetchBillingOverview(api, trustorCustomerId, billingPeriodIndex) {
   if (orgContext.isCustomer()) return fetchCustomerOverview(billingPeriodIndex);
+  if (isBillingSimulated(trustorCustomerId)) {
+    return withAdminToolUsers(trustorCustomerId, await fetchSimulatedOverview(trustorCustomerId, billingPeriodIndex));
+  }
 
   const trusteeCustomerId = getTrusteeForOrg(trustorCustomerId);
   if (!trusteeCustomerId) {
@@ -126,12 +177,13 @@ export async function fetchBillingOverview(api, trustorCustomerId, billingPeriod
   const trustorOrgId = await getTrustorOrgId(api, trustorCustomerId);
 
   // 2) Trustee → billing overview for that trustor UUID
-  return api.proxyGenesys(
+  const overview = await api.proxyGenesys(
     trusteeCustomerId,
     "GET",
     `/api/v2/billing/trusteebillingoverview/${encodeURIComponent(trustorOrgId)}`,
     { query: { billingPeriodIndex: String(billingPeriodIndex) } }
   );
+  return withAdminToolUsers(trustorCustomerId, overview);
 }
 
 /**
@@ -147,6 +199,9 @@ export async function fetchBillingOverview(api, trustorCustomerId, billingPeriod
  */
 export async function fetchBillingOverviewById(api, trustorCustomerId, trustorOrgId, billingPeriodIndex) {
   if (orgContext.isCustomer()) return fetchCustomerOverview(billingPeriodIndex);
+  if (isBillingSimulated(trustorCustomerId)) {
+    return withAdminToolUsers(trustorCustomerId, await fetchSimulatedOverview(trustorCustomerId, billingPeriodIndex));
+  }
 
   const trusteeCustomerId = getTrusteeForOrg(trustorCustomerId);
   if (!trusteeCustomerId) {
@@ -154,12 +209,13 @@ export async function fetchBillingOverviewById(api, trustorCustomerId, trustorOr
       `${trustorCustomerId} is a trustee organisation itself and cannot be exported as a trustor.`
     );
   }
-  return api.proxyGenesys(
+  const overview = await api.proxyGenesys(
     trusteeCustomerId,
     "GET",
     `/api/v2/billing/trusteebillingoverview/${encodeURIComponent(trustorOrgId)}`,
     { query: { billingPeriodIndex: String(billingPeriodIndex) } }
   );
+  return withAdminToolUsers(trustorCustomerId, overview);
 }
 
 /**
@@ -213,14 +269,17 @@ export async function fetchBillingPeriodsForCalendarYear(api, customerId, calend
     throw new Error(`Invalid calendar year: ${calendarYear}`);
   }
 
-  const trusteeCustomerId = getTrusteeForOrg(customerId);
+  const simulated = orgContext.isCustomer() || isBillingSimulated(customerId);
+  const trusteeCustomerId = simulated ? "simulated" : getTrusteeForOrg(customerId);
   if (!trusteeCustomerId) {
     throw new Error(
       `${customerId} is a trustee organisation itself and cannot be exported as a trustor.`
     );
   }
 
-  const trustorOrgId = await getTrustorOrgId(api, customerId);
+  // A simulated org has no trustor UUID to resolve; fetchBillingOverviewById
+  // ignores the id for it anyway.
+  const trustorOrgId = simulated ? "" : await getTrustorOrgId(api, customerId);
 
   const periods = [];
   const errors  = [];
@@ -395,9 +454,13 @@ export async function fetchBillingPeriods(api, customerId, { force = false } = {
   }
 
   let results;
-  if (orgContext.isCustomer()) {
-    // The server resolves the org and the trustee; nothing to look up here.
-    results = await Promise.allSettled([0, 1, 2, 3].map((i) => fetchCustomerOverview(i)));
+  if (orgContext.isCustomer() || isBillingSimulated(customerId)) {
+    // The server resolves the org and the trustee (or simulates); nothing to look up here.
+    results = await Promise.allSettled([0, 1, 2, 3].map((i) =>
+      orgContext.isCustomer()
+        ? fetchCustomerOverview(i)
+        : fetchSimulatedOverview(customerId, i).then((ov) => withAdminToolUsers(customerId, ov))
+    ));
 
     // A permanent answer for the org — no trustee, no permission — comes back
     // on every index alike. Surface it once as the error it is, rather than

@@ -495,6 +495,14 @@ never from a request field:
      answers the billing rule (peak within a period, Genesys-style). Design, gate, page and the
      twenty-case pass: [customer-user-licensing-design.md](customer-user-licensing-design.md).
 
+   - 5j: **Apps section on every billing sheet** — `Admin Tool`, the org's named users at the
+     period's peak, in Actual Usage and On-Demand, and under Overage when above zero; one row in the
+     processor and block writer (client and server mirror), so all six pages and the three scheduled
+     exports carry it. `/api/licenses/peak` serves the count (a customer only ever its own). Test IE,
+     which has no trustee, is served a synthetic overview when `BILLING_SIMULATION_ORGS` names it — the
+     Genesys figures are made up and say so, the Admin Tool count is real. Design and the fifteen-case
+     pass: [billing-apps-section-design.md](billing-apps-section-design.md).
+
 6. **Data-store isolation** (§10). **[DONE — validated on dev 2026-07-17]**
    - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
      from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or
