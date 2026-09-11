@@ -22,25 +22,8 @@ const {
   buildCalendarYearWorkbook,
 } = require("../billingWorkbook");
 
-// ── Billing trustee mapping (mirror of js/utils/billingTrustees.js) ──
-const BILLING_ORG_TRUSTEE_MAP = {
-  "demo":        null,        // trustee — not exportable
-  "test-ie":     null,        // trustee — not exportable
-  "dktv":        "test-ie",
-  "nuuday-test": "test-ie",
-};
-const DEFAULT_TRUSTEE_ID = "demo";
-
-function getTrusteeForOrg(customerId) {
-  if (customerId in BILLING_ORG_TRUSTEE_MAP) return BILLING_ORG_TRUSTEE_MAP[customerId];
-  return DEFAULT_TRUSTEE_ID;
-}
-function isTrusteeOrg(customerId) {
-  return BILLING_ORG_TRUSTEE_MAP[customerId] === null;
-}
-function filterBillableCustomers(list) {
-  return (list || []).filter((c) => !isTrusteeOrg(c.id));
-}
+// ── Billing trustee lookup — one source, customers.json ─────────────
+const { getTrusteeForOrg, filterBillableCustomers } = require("../billingTrustees");
 
 // ── Genesys API wrapper (per-customer credentials) ───────────────────
 

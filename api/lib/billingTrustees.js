@@ -1,29 +1,29 @@
 /**
- * Billing trustee map, server-side.
+ * Billing trustee lookup, server-side — read from customers.json.
  *
  * Trustee orgs hold the client credentials that may call
  * `/api/v2/billing/trusteebillingoverview/{trustorOrgId}` on behalf of the
- * orgs they have a trust relationship with. The map answers "as which org do
- * we read this customer's billing?".
+ * orgs they have a trust relationship with. Each row in customers.json names
+ * the trustee this app reads that org's billing as, in `billingTrustee`:
  *
- * The same table lives in js/utils/billingTrustees.js and is copied into the
- * three scheduled billing exports under ./exports. This module is the one the
- * customer billing endpoint reads (docs/customer-billing-design.md §3.1); the
- * exports are deliberately left on their own copies for now — re-pointing a
- * scheduled job is a separate change. Keep the five in step until then.
+ *   "demo"      — Netdesign DE reads it (the common case)
+ *   "test-ie"   — Test IE reads it (dktv, nuuday-test)
+ *   null        — nobody can: the org is itself a trustee, not a trustor
  *
- * `null` means the org is itself a trustee and has no trustee this app can act
- * as, so its billing cannot be read here. Test IE is such an org: Netdesign DE
- * is not its trustee (confirmed 2026-09-11), so on Test IE the customer path
- * answers `no_trustee` — correctly, and by design (§7 of the design).
+ * This used to be a four-entry table copied into five files (this one, the
+ * client's js/utils/billingTrustees.js, and the three scheduled billing
+ * exports) with "unlisted means demo" implied in each. Now the row is the
+ * truth: the exports require this module, and the browser receives the field
+ * with the customer list, so adding a billable customer is one row in
+ * customers.json and nothing else.
+ *
+ * A slug with no row keeps the old default of "demo". That is deliberate: a
+ * customer can exist in CUSTOMER_REGISTRY_JSON without a customers.json row,
+ * and the customer billing endpoint used to resolve such an org to Netdesign.
+ * Every org that IS in customers.json carries the field explicitly, so the
+ * default is only ever exercised for orgs the file does not know.
  */
-const BILLING_ORG_TRUSTEE_MAP = {
-  "demo":        null,        // trustee — not a trustor
-  "test-ie":     null,        // trustee — not a trustor
-  "dktv":        "test-ie",
-  "nuuday-test": "test-ie",
-  // All other customers default to "demo"
-};
+const customers = require("./customers.json");
 
 const DEFAULT_TRUSTEE_ID = "demo";
 
@@ -34,10 +34,22 @@ const DEFAULT_TRUSTEE_ID = "demo";
  * @returns {string|null}
  */
 function trusteeFor(customerId) {
-  if (Object.prototype.hasOwnProperty.call(BILLING_ORG_TRUSTEE_MAP, customerId)) {
-    return BILLING_ORG_TRUSTEE_MAP[customerId];
-  }
+  const row = customers.find((c) => c.id === customerId);
+  if (row && Object.prototype.hasOwnProperty.call(row, "billingTrustee")) return row.billingTrustee;
   return DEFAULT_TRUSTEE_ID;
 }
 
-module.exports = { BILLING_ORG_TRUSTEE_MAP, trusteeFor };
+/** Same lookup under the name the scheduled exports have always used. */
+const getTrusteeForOrg = trusteeFor;
+
+/** True if the org is itself a trustee — nobody reads its billing here. */
+function isTrusteeOrg(customerId) {
+  return trusteeFor(customerId) === null;
+}
+
+/** The customer list without the trustee orgs. Each item needs an `id`. */
+function filterBillableCustomers(list) {
+  return (list || []).filter((c) => !isTrusteeOrg(c.id));
+}
+
+module.exports = { trusteeFor, getTrusteeForOrg, isTrusteeOrg, filterBillableCustomers, DEFAULT_TRUSTEE_ID };

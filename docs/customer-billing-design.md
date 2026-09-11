@@ -76,15 +76,25 @@ in Genesys Admin.*
 
 ### 3.1 `api/lib/billingTrustees.js` (new)
 
-The trustee map, server-side, in one place. Today it is copied into three
-export files (`billingSingleOrg.js`, `billingCalendarYear.js`,
-`billingAllOrgsLatest.js`) and `js/utils/billingTrustees.js`. The new endpoint
-uses this module. The three exports are **not** re-pointed in this change —
-that is a separate tidy-up and touching scheduled exports for a demo is the
-wrong trade.
+The trustee lookup, server-side. As first shipped it held its own copy of the
+four-entry table, making five copies in all (this, the client's
+`js/utils/billingTrustees.js`, and the three scheduled exports). **Consolidated
+2026-09-11:** the truth is now one field per row in `api/lib/customers.json`,
+`billingTrustee` — a trustee slug, or `null` when the org is itself a trustee.
+This module derives `trusteeFor()` from that file; the three exports `require`
+it and their inline tables are gone; org-config and `/api/customers` send the
+field to the browser, and the client module answers from the customer list
+instead of a table of its own. Adding a billable customer is one row.
 
-`trusteeFor(customerId)` → trustee slug, `null` when the org has no trustee
-this app can act as. The map's semantics stay: unlisted → `"demo"`.
+A slug with no row keeps the old default of `"demo"`, deliberately: a
+registry-only customer (in `CUSTOMER_REGISTRY_JSON`, not yet in
+`customers.json`) resolved to Netdesign before and still does. Every org that
+is in the file carries the field explicitly.
+
+Verified by an equivalence pass: for every slug in `customers.json` plus
+unknown slugs, the new server lookup, the three exports through it, and the
+client module reading the sent list all return exactly what the old table
+returned — `trusteeFor`, `isTrusteeOrg` and `filterBillableCustomers` alike.
 
 ### 3.2 `api/lib/billingOverview.js` (new)
 
