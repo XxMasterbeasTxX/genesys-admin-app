@@ -102,9 +102,6 @@ const ENRICH_CONCURRENCY = 5;
  */
 const MAX_INTERVAL_DAYS = 31;
 
-/** Rows drawn at once. Past this the table stops being readable anyway. */
-const MAX_TABLE_ROWS = 500;
-
 const STATUS_FILTERS = [
   { key: "all", label: "All" },
   { key: "complete", label: "✅ Completed" },
@@ -305,6 +302,23 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           <div class="dq-table-wrap has-filters" data-c="rowsWrap">
             <table class="dq-table" data-c="rows"></table>
           </div>
+          <div class="dq-foot" data-c="rowsFoot" hidden>
+            <span class="dq-foot-count" data-c="rowsCount"></span>
+            <span class="dq-foot-pager">
+              <button class="btn btn-sm" data-c="rowsPrev">Previous</button>
+              <span class="dq-detail-page" data-c="rowsPage"></span>
+              <button class="btn btn-sm" data-c="rowsNext">Next</button>
+            </span>
+            <label class="dq-foot-size">
+              Rows per page
+              <select class="input" data-c="rowsSize">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
+            </label>
+          </div>
           <div class="dq-panel-note" data-c="tableNote" hidden></div>
         </div>
       </div>
@@ -355,6 +369,54 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   let agentCheckedOnly = false;
   let detachFilters = null;
   let openRowId = null;            // the interaction whose detail is showing
+
+  /**
+   * Paging over the rows already drawn - fifty by default, as everywhere else.
+   *
+   * UNLIKE Evaluation Gaps, this table is redrawn every few conversations while
+   * enrichment runs, so the page the reader is on has to SURVIVE a redraw:
+   * showRowsPage clamps rather than resets, and only a change of filter or a
+   * new load sends it back to page one. Otherwise nobody could read page three
+   * until the whole run had finished.
+   */
+  let rowsSize = 50;
+  let rowsPage = 1;
+  let rowsVisible = [];
+
+  function showRowsPage() {
+    const total = rowsVisible.length;
+    const pages = Math.max(Math.ceil(total / rowsSize), 1);
+    if (rowsPage > pages) rowsPage = pages;
+    const start = (rowsPage - 1) * rowsSize;
+
+    rowsVisible.forEach((tr, i) => {
+      tr.style.display = i >= start && i < start + rowsSize ? "" : "none";
+    });
+
+    const shown = Math.min(rowsSize, Math.max(total - start, 0));
+    $("rowsFoot").hidden = !total;
+    $("rowsCount").textContent = total
+      ? `Showing ${shown.toLocaleString()} of ${total.toLocaleString()}`
+      : "Nothing matches these filters";
+    $("rowsPage").textContent = `Page ${rowsPage} of ${pages}`;
+    $("rowsPrev").disabled = rowsPage <= 1;
+    $("rowsNext").disabled = rowsPage >= pages;
+  }
+
+  $("rowsPrev").addEventListener("click", () => {
+    if (rowsPage <= 1) return;
+    rowsPage -= 1;
+    showRowsPage();
+  });
+  $("rowsNext").addEventListener("click", () => {
+    rowsPage += 1;
+    showRowsPage();
+  });
+  $("rowsSize").addEventListener("change", () => {
+    rowsSize = Number($("rowsSize").value) || 50;
+    rowsPage = 1;
+    showRowsPage();
+  });
   let abort = null;                // aborts an in-flight load/enrichment
 
   /** Bumped by every new load, so a stale run cannot write into fresh state. */
@@ -661,6 +723,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     truncated = false;
     statusFilter = "all";
     agentCheckedOnly = false;
+    rowsPage = 1;
     $results.hidden = true;
     $("export").hidden = true;
     openRowId = null;
@@ -985,6 +1048,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
         if (b.tagName !== "BUTTON" || b.dataset.toggle === "agent") continue;
         b.classList.toggle("is-active", b === btn);
       }
+      rowsPage = 1;
       drawAll();
     });
     $("statusFilters").append(btn);
@@ -1005,6 +1069,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     btn.addEventListener("click", () => {
       agentCheckedOnly = !agentCheckedOnly;
       btn.classList.toggle("is-active", agentCheckedOnly);
+      rowsPage = 1;
       drawAll();
     });
     $("statusFilters").append(btn);
@@ -1117,7 +1182,6 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
   function drawTable() {
     const visible = rows.filter(passes);
-    const shown = visible.slice(0, MAX_TABLE_ROWS);
     const $t = $("rows");
 
     detachFilters?.();
@@ -1126,6 +1190,8 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
     if (!visible.length) {
       $t.innerHTML = "";
+      rowsVisible = [];
+      $("rowsFoot").hidden = true;
       $("tableNote").textContent = "No interactions match these filters.";
       $("tableNote").hidden = false;
       return;
@@ -1135,7 +1201,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       "<thead><tr><th>Time</th><th>Agent</th><th>Queue</th><th>Copilot</th>"
       + '<th>Media</th><th class="is-num">Duration</th><th>Checklist</th>'
       + '<th>Wrapup</th><th class="is-num">Checked</th><th>Status</th></tr></thead>'
-      + `<tbody>${shown.map((r) => {
+      + `<tbody>${visible.map((r) => {
         const info = enriched.get(r.conversationId);
         const names = info?.checklists?.length
           ? [...new Set(info.checklists.map((c) => c.name || "Checklist"))].join(", ")
@@ -1165,14 +1231,15 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       numericCols: [5, 8],
       rangeCols: [5, 8],
       dateCols: [0],
+      // A column filter narrows the set being paged and lands on page one.
+      onChange: (visible) => { rowsVisible = visible; rowsPage = 1; showRowsPage(); },
     });
 
-    if (visible.length > shown.length) {
-      $("tableNote").textContent =
-        `Showing the first ${shown.length.toLocaleString()} of `
-        + `${visible.length.toLocaleString()}. Narrow the filters or the date range.`;
-      $("tableNote").hidden = false;
-    }
+    // Every row that passed the status filters, in the order drawn. The column
+    // filters narrow this through onChange above. The page is NOT reset here:
+    // this runs on every enrichment batch, and the reader may be on page four.
+    rowsVisible = Array.from($t.querySelectorAll("tbody tr"));
+    showRowsPage();
   }
 
   // One listener for the life of the page rather than one per redraw: the table

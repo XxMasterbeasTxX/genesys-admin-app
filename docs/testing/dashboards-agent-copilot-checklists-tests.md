@@ -80,7 +80,11 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 4.7e | Filter Checked | A FROM/TO range on the percentage, so "under 50%" is one filter | | |
 | 4.7f | No checklist, or no items | Reads `—`, never `0/0` | | |
 | 4.7g | Export | Two numeric columns, **Ticked** and **Items**, so Excel can compute with them | | |
-| 4.8 | More than 500 matching rows | First 500 shown, with a note saying so and what to do | | |
+| 4.8 | ★ More than 500 matching rows | **Every** row is reachable through the pager, 50 per page by default. Nothing is cut off | | |
+| 4.8a | ★ Go to page 3 **while enrichment is still running** | You stay on page 3 as batches land. The redraw every few conversations must not bounce you back to page 1 | | |
+| 4.8b | Click a status filter, or Agent Checked, while on page 3 | Back to page 1 — a filter changes the set being paged | | |
+| 4.8c | Apply a column filter while paged | Applies to **all** rows, not the 50 on screen; lands on page 1 | | |
+| 4.8d | Sort while paged | Reorders the whole set, not the visible page | | |
 
 ## 5. Status — the part most likely to be subtly wrong ★
 
