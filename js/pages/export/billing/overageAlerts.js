@@ -101,7 +101,7 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
 
         <div class="oa-row">
           <label class="oa-field">Recipients (comma-separated)
-            <input type="text" id="oaRecipients" value="${escapeHtml(me?.email || "")}">
+            <input type="text" id="oaRecipients" placeholder="name@company.com, other@company.com">
           </label>
         </div>
 

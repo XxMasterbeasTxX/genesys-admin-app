@@ -53,8 +53,8 @@ runs at midnight. The mail says what is over, by how much.
     it stays over; the handler remembers last run's state per item on the
     schedule. A lost mail is not repeated in this mode; the mode says so on the
     form.
-- **Recipients: the existing free-text list** (`emailRecipients`), defaulting
-  to the creator. The custom-message field is **not** offered on this form —
+- **Recipients: the existing free-text list** (`emailRecipients`), empty by
+  default — the creator types who gets the mail (no autofill, at your request). The custom-message field is **not** offered on this form —
   the runner lets a custom message replace the handler's body, and for an
   alert the body *is* the information.
 - **Mail only when there is something to say.** A run with nothing in overage
@@ -84,7 +84,7 @@ current period once (index 0, the same path the pages use) and shows:
 - **Frequency** — Daily / Weekly, and a weekday for weekly.
 - **Notify** — *Every run while in overage* / *Only when an item enters
   overage*.
-- **Recipients** — free text, prefilled with the creator's e-mail.
+- **Recipients** — free text, empty; required before Create.
 - **Create** — a confirmation lists what will be watched, when, and who gets
   mail.
 
