@@ -46,6 +46,8 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
       .oa-item .oa-thr input { width:64px; padding:3px 6px; background:var(--panel-2,rgba(255,255,255,.04)); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; }
       .oa-row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
       .oa-field { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
+      .oa-field[hidden], .oa-card[hidden] { display:none; }
+      .oa-toolbar { margin-bottom:14px; }
       .oa-field select, .oa-field input[type=text] { padding:6px 10px; background:var(--panel-2,rgba(255,255,255,.04)); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; }
       .oa-field input[type=text] { min-width:320px; }
       .oa-mode { display:flex; flex-direction:column; gap:6px; font-size:13px; margin-bottom:12px; }
@@ -70,6 +72,10 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
       </div>
 
       <div id="oaStatus" class="cs-status"></div>
+
+      <div class="oa-toolbar" id="oaToolbar" hidden>
+        <button type="button" class="btn" id="oaOpenBtn">Create Alert</button>
+      </div>
 
       <div class="oa-card" id="oaCreate" hidden>
         <h2>Create an alert</h2>
@@ -106,6 +112,7 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
         </div>
 
         <button type="button" class="btn" id="oaCreateBtn" disabled>Create alert</button>
+        <button type="button" class="btn btn-secondary" id="oaCancelBtn">Cancel</button>
       </div>
 
       <div class="oa-card" id="oaListCard" hidden>
@@ -119,6 +126,7 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
   const $orgName = $("oaOrgName"), $status = $("oaStatus"), $create = $("oaCreate"), $items = $("oaItems");
   const $freq = $("oaFreq"), $dayWrap = $("oaDayWrap"), $day = $("oaDay"), $recipients = $("oaRecipients");
   const $createBtn = $("oaCreateBtn"), $listCard = $("oaListCard"), $listOrg = $("oaListOrg"), $list = $("oaList");
+  const $toolbar = $("oaToolbar"), $openBtn = $("oaOpenBtn"), $cancelBtn = $("oaCancelBtn");
   const setStatus = makeStatus($status, "cs-status");
 
   let currentOrg = null;
@@ -126,6 +134,18 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
   let alerts     = [];
 
   $freq.addEventListener("change", () => { $dayWrap.hidden = $freq.value !== "weekly"; });
+
+  function resetForm() {
+    for (const cb of $items.querySelectorAll("input[type=checkbox]")) cb.checked = false;
+    $freq.value = "daily"; $dayWrap.hidden = true;
+    const always = el.querySelector("input[name=oaMode][value=always]"); if (always) always.checked = true;
+    $recipients.value = "";
+    updateCreateBtn();
+  }
+  function openForm()  { resetForm(); $create.hidden = false; $toolbar.hidden = true; }
+  function closeForm() { $create.hidden = true; $toolbar.hidden = candidates.length === 0; }
+  $openBtn.addEventListener("click", openForm);
+  $cancelBtn.addEventListener("click", closeForm);
 
   // ── What can be watched: whatever the current period contains ─────────
 
@@ -182,12 +202,13 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
       const n = processed.summary.adminToolUsers;
       candidates.push({ kind: "adminTool", label: "Admin Tool", over: false, current: typeof n === "number" ? n : 0 });
       renderItems();
-      $create.hidden = false;
+      $create.hidden = true;
+      $toolbar.hidden = candidates.length === 0;
       const simNote = overview && overview.simulated ? "Simulated billing data — the Genesys figures are not real; the Admin Tool count is. " : "";
       setStatus(`${simNote}Current period: ${processed.summary.startDate} to ${processed.summary.endDate}.`, simNote ? "warn" : "");
     } catch (err) {
       candidates = [];
-      $create.hidden = true;
+      $create.hidden = true; $toolbar.hidden = true;
       setStatus(isPermanentBillingState(err) ? err.message : `Could not read the current billing period: ${err.message || err}`, isPermanentBillingState(err) ? "warn" : "error");
     }
   }
@@ -276,8 +297,7 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
       logAction({ me, orgId: currentOrg.id, orgName: currentOrg.name, action: "billing.overageAlert.create",
         description: `Created overage alert for '${currentOrg.name}': ${describeItems(items)} (${freq}, ${mode})` });
       setStatus("Alert created.", "ok");
-      for (const cb of $items.querySelectorAll("input[type=checkbox]")) cb.checked = false;
-      updateCreateBtn();
+      closeForm();
       await loadAlerts();
     } catch (err) {
       setStatus(`Could not create the alert: ${err.message || err}`, "error");
@@ -306,12 +326,12 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
     candidates = []; alerts = [];
     if (!currentOrg) {
       $orgName.textContent = "Select a customer org in the header.";
-      $create.hidden = true; $listCard.hidden = true; setStatus("");
+      $create.hidden = true; $toolbar.hidden = true; $listCard.hidden = true; setStatus("");
       return;
     }
     $orgName.textContent = currentOrg.name;
     if (!orgContext.isCustomer() && isTrusteeOrg(currentOrg.id)) {
-      $create.hidden = true; $listCard.hidden = true;
+      $create.hidden = true; $toolbar.hidden = true; $listCard.hidden = true;
       setStatus(`${currentOrg.name} is a trustee organisation and has no billing to watch.`, "warn");
       return;
     }
