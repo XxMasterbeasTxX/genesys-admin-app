@@ -1,46 +1,22 @@
 /**
- * Billing trustee configuration.
+ * Billing trustee lookup, client-side — read from the customer list.
  *
- * Ported verbatim from the Python project's GUI_config.py:
- *   - BILLING_TRUSTEE_ORGS
- *   - BILLING_ORG_TRUSTEE_MAP
- *   - get_trustee_for_org()
+ * Trustee orgs hold the credentials used to call
+ * `/api/v2/billing/trusteebillingoverview/{trustorOrgId}` on behalf of the
+ * orgs they have a trust relationship with. Which org reads a customer's
+ * billing is a fact about the customer, and it arrives with the customer:
+ * every entry the server sends (`/api/customers`, org-config) carries
+ * `billingTrustee` — a trustee slug, or `null` when the org is itself a
+ * trustee and nobody reads its billing here.
  *
- * Trustee orgs hold the credentials used to call the
- * `/api/v2/billing/trusteebillingoverview/{trustorOrgId}` endpoint on
- * behalf of other (trustor) orgs they have a trust relationship with.
- *
- * Customer-id slugs used here match `api/lib/customers.json`.
- *
- * The server holds the same table in api/lib/billingTrustees.js (read by the
- * customer billing endpoint) and the three scheduled billing exports carry
- * copies. Keep them in step.
+ * The truth lives in one place, api/lib/customers.json. This module used to
+ * hold a copy of the table; the copy is gone, and these three functions
+ * answer from `orgContext.getCustomers()` instead, so the pages that import
+ * them are unchanged.
  */
+import { orgContext } from "../services/orgContext.js";
 
-/** Trustee orgs (have credentials, perform the API calls). */
-export const BILLING_TRUSTEE_ORGS = {
-  "demo": {
-    description: "Netdesign DE — Primary trustee organization",
-  },
-  "test-ie": {
-    description: "Test IE — Secondary trustee organization",
-  },
-};
-
-/**
- * Org-to-trustee mapping (customer-id keyed).
- * If an org is not listed, it defaults to "demo".
- * A value of `null` means the org IS a trustee and should NOT be exported.
- */
-export const BILLING_ORG_TRUSTEE_MAP = {
-  "demo":        null,        // trustee — not exportable as trustor
-  "test-ie":     null,        // trustee — not exportable as trustor
-  "dktv":        "test-ie",
-  "nuuday-test": "test-ie",
-  // All other customers default to "demo"
-};
-
-/** Default trustee when an org has no explicit mapping. */
+/** What the server assumes for an org it has no row for. */
 const DEFAULT_TRUSTEE_ID = "demo";
 
 /**
@@ -51,9 +27,8 @@ const DEFAULT_TRUSTEE_ID = "demo";
  * @returns {string|null} trustee customer-id, or null if not exportable
  */
 export function getTrusteeForOrg(customerId) {
-  if (customerId in BILLING_ORG_TRUSTEE_MAP) {
-    return BILLING_ORG_TRUSTEE_MAP[customerId];
-  }
+  const c = (orgContext.getCustomers() || []).find((x) => x && x.id === customerId);
+  if (c && Object.prototype.hasOwnProperty.call(c, "billingTrustee")) return c.billingTrustee;
   return DEFAULT_TRUSTEE_ID;
 }
 
@@ -62,7 +37,7 @@ export function getTrusteeForOrg(customerId) {
  * as a trustor — it would be self-referential).
  */
 export function isTrusteeOrg(customerId) {
-  return customerId in BILLING_TRUSTEE_ORGS;
+  return getTrusteeForOrg(customerId) === null;
 }
 
 /**

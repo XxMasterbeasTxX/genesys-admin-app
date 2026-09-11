@@ -46,6 +46,11 @@ In the **customer's** Genesys Cloud org (Admin → Integrations → OAuth → Ad
 1. **Org GUID** — from the customer org: `GET /api/v2/organizations/me` → `id` (or Admin → Organization Settings).
 2. **Region** — the customer's Genesys region host, e.g. `mypurecloud.de`, `mypurecloud.ie`, `mypurecloud.com`.
 3. **Slug** — a short id you choose for the URL/registry (e.g. `acme`). Lowercase, no spaces.
+4. **Billing trustee** — if the customer should see Billing Period / Period Comparison, add a row to
+   `api/lib/customers.json` with `"billingTrustee"` set to the org that is their trustee in Genesys
+   (`"demo"` for Netdesign DE). Without a row the app assumes `"demo"`; set `null` for an org nobody
+   reads billing for. This one field is the only place the trustee is recorded — the scheduled billing
+   exports and the browser both read it from here.
 
 ---
 
@@ -72,7 +77,7 @@ entry (Step 4) — the backend expands them into access-key prefixes automatical
 >
 > **Billing pages need a trust relationship.** Export › Billing › Billing Period and Period Comparison show
 > a customer their own overage by reading the trustee billing overview *as Netdesign*. They work only for
-> orgs where Netdesign DE (or the mapped trustee in `api/lib/billingTrustees.js`) is a trustee, and only
+> orgs where Netdesign DE (or the trustee named in the org's `billingTrustee` row in `api/lib/customers.json`) is a trustee, and only
 > for users holding `billing:subscription:view` in their own org. An org with no trustee sees "Billing is
 > not available for this organisation through this app" — Test IE is one.
 >

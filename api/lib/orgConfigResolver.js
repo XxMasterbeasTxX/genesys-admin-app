@@ -1,6 +1,7 @@
 const customers = require("./customers.json");
 const crypto = require("crypto");
 const { expandPackages } = require("./packages");
+const { trusteeFor } = require("./billingTrustees");
 
 const DEFAULT_REGION = process.env.GENESYS_HOME_REGION || "mypurecloud.de";
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim().toLowerCase();
@@ -253,7 +254,7 @@ async function classifyCaller(context, token, hintId) {
         ? {
             mode: "customer",
             org: homeOrg,
-            customer: { id: matched.id, name: matched.name, region: matched.region },
+            customer: { id: matched.id, name: matched.name, region: matched.region, billingTrustee: trusteeFor(matched.id) },
             entitlements: matched.entitlements,
           }
         : { mode: "unrecognized", org: homeOrg };
@@ -276,7 +277,7 @@ async function classifyCaller(context, token, hintId) {
       ? {
           mode: "customer",
           org: custOrg,
-          customer: { id: hintEntry.id, name: hintEntry.name, region: hintEntry.region },
+          customer: { id: hintEntry.id, name: hintEntry.name, region: hintEntry.region, billingTrustee: trusteeFor(hintEntry.id) },
           entitlements: hintEntry.entitlements,
         }
       : { mode: "org_mismatch", org: custOrg };
@@ -323,7 +324,9 @@ async function resolveOrgConfig(context, req) {
     return { status: 401, body: { error: "missing_token" } };
   }
 
-  const safeCustomers = customers.map(({ id, name, region }) => ({ id, name, region }));
+  // billingTrustee: which org reads this one's billing (null: none). The
+  // browser's billing pages take it from here — there is no client-side table.
+  const safeCustomers = customers.map(({ id, name, region }) => ({ id, name, region, billingTrustee: trusteeFor(id) }));
 
   const classification = await classifyCaller(context, accessToken, orgHint);
 

@@ -1,4 +1,5 @@
 const customers = require("../lib/customers.json");
+const { DEFAULT_TRUSTEE_ID } = require("../lib/billingTrustees");
 const { getCallerContext } = require("../lib/callerContext");
 
 /**
@@ -33,11 +34,14 @@ module.exports = async function (context, req) {
     return;
   }
 
-  // Return only safe metadata (id, name, region) — never secrets
-  const safeList = customers.map(({ id, name, region }) => ({
+  // Return only safe metadata — never secrets. billingTrustee names which
+  // org reads this one's billing (null: none); the browser's billing pages
+  // read it from here rather than from a table of their own.
+  const safeList = customers.map(({ id, name, region, billingTrustee }) => ({
     id,
     name,
     region,
+    billingTrustee: billingTrustee === undefined ? DEFAULT_TRUSTEE_ID : billingTrustee,
   }));
 
   context.res = json(200, safeList);
