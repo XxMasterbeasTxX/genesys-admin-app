@@ -476,6 +476,17 @@ never from a request field:
      the ten-case pass: [customer-permission-refinement-design.md](customer-permission-refinement-design.md).
      Also adds the sellable `all` package (§15) for the per-user licensing model.
 
+   - 5h: **Billing Period and Period Comparison for customers** — a customer's own overage, read for
+     them by the server as their trustee through a dedicated `/api/billing-overview`, the org taken from
+     the verified identity and the user's own `billing:subscription:view` enforced server-side. The one
+     deliberate exception to "no client-credential calls for a customer", and the rule it leaves behind:
+     *only through a dedicated endpoint that derives the org from the verified identity, enforces the
+     user's own permission for the equivalent self-service data, and exposes nothing the customer could
+     not see in Genesys Admin.* The proxy still denies `/api/v2/billing` to customers. "Single Org" is now
+     "Billing Period"; Period Comparison follows the header selector. Design, fences and the thirteen-case
+     pass: [customer-billing-design.md](customer-billing-design.md). **Manual verification pending a real
+     customer org** — Netdesign DE is not a trustee of Test IE, so Test IE shows the `no_trustee` state.
+
 6. **Data-store isolation** (§10). **[DONE — validated on dev 2026-07-17]**
    - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
      from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or

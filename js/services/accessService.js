@@ -153,9 +153,12 @@ function permGrants(granted, required) {
  *
  * @param {{ hasAccess: (k: string) => boolean,
  *           permList: string[]|null,
- *           isSuper: boolean }} p
+ *           isSuper: boolean,
+ *           sessionMode: "internal"|"customer" }} p
+ *   `sessionMode` selects a read entry's per-mode block where one exists
+ *   (see featurePermissionMap.getReadPermissions).
  */
-function buildRefinedAccess({ hasAccess, permList, isSuper }) {
+function buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode = "internal" }) {
   const permsAvailable = Array.isArray(permList);
   const hasPermission = (perm) => permsAvailable && permList.some((g) => permGrants(g, perm));
 
@@ -186,7 +189,7 @@ function buildRefinedAccess({ hasAccess, permList, isSuper }) {
     // page reads — the client-credentials path means a read here is not the
     // user's own read. See docs/read-permission-gating-design.md.
     if (isReadGated(pageKey)) {
-      const { mode, permissions } = getReadPermissions(pageKey, action);
+      const { mode, permissions } = getReadPermissions(pageKey, action, sessionMode);
       if (!permissions.length) return "allowed";
       if (!permsAvailable) return "denied-no-permission";
       const ok = mode === "all"
@@ -207,7 +210,7 @@ function buildRefinedAccess({ hasAccess, permList, isSuper }) {
       return required.filter((p) => !hasPermission(p));
     }
     if (isReadGated(pageKey)) {
-      const { permissions } = getReadPermissions(pageKey, action);
+      const { permissions } = getReadPermissions(pageKey, action, sessionMode);
       if (!permsAvailable) return permissions;
       return permissions.filter((p) => !hasPermission(p));
     }
@@ -233,7 +236,7 @@ function buildRefinedAccess({ hasAccess, permList, isSuper }) {
     // A read action of a read-gated feature — e.g. the WEM tab of
     // roles.search, which needs the licence permission its siblings do not.
     if (isReadGated(accessKey)) {
-      const { mode, permissions } = getReadPermissions(accessKey, action);
+      const { mode, permissions } = getReadPermissions(accessKey, action, sessionMode);
       if (!permissions.length) return true;
       if (!permsAvailable) return false;
       return mode === "all"
@@ -299,7 +302,7 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
     return keys.has(pageKey);
   }
 
-  const refined = buildRefinedAccess({ hasAccess, permList, isSuper });
+  const refined = buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode: "internal" });
 
   return {
     hasAccess,
@@ -352,7 +355,7 @@ export async function resolveCustomerAccess(entitlements, accessToken, apiBase) 
   }
 
   const permList = accessToken ? await fetchUserPermissions(accessToken, apiBase) : null;
-  const refined = buildRefinedAccess({ hasAccess, permList, isSuper: false });
+  const refined = buildRefinedAccess({ hasAccess, permList, isSuper: false, sessionMode: "customer" });
 
   return {
     hasAccess,
@@ -365,10 +368,10 @@ export async function resolveCustomerAccess(entitlements, accessToken, apiBase) 
 /**
 /**
  * Access keys (or prefixes) that are INTERNAL-ONLY and must never be available in
- * customer mode — cross-org copies, trustee/all-orgs/billing exports, recording
- * exports, and the internal Utilities module (IP Ranges uses client-credentials;
- * Permission Catalog is internal). GDPR is intentionally NOT excluded (open
- * decision O2).
+ * customer mode — cross-org copies, trustee/all-orgs exports, the multi-org and
+ * arbitrary-range billing reports, recording exports, and the internal
+ * Utilities module (IP Ranges uses client-credentials; Permission Catalog is
+ * internal). GDPR is intentionally NOT excluded (open decision O2).
  *
  * `phones.webrtc.delete` is deliberately NOT listed: a customer may have it if
  * their package grants it. Note the consequence — a `phones.*` entitlement
@@ -381,7 +384,15 @@ const CUSTOMER_EXCLUDED_KEYS = [
   "roles.copy.betweenOrgs",
   "export.users.trustee",
   "export.roles.allOrgs",
-  "export.billing",
+  // Billing: the four multi-org / arbitrary-range reports stay internal. Billing
+  // Period and Period Comparison are customer-visible — a customer's own
+  // overage, read for them by the server as their trustee
+  // (docs/customer-billing-design.md). Named individually rather than as the
+  // `export.billing` prefix, because the prefix would hide those two.
+  "export.billing.allOrgsLatest",
+  "export.billing.calendarYear",
+  "export.billing.dateRange",
+  "export.billing.customOrgs",
   "utilities",
   "deployment",
   // Flows is otherwise a customer-suitable module, so a `flows.*` entitlement

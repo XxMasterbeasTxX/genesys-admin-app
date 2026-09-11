@@ -8,11 +8,14 @@
  *   - orgContext.clear()         → deselect
  *   - orgContext.onChange(fn)    → subscribe (returns unsubscribe function)
  *   - orgContext.setCustomers([]) → populate available customers list
+ *   - orgContext.setMode(m)      → "internal" | "customer", set once on boot
+ *   - orgContext.isCustomer()    → true in customer mode
  */
 
 const K_SELECTED_ORG = "gc_selected_org";
 const listeners = new Set();
 let customerList = []; // populated from /api/customers on boot
+let sessionMode  = "internal"; // set by app.js from the server's org-config answer
 
 function notify(orgId) {
   for (const fn of listeners) {
@@ -49,6 +52,21 @@ export const orgContext = {
   /** Get the list of all available customers. */
   getCustomers() {
     return customerList;
+  },
+
+  /**
+   * The session mode the server resolved: "internal" or "customer". Set once
+   * by app.js. Services that must take a different path for a customer —
+   * billing reads for them as their trustee, where staff read as the trustee
+   * themselves — branch on this rather than inferring it from the selection.
+   */
+  setMode(mode) {
+    sessionMode = mode === "customer" ? "customer" : "internal";
+  },
+
+  /** True when the session is a customer's. */
+  isCustomer() {
+    return sessionMode === "customer";
   },
 
   /** Populate the available customers (called once on boot). */

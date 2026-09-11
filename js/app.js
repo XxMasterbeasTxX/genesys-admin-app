@@ -213,6 +213,7 @@ function renderSignInGate() {
       isInternalMode = false;
 
       const customer = orgCfg.customer;
+      orgContext.setMode("customer");
       orgContext.setCustomers([customer]);
 
       orgSelectEl.innerHTML =
@@ -224,6 +225,7 @@ function renderSignInGate() {
       access = await resolveAccess(res.accessToken, GROUP_ACCESS, res.me?.id);
 
       const customers = Array.isArray(orgCfg.customers) ? orgCfg.customers : [];
+      orgContext.setMode("internal");
       orgContext.setCustomers(customers);
 
       orgSelectEl.innerHTML = `<option value="">Select customer…</option>`

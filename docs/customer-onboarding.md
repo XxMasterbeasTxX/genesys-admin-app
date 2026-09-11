@@ -70,6 +70,12 @@ entry (Step 4) — the backend expands them into access-key prefixes automatical
 > **never** in a package and are blocked server-side + hidden in customer mode. This holds for `demo`
 > too — the `*` wildcard is applied *before* the customer-exclusion list, so it cannot reach them.
 >
+> **Billing pages need a trust relationship.** Export › Billing › Billing Period and Period Comparison show
+> a customer their own overage by reading the trustee billing overview *as Netdesign*. They work only for
+> orgs where Netdesign DE (or the mapped trustee in `api/lib/billingTrustees.js`) is a trustee, and only
+> for users holding `billing:subscription:view` in their own org. An org with no trustee sees "Billing is
+> not available for this organisation through this app" — Test IE is one.
+>
 > **Which bundle for a paying customer?** `["all"]`, under the current per-user licensing model. The five
 > named packages stay in the catalog as the granular tiers for a later return to selling by package —
 > do not remove them. `demo` grants the same as `all` but is the reference customer's bundle; keep the
