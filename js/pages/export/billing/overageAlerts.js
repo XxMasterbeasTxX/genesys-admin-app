@@ -94,7 +94,7 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
               ${DAYS.map((d, i) => `<option value="${i}"${i === 1 ? " selected" : ""}>${d}</option>`).join("")}
             </select>
           </label>
-          <span class="oa-muted" style="font-size:12px;padding-bottom:8px">Runs at 00:00 (Copenhagen).</span>
+          <span class="oa-muted" style="font-size:12px;padding-bottom:8px">Runs at 00:00 (Copenhagen). A new alert also runs once straight away.</span>
         </div>
 
         <div class="oa-muted" style="font-size:12px;margin-bottom:4px">Notify</div>

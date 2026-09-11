@@ -45,6 +45,11 @@ runs at midnight. The mail says what is over, by how much.
 - **Daily or weekly**, at **00:00** Copenhagen. The time is fixed and not
   shown as editable; weekly takes a weekday. The runner ticks every five
   minutes, so it fires within five minutes of midnight on the chosen days.
+  **A new alert also runs once immediately** — the runner's catch-up rule
+  ("scheduled time already past today, not yet run today") applies to every
+  schedule type, and was kept deliberately (decided 2026-09-11): the creator
+  gets an instant answer to "is anything over right now?", and an alert never
+  silently waits a day. The form says so.
 - **Two notification modes, chosen at creation:**
   - **Every run while in overage** — a daily alert is a daily reminder until
     the overage clears. Stateless.
