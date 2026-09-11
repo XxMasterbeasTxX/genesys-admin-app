@@ -6,6 +6,7 @@ const {
   parseRegistry,
 } = require("../lib/orgConfigResolver");
 const { checkCustomerRequest } = require("../lib/entitlementAllowlist");
+const { checkLicense } = require("../lib/licenseGate");
 
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim();
 const ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -161,6 +162,19 @@ module.exports = async function (context, req) {
     // --- CUSTOMER MODE: token-forwarding, org-locked, guarded ---
     if (classification.mode === "customer") {
       const cust = classification.customer;
+
+      // The named-user gate, before anything else on the customer path: an
+      // unnamed user gets no Genesys call through here, whatever the org
+      // bought (licenseGate.js).
+      const licence = await checkLicense(context, userToken, classification);
+      if (!licence.licensed) {
+        context.res = {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+          body: { error: "user_not_licensed", reason: licence.reason },
+        };
+        return;
+      }
 
       // Never allow a customer session to target another org via the body.
       if (customerId && customerId !== cust.id) {

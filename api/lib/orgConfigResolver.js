@@ -4,6 +4,7 @@ const { expandPackages } = require("./packages");
 const { trusteeFor } = require("./billingTrustees");
 
 const DEFAULT_REGION = process.env.GENESYS_HOME_REGION || "mypurecloud.de";
+const INTERNAL_ORG_SLUG = String(process.env.INTERNAL_ORG_SLUG || "demo").trim();
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim().toLowerCase();
 
 // Cache caller classification per token to avoid an organizations/me call on
@@ -326,7 +327,16 @@ async function resolveOrgConfig(context, req) {
 
   // billingTrustee: which org reads this one's billing (null: none). The
   // browser's billing pages take it from here — there is no client-side table.
-  const safeCustomers = customers.map(({ id, name, region }) => ({ id, name, region, billingTrustee: trusteeFor(id) }));
+  // registered: the org has a registry entry and can sign in as a customer —
+  // the only kind of org that has a licence list (Customers › Access).
+  // internal: the company's own org, whose users are granted by group.
+  const registryIds = new Set(parseRegistry(context).map((e) => e.id));
+  const safeCustomers = customers.map(({ id, name, region }) => ({
+    id, name, region,
+    billingTrustee: trusteeFor(id),
+    registered: registryIds.has(id),
+    internal: id === INTERNAL_ORG_SLUG,
+  }));
 
   const classification = await classifyCaller(context, accessToken, orgHint);
 
@@ -367,10 +377,30 @@ async function resolveOrgConfig(context, req) {
     if (orgHint && orgHint !== classification.customer.id) {
       return { status: 403, body: { error: "org_hint_mismatch" } };
     }
+
+    // The named-user gate. An org being registered admits nobody by itself;
+    // the person must have been named for it (licenseGate.js). Unnamed →
+    // the client renders one screen instead of the shell, and nothing else
+    // on the customer path will answer them either.
+    const { checkLicense } = require("./licenseGate");
+    const licence = await checkLicense(context, accessToken, classification);
+    if (!licence.licensed) {
+      return {
+        status: 200,
+        body: {
+          mode: "customer",
+          licensed: false,
+          reason: licence.reason,
+          customer: { id: classification.customer.id, name: classification.customer.name },
+        },
+      };
+    }
+
     return {
       status: 200,
       body: {
         mode: "customer",
+        licensed: true,
         org: classification.org,
         customer: classification.customer,
         entitlements: classification.entitlements,

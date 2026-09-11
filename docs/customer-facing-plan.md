@@ -487,6 +487,14 @@ never from a request field:
      pass: [customer-billing-design.md](customer-billing-design.md). **Manual verification pending a real
      customer org** — Netdesign DE is not a trustee of Test IE, so Test IE shows the `no_trustee` state.
 
+   - 5i: **Named-user licensing** — customers pay per named user; the list on Customers › Access to
+     Admin Tool (internal, Master Admin only) is the contract, with no seat count to drift from it.
+     A server-side gate in front of everything on the customer path — org-config, every store
+     endpoint, the proxy, billing-overview — refuses anyone not on the list with one screen. Removal
+     is a revocation, not a deletion: rows are billing history, and `peakAssigned(start, end)` already
+     answers the billing rule (peak within a period, Genesys-style). Design, gate, page and the
+     twenty-case pass: [customer-user-licensing-design.md](customer-user-licensing-design.md).
+
 6. **Data-store isolation** (§10). **[DONE — validated on dev 2026-07-17]**
    - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
      from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or

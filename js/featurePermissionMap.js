@@ -158,6 +158,12 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // ── Audit ────────────────────────────────────────────
   "audit.search":              { view: { all: ["audits:audit:view"] } },
 
+  // ── Customers ────────────────────────────────────────
+  // Access to Admin Tool searches the customer's user directory through the
+  // proxy (POST /users/search → directory:user:view). The list itself is the
+  // app's own store and needs no Genesys permission.
+  "customers.access":          { view: ["directory:user:view"] },
+
   // ── Dashboards › Quality ─────────────────────────────
   // Coverage is `all:` because it aggregates two genuinely distinct datasets:
   // the analytics evaluation aggregates, and the agent/evaluator activity

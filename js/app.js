@@ -104,6 +104,38 @@ function renderOrgRecovery() {
   });
 }
 
+/**
+ * Shown to a customer user who has not been named for the app.
+ *
+ * Customers pay per named user, and the server refuses everything on the
+ * customer path for anyone not on the list (licenseGate.js). This is the one
+ * screen they get instead of the shell — no menu, no partial page, no 403s
+ * trickling in from features. The reason is shown only when it is something
+ * the person could act on; "not_assigned" needs no elaboration.
+ */
+function renderNotLicensed(customer, reason) {
+  setHeader({ authText: "Auth: no licence" });
+  const orgSelectEl = document.getElementById("orgSelect");
+  if (orgSelectEl) {
+    orgSelectEl.innerHTML = `<option value="">${escapeHtml(customer?.name || "")}</option>`;
+    orgSelectEl.disabled = true;
+  }
+  // The server caches its verdict per token for five minutes — a person who
+  // was added a moment ago is exactly who reads this, so say how to apply it.
+  const detail = reason === "identity_unavailable"
+    ? "We could not verify who you are just now. Try again in a moment."
+    : reason === "license_check_failed"
+      ? "The licence check is temporarily unavailable. Try again in a moment."
+      : "If access was just added for you, it can take up to five minutes to apply — or sign out and back in to apply it now.";
+  document.getElementById("appMain").innerHTML = `
+    <section class="card">
+      <h1 class="h1">No licence for this app is assigned to you</h1>
+      <p class="p">Ask your administrator to have access added for your user.</p>
+      ${detail ? `<p class="p" style="opacity:0.8;">${escapeHtml(detail)}</p>` : ""}
+    </section>
+  `;
+}
+
 function renderFatalError(message) {
   const outletEl = document.getElementById("appMain");
   outletEl.innerHTML = `
@@ -205,6 +237,13 @@ function renderSignInGate() {
     const orgCfg = await fetchOrgConfig(res.accessToken, res.orgHint);
     // Org context resolved — clear any prior self-heal guard.
     sessionStorage.removeItem(ORGCFG_RETRY_KEY);
+
+    if (orgCfg.mode === "customer" && orgCfg.licensed === false) {
+      // Named-user gate: the org is registered, this person is not on its
+      // list. Stop here — nothing else on the customer path will answer them.
+      renderNotLicensed(orgCfg.customer, orgCfg.reason);
+      return;
+    }
 
     if (orgCfg.mode === "customer" && orgCfg.customer) {
       // Entitlements shape the menu; the user's own permissions, read on THEIR

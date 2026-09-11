@@ -20,6 +20,7 @@
  *      the trustee already, gated by affiliateOrganization:clientBilling:view.
  */
 const { classifyCaller, getBearerToken } = require("../lib/orgConfigResolver");
+const { checkLicense } = require("../lib/licenseGate");
 const { fetchUserPermissions, hasAnyPermission } = require("../lib/userPermissions");
 const { fetchOverviewForCustomer } = require("../lib/billingOverview");
 
@@ -62,6 +63,12 @@ module.exports = async function (context, req) {
       default:
         return json(context, 403, { error: "organization_not_recognized" });
     }
+
+    // The named-user gate. This endpoint classifies for itself rather than
+    // through getCallerContext, so it must ask the gate itself too — an
+    // unnamed user with billing:subscription:view still gets nothing.
+    const licence = await checkLicense(context, token, classification);
+    if (!licence.licensed) return json(context, 403, { error: "user_not_licensed", reason: licence.reason });
 
     // Fence 2: both of these come from the classification, not the request.
     const customerId = classification.customer.id;

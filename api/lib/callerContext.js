@@ -17,6 +17,7 @@
  *     a missing ownerOrgId as INTERNAL_OWNER so existing internal data stays visible.
  */
 const { classifyCaller, identifyCaller, getBearerToken, parseRegistry } = require("./orgConfigResolver");
+const { checkLicense } = require("./licenseGate");
 
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim();
 const INTERNAL_OWNER = "internal";
@@ -114,7 +115,14 @@ async function getCallerContext(context, req, { hintId = null, identify = true }
     case "internal":
     case "fallback":
       return withIdentity({ authorized: true, mode: "internal", configured, customerId: null, ownerOrgId: INTERNAL_OWNER });
-    case "customer":
+    case "customer": {
+      // The named-user gate (licenseGate.js): a customer session whose user
+      // has not been named for the org is refused here, so every store
+      // endpoint inherits it without each having to ask.
+      const licence = await checkLicense(context, token, classification);
+      if (!licence.licensed) {
+        return { authorized: false, status: 403, error: "user_not_licensed", reason: licence.reason, mode: "customer", configured, customerId: classification.customer.id, ownerOrgId: classification.customer.id, ...NO_IDENTITY };
+      }
       return withIdentity({
         authorized: true,
         mode: "customer",
@@ -122,6 +130,7 @@ async function getCallerContext(context, req, { hintId = null, identify = true }
         customerId: classification.customer.id,
         ownerOrgId: classification.customer.id,
       });
+    }
     case "verify_failed":
       return { authorized: false, status: 401, error: "identity_verification_failed", mode: "verify_failed", configured, customerId: null, ownerOrgId: INTERNAL_OWNER, ...NO_IDENTITY };
     case "org_mismatch":
