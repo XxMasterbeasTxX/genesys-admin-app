@@ -62,16 +62,18 @@ entry (Step 4) — the backend expands them into access-key prefixes automatical
 | `user-access` | `users.*`, `roles.*`, `divisions.*` |
 | `configuration` | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
 | `gdpr` | `gdpr.*` (add-on) |
-| `demo` | `*` — every module a customer may hold (**internal demo/eval only, not sellable**) |
+| `all` | `*` — every module a customer may hold. **The current commercial model:** customers buy user licences and get everything, so a paying customer's entry is `["all"]` |
+| `demo` | `*` — same grant as `all`; the reference customer's bundle (**internal, not for paying customers**) |
 
 > Internal-only features (Utilities, Deployment, cross-org copies, trustee/all-orgs/billing exports,
 > recording export jobs) are
 > **never** in a package and are blocked server-side + hidden in customer mode. This holds for `demo`
 > too — the `*` wildcard is applied *before* the customer-exclusion list, so it cannot reach them.
 >
-> ⚠ **`demo` is not a sellable package.** It grants every customer-facing module, including ones no
-> package sells yet, and it will pick up future modules automatically with no review. Use it for the
-> reference customer and sales demos; give paying customers named packages.
+> **Which bundle for a paying customer?** `["all"]`, under the current per-user licensing model. The five
+> named packages stay in the catalog as the granular tiers for a later return to selling by package —
+> do not remove them. `demo` grants the same as `all` but is the reference customer's bundle; keep the
+> two distinct in registry entries so it is always clear which kind of org an entry is.
 > (Advanced: an entry may also include an explicit `entitlements` array of prefixes; it is unioned with
 > the expanded packages. Prefer packages.)
 
@@ -89,7 +91,7 @@ single-line JSON **array**; append your entry to the existing array.
   "orgId": "11111111-2222-3333-4444-555555555555",
   "region": "mypurecloud.de",
   "clientId": "<pkce-client-id-from-step-1>",
-  "packages": ["insights", "gdpr"],
+  "packages": ["all"],
   "enabled": true
 }
 ```

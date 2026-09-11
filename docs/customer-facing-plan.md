@@ -469,6 +469,13 @@ never from a request field:
        Documentation export, which reads `recording/mediaretentionpolicies`. Only `/api/v2/recording/jobs`
        belongs to these pages.
 
+   - 5g: **Permission refinement for customers** — the greying internal users have had since §6 now
+     applies in customer mode too: entitlements decide what is shown, the user's own Genesys permissions
+     decide what is greyed, missing permissions named. One shared builder serves both resolvers, and the
+     permission call goes to the session's region rather than `CONFIG.apiBase`. Design, decisions and
+     the ten-case pass: [customer-permission-refinement-design.md](customer-permission-refinement-design.md).
+     Also adds the sellable `all` package (§15) for the per-user licensing model.
+
 6. **Data-store isolation** (§10). **[DONE — validated on dev 2026-07-17]**
    - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
      from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or
@@ -551,7 +558,9 @@ recording export jobs) are
 | `user-access` | `users.*`, `roles.*`, `divisions.*` |
 | `configuration` | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
 | `gdpr` (add-on) | `gdpr.*` |
-| `demo` (internal, not sellable) | `*` — every module a customer may hold; the customer-exclusion list still applies |
+| `all` (sellable full tier) | `*` — every module a customer may hold; the customer-exclusion list still applies. The current model (2026-09-11): customers buy user licences and get `all` |
+| `demo` (internal, not sellable) | `*` — same grant as `all`; the reference customer's bundle |
 
-A customer's registry entry just lists what they bought, e.g. `"packages": ["insights", "gdpr"]`.
+A customer's registry entry just lists what they bought — today `"packages": ["all"]`; the named
+packages remain so an entry like `["insights", "gdpr"]` works unchanged if selling by package returns.
 See [customer-onboarding.md](customer-onboarding.md) for the full onboarding steps.

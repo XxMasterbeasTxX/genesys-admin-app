@@ -11,10 +11,12 @@ import {
   isReadGated, getReadPermissions,
 } from "../featurePermissionMap.js";
 
-// Feature flag: when true, internal users' WRITE actions are additionally gated
-// by their OWN Genesys permissions in the company org (see docs/customer-facing-plan.md
-// §6). Read-only features are never affected; superusers always bypass. Set to
-// false to disable the permission refinement entirely (group access only).
+// Feature flag: when true, WRITE actions are additionally gated by the user's
+// OWN Genesys permissions — internal users in the company org (see
+// docs/customer-facing-plan.md §6), customers in theirs
+// (docs/customer-permission-refinement-design.md). Read-only features are never
+// affected; superusers always bypass. Set to false to disable the permission
+// refinement entirely on both sides (group / entitlement access only).
 const ENFORCE_PERMISSION_REFINEMENT = true;
 
 /** Fetch the names of all groups the authenticated user belongs to. */
@@ -61,7 +63,12 @@ async function fetchUserGroupNames(accessToken) {
 }
 
 /**
- * Fetch the authenticated user's effective Genesys permissions (company org).
+ * Fetch the authenticated user's effective Genesys permissions.
+ *
+ * `apiBase` defaults to the company org's region. A customer's token is only
+ * valid on THEIR region, so the customer resolver passes the session's base —
+ * asking `.de` about a `.ie` token is a 401, which the fail-closed rule would
+ * turn into every write greyed.
  *
  * Reads BOTH `authorization.permissions` (flat strings, may include wildcards)
  * and `authorization.permissionPolicies` (domain/entityName/actionSet) from the
@@ -71,10 +78,10 @@ async function fetchUserGroupNames(accessToken) {
  * Returns an array of permission strings, or null if the call fails / the
  * authorization block is entirely absent (→ callers fail closed for writes).
  */
-async function fetchUserPermissions(accessToken) {
+async function fetchUserPermissions(accessToken, apiBase = CONFIG.apiBase) {
   const headers = { Authorization: `Bearer ${accessToken}` };
   try {
-    const resp = await fetch(`${CONFIG.apiBase}/api/v2/users/me?expand=authorization`, { headers });
+    const resp = await fetch(`${apiBase}/api/v2/users/me?expand=authorization`, { headers });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       console.error("[accessService] users/me?expand=authorization error:", resp.status, json);
@@ -131,59 +138,27 @@ function permGrants(granted, required) {
 }
 
 /**
- * Resolve the user's access from their group memberships, refined by their own
- * Genesys permissions for WRITE actions (see docs/customer-facing-plan.md §6).
+ * The permission-refinement half of access, shared by both resolvers.
  *
- * @param {string} accessToken   PKCE access token (your own Genesys org).
- * @param {Object} groupAccessMap  GROUP_ACCESS from accessConfig.js.
- * @param {string} [userId]        The authenticated user's Genesys user ID.
- * @returns {Promise<{ hasAccess, hasAnyAccess, accessState, getMissingPermissions }>}
+ * Given a `hasAccess` that already answers "may this session see this page at
+ * all" (groups for internal sessions, entitlements for customers), this layers
+ * the user's OWN Genesys permissions on top: a page the session may see but the
+ * user cannot act on reads `denied-no-permission` — shown greyed with the
+ * missing permissions named — rather than `allowed`. The distinction between
+ * "not your section" (hidden) and "not your permission" (greyed) is drawn here
+ * and nowhere else, which is why there is one builder and not one per resolver.
+ *
+ * Fail-closed throughout: `permList === null` means the permission set could
+ * not be read, and every gated action is then denied rather than assumed.
+ *
+ * @param {{ hasAccess: (k: string) => boolean,
+ *           permList: string[]|null,
+ *           isSuper: boolean }} p
  */
-export async function resolveAccess(accessToken, groupAccessMap, userId) {
-  const isSuper = !!(userId && SUPERUSER_IDS.includes(userId));
-
-  // Fetch groups and permissions in parallel.
-  const [groupNames, permList] = await Promise.all([
-    isSuper ? Promise.resolve([]) : fetchUserGroupNames(accessToken),
-    isSuper ? Promise.resolve(null) : fetchUserPermissions(accessToken),
-  ]);
-
-  // Fail CLOSED. This used to grant every group's access when the lookup
-  // failed, which handed full read access to anyone whose token could not read
-  // its own groups — while the permission gate twelve lines below was already
-  // explicitly fail-closed. Two halves of one function cannot disagree about
-  // which way to fail. The failure is surfaced (see `verificationFailed`) so it
-  // reads as "we could not check" rather than as an empty menu.
-  const groupsFailed = groupNames === null;
-  if (groupsFailed) {
-    console.error("[accessService] Could not fetch groups — denying access until verified.");
-  }
-
+function buildRefinedAccess({ hasAccess, permList, isSuper }) {
   const permsAvailable = Array.isArray(permList);
   const hasPermission = (perm) => permsAvailable && permList.some((g) => permGrants(g, perm));
 
-  const keys = new Set();
-  for (const name of (groupNames || [])) {
-    const granted = groupAccessMap[name];
-    if (Array.isArray(granted)) granted.forEach((k) => keys.add(k));
-  }
-
-  /**
-   * Group-level access check (unchanged semantics).
-   * Checks (in order): *, section.*, section.group.*, exact key.
-   * Falsy pageKey (unprotected page) → true.
-   */
-  function hasAccess(pageKey) {
-    if (!pageKey) return true;
-    if (isSuper) return true;
-    if (groupsFailed) return false;
-    if (keys.has("*")) return true;
-    const parts = pageKey.split(".");
-    for (let i = parts.length - 1; i > 0; i--) {
-      if (keys.has(parts.slice(0, i).join(".") + ".*")) return true;
-    }
-    return keys.has(pageKey);
-  }
 
   /**
    * Refined state for a page key:
@@ -269,12 +244,67 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
     return true;
   }
 
+  return { accessState, getMissingPermissions, can };
+}
+
+/**
+ * Resolve the user's access from their group memberships, refined by their own
+ * Genesys permissions for WRITE actions (see docs/customer-facing-plan.md §6).
+ *
+ * @param {string} accessToken   PKCE access token (your own Genesys org).
+ * @param {Object} groupAccessMap  GROUP_ACCESS from accessConfig.js.
+ * @param {string} [userId]        The authenticated user's Genesys user ID.
+ * @returns {Promise<{ hasAccess, hasAnyAccess, accessState, getMissingPermissions }>}
+ */
+export async function resolveAccess(accessToken, groupAccessMap, userId) {
+  const isSuper = !!(userId && SUPERUSER_IDS.includes(userId));
+
+  // Fetch groups and permissions in parallel.
+  const [groupNames, permList] = await Promise.all([
+    isSuper ? Promise.resolve([]) : fetchUserGroupNames(accessToken),
+    isSuper ? Promise.resolve(null) : fetchUserPermissions(accessToken),
+  ]);
+
+  // Fail CLOSED. This used to grant every group's access when the lookup
+  // failed, which handed full read access to anyone whose token could not read
+  // its own groups — while the permission gate twelve lines below was already
+  // explicitly fail-closed. Two halves of one function cannot disagree about
+  // which way to fail. The failure is surfaced (see `verificationFailed`) so it
+  // reads as "we could not check" rather than as an empty menu.
+  const groupsFailed = groupNames === null;
+  if (groupsFailed) {
+    console.error("[accessService] Could not fetch groups — denying access until verified.");
+  }
+
+  const keys = new Set();
+  for (const name of (groupNames || [])) {
+    const granted = groupAccessMap[name];
+    if (Array.isArray(granted)) granted.forEach((k) => keys.add(k));
+  }
+
+  /**
+   * Group-level access check (unchanged semantics).
+   * Checks (in order): *, section.*, section.group.*, exact key.
+   * Falsy pageKey (unprotected page) → true.
+   */
+  function hasAccess(pageKey) {
+    if (!pageKey) return true;
+    if (isSuper) return true;
+    if (groupsFailed) return false;
+    if (keys.has("*")) return true;
+    const parts = pageKey.split(".");
+    for (let i = parts.length - 1; i > 0; i--) {
+      if (keys.has(parts.slice(0, i).join(".") + ".*")) return true;
+    }
+    return keys.has(pageKey);
+  }
+
+  const refined = buildRefinedAccess({ hasAccess, permList, isSuper });
+
   return {
     hasAccess,
     hasAnyAccess() { return isSuper || keys.size > 0; },
-    accessState,
-    getMissingPermissions,
-    can,
+    ...refined,
     // True when the group lookup failed, so nothing could be verified. Lets the
     // shell say "could not verify your access" instead of showing an empty menu
     // that looks like a permissions decision.
@@ -283,18 +313,28 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
 }
 
 /**
- * Resolve access for a CUSTOMER session from their purchased entitlements.
+ * Resolve access for a CUSTOMER session: entitlements shape the menu, the
+ * user's own permissions refine the actions.
  *
- * Customers are gated purely by their module entitlements (e.g. "interactions.*",
- * "export.users.*", "utilities.ipRanges") — the same wildcard key machinery used
- * for internal group access. There is NO permission refinement: a customer's
- * write actions are governed by their own Genesys role (token-forwarding) and,
- * server-side, by the proxy's org-lock + entitlement guard. Exposes the same
- * interface as resolveAccess() so nav, routing, and pages are unchanged.
+ * Entitlements (e.g. "interactions.*", "export.users.*") decide what the org
+ * has bought and therefore what is SHOWN, through the same wildcard key
+ * machinery as internal group access. What this user may DO within that is
+ * refined from their own Genesys permissions by the shared builder, exactly as
+ * for internal users — so a control they cannot use is greyed with the missing
+ * permission named, instead of erroring after the click. Genesys still enforces
+ * on every forwarded call; this layer only stops the UI lying about it.
+ *
+ * Exposes the same interface as resolveAccess() so nav, routing, and pages are
+ * unchanged.
  *
  * @param {string[]} entitlements  Module access-key prefixes for the customer.
+ * @param {string}   [accessToken] The session token. Omitted (the org-config
+ *                                 fallback path) → no fetch, permissions
+ *                                 unavailable, every gated action fails closed.
+ * @param {string}   [apiBase]     The session's region base. A customer's token
+ *                                 answers only on its own region.
  */
-export function resolveCustomerAccess(entitlements) {
+export async function resolveCustomerAccess(entitlements, accessToken, apiBase) {
   const keys = new Set((entitlements || []).filter((k) => typeof k === "string" && k.trim()));
 
   function hasAccess(pageKey) {
@@ -311,12 +351,13 @@ export function resolveCustomerAccess(entitlements) {
     return keys.has(pageKey);
   }
 
+  const permList = accessToken ? await fetchUserPermissions(accessToken, apiBase) : null;
+  const refined = buildRefinedAccess({ hasAccess, permList, isSuper: false });
+
   return {
     hasAccess,
     hasAnyAccess() { return keys.size > 0; },
-    accessState(pageKey) { return hasAccess(pageKey) ? "allowed" : "hidden"; },
-    getMissingPermissions() { return []; },
-    can() { return true; },
+    ...refined,
     verificationFailed: false,
   };
 }

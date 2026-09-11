@@ -47,6 +47,16 @@ const PACKAGES = {
   // ships, with no review — which is why this is a demo bundle, not a sellable
   // tier. Do not hand it to a paying customer.
   "demo": ["*"],
+
+  // The sellable full tier. Decided 2026-09-11: for now customers buy user
+  // licences and get every customer-facing module, so a paying customer's
+  // registry entry is `["all"]`. Same expansion as `demo` and the same
+  // customer-exclusion list applies — it grants exactly what a customer may
+  // hold. It is a separate name so a registry entry says which it is: `demo`
+  // stays the reference customer's bundle and stays marked internal, and the
+  // five named packages above stay as the granular tiers should selling by
+  // package return.
+  "all": ["*"],
 };
 
 /**

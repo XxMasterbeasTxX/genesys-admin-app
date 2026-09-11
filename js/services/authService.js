@@ -99,6 +99,17 @@ function getLoginRegion() {
   return (sessionStorage.getItem(K_LOGIN_REGION) || "").trim() || CONFIG.region;
 }
 
+/**
+ * The API base the current session's token is valid on — `api.<login region>`.
+ *
+ * Exported for callers outside auth that must ask Genesys about THIS user:
+ * a customer's token answers only on the region it was issued in, and
+ * CONFIG.apiBase is the company org's region, not theirs.
+ */
+export function getSessionApiBase() {
+  return apiBaseFor(getLoginRegion());
+}
+
 /** OAuth client id used for the current session (customer or internal default). */
 function getLoginClientId() {
   return (sessionStorage.getItem(K_LOGIN_CLIENT_ID) || "").trim() || CONFIG.oauthClientId;
