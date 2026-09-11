@@ -28,6 +28,8 @@ function licenseMessage(code, json, status) {
     case "group_required":   return `Only members of "${json.required}" can change who has access.`;
     case "group_unverified": return "Your group membership could not be verified, so this change was not made.";
     case "internal_only":    return "This page is for Netdesign staff.";
+    case "internal_org":     return "This is the internal organisation. Its users are granted access by group, not by licence.";
+    case "not_a_customer":   return "This organisation is not set up as a customer yet — it has no registry entry, so nobody can sign in to it as a customer.";
     default:                 return `The request failed (${code || status}).`;
   }
 }

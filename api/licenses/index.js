@@ -14,7 +14,7 @@
  * VERIFIED identity (from the token, never the body).
  */
 const { getCallerContext } = require("../lib/callerContext");
-const { getBearerToken } = require("../lib/orgConfigResolver");
+const { getBearerToken, parseRegistry } = require("../lib/orgConfigResolver");
 const { fetchUserGroupNames } = require("../lib/userGroups");
 const store = require("../lib/licenseStore");
 const activityLog = require("../lib/activityLogStore");
@@ -22,6 +22,22 @@ const customers = require("../lib/customers.json");
 
 const REQUIRED_GROUP = "Genesys App - Master Admin";
 const HOME_REGION = process.env.GENESYS_HOME_REGION || "mypurecloud.de";
+const INTERNAL_ORG_SLUG = String(process.env.INTERNAL_ORG_SLUG || "demo").trim();
+
+/**
+ * Only an org that can sign in AS A CUSTOMER has a list. The internal org's
+ * users are gated by group membership and never meet the licence gate, so a
+ * name added for it would do nothing but mislead; an org with no registry
+ * entry cannot sign in as a customer at all. Both are refused with a code the
+ * page turns into a sentence.
+ */
+function licensableCustomer(context, customerId) {
+  if (!customerId) return { ok: false, error: "customerId_required" };
+  if (customerId === INTERNAL_ORG_SLUG) return { ok: false, error: "internal_org" };
+  const registry = parseRegistry(context);
+  if (!registry.some((e) => e.id === customerId)) return { ok: false, error: "not_a_customer" };
+  return { ok: true };
+}
 
 function json(context, status, body) {
   context.res = { status, headers: { "Content-Type": "application/json" }, body };
@@ -57,7 +73,8 @@ module.exports = async function (context, req) {
     // ── GET /api/licenses?customerId= ────────────────────────────────────
     if (method === "GET" && !action) {
       const customerId = String((req.query && req.query.customerId) || "").trim();
-      if (!customerId) return json(context, 400, { error: "customerId_required" });
+      const lc = licensableCustomer(context, customerId);
+      if (!lc.ok) return json(context, 400, { error: lc.error });
       const users = await store.listActive(customerId);
       return json(context, 200, { customerId, users });
     }
@@ -66,7 +83,9 @@ module.exports = async function (context, req) {
     if (method === "POST" && action === "assign") {
       const customerId = String(body.customerId || "").trim();
       const userId     = String(body.userId || "").trim();
-      if (!customerId || !userId) return json(context, 400, { error: "customerId_and_userId_required" });
+      const lc = licensableCustomer(context, customerId);
+      if (!lc.ok) return json(context, 400, { error: lc.error });
+      if (!userId) return json(context, 400, { error: "customerId_and_userId_required" });
 
       const result = await store.assign(customerId, { id: userId, email: body.email, name: body.name }, by);
       if (result.created) {
@@ -85,7 +104,9 @@ module.exports = async function (context, req) {
     if (method === "DELETE" && action === "assign") {
       const customerId = String(body.customerId || "").trim();
       const userId     = String(body.userId || "").trim();
-      if (!customerId || !userId) return json(context, 400, { error: "customerId_and_userId_required" });
+      const lc = licensableCustomer(context, customerId);
+      if (!lc.ok) return json(context, 400, { error: lc.error });
+      if (!userId) return json(context, 400, { error: "customerId_and_userId_required" });
 
       const result = await store.revoke(customerId, userId, by);
       if (result.revoked) {

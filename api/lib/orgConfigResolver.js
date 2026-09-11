@@ -4,6 +4,7 @@ const { expandPackages } = require("./packages");
 const { trusteeFor } = require("./billingTrustees");
 
 const DEFAULT_REGION = process.env.GENESYS_HOME_REGION || "mypurecloud.de";
+const INTERNAL_ORG_SLUG = String(process.env.INTERNAL_ORG_SLUG || "demo").trim();
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim().toLowerCase();
 
 // Cache caller classification per token to avoid an organizations/me call on
@@ -326,7 +327,16 @@ async function resolveOrgConfig(context, req) {
 
   // billingTrustee: which org reads this one's billing (null: none). The
   // browser's billing pages take it from here — there is no client-side table.
-  const safeCustomers = customers.map(({ id, name, region }) => ({ id, name, region, billingTrustee: trusteeFor(id) }));
+  // registered: the org has a registry entry and can sign in as a customer —
+  // the only kind of org that has a licence list (Customers › Access).
+  // internal: the company's own org, whose users are granted by group.
+  const registryIds = new Set(parseRegistry(context).map((e) => e.id));
+  const safeCustomers = customers.map(({ id, name, region }) => ({
+    id, name, region,
+    billingTrustee: trusteeFor(id),
+    registered: registryIds.has(id),
+    internal: id === INTERNAL_ORG_SLUG,
+  }));
 
   const classification = await classifyCaller(context, accessToken, orgHint);
 

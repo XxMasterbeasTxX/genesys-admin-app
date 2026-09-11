@@ -250,6 +250,22 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
   $search.addEventListener("blur", () => setTimeout(closeDropdown, 150));
   $search.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDropdown(); });
 
+  /**
+   * Only an org that can sign in as a customer has a list. The internal org's
+   * users are granted by group and never meet the licence gate; an org without
+   * a registry entry cannot sign in as a customer at all. The server refuses
+   * both; this just says so instead of offering a box that would fail.
+   */
+  function notLicensable(org) {
+    if (!org) return null;
+    if (org.internal === true || org.registered === false) {
+      return org.internal
+        ? `${org.name} is the internal organisation. Its users are granted access by group, not by licence — there is nothing to name here.`
+        : `${org.name} is not set up as a customer yet: it has no registry entry, so nobody can sign in to it as a customer. Add the registry entry first (see the onboarding runbook), then name its users here.`;
+    }
+    return null;
+  }
+
   function setOrg(org) {
     currentOrg = org || null;
     closeDropdown();
@@ -263,6 +279,14 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
       return;
     }
     $orgName.textContent = currentOrg.name;
+    const why = notLicensable(currentOrg);
+    if (why) {
+      $add.hidden = true;
+      $count.textContent = "";
+      $list.innerHTML = "";
+      setStatus(why, "warn");
+      return;
+    }
     $add.hidden = false;
     loadList();
   }

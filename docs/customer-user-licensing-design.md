@@ -147,6 +147,17 @@ outside the group calling it directly is refused too.
 | Method | Path | Does |
 | --- | --- | --- |
 | GET | `/api/licenses?customerId=` | `{ users: [...active rows...] }` |
+
+Every method first checks that `customerId` is an org that can sign in as a
+customer: not the internal org (`400 internal_org` — its users are granted by
+group and never meet the gate, so a name there would only mislead) and present
+in the registry (`400 not_a_customer` — otherwise nobody can sign in to it as
+a customer at all). Found on first use: the page offered the box for Demo.
+org-config now sends `internal` and `registered` with each customer, and the
+page says why instead of offering a box that would fail.
+
+| | | |
+| --- | --- | --- |
 | POST | `/api/licenses/assign` `{ customerId, userId, email, name }` | `assign`; `200` with the row, whether new or already active |
 | DELETE | `/api/licenses/assign` `{ customerId, userId }` | `revoke`; `200`; idempotent |
 
@@ -205,12 +216,15 @@ recorded.
 | 18 | `peakAssigned`: one added and revoked inside the period | counts at that moment |
 | 19 | `peakAssigned`: activity entirely before / entirely after the period | not counted |
 | 20 | `peakAssigned`: period boundary at 23:30 UTC on the last day | the add at 23:30 counts; one at 00:30 next day does not |
+| 21 | assign for the internal org | `400 internal_org`, no row |
+| 22 | GET / DELETE for an org with no registry entry | `400 not_a_customer` |
+| 23 | org-config customer list | `internal: true` on Demo, `registered: true` on Test IE, both false on an unregistered org |
 
 Manual, on Test IE: add you and your colleague → both in as before; a third
 Test IE user → the refusal screen; remove one → refused within five minutes;
 add them back → in again.
 
-**Result 2026-09-11:** all twenty pass, plus three extras (the assigner's id
+**Result 2026-09-11:** all twenty-three pass, plus three extras (the assigner's id
 is the verified one, not the body's; the activity-log entry is written; a
 same-second swap never under-counts the peak). Server cases run the real
 endpoint, gate, store, resolver, caller context, proxy and activity log with
