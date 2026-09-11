@@ -21,6 +21,32 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "5.5",
+    date: "2026-09-11",
+    title: "Agent Copilot: how much of the checklist got done, and what was actually said",
+    changes: [
+      "A new Checked column on Checklists & Summaries, between Wrap-up and Status: how many "
+        + "items were ticked out of how many \u2014 4/7, 7/7 \u2014 with a bar beneath that fills "
+        + "green only when every item is done. Hover it for who did the ticking: \u201c4 of 7 "
+        + "ticked \u2014 1 by the agent, 3 by AI\u201d. It sorts by how far from done and can be "
+        + "filtered by range, so \u201cunder half checked\u201d is one filter. The Excel export "
+        + "carries Ticked and Items as two numeric columns.",
+      "Open an interaction and, where a transcript exists, a Transcript section now sits "
+        + "beneath the Conversation Summary. Like the summary, it only appears when there is one, "
+        + "and nothing is fetched until you open it.",
+      "Transcripts name their speakers Agent and Customer \u2014 in Agent Copilot and in the "
+        + "Evaluation Scores drawer alike. They previously showed Genesys\u2019s own internal "
+        + "and external, which read as jargon and left an agent\u2019s lines uncoloured.",
+      "The interactions table pages instead of stopping at 500 rows, 50 to a page, with the "
+        + "same pager Evaluation Scores uses. Every interaction that was read is reachable; a "
+        + "column filter or sort applies to all of them, not to the page on screen; and turning "
+        + "a page while checklists are still loading keeps you where you were. Evaluation Gaps "
+        + "gained the same pager on 9 September.",
+      "Count interactions now says roughly how long loading will take and leaves out the "
+        + "request count, which decided nothing.",
+    ],
+  },
+  {
     version: "5.4",
     date: "2026-09-09",
     title: "GDPR data subject requests",
