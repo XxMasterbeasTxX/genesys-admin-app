@@ -36,6 +36,10 @@ import {
 } from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import {
+  customerCommunicationId, fetchTranscriptUrl, fetchTranscriptFromUrl,
+  renderTranscript, transcriptFailureReason,
+} from "../../../components/transcript.js";
+import {
   RANGE_PRESETS, resolvePreset, latestSelectableDay, utcIso, yesterday,
   formatRange, dayCount,
 } from "../../../utils/dateRanges.js";
@@ -98,9 +102,6 @@ const ENRICH_CONCURRENCY = 5;
  */
 const MAX_INTERVAL_DAYS = 31;
 
-/** Rows drawn at once. Past this the table stops being readable anyway. */
-const MAX_TABLE_ROWS = 500;
-
 const STATUS_FILTERS = [
   { key: "all", label: "All" },
   { key: "complete", label: "✅ Completed" },
@@ -150,6 +151,28 @@ export function parseSummaries(res) {
 function agentTickedAny(checklists) {
   return (checklists || []).some(
     (cl) => (cl?.checklistItems || []).some((it) => it.stateFromAgent === TICKED));
+}
+
+/**
+ * How many items are ticked, across every checklist on the interaction.
+ *
+ * "Ticked" is by agent OR model - the same reading Complete uses, so 7/7 and
+ * Complete can never disagree. The agent and AI counts ride alongside because
+ * a bare fraction hides who did the ticking, and that is the page's whole
+ * point. Returns null when there is nothing to count.
+ */
+export function tickCounts(checklists) {
+  const items = (checklists || []).flatMap((cl) => cl?.checklistItems || []);
+  if (!items.length) return null;
+  let ticked = 0, agent = 0, ai = 0;
+  for (const it of items) {
+    const a = it.stateFromAgent === TICKED;
+    const m = it.stateFromModel === TICKED;
+    if (a || m) ticked++;
+    if (a) agent++;
+    if (m) ai++;
+  }
+  return { ticked, total: items.length, agent, ai };
 }
 
 /** Seconds → "3m 07s", or an em dash when there is nothing to show. */
@@ -279,6 +302,23 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           <div class="dq-table-wrap has-filters" data-c="rowsWrap">
             <table class="dq-table" data-c="rows"></table>
           </div>
+          <div class="dq-foot" data-c="rowsFoot" hidden>
+            <span class="dq-foot-count" data-c="rowsCount"></span>
+            <span class="dq-foot-pager">
+              <button class="btn btn-sm" data-c="rowsPrev">Previous</button>
+              <span class="dq-detail-page" data-c="rowsPage"></span>
+              <button class="btn btn-sm" data-c="rowsNext">Next</button>
+            </span>
+            <label class="dq-foot-size">
+              Rows per page
+              <select class="input" data-c="rowsSize">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
+            </label>
+          </div>
           <div class="dq-panel-note" data-c="tableNote" hidden></div>
         </div>
       </div>
@@ -329,6 +369,54 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
   let agentCheckedOnly = false;
   let detachFilters = null;
   let openRowId = null;            // the interaction whose detail is showing
+
+  /**
+   * Paging over the rows already drawn - fifty by default, as everywhere else.
+   *
+   * UNLIKE Evaluation Gaps, this table is redrawn every few conversations while
+   * enrichment runs, so the page the reader is on has to SURVIVE a redraw:
+   * showRowsPage clamps rather than resets, and only a change of filter or a
+   * new load sends it back to page one. Otherwise nobody could read page three
+   * until the whole run had finished.
+   */
+  let rowsSize = 50;
+  let rowsPage = 1;
+  let rowsVisible = [];
+
+  function showRowsPage() {
+    const total = rowsVisible.length;
+    const pages = Math.max(Math.ceil(total / rowsSize), 1);
+    if (rowsPage > pages) rowsPage = pages;
+    const start = (rowsPage - 1) * rowsSize;
+
+    rowsVisible.forEach((tr, i) => {
+      tr.style.display = i >= start && i < start + rowsSize ? "" : "none";
+    });
+
+    const shown = Math.min(rowsSize, Math.max(total - start, 0));
+    $("rowsFoot").hidden = !total;
+    $("rowsCount").textContent = total
+      ? `Showing ${shown.toLocaleString()} of ${total.toLocaleString()}`
+      : "Nothing matches these filters";
+    $("rowsPage").textContent = `Page ${rowsPage} of ${pages}`;
+    $("rowsPrev").disabled = rowsPage <= 1;
+    $("rowsNext").disabled = rowsPage >= pages;
+  }
+
+  $("rowsPrev").addEventListener("click", () => {
+    if (rowsPage <= 1) return;
+    rowsPage -= 1;
+    showRowsPage();
+  });
+  $("rowsNext").addEventListener("click", () => {
+    rowsPage += 1;
+    showRowsPage();
+  });
+  $("rowsSize").addEventListener("change", () => {
+    rowsSize = Number($("rowsSize").value) || 50;
+    rowsPage = 1;
+    showRowsPage();
+  });
   let abort = null;                // aborts an in-flight load/enrichment
 
   /** Bumped by every new load, so a stale run cannot write into fresh state. */
@@ -610,9 +698,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
             + `${(MAX_PAGES * 100).toLocaleString()} interactions.`
           : `${total.toLocaleString()} interaction(s) in ${formatRange(s.from, s.to)}. `
             + `Loading reads ${willRead.toLocaleString()} and fetches checklists for `
-            + `${willEnrich.toLocaleString()} of them — roughly `
-            + `${(willEnrich * 3).toLocaleString()}–${(willEnrich * 4).toLocaleString()} `
-            + `requests, about ${estimateMinutes(willEnrich)}.`);
+            + `${willEnrich.toLocaleString()} of them, ${estimateMinutes(willEnrich)}.`);
     } catch (e) {
       setStatus(`Could not count interactions: ${e.message}`, "error");
     }
@@ -637,6 +723,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     truncated = false;
     statusFilter = "all";
     agentCheckedOnly = false;
+    rowsPage = 1;
     $results.hidden = true;
     $("export").hidden = true;
     openRowId = null;
@@ -919,7 +1006,13 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
         return true;
       });
 
-      return { checklists, summaries, completion: checklistCompletion(checklists) };
+      return {
+        checklists, summaries, completion: checklistCompletion(checklists),
+        // The transcript hangs off the customer's communication. Found now,
+        // while the conversation is in hand, so opening it later is one call
+        // for the URL and one fetch - not a third read of the conversation.
+        customerCommId: customerCommunicationId(conv),
+      };
     } catch (e) {
       return { ...empty, _error: e.message || String(e) };
     }
@@ -955,6 +1048,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
         if (b.tagName !== "BUTTON" || b.dataset.toggle === "agent") continue;
         b.classList.toggle("is-active", b === btn);
       }
+      rowsPage = 1;
       drawAll();
     });
     $("statusFilters").append(btn);
@@ -975,6 +1069,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     btn.addEventListener("click", () => {
       agentCheckedOnly = !agentCheckedOnly;
       btn.classList.toggle("is-active", agentCheckedOnly);
+      rowsPage = 1;
       drawAll();
     });
     $("statusFilters").append(btn);
@@ -1045,6 +1140,29 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
       + "</div>";
   }
 
+  /**
+   * Ticked over total, with a bar beneath and the who-ticked-it in the title.
+   *
+   * data-value carries the percentage, not the fraction text: "4/7" would sort
+   * as the number 4, which puts 4/4 and 4/12 side by side. Sorting by how far
+   * from done is what the column is for.
+   */
+  function checkedCell(row) {
+    const info = enriched.get(row.conversationId);
+    if (!info || info._error) return '<td class="is-num"></td>';
+    const c = tickCounts(info.checklists);
+    if (!c) return '<td class="is-num"><span class="dq-muted">—</span></td>';
+    const pct = Math.round((c.ticked / c.total) * 100);
+    const full = c.ticked === c.total;
+    const title = `${c.ticked} of ${c.total} ticked — `
+      + `${c.agent} by the agent, ${c.ai} by AI`;
+    return `<td class="is-num" data-value="${pct}" title="${escapeHtml(title)}">
+      <span class="ac-checked">${c.ticked}/${c.total}</span>
+      <span class="ac-checked-track"><span class="ac-checked-bar ${full ? "is-full" : ""}"
+        style="width:${pct}%"></span></span>
+    </td>`;
+  }
+
   function statusCell(row) {
     const info = enriched.get(row.conversationId);
     if (!info) return '<span class="ac-badge is-loading">…</span>';
@@ -1064,7 +1182,6 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
   function drawTable() {
     const visible = rows.filter(passes);
-    const shown = visible.slice(0, MAX_TABLE_ROWS);
     const $t = $("rows");
 
     detachFilters?.();
@@ -1073,6 +1190,8 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
     if (!visible.length) {
       $t.innerHTML = "";
+      rowsVisible = [];
+      $("rowsFoot").hidden = true;
       $("tableNote").textContent = "No interactions match these filters.";
       $("tableNote").hidden = false;
       return;
@@ -1081,8 +1200,8 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     $t.innerHTML =
       "<thead><tr><th>Time</th><th>Agent</th><th>Queue</th><th>Copilot</th>"
       + '<th>Media</th><th class="is-num">Duration</th><th>Checklist</th>'
-      + "<th>Wrapup</th><th>Status</th></tr></thead>"
-      + `<tbody>${shown.map((r) => {
+      + '<th>Wrapup</th><th class="is-num">Checked</th><th>Status</th></tr></thead>'
+      + `<tbody>${visible.map((r) => {
         const info = enriched.get(r.conversationId);
         const names = info?.checklists?.length
           ? [...new Set(info.checklists.map((c) => c.name || "Checklist"))].join(", ")
@@ -1097,6 +1216,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           <td class="is-num" data-value="${seconds}">${escapeHtml(fmtDuration(r.ms))}</td>
           <td>${escapeHtml(names)}</td>
           <td>${escapeHtml(wrapUpLabel(r))}</td>
+          ${checkedCell(r)}
           <td>${statusCell(r)}</td>
         </tr>`;
       }).join("")}</tbody>`;
@@ -1108,17 +1228,18 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     detachFilters = attachColumnFilters($("rowsWrap"), {
       sortable: true,
       compact: true,
-      numericCols: [5],
-      rangeCols: [5],
+      numericCols: [5, 8],
+      rangeCols: [5, 8],
       dateCols: [0],
+      // A column filter narrows the set being paged and lands on page one.
+      onChange: (visible) => { rowsVisible = visible; rowsPage = 1; showRowsPage(); },
     });
 
-    if (visible.length > shown.length) {
-      $("tableNote").textContent =
-        `Showing the first ${shown.length.toLocaleString()} of `
-        + `${visible.length.toLocaleString()}. Narrow the filters or the date range.`;
-      $("tableNote").hidden = false;
-    }
+    // Every row that passed the status filters, in the order drawn. The column
+    // filters narrow this through onChange above. The page is NOT reset here:
+    // this runs on every enrichment batch, and the reader may be on page four.
+    rowsVisible = Array.from($t.querySelectorAll("tbody tr"));
+    showRowsPage();
   }
 
   // One listener for the life of the page rather than one per redraw: the table
@@ -1190,7 +1311,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
    * source shipped, on the reasoning that a summary is prose you go looking
    * for while a checklist is what you came to see.
    */
-  function collapsible(title, content, expanded = true) {
+  function collapsible(title, content, expanded = true, onFirstOpen = null) {
     const wrap = document.createElement("div");
     wrap.className = "dq-panel-block";
 
@@ -1208,11 +1329,15 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
     body.hidden = !expanded;
     body.append(content);
 
+    // Fires once, on the first opening - so a section that has to fetch its
+    // content fetches it when it is asked for and not before.
+    let opened = expanded;
     toggle.addEventListener("click", () => {
       const open = !body.hidden;
       body.hidden = open;
       toggle.setAttribute("aria-expanded", String(!open));
       chevron.textContent = open ? "▶" : "▼";
+      if (!open && !opened) { opened = true; onFirstOpen?.(); }
     });
 
     wrap.append(toggle, body);
@@ -1270,7 +1395,44 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           : `Conversation Summaries (${info.summaries.length})`,
         summarySection(info.summaries), false));
     }
+    // Only when there is one, like Summary. Presence costs one URL call, made
+    // after the rest of the drill-down is already on screen so nothing waits
+    // for it; the section appears a moment later if a transcript exists.
+    offerTranscript(convId, info, $p);
     $p.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  /**
+   * Add a Transcript section - but only if there is a transcript.
+   *
+   * Summary's presence comes free from enrichment; a transcript's has to be
+   * asked for, so this makes the one URL call and appends the section only on
+   * a yes. No section for no transcript, no permission, or no customer
+   * communication - the same silence Summary keeps when it has nothing.
+   *
+   * The URL is kept, so opening the section later is the S3 fetch alone. The
+   * reader may have moved to another row while the call was out, in which case
+   * the answer belongs to a drill-down that is no longer showing and is dropped.
+   */
+  async function offerTranscript(convId, info, $p) {
+    const org = currentOrg();
+    if (!org || !may("transcript") || !info.customerCommId) return;
+
+    let url = null;
+    try {
+      url = await fetchTranscriptUrl(api, org.id, convId, info.customerCommId);
+    } catch { return; }
+    if (!url || openRowId !== convId || $p.hidden) return;
+
+    const body = document.createElement("div");
+    $p.append(collapsible("📄 Transcript", body, false, async () => {
+      body.innerHTML = '<p class="dq-bar-empty">Loading transcript' + "…" + "</p>";
+      try {
+        body.innerHTML = renderTranscript(await fetchTranscriptFromUrl(url));
+      } catch (e) {
+        body.innerHTML = `<p class="dq-bar-empty">${escapeHtml(transcriptFailureReason(e))}</p>`;
+      }
+    }));
   }
 
   /**
@@ -1704,7 +1866,7 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
 
     const interactions = [[
       "Conversation ID", "Time", "Agent", "Queue", "Copilot", "Media",
-      "Duration (s)", "Checklist", "Wrap-up", "Status",
+      "Duration (s)", "Checklist", "Wrap-up", "Ticked", "Items", "Status",
     ]];
     const items = [[
       "Conversation ID", "Checklist", "Agent", "Item", "Description",
@@ -1719,11 +1881,12 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
         : info.completion === "incomplete" ? "Incomplete" : "No items";
 
       const wrap = wrapUpLabel(r);
+      const tc = tickCounts(info.checklists);
       interactions.push([
         r.conversationId, r.when ? new Date(r.when) : "", agentNames(r),
         queueLabel(r), copilotLabel(r), r.media,
         r.ms ? Math.round(r.ms / 1000) : 0, names,
-        wrap === "—" ? "" : wrap, status,
+        wrap === "—" ? "" : wrap, tc ? tc.ticked : "", tc ? tc.total : "", status,
       ]);
 
       for (const cl of info.checklists) {

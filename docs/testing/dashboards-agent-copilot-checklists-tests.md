@@ -53,7 +53,7 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 3.1 | Press **Count interactions** | The count, the period, and an estimate of how many requests loading will take | | |
+| 3.1 | Press **Count interactions** | The count, the period, and roughly how long loading will take. No request count | | |
 | 3.2 | **Load checklists** is disabled until you have counted | Yes | | |
 | 3.3 | Change any filter after counting | Load disables again — the count was of the old scope | | |
 | 3.4 | A range with no interactions | Says so; Load stays disabled | | |
@@ -73,7 +73,18 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 4.5 | Sort by any column | Sorts; Duration sorts numerically, not as text | | |
 | 4.6 | Filter **Time** and **Duration** | Both offer a FROM/TO range rather than a list of checkboxes | | |
 | 4.7 | Right-click a row | Conversation ID copied, confirmed in the status line | | |
-| 4.8 | More than 500 matching rows | First 500 shown, with a note saying so and what to do | | |
+| 4.7a | ★ The **Checked** column, between Wrapup and Status | Ticked over total, e.g. `4/7`, with a slim bar beneath — green at 7/7, amber otherwise | | |
+| 4.7b | ★ Hover a Checked cell | The tooltip says who ticked what: "4 of 7 ticked — 1 by the agent, 3 by AI" | | |
+| 4.7c | ★ 7/7 and the Status badge | Always agree: a row reading 7/7 is Complete and vice versa, because both use the same reading (agent OR AI) | | |
+| 4.7d | Sort by Checked | Sorts by **how far from done**, not by the first number — 4/4 must not sit beside 4/12 | | |
+| 4.7e | Filter Checked | A FROM/TO range on the percentage, so "under 50%" is one filter | | |
+| 4.7f | No checklist, or no items | Reads `—`, never `0/0` | | |
+| 4.7g | Export | Two numeric columns, **Ticked** and **Items**, so Excel can compute with them | | |
+| 4.8 | ★ More than 500 matching rows | **Every** row is reachable through the pager, 50 per page by default. Nothing is cut off | | |
+| 4.8a | ★ Go to page 3 **while enrichment is still running** | You stay on page 3 as batches land. The redraw every few conversations must not bounce you back to page 1 | | |
+| 4.8b | Click a status filter, or Agent Checked, while on page 3 | Back to page 1 — a filter changes the set being paged | | |
+| 4.8c | Apply a column filter while paged | Applies to **all** rows, not the 50 on screen; lands on page 1 | | |
+| 4.8d | Sort while paged | Reorders the whole set, not the visible page | | |
 
 ## 5. Status — the part most likely to be subtly wrong ★
 
@@ -124,6 +135,22 @@ Tick **Result** as ✅ / ❌ and put anything odd in **Notes**.
 | 8.10 | A single-session conversation | **One** summary, not the same text twice — the conversation-level and session-level copies are de-duplicated | | |
 | 8.11 | A summary with predicted wrap-up codes | Listed at the end, by name where known | | |
 | 8.12 | Close the panel | Closes; the table is untouched | | |
+
+## 8b. Transcript ★
+
+Beneath Conversation Summary. Same path as the Scores drawer, through the shared
+component, so the two cannot disagree about a speaker.
+
+| # | Do this | Expect | Result | Notes |
+|---|---|---|---|---|
+| 8b.1 | ★ Open a drill-down for an interaction **with** a transcript | A **Transcript** section appears beneath Conversation Summary, **collapsed**, a moment after the rest — one `transcripturl` call decides whether it shows. The body is **not** fetched until opened | | |
+| 8b.2 | Open it | One direct fetch of the URL already in hand — no second `transcripturl` call, no re-read of the conversation | | |
+| 8b.3 | ★ Read it | Every line is labelled **Agent** or **Customer**, Agent in blue and Customer in green. Never "internal" or "External" | | |
+| 8b.4 | Close and reopen it | No second fetch — it was loaded once | | |
+| 8b.5 | ★ An interaction with **no** transcript | **No Transcript section at all**, like Summary when there is no summary. Not a section saying "none" | | |
+| 8b.6 | Without `recording:recording:view` or `speechAndTextAnalytics:data:view` | No Transcript section — the same silence Summary keeps without its permission. The rest of the drill-down is unaffected | | |
+| 8b.6a | ★ Click a different row while the transcript check for the previous one is still out | The section lands on the drill-down that is showing, or nowhere — never on the wrong interaction | | |
+| 8b.7 | An interaction with neither checklist nor summary | No drill-down sections at all, Transcript included — the source app opens nothing for such an interaction | | |
 
 ## 9. Recordings ★
 

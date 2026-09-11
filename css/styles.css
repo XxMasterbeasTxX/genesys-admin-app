@@ -6601,6 +6601,31 @@ a.fr-shipped:hover { text-decoration: underline; }
   font-size: 11px;
 }
 
+/* The Checked column: fraction over a slim bar. Green only at full, because
+   "almost" is amber whether it is 1/7 or 6/7 - the badge beside it says the
+   same thing the same way. */
+.ac-checked {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ac-checked-track {
+  background: rgba(255,255,255,0.08);
+  border-radius: 999px;
+  display: block;
+  height: 4px;
+  margin-top: 3px;
+  min-width: 48px;
+  overflow: hidden;
+}
+.ac-checked-bar {
+  background: rgba(251,191,36,0.9);
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+}
+.ac-checked-bar.is-full { background: rgba(74,222,128,0.9); }
+
 /* Status badges in the results table. */
 .ac-badge {
   border-radius: 999px;
@@ -6636,6 +6661,7 @@ a.fr-shipped:hover { text-decoration: underline; }
 
 @media (prefers-color-scheme: light) {
   .ac-col-track { background: #eef0f3; }
+  .ac-checked-track { background: #e5e7eb; }
   .ac-badge.is-complete { background: #dcf5e6; color: #14805e; }
   .ac-badge.is-incomplete { background: #fdf0d5; color: #8a5a00; }
   .ac-badge.is-error { background: #fbe3e1; color: #b3261e; }
