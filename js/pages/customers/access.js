@@ -5,8 +5,11 @@
  * named user and the list on this page IS the contract — there is no seat
  * count to keep in step with it (docs/customer-user-licensing-design.md).
  *
- *   - Add a user: type a name or e-mail, pick from the dropdown, Add.
- *   - Users with access: the current list, with Remove.
+ *   - Add users: search by name or e-mail, tick the users you mean, press
+ *     "Add users", confirm against the list of who. Three deliberate steps,
+ *     because adding a name starts a charge — a single click on a search
+ *     result is not enough of a decision.
+ *   - Users with access: the current list, with Remove (also confirmed).
  *
  * The org is the header selector's, like every other internal page. Search
  * runs through the proxy on the selected customer (POST /users/search);
@@ -36,14 +39,21 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
       .ca-input::placeholder { color:var(--muted); }
       .ca-dropdown { position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:200; background:var(--panel); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.4); max-height:260px; overflow-y:auto; display:none; }
       .ca-dropdown.open { display:block; }
-      .ca-option { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--border); }
+      .ca-option { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--border); margin:0; }
       .ca-option:last-child { border-bottom:none; }
       .ca-option:hover { background:rgba(59,130,246,.15); }
       .ca-option.is-added { cursor:default; opacity:.6; }
       .ca-option.is-added:hover { background:transparent; }
+      .ca-option input[type=checkbox] { margin:0; flex:none; }
+      .ca-option-text { flex:1; min-width:0; }
       .ca-option-name { font-weight:500; color:var(--text); }
       .ca-option-email { font-size:11px; color:var(--muted); margin-top:1px; }
       .ca-option-tag { font-size:11px; color:var(--muted); white-space:nowrap; }
+      .ca-selected { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+      .ca-selected:empty { display:none; }
+      .ca-chip { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; background:rgba(30,58,95,.8); border:1px solid #3b82f6; border-radius:8px; font-size:12px; color:#93c5fd; }
+      .ca-chip-x { cursor:pointer; color:var(--muted); font-size:14px; line-height:1; }
+      .ca-chip-x:hover { color:#f87171; }
       .ca-hint { color:var(--muted); font-style:italic; padding:10px 12px; cursor:default; font-size:13px; }
       .ca-table td.ca-actions { text-align:right; white-space:nowrap; }
       .ca-muted { color:var(--muted); }
@@ -67,9 +77,11 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
       <div class="ca-add" id="caAdd" hidden>
         <div class="ca-add-row">
           <input id="caSearch" class="ca-input" type="text" autocomplete="off"
-                 placeholder="Type a name or e-mail to add a user…">
+                 placeholder="Search users by name or e-mail, then tick the ones to add…">
+          <button type="button" class="btn" id="caAddBtn" disabled>Add users</button>
         </div>
         <div id="caDropdown" class="ca-dropdown"></div>
+        <div id="caSelected" class="ca-selected"></div>
       </div>
 
       <div id="caStatus" class="cs-status"></div>
@@ -83,6 +95,8 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
   const $add      = el.querySelector("#caAdd");
   const $search   = el.querySelector("#caSearch");
   const $dropdown = el.querySelector("#caDropdown");
+  const $addBtn   = el.querySelector("#caAddBtn");
+  const $selected = el.querySelector("#caSelected");
   const $status   = el.querySelector("#caStatus");
   const $list     = el.querySelector("#caList");
   const setStatus = makeStatus($status, "cs-status");
@@ -91,6 +105,8 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
   let licensed   = [];          // active rows for currentOrg
   let searchTimer = null;
   let searchSeq   = 0;          // drop stale responses
+  const selected  = new Map();  // userId → { id, name, email } ticked but not yet added
+  let lastResults = [];         // the dropdown's current rows, so a re-render keeps them
 
   // ── The list ─────────────────────────────────────────────────────────
 
@@ -154,24 +170,51 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
   }
 
   function showResults(users) {
+    lastResults = users;
     if (!users.length) { showHint("No users found"); return; }
     $dropdown.innerHTML = "";
     for (const u of users) {
       const already = licensed.some((l) => l.userId === u.id);
-      const opt = document.createElement("div");
-      opt.className = "ca-option" + (already ? " is-added" : "");
-      opt.innerHTML = `
-        <div>
+      const row = document.createElement("label");
+      row.className = "ca-option" + (already ? " is-added" : "");
+      row.innerHTML = `
+        <input type="checkbox" ${already ? "disabled" : ""} ${selected.has(u.id) ? "checked" : ""}>
+        <span class="ca-option-text">
           <div class="ca-option-name">${escapeHtml(u.name || u.id)}</div>
           <div class="ca-option-email">${escapeHtml(u.email || "")}</div>
-        </div>
-        <span class="ca-option-tag">${already ? "Has access" : "Add"}</span>`;
+        </span>
+        <span class="ca-option-tag">${already ? "Has access" : ""}</span>`;
       if (!already) {
-        opt.addEventListener("mousedown", (e) => { e.preventDefault(); add(u); });
+        row.querySelector("input").addEventListener("change", (e) => {
+          if (e.target.checked) selected.set(u.id, { id: u.id, name: u.name || "", email: u.email || "" });
+          else selected.delete(u.id);
+          renderSelected();
+        });
       }
-      $dropdown.appendChild(opt);
+      $dropdown.appendChild(row);
     }
     $dropdown.classList.add("open");
+  }
+
+  // Ticked users, shown as chips under the search so the choice is visible
+  // even after the dropdown closes or the search changes.
+  function renderSelected() {
+    $selected.innerHTML = "";
+    for (const u of selected.values()) {
+      const chip = document.createElement("span");
+      chip.className = "ca-chip";
+      chip.innerHTML = `${escapeHtml(u.name || u.email || u.id)} <span class="ca-chip-x" title="Untick">×</span>`;
+      chip.querySelector(".ca-chip-x").addEventListener("click", () => {
+        selected.delete(u.id);
+        renderSelected();
+        // keep the open dropdown in step
+        if ($dropdown.classList.contains("open")) showResults(lastResults);
+      });
+      $selected.appendChild(chip);
+    }
+    const n = selected.size;
+    $addBtn.disabled = n === 0;
+    $addBtn.textContent = n === 0 ? "Add users" : n === 1 ? "Add 1 user" : `Add ${n} users`;
   }
 
   async function search(q) {
@@ -197,24 +240,47 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
     }
   }
 
-  async function add(user) {
-    if (!currentOrg) return;
+  /**
+   * The decision. Everyone ticked is listed by name and e-mail in a
+   * confirmation, with the org and what adding means; only on OK does
+   * anything reach the server. Each user is added in turn so one failure
+   * does not hide the others' results.
+   */
+  async function addSelected() {
+    if (!currentOrg || selected.size === 0) return;
+    const users = [...selected.values()];
+    const lines = users.map((u) => `  • ${u.name || u.id}${u.email ? ` (${u.email})` : ""}`).join("\n");
+    const ok = window.confirm(
+      `Give access to the Admin Tool for ${currentOrg.name} to:\n\n${lines}\n\n` +
+      `Adding a name is what the customer is billed for. Continue?`
+    );
+    if (!ok) return;
+
     closeDropdown();
     $search.value = "";
-    setStatus(`Giving ${user.name || user.email || user.id} access…`);
-    try {
-      const r = await assignLicense(currentOrg.id, { id: user.id, email: user.email || "", name: user.name || "" });
-      if (r.created) {
-        licensed.push(r.user);
-        licensed.sort((a, b) => String(a.assignedAt).localeCompare(String(b.assignedAt)));
-        renderList();
-        setStatus(`${user.name || user.email || user.id} now has access.`, "ok");
-      } else {
-        setStatus(`${user.name || user.email || user.id} already has access.`);
+    $addBtn.disabled = true;
+    setStatus(`Adding ${users.length === 1 ? "1 user" : users.length + " users"}…`);
+
+    const added = [], already = [], failed = [];
+    for (const u of users) {
+      try {
+        const r = await assignLicense(currentOrg.id, { id: u.id, email: u.email, name: u.name });
+        if (r.created) { licensed.push(r.user); added.push(u); } else { already.push(u); }
+        selected.delete(u.id);
+      } catch (err) {
+        failed.push({ u, err });
       }
-    } catch (err) {
-      setStatus(err.message || String(err), "error");
     }
+    licensed.sort((a, b) => String(a.assignedAt).localeCompare(String(b.assignedAt)));
+    renderList();
+    renderSelected();
+
+    const name = (u) => u.name || u.email || u.id;
+    const parts = [];
+    if (added.length)   parts.push(`Added: ${added.map(name).join(", ")}.`);
+    if (already.length) parts.push(`Already had access: ${already.map(name).join(", ")}.`);
+    if (failed.length)  parts.push(`Failed: ${failed.map((f) => `${name(f.u)} (${f.err.message || f.err})`).join("; ")}.`);
+    setStatus(parts.join(" "), failed.length ? "error" : "ok");
   }
 
   // ── Remove ───────────────────────────────────────────────────────────
@@ -247,8 +313,14 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
     searchTimer = setTimeout(() => search($search.value), SEARCH_DEBOUNCE_MS);
   });
   $search.addEventListener("focus", () => { if ($search.value.trim()) search($search.value); });
-  $search.addEventListener("blur", () => setTimeout(closeDropdown, 150));
   $search.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDropdown(); });
+  // Ticking a row must not close the list: swallowing mousedown keeps focus
+  // on the input (the checkbox still toggles on click).
+  $dropdown.addEventListener("mousedown", (e) => e.preventDefault());
+  // Close on a click anywhere outside the add box.
+  const onDocClick = (e) => { if (!$add.contains(e.target)) closeDropdown(); };
+  document.addEventListener("click", onDocClick);
+  $addBtn.addEventListener("click", addSelected);
 
   /**
    * Only an org that can sign in as a customer has a list. The internal org's
@@ -270,6 +342,8 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
     currentOrg = org || null;
     closeDropdown();
     $search.value = "";
+    selected.clear();
+    renderSelected();
     licensed = [];
     if (!currentOrg) {
       $orgName.textContent = "Select a customer org in the header.";
@@ -293,7 +367,7 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
 
   setOrg(orgContext?.getDetails?.() || null);
   const unsubscribe = orgContext?.onChange?.(() => setOrg(orgContext?.getDetails?.() || null));
-  el.__destroy = () => { unsubscribe?.(); clearTimeout(searchTimer); };
+  el.__destroy = () => { unsubscribe?.(); clearTimeout(searchTimer); document.removeEventListener("click", onDocClick); };
 
   return el;
 }

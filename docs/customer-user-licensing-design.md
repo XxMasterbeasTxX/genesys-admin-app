@@ -66,10 +66,16 @@ filtering, a separate control the customer's admin owns.
 **Internal Master Admins** — **Customers › Access to Admin Tool**, driven by
 the header org selector like every other internal page:
 
-- **Add a user** — a search box. As you type, a dropdown of matching users
-  from the selected customer's org (name and e-mail). Pick one, **Add**. A
-  user who already has access shows as such in the dropdown and cannot be
-  added twice.
+- **Add users** — a search box. As you type, a dropdown of matching users
+  from the selected customer's org (name and e-mail), each with a checkbox.
+  Tick the ones you mean — they collect as chips under the box, across
+  searches — then press **Add users** (it says how many). A confirmation
+  lists every ticked user by name and e-mail, names the org, and says that
+  adding a name is what the customer is billed for. Only OK reaches the
+  server. Three deliberate steps, because a single click on a search result
+  is not enough of a decision to start a charge (first version had exactly
+  that, and it was too easy). A user who already has access shows as such and
+  cannot be ticked.
 - **Users with access** — name, e-mail, added by, added on, **Remove**. Remove
   confirms first: it locks the person out within five minutes.
 - **"N users have access"** — a count. Informational, not a target.
