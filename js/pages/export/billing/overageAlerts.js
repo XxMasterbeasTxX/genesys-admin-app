@@ -217,7 +217,7 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
               <td>${escapeHtml(describeWhen(s))}</td>
               <td>${s.exportConfig?.mode === "onChange" ? "On change" : "Every run"}</td>
               <td class="oa-muted">${escapeHtml(s.emailRecipients || "")}</td>
-              <td class="oa-muted">${escapeHtml(formatLastRun(s))} ${escapeHtml(formatLastStatus(s))}</td>
+              <td class="oa-muted">${formatLastRun(s)} ${formatLastStatus(s)}</td>
               <td class="oa-actions">${canEditSchedule(s, me) ? `<button type="button" class="btn btn-secondary btn-sm" data-del="${escapeHtml(s.id)}">Delete</button>` : ""}</td>
             </tr>`).join("")}
         </tbody>
