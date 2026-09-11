@@ -381,6 +381,14 @@ export const NAV_TREE = [
     ],
   },
   {
+    label: "Customers",
+    path: "customers",
+    enabled: true,
+    children: [
+      { label: "Access to Admin Tool", path: "access", enabled: true, access: "customers.access" },
+    ],
+  },
+  {
     label: "Utilities",
     path: "utilities",
     enabled: true,

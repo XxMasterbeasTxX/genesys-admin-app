@@ -191,7 +191,9 @@ export const GROUP_ACCESS = {
   // group by name rather than inherited through a wildcard — and
   // `deployment.onboarding`, which writes into customer orgs with client
   // credentials, stays superuser-only for both groups.
-  "Genesys App - Master Admin": [...ADMIN_BASE, "flows.delete", "phones.webrtc.delete"],
+  // `customers.*` — who may use the app, per customer — sits here too: adding
+  // a name starts a charge. The endpoint checks the same group server-side.
+  "Genesys App - Master Admin": [...ADMIN_BASE, "flows.delete", "phones.webrtc.delete", "customers.*"],
   "Genesys App - Admin": ADMIN_BASE,
   // Support gets `data-actions.test` and NOT `data-actions.*`: the Test page is
   // mapped to `integrations:action:execute` alone, so this grants running an

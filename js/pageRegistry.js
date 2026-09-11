@@ -207,6 +207,8 @@ const registry = {
     import("./pages/audit/search.js").then((m) => m.default(ctx)),
 
   // ── Deployment ────────────────────────────────────────
+  "/customers/access": (ctx) =>
+    import("./pages/customers/access.js").then((m) => m.default(ctx)),
   "/deployment/basic": (ctx) =>
     import("./pages/deployment/basic.js").then((m) => m.default(ctx)),
   "/deployment/datatables": (ctx) =>

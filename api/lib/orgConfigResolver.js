@@ -367,10 +367,30 @@ async function resolveOrgConfig(context, req) {
     if (orgHint && orgHint !== classification.customer.id) {
       return { status: 403, body: { error: "org_hint_mismatch" } };
     }
+
+    // The named-user gate. An org being registered admits nobody by itself;
+    // the person must have been named for it (licenseGate.js). Unnamed →
+    // the client renders one screen instead of the shell, and nothing else
+    // on the customer path will answer them either.
+    const { checkLicense } = require("./licenseGate");
+    const licence = await checkLicense(context, accessToken, classification);
+    if (!licence.licensed) {
+      return {
+        status: 200,
+        body: {
+          mode: "customer",
+          licensed: false,
+          reason: licence.reason,
+          customer: { id: classification.customer.id, name: classification.customer.name },
+        },
+      };
+    }
+
     return {
       status: 200,
       body: {
         mode: "customer",
+        licensed: true,
         org: classification.org,
         customer: classification.customer,
         entitlements: classification.entitlements,

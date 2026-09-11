@@ -126,7 +126,17 @@ Save. The Functions app restarts and picks up the change.
 
 ---
 
-## Step 5 — Give the customer their launch URL
+## Step 5 — Name the users who may use the app
+
+Nobody in the customer's org can use the app until they are named. In the app, as a **Genesys App -
+Master Admin**, select the customer in the header and open **Customers › Access to Admin Tool**. Type a
+name or e-mail, pick the user from the dropdown, **Add**. Repeat for each licensed user. Everyone else in
+the org sees *"No licence for this app is assigned to you"* — by design.
+
+Adding a name is what the customer is billed for; removing one keeps the row as history so the billing
+period's peak can be computed later. Removal takes effect within five minutes.
+
+## Step 6 — Give the customer their launch URL
 
 The customer opens the app (or embeds it as a Genesys **Integration → Custom Client Application**) with the
 `?org=` deep link:
@@ -142,7 +152,7 @@ and after authentication locks the session to that org with the purchased menu.
 
 ---
 
-## Step 6 — Verify
+## Step 7 — Verify
 
 1. **Pre-login config resolves** (no login needed):
    ```
@@ -163,7 +173,7 @@ and after authentication locks the session to that org with the purchased menu.
 
 ---
 
-## Step 7 — Go live on prod
+## Step 8 — Go live on prod
 
 Repeat Step 1 redirect URI (prod origin), then Steps 3–6 against the **prod** SWA, adding the entry to the
 **prod** `CUSTOMER_REGISTRY_JSON`. Keep dev and prod registries independent.

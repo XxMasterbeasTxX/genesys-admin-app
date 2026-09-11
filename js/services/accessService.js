@@ -395,6 +395,9 @@ const CUSTOMER_EXCLUDED_KEYS = [
   "export.billing.customOrgs",
   "utilities",
   "deployment",
+  // Who may use the app is Netdesign's list about the customer, never the
+  // customer's page (docs/customer-user-licensing-design.md §6).
+  "customers",
   // Flows is otherwise a customer-suitable module, so a `flows.*` entitlement
   // would hand a customer the ability to permanently delete a callflow and its
   // dependencies — irreversibly, with no rollback. Listed explicitly because the
