@@ -1,5 +1,5 @@
 /**
- * Export › Billing › Single Org
+ * Export › Billing › Billing Period
  *
  * Exports billing data for the currently selected customer org for a chosen
  * billing period. Mirrors the Python script GUI_Billing_Export.py — same
@@ -20,6 +20,7 @@ import { timestampedFilename, downloadWorkbook, makeStatus, makeControlBusy } fr
 import {
   fetchBillingPeriods,
   clearBillingPeriodsCache,
+  isPermanentBillingState,
 } from "../../../services/billingService.js";
 import { isTrusteeOrg } from "../../../utils/billingTrustees.js";
 import { processBillingOverview } from "../../../utils/billingProcessor.js";
@@ -32,14 +33,14 @@ const DEFAULT_PERIOD_INDEX = 1; // "Previous Period" = latest complete
 
 const AUTOMATION_ENABLED      = true;
 const AUTOMATION_EXPORT_TYPE  = "billingSingleOrg";
-const AUTOMATION_EXPORT_LABEL = "Billing — Single Org";
+const AUTOMATION_EXPORT_LABEL = "Billing — Billing Period";
 
 export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
   const el = document.createElement("section");
   el.className = "card";
 
   el.innerHTML = `
-    <h1 class="h1">Export — Billing — Single Org</h1>
+    <h1 class="h1">Export — Billing — Billing Period</h1>
     <hr class="hr">
     <p class="page-desc">
       Exports billing usage for the currently selected customer org for one
@@ -185,7 +186,10 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
       setStatus("");
       return;
     }
-    if (isTrusteeOrg(org.id)) {
+    // Internal only: the client-side map says which orgs we can read as a
+    // trustee. A customer's org is judged by the server, which answers
+    // `no_trustee` when there is none — rendered below as a state.
+    if (!orgContext.isCustomer() && isTrusteeOrg(org.id)) {
       $period.innerHTML = `<option value="">N/A</option>`;
       $period.disabled = true;
       $runBtn.disabled = true;
@@ -222,6 +226,15 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
       $reloadBtn.disabled = false;
     } catch (err) {
       resetProgress();
+      if (isPermanentBillingState(err)) {
+        // Not a failure: the true answer for this org. No retry offered.
+        $period.innerHTML = `<option value="">N/A</option>`;
+        $period.disabled = true;
+        $runBtn.disabled = true;
+        $reloadBtn.disabled = true;
+        setStatus(err.message, "warn");
+        return;
+      }
       $period.innerHTML = `<option value="">Failed to load periods</option>`;
       $reloadBtn.disabled = false;
       setStatus(`Error loading billing periods: ${err.message || err}`, "error");
@@ -301,7 +314,7 @@ export default function renderBillingSingleOrgExport({ me, api, orgContext }) {
         orgId:       org.id,
         orgName:     org.name,
         action:      "export_run",
-        description: `Exported 'Billing — Single Org' for '${org.name}' (period index ${idx}, ${processed.summary.startDate} to ${processed.summary.endDate})`,
+        description: `Exported 'Billing — Billing Period' for '${org.name}' (period index ${idx}, ${processed.summary.startDate} to ${processed.summary.endDate})`,
       });
 
       // ── Email (matches Python `[{customer}] {task} Export` subject) ──

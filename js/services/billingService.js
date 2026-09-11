@@ -13,9 +13,57 @@
  *
  * All requests go through `apiClient.proxyGenesys(customerId, ...)`, which
  * uses per-customer credentials configured server-side (see `api/genesys-proxy`).
+ *
+ * CUSTOMER MODE takes a different road to the same data. A customer session
+ * has no trustee credentials and the proxy denies /api/v2/billing to it, so
+ * `fetchBillingOverview` / `fetchBillingPeriods` call `/api/billing-overview`
+ * instead: the server reads the overview FOR the customer, as their trustee,
+ * for the org it verified their token against — never one named here. The
+ * body is the same TrusteeBillingOverview, so everything downstream of these
+ * functions is unchanged. See docs/customer-billing-design.md.
  */
 
 import { getTrusteeForOrg } from "../utils/billingTrustees.js";
+import { orgContext } from "./orgContext.js";
+import { withUserToken } from "./apiAuth.js";
+
+/**
+ * Customer mode: one billing period from the server, read as the trustee.
+ *
+ * Errors carry `code` from the server (`no_trustee`, `permission_required`,
+ * `permission_unverified`, `billing_period_not_found`, …) so a page can render
+ * the permanent ones as a state rather than a failure.
+ */
+async function fetchCustomerOverview(billingPeriodIndex) {
+  const resp = await fetch(`/api/billing-overview?billingPeriodIndex=${encodeURIComponent(String(billingPeriodIndex))}`, {
+    headers: withUserToken({ Accept: "application/json" }),
+  });
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const err = new Error(customerBillingMessage(body.error, resp.status));
+    err.code   = body.error || "billing_unavailable";
+    err.status = resp.status;
+    throw err;
+  }
+  return body;
+}
+
+/** Plain-language text for the server's billing answers. */
+function customerBillingMessage(code, status) {
+  switch (code) {
+    case "no_trustee":               return "Billing is not available for this organisation through this app.";
+    case "permission_required":      return "Your Genesys role does not include billing:subscription:view, which is needed to see billing.";
+    case "permission_unverified":    return "Your permissions could not be verified, so billing cannot be shown.";
+    case "billing_period_not_found": return "That billing period does not exist for this organisation.";
+    case "customer_only":            return "This billing path is for customer sessions.";
+    default:                         return `Billing is unavailable right now (${code || status}).`;
+  }
+}
+
+/** True when a billing error is a permanent state for the org, not a fault. */
+export function isPermanentBillingState(err) {
+  return err && (err.code === "no_trustee" || err.code === "permission_required");
+}
 
 // ── Fallback labels (matches Python BILLING_PERIOD_OPTIONS in GUI_config.py) ──
 const PERIOD_FALLBACK_LABELS = [
@@ -65,6 +113,8 @@ export async function getTrustorOrgId(api, customerId) {
  * @returns {Promise<object>}          Raw Genesys BillingOverview response
  */
 export async function fetchBillingOverview(api, trustorCustomerId, billingPeriodIndex) {
+  if (orgContext.isCustomer()) return fetchCustomerOverview(billingPeriodIndex);
+
   const trusteeCustomerId = getTrusteeForOrg(trustorCustomerId);
   if (!trusteeCustomerId) {
     throw new Error(
@@ -96,6 +146,8 @@ export async function fetchBillingOverview(api, trustorCustomerId, billingPeriod
  * @returns {Promise<object>}
  */
 export async function fetchBillingOverviewById(api, trustorCustomerId, trustorOrgId, billingPeriodIndex) {
+  if (orgContext.isCustomer()) return fetchCustomerOverview(billingPeriodIndex);
+
   const trusteeCustomerId = getTrusteeForOrg(trustorCustomerId);
   if (!trusteeCustomerId) {
     throw new Error(
@@ -342,22 +394,34 @@ export async function fetchBillingPeriods(api, customerId, { force = false } = {
     return _periodCache.get(customerId);
   }
 
-  const trusteeCustomerId = getTrusteeForOrg(customerId);
-  if (!trusteeCustomerId) {
-    throw new Error(
-      `${customerId} is a trustee organisation itself and cannot be exported as a trustor.`
+  let results;
+  if (orgContext.isCustomer()) {
+    // The server resolves the org and the trustee; nothing to look up here.
+    results = await Promise.allSettled([0, 1, 2, 3].map((i) => fetchCustomerOverview(i)));
+
+    // A permanent answer for the org — no trustee, no permission — comes back
+    // on every index alike. Surface it once as the error it is, rather than
+    // caching four "Failed to load" rows that hide the reason.
+    const permanent = results.find((r) => r.status === "rejected" && isPermanentBillingState(r.reason));
+    if (permanent && results.every((r) => r.status === "rejected")) throw permanent.reason;
+  } else {
+    const trusteeCustomerId = getTrusteeForOrg(customerId);
+    if (!trusteeCustomerId) {
+      throw new Error(
+        `${customerId} is a trustee organisation itself and cannot be exported as a trustor.`
+      );
+    }
+
+    // 1) Resolve trustor org UUID (single call).
+    const trustorOrgId = await getTrustorOrgId(api, customerId);
+
+    // 2) Fetch indices 0..3 in parallel; tolerate individual failures.
+    results = await Promise.allSettled(
+      [0, 1, 2, 3].map((i) =>
+        fetchBillingOverviewById(api, customerId, trustorOrgId, i)
+      )
     );
   }
-
-  // 1) Resolve trustor org UUID (single call).
-  const trustorOrgId = await getTrustorOrgId(api, customerId);
-
-  // 2) Fetch indices 0..3 in parallel; tolerate individual failures.
-  const results = await Promise.allSettled(
-    [0, 1, 2, 3].map((i) =>
-      fetchBillingOverviewById(api, customerId, trustorOrgId, i)
-    )
-  );
 
   const periods = results.map((r, index) => {
     if (r.status === "fulfilled" && r.value) {

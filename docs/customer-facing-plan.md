@@ -469,6 +469,24 @@ never from a request field:
        Documentation export, which reads `recording/mediaretentionpolicies`. Only `/api/v2/recording/jobs`
        belongs to these pages.
 
+   - 5g: **Permission refinement for customers** — the greying internal users have had since §6 now
+     applies in customer mode too: entitlements decide what is shown, the user's own Genesys permissions
+     decide what is greyed, missing permissions named. One shared builder serves both resolvers, and the
+     permission call goes to the session's region rather than `CONFIG.apiBase`. Design, decisions and
+     the ten-case pass: [customer-permission-refinement-design.md](customer-permission-refinement-design.md).
+     Also adds the sellable `all` package (§15) for the per-user licensing model.
+
+   - 5h: **Billing Period and Period Comparison for customers** — a customer's own overage, read for
+     them by the server as their trustee through a dedicated `/api/billing-overview`, the org taken from
+     the verified identity and the user's own `billing:subscription:view` enforced server-side. The one
+     deliberate exception to "no client-credential calls for a customer", and the rule it leaves behind:
+     *only through a dedicated endpoint that derives the org from the verified identity, enforces the
+     user's own permission for the equivalent self-service data, and exposes nothing the customer could
+     not see in Genesys Admin.* The proxy still denies `/api/v2/billing` to customers. "Single Org" is now
+     "Billing Period"; Period Comparison follows the header selector. Design, fences and the thirteen-case
+     pass: [customer-billing-design.md](customer-billing-design.md). **Manual verification pending a real
+     customer org** — Netdesign DE is not a trustee of Test IE, so Test IE shows the `no_trustee` state.
+
 6. **Data-store isolation** (§10). **[DONE — validated on dev 2026-07-17]**
    - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
      from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or
@@ -551,7 +569,9 @@ recording export jobs) are
 | `user-access` | `users.*`, `roles.*`, `divisions.*` |
 | `configuration` | `data-tables.*`, `data-actions.edit`, `wrapupCodes.*`, `flows.*`, `phones.*` |
 | `gdpr` (add-on) | `gdpr.*` |
-| `demo` (internal, not sellable) | `*` — every module a customer may hold; the customer-exclusion list still applies |
+| `all` (sellable full tier) | `*` — every module a customer may hold; the customer-exclusion list still applies. The current model (2026-09-11): customers buy user licences and get `all` |
+| `demo` (internal, not sellable) | `*` — same grant as `all`; the reference customer's bundle |
 
-A customer's registry entry just lists what they bought, e.g. `"packages": ["insights", "gdpr"]`.
+A customer's registry entry just lists what they bought — today `"packages": ["all"]`; the named
+packages remain so an entry like `["insights", "gdpr"]` works unchanged if selling by package returns.
 See [customer-onboarding.md](customer-onboarding.md) for the full onboarding steps.

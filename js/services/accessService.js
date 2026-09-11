@@ -11,10 +11,12 @@ import {
   isReadGated, getReadPermissions,
 } from "../featurePermissionMap.js";
 
-// Feature flag: when true, internal users' WRITE actions are additionally gated
-// by their OWN Genesys permissions in the company org (see docs/customer-facing-plan.md
-// §6). Read-only features are never affected; superusers always bypass. Set to
-// false to disable the permission refinement entirely (group access only).
+// Feature flag: when true, WRITE actions are additionally gated by the user's
+// OWN Genesys permissions — internal users in the company org (see
+// docs/customer-facing-plan.md §6), customers in theirs
+// (docs/customer-permission-refinement-design.md). Read-only features are never
+// affected; superusers always bypass. Set to false to disable the permission
+// refinement entirely on both sides (group / entitlement access only).
 const ENFORCE_PERMISSION_REFINEMENT = true;
 
 /** Fetch the names of all groups the authenticated user belongs to. */
@@ -61,7 +63,12 @@ async function fetchUserGroupNames(accessToken) {
 }
 
 /**
- * Fetch the authenticated user's effective Genesys permissions (company org).
+ * Fetch the authenticated user's effective Genesys permissions.
+ *
+ * `apiBase` defaults to the company org's region. A customer's token is only
+ * valid on THEIR region, so the customer resolver passes the session's base —
+ * asking `.de` about a `.ie` token is a 401, which the fail-closed rule would
+ * turn into every write greyed.
  *
  * Reads BOTH `authorization.permissions` (flat strings, may include wildcards)
  * and `authorization.permissionPolicies` (domain/entityName/actionSet) from the
@@ -71,10 +78,10 @@ async function fetchUserGroupNames(accessToken) {
  * Returns an array of permission strings, or null if the call fails / the
  * authorization block is entirely absent (→ callers fail closed for writes).
  */
-async function fetchUserPermissions(accessToken) {
+async function fetchUserPermissions(accessToken, apiBase = CONFIG.apiBase) {
   const headers = { Authorization: `Bearer ${accessToken}` };
   try {
-    const resp = await fetch(`${CONFIG.apiBase}/api/v2/users/me?expand=authorization`, { headers });
+    const resp = await fetch(`${apiBase}/api/v2/users/me?expand=authorization`, { headers });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       console.error("[accessService] users/me?expand=authorization error:", resp.status, json);
@@ -131,6 +138,119 @@ function permGrants(granted, required) {
 }
 
 /**
+ * The permission-refinement half of access, shared by both resolvers.
+ *
+ * Given a `hasAccess` that already answers "may this session see this page at
+ * all" (groups for internal sessions, entitlements for customers), this layers
+ * the user's OWN Genesys permissions on top: a page the session may see but the
+ * user cannot act on reads `denied-no-permission` — shown greyed with the
+ * missing permissions named — rather than `allowed`. The distinction between
+ * "not your section" (hidden) and "not your permission" (greyed) is drawn here
+ * and nowhere else, which is why there is one builder and not one per resolver.
+ *
+ * Fail-closed throughout: `permList === null` means the permission set could
+ * not be read, and every gated action is then denied rather than assumed.
+ *
+ * @param {{ hasAccess: (k: string) => boolean,
+ *           permList: string[]|null,
+ *           isSuper: boolean,
+ *           sessionMode: "internal"|"customer" }} p
+ *   `sessionMode` selects a read entry's per-mode block where one exists
+ *   (see featurePermissionMap.getReadPermissions).
+ */
+function buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode = "internal" }) {
+  const permsAvailable = Array.isArray(permList);
+  const hasPermission = (perm) => permsAvailable && permList.some((g) => permGrants(g, perm));
+
+
+  /**
+   * Refined state for a page key:
+   *   "hidden"                — no group access (never show)
+   *   "denied-no-permission"  — group grants it, but the user lacks the Genesys
+   *                             permission for its write action(s) (show disabled)
+   *   "allowed"               — usable
+   * Read-only / app-storage features (not in the write map) are always "allowed"
+   * when group-granted. Superusers are always "allowed".
+   */
+  function accessState(pageKey, action) {
+    if (!hasAccess(pageKey)) return "hidden";
+    if (isSuper) return "allowed";
+    if (!ENFORCE_PERMISSION_REFINEMENT) return "allowed";
+
+    if (isWriteGated(pageKey)) {
+      const required = getRequiredPermissions(pageKey);
+      if (!required.length) return "allowed";
+      // Fail-closed: if we couldn't read the user's permissions, deny.
+      if (!permsAvailable) return "denied-no-permission";
+      return required.some(hasPermission) ? "allowed" : "denied-no-permission";
+    }
+
+    // Reads are gated on what Genesys itself requires for the endpoints the
+    // page reads — the client-credentials path means a read here is not the
+    // user's own read. See docs/read-permission-gating-design.md.
+    if (isReadGated(pageKey)) {
+      const { mode, permissions } = getReadPermissions(pageKey, action, sessionMode);
+      if (!permissions.length) return "allowed";
+      if (!permsAvailable) return "denied-no-permission";
+      const ok = mode === "all"
+        ? permissions.every(hasPermission)
+        : permissions.some(hasPermission);
+      return ok ? "allowed" : "denied-no-permission";
+    }
+
+    return "allowed";
+  }
+
+  /** The required write permissions the user is missing for a page key. */
+  function getMissingPermissions(pageKey, action) {
+    if (isSuper) return [];
+    if (isWriteGated(pageKey)) {
+      const required = getRequiredPermissions(pageKey);
+      if (!permsAvailable) return required;
+      return required.filter((p) => !hasPermission(p));
+    }
+    if (isReadGated(pageKey)) {
+      const { permissions } = getReadPermissions(pageKey, action, sessionMode);
+      if (!permsAvailable) return permissions;
+      return permissions.filter((p) => !hasPermission(p));
+    }
+    return [];
+  }
+
+  /**
+   * In-page capability check for a specific logical action of a feature
+   * (e.g. can("data-tables.edit", "rowsDelete")). Returns true when the action
+   * has no permission mapping, or the user holds every permission it requires.
+   * Superusers always true; fail-closed when permissions couldn't be read.
+   */
+  function can(accessKey, action) {
+    if (isSuper) return true;
+    if (!ENFORCE_PERMISSION_REFINEMENT) return true;
+
+    const writePerms = getActionPermissions(accessKey, action);
+    if (writePerms.length) {
+      if (!permsAvailable) return false;
+      return writePerms.every(hasPermission);
+    }
+
+    // A read action of a read-gated feature — e.g. the WEM tab of
+    // roles.search, which needs the licence permission its siblings do not.
+    if (isReadGated(accessKey)) {
+      const { mode, permissions } = getReadPermissions(accessKey, action, sessionMode);
+      if (!permissions.length) return true;
+      if (!permsAvailable) return false;
+      return mode === "all"
+        ? permissions.every(hasPermission)
+        : permissions.some(hasPermission);
+    }
+
+    return true;
+  }
+
+  return { accessState, getMissingPermissions, can };
+}
+
+/**
  * Resolve the user's access from their group memberships, refined by their own
  * Genesys permissions for WRITE actions (see docs/customer-facing-plan.md §6).
  *
@@ -159,9 +279,6 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
     console.error("[accessService] Could not fetch groups — denying access until verified.");
   }
 
-  const permsAvailable = Array.isArray(permList);
-  const hasPermission = (perm) => permsAvailable && permList.some((g) => permGrants(g, perm));
-
   const keys = new Set();
   for (const name of (groupNames || [])) {
     const granted = groupAccessMap[name];
@@ -185,96 +302,12 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
     return keys.has(pageKey);
   }
 
-  /**
-   * Refined state for a page key:
-   *   "hidden"                — no group access (never show)
-   *   "denied-no-permission"  — group grants it, but the user lacks the Genesys
-   *                             permission for its write action(s) (show disabled)
-   *   "allowed"               — usable
-   * Read-only / app-storage features (not in the write map) are always "allowed"
-   * when group-granted. Superusers are always "allowed".
-   */
-  function accessState(pageKey, action) {
-    if (!hasAccess(pageKey)) return "hidden";
-    if (isSuper) return "allowed";
-    if (!ENFORCE_PERMISSION_REFINEMENT) return "allowed";
-
-    if (isWriteGated(pageKey)) {
-      const required = getRequiredPermissions(pageKey);
-      if (!required.length) return "allowed";
-      // Fail-closed: if we couldn't read the user's permissions, deny.
-      if (!permsAvailable) return "denied-no-permission";
-      return required.some(hasPermission) ? "allowed" : "denied-no-permission";
-    }
-
-    // Reads are gated on what Genesys itself requires for the endpoints the
-    // page reads — the client-credentials path means a read here is not the
-    // user's own read. See docs/read-permission-gating-design.md.
-    if (isReadGated(pageKey)) {
-      const { mode, permissions } = getReadPermissions(pageKey, action);
-      if (!permissions.length) return "allowed";
-      if (!permsAvailable) return "denied-no-permission";
-      const ok = mode === "all"
-        ? permissions.every(hasPermission)
-        : permissions.some(hasPermission);
-      return ok ? "allowed" : "denied-no-permission";
-    }
-
-    return "allowed";
-  }
-
-  /** The required write permissions the user is missing for a page key. */
-  function getMissingPermissions(pageKey, action) {
-    if (isSuper) return [];
-    if (isWriteGated(pageKey)) {
-      const required = getRequiredPermissions(pageKey);
-      if (!permsAvailable) return required;
-      return required.filter((p) => !hasPermission(p));
-    }
-    if (isReadGated(pageKey)) {
-      const { permissions } = getReadPermissions(pageKey, action);
-      if (!permsAvailable) return permissions;
-      return permissions.filter((p) => !hasPermission(p));
-    }
-    return [];
-  }
-
-  /**
-   * In-page capability check for a specific logical action of a feature
-   * (e.g. can("data-tables.edit", "rowsDelete")). Returns true when the action
-   * has no permission mapping, or the user holds every permission it requires.
-   * Superusers always true; fail-closed when permissions couldn't be read.
-   */
-  function can(accessKey, action) {
-    if (isSuper) return true;
-    if (!ENFORCE_PERMISSION_REFINEMENT) return true;
-
-    const writePerms = getActionPermissions(accessKey, action);
-    if (writePerms.length) {
-      if (!permsAvailable) return false;
-      return writePerms.every(hasPermission);
-    }
-
-    // A read action of a read-gated feature — e.g. the WEM tab of
-    // roles.search, which needs the licence permission its siblings do not.
-    if (isReadGated(accessKey)) {
-      const { mode, permissions } = getReadPermissions(accessKey, action);
-      if (!permissions.length) return true;
-      if (!permsAvailable) return false;
-      return mode === "all"
-        ? permissions.every(hasPermission)
-        : permissions.some(hasPermission);
-    }
-
-    return true;
-  }
+  const refined = buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode: "internal" });
 
   return {
     hasAccess,
     hasAnyAccess() { return isSuper || keys.size > 0; },
-    accessState,
-    getMissingPermissions,
-    can,
+    ...refined,
     // True when the group lookup failed, so nothing could be verified. Lets the
     // shell say "could not verify your access" instead of showing an empty menu
     // that looks like a permissions decision.
@@ -283,18 +316,28 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
 }
 
 /**
- * Resolve access for a CUSTOMER session from their purchased entitlements.
+ * Resolve access for a CUSTOMER session: entitlements shape the menu, the
+ * user's own permissions refine the actions.
  *
- * Customers are gated purely by their module entitlements (e.g. "interactions.*",
- * "export.users.*", "utilities.ipRanges") — the same wildcard key machinery used
- * for internal group access. There is NO permission refinement: a customer's
- * write actions are governed by their own Genesys role (token-forwarding) and,
- * server-side, by the proxy's org-lock + entitlement guard. Exposes the same
- * interface as resolveAccess() so nav, routing, and pages are unchanged.
+ * Entitlements (e.g. "interactions.*", "export.users.*") decide what the org
+ * has bought and therefore what is SHOWN, through the same wildcard key
+ * machinery as internal group access. What this user may DO within that is
+ * refined from their own Genesys permissions by the shared builder, exactly as
+ * for internal users — so a control they cannot use is greyed with the missing
+ * permission named, instead of erroring after the click. Genesys still enforces
+ * on every forwarded call; this layer only stops the UI lying about it.
+ *
+ * Exposes the same interface as resolveAccess() so nav, routing, and pages are
+ * unchanged.
  *
  * @param {string[]} entitlements  Module access-key prefixes for the customer.
+ * @param {string}   [accessToken] The session token. Omitted (the org-config
+ *                                 fallback path) → no fetch, permissions
+ *                                 unavailable, every gated action fails closed.
+ * @param {string}   [apiBase]     The session's region base. A customer's token
+ *                                 answers only on its own region.
  */
-export function resolveCustomerAccess(entitlements) {
+export async function resolveCustomerAccess(entitlements, accessToken, apiBase) {
   const keys = new Set((entitlements || []).filter((k) => typeof k === "string" && k.trim()));
 
   function hasAccess(pageKey) {
@@ -311,12 +354,13 @@ export function resolveCustomerAccess(entitlements) {
     return keys.has(pageKey);
   }
 
+  const permList = accessToken ? await fetchUserPermissions(accessToken, apiBase) : null;
+  const refined = buildRefinedAccess({ hasAccess, permList, isSuper: false, sessionMode: "customer" });
+
   return {
     hasAccess,
     hasAnyAccess() { return keys.size > 0; },
-    accessState(pageKey) { return hasAccess(pageKey) ? "allowed" : "hidden"; },
-    getMissingPermissions() { return []; },
-    can() { return true; },
+    ...refined,
     verificationFailed: false,
   };
 }
@@ -324,10 +368,10 @@ export function resolveCustomerAccess(entitlements) {
 /**
 /**
  * Access keys (or prefixes) that are INTERNAL-ONLY and must never be available in
- * customer mode — cross-org copies, trustee/all-orgs/billing exports, recording
- * exports, and the internal Utilities module (IP Ranges uses client-credentials;
- * Permission Catalog is internal). GDPR is intentionally NOT excluded (open
- * decision O2).
+ * customer mode — cross-org copies, trustee/all-orgs exports, the multi-org and
+ * arbitrary-range billing reports, recording exports, and the internal
+ * Utilities module (IP Ranges uses client-credentials; Permission Catalog is
+ * internal). GDPR is intentionally NOT excluded (open decision O2).
  *
  * `phones.webrtc.delete` is deliberately NOT listed: a customer may have it if
  * their package grants it. Note the consequence — a `phones.*` entitlement
@@ -340,7 +384,15 @@ const CUSTOMER_EXCLUDED_KEYS = [
   "roles.copy.betweenOrgs",
   "export.users.trustee",
   "export.roles.allOrgs",
-  "export.billing",
+  // Billing: the four multi-org / arbitrary-range reports stay internal. Billing
+  // Period and Period Comparison are customer-visible — a customer's own
+  // overage, read for them by the server as their trustee
+  // (docs/customer-billing-design.md). Named individually rather than as the
+  // `export.billing` prefix, because the prefix would hide those two.
+  "export.billing.allOrgsLatest",
+  "export.billing.calendarYear",
+  "export.billing.dateRange",
+  "export.billing.customOrgs",
   "utilities",
   "deployment",
   // Flows is otherwise a customer-suitable module, so a `flows.*` entitlement

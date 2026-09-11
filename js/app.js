@@ -17,6 +17,7 @@ import {
   isAuthPopup,
   runAuthPopup,
   loginViaPopup,
+  getSessionApiBase,
 } from "./services/authService.js";
 import { createApiClient } from "./services/apiClient.js";
 import { orgContext } from "./services/orgContext.js";
@@ -206,10 +207,13 @@ function renderSignInGate() {
     sessionStorage.removeItem(ORGCFG_RETRY_KEY);
 
     if (orgCfg.mode === "customer" && orgCfg.customer) {
-      access = resolveCustomerAccess(orgCfg.entitlements);
+      // Entitlements shape the menu; the user's own permissions, read on THEIR
+      // region, grey the actions they cannot take. Same refinement as internal.
+      access = await resolveCustomerAccess(orgCfg.entitlements, res.accessToken, getSessionApiBase());
       isInternalMode = false;
 
       const customer = orgCfg.customer;
+      orgContext.setMode("customer");
       orgContext.setCustomers([customer]);
 
       orgSelectEl.innerHTML =
@@ -221,6 +225,7 @@ function renderSignInGate() {
       access = await resolveAccess(res.accessToken, GROUP_ACCESS, res.me?.id);
 
       const customers = Array.isArray(orgCfg.customers) ? orgCfg.customers : [];
+      orgContext.setMode("internal");
       orgContext.setCustomers(customers);
 
       orgSelectEl.innerHTML = `<option value="">Select customer…</option>`
@@ -266,7 +271,7 @@ function renderSignInGate() {
     // Fail-closed for a customer deep link; keep internal resilience otherwise.
     isInternalMode = !res.orgHint;
     access = res.orgHint
-      ? resolveCustomerAccess([])
+      ? await resolveCustomerAccess([])
       : await resolveAccess(res.accessToken, GROUP_ACCESS, res.me?.id);
   }
 

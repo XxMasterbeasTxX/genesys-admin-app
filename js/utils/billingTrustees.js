@@ -11,6 +11,10 @@
  * behalf of other (trustor) orgs they have a trust relationship with.
  *
  * Customer-id slugs used here match `api/lib/customers.json`.
+ *
+ * The server holds the same table in api/lib/billingTrustees.js (read by the
+ * customer billing endpoint) and the three scheduled billing exports carry
+ * copies. Keep them in step.
  */
 
 /** Trustee orgs (have credentials, perform the API calls). */

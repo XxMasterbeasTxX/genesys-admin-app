@@ -31,9 +31,10 @@ import { escapeHtml, timestampedFilename, downloadWorkbook, makeStatus } from ".
 import {
   fetchBillingOverview,
   fetchBillingPeriods,
+  isPermanentBillingState,
   clearBillingPeriodsCache,
 } from "../../../services/billingService.js";
-import { isTrusteeOrg, filterBillableCustomers } from "../../../utils/billingTrustees.js";
+import { isTrusteeOrg } from "../../../utils/billingTrustees.js";
 import { processBillingOverview } from "../../../utils/billingProcessor.js";
 import { orgContext } from "../../../services/orgContext.js";
 import { logAction } from "../../../services/activityLogService.js";
@@ -279,23 +280,18 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
   let availablePeriods = []; // {index, label, error}
   let currentOrg = null;
 
-  const billable = filterBillableCustomers(orgContext.getCustomers());
-
   el.innerHTML = `
     <h1 class="h1">Export — Billing — Period Comparison</h1>
     <hr class="hr">
     <p class="page-desc">
-      Compare ${MIN_PERIODS}–${MAX_PERIODS} billing periods side-by-side for a single
+      Compare ${MIN_PERIODS}–${MAX_PERIODS} billing periods side-by-side for the selected
       organisation. Each pair of adjacent periods gets a variance column
-      (Δ + %) with green/red highlighting. Matches the Python report.
+      (Δ + %) with green/red highlighting.
     </p>
 
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-      <label class="em-label" for="bpcOrg" style="margin:0">Organization:</label>
-      <select id="bpcOrg" class="em-input" style="min-width:280px">
-        <option value="">Select a customer org…</option>
-        ${billable.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("")}
-      </select>
+      <span class="em-label" style="margin:0">Organization:</span>
+      <span id="bpcOrgName" class="em-hint">Select a customer org in the header.</span>
       <button class="btn btn-secondary" id="bpcReloadBtn" type="button" disabled>Reload periods</button>
     </div>
 
@@ -343,7 +339,7 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
     </div>
   `;
 
-  const $org       = el.querySelector("#bpcOrg");
+  const $orgName   = el.querySelector("#bpcOrgName");
   const $reload    = el.querySelector("#bpcReloadBtn");
   const $box       = el.querySelector("#bpcPeriodsBox");
   const $list      = el.querySelector("#bpcPeriodList");
@@ -414,6 +410,7 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
     lastFilename = null;
     $dlWrap.style.display = "none";
     currentOrg = org || null;
+    $orgName.textContent = org ? org.name : "Select a customer org in the header.";
 
     if (!org) {
       $box.style.display = "none";
@@ -422,7 +419,10 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
       setStatus("");
       return;
     }
-    if (isTrusteeOrg(org.id)) {
+    // Internal only: the client-side map says which orgs we can read as a
+    // trustee. A customer's org is judged by the server, which answers
+    // `no_trustee` when there is none — rendered below as a state.
+    if (!orgContext.isCustomer() && isTrusteeOrg(org.id)) {
       $box.style.display = "none";
       $reload.disabled = true;
       $runBtn.disabled = true;
@@ -453,17 +453,20 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
       $reload.disabled = false;
     } catch (err) {
       resetProgress();
+      if (isPermanentBillingState(err)) {
+        // Not a failure: the true answer for this org. No retry offered.
+        $box.style.display = "none";
+        $reload.disabled = true;
+        $runBtn.disabled = true;
+        setStatus(err.message, "warn");
+        return;
+      }
       $list.innerHTML = `<em>Failed to load periods.</em>`;
       $reload.disabled = false;
       setStatus(`Error loading billing periods: ${err.message || err}`, "error");
     }
   }
 
-  $org.addEventListener("change", () => {
-    const id = $org.value;
-    const customer = billable.find((c) => c.id === id);
-    loadPeriodsForOrg(customer || null);
-  });
   $reload.addEventListener("click", () => {
     if (currentOrg) loadPeriodsForOrg(currentOrg, { force: true });
   });
@@ -606,12 +609,15 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
     }
   });
 
-  // Auto-populate from current org context if it's a billable customer.
-  const initialOrg = orgContext?.getDetails?.() || null;
-  if (initialOrg && billable.some((c) => c.id === initialOrg.id)) {
-    $org.value = initialOrg.id;
-    loadPeriodsForOrg(initialOrg);
-  }
+  // ── Wire to org context — the header selector is the only selector ──
+  loadPeriodsForOrg(orgContext?.getDetails?.() || null);
+
+  const unsubscribe = orgContext?.onChange?.(() => {
+    loadPeriodsForOrg(orgContext?.getDetails?.() || null);
+  });
+
+  // The router tears the page down before detaching it (see singleOrg.js).
+  el.__destroy = () => unsubscribe?.();
 
   return el;
 }

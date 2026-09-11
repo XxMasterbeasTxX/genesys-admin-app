@@ -222,8 +222,20 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   "export.billing.calendarYear":     { view: ["affiliateOrganization:clientBilling:view"] },
   "export.billing.customOrgs":       { view: ["affiliateOrganization:clientBilling:view"] },
   "export.billing.dateRange":        { view: ["affiliateOrganization:clientBilling:view"] },
-  "export.billing.periodComparison": { view: ["affiliateOrganization:clientBilling:view"] },
-  "export.billing.singleOrg":        { view: ["affiliateOrganization:clientBilling:view"] },
+  // Billing Period and Period Comparison are read by CUSTOMERS too, and the
+  // permission differs by who is asking. Internally the read runs as the
+  // trustee, so the trustee's affiliate permission is the one that matters. A
+  // customer's read is made FOR them by the server, as their trustee, gated on
+  // the permission Genesys itself requires for their own billing report. One
+  // ANY list holding both would let an internal user with only the customer-
+  // side permission read a customer's billing — the escalation this map exists
+  // to stop — hence the per-mode block (docs/customer-billing-design.md §4.3).
+  "export.billing.periodComparison": { view: ["affiliateOrganization:clientBilling:view"],
+                                       customer: { view: ["billing:subscription:view",
+                                                          "billing:subscription:read"] } },
+  "export.billing.singleOrg":        { view: ["affiliateOrganization:clientBilling:view"],
+                                       customer: { view: ["billing:subscription:view",
+                                                          "billing:subscription:read"] } },
 
   // ── Export › other ───────────────────────────────────
   "export.documentation.create":  { view: ["architect:flow:view"] },
@@ -319,16 +331,24 @@ export function isReadGated(accessKey) {
  * across the actions — a page whose one tab is permitted should not be hidden
  * because another is not. Naming an action asks about that tab alone.
  *
+ * `sessionMode` is "internal" or "customer". An entry may carry a `customer`
+ * block — the same action→spec shape — that replaces the entry for customer
+ * sessions; entries without one behave identically for both. The block is
+ * consulted only when `sessionMode === "customer"`, so an internal session can
+ * never pick up a customer-side permission by accident.
+ *
  * @returns {{mode: "any"|"all", permissions: string[]}}
  */
-export function getReadPermissions(accessKey, action) {
-  const entry = FEATURE_READ_PERMISSIONS[accessKey];
-  if (!entry) return { mode: "any", permissions: [] };
+export function getReadPermissions(accessKey, action, sessionMode = "internal") {
+  const raw = FEATURE_READ_PERMISSIONS[accessKey];
+  if (!raw) return { mode: "any", permissions: [] };
+  const entry = (sessionMode === "customer" && raw.customer) ? raw.customer : raw;
   if (action) return normalizeSpec(entry[action]);
 
   // Union across actions. A mixed page falls back to ANY: the strict ALL sets
   // are per-action, and a page-level check is only deciding hide vs. show.
-  const specs = Object.values(entry).map(normalizeSpec);
+  // `customer` is a mode block, not an action, and must not be unioned in.
+  const specs = Object.entries(entry).filter(([k]) => k !== "customer").map(([, v]) => normalizeSpec(v));
   if (specs.length === 1) return specs[0];
   const set = new Set();
   for (const sp of specs) for (const p of sp.permissions) set.add(p);
