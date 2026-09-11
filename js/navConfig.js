@@ -229,6 +229,7 @@ export const NAV_TREE = [
           { label: "Date Range",            path: "date-range",        enabled: true, access: "export.billing.dateRange" },
           { label: "Custom Orgs",           path: "custom-orgs",       enabled: true, access: "export.billing.customOrgs" },
           { label: "Period Comparison",     path: "period-comparison", enabled: true, access: "export.billing.periodComparison" },
+          { label: "Overage Alerts",        path: "overage-alerts",    enabled: true, access: "export.billing.overageAlerts"    },
         ],
       },
       {

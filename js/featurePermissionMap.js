@@ -242,6 +242,11 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   "export.billing.singleOrg":        { view: ["affiliateOrganization:clientBilling:view"],
                                        customer: { view: ["billing:subscription:view",
                                                           "billing:subscription:read"] } },
+  // Overage Alerts reads the same current-period overview to offer what can be
+  // watched, and the alert itself runs on the same read — same gate, both modes.
+  "export.billing.overageAlerts":    { view: ["affiliateOrganization:clientBilling:view"],
+                                       customer: { view: ["billing:subscription:view",
+                                                          "billing:subscription:read"] } },
 
   // ── Export › other ───────────────────────────────────
   "export.documentation.create":  { view: ["architect:flow:view"] },

@@ -78,4 +78,24 @@ async function fetchOverviewForCustomer(context, { customerId, orgId, billingPer
   return { ok: true, overview, trusteeId };
 }
 
-module.exports = { fetchOverviewForCustomer };
+/**
+ * The Genesys org id for a customer slug, for callers that hold only the slug
+ * (a scheduled alert). The registry knows it for orgs that sign in as
+ * customers; for the rest, ask the org itself with its own credentials —
+ * the same `organizations/me` the scheduled billing exports make.
+ * @returns {Promise<string|null>}
+ */
+async function resolveTrustorOrgId(context, customerId) {
+  const { parseRegistry } = require("./orgConfigResolver");
+  const entry = parseRegistry(context).find((e) => e.id === customerId);
+  if (entry && entry.orgId) return entry.orgId;
+  try {
+    const me = await genesysCallAs(customerId, "GET", "/api/v2/organizations/me");
+    return me && me.id ? String(me.id) : null;
+  } catch (err) {
+    context?.log?.warn?.(`[billing-overview] could not resolve org id for ${customerId}: ${err.message || err}`);
+    return null;
+  }
+}
+
+module.exports = { fetchOverviewForCustomer, resolveTrustorOrgId, genesysCallAs };
