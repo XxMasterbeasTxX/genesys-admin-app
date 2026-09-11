@@ -33,10 +33,25 @@ export function getTrusteeForOrg(customerId) {
 }
 
 /**
+ * True if the server answers this org's billing with a synthetic overview
+ * (BILLING_SIMULATION_ORGS on the server; sent as `billingSimulated`).
+ */
+export function isBillingSimulated(customerId) {
+  const c = (orgContext.getCustomers() || []).find((x) => x && x.id === customerId);
+  return !!(c && c.billingSimulated === true);
+}
+
+/**
  * True if the given customer is itself a trustee org (cannot be exported
  * as a trustor — it would be self-referential).
+ *
+ * Every caller of this is really asking "can we NOT read this org's
+ * billing?", so a simulated org answers false here: its billing is readable —
+ * from the simulation — and the pages and filters should treat it as any
+ * other billable org.
  */
 export function isTrusteeOrg(customerId) {
+  if (isBillingSimulated(customerId)) return false;
   return getTrusteeForOrg(customerId) === null;
 }
 

@@ -326,7 +326,7 @@ export function appendBillingBlock(ws, state, processed, {
   includeBillingPeriod  = true,
   regularSectionLabel   = "─── REGULAR LICENSES (All Items with Usage) ───",
 } = {}) {
-  const { summary, regularRows, aiBreakdownRows, overageRows } = processed;
+  const { summary, regularRows, aiBreakdownRows, appsRows, overageRows } = processed;
 
   // Optional period separator — only useful for multi-period sheets
   // (calendar year, date range, period comparison).
@@ -338,10 +338,12 @@ export function appendBillingBlock(ws, state, processed, {
   // Python: single blue header row "─── BILLING SUMMARY: {org} ───" then
   // gray k/v rows. No separate "PERIOD" banner, no Subscription / Currency.
   if (summaryBanner) {
+    // A simulated overview says so in the sheet itself, not only on the page.
+    const bannerOrg = summary.simulated && orgName ? `${orgName} (SIMULATED)` : orgName;
     const headerLabel = summaryBannerLabel != null
       ? summaryBannerLabel
-      : (orgName
-          ? `─── BILLING SUMMARY: ${orgName} ───`
+      : (bannerOrg
+          ? `─── BILLING SUMMARY: ${bannerOrg} ───`
           : "─── BILLING SUMMARY ───");
     writeMergedBanner(ws, state, headerLabel, summaryBannerStyle);
   }
@@ -368,6 +370,13 @@ export function appendBillingBlock(ws, state, processed, {
     const label = `─── AI TOKENS USAGE BREAKDOWN (${summary.licenseType} Licenses) ───`;
     writeMergedBanner(ws, state, label, STYLE_DIVIDER);
     for (const r of aiBreakdownRows) writeDataRow(ws, state, r, false);
+    writeBlankRow(ws, state);
+  }
+
+  // ── Apps (Admin Tool named users) — always present, even at 0 ─────
+  if (appsRows && appsRows.length) {
+    writeMergedBanner(ws, state, "─── APPS ───", STYLE_DIVIDER);
+    for (const r of appsRows) writeDataRow(ws, state, r, false);
     writeBlankRow(ws, state);
   }
 

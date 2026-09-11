@@ -25,6 +25,7 @@ const {
 
 // ── Billing trustee lookup — one source, customers.json ─────────────
 const { getTrusteeForOrg, filterBillableCustomers } = require("../billingTrustees");
+const { peakAssigned } = require("../licenseStore");
 
 // ── Genesys API wrapper (per-customer credentials) ───────────────────
 
@@ -87,7 +88,10 @@ async function exportOneOrg(context, customer) {
   );
 
   // Step 3: process.
-  const processed = processBillingOverview(overview);
+  let adminToolUsers = null;
+  try { adminToolUsers = await peakAssigned(customer.id, overview.billingPeriodStartDate, overview.billingPeriodEndDate); }
+  catch (err) { context.log.warn(`[billingAllOrgsLatest] Admin Tool count unavailable for ${customer.id}: ${err.message || err}`); }
+  const processed = processBillingOverview(overview, { adminToolUsers });
   return { orgName: customer.name, processed };
 }
 

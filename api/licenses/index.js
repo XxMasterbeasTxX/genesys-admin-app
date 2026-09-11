@@ -4,11 +4,19 @@
  *   GET    /api/licenses?customerId=      → { users: [active rows] }
  *   POST   /api/licenses/assign           { customerId, userId, email, name }
  *   DELETE /api/licenses/assign           { customerId, userId }
+ *   GET    /api/licenses/peak?customerId=&start=&end=
+ *                                         → { users: n }  the period's peak
  *
- * Internal sessions only, and the caller must be in "Genesys App - Master
- * Admin" — checked here from the caller's own groups, not assumed from the
- * page (docs/customer-user-licensing-design.md §5). Adding a name starts a
- * charge; the endpoint is gated as tightly as the page.
+ * The list and the changes are internal-only, and the caller must be in
+ * "Genesys App - Master Admin" — checked here from the caller's own groups,
+ * not assumed from the page (docs/customer-user-licensing-design.md §5).
+ * Adding a name starts a charge; the endpoint is gated as tightly as the
+ * page.
+ *
+ * The peak is different: reading a count is not the commercial act. Any
+ * internal session may ask for any org; a customer session may ask only
+ * about its own — the customerId it sends is ignored and the verified org
+ * used (docs/billing-apps-section-design.md §2.1).
  *
  * Every add and remove is written to the activity log with the caller's
  * VERIFIED identity (from the token, never the body).
@@ -57,6 +65,26 @@ module.exports = async function (context, req) {
   try {
     const caller = await getCallerContext(context, req);
     if (!caller.authorized) return json(context, caller.status || 401, { error: caller.error || "unauthorized" });
+
+    const method = String(req.method || "GET").toUpperCase();
+    const action = String((req.params && req.params.action) || "").toLowerCase();
+
+    // ── GET /api/licenses/peak?customerId=&start=&end= ───────────────────
+    // Before the internal-only and group checks: a customer may read its
+    // own count (the gate in getCallerContext already vouched for them).
+    if (method === "GET" && action === "peak") {
+      const q = req.query || {};
+      const customerId = caller.mode === "customer"
+        ? caller.customerId                                   // never what they sent
+        : String(q.customerId || "").trim();
+      if (!customerId) return json(context, 400, { error: "customerId_required" });
+      const start = String(q.start || "").trim(), end = String(q.end || "").trim();
+      const s = Date.parse(start), e = Date.parse(end);
+      if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return json(context, 400, { error: "invalid_period" });
+      const users = await store.peakAssigned(customerId, start, end);
+      return json(context, 200, { customerId, start, end, users });
+    }
+
     if (caller.mode !== "internal") return json(context, 403, { error: "internal_only" });
 
     // The group check. fetchUserGroupNames returns null on failure → refuse.
@@ -65,8 +93,6 @@ module.exports = async function (context, req) {
     if (!Array.isArray(groups)) return json(context, 403, { error: "group_unverified", required: REQUIRED_GROUP });
     if (!groups.includes(REQUIRED_GROUP)) return json(context, 403, { error: "group_required", required: REQUIRED_GROUP });
 
-    const method = String(req.method || "GET").toUpperCase();
-    const action = String((req.params && req.params.action) || "").toLowerCase();
     const body   = req.body && typeof req.body === "object" ? req.body : {};
     const by     = { id: caller.userId || "", email: caller.userEmail || "", name: caller.userName || "" };
 

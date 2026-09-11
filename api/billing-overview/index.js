@@ -19,8 +19,10 @@
  *   4. Internal sessions are refused. Staff read billing through the proxy as
  *      the trustee already, gated by affiliateOrganization:clientBilling:view.
  */
-const { classifyCaller, getBearerToken } = require("../lib/orgConfigResolver");
+const { classifyCaller, getBearerToken, parseRegistry } = require("../lib/orgConfigResolver");
 const { checkLicense } = require("../lib/licenseGate");
+const { isSimulated, syntheticOverview } = require("../lib/billingSimulation");
+const customers = require("../lib/customers.json");
 const { fetchUserPermissions, hasAnyPermission } = require("../lib/userPermissions");
 const { fetchOverviewForCustomer } = require("../lib/billingOverview");
 
@@ -49,13 +51,31 @@ module.exports = async function (context, req) {
     if (!token) return json(context, 401, { error: "missing_token" });
 
     const classification = await classifyCaller(context, token, orgHint(req));
+
+    const rawIndex = req.query && req.query.billingPeriodIndex;
+    const billingPeriodIndex = rawIndex == null || rawIndex === "" ? 0 : Number(rawIndex);
+    if (!Number.isInteger(billingPeriodIndex) || billingPeriodIndex < 0 || billingPeriodIndex > MAX_PERIOD_INDEX) {
+      return json(context, 400, { error: "invalid_billing_period_index", max: MAX_PERIOD_INDEX });
+    }
+
     switch (classification.mode) {
       case "customer":
         break;
       case "internal":
-      case "fallback":
-        // Fence 4. Staff have the proxy path; this endpoint has one caller type.
+      case "fallback": {
+        // Fence 4, with one exception: a SIMULATED org (billingSimulation.js).
+        // Internal staff may ask for a simulated org by slug so the internal
+        // billing pages can show it; nothing real is read, and a non-simulated
+        // slug is refused exactly as before. Customer sessions never reach
+        // this branch and never get to name an org.
+        const wanted = String((req.query && req.query.customerId) || "").trim();
+        if (wanted && isSimulated(wanted)) {
+          const row = customers.find((c) => c.id === wanted) || parseRegistry(context).find((c) => c.id === wanted);
+          if (!row) return json(context, 404, { error: "unknown_customer" });
+          return json(context, 200, syntheticOverview({ id: wanted, name: row.name, orgId: row.orgId }, billingPeriodIndex));
+        }
         return json(context, 403, { error: "customer_only" });
+      }
       case "verify_failed":
         return json(context, 401, { error: "identity_verification_failed" });
       case "org_mismatch":
@@ -84,10 +104,11 @@ module.exports = async function (context, req) {
       return json(context, 403, { error: "permission_required", required: REQUIRED_ANY });
     }
 
-    const raw = req.query && req.query.billingPeriodIndex;
-    const billingPeriodIndex = raw == null || raw === "" ? 0 : Number(raw);
-    if (!Number.isInteger(billingPeriodIndex) || billingPeriodIndex < 0 || billingPeriodIndex > MAX_PERIOD_INDEX) {
-      return json(context, 400, { error: "invalid_billing_period_index", max: MAX_PERIOD_INDEX });
+    // A simulated org gets the synthetic overview instead of a trustee read.
+    // The Admin Tool count the page adds to it is real (the /licenses/peak
+    // endpoint reads the store); only Genesys's numbers are made up.
+    if (isSimulated(customerId)) {
+      return json(context, 200, syntheticOverview({ id: customerId, name: classification.customer.name, orgId }, billingPeriodIndex));
     }
 
     const result = await fetchOverviewForCustomer(context, { customerId, orgId, billingPeriodIndex });

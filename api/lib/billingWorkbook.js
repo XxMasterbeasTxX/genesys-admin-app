@@ -94,7 +94,16 @@ function fmtDate(d) {
 // Mirrors Python GUI_Billing_Export.py exactly. See js/utils/billingProcessor.js
 // for the heavily-commented twin — any change here MUST be applied there too.
 
-function processBillingOverview(overview) {
+/**
+ * @param {object} overview  Raw Genesys TrusteeBillingOverview.
+ * @param {{ adminToolUsers?: number|null }} [opts]
+ *   adminToolUsers — the org's named Admin Tool users at the period's peak
+ *   (licenseStore.peakAssigned). A number becomes the Apps row; null or
+ *   absent is written as "—", never as 0: a count that could not be read and
+ *   a count of none are different facts (billing-apps-section-design.md §3).
+ */
+function processBillingOverview(overview, opts) {
+  const adminToolUsers = opts && typeof opts.adminToolUsers === "number" ? opts.adminToolUsers : null;
   const usages = Array.isArray(overview && overview.usages) ? overview.usages : [];
 
   // Pass 1: collect non-AI fair-use allocations (Voice Transcription, etc.)
@@ -226,6 +235,17 @@ function processBillingOverview(overview) {
     });
   }
 
+  // ── Apps: Admin Tool named users, all billable ─────────────────────
+  const appsRows = [{
+    name:        "Admin Tool",
+    committed:   "",
+    actualUsage: adminToolUsers === null ? "\u2014" : adminToolUsers,
+    onDemand:    adminToolUsers === null ? "\u2014" : adminToolUsers,
+  }];
+  if (adminToolUsers !== null && adminToolUsers > 0) {
+    overageRows.push({ ...appsRows[0], overageCost: 0 });
+  }
+
   const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   regularRows.sort(byName);
   aiBreakdownRows.sort(byName);
@@ -241,9 +261,11 @@ function processBillingOverview(overview) {
       aiRollup,
       aiBillable,
       hasAi,
+      adminToolUsers,
     },
     regularRows,
     aiBreakdownRows,
+    appsRows,
     overageRows,
   };
 }
@@ -382,7 +404,7 @@ function appendBillingBlock(ws, state, processed, opts) {
   const summaryBannerStyle  = (opts && opts.summaryBannerStyle) || STYLE_SUMMARY_HEADER;
   const includeBillingPeriod = opts && opts.includeBillingPeriod === false ? false : true;
   const regularSectionLabel = (opts && opts.regularSectionLabel) || "─── REGULAR LICENSES (All Items with Usage) ───";
-  const { summary, regularRows, aiBreakdownRows, overageRows } = processed;
+  const { summary, regularRows, aiBreakdownRows, appsRows, overageRows } = processed;
 
   if (periodLabel) writeMergedBanner(ws, state, periodLabel, periodLabelStyle);
 
@@ -415,6 +437,13 @@ function appendBillingBlock(ws, state, processed, opts) {
     writeMergedBanner(ws, state,
       `─── AI TOKENS USAGE BREAKDOWN (${summary.licenseType} Licenses) ───`, STYLE_DIVIDER);
     for (const r of aiBreakdownRows) writeDataRow(ws, state, r, false);
+    writeBlankRow(ws, state);
+  }
+
+  // ── Apps (Admin Tool named users) — always present, even at 0 ──────
+  if (appsRows && appsRows.length) {
+    writeMergedBanner(ws, state, "─── APPS ───", STYLE_DIVIDER);
+    for (const r of appsRows) writeDataRow(ws, state, r, false);
     writeBlankRow(ws, state);
   }
 

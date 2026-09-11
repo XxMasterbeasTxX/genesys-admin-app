@@ -65,7 +65,7 @@ const COLOR_VARIANCE_FILL = "ED7D31";
  *   Our `processBillingOverview` already does the per-licence overrides and
  *   the AI fair-use math, so we just translate its outputs.
  */
-function buildComparisonLicenses(processed) {
+export function buildComparisonLicenses(processed) {
   const out = [];
   for (const r of processed.regularRows) {
     out.push({
@@ -81,6 +81,18 @@ function buildComparisonLicenses(processed) {
       prepay_quantity:  Math.round(processed.summary.aiFairUse),
       usage_quantity:   Math.round(processed.summary.aiRollup),
       overage_quantity: Math.round(processed.summary.aiBillable),
+    });
+  }
+  // Apps: Admin Tool named users at the period's peak. Nothing prepaid, so
+  // usage and overage are the same number; a count that could not be read
+  // shows as 0 here because the grid is numeric — the sheet's own Apps
+  // section is where "—" is distinguished from 0.
+  for (const r of processed.appsRows || []) {
+    out.push({
+      name:             r.name,
+      prepay_quantity:  0,
+      usage_quantity:   typeof r.actualUsage === "number" ? r.actualUsage : 0,
+      overage_quantity: typeof r.onDemand    === "number" ? r.onDemand    : 0,
     });
   }
   return out;
@@ -443,12 +455,13 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
       renderPeriodOptions(periods);
       resetProgress();
       const ok = periods.filter((p) => !p.error).length;
+      const simNote = periods.some((p) => p.overview && p.overview.simulated) ? "Simulated billing data — the Genesys figures are not real; the Admin Tool count is. " : "";
       if (ok === 0) {
         setStatus(`Could not load any billing periods for ${org.name}.`, "error");
       } else if (ok < periods.length) {
-        setStatus(`Loaded ${ok}/4 billing periods. Select ${MIN_PERIODS}–${MAX_PERIODS} to compare.`, "warn");
+        setStatus(`${simNote}Loaded ${ok}/4 billing periods. Select ${MIN_PERIODS}–${MAX_PERIODS} to compare.`, "warn");
       } else {
-        setStatus(`Loaded 4 billing periods. Select ${MIN_PERIODS}–${MAX_PERIODS} to compare.`);
+        setStatus(`${simNote}Loaded 4 billing periods. Select ${MIN_PERIODS}–${MAX_PERIODS} to compare.`, simNote ? "warn" : undefined);
       }
       $reload.disabled = false;
     } catch (err) {
