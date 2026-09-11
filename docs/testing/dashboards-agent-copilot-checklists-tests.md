@@ -143,12 +143,13 @@ component, so the two cannot disagree about a speaker.
 
 | # | Do this | Expect | Result | Notes |
 |---|---|---|---|---|
-| 8b.1 | Open a drill-down | A **Transcript** section sits beneath Conversation Summary, **collapsed**. Watch the network tab: **nothing is fetched** until it is opened | | |
-| 8b.2 | Open it | One `transcripturl` call, then one direct fetch of the URL it returns — no re-read of the conversation, which was kept from enrichment | | |
+| 8b.1 | ★ Open a drill-down for an interaction **with** a transcript | A **Transcript** section appears beneath Conversation Summary, **collapsed**, a moment after the rest — one `transcripturl` call decides whether it shows. The body is **not** fetched until opened | | |
+| 8b.2 | Open it | One direct fetch of the URL already in hand — no second `transcripturl` call, no re-read of the conversation | | |
 | 8b.3 | ★ Read it | Every line is labelled **Agent** or **Customer**, Agent in blue and Customer in green. Never "internal" or "External" | | |
 | 8b.4 | Close and reopen it | No second fetch — it was loaded once | | |
-| 8b.5 | An interaction with no transcript | "No transcript was recorded for this interaction." — never a spinner that never resolves | | |
-| 8b.6 | Without `recording:recording:view` or `speechAndTextAnalytics:data:view` | The section says which it needs, on opening; the rest of the drill-down is unaffected | | |
+| 8b.5 | ★ An interaction with **no** transcript | **No Transcript section at all**, like Summary when there is no summary. Not a section saying "none" | | |
+| 8b.6 | Without `recording:recording:view` or `speechAndTextAnalytics:data:view` | No Transcript section — the same silence Summary keeps without its permission. The rest of the drill-down is unaffected | | |
+| 8b.6a | ★ Click a different row while the transcript check for the previous one is still out | The section lands on the drill-down that is showing, or nowhere — never on the wrong interaction | | |
 | 8b.7 | An interaction with neither checklist nor summary | No drill-down sections at all, Transcript included — the source app opens nothing for such an interaction | | |
 
 ## 9. Recordings ★

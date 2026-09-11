@@ -36,8 +36,8 @@ import {
 } from "../../../services/genesysApi.js";
 import { createMultiSelect } from "../../../components/multiSelect.js";
 import {
-  customerCommunicationId, fetchTranscriptJson, renderTranscript,
-  transcriptFailureReason,
+  customerCommunicationId, fetchTranscriptUrl, fetchTranscriptFromUrl,
+  renderTranscript, transcriptFailureReason,
 } from "../../../components/transcript.js";
 import {
   RANGE_PRESETS, resolvePreset, latestSelectableDay, utcIso, yesterday,
@@ -1395,44 +1395,44 @@ export default function renderAgentCopilotChecklists({ me, api, orgContext, acce
           : `Conversation Summaries (${info.summaries.length})`,
         summarySection(info.summaries), false));
     }
-    // Collapsed, and empty until opened: a transcript is one URL call and one
-    // fetch per interaction, spent only for the ones somebody reads.
-    const transcriptBody = document.createElement("div");
-    $p.append(collapsible("📄 Transcript", transcriptBody, false,
-      () => loadTranscript(convId, info, transcriptBody)));
+    // Only when there is one, like Summary. Presence costs one URL call, made
+    // after the rest of the drill-down is already on screen so nothing waits
+    // for it; the section appears a moment later if a transcript exists.
+    offerTranscript(convId, info, $p);
     $p.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
   /**
-   * Fetch and show the transcript, the first time its section is opened.
+   * Add a Transcript section - but only if there is a transcript.
    *
-   * Same path as the Evaluation Scores drawer, through the shared component:
-   * the customer's communication was kept at enrichment time, so this is the
-   * URL call and the S3 fetch and nothing else. "No transcript" is ordinary
-   * and says so; a refusal names the permissions.
+   * Summary's presence comes free from enrichment; a transcript's has to be
+   * asked for, so this makes the one URL call and appends the section only on
+   * a yes. No section for no transcript, no permission, or no customer
+   * communication - the same silence Summary keeps when it has nothing.
+   *
+   * The URL is kept, so opening the section later is the S3 fetch alone. The
+   * reader may have moved to another row while the call was out, in which case
+   * the answer belongs to a drill-down that is no longer showing and is dropped.
    */
-  async function loadTranscript(convId, info, body) {
+  async function offerTranscript(convId, info, $p) {
     const org = currentOrg();
-    if (!org) return;
-    if (!may("transcript")) {
-      body.innerHTML = '<p class="dq-bar-empty">Transcripts need recording:recording:view '
-        + "and speechAndTextAnalytics:data:view.</p>";
-      return;
-    }
-    if (!info.customerCommId) {
-      body.innerHTML = '<p class="dq-bar-empty">No transcript: this interaction has no '
-        + "communication to transcribe.</p>";
-      return;
-    }
-    body.innerHTML = '<p class="dq-bar-empty">Loading transcript' + "…" + "</p>";
+    if (!org || !may("transcript") || !info.customerCommId) return;
+
+    let url = null;
     try {
-      const data = await fetchTranscriptJson(api, org.id, convId, info.customerCommId);
-      body.innerHTML = data
-        ? renderTranscript(data)
-        : '<p class="dq-bar-empty">No transcript was recorded for this interaction.</p>';
-    } catch (e) {
-      body.innerHTML = `<p class="dq-bar-empty">${escapeHtml(transcriptFailureReason(e))}</p>`;
-    }
+      url = await fetchTranscriptUrl(api, org.id, convId, info.customerCommId);
+    } catch { return; }
+    if (!url || openRowId !== convId || $p.hidden) return;
+
+    const body = document.createElement("div");
+    $p.append(collapsible("📄 Transcript", body, false, async () => {
+      body.innerHTML = '<p class="dq-bar-empty">Loading transcript' + "…" + "</p>";
+      try {
+        body.innerHTML = renderTranscript(await fetchTranscriptFromUrl(url));
+      } catch (e) {
+        body.innerHTML = `<p class="dq-bar-empty">${escapeHtml(transcriptFailureReason(e))}</p>`;
+      }
+    }));
   }
 
   /**

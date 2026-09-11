@@ -63,12 +63,27 @@ export function customerCommunicationId(conv) {
  * is not "there is no transcript", so the caller can name the permission.
  */
 export async function fetchTranscriptJson(api, orgId, conversationId, commId) {
+  const url = await fetchTranscriptUrl(api, orgId, conversationId, commId);
+  return url ? fetchTranscriptFromUrl(url) : null;
+}
+
+/**
+ * The pre-signed URL of a communication's transcript, or `null` when Genesys
+ * has none.
+ *
+ * Split out so a caller can learn WHETHER a transcript exists - one proxy
+ * call - without pulling its body until somebody reads it.
+ */
+export async function fetchTranscriptUrl(api, orgId, conversationId, commId) {
   const urlResp = await api.proxyGenesys(orgId, "GET",
     `/api/v2/speechandtextanalytics/conversations/${conversationId}`
     + `/communications/${commId}/transcripturl`);
-  if (!urlResp?.url) return null;
-  // A pre-signed URL — fetched directly, without the proxy or a token.
-  const resp = await fetch(urlResp.url);
+  return urlResp?.url || null;
+}
+
+/** The transcript JSON behind a pre-signed URL - fetched directly, without the proxy or a token. */
+export async function fetchTranscriptFromUrl(url) {
+  const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Transcript fetch failed (${resp.status})`);
   return resp.json();
 }
