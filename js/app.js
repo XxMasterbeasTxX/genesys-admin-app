@@ -120,11 +120,13 @@ function renderNotLicensed(customer, reason) {
     orgSelectEl.innerHTML = `<option value="">${escapeHtml(customer?.name || "")}</option>`;
     orgSelectEl.disabled = true;
   }
+  // The server caches its verdict per token for five minutes — a person who
+  // was added a moment ago is exactly who reads this, so say how to apply it.
   const detail = reason === "identity_unavailable"
     ? "We could not verify who you are just now. Try again in a moment."
     : reason === "license_check_failed"
       ? "The licence check is temporarily unavailable. Try again in a moment."
-      : "";
+      : "If access was just added for you, it can take up to five minutes to apply — or sign out and back in to apply it now.";
   document.getElementById("appMain").innerHTML = `
     <section class="card">
       <h1 class="h1">No licence for this app is assigned to you</h1>
