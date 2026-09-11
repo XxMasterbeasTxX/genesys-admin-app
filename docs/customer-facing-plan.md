@@ -503,6 +503,13 @@ never from a request field:
      Genesys figures are made up and say so, the Admin Tool count is real. Design and the fifteen-case
      pass: [billing-apps-section-design.md](billing-apps-section-design.md).
 
+   - 5k: **Overage Alerts** — Export › Billing › Overage Alerts: watch chosen licences, AI Tokens or an
+     Admin Tool threshold in the *current* period, daily or weekly at 00:00; mail only when something is
+     over, every run or only on change. A schedule type on the existing runner (`billingOverageAlert`),
+     customer-scoped like every schedule, creator re-checked at run time and, for a customer, required
+     still to be on the named-user list. Design and the sixteen-case pass:
+     [billing-overage-alerts-design.md](billing-overage-alerts-design.md).
+
 6. **Data-store isolation** (§10). **[DONE — validated on dev 2026-07-17]**
    - Backend `api/lib/callerContext.js` (`getCallerContext` + `ownerVisibleTo`) resolves the caller
      from `X-Genesys-Token` (reuses `classifyCaller`) and returns an `ownerOrgId` (customer slug, or

@@ -37,6 +37,9 @@ const handlers = {
   // attachment. Registered here so it rides the existing schedule store,
   // runner and email path rather than growing a third scheduler.
   webrtcPhoneCreate:      () => require("./exports/webrtcPhoneCreate"),
+  // Not an export either: reads the current billing period and mails only
+  // when a watched licence is over (docs/billing-overage-alerts-design.md).
+  billingOverageAlert:    () => require("./exports/billingOverageAlert"),
 };
 
 /**

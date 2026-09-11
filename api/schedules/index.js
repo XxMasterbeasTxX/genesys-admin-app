@@ -125,9 +125,10 @@ module.exports = async function (context, req) {
         createdBy: b.userEmail,
         createdByName: b.userName || "",
         // Recorded so a job that writes can re-check its creator at run
-        // time. Optional: existing schedules predate it and simply
-        // report as unverifiable rather than failing.
-        createdById: b.userId || "",
+        // time. The VERIFIED id from the token when identity is available;
+        // the body's only as a fallback. Existing schedules predate it and
+        // simply report as unverifiable rather than failing.
+        createdById: caller.userId || b.userId || "",
       });
 
       context.res = json(201, schedule);

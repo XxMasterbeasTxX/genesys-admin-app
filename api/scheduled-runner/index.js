@@ -185,7 +185,13 @@ async function runExport(context, schedule) {
     return { id, exportType, status: "error", error: result.error };
   }
 
-  // 2. Send email with the result
+  // 2. Send email with the result — unless the handler says there is nothing
+  //    to say (an overage alert with nothing over). Success, recorded, silent.
+  if (result.skipEmail) {
+    await store.updateRunStatus(id, { lastRun: new Date().toISOString(), lastStatus: "success", lastError: null });
+    context.log(`${exportLabel}: ran, nothing to send${result.summary ? " — " + result.summary : ""}`);
+    return { id, exportType, status: "success", error: null, skipped: true };
+  }
   const emailError = await sendResultEmail(context, schedule, result);
 
   // 3. Update run status
