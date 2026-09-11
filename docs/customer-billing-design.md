@@ -95,6 +95,10 @@ Verified by an equivalence pass: for every slug in `customers.json` plus
 unknown slugs, the new server lookup, the three exports through it, and the
 client module reading the sent list all return exactly what the old table
 returned — `trusteeFor`, `isTrusteeOrg` and `filterBillableCustomers` alike.
+Live: a scheduled All Orgs (Latest) export on dev, 2026-09-11, after the
+consolidation — completed, e-mail delivered, sheet identical to before (Demo
+and Test IE absent, every other org present). That run is what proves the
+`require` resolves and the file is read inside the Functions runtime.
 
 ### 3.2 `api/lib/billingOverview.js` (new)
 
