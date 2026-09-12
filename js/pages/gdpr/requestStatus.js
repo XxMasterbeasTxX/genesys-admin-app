@@ -164,41 +164,77 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
     if (!win) {
       throw new Error("Pop-up blocked. Allow pop-ups for this site and try the download again.");
     }
-    try {
-      win.document.title = "Preparing GDPR export…";
-      win.document.body.innerHTML =
-        "<p style=\"font-family:system-ui;padding:24px;color:#555\">Preparing your export archive…</p>";
-    } catch { /* cross-origin sandboxing can refuse this; the tab still works */ }
+
+    // The tab is where the tester is looking, so the tab is where the answer
+    // goes — every stage, and every failure. Closing it on error and reporting
+    // on the page behind it left them staring at "Preparing…" with no idea the
+    // page they had just left was showing the reason.
+    const say = (title, html) => {
+      try {
+        win.document.title = title;
+        win.document.body.innerHTML =
+          `<div style="font-family:system-ui;padding:24px;color:#333;max-width:56ch;line-height:1.5">${html}</div>`;
+      } catch { /* navigated away — whatever is showing is the answer */ }
+    };
+    const host = (u) => { try { return new URL(u).host; } catch { return "(not a URL)"; } };
+
+    say("Preparing GDPR export…",
+      `<p style="margin:0 0 6px"><strong>Preparing your export archive…</strong></p>`
+      + `<p style="margin:0;color:#777;font-size:13px">Asking Genesys for the download link.</p>`);
+
+    const slow = setTimeout(() => {
+      say("Still preparing…",
+        `<p style="margin:0 0 6px"><strong>Still waiting for Genesys…</strong></p>`
+        + `<p style="margin:0;color:#777;font-size:13px">The link request is taking longer than usual. `
+        + `It gives up after about 45 seconds.</p>`);
+    }, 8000);
 
     let signed;
     try {
+      console.info("[gdpr] resolving download link", { resultsUrl });
       signed = await gc.gdprResolveDownloadUrl(api, currentOrg.id, resultsUrl);
+      console.info("[gdpr] download link resolved", { host: host(signed) });
     } catch (err) {
-      try { win.close(); } catch { /* already gone */ }
+      clearTimeout(slow);
+      console.error("[gdpr] download link failed", err);
+      say("GDPR export — could not get the link",
+        `<p style="margin:0 0 8px;color:#b4342c"><strong>Could not get the download link.</strong></p>`
+        + `<p style="margin:0 0 8px;font-family:ui-monospace,monospace;font-size:13px;`
+        + `background:#f4f4f4;padding:8px 10px;border-radius:4px">${escapeHtml(err?.message || String(err))}</p>`
+        + `<p style="margin:0;color:#777;font-size:13px">Genesys endpoint: <code>${escapeHtml(resultsUrl)}</code>. `
+        + `Close this tab; the same message is on the Request Status page.</p>`);
       throw err;
     }
+    clearTimeout(slow);
+
+    if (signed === resultsUrl) {
+      // Nothing was resolved — the URL was not a /downloads/ path we recognise.
+      say("GDPR export — unexpected link",
+        `<p style="margin:0 0 8px;color:#b4342c"><strong>This link is not the shape the app expects.</strong></p>`
+        + `<p style="margin:0;color:#777;font-size:13px">Got <code>${escapeHtml(resultsUrl)}</code> and could not `
+        + `turn it into a download. Copy this and report it.</p>`);
+      throw new Error("resultsUrl was not a recognised /api/v2/downloads/ link: " + resultsUrl);
+    }
+
+    say("GDPR export — starting download",
+      `<p style="margin:0 0 6px"><strong>Link received &mdash; starting the download.</strong></p>`
+      + `<p style="margin:0;color:#777;font-size:13px">From <code>${escapeHtml(host(signed))}</code>.</p>`);
     win.location.href = signed;
 
-    // A URL that answers Content-Disposition: attachment starts a download and
-    // leaves the page exactly as it was — still about:blank, still saying
-    // "Preparing…", with the archive quietly landing in the download bar. So
-    // the tab told the tester nothing had happened when everything had. After
-    // a beat, say what the tab is now for. If the navigation actually replaced
-    // the document (an error page from storage, say), this write is
-    // cross-origin and throws, which is fine: the error page is the message.
+    // A URL that answers Content-Disposition: attachment starts the download
+    // and leaves this page as it was, so say what the tab is now for. If the
+    // navigation replaced the document instead — storage returning an error
+    // page — this write is cross-origin and throws, and that page is the
+    // message.
     setTimeout(() => {
-      try {
-        win.document.title = "GDPR export";
-        win.document.body.innerHTML =
-          "<div style=\"font-family:system-ui;padding:24px;color:#333;max-width:52ch;line-height:1.5\">"
-          + "<p style=\"font-size:16px;margin:0 0 8px\"><strong>Your export archive is downloading.</strong></p>"
-          + "<p style=\"margin:0 0 8px;color:#555\">Look for the <code>.zip</code> in your browser's download bar "
-          + "or Downloads folder. You can close this tab.</p>"
-          + "<p style=\"margin:0;color:#777;font-size:13px\">If nothing arrived, the signed link may have expired "
-          + "&mdash; go back and submit a new Access request.</p>"
-          + "</div>";
-      } catch { /* navigated away: whatever is showing is the answer */ }
-    }, 1200);
+      say("GDPR export",
+        `<p style="font-size:16px;margin:0 0 8px"><strong>Your export archive is downloading.</strong></p>`
+        + `<p style="margin:0 0 8px;color:#555">Look for the <code>.zip</code> in your browser's download bar `
+        + `or Downloads folder. You can close this tab.</p>`
+        + `<p style="margin:0;color:#777;font-size:13px">Nothing arrived? The signed link from `
+        + `<code>${escapeHtml(host(signed))}</code> may have been refused or expired &mdash; `
+        + `check the browser's download bar for a blocked-download notice, then submit a new Access request.</p>`);
+    }, 1500);
   }
 
   // ── Rendering ─────────────────────────────────────────────────────
