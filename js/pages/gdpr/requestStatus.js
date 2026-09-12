@@ -178,6 +178,27 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
       throw err;
     }
     win.location.href = signed;
+
+    // A URL that answers Content-Disposition: attachment starts a download and
+    // leaves the page exactly as it was — still about:blank, still saying
+    // "Preparing…", with the archive quietly landing in the download bar. So
+    // the tab told the tester nothing had happened when everything had. After
+    // a beat, say what the tab is now for. If the navigation actually replaced
+    // the document (an error page from storage, say), this write is
+    // cross-origin and throws, which is fine: the error page is the message.
+    setTimeout(() => {
+      try {
+        win.document.title = "GDPR export";
+        win.document.body.innerHTML =
+          "<div style=\"font-family:system-ui;padding:24px;color:#333;max-width:52ch;line-height:1.5\">"
+          + "<p style=\"font-size:16px;margin:0 0 8px\"><strong>Your export archive is downloading.</strong></p>"
+          + "<p style=\"margin:0 0 8px;color:#555\">Look for the <code>.zip</code> in your browser's download bar "
+          + "or Downloads folder. You can close this tab.</p>"
+          + "<p style=\"margin:0;color:#777;font-size:13px\">If nothing arrived, the signed link may have expired "
+          + "&mdash; go back and submit a new Access request.</p>"
+          + "</div>";
+      } catch { /* navigated away: whatever is showing is the answer */ }
+    }, 1200);
   }
 
   // ── Rendering ─────────────────────────────────────────────────────
@@ -345,7 +366,8 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
           // the browser and Genesys. Resolving the link is the part we CAN see
           // — a 404 there means Genesys no longer holds the export.
           setStatus(
-            "Export archive opening in a new tab — the browser will save it.",
+            "Download started — the .zip is in your browser's download bar. "
+            + "The new tab only tells you that; you can close it.",
             "success",
           );
           // Pulling a subject's personal data out of a customer tenant is the
