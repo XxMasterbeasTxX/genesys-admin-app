@@ -216,25 +216,24 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
       throw new Error("resultsUrl was not a recognised /api/v2/downloads/ link: " + resultsUrl);
     }
 
-    say("GDPR export — starting download",
-      `<p style="margin:0 0 6px"><strong>Link received &mdash; starting the download.</strong></p>`
-      + `<p style="margin:0;color:#777;font-size:13px">From <code>${escapeHtml(host(signed))}</code>.</p>`);
+    // Two routes to the same file, because one of them can be blocked
+    // silently. Navigating the tab is a script-initiated download with no
+    // fresh user gesture behind it, and Edge declined it for the tester
+    // without a word — link resolved, nothing arrived. A real click on a real
+    // anchor is a user gesture and cannot be refused as "automatic". So the
+    // tab gets the anchor first, and the navigation is attempted as well; if
+    // the browser allows it, the download simply starts, and if it does not,
+    // the button is already there.
+    say("GDPR export — ready",
+      `<p style="font-size:16px;margin:0 0 12px"><strong>Your export archive is ready.</strong></p>`
+      + `<p style="margin:0 0 16px"><a href="${escapeHtml(signed)}" `
+      + `style="display:inline-block;padding:12px 22px;background:#1d4ed8;color:#fff;border-radius:6px;`
+      + `text-decoration:none;font-weight:600;font-size:15px">&#11015; Download archive (.zip)</a></p>`
+      + `<p style="margin:0 0 6px;color:#555">The download should also have started on its own &mdash; `
+      + `check the browser's download bar. If it did not, the button above works.</p>`
+      + `<p style="margin:0;color:#777;font-size:13px">Served from <code>${escapeHtml(host(signed))}</code>. `
+      + `You can close this tab once the file has arrived.</p>`);
     win.location.href = signed;
-
-    // A URL that answers Content-Disposition: attachment starts the download
-    // and leaves this page as it was, so say what the tab is now for. If the
-    // navigation replaced the document instead — storage returning an error
-    // page — this write is cross-origin and throws, and that page is the
-    // message.
-    setTimeout(() => {
-      say("GDPR export",
-        `<p style="font-size:16px;margin:0 0 8px"><strong>Your export archive is downloading.</strong></p>`
-        + `<p style="margin:0 0 8px;color:#555">Look for the <code>.zip</code> in your browser's download bar `
-        + `or Downloads folder. You can close this tab.</p>`
-        + `<p style="margin:0;color:#777;font-size:13px">Nothing arrived? The signed link from `
-        + `<code>${escapeHtml(host(signed))}</code> may have been refused or expired &mdash; `
-        + `check the browser's download bar for a blocked-download notice, then submit a new Access request.</p>`);
-    }, 1500);
   }
 
   // ── Rendering ─────────────────────────────────────────────────────
