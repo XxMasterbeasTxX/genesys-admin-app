@@ -70,6 +70,12 @@ const PATH_MODULE_RULES = [
   // export; unmapped, both would fail closed the moment the flag is enabled.
   { test: /^\/api\/v2\/license\b/i, modules: ["roles", "export.licenses", "export"] },
   { test: /^\/api\/v2\/gdpr\b/i, modules: ["gdpr"] },
+  // A GDPR export's resultsUrl is /api/v2/downloads/<id> — an endpoint that
+  // exchanges an authenticated call for a signed storage URL. Request Status
+  // makes that call through the proxy with issueRedirect=false; unmapped, it
+  // would fail closed for every entitlement-gated session and the Download
+  // link would do nothing.
+  { test: /^\/api\/v2\/downloads\b/i, modules: ["gdpr"] },
 
   // Configuration reads behind the Divisions pages, shared with the features
   // that also list the same objects.
