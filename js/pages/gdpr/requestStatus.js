@@ -237,7 +237,10 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
                         : r.subject?.externalId        ? "External ID"
                         : "—";
 
-      const completedDate = r.resolutionDate ? new Date(r.resolutionDate).toLocaleString() : "—";
+      // No completion timestamp: GDPRRequest carries createdDate and nothing
+      // else date-shaped. A Completed column used to read `resolutionDate`, a
+      // field that is not in the spec and never arrived, so it was "—" on every
+      // row forever.
       // Three sources, strongest first. The app's own log is the only one that
       // names a person for a request raised here; Genesys can only name one
       // for a request raised elsewhere. They are marked differently because
@@ -286,7 +289,6 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
           <td>${subjectHtml}</td>
           <td><span class="gdpr-subject-type-badge">${escapeHtml(subjectType)}</span></td>
           <td><span class="gdpr-status-dot gdpr-status-dot--${statusClass}">${escapeHtml(statusLabel)}</span></td>
-          <td>${escapeHtml(completedDate)}</td>
           <td>${submittedHtml}</td>
           <td class="gdpr-details-cell">${detailsHtml}</td>
           <td class="gdpr-mono">${reqId}</td>
@@ -305,7 +307,6 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
               <th>Subject</th>
               <th>Subject Type</th>
               <th>Status</th>
-              <th>Completed</th>
               <th>Submitted by</th>
               <th>Details</th>
               <th>Request ID</th>
