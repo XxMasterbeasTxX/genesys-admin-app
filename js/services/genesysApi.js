@@ -1984,6 +1984,48 @@ export async function gdprGetRequest(api, orgId, requestId) {
   return api.proxyGenesys(orgId, "GET", `/api/v2/gdpr/requests/${requestId}`);
 }
 
+/**
+ * Turn a GDPR export's `resultsUrl` into a URL the browser can fetch.
+ *
+ * `resultsUrl` is not the archive. Observed live, it is
+ *   https://apps.mypurecloud.de/platform/api/v2/downloads/<id>
+ * — a Genesys API endpoint that, per the spec, "issues a redirect to a signed
+ * secure download URL". It needs a bearer token, so opening it in a bare tab
+ * renders blank, and it 302s to storage, so fetching it through the proxy
+ * would follow the redirect and read a zip as text.
+ *
+ * `issueRedirect=false` is the way out: the endpoint then answers 200 with
+ * `{ url }` — the signed URL as JSON — which the proxy passes through intact
+ * and the browser can open directly. Authenticated hop through the proxy,
+ * binary hop in the browser; neither touches the other's weakness.
+ *
+ * Accepts the full URL as Genesys returns it, an api-host URL, or a bare
+ * path. The `/platform` prefix on the apps host is that host's own proxy
+ * mount and is not part of the API path.
+ *
+ * @returns {Promise<string>} The signed URL, or the input unchanged when it
+ *   is not a /downloads/ path (already signed, or something newer).
+ */
+export async function gdprResolveDownloadUrl(api, orgId, resultsUrl) {
+  let path;
+  try {
+    const u = new URL(resultsUrl, "https://api.mypurecloud.com");
+    path = u.pathname;
+  } catch {
+    path = String(resultsUrl || "");
+  }
+  const m = path.match(/\/api\/v2\/downloads\/([^/?#]+)/i);
+  if (!m) return resultsUrl;
+
+  const resp = await api.proxyGenesys(orgId, "GET", `/api/v2/downloads/${m[1]}`, {
+    query: { issueRedirect: "false" },
+  });
+  if (!resp?.url) {
+    throw new Error("Genesys did not return a download URL for this export.");
+  }
+  return resp.url;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Audit
 // ─────────────────────────────────────────────────────────────────────

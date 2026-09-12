@@ -128,37 +128,56 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
 
   // ── Download ──────────────────────────────────────────────────────
   /**
-   * Hand the export's results URL straight to the browser.
+   * Get the export archive into the browser.
    *
-   * The export is a **ZIP archive** — `resultsUrls` is documented as "the
-   * locations where the results can be retrieved if multiple archive files
-   * created", and Genesys staff on the community forum confirm a zip. There is
-   * also no `/results` endpoint anywhere under `/api/v2/gdpr` in the OpenAPI
-   * spec, and every comparable `downloadUrl` in that spec is described as a
-   * signed or presigned URL. So `resultsUrl` points at storage Genesys has
-   * signed, not at an API path.
+   * What `resultsUrl` actually is, observed live on 2026-09-12:
    *
-   * That rules out both of the obvious-looking implementations:
+   *   https://apps.mypurecloud.de/platform/api/v2/downloads/<id>
    *
-   *   - `URL.createObjectURL` + `a.click()` (what this page used to do) is
-   *     inert inside the Genesys Cloud iframe.
-   *   - Routing it through `/api/genesys-proxy` would be worse than useless:
-   *     the proxy reads every response with `.text()`, which silently destroys
-   *     a zip, and it sits behind the 45-second Static Web Apps cap that a
-   *     large archive would blow through. It would have produced a corrupt
-   *     file that looked like a successful download.
+   * Not the archive, and not a signed link either. It is a Genesys API
+   * endpoint that "issues a redirect to a signed secure download URL" (the
+   * spec's own words), and it wants a bearer token. Opened bare in a tab it
+   * renders blank, which is what the first release did and what the tester
+   * saw. An earlier comment here reasoned from the absence of a `/results`
+   * endpoint under `/api/v2/gdpr` to "it must be signed storage" — the
+   * inference was sound and the conclusion was wrong, because the endpoint
+   * lives under `/downloads`, not `/gdpr`.
    *
-   * Opening the signed URL lets the browser do what it is for: it carries its
-   * own auth, the server sets the filename and content type, and the download
-   * is the browser's, not ours. `window.open` is the same mechanism the Excel
-   * exports already rely on to reach download.html, so it is proven in the
-   * iframe.
+   * So it is a two-step, and each step goes where it belongs:
+   *
+   *   1. `gdprResolveDownloadUrl` calls the endpoint through the proxy with
+   *      `issueRedirect=false`, which returns the signed URL as JSON instead of
+   *      a 302. The proxy carries the auth and passes a small JSON body through
+   *      intact — the one thing it is good at. Without that flag it would
+   *      follow the redirect into storage and `.text()` a zip.
+   *   2. The browser opens the signed URL. Binary, filename, content type and
+   *      the download itself are the browser's, not ours.
+   *
+   * The tab is opened SYNCHRONOUSLY in the click, before the await. A
+   * `window.open` after an await has lost the user gesture and pop-up blockers
+   * refuse it — which is the "Pop-up blocked" the tester hit on top of the
+   * blank tab. Open first, resolve, then point the already-open tab at the
+   * signed URL; close it again if resolution fails.
    */
-  function openExport(url) {
-    const win = window.open(url, "_blank", "noopener");
+  async function openExport(resultsUrl) {
+    const win = window.open("", "_blank");
     if (!win) {
       throw new Error("Pop-up blocked. Allow pop-ups for this site and try the download again.");
     }
+    try {
+      win.document.title = "Preparing GDPR export…";
+      win.document.body.innerHTML =
+        "<p style=\"font-family:system-ui;padding:24px;color:#555\">Preparing your export archive…</p>";
+    } catch { /* cross-origin sandboxing can refuse this; the tab still works */ }
+
+    let signed;
+    try {
+      signed = await gc.gdprResolveDownloadUrl(api, currentOrg.id, resultsUrl);
+    } catch (err) {
+      try { win.close(); } catch { /* already gone */ }
+      throw err;
+    }
+    win.location.href = signed;
   }
 
   // ── Rendering ─────────────────────────────────────────────────────
@@ -317,15 +336,15 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
         if (!currentOrg) return;
         const url = link.dataset.gdprUrl;
         const reqId = link.dataset.reqId;
+        link.textContent = "Preparing…";
+        link.style.pointerEvents = "none";
         try {
-          openExport(url);
-          // The archive opens on Genesys's own storage, so this is the last
-          // point we can see. Whether the signed URL is still valid is between
-          // the browser and Genesys — if it has expired, that shows in the new
-          // tab, and claiming otherwise here would be inventing a result.
+          await openExport(url);
+          // Once the tab is pointed at signed storage the exchange is between
+          // the browser and Genesys. Resolving the link is the part we CAN see
+          // — a 404 there means Genesys no longer holds the export.
           setStatus(
-            "Opening the export archive in a new tab. If it does not download, "
-            + "the signed link may have expired — submit a new Access request.",
+            "Export archive opening in a new tab — the browser will save it.",
             "success",
           );
           // Pulling a subject's personal data out of a customer tenant is the
@@ -335,11 +354,24 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
             description: `Opened GDPR Access export archive for request ${reqId || "(unknown)"}`,
             count: 1 });
         } catch (err) {
-          setStatus(err.message, "error");
+          const gone = err?.status === 404 || /not found/i.test(err?.message || "");
+          setStatus(gone
+            ? "Genesys no longer holds this export — submit a new Access request."
+            : `Download failed: ${err.message}`, "error");
+          if (gone) {
+            link.textContent = "Expired";
+            link.style.opacity = "0.5";
+            link.title = "Genesys returned 404 for this download. Submit a new Access request.";
+          }
           logAction({ me, orgId: currentOrg.id, orgName: currentOrg.name || "",
             action: "gdpr_export_download",
             description: `GDPR Access export could not be opened for request ${reqId || "(unknown)"}`,
             result: "failure", errorMessage: err.message });
+        } finally {
+          if (link.textContent !== "Expired") {
+            link.textContent = link.dataset.originalText || "Download";
+            link.style.pointerEvents = "";
+          }
         }
       });
     });

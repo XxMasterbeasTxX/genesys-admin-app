@@ -282,24 +282,31 @@ fails outright, because nobody finds out.
 **The section that matters most.** This flow has never run in production, so
 treat every line as a first run rather than a regression check.
 
-What the investigation established, so you know what "correct" looks like: the
-export is a **ZIP archive** on storage Genesys signs itself. There is no
-`/results` endpoint under `/api/v2/gdpr` anywhere in the OpenAPI spec,
-`resultsUrls` is documented as "the locations … if multiple archive files
-created", and Genesys staff on the community forum confirm a zip. The app
-therefore opens the signed URL in a new tab and lets the browser save it. It
-deliberately does **not** route it through `/api/genesys-proxy`, which reads
-every response as text — that would silently corrupt a zip — and which sits
-behind the 45-second Static Web Apps cap.
+What "correct" looks like, established on 2026-09-12 from a live click: the
+export is a **ZIP archive**, and `resultsUrl` is **not** a link to it. It is
+`https://apps.mypurecloud.de/platform/api/v2/downloads/<id>` — a Genesys API
+endpoint that "issues a redirect to a signed secure download URL" and needs a
+bearer token. Opened bare it renders a blank tab, which is what the first
+release did.
+
+The app now does it in two steps: it calls that endpoint through the proxy
+with `issueRedirect=false`, which returns the signed URL as JSON rather than a
+302, then points a new tab at the signed URL so the browser downloads the
+archive. The proxy never touches the zip — it would read it as text and
+corrupt it — and the tab is opened *before* the network call so pop-up
+blockers do not refuse it.
 
 - [ ] **9.1** — Submit an Access request and wait for Genesys to complete it (1–2 business days)
   - Expect: status reaches **Completed** and a **Download** link appears
   - Notes: `______________________`
-- [ ] **9.2 ★** — Inspect `resultsUrl` on the completed request (dev tools → Network)
-  - Expect: an absolute URL on signed storage, not an `/api/v2/` path
-  - Answer — host, and does it carry a signature in the query string? `______________________`
+- [ ] **9.2** — Inspect `resultsUrl` on the completed request (dev tools → Network)
+  - Expect: `…/api/v2/downloads/<id>` on the apps host — an API endpoint, not signed storage. Confirmed 2026-09-12.
+  - Notes: `______________________`
 - [ ] **9.3** — Click **Download**
-  - Expect: a new tab opens and the browser downloads a **.zip**
+  - Expect: a new tab opens showing "Preparing your export archive…" for a moment, then the browser downloads a **.zip**. The link reads "Preparing…" while it resolves, then returns to "Download".
+  - Notes: `______________________`
+- [ ] **9.3a** — Watch DevTools → Network during 9.3
+  - Expect: one `genesys-proxy` call whose body targets `/api/v2/downloads/<id>` with `issueRedirect=false`, returning a small JSON `{ url }`. The zip itself is fetched by the browser from an `amazonaws.com` (or similar) host, **not** via the proxy.
   - Notes: `______________________`
 - [ ] **9.4** — Open the archive
   - Expect: real export content
@@ -314,9 +321,9 @@ behind the 45-second Static Web Apps cap.
 - [ ] **9.7** — Submit an Access request for a subject with a lot of history
   - Expect: if Genesys returns several archives (`resultsUrls`), each gets its own numbered link — Download (1), Download (2)
   - Answer — how many archives? `______________________`
-- [ ] **9.8 ★** — Leave a completed export for a week, then click Download
-  - Expect: unknown. Once the tab is open the exchange is between the browser and Genesys, so an expired signed link shows Genesys's own error page, not ours. The app says as much when you click.
-  - Answer — what happens, and roughly how long do links last? `______________________`
+- [ ] **9.8 ★** — Leave a completed export for a while, then click Download
+  - Expect: if Genesys has dropped the export, the `/downloads` call returns 404 and the link reads **Expired** with a message to submit a new Access request — the tab closes rather than showing a blank page. If the signed URL is returned but has itself expired, the new tab shows the storage provider's error.
+  - Answer — which happened, and roughly how long after completion? `______________________`
 - [ ] **9.9** — Block pop-ups in the browser, then click Download
   - Expect: an inline error naming the pop-up blocker — not a silent no-op
   - Notes: `______________________`
