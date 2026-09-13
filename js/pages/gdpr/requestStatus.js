@@ -140,23 +140,29 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
    * call through the proxy with `issueRedirect=false` so the signed URL comes
    * back as JSON rather than a 302 the proxy would follow into the archive.
    *
-   * What the browser then does with the signed URL turned out to be the whole
-   * problem, and it was settled empirically rather than by reasoning:
+   * What the browser then does with the signed URL was the whole problem, and
+   * the answer was not in this app. The app runs inside the Genesys Cloud
+   * iframe, which is sandboxed; every tab the app opens inherits that sandbox;
+   * and a sandboxed document cannot perform a browser download unless the
+   * sandbox grants `allow-downloads`. Without it, four different shapes of
+   * the same click all produced a blank tab — navigating a popup, an anchor
+   * inside that popup, a plain <a target="_blank"> here — while right-click →
+   * "Open link in new tab" worked every time, because THAT tab is opened by
+   * the browser and is not sandboxed. Fetching the bytes into download.html
+   * for a Save As dialog was tried and refused: api-downloads.<region> does
+   * not allow a cross-origin fetch.
    *
-   *   - navigating a script-opened about:blank popup to it: no download
-   *   - clicking an anchor INSIDE that popup: no download
-   *   - "open link in new tab" on that anchor: downloads
+   * The fix is therefore a Genesys setting, not code: the Client Application
+   * integration's **Iframe Sandbox Options** must include `allow-downloads`.
+   * With it, this plain anchor downloads on a left-click; the browser's own
+   * "ask where to save" preference decides whether a Save As dialog appears.
+   * See docs/customer-onboarding.md, Step 6.
    *
-   * So the tab that fetches the archive has to be a fresh one whose FIRST
-   * navigation is the signed URL. That is exactly what a plain
-   * `<a href target="_blank">` does on a click, and nothing else in the app
-   * needs to happen at click time — which is why the URLs are resolved up
-   * front and the table gets ordinary anchors. One click, no popup, no
-   * "Preparing…", nothing for a blocker to refuse.
-   *
-   * The cost is a proxy call per completed export on load, small JSON each,
-   * capped. The trade is a signed URL that can go stale while the page sits
-   * open; Load / Refresh mints fresh ones, and the help text says so.
+   * The URLs are resolved up front so that the click is nothing but an
+   * ordinary navigation the browser handles. The cost is a proxy call per
+   * completed export on load, small JSON each, capped. The trade is a signed
+   * URL that can go stale while the page sits open; Load / Refresh mints fresh
+   * ones, and the help text says so.
    */
   const signedUrls = new Map();   // request id → [{ url } | { error, gone }]
 

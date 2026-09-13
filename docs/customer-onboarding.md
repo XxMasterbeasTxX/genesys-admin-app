@@ -150,6 +150,28 @@ Example (Test IE on dev): `https://wonderful-rock-07e429f10.7.azurestaticapps.ne
 On launch the app looks up the org's public login config, sends the user to **their own** region's login,
 and after authentication locks the session to that org with the purchased menu.
 
+### If the app is embedded as a Client Application
+
+Genesys embeds Client Applications in a **sandboxed iframe**, and every tab the app opens inherits
+that sandbox. A sandboxed tab cannot perform a browser download, so anything the app hands to the
+browser as a file — a GDPR export archive is the first example — opens a blank tab instead.
+
+In the integration's **Configuration → Advanced → Iframe Sandbox Options**, add:
+
+```
+allow-downloads
+```
+
+to whatever is already there (the default set includes `allow-scripts`, `allow-same-origin`,
+`allow-forms`, `allow-modals`, `allow-popups`). Without it, a left-click on a download link does
+nothing; the workaround is right-click → *Open link in new tab*, which the browser opens outside
+the sandbox.
+
+Excel exports are unaffected either way — `download.html` uses the native Save As dialog, which is
+not a download in the sandbox's sense.
+
+Confirmed on Demo, 2026-09-13.
+
 ---
 
 ## Step 7 — Verify
