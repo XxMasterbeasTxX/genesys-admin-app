@@ -31,8 +31,11 @@ import { logAction } from "../../services/activityLogService.js";
 //     COMPLETED.
 //   • Access returns a ZIP archive whose contents Genesys has repeatedly
 //     declined to document (community.genesys.com/discussion/use-of-gdpr-apis,
-//     open from 2023 to 2025), and which excludes call recordings even though
-//     erasure covers them.
+//     open from 2023 to 2025). A real one, opened 2026-09-13: 2,002 flat
+//     `service!id` files — analytics conversation records, .opus call
+//     recordings, external-contact JSON, a quality survey, a billing record.
+//     An earlier draft here said recordings were excluded; that came from
+//     search results describing Genesys Engage, not Genesys Cloud.
 //   • Timeframes are from help.genesys.cloud/articles/genesys-cloud-and-gdpr-compliance.
 //
 // This is the page where someone acts on a legal obligation on a real
@@ -50,7 +53,7 @@ const REQUEST_TYPES = {
       "Genesys <strong>redacts personal data — it does not delete history</strong>. Conversations, "
         + "interaction records and their metrics survive; the name, phone number, participant data "
         + "and recording content attached to them are removed or anonymised.",
-      "Call recordings <strong>are</strong> in scope, unlike the Access export.",
+      "Call recordings <strong>are</strong> in scope.",
       "Takes <strong>up to 14 days</strong>. Redaction has been reported to land days after the "
         + "status here reads Completed, so treat Completed as “Genesys accepted it”, not “it is done”.",
       "Irreversible. There is no undo, and Genesys will not restore the data.",
@@ -74,9 +77,9 @@ const REQUEST_TYPES = {
       "You get a <strong>ZIP archive</strong>, downloadable from Request Status once the request "
         + "reads Completed — usually <strong>1–2 business days</strong>. Large exports may arrive as "
         + "several archives.",
-      "Inside are raw platform exports — reported to include analytics, billing and journey session "
-        + "data, as HTML and CSV.",
-      "<strong>Call recordings are not included</strong>, even though erasure covers them.",
+      "Inside are flat <code>service!id</code> files: one per conversation from analytics, the "
+        + "subject's <strong>call recordings as .opus audio</strong>, external-contact data, quality "
+        + "surveys and billing records.",
       "Nothing is changed. This request only reads.",
     ],
     expectWarn:   null,

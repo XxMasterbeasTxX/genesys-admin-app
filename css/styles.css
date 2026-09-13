@@ -4180,6 +4180,14 @@ body {
   white-space: nowrap;
 }
 .gdpr-download-link:hover { background: rgba(59,130,246,0.22); color: #bfdbfe; }
+/* A download that could not be resolved: shown, not clickable, reason on hover. */
+.gdpr-download-link--dead {
+  background: transparent;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  cursor: help;
+}
+.gdpr-download-link--dead:hover { background: transparent; color: var(--muted); }
 .gdpr-replacements-summary {
   font-size: 12px;
   color: var(--muted);

@@ -303,17 +303,21 @@ blockers do not refuse it.
   - Expect: `…/api/v2/downloads/<id>` on the apps host — an API endpoint, not signed storage. Confirmed 2026-09-12.
   - Notes: `______________________`
 - [ ] **9.3** — Click **Download**
-  - Expect: a new tab opens showing "Preparing your export archive…" for a moment, then the browser downloads a **.zip**. The link reads "Preparing…" while it resolves, then returns to "Download".
+  - Expect: a **new tab** opens directly on `api-downloads.<region>` and the browser saves a **.zip**. No intermediate page, no "Preparing…". The link is an ordinary anchor with the signed URL already in it.
   - Notes: `______________________`
-- [ ] **9.3a** — Watch DevTools → Network during 9.3
-  - Expect: one `genesys-proxy` call whose body targets `/api/v2/downloads/<id>` with `issueRedirect=false`, returning a small JSON `{ url }`. The zip itself is fetched by the browser from an `amazonaws.com` (or similar) host, **not** via the proxy.
+  - Settled empirically on 2026-09-12/13: navigating a script-opened popup to the signed URL never downloaded, nor did clicking a button inside that popup — but "open link in new tab" did. So the tab that fetches the archive must be a fresh one whose first navigation is the signed URL, which is what a plain `target="_blank"` anchor gives.
+- [ ] **9.3a** — Watch DevTools → Network while the page **loads**
+  - Expect: one `genesys-proxy` call per completed export targeting `/api/v2/downloads/<id>` with `issueRedirect=false`, each returning a small JSON `{ url }`. Nothing at click time — the click is a plain navigation the browser handles.
   - Notes: `______________________`
+- [ ] **9.3b** — Leave the page open a long while, then click Download
+  - Expect: either it still works, or the new tab shows Genesys's own error for a stale signed link. Press **Load / Refresh** and click again — fresh links are minted on every load.
+  - Answer — how long did the link stay good? `______________________`
 - [ ] **9.4** — Open the archive
-  - Expect: real export content
-  - Answer — top-level folder names: `______________________`
-- [ ] **9.5 ★** — Look for call recordings inside the archive
-  - Expect: **absent** — recordings are excluded from Access even though Erasure covers them
-  - Answer: `______________________`
+  - Expect: **flat files, no folders**, named `service!identifier` — `analytics!<uuid>` (one per conversation, JSON with no extension), `recording!Recording_Conv_…_Rec_….opus`, `contacts-service!externalContact-*.json`, `quality!Survey_Conv_….json`, `billing-service!<uuid>`. Confirmed 2026-09-13 from a real export: 2,002 files.
+  - Notes: `______________________`
+- [ ] **9.5** — Look for call recordings inside the archive
+  - Expect: **present**, as `.opus` audio under the `recording!` prefix. An earlier version of this plan said absent — that was wrong, and came from documentation for a different Genesys product.
+  - Notes: `______________________`
 - [ ] **9.6** — **Run 9.3 with the app embedded in the Genesys Cloud iframe**, not standalone
   - Expect: the new tab opens and the download completes
   - Notes: `______________________`
@@ -321,17 +325,17 @@ blockers do not refuse it.
 - [ ] **9.7** — Submit an Access request for a subject with a lot of history
   - Expect: if Genesys returns several archives (`resultsUrls`), each gets its own numbered link — Download (1), Download (2)
   - Answer — how many archives? `______________________`
-- [ ] **9.8 ★** — Leave a completed export for a while, then click Download
-  - Expect: if Genesys has dropped the export, the `/downloads` call returns 404 and the link reads **Expired** with a message to submit a new Access request — the tab closes rather than showing a blank page. If the signed URL is returned but has itself expired, the new tab shows the storage provider's error.
-  - Answer — which happened, and roughly how long after completion? `______________________`
+- [ ] **9.8 ★** — Come back days later and press Load / Refresh
+  - Expect: if Genesys has dropped the export, resolving returns 404 and the link renders as **Expired** (hover for the reason) — submit a new Access request.
+  - Answer — how long after completion did Genesys stop serving it? `______________________`
 - [ ] **9.9** — Block pop-ups in the browser, then click Download
   - Expect: an inline error naming the pop-up blocker — not a silent no-op
   - Notes: `______________________`
 - [ ] **9.10** — Check the Activity Log after 9.3
   - Expect: a **GDPR Export Download** row naming the request id
   - Notes: `______________________`
-- [ ] **9.11 ★** — Judgement call, once you have seen a real archive
-  - Is the export usable as-is, or does it need processing before it can go to a data subject? Genesys does not document its contents, and users report building custom tooling to read them.
+- [ ] **9.11 ★** — Judgement call, having seen a real archive
+  - 2,002 flat files, most of them extensionless JSON named by conversation id, plus raw .opus audio. Is that something the business can hand to a data subject, or does it need a report built from it?
   - Answer: `______________________`
 
 ---

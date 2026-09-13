@@ -67,9 +67,9 @@ export const RELEASE_NOTES = [
       "Each right explains what Genesys actually does before you commit, because it is not what the "
         + "article names. Erasure <em>redacts</em> personal data — conversations and their metrics "
         + "survive, names and phone numbers and recording content do not — and can take 14 days. "
-        + "Access produces a ZIP archive of raw platform data that excludes call recordings and that "
-        + "Genesys does not document, so it is not something you can forward to the data subject "
-        + "unread. That is on the page, up front, rather than left to be discovered after the fact.",
+        + "Access produces a ZIP archive of raw platform data — conversation records, the subject's "
+        + "call recordings as audio, contact data, surveys — that Genesys does not document. That is "
+        + "on the page, up front, rather than left to be discovered after the fact.",
       "Confirmation names the customer org and lists every subject that will be affected. Erasure "
         + "additionally holds the submit button behind an explicit consent tick, because it cannot "
         + "be undone.",
