@@ -80,13 +80,16 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
         <li><strong>Completed means Genesys accepted and processed the request</strong>, not
             necessarily that every record has caught up. Erasures in particular have been reported
             to finish redacting days after the status here changes.</li>
-        <li><strong>Access</strong> downloads are a <strong>ZIP archive</strong> on Genesys's own
-            storage &mdash; the link opens in a new tab and the browser saves it. Large exports may
-            produce several archives, and each gets its own link. Call recordings are not included.</li>
+        <li><strong>Access</strong> downloads are a <strong>ZIP archive</strong> &mdash; the link opens a new
+            tab and the browser saves it. Inside: one file per conversation from analytics, the subject's
+            <strong>call recordings as .opus audio</strong>, external-contact data, quality surveys and billing
+            records, all as flat <code>service!id</code> files. Large exports may produce several archives,
+            each with its own link.</li>
+        <li>Download links are minted when this page loads and do not last forever. If one has gone
+            stale, <strong>Load / Refresh</strong> mints fresh ones; if Genesys no longer holds the
+            export, the link reads Expired &mdash; submit a new Access request.</li>
         <li><strong>Erasure</strong> redacts personal data and leaves the interaction records
             themselves in place, so a completed erasure does not empty the org's history.</li>
-        <li>Download links are signed by Genesys and do not last forever. If one stops working,
-            submit a fresh Access request rather than retrying it.</li>
         <li><strong>Submitted by</strong> is what Genesys recorded. Requests raised from this app
             arrive through its integration, so Genesys attributes them to the API client rather
             than to a person &mdash; <strong>Admin &rsaquo; Activity Log</strong> is where the
@@ -128,112 +131,60 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
 
   // ── Download ──────────────────────────────────────────────────────
   /**
-   * Get the export archive into the browser.
+   * Turn each completed export's `resultsUrl` into a link the browser will
+   * actually download from, BEFORE the table is drawn.
    *
-   * What `resultsUrl` actually is, observed live on 2026-09-12:
+   * What `resultsUrl` is, observed live: an API endpoint —
+   * `…/api/v2/downloads/<id>` — that exchanges an authenticated call for a
+   * signed URL on `api-downloads.<region>`. `gdprResolveDownloadUrl` makes that
+   * call through the proxy with `issueRedirect=false` so the signed URL comes
+   * back as JSON rather than a 302 the proxy would follow into the archive.
    *
-   *   https://apps.mypurecloud.de/platform/api/v2/downloads/<id>
+   * What the browser then does with the signed URL turned out to be the whole
+   * problem, and it was settled empirically rather than by reasoning:
    *
-   * Not the archive, and not a signed link either. It is a Genesys API
-   * endpoint that "issues a redirect to a signed secure download URL" (the
-   * spec's own words), and it wants a bearer token. Opened bare in a tab it
-   * renders blank, which is what the first release did and what the tester
-   * saw. An earlier comment here reasoned from the absence of a `/results`
-   * endpoint under `/api/v2/gdpr` to "it must be signed storage" — the
-   * inference was sound and the conclusion was wrong, because the endpoint
-   * lives under `/downloads`, not `/gdpr`.
+   *   - navigating a script-opened about:blank popup to it: no download
+   *   - clicking an anchor INSIDE that popup: no download
+   *   - "open link in new tab" on that anchor: downloads
    *
-   * So it is a two-step, and each step goes where it belongs:
+   * So the tab that fetches the archive has to be a fresh one whose FIRST
+   * navigation is the signed URL. That is exactly what a plain
+   * `<a href target="_blank">` does on a click, and nothing else in the app
+   * needs to happen at click time — which is why the URLs are resolved up
+   * front and the table gets ordinary anchors. One click, no popup, no
+   * "Preparing…", nothing for a blocker to refuse.
    *
-   *   1. `gdprResolveDownloadUrl` calls the endpoint through the proxy with
-   *      `issueRedirect=false`, which returns the signed URL as JSON instead of
-   *      a 302. The proxy carries the auth and passes a small JSON body through
-   *      intact — the one thing it is good at. Without that flag it would
-   *      follow the redirect into storage and `.text()` a zip.
-   *   2. The browser opens the signed URL. Binary, filename, content type and
-   *      the download itself are the browser's, not ours.
-   *
-   * The tab is opened SYNCHRONOUSLY in the click, before the await. A
-   * `window.open` after an await has lost the user gesture and pop-up blockers
-   * refuse it — which is the "Pop-up blocked" the tester hit on top of the
-   * blank tab. Open first, resolve, then point the already-open tab at the
-   * signed URL; close it again if resolution fails.
+   * The cost is a proxy call per completed export on load, small JSON each,
+   * capped. The trade is a signed URL that can go stale while the page sits
+   * open; Load / Refresh mints fresh ones, and the help text says so.
    */
-  async function openExport(resultsUrl) {
-    const win = window.open("", "_blank");
-    if (!win) {
-      throw new Error("Pop-up blocked. Allow pop-ups for this site and try the download again.");
+  const signedUrls = new Map();   // request id → [{ url } | { error, gone }]
+
+  async function resolveDownloadUrls(orgId) {
+    const jobs = [];
+    let budget = 20;
+    for (const r of allRequests) {
+      if (r.requestType !== "GDPR_EXPORT" || r.status !== "COMPLETED") continue;
+      const raw = r.resultsUrls?.length ? r.resultsUrls : r.resultsUrl ? [r.resultsUrl] : [];
+      if (!raw.length) continue;
+      const slots = raw.map(() => ({ pending: true }));
+      signedUrls.set(r.id, slots);
+      raw.forEach((u, i) => {
+        if (budget-- <= 0) {
+          slots[i] = { error: "Not resolved — too many exports on one page. Filter the list." };
+          return;
+        }
+        jobs.push(
+          gc.gdprResolveDownloadUrl(api, orgId, u)
+            .then(url => { slots[i] = { url }; })
+            .catch(err => {
+              const gone = err?.status === 404 || /not found/i.test(err?.message || "");
+              slots[i] = { error: err?.message || String(err), gone };
+            }),
+        );
+      });
     }
-
-    // The tab is where the tester is looking, so the tab is where the answer
-    // goes — every stage, and every failure. Closing it on error and reporting
-    // on the page behind it left them staring at "Preparing…" with no idea the
-    // page they had just left was showing the reason.
-    const say = (title, html) => {
-      try {
-        win.document.title = title;
-        win.document.body.innerHTML =
-          `<div style="font-family:system-ui;padding:24px;color:#333;max-width:56ch;line-height:1.5">${html}</div>`;
-      } catch { /* navigated away — whatever is showing is the answer */ }
-    };
-    const host = (u) => { try { return new URL(u).host; } catch { return "(not a URL)"; } };
-
-    say("Preparing GDPR export…",
-      `<p style="margin:0 0 6px"><strong>Preparing your export archive…</strong></p>`
-      + `<p style="margin:0;color:#777;font-size:13px">Asking Genesys for the download link.</p>`);
-
-    const slow = setTimeout(() => {
-      say("Still preparing…",
-        `<p style="margin:0 0 6px"><strong>Still waiting for Genesys…</strong></p>`
-        + `<p style="margin:0;color:#777;font-size:13px">The link request is taking longer than usual. `
-        + `It gives up after about 45 seconds.</p>`);
-    }, 8000);
-
-    let signed;
-    try {
-      console.info("[gdpr] resolving download link", { resultsUrl });
-      signed = await gc.gdprResolveDownloadUrl(api, currentOrg.id, resultsUrl);
-      console.info("[gdpr] download link resolved", { host: host(signed) });
-    } catch (err) {
-      clearTimeout(slow);
-      console.error("[gdpr] download link failed", err);
-      say("GDPR export — could not get the link",
-        `<p style="margin:0 0 8px;color:#b4342c"><strong>Could not get the download link.</strong></p>`
-        + `<p style="margin:0 0 8px;font-family:ui-monospace,monospace;font-size:13px;`
-        + `background:#f4f4f4;padding:8px 10px;border-radius:4px">${escapeHtml(err?.message || String(err))}</p>`
-        + `<p style="margin:0;color:#777;font-size:13px">Genesys endpoint: <code>${escapeHtml(resultsUrl)}</code>. `
-        + `Close this tab; the same message is on the Request Status page.</p>`);
-      throw err;
-    }
-    clearTimeout(slow);
-
-    if (signed === resultsUrl) {
-      // Nothing was resolved — the URL was not a /downloads/ path we recognise.
-      say("GDPR export — unexpected link",
-        `<p style="margin:0 0 8px;color:#b4342c"><strong>This link is not the shape the app expects.</strong></p>`
-        + `<p style="margin:0;color:#777;font-size:13px">Got <code>${escapeHtml(resultsUrl)}</code> and could not `
-        + `turn it into a download. Copy this and report it.</p>`);
-      throw new Error("resultsUrl was not a recognised /api/v2/downloads/ link: " + resultsUrl);
-    }
-
-    // Two routes to the same file, because one of them can be blocked
-    // silently. Navigating the tab is a script-initiated download with no
-    // fresh user gesture behind it, and Edge declined it for the tester
-    // without a word — link resolved, nothing arrived. A real click on a real
-    // anchor is a user gesture and cannot be refused as "automatic". So the
-    // tab gets the anchor first, and the navigation is attempted as well; if
-    // the browser allows it, the download simply starts, and if it does not,
-    // the button is already there.
-    say("GDPR export — ready",
-      `<p style="font-size:16px;margin:0 0 12px"><strong>Your export archive is ready.</strong></p>`
-      + `<p style="margin:0 0 16px"><a href="${escapeHtml(signed)}" `
-      + `style="display:inline-block;padding:12px 22px;background:#1d4ed8;color:#fff;border-radius:6px;`
-      + `text-decoration:none;font-weight:600;font-size:15px">&#11015; Download archive (.zip)</a></p>`
-      + `<p style="margin:0 0 6px;color:#555">The download should also have started on its own &mdash; `
-      + `check the browser's download bar. If it did not, the button above works.</p>`
-      + `<p style="margin:0;color:#777;font-size:13px">Served from <code>${escapeHtml(host(signed))}</code>. `
-      + `You can close this tab once the file has arrived.</p>`);
-    win.location.href = signed;
+    await Promise.all(jobs);
   }
 
   // ── Rendering ─────────────────────────────────────────────────────
@@ -320,10 +271,22 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
                  : r.resultsUrl          ? [r.resultsUrl]
                  : [];
       if (type === "GDPR_EXPORT" && urls.length) {
-        detailsHtml = urls.map((url, i) =>
-          `<a href="#" class="gdpr-download-link" data-gdpr-url="${escapeHtml(url)}" data-req-id="${escapeHtml(r.id ?? "")}">` +
-          `Download${urls.length > 1 ? ` (${i + 1})` : ""}</a>`
-        ).join("<br>");
+        const slots = signedUrls.get(r.id) || [];
+        detailsHtml = urls.map((_, i) => {
+          const label = `Download${urls.length > 1 ? ` (${i + 1})` : ""}`;
+          const slot = slots[i];
+          if (slot?.url) {
+            // A real anchor to a fresh tab: the one shape of click that
+            // reliably produced a file. No handler intercepts it.
+            return `<a href="${escapeHtml(slot.url)}" target="_blank" rel="noopener" class="gdpr-download-link"`
+              + ` data-req-id="${escapeHtml(r.id ?? "")}" title="Opens in a new tab and downloads a .zip">${label}</a>`;
+          }
+          if (slot?.gone) {
+            return `<span class="gdpr-download-link gdpr-download-link--dead" title="Genesys returned 404 for this download. Submit a new Access request.">Expired</span>`;
+          }
+          const why = slot?.error || "No download link was resolved for this export.";
+          return `<span class="gdpr-download-link gdpr-download-link--dead" title="${escapeHtml(why)}">Unavailable</span>`;
+        }).join("<br>");
       } else if (type === "GDPR_UPDATE" && r.replacementTerms?.length) {
         // `replacementTerms` is the request's own INPUT echoed back — the terms
         // that were submitted. Genesys does not report what it actually
@@ -386,51 +349,18 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
   }
 
   function attachDownloadHandlers() {
-    $statusWrap.querySelectorAll("a[data-gdpr-url]").forEach(link => {
-      link.dataset.originalText = link.textContent;
-      link.addEventListener("click", async (e) => {
-        e.preventDefault();
+    // The anchor does the work. This only records that a subject's personal
+    // data was pulled out of a customer tenant — and never preventDefaults,
+    // because the default is the one thing that works.
+    $statusWrap.querySelectorAll("a.gdpr-download-link[href]").forEach(link => {
+      link.addEventListener("click", () => {
         if (!currentOrg) return;
-        const url = link.dataset.gdprUrl;
         const reqId = link.dataset.reqId;
-        link.textContent = "Preparing…";
-        link.style.pointerEvents = "none";
-        try {
-          await openExport(url);
-          // Once the tab is pointed at signed storage the exchange is between
-          // the browser and Genesys. Resolving the link is the part we CAN see
-          // — a 404 there means Genesys no longer holds the export.
-          setStatus(
-            "Download started — the .zip is in your browser's download bar. "
-            + "The new tab only tells you that; you can close it.",
-            "success",
-          );
-          // Pulling a subject's personal data out of a customer tenant is the
-          // other action on these pages worth a trail, and it left none.
-          logAction({ me, orgId: currentOrg.id, orgName: currentOrg.name || "",
-            action: "gdpr_export_download",
-            description: `Opened GDPR Access export archive for request ${reqId || "(unknown)"}`,
-            count: 1 });
-        } catch (err) {
-          const gone = err?.status === 404 || /not found/i.test(err?.message || "");
-          setStatus(gone
-            ? "Genesys no longer holds this export — submit a new Access request."
-            : `Download failed: ${err.message}`, "error");
-          if (gone) {
-            link.textContent = "Expired";
-            link.style.opacity = "0.5";
-            link.title = "Genesys returned 404 for this download. Submit a new Access request.";
-          }
-          logAction({ me, orgId: currentOrg.id, orgName: currentOrg.name || "",
-            action: "gdpr_export_download",
-            description: `GDPR Access export could not be opened for request ${reqId || "(unknown)"}`,
-            result: "failure", errorMessage: err.message });
-        } finally {
-          if (link.textContent !== "Expired") {
-            link.textContent = link.dataset.originalText || "Download";
-            link.style.pointerEvents = "";
-          }
-        }
+        setStatus("Opening the export in a new tab — the browser will save the .zip.", "success");
+        logAction({ me, orgId: currentOrg.id, orgName: currentOrg.name || "",
+          action: "gdpr_export_download",
+          description: `Opened GDPR Access export archive for request ${reqId || "(unknown)"}`,
+          count: 1 });
       });
     });
   }
@@ -592,7 +522,7 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
     try {
       allRequests = await gc.gdprGetRequests(api, org.id);
       await Promise.all([
-        fillMissingResultUrls(org.id),
+        fillMissingResultUrls(org.id).then(() => resolveDownloadUrls(org.id)),
         resolveNames(org.id),
         resolveSubmitters(org.id),
       ]);
