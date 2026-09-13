@@ -375,9 +375,34 @@ export function exportLogXlsx({ sheetName, columns, rows, filename, statusKey = 
  * @param {string} b64       Base64-encoded file content.
  */
 export function downloadBase64(filename, b64) {
+  openDownloadHelper({ filename, b64 });
+}
+
+/**
+ * Hand a URL to download.html, which fetches it and offers Save As.
+ *
+ * For files that already exist somewhere signed — a GDPR export on
+ * api-downloads.<region> — and would be wrong to pull through the app's proxy:
+ * it reads responses as text, and an archive is not text. The helper fetches
+ * the URL itself, in the browser, and saves it the same way it saves an Excel
+ * export: showSaveFilePicker, the native Save As dialog. That dialog is the
+ * one thing that works from inside the sandboxed popup this app runs in;
+ * navigating any tab the app opened to a download URL does nothing.
+ *
+ * Must be called synchronously from a user gesture, like downloadBase64, and
+ * throws the same way when the pop-up is blocked.
+ *
+ * @param {string} filename  Suggested filename, extension included.
+ * @param {string} url       Absolute URL the browser can fetch without auth.
+ */
+export function downloadFromUrl(filename, url) {
+  openDownloadHelper({ filename, url });
+}
+
+function openDownloadHelper(payload) {
   const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
   window._xlsxDownload = window._xlsxDownload || {};
-  window._xlsxDownload[key] = { filename, b64 };
+  window._xlsxDownload[key] = payload;
 
   const helperUrl = new URL("download.html", document.baseURI);
   helperUrl.hash = key;
