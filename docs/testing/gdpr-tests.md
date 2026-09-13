@@ -302,16 +302,19 @@ blockers do not refuse it.
 - [ ] **9.2** — Inspect `resultsUrl` on the completed request (dev tools → Network)
   - Expect: `…/api/v2/downloads/<id>` on the apps host — an API endpoint, not signed storage. Confirmed 2026-09-12.
   - Notes: `______________________`
-- [ ] **9.3** — Click **Download**
-  - Expect: a **new tab** opens directly on `api-downloads.<region>` and the browser saves a **.zip**. No intermediate page, no "Preparing…". The link is an ordinary anchor with the signed URL already in it.
+- [ ] **9.3** — Left-click **Download**
+  - Expect: a new tab opens and the browser saves a **.zip** (to the default folder, or via a Save As prompt if the browser is set to ask). **Requires `allow-downloads` in the Client Application's Iframe Sandbox Options** — see customer-onboarding.md Step 6.
   - Notes: `______________________`
-  - Settled empirically on 2026-09-12/13: navigating a script-opened popup to the signed URL never downloaded, nor did clicking a button inside that popup — but "open link in new tab" did. So the tab that fetches the archive must be a fresh one whose first navigation is the signed URL, which is what a plain `target="_blank"` anchor gives.
+  - Root cause, settled 2026-09-13: the app runs in a sandboxed Genesys iframe and every tab it opens inherits the sandbox, which forbids browser downloads. Not a code problem — four different click shapes all failed identically until the flag was added. Fetching the bytes into `download.html` for a Save As dialog was tried and refused (`api-downloads.<region>` does not allow cross-origin fetch), so that route is closed.
 - [ ] **9.3a** — Watch DevTools → Network while the page **loads**
   - Expect: one `genesys-proxy` call per completed export targeting `/api/v2/downloads/<id>` with `issueRedirect=false`, each returning a small JSON `{ url }`. Nothing at click time — the click is a plain navigation the browser handles.
   - Notes: `______________________`
 - [ ] **9.3b** — Leave the page open a long while, then click Download
   - Expect: either it still works, or the new tab shows Genesys's own error for a stale signed link. Press **Load / Refresh** and click again — fresh links are minted on every load.
   - Answer — how long did the link stay good? `______________________`
+- [ ] **9.3c** — On an install **without** `allow-downloads`, left-click Download
+  - Expect: a blank tab. Right-click → "Open link in new tab" still downloads. This is the symptom that means the sandbox flag is missing.
+  - Notes: `______________________`
 - [ ] **9.4** — Open the archive
   - Expect: **flat files, no folders**, named `service!identifier` — `analytics!<uuid>` (one per conversation, JSON with no extension), `recording!Recording_Conv_…_Rec_….opus`, `contacts-service!externalContact-*.json`, `quality!Survey_Conv_….json`, `billing-service!<uuid>`. Confirmed 2026-09-13 from a real export: 2,002 files.
   - Notes: `______________________`
