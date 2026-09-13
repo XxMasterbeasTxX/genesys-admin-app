@@ -6,7 +6,7 @@
  * Access requests) download links once the export is fulfilled.
  */
 import * as gc from "../../services/genesysApi.js";
-import { escapeHtml, makeStatus, downloadFromUrl } from "../../utils.js";
+import { escapeHtml, makeStatus } from "../../utils.js";
 import { logAction, fetchActivityLog } from "../../services/activityLogService.js";
 
 const TYPE_LABELS  = { GDPR_DELETE: "Erasure", GDPR_EXPORT: "Access", GDPR_UPDATE: "Rectification" };
@@ -80,8 +80,8 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
         <li><strong>Completed means Genesys accepted and processed the request</strong>, not
             necessarily that every record has caught up. Erasures in particular have been reported
             to finish redacting days after the status here changes.</li>
-        <li><strong>Access</strong> downloads are a <strong>ZIP archive</strong> &mdash; the link opens a small
-            tab with a <strong>Save</strong> button, the same way Excel exports do. Inside: one file per conversation from analytics, the subject's
+        <li><strong>Access</strong> downloads are a <strong>ZIP archive</strong> &mdash; the link opens a new
+            tab and the browser saves it. Inside: one file per conversation from analytics, the subject's
             <strong>call recordings as .opus audio</strong>, external-contact data, quality surveys and billing
             records, all as flat <code>service!id</code> files. Large exports may produce several archives,
             each with its own link.</li>
@@ -279,8 +279,7 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
             // A real anchor to a fresh tab: the one shape of click that
             // reliably produced a file. No handler intercepts it.
             return `<a href="${escapeHtml(slot.url)}" target="_blank" rel="noopener" class="gdpr-download-link"`
-              + ` data-req-id="${escapeHtml(r.id ?? "")}"${urls.length > 1 ? ` data-part="${i + 1}"` : ""}`
-              + ` title="Opens the save dialog for this .zip">${label}</a>`;
+              + ` data-req-id="${escapeHtml(r.id ?? "")}" title="Opens in a new tab and downloads a .zip">${label}</a>`;
           }
           if (slot?.gone) {
             return `<span class="gdpr-download-link gdpr-download-link--dead" title="Genesys returned 404 for this download. Submit a new Access request.">Expired</span>`;
@@ -350,29 +349,18 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
   }
 
   function attachDownloadHandlers() {
-    // A left-click goes through download.html — the same helper every Excel
-    // export uses, and the only route that has produced a file from inside
-    // this app's sandboxed popups. It fetches the signed URL itself and offers
-    // the native Save As dialog. The href is left in place on purpose: a
-    // right-click → "Open link in new tab" is a browser-opened, unsandboxed
-    // tab, and that route works too.
+    // The anchor does the work. This only records that a subject's personal
+    // data was pulled out of a customer tenant — and never preventDefaults,
+    // because the default is the one thing that works.
     $statusWrap.querySelectorAll("a.gdpr-download-link[href]").forEach(link => {
-      link.addEventListener("click", (e) => {
+      link.addEventListener("click", () => {
         if (!currentOrg) return;
-        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        e.preventDefault();
         const reqId = link.dataset.reqId;
-        const filename = `gdpr-export-${reqId || "archive"}${link.dataset.part ? `-part${link.dataset.part}` : ""}.zip`;
-        try {
-          downloadFromUrl(filename, link.href);
-          setStatus("Export opening in a new tab — use its Save button to keep the .zip.", "success");
-          logAction({ me, orgId: currentOrg.id, orgName: currentOrg.name || "",
-            action: "gdpr_export_download",
-            description: `Opened GDPR Access export archive for request ${reqId || "(unknown)"}`,
-            count: 1 });
-        } catch (err) {
-          setStatus(err.message, "error");
-        }
+        setStatus("Opening the export in a new tab — the browser will save the .zip.", "success");
+        logAction({ me, orgId: currentOrg.id, orgName: currentOrg.name || "",
+          action: "gdpr_export_download",
+          description: `Opened GDPR Access export archive for request ${reqId || "(unknown)"}`,
+          count: 1 });
       });
     });
   }
