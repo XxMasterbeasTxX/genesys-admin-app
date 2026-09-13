@@ -26,6 +26,7 @@
       var msgEl = document.getElementById("msg");
       var subEl = document.getElementById("sub");
       var btnEl = document.getElementById("dlBtn");
+      var fileName = "";
 
       try {
         var key = location.hash.substring(1);
@@ -35,8 +36,9 @@
         var payload = store && store[key];
         if (!payload) { msgEl.textContent = "Export data not found or expired. Please try again."; return; }
 
-        var fileName = payload.filename;
+        fileName = payload.filename;
         var b64 = payload.b64;
+        var srcUrl = payload.url;
 
         // Clean up from opener
         try { delete window.opener._xlsxDownload[key]; } catch (e) {}
@@ -44,13 +46,62 @@
         // Clear hash for privacy
         history.replaceState(null, "", location.pathname);
 
+        // Two ways the bytes arrive. Base64 is what the Excel exports hand
+        // over: they build the file in the opener and it is small. A URL is
+        // what a GDPR export hands over: the file already exists on a signed
+        // Genesys download link, is fetched here directly so the app's proxy
+        // never has to carry binary, and can be large. Either way it ends up
+        // as a Blob and goes through the same Save button, because that button
+        // — showSaveFilePicker, the native Save As dialog — is the one thing
+        // that works from inside the sandboxed popup the app lives in;
+        // navigating any tab the app opened to a download URL does nothing.
+        var ext = fileName.split(".").pop().toLowerCase();
+        if (srcUrl) {
+          msgEl.textContent = "Fetching your export…";
+          subEl.textContent = "Large exports can take a moment.";
+          fetch(srcUrl, { mode: "cors", credentials: "omit" })
+            .then(function (resp) {
+              if (!resp.ok) throw new Error("HTTP " + resp.status);
+              return resp.blob();
+            })
+            .then(function (fetched) {
+              offer(fetched.type && fetched.type !== "application/octet-stream"
+                ? fetched
+                : new Blob([fetched], { type: mimeFor(ext) }));
+            })
+            .catch(function (e) {
+              // Most likely the signed host does not allow a cross-origin
+              // fetch. The link still works from a tab the BROWSER opens —
+              // right-click, "Open link in new tab" — so offer exactly that.
+              msgEl.textContent = "Could not fetch the export into this tab.";
+              var a = document.createElement("a");
+              a.href = srcUrl;
+              a.textContent = "Right-click here and choose “Open link in new tab” to download it";
+              a.style.cssText = "color:#93c5fd;font-size:1rem";
+              a.addEventListener("click", function (ev) {
+                // A left-click here would just repeat the blank-tab failure.
+                ev.preventDefault();
+                subEl.textContent = "Left-clicking will not work from this tab — right-click the link and open it in a new tab.";
+              });
+              subEl.textContent = "";
+              subEl.appendChild(document.createTextNode("(" + (e.message || "fetch failed") + ") "));
+              subEl.appendChild(a);
+              console.warn("Download helper: fetch of signed URL failed", e);
+            });
+          return;
+        }
+
         // Decode base64
         var raw = atob(b64);
         var bytes = new Uint8Array(raw.length);
         for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        offer(new Blob([bytes], { type: mimeFor(ext) }));
+      } catch (err) {
+        msgEl.textContent = "Error: " + err.message;
+        console.error("Download helper error:", err);
+      }
 
-        // Detect MIME type from file extension
-        var ext = fileName.split(".").pop().toLowerCase();
+      function mimeFor(ext) {
         var mimeMap = {
           xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           zip:  "application/zip",
@@ -61,8 +112,12 @@
           html: "text/html",
           json: "application/json",
         };
-        var mime = mimeMap[ext] || "application/octet-stream";
+        return mimeMap[ext] || "application/octet-stream";
+      }
 
+      function offer(blob) {
+        var ext = fileName.split(".").pop().toLowerCase();
+        var mime = blob.type || mimeFor(ext);
         var descMap = {
           xlsx: "Excel Workbook", zip: "ZIP Archive", csv: "CSV File", pdf: "PDF Document",
           svg: "SVG Image", png: "PNG Image", html: "HTML Page", json: "JSON File",
@@ -74,8 +129,6 @@
           accept: {},
         }];
         pickerTypes[0].accept[mime] = ["." + ext];
-
-        var blob = new Blob([bytes], { type: mime });
 
         msgEl.textContent = "Click the button to save your file:";
         btnEl.textContent = "\u2B07 Save " + fileName;
@@ -124,10 +177,6 @@
             msgEl.textContent = "Download failed: " + e2.message;
           }
         });
-
-      } catch (err) {
-        msgEl.textContent = "Error: " + err.message;
-        console.error("Download helper error:", err);
       }
     })();
   </script>

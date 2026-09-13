@@ -302,10 +302,16 @@ blockers do not refuse it.
 - [ ] **9.2** — Inspect `resultsUrl` on the completed request (dev tools → Network)
   - Expect: `…/api/v2/downloads/<id>` on the apps host — an API endpoint, not signed storage. Confirmed 2026-09-12.
   - Notes: `______________________`
-- [ ] **9.3** — Click **Download**
-  - Expect: a **new tab** opens directly on `api-downloads.<region>` and the browser saves a **.zip**. No intermediate page, no "Preparing…". The link is an ordinary anchor with the signed URL already in it.
+- [ ] **9.3** — Left-click **Download**
+  - Expect: a small tab opens reading "Fetching your export…", then shows a **Save gdpr-export-….zip** button — the same helper tab the Excel exports use. Click Save, pick a location, done.
   - Notes: `______________________`
-  - Settled empirically on 2026-09-12/13: navigating a script-opened popup to the signed URL never downloaded, nor did clicking a button inside that popup — but "open link in new tab" did. So the tab that fetches the archive must be a fresh one whose first navigation is the signed URL, which is what a plain `target="_blank"` anchor gives.
+  - Why a Save button and not a download: the app runs inside a sandboxed Genesys iframe, and no tab the app opens can perform a browser download — not by navigation, not by an anchor, not by a button inside it (all three tried, 2026-09-12/13). The native Save-As dialog is not a download in that sense, which is why `download.html` has always used it.
+- [ ] **9.3c** — Right-click **Download** → "Open link in new tab"
+  - Expect: still works — the browser opens the signed URL in an unsandboxed tab and saves the .zip directly. The href is kept on the link for exactly this.
+  - Notes: `______________________`
+- [ ] **9.3d ★** — In the helper tab, does it reach the Save button, or say "Could not fetch the export into this tab"?
+  - The helper fetches the signed URL in the browser, which needs `api-downloads.<region>` to allow a cross-origin fetch. Verified against a local server; not yet against Genesys. If it cannot, the tab offers the right-click route instead.
+  - Answer: `______________________`
 - [ ] **9.3a** — Watch DevTools → Network while the page **loads**
   - Expect: one `genesys-proxy` call per completed export targeting `/api/v2/downloads/<id>` with `issueRedirect=false`, each returning a small JSON `{ url }`. Nothing at click time — the click is a plain navigation the browser handles.
   - Notes: `______________________`
