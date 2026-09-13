@@ -6,7 +6,7 @@
  * Access requests) download links once the export is fulfilled.
  */
 import * as gc from "../../services/genesysApi.js";
-import { escapeHtml, makeStatus, downloadFromUrl } from "../../utils.js";
+import { escapeHtml, makeStatus } from "../../utils.js";
 import { logAction, fetchActivityLog } from "../../services/activityLogService.js";
 
 const TYPE_LABELS  = { GDPR_DELETE: "Erasure", GDPR_EXPORT: "Access", GDPR_UPDATE: "Rectification" };
@@ -80,8 +80,8 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
         <li><strong>Completed means Genesys accepted and processed the request</strong>, not
             necessarily that every record has caught up. Erasures in particular have been reported
             to finish redacting days after the status here changes.</li>
-        <li><strong>Access</strong> downloads are a <strong>ZIP archive</strong> &mdash; the link opens a small
-            tab with a <strong>Save</strong> button, the same way Excel exports do. Inside: one file per conversation from analytics, the subject's
+        <li><strong>Access</strong> downloads are a <strong>ZIP archive</strong> &mdash; the link opens a new
+            tab and the browser saves it. Inside: one file per conversation from analytics, the subject's
             <strong>call recordings as .opus audio</strong>, external-contact data, quality surveys and billing
             records, all as flat <code>service!id</code> files. Large exports may produce several archives,
             each with its own link.</li>
@@ -140,23 +140,29 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
    * call through the proxy with `issueRedirect=false` so the signed URL comes
    * back as JSON rather than a 302 the proxy would follow into the archive.
    *
-   * What the browser then does with the signed URL turned out to be the whole
-   * problem, and it was settled empirically rather than by reasoning:
+   * What the browser then does with the signed URL was the whole problem, and
+   * the answer was not in this app. The app runs inside the Genesys Cloud
+   * iframe, which is sandboxed; every tab the app opens inherits that sandbox;
+   * and a sandboxed document cannot perform a browser download unless the
+   * sandbox grants `allow-downloads`. Without it, four different shapes of
+   * the same click all produced a blank tab — navigating a popup, an anchor
+   * inside that popup, a plain <a target="_blank"> here — while right-click →
+   * "Open link in new tab" worked every time, because THAT tab is opened by
+   * the browser and is not sandboxed. Fetching the bytes into download.html
+   * for a Save As dialog was tried and refused: api-downloads.<region> does
+   * not allow a cross-origin fetch.
    *
-   *   - navigating a script-opened about:blank popup to it: no download
-   *   - clicking an anchor INSIDE that popup: no download
-   *   - "open link in new tab" on that anchor: downloads
+   * The fix is therefore a Genesys setting, not code: the Client Application
+   * integration's **Iframe Sandbox Options** must include `allow-downloads`.
+   * With it, this plain anchor downloads on a left-click; the browser's own
+   * "ask where to save" preference decides whether a Save As dialog appears.
+   * See docs/customer-onboarding.md, Step 6.
    *
-   * So the tab that fetches the archive has to be a fresh one whose FIRST
-   * navigation is the signed URL. That is exactly what a plain
-   * `<a href target="_blank">` does on a click, and nothing else in the app
-   * needs to happen at click time — which is why the URLs are resolved up
-   * front and the table gets ordinary anchors. One click, no popup, no
-   * "Preparing…", nothing for a blocker to refuse.
-   *
-   * The cost is a proxy call per completed export on load, small JSON each,
-   * capped. The trade is a signed URL that can go stale while the page sits
-   * open; Load / Refresh mints fresh ones, and the help text says so.
+   * The URLs are resolved up front so that the click is nothing but an
+   * ordinary navigation the browser handles. The cost is a proxy call per
+   * completed export on load, small JSON each, capped. The trade is a signed
+   * URL that can go stale while the page sits open; Load / Refresh mints fresh
+   * ones, and the help text says so.
    */
   const signedUrls = new Map();   // request id → [{ url } | { error, gone }]
 
@@ -279,8 +285,7 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
             // A real anchor to a fresh tab: the one shape of click that
             // reliably produced a file. No handler intercepts it.
             return `<a href="${escapeHtml(slot.url)}" target="_blank" rel="noopener" class="gdpr-download-link"`
-              + ` data-req-id="${escapeHtml(r.id ?? "")}"${urls.length > 1 ? ` data-part="${i + 1}"` : ""}`
-              + ` title="Opens the save dialog for this .zip">${label}</a>`;
+              + ` data-req-id="${escapeHtml(r.id ?? "")}" title="Opens in a new tab and downloads a .zip">${label}</a>`;
           }
           if (slot?.gone) {
             return `<span class="gdpr-download-link gdpr-download-link--dead" title="Genesys returned 404 for this download. Submit a new Access request.">Expired</span>`;
@@ -350,29 +355,18 @@ export default function renderRequestStatus({ route, me, api, orgContext }) {
   }
 
   function attachDownloadHandlers() {
-    // A left-click goes through download.html — the same helper every Excel
-    // export uses, and the only route that has produced a file from inside
-    // this app's sandboxed popups. It fetches the signed URL itself and offers
-    // the native Save As dialog. The href is left in place on purpose: a
-    // right-click → "Open link in new tab" is a browser-opened, unsandboxed
-    // tab, and that route works too.
+    // The anchor does the work. This only records that a subject's personal
+    // data was pulled out of a customer tenant — and never preventDefaults,
+    // because the default is the one thing that works.
     $statusWrap.querySelectorAll("a.gdpr-download-link[href]").forEach(link => {
-      link.addEventListener("click", (e) => {
+      link.addEventListener("click", () => {
         if (!currentOrg) return;
-        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        e.preventDefault();
         const reqId = link.dataset.reqId;
-        const filename = `gdpr-export-${reqId || "archive"}${link.dataset.part ? `-part${link.dataset.part}` : ""}.zip`;
-        try {
-          downloadFromUrl(filename, link.href);
-          setStatus("Export opening in a new tab — use its Save button to keep the .zip.", "success");
-          logAction({ me, orgId: currentOrg.id, orgName: currentOrg.name || "",
-            action: "gdpr_export_download",
-            description: `Opened GDPR Access export archive for request ${reqId || "(unknown)"}`,
-            count: 1 });
-        } catch (err) {
-          setStatus(err.message, "error");
-        }
+        setStatus("Opening the export in a new tab — the browser will save the .zip.", "success");
+        logAction({ me, orgId: currentOrg.id, orgName: currentOrg.name || "",
+          action: "gdpr_export_download",
+          description: `Opened GDPR Access export archive for request ${reqId || "(unknown)"}`,
+          count: 1 });
       });
     });
   }
