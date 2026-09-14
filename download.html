@@ -35,8 +35,34 @@
         var payload = store && store[key];
         if (!payload) { msgEl.textContent = "Export data not found or expired. Please try again."; return; }
 
+        // A payload can arrive before its bytes do. The opener opens this tab
+        // synchronously on the click — the only moment a pop-up is allowed —
+        // and fills in `b64` or `bytes` when a slow build (a zip of every
+        // audio file in a GDPR export) finishes. Until then, wait here.
+        if (payload.pending) {
+          msgEl.textContent = "Preparing " + payload.filename + "\u2026";
+          subEl.textContent = payload.progress || "";
+          var waited = 0;
+          var poll = setInterval(function () {
+            var p = store[key];
+            if (!p) { clearInterval(poll); msgEl.textContent = "Export data not found or expired. Please try again."; return; }
+            if (p.error) { clearInterval(poll); msgEl.textContent = "Could not prepare the file: " + p.error; subEl.textContent = ""; return; }
+            if (p.progress) subEl.textContent = p.progress;
+            if (p.b64 || p.bytes) { clearInterval(poll); ready(p); return; }
+            waited += 250;
+            if (waited > 10 * 60 * 1000) { clearInterval(poll); msgEl.textContent = "Gave up waiting for the file."; }
+          }, 250);
+          return;
+        }
+        ready(payload);
+      } catch (err) {
+        msgEl.textContent = "Error: " + err.message;
+        console.error("Download helper error:", err);
+      }
+
+      function ready(payload) {
+      try {
         var fileName = payload.filename;
-        var b64 = payload.b64;
 
         // Clean up from opener
         try { delete window.opener._xlsxDownload[key]; } catch (e) {}
@@ -44,10 +70,13 @@
         // Clear hash for privacy
         history.replaceState(null, "", location.pathname);
 
-        // Decode base64
-        var raw = atob(b64);
-        var bytes = new Uint8Array(raw.length);
-        for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        // Bytes as given, or decoded from base64
+        var bytes = payload.bytes;
+        if (!bytes) {
+          var raw = atob(payload.b64);
+          bytes = new Uint8Array(raw.length);
+          for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        }
 
         // Detect MIME type from file extension
         var ext = fileName.split(".").pop().toLowerCase();
@@ -60,12 +89,19 @@
           png:  "image/png",
           html: "text/html",
           json: "application/json",
+          // What a GDPR export archive holds: call audio, inline images, text attachments.
+          opus: "audio/ogg",
+          jpg:  "image/jpeg",
+          jpeg: "image/jpeg",
+          gif:  "image/gif",
+          txt:  "text/plain",
         };
         var mime = mimeMap[ext] || "application/octet-stream";
 
         var descMap = {
           xlsx: "Excel Workbook", zip: "ZIP Archive", csv: "CSV File", pdf: "PDF Document",
           svg: "SVG Image", png: "PNG Image", html: "HTML Page", json: "JSON File",
+          opus: "Opus Audio", jpg: "JPEG Image", jpeg: "JPEG Image", gif: "GIF Image", txt: "Text File",
         };
 
         // File picker accepts config per extension
@@ -128,6 +164,7 @@
       } catch (err) {
         msgEl.textContent = "Error: " + err.message;
         console.error("Download helper error:", err);
+      }
       }
     })();
   </script>

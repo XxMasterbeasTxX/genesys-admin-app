@@ -179,6 +179,8 @@ const registry = {
     import("./pages/gdpr/subjectRequest.js").then((m) => m.default(ctx)),
   "/gdpr/request-status": (ctx) =>
     import("./pages/gdpr/requestStatus.js").then((m) => m.default(ctx)),
+  "/gdpr/export-reader": (ctx) =>
+    import("./pages/gdpr/exportReader.js").then((m) => m.default(ctx)),
 
   // ── Roles ──────────────────────────────────────────────
   "/roles/compare": (ctx) =>

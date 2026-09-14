@@ -399,9 +399,91 @@ blockers do not refuse it.
 
 ---
 
+## 12. Article 15 - Export Reader
+
+A third GDPR page. It takes a downloaded Access archive and produces an Excel
+workbook, entirely in the browser — no org needs to be selected and nothing is
+sent to Genesys. Use the archives from §9; the two user exports with call
+history (`0543e76b…`, `f8e044e2…`) exercise the most.
+
+- [ ] **12.1** — Open **GDPR › Article 15 - Export Reader** with no org selected
+  - Expect: the page renders with a drop zone; no "select an org" message — the page does not need one
+  - Notes: `______________________`
+- [ ] **12.2** — Drag an archive onto the drop zone
+  - Expect: the zone highlights while hovering; on drop, a "Reading… N / M" counter runs, then "Read N files." in green and a summary appears
+  - Notes: `______________________`
+- [ ] **12.3** — Click the drop zone instead and pick the archive in the file dialog
+  - Expect: same result as 12.2
+  - Notes: `______________________`
+- [ ] **12.4** — Read the summary for an **external contact** export (e.g. `f2e678bf…`)
+  - Expect: subject name with an **External contact** pill; request id and timestamp taken from the filename; counts for Emails, Messages, Calls, Journey sessions, Attachments, Billing, Receipts; a "Nothing for:" line naming the empty categories
+  - Notes: `______________________`
+- [ ] **12.5** — Read the summary for a **Genesys user** export (e.g. `f8e044e2…`)
+  - Expect: the pill reads **Genesys user**; Performance points has a count; Calls is 225
+  - Notes: `______________________`
+- [ ] **12.6** — Drop the 37,000-file export (`0543e76b…`)
+  - Expect: finishes in well under a minute (measured 12 s), the counter visibly advances, the page stays responsive
+  - Answer — how long did it take? `______________________`
+- [ ] **12.7** — Press **Save workbook**
+  - Expect: `download.html` opens with a native **Save As** — this is the existing Excel path, so it works with or without `allow-downloads`. Filename `GDPR_Access_<name>_<request>.xlsx`
+  - Notes: `______________________`
+- [ ] **12.8** — Open the workbook: **Summary** sheet
+  - Expect: first tab; subject, kind, request id, exported-at, counts; a "Sheets left out" line matching the page's "Nothing for"; a "Present but empty in the archive" line on a user export (Coaching, Shift trades, …); the About / Calls / Receipts / Other people's details / Email bodies statements at the foot
+  - Notes: `______________________`
+- [ ] **12.9** — **Calls** sheet on `f8e044e2…`
+  - Expect: 225 rows; Duration as m:ss and Seconds as a number; State `empty` on exactly 4 rows with no duration; **Transcribed by Genesys** and **Summarised by Genesys** read "Yes — text not in export" on most rows and "No" on the rest (the org has transcription on); on `0543e76b…` every row reads "No"
+  - Notes: `______________________`
+- [ ] **12.10** — **Conversation outlines** sheet on `f8e044e2…`
+  - Expect: 21 rows across 5 conversations: segment header, one-sentence description (Danish/Norwegian), start and end times. Absent on the other exports, and the Summary says so
+  - Notes: `______________________`
+- [ ] **12.11** — **Messages** sheet on `0543e76b…`
+  - Expect: three channels — Messaging, Chat (legacy), Internal chat. Presence rows read `[joined]` / `[left]`, not blank. Internal chat rows have From "(the subject)". No phone numbers anywhere in From/To — a number reads "(phone number withheld)"; a bare id reads as the role, e.g. "(customer)"
+  - Notes: `______________________`
+- [ ] **12.12** — **Emails** sheet on `f2e678bf…`
+  - Expect: rows with a text **Body** and an **Attachments** list; From/To as `Name <email>`. On `f8e044e2…` the rows from the email routing records read "Email record (headers only)" with Body "(body not in export)"
+  - Notes: `______________________`
+- [ ] **12.13** — **Subject** sheet
+  - Expect: contact export — one External contact section, name, work email, work phone, merge history. User export — User profile first (name, email, department, skills), then Login, Station, Call forwarding
+  - Notes: `______________________`
+- [ ] **12.14** — Expand **Audio and attachments** and press **Save** on an `.opus` and on an image
+  - Expect: `download.html` opens with a Save As for that one file, correct extension, playable / viewable after saving
+  - Notes: `______________________`
+- [ ] **12.14a** — Press **Save all audio & attachments (.zip, N MB)** on `f8e044e2…`
+  - Expect: the button shows the total size (30.1 MB); `download.html` opens at once reading "Preparing … Packing NN%", then offers Save As for `GDPR_Access_<name>_<request>_files.zip`. Inside: `audio/` with 221 `.opus` (the 4 empty ones are left out) and `attachments/<conversation id>/` folders with the images
+  - Answer — how long from click to the Save button? `______________________`
+- [ ] **12.14b** — On an export with no audio and no attachments (`27c7defa…`)
+  - Expect: no Save-all button and no file list — only Save workbook
+  - Notes: `______________________`
+- [ ] **12.15** — Press **Save** on a file, then cancel the Save As dialog
+  - Expect: nothing breaks; the button re-enables; pressing again works
+  - Notes: `______________________`
+- [ ] **12.16** — Drop something that is not a ZIP (any `.txt`)
+  - Expect: a red "Could not read the archive: …" line; the page stays usable
+  - Notes: `______________________`
+- [ ] **12.17** — Rename an archive to `foo.zip` and drop it
+  - Expect: it still reads; Request and Exported read **unknown**; the Summary sheet says the archive was renamed
+  - Notes: `______________________`
+- [ ] **12.18** — Check **Admin › Activity Log** after 12.2
+  - Expect: a **GDPR Export Read** row with the request id and the file count; nothing from inside the archive
+  - Notes: `______________________`
+- [ ] **12.19** — DevTools → Network while dropping an archive
+  - Expect: **no** request to `/api/genesys-proxy` or anywhere else carrying archive content — only the activity-log write
+  - Notes: `______________________`
+- [ ] **12.20** — Both pages in light and dark mode
+  - Expect: drop zone border and the kind pill legible in both
+  - Notes: `______________________`
+- [ ] **12.21** — **Conversations** sheet on `f8e044e2…`
+  - Expect: 211 rows, oldest first; First/Last event timestamps; 140 rows with Recordings > 0, 83 Transcribed, 88 Summarised, 5 with outline segments, 8 with a journey session. The Summary carries a "Transcript acknowledgements not attributed: 96 …" line explaining why transcribed is a floor
+  - Notes: `______________________`
+- [ ] **12.22 ★** — Pick three conversations from that sheet you know something about (a call you took, a chat you had) and check the row against your memory
+  - Expect: first/last event bracket the conversation; the recordings / messages / survey columns match what happened
+  - Answer: `______________________`
+
+---
+
 ## Sign-off
 
-**Sections completed:** ☐ 1 ☐ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6 ☐ 7 ☐ 8 ☐ 9 ☐ 10 ☐ 11
+**Sections completed:** ☐ 1 ☐ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6 ☐ 7 ☐ 8 ☐ 9 ☐ 10 ☐ 11 ☐ 12
 
 **Blocking failures** — must fix before this goes to customers:
 
