@@ -39,14 +39,23 @@ function json(context, status, body) {
 async function authorize(context, req, orgId) {
   const token = getBearerToken(req);
   if (!token) return { ok: false, status: 401, error: "missing_token" };
+  // A customer in another region (Test IE is .ie; the app's home is .de)
+  // can only be verified against THEIR region, and classifyCaller learns
+  // which one from the hint. The body's orgId is that hint: the frontend
+  // sends the selected org slug, which for a customer is the locked one.
+  // A wrong hint cannot elevate anything — classifyCaller re-checks that
+  // the token's org is the hinted entry's org, and the org lock below then
+  // requires orgId to be the customer's own.
   let classification;
   try {
-    classification = await classifyCaller(context, token, null);
+    classification = await classifyCaller(context, token, orgId || null);
   } catch (err) {
     context.log.error("[flow-yaml] classify failed:", err.message || err);
     return { ok: false, status: 401, error: "identity_verification_failed" };
   }
   if (classification.mode === "internal" || classification.mode === "fallback") return { ok: true };
+  if (classification.mode === "verify_failed") return { ok: false, status: 401, error: "identity_verification_failed" };
+  if (classification.mode === "org_mismatch") return { ok: false, status: 403, error: "org_locked" };
   if (classification.mode !== "customer") return { ok: false, status: 403, error: "internal_only" };
 
   // Customer: licence first, then the org lock, then entitlement, then the
