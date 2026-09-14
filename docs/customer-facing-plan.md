@@ -95,7 +95,7 @@ the existing wildcard matching in `hasAccess()` — **no change to that logic**.
 | GDPR | `gdpr.*` | **TBD** (sensitive — see open decisions) |
 | Roles | `roles.*` | Compare/Search/Create/Edit/Copy-Single ✅ · Copy Between Orgs ❌ |
 | Wrapup Codes | `wrapupCodes.*` | ✅ |
-| Flows | `flows.*` | Flow Overview / Journey ✅ · **Delete Flow ❌ internal-only** |
+| Flows | `flows.*` | Flow Overview / Journey ✅ · **Delete Flow ❌ internal-only** — Flow Overview reads YAML through `/api/flow-yaml`, which until 2026-09-14 refused every customer session (`internal_only`, found on Test IE); it now serves a customer their own org when they are a named user holding `architect:flow:view`, the export itself running on the org's client credentials because the Flow Scripting SDK cannot take a forwarded token |
 | Audit | `audit.*` | ✅ single-org |
 | Deployment | `deployment.*` | ✅ (powerful; consider higher tier) |
 | Users | `users.*` | ✅ single-org |

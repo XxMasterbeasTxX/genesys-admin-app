@@ -4,41 +4,85 @@
  * Flow Overview needs the *structured* Archy YAML of a flow (the flat REST
  * latestconfiguration omits implicit default connections). Exporting YAML needs
  * the Flow Scripting SDK, which runs in the onboarding-runner. This managed
- * function verifies the caller is internal and forwards to the runner's
- * export-yaml endpoint (shared secret), returning the YAML text.
+ * function verifies the caller and forwards to the runner's export-yaml
+ * endpoint (shared secret), returning the YAML text.
  *
- * INTERNAL ONLY — reading flows via client-credentials must be gated the same way
- * as the onboarding deploy endpoint.
+ * Who may call it:
+ *   internal / fallback — any org in customers.json (as before).
+ *   customer            — their OWN org only. The export runs on the org's
+ *                         client credentials held by the runner (the SDK has
+ *                         no token-forwarding), so the same fences as
+ *                         billing-overview apply before anything is read:
+ *                         named-user licence, org lock, and the user's own
+ *                         architect:flow:view — the permission the page is
+ *                         gated on in featurePermissionMap.js — read on
+ *                         their own region. A customer who could not open
+ *                         the flow in Architect gets nothing here either.
  */
 const customers = require("../lib/customers.json");
 const { classifyCaller, getBearerToken } = require("../lib/orgConfigResolver");
+const { checkLicense } = require("../lib/licenseGate");
+const { fetchUserPermissions, hasAnyPermission } = require("../lib/userPermissions");
+const { entitlementGrants } = require("../lib/entitlementAllowlist");
+
+const CUSTOMER_REQUIRED_ANY = ["architect:flow:view"];
+const MODULE_KEY = "flows.flowoverview";
 
 function json(context, status, body) {
   context.res = { status, headers: { "Content-Type": "application/json" }, body };
 }
 
-async function requireInternal(context, req) {
+/**
+ * Decide who is calling and, for a customer, whether they may read the org
+ * named in the body. Returns { ok: true } or { ok: false, status, error }.
+ */
+async function authorize(context, req, orgId) {
   const token = getBearerToken(req);
   if (!token) return { ok: false, status: 401, error: "missing_token" };
+  // A customer in another region (Test IE is .ie; the app's home is .de)
+  // can only be verified against THEIR region, and classifyCaller learns
+  // which one from the hint. The body's orgId is that hint: the frontend
+  // sends the selected org slug, which for a customer is the locked one.
+  // A wrong hint cannot elevate anything — classifyCaller re-checks that
+  // the token's org is the hinted entry's org, and the org lock below then
+  // requires orgId to be the customer's own.
   let classification;
   try {
-    classification = await classifyCaller(context, token, null);
+    classification = await classifyCaller(context, token, orgId || null);
   } catch (err) {
     context.log.error("[flow-yaml] classify failed:", err.message || err);
     return { ok: false, status: 401, error: "identity_verification_failed" };
   }
   if (classification.mode === "internal" || classification.mode === "fallback") return { ok: true };
-  return { ok: false, status: 403, error: "internal_only" };
+  if (classification.mode === "verify_failed") return { ok: false, status: 401, error: "identity_verification_failed" };
+  if (classification.mode === "org_mismatch") return { ok: false, status: 403, error: "org_locked" };
+  if (classification.mode !== "customer") return { ok: false, status: 403, error: "internal_only" };
+
+  // Customer: licence first, then the org lock, then entitlement, then the
+  // user's own permission — the same order as the proxy and billing-overview.
+  const licence = await checkLicense(context, token, classification);
+  if (!licence.licensed) return { ok: false, status: 403, error: "user_not_licensed", reason: licence.reason };
+  if (orgId !== classification.customer.id) return { ok: false, status: 403, error: "org_locked" };
+  const ents = Array.isArray(classification.entitlements) ? classification.entitlements : [];
+  if (!ents.some((e) => entitlementGrants(e, MODULE_KEY))) return { ok: false, status: 403, error: "endpoint_not_entitled" };
+  const perms = await fetchUserPermissions(token, classification.org.region);
+  if (perms === null) return { ok: false, status: 403, error: "permission_unverified", required: CUSTOMER_REQUIRED_ANY };
+  if (!hasAnyPermission(perms, CUSTOMER_REQUIRED_ANY)) return { ok: false, status: 403, error: "permission_required", required: CUSTOMER_REQUIRED_ANY };
+  return { ok: true };
 }
 
 module.exports = async function (context, req) {
-  const guard = await requireInternal(context, req);
-  if (!guard.ok) return json(context, guard.status, { error: guard.error });
-
   const body = req.body || {};
   const orgId = String(body.orgId || "").trim();
   const flowName = String(body.flowName || "").trim();
   const flowType = String(body.flowType || "").trim().toLowerCase();
+
+  const guard = await authorize(context, req, orgId);
+  if (!guard.ok) {
+    const { ok, status, ...rest } = guard;
+    return json(context, status, rest);
+  }
+
   if (!orgId || !flowName || !flowType) {
     return json(context, 400, { error: "orgId, flowName and flowType are required" });
   }
