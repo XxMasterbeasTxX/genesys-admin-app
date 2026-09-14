@@ -159,4 +159,5 @@ module.exports = {
   pathToModule,
   pathToModules,
   checkCustomerRequest,
+  entitlementGrants,
 };

@@ -24,10 +24,12 @@
  * neither a diagram nor a test path can be traced reliably from it. See the note
  * at the top of flowYaml.js.
  *
- * INTERNAL ONLY: `POST /api/flow-yaml` forwards to the onboarding runner's SDK
- * export using client credentials and answers 403 for a customer session (see
- * api/flow-yaml/index.js). Any page built on this module is internal-only in
- * practice, whatever its access key says.
+ * WHO: `POST /api/flow-yaml` forwards to the onboarding runner's SDK export
+ * using the org's client credentials. Internal sessions may name any org; a
+ * customer session gets its own org only, and only when the user is a named
+ * Admin Tool user holding architect:flow:view (see api/flow-yaml/index.js).
+ * Flow Overview is customer-facing; Deployment › Test Cases stays internal
+ * through its access key, not through this call.
  */
 
 import * as gc from "../services/genesysApi.js";
