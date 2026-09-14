@@ -123,11 +123,25 @@ Summary says so:
    duration (from the Ogg granule position), size, and **"empty"** for the
    27-byte placeholders, so nobody goes looking for a call that was never
    captured. Where an STA outline exists for the conversation, its headers
-   are joined in as a one-cell summary. A **Transcribed** column says whether
-   Genesys acknowledged a `TranscriptsEvent` for that conversation — in the
-   export with transcription enabled, 83 of 153 recorded conversations — with
-   the note that the text itself is not in the archive. Audio is listed, not
+   are joined in as a one-cell summary. **Transcribed** and **Summarised**
+   columns say whether Genesys acknowledged a `TranscriptsEvent` /
+   `ConversationSummaryEvents` for that conversation — in the export with
+   transcription enabled, 83 and 88 of 140 recorded conversations — with the
+   note that the text itself is not in the archive. Audio is listed, not
    transcribed.
+5a. **Conversations** — the index the receipts make possible. `ConversationEvent`
+   names every conversation the subject took part in (211 in the user export,
+   158 in the large contact export), ~25 receipts each, and their
+   `eventTimestamp`s give the first and last event. One row per conversation:
+   id, first event, last event, event count, then what the archive holds for
+   it — recordings, transcribed, summarised, outline segments, messages,
+   emails, journey session, survey, voicemail, resolution — joined by id from
+   the other sheets and from the other conversation-scoped topics. This is as
+   close as the export gets to conversation detail: Genesys ships no
+   participant, queue, ANI/DNIS or wrap-up record. `TranscriptsEvent` ids are
+   sometimes a communication inside the conversation rather than the
+   conversation (96 of 179); those are counted on the Summary as
+   unattributed rather than guessed at, so "transcribed" is a floor.
 6. **Conversation outlines** — one row per STA segment: conversation id,
    segment header, description, start, end. The text is Genesys's AI summary
    of the conversation, and the sheet says so. Named for conversations, not

@@ -39,6 +39,32 @@ const WEM_CONTAINERS = {
   "PUSH":                                       { label: "Push notifications",     keys: ["notificationIds", "deviceTokens"] },
 };
 
+/**
+ * Receipt topics whose `externalId` is a conversation id. `ConversationEvent`
+ * is the authoritative set — every conversation the subject took part in;
+ * the others add a fact about one of those conversations. Verified on the
+ * user and contact exports, with one exception: `TranscriptsEvent` ids are
+ * sometimes a *communication* id inside the conversation rather than the
+ * conversation itself (96 of 179 in one export), and those cannot be
+ * attributed to a conversation with certainty, so they are counted and
+ * reported on the Summary rather than guessed at. The remaining topics key
+ * on the user (UserActivityEvents, PresenceEvents), a knowledge document, a
+ * work item, or nothing at all.
+ */
+const CONVERSATION_TOPICS = {
+  ConversationEvent:                  "events",
+  ProviderCallEventSubmitted:         "provider",
+  AnalyticsDetailEvents:              "detail",
+  TranscriptsEvent:                   "transcribed",
+  ConversationSummaryEvents:          "summarised",
+  ConversationSummaryEngagementEvents: "summarised",
+  ConversationSuggestionEvents:       "suggestions",
+  StaMetricsEvent:                    "sta",
+  ResolutionEvents:                   "resolution",
+  VoicemailEvent:                     "voicemail",
+  SurveyUpdated:                      "survey",
+};
+
 const PHONE_RE = /^\s*(tel:)?\+?\d[\d\s().-]{5,}\d\s*$/;
 // A bare Genesys id — participant, deployment, 32-hex message id — names nobody.
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[0-9a-f]{24,32}$/i;
@@ -66,10 +92,14 @@ export default function renderExportReader({ me, orgContext }) {
             and &mdash; for a Genesys user &mdash; performance points and workforce-management records.
             A sheet with nothing in it is left out and the Summary says so.</li>
         <li><strong>Calls are listed, not transcribed.</strong> The archive holds the audio and, where
-            Genesys transcribed the call, an acknowledgement that it did &mdash; never the text. The
-            Calls sheet gives each recording's duration and whether a transcript existed. Where
-            Speech &amp; Text Analytics wrote an outline of a conversation &mdash; call or messaging
-            &mdash; it is on the Conversation outlines sheet.</li>
+            Genesys transcribed or summarised the call, an acknowledgement that it did &mdash; never the
+            text. The Calls sheet gives each recording's duration and whether a transcript or summary
+            existed. Where Speech &amp; Text Analytics wrote an outline of a conversation &mdash; call or
+            messaging &mdash; it is on the Conversation outlines sheet.</li>
+        <li><strong>A Conversations index</strong> is assembled from the thousands of acknowledgement
+            receipts: every conversation they name, when its first and last event happened, and what
+            the archive holds for it. Genesys exports no participant, queue or wrap-up detail; this is
+            as close as the archive gets.</li>
         <li><strong>Audio and attachments</strong> can be saved one at a time from the list below.</li>
         <li><strong>Other people's phone numbers are withheld</strong> from the message and email
             rows; their names and email addresses are kept, because they are the correspondence.</li>
@@ -149,6 +179,7 @@ export default function renderExportReader({ me, orgContext }) {
       ["Subject",            m.subjectRows.length ? 1 : 0],
       ["Emails",             m.emails.length],
       ["Messages",           m.messages.length],
+      ["Conversations",      m.conversationRows.length],
       ["Calls",              m.calls.length],
       ["Conversation outlines", m.outlines.length],
       ["Journey sessions",   m.journeys.length],
@@ -256,7 +287,9 @@ async function parseArchive(file, progress) {
     subjectKind: "unknown", subjectKindLabel: "", subjectName: "", subjectRows: [],
     emails: [], messages: [], calls: [], outlines: [], journeys: [], attachments: [],
     points: [], personalBests: [], wem: [], surveys: [], billing: [],
-    receipts: new Map(), receiptTotal: 0, transcribed: new Set(),
+    receipts: new Map(), receiptTotal: 0,
+    // conversation id → what the receipts say happened to it
+    conversations: new Map(),
     emptyCategories: [], deployments: [],
     unknown: new Map(),
     audio: [],
@@ -284,7 +317,14 @@ async function parseArchive(file, progress) {
           const topic = j?.topic || j?.name || "(unnamed)";
           m.receipts.set(topic, (m.receipts.get(topic) || 0) + 1);
           m.receiptTotal++;
-          if (topic === "TranscriptsEvent" && j?.externalId) m.transcribed.add(j.externalId);
+          const flag = CONVERSATION_TOPICS[topic];
+          if (flag && typeof j?.externalId === "string") {
+            let c = m.conversations.get(j.externalId);
+            if (!c) { c = { id: j.externalId, first: Infinity, last: -Infinity, events: 0, flags: new Set() }; m.conversations.set(j.externalId, c); }
+            const ts = j.eventTimestamp;
+            if (typeof ts === "number") { if (ts < c.first) c.first = ts; if (ts > c.last) c.last = ts; }
+            if (flag === "events") c.events++; else c.flags.add(flag);
+          }
           break;
         }
         case "recording":
@@ -442,9 +482,50 @@ async function parseArchive(file, progress) {
     outlineByConv.get(o.conversationId).push(o.header);
   }
   for (const c of m.calls) {
-    c.transcribed = m.transcribed.has(c.conversationId) ? "Yes — text not in export" : "No";
+    const conv = m.conversations.get(c.conversationId);
+    c.transcribed = conv?.flags.has("transcribed") ? "Yes — text not in export" : "No";
+    c.summarised  = conv?.flags.has("summarised")  ? "Yes — text not in export" : "No";
     c.outline = (outlineByConv.get(c.conversationId) || []).join(" › ");
   }
+
+  // The Conversations index: one row per conversation the receipts name,
+  // joined to whatever the archive actually holds for it. This is the
+  // closest thing the export has to conversation detail — Genesys ships no
+  // participant, queue or wrap-up record, only these acknowledgements.
+  const count = (list, key = "conversationId") => {
+    const out = new Map();
+    for (const r of list) { const k = r[key]; if (k) out.set(k, (out.get(k) || 0) + 1); }
+    return out;
+  };
+  const nCalls = count(m.calls), nMsgs = count(m.messages), nEmails = count(m.emails),
+        nOutl = count(m.outlines), nSurv = count(m.surveys), nJourney = count(m.journeys, "id");
+  const yes = (v) => (v ? "Yes" : "");
+  // Only ids that ConversationEvent names are conversations; an id seen
+  // solely under another topic is a communication or something else.
+  m.unattributed = new Map();
+  for (const c of m.conversations.values()) {
+    if (c.events > 0) continue;
+    for (const f of c.flags) m.unattributed.set(f, (m.unattributed.get(f) || 0) + 1);
+  }
+  m.conversationRows = [...m.conversations.values()]
+    .filter((c) => c.events > 0)
+    .sort((a, b) => a.first - b.first)
+    .map((c) => ({
+      id: c.id,
+      first: epochToIso(c.first === Infinity ? 0 : c.first),
+      last:  epochToIso(c.last === -Infinity ? 0 : c.last),
+      events: c.events,
+      recordings: nCalls.get(c.id) || 0,
+      transcribed: yes(c.flags.has("transcribed")),
+      summarised: yes(c.flags.has("summarised")),
+      outlined: nOutl.get(c.id) || 0,
+      messages: nMsgs.get(c.id) || 0,
+      emails: nEmails.get(c.id) || 0,
+      journey: yes(nJourney.has(c.id)),
+      survey: yes(c.flags.has("survey") || nSurv.has(c.id)),
+      voicemail: yes(c.flags.has("voicemail")),
+      resolution: yes(c.flags.has("resolution")),
+    }));
 
   m.subjectRows.sort((a, b) => {
     const ra = SUBJECT_ORDER.indexOf(a[0]), rb = SUBJECT_ORDER.indexOf(b[0]);
@@ -454,7 +535,7 @@ async function parseArchive(file, progress) {
   m.subjectKindLabel = { both: "Genesys user and external contact", contact: "External contact",
     user: "Genesys user", unknown: "No subject record in archive" }[m.subjectKind];
 
-  for (const list of ["emails", "messages", "calls", "outlines", "journeys", "attachments", "points", "wem", "surveys", "billing"]) {
+  for (const list of ["conversationRows", "emails", "messages", "calls", "outlines", "journeys", "attachments", "points", "wem", "surveys", "billing"]) {
     if (m[list].length > ROW_CAP) {
       m.notes.push(`${list}: ${m[list].length.toLocaleString()} rows, only the first ${ROW_CAP.toLocaleString()} are in the workbook.`);
       m[list].length = ROW_CAP;
@@ -476,7 +557,7 @@ async function readRecording(entry, rest, m) {
     m.calls.push({
       conversationId, recordingId, fileName: rest, size: bytes.length,
       durationSec: empty ? "" : oggDurationSeconds(bytes),
-      state: empty ? "empty" : "audio", transcribed: "", outline: "",
+      state: empty ? "empty" : "audio", transcribed: "", summarised: "", outline: "",
     });
     m.audio.push({ kind: "Call audio", fileName: rest, conversationId, size: bytes.length, entry });
     return;
@@ -600,9 +681,12 @@ function buildWorkbook(m) {
   queue("Messages", ["Conversation", "Time", "Channel", "Direction", "From", "To", "Text", "Status"],
     m.messages.map((r) => [r.conversationId, r.time, r.channel, r.direction, r.from, r.to, r.text, r.status]));
 
-  queue("Calls", ["Conversation", "Recording", "Duration", "Seconds", "Size", "State", "Transcribed by Genesys", "Outline", "File"],
+  queue("Calls", ["Conversation", "Recording", "Duration", "Seconds", "Size", "State", "Transcribed by Genesys", "Summarised by Genesys", "Outline", "File"],
     m.calls.map((c) => [c.conversationId, c.recordingId, c.durationSec === "" ? "" : fmtDuration(c.durationSec),
-      c.durationSec === "" ? "" : Math.round(c.durationSec), c.size, c.state, c.transcribed, c.outline, c.fileName]));
+      c.durationSec === "" ? "" : Math.round(c.durationSec), c.size, c.state, c.transcribed, c.summarised, c.outline, c.fileName]));
+
+  queue("Conversations", ["Conversation", "First event", "Last event", "Events", "Recordings", "Transcribed", "Summarised", "Outline segments", "Messages", "Emails", "Journey session", "Survey", "Voicemail", "Resolution"],
+    m.conversationRows.map((c) => [c.id, c.first, c.last, c.events, c.recordings, c.transcribed, c.summarised, c.outlined, c.messages, c.emails, c.journey, c.survey, c.voicemail, c.resolution]));
 
   queue("Conversation outlines", ["Conversation", "Communication", "Segment", "Description", "Start", "End"],
     m.outlines.map((o) => [o.conversationId, o.communicationId, o.header, o.description, o.start, o.end]));
@@ -638,6 +722,7 @@ function buildWorkbook(m) {
   s.push(["Archive", m.fileName]);
   s.push(["Files in archive", m.fileCount]);
   s.push(["", ""]);
+  s.push(["Conversations named by the receipts", m.conversationRows.length]);
   s.push(["Emails", m.emails.length]);
   s.push(["Messages", m.messages.length]);
   s.push(["Calls (audio files)", m.calls.length]);
@@ -653,6 +738,7 @@ function buildWorkbook(m) {
   s.push(["Analytics receipts", `${m.receiptTotal} across ${m.receipts.size} topics`]);
   s.push(["", ""]);
   if (omitted.length) s.push(["Sheets left out (nothing to show)", omitted.join(", ")]);
+  if (m.unattributed.get("transcribed")) s.push(["Transcript acknowledgements not attributed", `${m.unattributed.get("transcribed")} name a communication inside a conversation rather than the conversation, so they are not on the Conversations sheet; the count of transcribed conversations is therefore a floor, not a total.`]);
   if (m.emptyCategories.length) s.push(["Present but empty in the archive", [...new Set(m.emptyCategories)].join(", ")]);
   if (m.deployments.length) s.push(["Web Messenger deployments naming the subject as last editor", m.deployments.join("; ")]);
   for (const [prefix, u] of m.unknown) s.push([`Not recognised: ${prefix}!`, `${u.count} file(s); keys: ${u.keys}`]);
@@ -661,6 +747,7 @@ function buildWorkbook(m) {
   s.push(["About this workbook", "A rendering of the Genesys GDPR Access export, produced in the browser from the archive above. It is not a certified copy."]);
   s.push(["Calls", "Genesys exports call audio and, where it transcribed the call, an acknowledgement that it did. The transcript text is not in the archive and nothing here is transcribed. Conversation outlines are Genesys's own AI summary of a conversation (Speech & Text Analytics), for calls and messaging alike."]);
   s.push(["Receipts", "The analytics! files are acknowledgements that each analytics topic processed the request. They carry ids and timestamps, no content."]);
+  s.push(["Conversations", "Built from those receipts: every conversation id they name, with the time of its first and last event and which Genesys services touched it. Genesys exports no participant, queue or wrap-up detail for a conversation; this index and the transcript, call and journey sheets are all the archive holds about one."]);
   s.push(["Other people's details", "Names and email addresses of counterparts are reproduced because they are the subject's correspondence. Phone numbers in message and email rows are withheld."]);
   s.push(["Email bodies", "Text bodies are reproduced. An email with only an HTML body is shown as text with the markup removed. Email records from the routing service carry headers only; the archive has no body for them."]);
 

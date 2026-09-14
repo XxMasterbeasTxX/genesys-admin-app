@@ -431,7 +431,7 @@ history (`0543e76b…`, `f8e044e2…`) exercise the most.
   - Expect: first tab; subject, kind, request id, exported-at, counts; a "Sheets left out" line matching the page's "Nothing for"; a "Present but empty in the archive" line on a user export (Coaching, Shift trades, …); the About / Calls / Receipts / Other people's details / Email bodies statements at the foot
   - Notes: `______________________`
 - [ ] **12.9** — **Calls** sheet on `f8e044e2…`
-  - Expect: 225 rows; Duration as m:ss and Seconds as a number; State `empty` on exactly 4 rows with no duration; **Transcribed by Genesys** reads "Yes — text not in export" on most rows and "No" on the rest (the org has transcription on); on `0543e76b…` every row reads "No"
+  - Expect: 225 rows; Duration as m:ss and Seconds as a number; State `empty` on exactly 4 rows with no duration; **Transcribed by Genesys** and **Summarised by Genesys** read "Yes — text not in export" on most rows and "No" on the rest (the org has transcription on); on `0543e76b…` every row reads "No"
   - Notes: `______________________`
 - [ ] **12.10** — **Conversation outlines** sheet on `f8e044e2…`
   - Expect: 21 rows across 5 conversations: segment header, one-sentence description (Danish/Norwegian), start and end times. Absent on the other exports, and the Summary says so
@@ -466,6 +466,12 @@ history (`0543e76b…`, `f8e044e2…`) exercise the most.
 - [ ] **12.20** — Both pages in light and dark mode
   - Expect: drop zone border and the kind pill legible in both
   - Notes: `______________________`
+- [ ] **12.21** — **Conversations** sheet on `f8e044e2…`
+  - Expect: 211 rows, oldest first; First/Last event timestamps; 140 rows with Recordings > 0, 83 Transcribed, 88 Summarised, 5 with outline segments, 8 with a journey session. The Summary carries a "Transcript acknowledgements not attributed: 96 …" line explaining why transcribed is a floor
+  - Notes: `______________________`
+- [ ] **12.22 ★** — Pick three conversations from that sheet you know something about (a call you took, a chat you had) and check the row against your memory
+  - Expect: first/last event bracket the conversation; the recordings / messages / survey columns match what happened
+  - Answer: `______________________`
 
 ---
 

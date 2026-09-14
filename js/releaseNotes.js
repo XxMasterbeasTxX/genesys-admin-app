@@ -39,8 +39,13 @@ export const RELEASE_NOTES = [
         + "was read and its request id.",
       "Calls are listed, not transcribed. The archive never contains transcript text \u2014 checked "
         + "against an org with transcription on \u2014 so the Calls sheet says, per recording, "
-        + "whether Genesys transcribed it and that the text is not in the export. Empty "
-        + "recordings (a 27-byte file where a call was never captured) are marked as such.",
+        + "whether Genesys transcribed or summarised it and that the text is not in the export. "
+        + "Empty recordings (a 27-byte file where a call was never captured) are marked as such.",
+      "A Conversations sheet is assembled from the acknowledgement receipts: every conversation "
+        + "the subject took part in, when its first and last event happened, how many events, and "
+        + "what the archive holds for it \u2014 recordings, transcript, summary, outline, messages, "
+        + "emails, journey session, survey. Genesys exports no participant, queue or wrap-up "
+        + "detail for a conversation; this index is as close as the archive gets.",
       "Other people's phone numbers are withheld from the message and email rows; their names "
         + "and email addresses are kept, because they are the subject's correspondence. Audio "
         + "files and attachments can be saved one at a time.",
