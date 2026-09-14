@@ -280,6 +280,9 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // runs as the org's OAuth client, not as them. Exactly the hole this map
   // exists to close.
   "gdpr.subjectRequest":       { view: ["gdpr:subject:view"] },
+  // gdpr.exportReader has no entry on purpose: the page parses a file on the
+  // user's machine and calls no Genesys endpoint, so there is no permission
+  // to check. The gdpr.* entitlement alone gates it.
 
   // ── Interactions ─────────────────────────────────────
   "interactions.recordings.jobs":                    { view: { all: ["recording:job:view"] } },

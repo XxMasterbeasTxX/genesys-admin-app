@@ -21,6 +21,32 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "5.6",
+    date: "2026-09-14",
+    title: "GDPR: read an Article 15 export",
+    changes: [
+      "A third GDPR page, Article 15 - Export Reader. Drop the archive Genesys delivered for an "
+        + "Access request onto it and get one Excel workbook back: the subject record, emails with "
+        + "their text bodies, chat and messaging transcripts, calls with duration, Speech & Text "
+        + "Analytics outlines of conversations, journey sessions, attachments, surveys, billing "
+        + "references and \u2014 for a Genesys user \u2014 performance points and workforce-management "
+        + "records. One sheet per kind, and the Summary sheet says which sheets were left out "
+        + "because the archive had nothing for them.",
+      "What Genesys actually delivers is a zip of thousands of flat, extensionless files, 96\u201399% "
+        + "of them acknowledgement receipts with no content, with the transcripts as zips inside "
+        + "the zip and the calls as bare audio. The reader sorts that out in your browser; nothing "
+        + "in the archive is uploaded anywhere, and the Activity Log records only that an export "
+        + "was read and its request id.",
+      "Calls are listed, not transcribed. The archive never contains transcript text \u2014 checked "
+        + "against an org with transcription on \u2014 so the Calls sheet says, per recording, "
+        + "whether Genesys transcribed it and that the text is not in the export. Empty "
+        + "recordings (a 27-byte file where a call was never captured) are marked as such.",
+      "Other people's phone numbers are withheld from the message and email rows; their names "
+        + "and email addresses are kept, because they are the subject's correspondence. Audio "
+        + "files and attachments can be saved one at a time.",
+    ],
+  },
+  {
     version: "5.5",
     date: "2026-09-11",
     title: "Agent Copilot: how much of the checklist got done, and what was actually said",

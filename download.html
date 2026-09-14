@@ -60,12 +60,19 @@
           png:  "image/png",
           html: "text/html",
           json: "application/json",
+          // What a GDPR export archive holds: call audio, inline images, text attachments.
+          opus: "audio/ogg",
+          jpg:  "image/jpeg",
+          jpeg: "image/jpeg",
+          gif:  "image/gif",
+          txt:  "text/plain",
         };
         var mime = mimeMap[ext] || "application/octet-stream";
 
         var descMap = {
           xlsx: "Excel Workbook", zip: "ZIP Archive", csv: "CSV File", pdf: "PDF Document",
           svg: "SVG Image", png: "PNG Image", html: "HTML Page", json: "JSON File",
+          opus: "Opus Audio", jpg: "JPEG Image", jpeg: "JPEG Image", gif: "GIF Image", txt: "Text File",
         };
 
         // File picker accepts config per extension

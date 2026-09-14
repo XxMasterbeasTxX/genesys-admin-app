@@ -118,6 +118,7 @@
  *   GDPR
  *   gdpr.subjectRequest                Subject Request
  *   gdpr.requestStatus                 Request Status
+ *   gdpr.exportReader                  Article 15 - Export Reader  (reads a downloaded archive; no Genesys call)
  *
  *   INTERACTIONS
  *   interactions.disconnect                          Disconnect (force-disconnect stuck conversations)
