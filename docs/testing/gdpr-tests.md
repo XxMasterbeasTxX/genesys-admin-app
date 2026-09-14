@@ -448,6 +448,12 @@ history (`0543e76b…`, `f8e044e2…`) exercise the most.
 - [ ] **12.14** — Expand **Audio and attachments** and press **Save** on an `.opus` and on an image
   - Expect: `download.html` opens with a Save As for that one file, correct extension, playable / viewable after saving
   - Notes: `______________________`
+- [ ] **12.14a** — Press **Save all audio & attachments (.zip, N MB)** on `f8e044e2…`
+  - Expect: the button shows the total size (30.1 MB); `download.html` opens at once reading "Preparing … Packing NN%", then offers Save As for `GDPR_Access_<name>_<request>_files.zip`. Inside: `audio/` with 221 `.opus` (the 4 empty ones are left out) and `attachments/<conversation id>/` folders with the images
+  - Answer — how long from click to the Save button? `______________________`
+- [ ] **12.14b** — On an export with no audio and no attachments (`27c7defa…`)
+  - Expect: no Save-all button and no file list — only Save workbook
+  - Notes: `______________________`
 - [ ] **12.15** — Press **Save** on a file, then cancel the Save As dialog
   - Expect: nothing breaks; the button re-enables; pressing again works
   - Notes: `______________________`

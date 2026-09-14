@@ -173,9 +173,16 @@ frozen row. Same as every other export.
 **Files as files.** Each non-empty `.opus` and each attachment gets a
 **Save** button that hands the bytes to `download.html` as base64 — the route
 that is proven to work in the sandbox. No transcription; the app has no
-speech-to-text and should not pretend to. A **Save all audio** button is not
-offered: 225 files through 225 Save As dialogs is worse than the original
-zip, which the user still has.
+speech-to-text and should not pretend to.
+
+**Save all audio & attachments** (added 2026-09-14 on request) packs every
+one of them into a single zip — `audio/<file>`, `attachments/<conversation>/
+<file>`, stored not deflated — through one Save As. The zip takes longer to
+build than a pop-up is allowed to wait for, so `downloadDeferred` in
+`utils.js` opens `download.html` synchronously on the click with a *pending*
+payload and fills in the bytes when `JSZip` finishes; `download.html` shows
+"Preparing… Packing 35%" until then. Bytes cross as a `Uint8Array`, not
+base64. Measured: 30 MB, 242 files, 1.0 s.
 
 ## 3. Consequences worth agreeing to
 

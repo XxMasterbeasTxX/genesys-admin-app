@@ -390,6 +390,42 @@ export function downloadBase64(filename, b64) {
 }
 
 /**
+ * Hand download.html a file that is still being built.
+ *
+ * A pop-up is only allowed in the moment of the click, and a zip of every
+ * audio file in a GDPR export can take longer to build than that moment
+ * lasts. So the tab is opened at once with a pending payload, and
+ * download.html waits — showing `progress` when given — until `produce`
+ * resolves with the bytes. Bytes go across as a Uint8Array, not base64:
+ * same origin, no 4/3 blow-up, no atob over tens of megabytes.
+ *
+ * @param {string} filename
+ * @param {(report: (text: string) => void) => Promise<Uint8Array>} produce
+ *   Builds the file; call `report` with a progress line as it goes.
+ */
+export async function downloadDeferred(filename, produce) {
+  const key = "xlsx_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+  window._xlsxDownload = window._xlsxDownload || {};
+  const payload = { filename, pending: true, progress: "" };
+  window._xlsxDownload[key] = payload;
+
+  const helperUrl = new URL("download.html", document.baseURI);
+  helperUrl.hash = key;
+  const popup = window.open(helperUrl.href, "_blank");
+  if (!popup) {
+    delete window._xlsxDownload[key];
+    throw new Error("Pop-up blocked. Please allow pop-ups for this site and try again.");
+  }
+  try {
+    payload.bytes = await produce((text) => { payload.progress = text; });
+    payload.pending = false;
+  } catch (err) {
+    payload.error = err.message || String(err);
+    throw err;
+  }
+}
+
+/**
  * Encode a finished workbook and hand it to download.html.
  *
  * @param {object} wb        SheetJS workbook.

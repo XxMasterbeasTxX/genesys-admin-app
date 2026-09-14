@@ -22,7 +22,7 @@
  *   - calls are listed with duration and whether Genesys transcribed them;
  *     the transcript text is not in the archive and nothing is transcribed here
  */
-import { escapeHtml, makeStatus, downloadWorkbook, downloadBase64 } from "../../utils.js";
+import { escapeHtml, makeStatus, downloadWorkbook, downloadBase64, downloadDeferred } from "../../utils.js";
 import { addStyledSheet } from "../../utils/excelStyles.js";
 import { logAction } from "../../services/activityLogService.js";
 
@@ -100,7 +100,8 @@ export default function renderExportReader({ me, orgContext }) {
             receipts: every conversation they name, when its first and last event happened, and what
             the archive holds for it. Genesys exports no participant, queue or wrap-up detail; this is
             as close as the archive gets.</li>
-        <li><strong>Audio and attachments</strong> can be saved one at a time from the list below.</li>
+        <li><strong>Audio and attachments</strong> can be saved all at once as a zip &mdash; audio in one
+            folder, attachments in a folder per conversation &mdash; or one at a time from the list below.</li>
         <li><strong>Other people's phone numbers are withheld</strong> from the message and email
             rows; their names and email addresses are kept, because they are the correspondence.</li>
         <li>The workbook is a rendering of what Genesys exported, not a certified copy.</li>
@@ -193,7 +194,9 @@ export default function renderExportReader({ me, orgContext }) {
     const present = counts.filter(([, n]) => n > 0);
     const absent  = counts.filter(([, n]) => n === 0).map(([k]) => k);
 
-    const files = [...m.audio, ...m.attachments].filter((f) => f.size > 0);
+    // The 27-byte placeholder recordings are on the Calls sheet as "empty";
+    // there is nothing in them to save.
+    const files = [...m.audio, ...m.attachments].filter((f) => f.size > 0 && !f.empty);
 
     $result.innerHTML = `
       <div class="gdpr-reader-summary">
@@ -212,6 +215,7 @@ export default function renderExportReader({ me, orgContext }) {
       </div>
       <div class="te-actions">
         <button class="btn te-btn-export" id="gdprReaderSave">Save workbook</button>
+        ${files.length ? `<button class="btn te-btn-export" id="gdprReaderSaveAll">Save all audio &amp; attachments (.zip, ${fmtSize(files.reduce((a, f) => a + f.size, 0))})</button>` : ""}
       </div>
       ${files.length ? `
         <details class="gdpr-reader-files">
@@ -239,6 +243,19 @@ export default function renderExportReader({ me, orgContext }) {
         downloadWorkbook(buildWorkbook(m), workbookName(m));
       } catch (err) {
         setStatus(err.message, "error");
+      }
+    });
+
+    const $saveAll = $result.querySelector("#gdprReaderSaveAll");
+    if ($saveAll) $saveAll.addEventListener("click", async () => {
+      $saveAll.disabled = true;
+      try {
+        await downloadDeferred(filesZipName(m), (report) => buildFilesZip(files, report));
+        setStatus("");
+      } catch (err) {
+        setStatus(err.message, "error");
+      } finally {
+        $saveAll.disabled = false;
       }
     });
 
@@ -559,7 +576,7 @@ async function readRecording(entry, rest, m) {
       durationSec: empty ? "" : oggDurationSeconds(bytes),
       state: empty ? "empty" : "audio", transcribed: "", summarised: "", outline: "",
     });
-    m.audio.push({ kind: "Call audio", fileName: rest, conversationId, size: bytes.length, entry });
+    m.audio.push({ kind: "Call audio", fileName: rest, conversationId, size: bytes.length, entry, empty });
     return;
   }
 
@@ -754,6 +771,33 @@ function buildWorkbook(m) {
   addStyledSheet(wb, [["Item", "Value"], ...s], "Summary");
   for (const [name, headers, rows] of pending) if (rows.length) addStyledSheet(wb, [headers, ...rows], name);
   return wb;
+}
+
+/**
+ * Every audio file and attachment as one zip: `audio/<file>` and
+ * `attachments/<conversation>/<file>`. Inline images repeat their names
+ * (image001.png in every signature), so a clash within a folder gets a
+ * counter. Stored, not deflated — Opus and images do not compress, and a
+ * 30 MB archive should not spend ten seconds proving it.
+ */
+async function buildFilesZip(files, report) {
+  const zip = new JSZip();
+  const used = new Set();
+  for (const f of files) {
+    const dir = f.kind === "Call audio" ? "audio" : `attachments/${f.conversationId || "unknown"}`;
+    let path = `${dir}/${f.fileName}`;
+    for (let n = 2; used.has(path); n++) path = `${dir}/${f.fileName.replace(/(\.[^.]*)?$/, `_${n}$1`)}`;
+    used.add(path);
+    zip.file(path, await f.entry.async("uint8array"));
+  }
+  return zip.generateAsync(
+    { type: "uint8array", compression: "STORE" },
+    (meta) => report(`Packing… ${Math.round(meta.percent)}%`),
+  );
+}
+
+function filesZipName(m) {
+  return workbookName(m).replace(/\.xlsx$/, "_files.zip");
 }
 
 function workbookName(m) {

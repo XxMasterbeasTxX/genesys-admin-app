@@ -48,7 +48,8 @@ export const RELEASE_NOTES = [
         + "detail for a conversation; this index is as close as the archive gets.",
       "Other people's phone numbers are withheld from the message and email rows; their names "
         + "and email addresses are kept, because they are the subject's correspondence. Audio "
-        + "files and attachments can be saved one at a time.",
+        + "files and attachments can be saved all at once as one zip \u2014 audio in one folder, "
+        + "attachments in a folder per conversation \u2014 or one at a time.",
     ],
   },
   {
