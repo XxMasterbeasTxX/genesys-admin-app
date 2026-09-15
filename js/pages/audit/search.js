@@ -150,7 +150,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   let filteredRows   = [];     // current filtered view (subset of allResults)
   let actorMap       = {};     // { userId → displayName } for users expand did not name
   let clientMap      = {};     // { clientId → OAuth client name }
-  let entityNameMap  = {};     // { entityId → resolvedName }
+  let nameCache      = {};     // { guid → name } for entities and the GUIDs inside values
   let failures       = [];     // [{ label, message }] queries that returned nothing
   let isRunning      = false;
   let currentPage    = 1;
@@ -464,7 +464,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     allResults    = [];
     actorMap      = {};
     clientMap     = {};
-    entityNameMap = {};
+    nameCache     = {};
     failures      = [];
     renderFailures();
     $tableBody.innerHTML = "";
@@ -591,107 +591,252 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     return total;
   }
 
-  // ── Entity name resolution ───────────────────────────────────────
-  // Maps service+entityType to a Genesys API path function. Only used when
-  // the audit entry carries no entity.name of its own.
-  // entity.id in audit entries is always the resource GUID (or for
-  // Datatables/Row it is the parent datatable ID).
-  const ENTITY_PATH = {
-    // Triggers / ProcessAutomation
-    "Triggers/Trigger":                   id => `/api/v2/processautomation/triggers/${id}`,
-    "ProcessAutomation/Trigger":           id => `/api/v2/processautomation/triggers/${id}`,
-    // Datatables
-    "Datatables/Schema":              id => `/api/v2/flows/datatables/${id}`,
-    "Datatables/Row":                 id => `/api/v2/flows/datatables/${id}`,
-    // Architect
-    "Architect/Flow":                 id => `/api/v2/flows/${id}`,
-    "Architect/Prompt":               id => `/api/v2/architect/prompts/${id}`,
-    "Architect/IVR":                  id => `/api/v2/architect/ivrs/${id}`,
-    "Architect/Schedule":             id => `/api/v2/architect/schedules/${id}`,
-    "Architect/ScheduleGroup":        id => `/api/v2/architect/schedulegroups/${id}`,
-    "Architect/EmergencyGroup":       id => `/api/v2/architect/emergencygroups/${id}`,
-    "Architect/FlowOutcome":          id => `/api/v2/flows/outcomes/${id}`,
-    "Architect/FlowMilestone":        id => `/api/v2/flows/milestones/${id}`,
-    // ContactCenter
-    "ContactCenter/Queue":            id => `/api/v2/routing/queues/${id}`,
-    "ContactCenter/WrapupCode":       id => `/api/v2/routing/wrapupcodes/${id}`,
-    // PeoplePermissions
-    "PeoplePermissions/Role":         id => `/api/v2/authorization/roles/${id}`,
-    "PeoplePermissions/OAuthClient":  id => `/api/v2/oauth/clients/${id}`,
-    // Directory
-    "Directory/User":                 id => `/api/v2/users/${id}`,
-    // Groups
-    "Groups/DirectoryGroup":          id => `/api/v2/groups/${id}`,
-    "Groups/Team":                    id => `/api/v2/teams/${id}`,
-    "Groups/SkillGroup":              id => `/api/v2/routing/skillgroups/${id}`,
+  // ── Name resolution ──────────────────────────────────────────────
+  // Genesys audits refer to almost everything by GUID: the entity, the
+  // actor, and the old/new values of any property that points at another
+  // object. Every GUID that can be turned into a name is, through the one
+  // cache below (id → name | null while in flight).
+  //
+  // Paths are keyed on the ENTITY TYPE alone: the same type appears under
+  // several services (Queue under ContactCenter and Routing, Schedule under
+  // Architect and Telephony) and the resource behind it is the same. The
+  // few cases where the service changes the meaning are overridden by
+  // "Service/Type" in SERVICE_TYPE_PATH.
+  const TYPE_PATH = {
+    // People
+    User:                  id => `/api/v2/users/${id}`,
+    AuthUser:              id => `/api/v2/users/${id}`,
+    UserPresence:          id => `/api/v2/users/${id}`,   // entity id is the user
+    Agent:                 id => `/api/v2/users/${id}`,
+    Station:               id => `/api/v2/stations/${id}`,
+    Location:              id => `/api/v2/locations/${id}`,
+    Role:                  id => `/api/v2/authorization/roles/${id}`,
+    Division:              id => `/api/v2/authorization/divisions/${id}`,
+    OAuthClient:           id => `/api/v2/oauth/clients/${id}`,
+    Group:                 id => `/api/v2/groups/${id}`,
+    DirectoryGroup:        id => `/api/v2/groups/${id}`,
+    Team:                  id => `/api/v2/teams/${id}`,
+    SkillGroup:            id => `/api/v2/routing/skillgroups/${id}`,
     // Routing
-    "Routing/RoutingSkill":           id => `/api/v2/routing/skills/${id}`,
-    // ResponseManagement
-    "ResponseManagement/Response":        id => `/api/v2/responsemanagement/responses/${id}`,
-    "ResponseManagement/ResponseLibrary": id => `/api/v2/responsemanagement/libraries/${id}`,
+    Queue:                 id => `/api/v2/routing/queues/${id}`,
+    Skill:                 id => `/api/v2/routing/skills/${id}`,
+    RoutingSkill:          id => `/api/v2/routing/skills/${id}`,
+    Language:              id => `/api/v2/routing/languages/${id}`,
+    RoutingLanguage:       id => `/api/v2/routing/languages/${id}`,
+    WrapupCode:            id => `/api/v2/routing/wrapupcodes/${id}`,
+    WrapUpCode:            id => `/api/v2/routing/wrapupcodes/${id}`,
+    UtilizationLabel:      id => `/api/v2/routing/utilization/labels/${id}`,
+    EmailDomain:           id => `/api/v2/routing/email/domains/${id}`,
+    Predictor:             id => `/api/v2/routing/predictors/${id}`,
+    // Architect
+    Flow:                  id => `/api/v2/flows/${id}`,
+    Prompt:                id => `/api/v2/architect/prompts/${id}`,
+    UserPrompt:            id => `/api/v2/architect/prompts/${id}`,
+    SystemPrompt:          id => `/api/v2/architect/systemprompts/${id}`,
+    IVR:                   id => `/api/v2/architect/ivrs/${id}`,
+    Schedule:              id => `/api/v2/architect/schedules/${id}`,
+    ScheduleGroup:         id => `/api/v2/architect/schedulegroups/${id}`,
+    EmergencyGroup:        id => `/api/v2/architect/emergencygroups/${id}`,
+    FlowOutcome:           id => `/api/v2/flows/outcomes/${id}`,
+    FlowMilestone:         id => `/api/v2/flows/milestones/${id}`,
+    Datatable:             id => `/api/v2/flows/datatables/${id}`,
+    Schema:                id => `/api/v2/flows/datatables/${id}`,
+    Trigger:               id => `/api/v2/processautomation/triggers/${id}`,
     // Telephony
-    "Telephony/Site":                 id => `/api/v2/telephony/providers/edges/sites/${id}`,
-    "Telephony/Trunk":                id => `/api/v2/telephony/providers/edges/trunks/${id}`,
-    "Telephony/TrunkBase":            id => `/api/v2/telephony/providers/edges/trunkbasesettings/${id}`,
-    "Telephony/Phone":                id => `/api/v2/telephony/providers/edges/phones/${id}`,
-    "Telephony/Edge":                 id => `/api/v2/telephony/providers/edges/${id}`,
-    "Telephony/IVR":                  id => `/api/v2/architect/ivrs/${id}`,
-    "Telephony/Schedule":             id => `/api/v2/architect/schedules/${id}`,
-    "Telephony/ScheduleGroup":        id => `/api/v2/architect/schedulegroups/${id}`,
-    "Telephony/EmergencyGroup":       id => `/api/v2/architect/emergencygroups/${id}`,
+    Site:                  id => `/api/v2/telephony/providers/edges/sites/${id}`,
+    Trunk:                 id => `/api/v2/telephony/providers/edges/trunks/${id}`,
+    TrunkBase:             id => `/api/v2/telephony/providers/edges/trunkbasesettings/${id}`,
+    TrunkBaseSettings:     id => `/api/v2/telephony/providers/edges/trunkbasesettings/${id}`,
+    Phone:                 id => `/api/v2/telephony/providers/edges/phones/${id}`,
+    PhoneBase:             id => `/api/v2/telephony/providers/edges/phonebasesettings/${id}`,
+    PhoneBaseSettings:     id => `/api/v2/telephony/providers/edges/phonebasesettings/${id}`,
+    Line:                  id => `/api/v2/telephony/providers/edges/lines/${id}`,
+    LineBase:              id => `/api/v2/telephony/providers/edges/linebasesettings/${id}`,
+    LineBaseSettings:      id => `/api/v2/telephony/providers/edges/linebasesettings/${id}`,
+    Edge:                  id => `/api/v2/telephony/providers/edges/${id}`,
+    EdgeGroup:             id => `/api/v2/telephony/providers/edges/edgegroups/${id}`,
+    DID:                   id => `/api/v2/telephony/providers/edges/dids/${id}`,
+    DIDPool:               id => `/api/v2/telephony/providers/edges/didpools/${id}`,
+    Extension:             id => `/api/v2/telephony/providers/edges/extensions/${id}`,
+    ExtensionPool:         id => `/api/v2/telephony/providers/edges/extensionpools/${id}`,
+    OutboundRoute:         id => `/api/v2/telephony/providers/edges/outboundroutes/${id}`,
     // Outbound
-    "Outbound/Campaign":              id => `/api/v2/outbound/campaigns/${id}`,
-    "Outbound/ContactList":           id => `/api/v2/outbound/contactlists/${id}`,
-    "Outbound/DNCList":               id => `/api/v2/outbound/dnclists/${id}`,
-    "Outbound/RuleSet":               id => `/api/v2/outbound/rulesets/${id}`,
-    "Outbound/CallableTimeSet":       id => `/api/v2/outbound/callabletimesets/${id}`,
-    // Knowledge
-    "Knowledge/KnowledgeBase":        id => `/api/v2/knowledge/knowledgebases/${id}`,
-    // Integrations
-    "Integrations/Integration":       id => `/api/v2/integrations/${id}`,
-    // WebDeployments
-    "WebDeployments/Deployment":      id => `/api/v2/webdeployments/deployments/${id}`,
-    "WebDeployments/Configuration":   id => `/api/v2/webdeployments/configurations/${id}`,
-    // WorkforceManagement
-    "WorkforceManagement/BusinessUnit":   id => `/api/v2/workforcemanagement/businessunits/${id}`,
-    "WorkforceManagement/ManagementUnit": id => `/api/v2/workforcemanagement/managementunits/${id}`,
-    // Messaging
-    "Messaging/Integration":          id => `/api/v2/messaging/integrations/${id}`,
+    Campaign:              id => `/api/v2/outbound/campaigns/${id}`,
+    ContactList:           id => `/api/v2/outbound/contactlists/${id}`,
+    ContactListFilter:     id => `/api/v2/outbound/contactlistfilters/${id}`,
+    DNCList:               id => `/api/v2/outbound/dnclists/${id}`,
+    RuleSet:               id => `/api/v2/outbound/rulesets/${id}`,
+    CallableTimeSet:       id => `/api/v2/outbound/callabletimesets/${id}`,
+    CampaignSequence:      id => `/api/v2/outbound/sequences/${id}`,
+    Sequence:              id => `/api/v2/outbound/sequences/${id}`,
+    CampaignRule:          id => `/api/v2/outbound/campaignrules/${id}`,
+    AttemptLimits:         id => `/api/v2/outbound/attemptlimits/${id}`,
+    ResponseSet:           id => `/api/v2/outbound/callanalysisresponsesets/${id}`,
+    // Content
+    Response:              id => `/api/v2/responsemanagement/responses/${id}`,
+    ResponseLibrary:       id => `/api/v2/responsemanagement/libraries/${id}`,
+    Library:               id => `/api/v2/responsemanagement/libraries/${id}`,
+    KnowledgeBase:         id => `/api/v2/knowledge/knowledgebases/${id}`,
+    // Integrations / deployments
+    Integration:           id => `/api/v2/integrations/${id}`,
+    Action:                id => `/api/v2/integrations/actions/${id}`,
+    DataAction:            id => `/api/v2/integrations/actions/${id}`,
+    Deployment:            id => `/api/v2/webdeployments/deployments/${id}`,
+    Configuration:         id => `/api/v2/webdeployments/configurations/${id}`,
+    // Quality / analytics / WFM / other
+    EvaluationForm:        id => `/api/v2/quality/forms/evaluations/${id}`,
+    SurveyForm:            id => `/api/v2/quality/forms/surveys/${id}`,
+    MediaRetentionPolicy:  id => `/api/v2/recording/mediaretentionpolicies/${id}`,
+    RecordingPolicy:       id => `/api/v2/recording/mediaretentionpolicies/${id}`,
+    Topic:                 id => `/api/v2/speechandtextanalytics/topics/${id}`,
+    Program:               id => `/api/v2/speechandtextanalytics/programs/${id}`,
+    BusinessUnit:          id => `/api/v2/workforcemanagement/businessunits/${id}`,
+    ManagementUnit:        id => `/api/v2/workforcemanagement/managementunits/${id}`,
+    LearningModule:        id => `/api/v2/learning/modules/${id}`,
+    Module:                id => `/api/v2/learning/modules/${id}`,
+    Appointment:           id => `/api/v2/coaching/appointments/${id}`,
+    ExternalContact:       id => `/api/v2/externalcontacts/contacts/${id}`,
+    Contact:               id => `/api/v2/externalcontacts/contacts/${id}`,
+    ExternalOrganization:  id => `/api/v2/externalcontacts/organizations/${id}`,
+    Organization:          id => `/api/v2/externalcontacts/organizations/${id}`,
   };
 
-  async function resolveEntities() {
-    // Unique (service/entityType, id) pairs that have a resolver AND no name
-    // of their own. An entity.name in the audit is the name at the time of the
-    // change, which beats today's name — and beats "(deleted)".
-    const toResolve = [];
-    for (const entry of allResults) {
-      const id      = entry.entity?.id;
-      if (!id || entry.entity?.name) continue;
-      const service = entry.serviceName || "";
-      const type    = entry.entityType  || entry.entity?.type || "";
-      const key     = `${service}/${type}`;
-      if (ENTITY_PATH[key] && !(id in entityNameMap)) {
-        entityNameMap[id] = null; // mark as in-flight
-        toResolve.push({ key, id });
-      }
-    }
+  // "Service/Type" overrides where the service changes what the id means.
+  const SERVICE_TYPE_PATH = {
+    "Datatables/Row":          id => `/api/v2/flows/datatables/${id}`,  // id is the parent datatable
+    "Messaging/Integration":   id => `/api/v2/messaging/integrations/${id}`,
+    "Outbound/Schedule":       null,  // campaign schedules have no name endpoint
+  };
 
-    await runLimited(toResolve, LOOKUP_CONCURRENCY, async ({ key, id }) => {
+  function pathFor(service, type, id) {
+    const key = `${service}/${type}`;
+    if (key in SERVICE_TYPE_PATH) return SERVICE_TYPE_PATH[key] ? SERVICE_TYPE_PATH[key](id) : null;
+    return TYPE_PATH[type] ? TYPE_PATH[type](id) : null;
+  }
+
+  // Property name → the type its GUID values point at. Ordered: the first
+  // match wins, so the specific ("skillGroup") sits above the general
+  // ("group"), and anything naming people ("members", "owner") sits above
+  // the object they belong to ("queueMembers" holds users, not queues).
+  const PROPERTY_TYPE_HINTS = [
+    [/skill.?group/i,                                                "SkillGroup"],
+    [/division/i,                                                    "Division"],
+    [/member|user|agent|owner|supervisor|manager|createdby|modifiedby|evaluator|reviewer|participant/i, "User"],
+    [/wrap.?up/i,                                                    "WrapupCode"],
+    [/queue/i,                                                       "Queue"],
+    [/skill/i,                                                       "Skill"],
+    [/language/i,                                                    "Language"],
+    [/role/i,                                                        "Role"],
+    [/team/i,                                                        "Team"],
+    [/group/i,                                                       "Group"],
+    [/site/i,                                                        "Site"],
+    [/flow/i,                                                        "Flow"],
+    [/schedule.?group/i,                                             "ScheduleGroup"],
+    [/schedule/i,                                                    "Schedule"],
+    [/prompt/i,                                                      "Prompt"],
+    [/location/i,                                                    "Location"],
+    [/station/i,                                                     "Station"],
+    [/phone.?base/i,                                                 "PhoneBase"],
+    [/phone/i,                                                       "Phone"],
+    [/trunk.?base/i,                                                 "TrunkBase"],
+    [/trunk/i,                                                       "Trunk"],
+    [/edge.?group/i,                                                 "EdgeGroup"],
+    [/edge/i,                                                        "Edge"],
+    [/campaign/i,                                                    "Campaign"],
+    [/contact.?list/i,                                               "ContactList"],
+    [/integration/i,                                                 "Integration"],
+    [/data.?action|action.?id/i,                                     "Action"],
+    [/knowledge/i,                                                   "KnowledgeBase"],
+    [/evaluation.?form|form.?id/i,                                   "EvaluationForm"],
+    [/topic/i,                                                       "Topic"],
+    [/program/i,                                                     "Program"],
+    [/business.?unit/i,                                              "BusinessUnit"],
+    [/management.?unit/i,                                            "ManagementUnit"],
+    [/client/i,                                                      "OAuthClient"],
+  ];
+
+  const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  /** Type a property's GUID values point at, or null when nothing in the name says. */
+  function hintedType(property) {
+    const name = String(property || "");
+    for (const [re, type] of PROPERTY_TYPE_HINTS) if (re.test(name)) return type;
+    return null;
+  }
+
+  /**
+   * Every GUID reference an entry makes in its values: property changes and
+   * entity changes. Returns [{ type, id }] (type may be null for an entity
+   * change with no entityType).
+   */
+  function valueRefs(entry) {
+    const refs = [];
+    for (const p of (entry.propertyChanges || [])) {
+      const type = hintedType(p.property);
+      if (!type) continue;
+      for (const v of [].concat(p.oldValues ?? [], p.newValues ?? []))
+        if (GUID_RE.test(String(v))) refs.push({ type, id: String(v) });
+    }
+    for (const { k, v } of contextPairs(entry)) {
+      const type = hintedType(k);
+      if (type && GUID_RE.test(v)) refs.push({ type, id: v });
+    }
+    for (const c of (entry.entityChanges || [])) {
+      if (c.entityId && !c.entityName && GUID_RE.test(c.entityId))
+        refs.push({ type: c.entityType || null, id: c.entityId });
+      for (const v of [].concat(c.oldValues ?? [], c.newValues ?? []))
+        if (GUID_RE.test(String(v))) refs.push({ type: c.entityType || null, id: String(v) });
+    }
+    return refs;
+  }
+
+  /**
+   * Look up the names for [{ path, id }] not already in nameCache.
+   * A 404 is recorded as "(deleted) <id>"; any other failure leaves the id.
+   */
+  async function resolvePaths(items) {
+    const todo = [];
+    for (const { path, id } of items) {
+      if (!path || !id || id in nameCache) continue;
+      nameCache[id] = null; // in flight
+      todo.push({ path, id });
+    }
+    await runLimited(todo, LOOKUP_CONCURRENCY, async ({ path, id }) => {
       try {
-        const path = ENTITY_PATH[key](id);
-        const res  = await gc.fetchEntityByPath(api, orgId, path);
-        entityNameMap[id] = res?.name || id;
+        const res = await gc.fetchEntityByPath(api, orgId, path);
+        nameCache[id] = res?.name || res?.displayName || id;
       } catch (err) {
-        entityNameMap[id] = err?.status === 404
-          ? `(deleted) ${id}`
-          : id; // other errors (permissions, network) — just show GUID
+        nameCache[id] = err?.status === 404 ? `(deleted) ${id}` : id;
       }
     });
   }
 
+  /** Resolve the GUIDs inside the values of these entries (bounded, cached). */
+  async function resolveValueRefs(entries) {
+    const items = [];
+    for (const entry of entries)
+      for (const { type, id } of valueRefs(entry))
+        if (type && TYPE_PATH[type]) items.push({ path: TYPE_PATH[type](id), id });
+    await resolvePaths(items);
+  }
+
+  /** The entity of every result, unless the audit already carries its name. */
+  async function resolveEntities() {
+    const items = [];
+    for (const entry of allResults) {
+      const id = entry.entity?.id;
+      if (!id || entry.entity?.name) continue;
+      const path = pathFor(entry.serviceName || "", getEntityType(entry), id);
+      if (path) items.push({ path, id });
+    }
+    await resolvePaths(items);
+  }
+
   // ── Actor name resolution ────────────────────────────────────────
-  // `expand=user` already puts user.name on most entries. Anything left —
-  // typically a trustee user from another org — gets one lookup here.
+  // `expand=user` names most actors. What it leaves unnamed is either a
+  // trustee user from another org or — for anything this app did — the
+  // OAuth client, whose id Genesys puts in user.id. Try the user first,
+  // then the OAuth client, then give up and show the id.
   async function resolveActors() {
     const ids = [...new Set(
       allResults.filter(e => e.user?.id && !e.user?.name).map(e => e.user.id)
@@ -700,21 +845,26 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       try {
         const user = await gc.getUser(api, orgId, userId);
         if (user?.name) { actorMap[userId] = user.name; return; }
-      } catch { /* not a user in this org */ }
+      } catch { /* not a user in this org — try OAuth next */ }
+      try {
+        const client = await gc.getOAuthClient(api, orgId, userId);
+        if (client?.name) { actorMap[userId] = client.name; return; }
+      } catch { /* not an OAuth client either */ }
       actorMap[userId] = userId;
     });
   }
 
   // `client` is the OAuth client the action came through — separate from
-  // `user`. Changes made by this app are attributed to its client.
+  // `user`. Genesys's own clients (the web UI) 404 here and keep their id.
   async function resolveClients() {
     const ids = [...new Set(allResults.map(e => e.client?.id).filter(Boolean))];
     await runLimited(ids, LOOKUP_CONCURRENCY, async (clientId) => {
+      if (actorMap[clientId] && actorMap[clientId] !== clientId) { clientMap[clientId] = actorMap[clientId]; return; }
       try {
         const client = await gc.getOAuthClient(api, orgId, clientId);
         clientMap[clientId] = client?.name || clientId;
       } catch {
-        clientMap[clientId] = clientId; // Genesys-internal clients 404 here
+        clientMap[clientId] = clientId;
       }
     });
   }
@@ -812,8 +962,19 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   function getEntityName(entry) {
     if (entry.entity?.name) return entry.entity.name;
     const id = entry.entity?.id;
-    if (id && entityNameMap[id]) return entityNameMap[id];
+    if (id && nameCache[id]) return nameCache[id];
     return id || "";
+  }
+
+  /** A value as displayed: its resolved name when it is a known GUID, else itself. */
+  function displayValue(v) {
+    const str = String(v ?? "");
+    return (GUID_RE.test(str) && nameCache[str]) ? nameCache[str] : str;
+  }
+
+  /** Comma-joined values with GUIDs resolved. */
+  function joinValues(values) {
+    return [].concat(values ?? []).map(displayValue).join(", ");
   }
 
   function getClientName(entry) {
@@ -825,7 +986,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   function getActorName(entry) {
     if (entry.user?.name) return entry.user.name;
     if (entry.user?.id)   return actorMap[entry.user.id] || entry.user.id;
-    return getClientName(entry) || "—";
+    const client = getClientName(entry);
+    if (client) return client;
+    return entry.level === "SYSTEM" || entry.level === "GENESYS_INTERNAL" ? "Genesys (system)" : "—";
   }
 
   // ── Pagination wiring ────────────────────────────────────────────
@@ -912,9 +1075,14 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       function toggleRow() {
         const opening = detailTr.hidden;
         if (opening && !detailBuilt) {
-          detailTr.innerHTML = `<td colspan="7">${buildDiffHtml(entry)}</td>`;
+          detailTr.innerHTML = `<td colspan="7"><div class="aq-diff-body">${buildDiffHtml(entry)}</div>${relatedHtml(entry)}</td>`;
           wireRelatedButton(detailTr, entry);
           detailBuilt = true;
+          // The GUIDs inside old/new values are looked up on first open only —
+          // doing it for every result up front would be hundreds of calls for
+          // rows nobody expands. Repaint the diff once they are known.
+          const body = detailTr.querySelector(".aq-diff-body");
+          resolveValueRefs([entry]).then(() => { body.innerHTML = buildDiffHtml(entry); });
         }
         detailTr.hidden = !opening;
         expandBtn.textContent = opening ? "▼" : "▶";
@@ -943,6 +1111,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
           out.innerHTML = `<p class="aq-diff-empty">No other audits were written by this action.</p>`;
           return;
         }
+        await resolvePaths(related
+          .filter(r => r.entity?.id && !r.entity?.name)
+          .map(r => ({ path: pathFor(r.serviceName || "", getEntityType(r), r.entity.id), id: r.entity.id })));
         out.innerHTML = `
           <table class="data-table aq-diff-table aq-related-table">
             <thead><tr><th>Date &amp; Time</th><th>Service</th><th>Entity Type</th><th>Entity</th><th>Action</th><th>Status</th></tr></thead>
@@ -951,7 +1122,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
                 <td>${escapeHtml(formatDateTime(r.eventDate))}</td>
                 <td>${escapeHtml(r.serviceName || "")}</td>
                 <td>${escapeHtml(getEntityType(r))}</td>
-                <td>${escapeHtml(r.entity?.name || r.entity?.id || "")}</td>
+                <td title="${escapeHtml(r.entity?.id || "")}">${escapeHtml(getEntityName(r))}</td>
                 <td>${escapeHtml(r.action || "")}</td>
                 <td>${escapeHtml(r.status || "")}</td>
               </tr>`).join("")}
@@ -973,11 +1144,13 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     const metaFields = [
       ["Service",     entry.serviceName],
       ["Entity Type", entry.entityType],
+      ["Entity",      getEntityName(entry) !== entry.entity?.id ? getEntityName(entry) : null],
       ["Entity ID",   entry.entity?.id],
       ["Action",      entry.action],
       ["Status",      entry.status],
       ["Message",     entry.message?.message],
-      ["Changed By",  entry.user?.name || actorMap[entry.user?.id] || entry.user?.id],
+      ["Changed By",  getActorName(entry)],
+      ["User ID",     entry.user?.id],
       ["Client",      getClientName(entry)],
       ["Application", entry.application],
       ["Level",       entry.level],
@@ -1005,8 +1178,8 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       const rows = propChanges.map(p => `
           <tr>
             <td class="aq-diff-prop">${escapeHtml(String(p.property ?? ""))}</td>
-            <td class="aq-diff-old">${escapeHtml([].concat(p.oldValues ?? []).join(", "))}</td>
-            <td class="aq-diff-new">${escapeHtml([].concat(p.newValues ?? []).join(", "))}</td>
+            <td class="aq-diff-old" title="${escapeHtml([].concat(p.oldValues ?? []).join(", "))}">${escapeHtml(joinValues(p.oldValues))}</td>
+            <td class="aq-diff-new" title="${escapeHtml([].concat(p.newValues ?? []).join(", "))}">${escapeHtml(joinValues(p.newValues))}</td>
           </tr>`).join("");
       propsHtml = `
         <h4 class="aq-diff-section-title">Changed Properties</h4>
@@ -1023,9 +1196,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       const rows = entChanges.map(c => `
           <tr>
             <td class="aq-diff-prop">${escapeHtml(c.entityType || "")}</td>
-            <td>${escapeHtml(c.entityName || c.entityId || "")}</td>
-            <td class="aq-diff-old">${escapeHtml([].concat(c.oldValues ?? []).join(", "))}</td>
-            <td class="aq-diff-new">${escapeHtml([].concat(c.newValues ?? []).join(", "))}</td>
+            <td title="${escapeHtml(c.entityId || "")}">${escapeHtml(c.entityName || displayValue(c.entityId))}</td>
+            <td class="aq-diff-old" title="${escapeHtml([].concat(c.oldValues ?? []).join(", "))}">${escapeHtml(joinValues(c.oldValues))}</td>
+            <td class="aq-diff-new" title="${escapeHtml([].concat(c.newValues ?? []).join(", "))}">${escapeHtml(joinValues(c.newValues))}</td>
           </tr>`).join("");
       entHtml = `
         <h4 class="aq-diff-section-title aq-diff-section-title--ctx">Changed Entities</h4>
@@ -1042,7 +1215,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       const ctxRows = pairs.map(({ k, v }) => `
         <tr>
           <td class="aq-diff-ctx-key">${escapeHtml(k)}</td>
-          <td class="aq-diff-ctx-val">${escapeHtml(v)}</td>
+          <td class="aq-diff-ctx-val" title="${escapeHtml(v)}">${escapeHtml(displayValue(v))}</td>
         </tr>`).join("");
       ctxHtml = `
         <h4 class="aq-diff-section-title aq-diff-section-title--ctx">Additional Context</h4>
@@ -1055,13 +1228,17 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     const noChanges = !propChanges.length && !entChanges.length
       ? `<p class="aq-diff-empty">Genesys recorded no property changes for this audit.</p>` : "";
 
-    const relatedHtml = entry.id ? `
+    return `${metaHtml}${propsHtml}${entHtml}${noChanges}${ctxHtml}`;
+  }
+
+  /** The part of the detail row that is NOT repainted when names resolve. */
+  function relatedHtml(entry) {
+    const related = entry.id ? `
       <div class="aq-related">
         <button class="btn aq-related-btn" type="button" title="Genesys writes several audits for one action — list the others">Show related audits</button>
         <div class="aq-related-out"></div>
       </div>` : "";
-
-    return `${metaHtml}${propsHtml}${entHtml}${noChanges}${ctxHtml}${relatedHtml}
+    return `${related}
       <details class="aq-raw-details">
         <summary class="aq-raw-summary">Raw API response</summary>
         <pre class="aq-raw-json">${escapeHtml(JSON.stringify(entry, null, 2))}</pre>
@@ -1107,8 +1284,20 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     { key: "context",     label: "Additional Context", wch: 50 },
   ];
 
-  function exportToExcel() {
-    if (!filteredRows.length) return;
+  async function exportToExcel() {
+    if (!filteredRows.length || isRunning) return;
+    isRunning = true;
+    $exportBtn.disabled = true;
+    try {
+      setStatus(`Resolving names for ${filteredRows.length} rows…`);
+      await resolveValueRefs(filteredRows);
+      setStatus("");
+    } catch (err) {
+      setStatus(`Some names could not be resolved: ${friendlyError(err)}`, "warn");
+    } finally {
+      isRunning = false;
+      $exportBtn.disabled = false;
+    }
 
     const rows = [];
     for (const entry of filteredRows) {
@@ -1126,19 +1315,19 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         message:     entry.message?.message || "",
         level:       entry.level || "",
         remoteIp:    (entry.remoteIp || []).filter(Boolean).join(", "),
-        context:     contextPairs(entry).map(({ k, v }) => `${k}: ${v}`).join("; "),
+        context:     contextPairs(entry).map(({ k, v }) => `${k}: ${displayValue(v)}`).join("; "),
       };
 
       const changes = [
         ...(entry.propertyChanges || []).map(p => ({
           property: String(p.property ?? ""),
-          oldValue: [].concat(p.oldValues ?? []).join(", "),
-          newValue: [].concat(p.newValues ?? []).join(", "),
+          oldValue: joinValues(p.oldValues),
+          newValue: joinValues(p.newValues),
         })),
         ...(entry.entityChanges || []).map(c => ({
-          property: `${c.entityType || "Entity"}: ${c.entityName || c.entityId || ""}`,
-          oldValue: [].concat(c.oldValues ?? []).join(", "),
-          newValue: [].concat(c.newValues ?? []).join(", "),
+          property: `${c.entityType || "Entity"}: ${c.entityName || displayValue(c.entityId)}`,
+          oldValue: joinValues(c.oldValues),
+          newValue: joinValues(c.newValues),
         })),
       ];
 

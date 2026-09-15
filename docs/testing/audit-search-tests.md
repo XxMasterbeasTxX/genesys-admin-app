@@ -107,7 +107,13 @@ every page is read.
   - Expect: **Changed By** shows your name; the detail row shows **Client** as the Genesys web client id or name and **Application** if Genesys sent one
   - Notes: `______________________`
 - [ ] **5.2** — Make a change through this app (any write page), then search Today
-  - Expect: Changed By shows the app's OAuth client **name** (from `client`), not a GUID
+  - Expect: Changed By shows the app's OAuth client **name**, not a GUID. Genesys puts the client id in `user.id` for client-credentials actions, so the lookup tries the user first and the OAuth client second
+  - Notes: `______________________`
+- [ ] **5.2a** — Find a Presence › UserPresence row (agents changing status)
+  - Expect: Entity Name is the **agent's name** (the entity id is the user); Changed By is the agent, or "Genesys (system)" for a SYSTEM-level audit
+  - Notes: `______________________`
+- [ ] **5.2b** — Find a PeoplePermissions › AccessToken row
+  - Expect: Entity Name stays the token string — there is nothing to resolve it to; Changed By is the user or client that obtained the token
   - Notes: `______________________`
 - [ ] **5.3** — Find an audit on an object that has since been **deleted**
   - Expect: Entity Name is the name at the time of the change when Genesys sent one; otherwise "(deleted) <guid>"
@@ -143,6 +149,12 @@ every page is read.
   - Notes: `______________________`
 - [ ] **6.7** — Collapse and re-expand a row
   - Expect: the related-audits table you loaded is still there (the detail is built once)
+  - Notes: `______________________`
+- [ ] **6.8** — Expand an audit whose old/new values are GUIDs (a queue's members, a user's division or skills, a flow's division)
+  - Expect: the GUIDs turn into names a moment after the row opens (hover shows the raw GUID); a deleted object reads "(deleted) <guid>"
+  - Notes: `______________________`
+- [ ] **6.9** — Expand an audit whose property name gives no hint of what its GUID values are
+  - Expect: the GUIDs stay as they are — no lookup is guessed
   - Notes: `______________________`
 
 ---
@@ -201,7 +213,7 @@ every page is read.
   - Expect: "Page x of y" updates; Prev/Next disable at the ends
   - Notes: `______________________`
 - [ ] **10.4** — Export to Excel with filters applied
-  - Expect: one row per property change **and** per entity change; columns include Entity ID, Status, Client, Application, Message; only the filtered rows are exported
+  - Expect: the status line first says "Resolving names for N rows…"; one row per property change **and** per entity change; GUIDs in old/new values are names where the property name hints the type; columns include Entity ID, Status, Client, Application, Message; only the filtered rows are exported
   - Notes: `______________________`
 
 ---
