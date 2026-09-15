@@ -21,6 +21,25 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "5.7",
+    date: "2026-09-15",
+    title: "GDPR: an email when the request completes",
+    changes: [
+      "Tick \u201cEmail me when Genesys completes this\u201d on the confirmation step and enter an "
+        + "address \u2014 it is not prefilled, because the Genesys login address is often not the one "
+        + "you read notifications on. Genesys takes one to two business days; the app checks every "
+        + "hour and sends one plain-text email per request when it completes, fails, or has run for "
+        + "30 days without finishing.",
+      "The email names the request id, the org, who raised it and the status seen, and says the "
+        + "request can be viewed under GDPR \u203a Request Status in the Genesys Admin Tool. It carries "
+        + "no link and nothing about the data subject. The Activity Log records that it was sent, to "
+        + "which domain.",
+      "Notifications run unattended, so they need the org's Client Credentials OAuth client in the "
+        + "app's settings with gdpr:request:view. Where that is missing you still get one email \u2014 "
+        + "saying the app could not check and what to ask your administrator for \u2014 never silence.",
+    ],
+  },
+  {
     version: "5.6",
     date: "2026-09-14",
     title: "GDPR: read an Article 15 export",

@@ -4117,6 +4117,29 @@ body {
 }
 .gdpr-confirm-label input { margin-top: 2px; flex-shrink: 0; accent-color: #f87171; }
 
+/* "Email me when Genesys completes this" on the confirmation step, and the
+   line beside the submitted ids that says whether the watch was registered. */
+.gdpr-notify { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--border); }
+.gdpr-notify-label {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; cursor: pointer; color: var(--text);
+}
+.gdpr-notify-label input { flex-shrink: 0; accent-color: #3b82f6; }
+.gdpr-notify-field { margin: 8px 0 0 26px; }
+.gdpr-notify-email {
+  width: min(100%, 360px); padding: 6px 10px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text);
+}
+.gdpr-notify-email:focus { outline: none; border-color: #3b82f6; }
+.gdpr-notify-help { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.gdpr-notify-result { margin-top: 8px; font-size: 13px; }
+.gdpr-notify-ok   { color: #34d399; }
+.gdpr-notify-warn { color: #fbbf24; }
+@media (prefers-color-scheme: light) {
+  .gdpr-notify-ok   { color: #047857; }
+  .gdpr-notify-warn { color: #b45309; }
+}
+
 /* ── Badges ────────────────────────────────────────────── */
 .gdpr-badge {
   display: inline-block;

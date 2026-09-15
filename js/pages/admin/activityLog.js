@@ -37,6 +37,7 @@ const ACTION_LABELS = {
   gdpr_subject_search:    "GDPR Subject Search",
   gdpr_export_download:   "GDPR Export Download",
   gdpr_export_read:       "GDPR Export Read",
+  gdpr_notify_sent:       "GDPR Notification",
   export_run:             "Export Run",
 };
 

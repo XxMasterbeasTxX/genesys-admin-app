@@ -63,6 +63,7 @@ These are the Azure Functions endpoints exposed by the app itself.
 | POST | `/api/scheduled-runner` | Trigger the scheduled export runner (called every 5 min by Azure Timer Trigger) |
 | GET | `/api/activity-log` | Fetch internal activity log entries |
 | POST | `/api/activity-log` | Write a new internal activity log entry |
+| POST | `/api/gdpr-watches` | Register "email me when Genesys completes this" for the request ids a submission created; the hourly sweep inside `scheduled-runner` mails once per request |
 | GET | `/api/feature-requests?board=mine` | The caller's own organisation's feature requests, in full. Scoped by `ownerOrgId`. |
 | GET | `/api/feature-requests?board=shared` | Requests promoted to the shared board, as a **server-side redacted projection** — curated title/description, status, vote count, and the submitter as `Thomas V.` or `A customer`. The submitter's own wording, identity, org and page context are never sent. Any authenticated caller. |
 | GET | `/api/feature-requests?board=all` | Every organisation's requests, unredacted — **superuser only** (`SUPERUSER_IDS` app setting, matched against the caller's token-derived user id). The triage queue; also triggers the 12-month retention purge. |
@@ -437,13 +438,13 @@ Used by: Documentation Export, Audit — Search (entity name resolution)
 
 ## 14. GDPR
 
-Used by: GDPR — Subject Request, GDPR — Request Status
+Used by: GDPR — Subject Request, GDPR — Request Status, the completion sweep in `api/scheduled-runner` (GDPR › Article 15 - Export Reader calls no endpoint — it reads a file)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/gdpr/subjects` | Search for GDPR data subjects by identifier |
 | POST | `/api/v2/gdpr/requests` | Submit a GDPR data subject request (Articles 15, 16, 17) |
-| GET | `/api/v2/gdpr/requests` | List all previously submitted GDPR requests |
+| GET | `/api/v2/gdpr/requests` | List all previously submitted GDPR requests. Also called hourly by the completion sweep in `scheduled-runner`, on the org's **client credentials**, which therefore need `gdpr:request:view` |
 | GET | `/api/v2/gdpr/requests/{requestId}` | Get a single GDPR request by ID — returns `resultsUrl` (string) and/or `resultsUrls` (array) for fulfilled Access exports; used by Request Status to retrieve download URLs |
 
 ---

@@ -481,9 +481,62 @@ history (`0543e76b…`, `f8e044e2…`) exercise the most.
 
 ---
 
+## 13. Completion notification
+
+*Email me when Genesys completes this* on the confirmation step. Needs a
+Client Credentials OAuth client for the org in the SWA settings
+(`GENESYS_<SLUG>_CLIENT_ID/_SECRET`) with `gdpr:request:view`; on Demo that is
+the client the scheduled exports already use. The sweep runs inside the
+5-minute runner at most once an hour, so allow up to 60 minutes per step.
+
+- [ ] **13.1** — On the confirmation step, find the checkbox
+  - Expect: **Email me when Genesys completes this**, unticked, no address field visible
+  - Notes: `______________________`
+- [ ] **13.2** — Tick it
+  - Expect: an empty email field appears with focus — **not** prefilled with your Genesys address; a help line says one email per request, id and org only, never the data subject. Submit is disabled while the field is empty
+  - Notes: `______________________`
+- [ ] **13.3** — Type `not-an-email`, then a real address
+  - Expect: Submit stays disabled until the address is valid; on Erasure, Submit also needs the confirm tick — both gates hold at once
+  - Notes: `______________________`
+- [ ] **13.4** — Untick the box
+  - Expect: the field hides; Submit re-enables (an invalid address in a hidden field does not block)
+  - Notes: `______________________`
+- [ ] **13.5** — Tick, enter your address, submit an Access request for a subject
+  - Expect: beside the request id: "✉ &lt;address&gt; will be emailed when each request completes — checked hourly."
+  - Notes: `______________________`
+- [ ] **13.6** — Admin › Activity Log straight after
+  - Expect: the **GDPR Request** row as before; no notification row yet
+  - Notes: `______________________`
+- [ ] **13.7** — Within the hour after Genesys marks it Completed
+  - Expect: one plain-text mail, subject `GDPR Access request completed — <org>`; body has your name, the submission time, request id, org, status, "view the request under GDPR › Request Status in the Genesys Admin Tool", the archive sentence, and "this is the only email you will receive". **No link, no subject name, no identifiers.**
+  - Answer — minutes from Completed to mail: `______________________`
+- [ ] **13.8** — Activity Log after the mail
+  - Expect: a **GDPR Notification** row: request id, `completed`, "sent to @your-domain" — the domain, not the address
+  - Notes: `______________________`
+- [ ] **13.9** — Wait another hour
+  - Expect: no second mail for the same request
+  - Notes: `______________________`
+- [ ] **13.10** — Submit with the box ticked, then block `/api/gdpr-watches` in DevTools before pressing Submit
+  - Expect: the request still submits; beside the id a yellow "⚠ Could not register the email notification: … check Request Status instead."
+  - Notes: `______________________`
+- [ ] **13.11** — Submit with the box ticked for an org that has **no** client credentials in the SWA settings (Test IE, unless they have been added)
+  - Expect: within the hour, one mail `GDPR … request could not be checked — <org>` naming `gdpr:request:view` and the app's OAuth client; a **GDPR Notification** row with `unchecked`
+  - Notes: `______________________`
+- [ ] **13.12** — Submit an Erasure with the box ticked
+  - Expect: on completion, `GDPR Erasure request completed — <org>` with no archive sentence
+  - Notes: `______________________`
+- [ ] **13.13** — Two subjects in one submission with the box ticked
+  - Expect: two request ids, one "will be emailed" line, and later two separate mails, one per request
+  - Notes: `______________________`
+- [ ] **13.14 ★** — Scheduled Exports still run
+  - Expect: an existing scheduled export fires on time after this change — the sweep runs first in the same runner and must never stop it
+  - Notes: `______________________`
+
+---
+
 ## Sign-off
 
-**Sections completed:** ☐ 1 ☐ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6 ☐ 7 ☐ 8 ☐ 9 ☐ 10 ☐ 11 ☐ 12
+**Sections completed:** ☐ 1 ☐ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6 ☐ 7 ☐ 8 ☐ 9 ☐ 10 ☐ 11 ☐ 12 ☐ 13
 
 **Blocking failures** — must fix before this goes to customers:
 

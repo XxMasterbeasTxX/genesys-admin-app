@@ -20,6 +20,7 @@
 const store = require("../lib/scheduleStore");
 const { getHandler } = require("../lib/exportHandlers");
 const mailer = require("../lib/mailer");
+const gdprNotify = require("../lib/gdprNotify");
 
 module.exports = async function (context, req) {
   // ── Verify shared secret ──────────────────────────────
@@ -55,6 +56,11 @@ module.exports = async function (context, req) {
     body,
   });
 
+  // GDPR completion notifications first: one paged call per org with open
+  // watches, at most once an hour, and never a reason for the export
+  // schedules below not to run (it catches its own failures).
+  const gdpr = await gdprNotify.sweepIfDue(context);
+
   let schedules;
   try {
     schedules = await store.listAll();
@@ -67,7 +73,7 @@ module.exports = async function (context, req) {
   const enabled = schedules.filter((s) => s.enabled);
   if (!enabled.length) {
     context.log("No enabled schedules. Exiting.");
-    context.res = json(200, { message: "No enabled schedules", ran: 0 });
+    context.res = json(200, { message: "No enabled schedules", ran: 0, gdpr });
     return;
   }
 
@@ -76,7 +82,7 @@ module.exports = async function (context, req) {
 
   if (!dueSchedules.length) {
     context.log(`${enabled.length} enabled schedules, none due right now.`);
-    context.res = json(200, { message: "No schedules due", enabled: enabled.length, ran: 0 });
+    context.res = json(200, { message: "No schedules due", enabled: enabled.length, ran: 0, gdpr });
     return;
   }
 
@@ -89,7 +95,7 @@ module.exports = async function (context, req) {
   }
 
   context.log("Scheduled runner complete.");
-  context.res = json(200, { message: "Runner complete", ran: results.length, results });
+  context.res = json(200, { message: "Runner complete", ran: results.length, results, gdpr });
 };
 
 // ── Due check ───────────────────────────────────────────
