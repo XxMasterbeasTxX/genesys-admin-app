@@ -1347,6 +1347,7 @@ body {
   margin-bottom: 8px;
 }
 .di-status--success { color: #34d399; }
+.di-status--warn    { color: #f59e0b; }
 .di-status--error   { color: #f87171; }
 .di-progress-wrap {
   height: 4px;
@@ -4620,12 +4621,45 @@ body {
   color: var(--text);
 }
 
+/* Entity ID (server-side EntityId filter) */
+.aq-entity-id-group { min-width: 300px; }
+.aq-entity-id       { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 12px; }
+
+/* Audit status badge — only shown when Genesys audited the action as not SUCCESS */
+.aq-status {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}
+.aq-status--failure { background: rgba(248,113,113,0.18); color: #f87171; }
+.aq-status--warning { background: rgba(245,158,11,0.18);  color: #f59e0b; }
+
+/* Queries that failed during a run — collapsed under the status line */
+.aq-failures         { margin: 4px 0 8px; font-size: 12px; }
+.aq-failures-summary { cursor: pointer; color: #f59e0b; }
+.aq-failures-list    { margin: 6px 0 0; padding-left: 20px; color: var(--muted); }
+.aq-failures-list li { margin: 2px 0; }
+
+/* Related audits (same action) inside the detail row */
+.aq-related       { margin-top: 14px; }
+.aq-related-btn   { font-size: 12px; padding: 4px 10px; }
+.aq-related-out   { margin-top: 8px; }
+.aq-related-table { margin-top: 0; }
+
 /* Light-mode overrides */
 @media (prefers-color-scheme: light) {
   .aq-detail-row > td { background: rgba(0,0,0,0.03); }
   .aq-expand-btn:hover { background: rgba(0,0,0,0.06); }
   .aq-diff-old { color: #dc2626; }
   .aq-diff-new { color: #16a34a; }
+  .aq-status--failure { color: #dc2626; }
+  .aq-status--warning { color: #b45309; }
+  .aq-failures-summary { color: #b45309; }
 }
 
 /* ════════════════════════════════════════════════════════════

@@ -2052,33 +2052,49 @@ export async function fetchRealtimeAuditServiceMapping(api, orgId) {
 
 /**
  * Submit a synchronous (realtime) audit query.
- * Covers up to 14 days back. Returns entities directly — no polling needed.
+ * Covers the last 14 days only. Returns entities directly — no polling needed.
+ *
+ * Pagination is page-number based and lives in the request BODY
+ * (AuditRealtimeQueryRequest.pageNumber / pageSize); the response carries
+ * pageNumber / pageCount / total. There is no cursor and no nextUri, and the
+ * endpoint's only query parameter is `expand`. `expand=user` fills user.name
+ * so the caller need not look every actor up.
  *
  * @param {Object} api
  * @param {string} orgId
- * @param {Object} body  { interval, serviceName }
+ * @param {Object} body  { interval, serviceName, filters? }
  * @returns {Promise<Object[]>}  Audit entries array.
  */
 export async function submitRealtimeAuditQuery(api, orgId, body) {
   const all = [];
-  let cursor = null;
+  const path = "/api/v2/audits/query/realtime?expand=user";
+  let pageNumber = 1;
 
   while (true) {
-    let path = "/api/v2/audits/query/realtime?pageSize=500";
-    if (cursor) path += `&cursor=${encodeURIComponent(cursor)}`;
-
-    const resp = await api.proxyGenesys(orgId, "POST", path, { body });
-    const items = resp.entities || resp.audits || [];
+    const resp = await withRateLimitRetry(() =>
+      api.proxyGenesys(orgId, "POST", path, { body: { ...body, pageSize: 500, pageNumber } }));
+    const items = resp.entities || [];
     all.push(...items);
 
-    const nextUri = resp.nextUri || null;
-    if (!nextUri) break;
-    const match = nextUri.match(/[?&]cursor=([^&]+)/);
-    cursor = match ? decodeURIComponent(match[1]) : null;
-    if (!cursor) break;
+    const pageCount = Number(resp.pageCount) || 1;
+    if (pageNumber >= pageCount || !items.length) break;
+    pageNumber++;
   }
 
   return all;
+}
+
+/**
+ * Fetch every audit produced by the same action as the given audit.
+ * One user action (e.g. saving a queue) often writes several audit
+ * entries; this endpoint groups them. Realtime only — 14 days.
+ *
+ * @returns {Promise<Object[]>}
+ */
+export async function fetchRelatedAudits(api, orgId, auditId) {
+  const resp = await api.proxyGenesys(orgId, "POST",
+    "/api/v2/audits/query/realtime/related?expand=user", { body: { auditId } });
+  return resp.entities || [];
 }
 
 /**
@@ -2086,11 +2102,12 @@ export async function submitRealtimeAuditQuery(api, orgId, body) {
  *
  * @param {Object} api
  * @param {string} orgId
- * @param {Object} body  Full query body — interval + serviceName + optional filters.
+ * @param {Object} body  Full query body — interval + optional serviceName + optional filters.
  * @returns {Promise<string>}  transactionId
  */
 export async function submitAuditQuery(api, orgId, body) {
-  const resp = await api.proxyGenesys(orgId, "POST", "/api/v2/audits/query", { body });
+  const resp = await withRateLimitRetry(() =>
+    api.proxyGenesys(orgId, "POST", "/api/v2/audits/query", { body }));
   const txId = resp.id || resp.transactionId;
   if (!txId) {
     throw new Error(`Audit query submission failed: ${resp.message || JSON.stringify(resp)}`);
@@ -2099,21 +2116,22 @@ export async function submitAuditQuery(api, orgId, body) {
 }
 
 /**
- * Poll an audit query until it reaches Succeeded (or Failed / timeout).
+ * Poll an audit query until it reaches Succeeded (or Failed / Cancelled / timeout).
+ * States: Queued, Running, Succeeded, Failed, Cancelled.
  *
  * @param {Object}   api
  * @param {string}   orgId
  * @param {string}   transactionId
  * @param {Object}   [opts]
  * @param {number}   [opts.pollIntervalMs=2000]
- * @param {number}   [opts.maxWaitSeconds=120]
- * @param {Function} [opts.onPoll]  Called each tick with (elapsedSeconds).
+ * @param {number}   [opts.maxWaitSeconds=300]
+ * @param {Function} [opts.onPoll]  Called each tick with (elapsedSeconds, state).
  * @returns {Promise<void>}
  */
 export async function pollAuditQuery(api, orgId, transactionId, opts = {}) {
   const {
     pollIntervalMs = 2000,
-    maxWaitSeconds = 120,
+    maxWaitSeconds = 300,
     onPoll,
   } = opts;
 
@@ -2125,24 +2143,29 @@ export async function pollAuditQuery(api, orgId, transactionId, opts = {}) {
       throw new Error(`Audit query timed out after ${maxWaitSeconds}s`);
     }
 
-    const resp = await api.proxyGenesys(orgId, "GET",
-      `/api/v2/audits/query/${transactionId}`);
-
-    if (onPoll) onPoll(elapsed);
+    const resp = await withRateLimitRetry(() =>
+      api.proxyGenesys(orgId, "GET", `/api/v2/audits/query/${transactionId}`));
 
     const state = (resp.state || "").toLowerCase();
-    if (state === "succeeded" || state === "fulfilled") return;
+    if (onPoll) onPoll(elapsed, resp.state);
+
+    if (state === "succeeded") return;
     if (state === "failed") {
       throw new Error(`Audit query failed: ${resp.errorMessage || "Unknown error"}`);
+    }
+    if (state === "cancelled") {
+      throw new Error("Audit query was cancelled by Genesys");
     }
   }
 }
 
 /**
- * Fetch all results from a completed audit query (cursor / nextUri pagination).
+ * Fetch all results from a completed audit query (cursor pagination).
  *
- * The Genesys audit results endpoint uses `nextUri` to point to the
- * next page. Results are in `entities[]`.
+ * AuditQueryExecutionResultsResponse is { id, pageSize, cursor, entities }:
+ * `cursor` is the token for the next page and is absent on the last one.
+ * Older responses have been seen with a `nextUri` instead, so that is read
+ * as a fallback. `expand=user` fills user.name.
  *
  * @param {Object}   api
  * @param {string}   orgId
@@ -2157,23 +2180,24 @@ export async function fetchAuditQueryResults(api, orgId, transactionId, opts = {
   let cursor = null;
 
   while (true) {
-    // Build query params directly into the path so the proxy forwards them
-    // correctly regardless of how it handles the `query` option for GET requests.
-    let path = `/api/v2/audits/query/${transactionId}/results?pageSize=500`;
+    // Query params are built into the path so the proxy forwards them
+    // regardless of how it handles the `query` option for GET requests.
+    let path = `/api/v2/audits/query/${transactionId}/results?pageSize=500&expand=user`;
     if (cursor) path += `&cursor=${encodeURIComponent(cursor)}`;
 
-    const resp = await api.proxyGenesys(orgId, "GET", path);
+    const resp = await withRateLimitRetry(() => api.proxyGenesys(orgId, "GET", path));
 
-    const items = resp.entities || resp.audits || [];
+    const items = resp.entities || [];
     all.push(...items);
     if (onProgress) onProgress(all.length);
 
-    // Extract cursor from nextUri (e.g. "...results?cursor=xxx" — may be absolute URL)
-    const nextUri = resp.nextUri || null;
-    if (!nextUri) break;
-    const match = nextUri.match(/[?&]cursor=([^&]+)/);
-    cursor = match ? decodeURIComponent(match[1]) : null;
-    if (!cursor) break;
+    let next = resp.cursor || null;
+    if (!next && resp.nextUri) {
+      const match = String(resp.nextUri).match(/[?&]cursor=([^&]+)/);
+      next = match ? decodeURIComponent(match[1]) : null;
+    }
+    if (!next || next === cursor || !items.length) break;
+    cursor = next;
   }
 
   return all;

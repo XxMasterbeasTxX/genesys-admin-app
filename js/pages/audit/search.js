@@ -1,40 +1,77 @@
 /**
  * Audit › Search
  *
- * Routing:
- *   ≤ 14 days, no service  → realtime API, all realtime-supported services (concurrent)
- *   ≤ 14 days, service selected, in realtime mapping → realtime API (sync, fast)
- *   ≤ 14 days, service selected, NOT in realtime     → async API fallback
- *   > 14 days → async API only; service selection required
+ * Routing (decided by how OLD the interval start is, not how long the range is —
+ * the realtime endpoint holds only the last 14 days of audits):
+ *   start within 14 days, no service   → realtime API, all realtime-supported services
+ *   start within 14 days, service in realtime mapping → realtime API (sync, fast)
+ *   start within 14 days, service NOT in realtime mapping → async API
+ *   start older than 14 days           → async API; service optional. The spec
+ *                                        requires only `interval`; if Genesys
+ *                                        rejects a service-less query the user
+ *                                        is asked to pick one.
  *
- * Realtime endpoints (synchronous, ≤14 days):
+ * Realtime endpoints (synchronous, last 14 days, page-number pagination in body):
  *   GET  /api/v2/audits/query/realtime/servicemapping
- *   POST /api/v2/audits/query/realtime
+ *   POST /api/v2/audits/query/realtime?expand=user
+ *   POST /api/v2/audits/query/realtime/related   (all audits from one action)
  *
- * Async endpoints (any range):
+ * Async endpoints (any range, cursor pagination):
  *   GET  /api/v2/audits/query/servicemapping
  *   POST /api/v2/audits/query
  *   GET  /api/v2/audits/query/{transactionId}
- *   GET  /api/v2/audits/query/{transactionId}/results
+ *   GET  /api/v2/audits/query/{transactionId}/results?expand=user
+ *
+ * Both query endpoints accept server-side filters (UserId, ClientId, Action,
+ * EntityType, EntityId). Entity ID is exposed here as the "history of one
+ * object" query; the others stay client-side because the values come from
+ * the results.
+ *
+ * Times: the date/time inputs are LOCAL time (the table shows local time too);
+ * intervals are converted to UTC ISO strings for the API.
  */
-import { escapeHtml, formatDateTime, todayStr, daysAgoStr, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
+import { escapeHtml, formatDateTime, exportXlsx, timestampedFilename, makeStatus } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
-const CHUNK_DAYS = 30;
-const REALTIME_CHUNK_DAYS = 1; // realtime endpoint times out on multi-day intervals
+const CHUNK_DAYS          = 30;
+const REALTIME_CHUNK_DAYS = 1;  // realtime endpoint times out on multi-day intervals
+const REALTIME_WINDOW_MS  = 14 * 86_400_000;
+const QUERY_CONCURRENCY   = 6;  // realtime jobs in flight at once
+const LOOKUP_CONCURRENCY  = 6;  // name-resolution GETs in flight at once
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+/** Local date as YYYY-MM-DD (the date inputs are local time). */
+function localDateStr(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Local date N days ago as YYYY-MM-DD. */
+function daysAgoLocalStr(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return localDateStr(d);
+}
+
+/** Parse a local date + "HH:MM" into a Date. */
+function localDateTime(date, time) {
+  return new Date(`${date}T${time}:00`);
+}
+
 /**
- * Split a [from, to] date+time range into CHUNK_DAYS-day ISO 8601 interval strings.
- * fromTime / toTime are "HH:MM" strings (24-hour, UTC).
+ * Split a [from, to] local date+time range into chunkDays-day ISO 8601
+ * interval strings (UTC).
  */
 function buildIntervalChunks(from, fromTime, to, toTime, chunkDays = CHUNK_DAYS) {
-  const start = new Date(`${from}T${fromTime}:00.000Z`);
-  const end   = new Date(`${to}T${toTime}:59.999Z`);
+  const start = localDateTime(from, fromTime);
+  const end   = localDateTime(to, toTime);
+  end.setSeconds(59, 999);
   const chunks = [];
   let cursor = start;
 
@@ -50,19 +87,43 @@ function buildIntervalChunks(from, fromTime, to, toTime, chunkDays = CHUNK_DAYS)
   return chunks;
 }
 
-/** Days between two YYYY-MM-DD strings. Returns 0 if either is missing. */
-function calcRangeDays(from, to) {
-  if (!from || !to) return 0;
-  return Math.round((new Date(to) - new Date(from)) / 86_400_000);
+/** Does the realtime endpoint still hold audits from this start time? */
+function withinRealtimeWindow(from, fromTime) {
+  return localDateTime(from, fromTime).getTime() >= Date.now() - REALTIME_WINDOW_MS;
+}
+
+/**
+ * Run `fn` over `items` with at most `limit` in flight. Resolves to an
+ * allSettled-style array in input order.
+ */
+async function runLimited(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      try { results[i] = { status: "fulfilled", value: await fn(items[i], i) }; }
+      catch (reason) { results[i] = { status: "rejected", reason }; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 /** Extract a friendly message from an API error. */
 function friendlyError(err) {
-  const msg = err.message || String(err);
-  if (msg.includes("403")) return "Permission denied";
-  if (msg.includes("404")) return "Not found";
-  if (msg.includes("429")) return "Rate limited — try again shortly";
+  const msg = err?.message || String(err);
+  if (err?.status === 403 || msg.includes("403")) return "Permission denied";
+  if (err?.status === 404 || msg.includes("404")) return "Not found";
+  if (err?.status === 429 || msg.includes("429")) return "Rate limited — try again shortly";
   return msg;
+}
+
+/** Does this error say Genesys wants a serviceName on the query? */
+function isServiceRequiredError(err) {
+  if (err?.status !== 400) return false;
+  const text = `${err.message || ""} ${JSON.stringify(err.body || {})}`.toLowerCase();
+  return text.includes("service");
 }
 
 // ── Page renderer ─────────────────────────────────────────────────────
@@ -87,8 +148,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   let realtimeServiceNames   = new Set(); // service names supported by realtime API
   let allResults     = [];     // all fetched audit entries, sorted latest-first
   let filteredRows   = [];     // current filtered view (subset of allResults)
-  let actorMap       = {};     // { userId → displayName }
+  let actorMap       = {};     // { userId → displayName } for users expand did not name
+  let clientMap      = {};     // { clientId → OAuth client name }
   let entityNameMap  = {};     // { entityId → resolvedName }
+  let failures       = [];     // [{ label, message }] queries that returned nothing
   let isRunning      = false;
   let currentPage    = 1;
   let pageSize       = 50;
@@ -98,8 +161,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     <h1 class="h1">Audit — Search</h1>
     <hr class="hr">
     <p class="page-desc">
-      Ranges up to 14 days query all supported services automatically.
-      For longer ranges, select a service first.
+      The last 14 days query all supported services automatically.
+      Older ranges use the standard audit query, which is slower and may need a service.
+      Times are local.
     </p>
 
     <!-- Preset quick filters -->
@@ -129,6 +193,11 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         </div>
         <p class="aq-service-hint" id="aqServiceHint"></p>
       </div>
+      <div class="di-control-group aq-entity-id-group">
+        <label class="di-label" for="aqEntityId">Entity ID (optional)</label>
+        <input type="text" class="input aq-entity-id" id="aqEntityId" placeholder="GUID of one object" spellcheck="false">
+        <p class="aq-service-hint aq-service-hint--info">Full change history of one queue, flow, user, …</p>
+      </div>
       <div class="di-control-group" style="justify-content:flex-end;padding-top:20px">
         <button class="btn" id="aqSearchBtn" disabled>Search</button>
       </div>
@@ -139,6 +208,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     <div class="di-progress-wrap" id="aqProgressWrap" style="display:none">
       <div class="di-progress-bar" id="aqProgressBar"></div>
     </div>
+    <details class="aq-failures" id="aqFailures" hidden>
+      <summary class="aq-failures-summary" id="aqFailuresSummary"></summary>
+      <ul class="aq-failures-list" id="aqFailuresList"></ul>
+    </details>
 
     <!-- Zone 2: Filters + results (hidden until first search completes) -->
     <div id="aqResultsZone" style="display:none">
@@ -155,6 +228,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         <div class="di-control-group">
           <label class="di-label">Changed By</label>
           <div id="aqChangedByDropdown"></div>
+        </div>
+        <div class="di-control-group">
+          <label class="di-label">Status</label>
+          <div id="aqStatusDropdown"></div>
         </div>
         <div class="di-control-group" style="margin-left:auto;justify-content:flex-end;padding-top:20px">
           <button class="btn" id="aqExportBtn" disabled>Export to Excel</button>
@@ -206,10 +283,14 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   const $timeTo       = el.querySelector("#aqTimeTo");
   const $serviceDrop  = el.querySelector("#aqServiceDropdown");
   const $serviceHint  = el.querySelector("#aqServiceHint");
+  const $entityId     = el.querySelector("#aqEntityId");
   const $searchBtn    = el.querySelector("#aqSearchBtn");
   const $status       = el.querySelector("#aqStatus");
   const $progressWrap = el.querySelector("#aqProgressWrap");
   const $progressBar  = el.querySelector("#aqProgressBar");
+  const $failures     = el.querySelector("#aqFailures");
+  const $failuresSum  = el.querySelector("#aqFailuresSummary");
+  const $failuresList = el.querySelector("#aqFailuresList");
   const $resultsZone  = el.querySelector("#aqResultsZone");
   const $resultCount  = el.querySelector("#aqResultCount");
   const $tableBody    = el.querySelector("#aqTableBody");
@@ -220,23 +301,22 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   const $exportBtn    = el.querySelector("#aqExportBtn");
 
   // ── Date defaults ────────────────────────────────────────────────
-  const today       = todayStr();
-  const defaultFrom = today;   // default to today, matching Genesys UI behaviour
-  const minDate     = daysAgoStr(365);
+  const today   = localDateStr();
+  const minDate = daysAgoLocalStr(365);
 
-  $dateFrom.value = defaultFrom;
+  $dateFrom.value = today;   // default to today, matching Genesys UI behaviour
   $dateTo.value   = today;
   $dateFrom.min   = minDate;
   $dateFrom.max   = today;
   $dateTo.min     = minDate;
   $dateTo.max     = today;
-  updateServiceMode(); // set initial hint
 
   // ── Single-select dropdowns ──────────────────────────────────────
-  const ssService    = createSingleSelect({ placeholder: "— Select service —",  searchable: true,  onChange: () => {} });
+  const ssService    = createSingleSelect({ placeholder: "— All services —",    searchable: true,  onChange: () => updateServiceMode() });
   const ssEntityType = createSingleSelect({ placeholder: "All entity types",     searchable: false, onChange: onEntityTypeChange });
   const ssAction     = createSingleSelect({ placeholder: "All actions",          searchable: false, onChange: () => applyFilters() });
   const ssChangedBy  = createSingleSelect({ placeholder: "All users",            searchable: true,  onChange: () => applyFilters() });
+  const ssStatus     = createSingleSelect({ placeholder: "All statuses",         searchable: false, onChange: () => applyFilters() });
 
   // Replace the "Loading services…" placeholder with the real dropdown
   $serviceDrop.innerHTML = "";
@@ -245,11 +325,14 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   el.querySelector("#aqEntityTypeDropdown").append(ssEntityType.el);
   el.querySelector("#aqActionDropdown").append(ssAction.el);
   el.querySelector("#aqChangedByDropdown").append(ssChangedBy.el);
+  el.querySelector("#aqStatusDropdown").append(ssStatus.el);
 
   // Client-side filters start disabled (no results yet)
   ssEntityType.setEnabled(false);
   ssAction.setEnabled(false);
   ssChangedBy.setEnabled(false);
+  ssStatus.setEnabled(false);
+  updateServiceMode(); // set initial hint (needs ssService)
 
   // ── Status / progress helpers ────────────────────────────────────
   const setStatus = makeStatus($status, "di-status");
@@ -262,6 +345,14 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   function hideProgress() {
     $progressWrap.style.display = "none";
     $progressBar.style.width    = "0%";
+  }
+
+  function renderFailures() {
+    if (!failures.length) { $failures.hidden = true; $failures.open = false; return; }
+    $failuresSum.textContent = `${failures.length} quer${failures.length === 1 ? "y" : "ies"} returned nothing — show which`;
+    $failuresList.innerHTML = failures.map(f =>
+      `<li><strong>${escapeHtml(f.label)}</strong> — ${escapeHtml(f.message)}</li>`).join("");
+    $failures.hidden = false;
   }
 
   // ── Load service mappings on mount (both async + realtime in parallel) ──
@@ -295,12 +386,21 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   // ── Service mode hint ────────────────────────────────────────────
   function updateServiceMode() {
-    const days = calcRangeDays($dateFrom.value, $dateTo.value);
-    if (days <= 14) {
-      $serviceHint.textContent = "All supported services shown — select one to narrow.";
-      $serviceHint.className   = "aq-service-hint aq-service-hint--info";
+    const from    = $dateFrom.value;
+    const service = ssService.getValue();
+    if (!from) { $serviceHint.textContent = ""; return; }
+    if (withinRealtimeWindow(from, $timeFrom.value || "00:00")) {
+      if (service && realtimeServiceNames.size && !realtimeServiceNames.has(service)) {
+        $serviceHint.textContent = `${service} is not in the realtime set — the standard query will be used.`;
+        $serviceHint.className   = "aq-service-hint aq-service-hint--info";
+      } else {
+        $serviceHint.textContent = "Last 14 days — all supported services shown; select one to narrow.";
+        $serviceHint.className   = "aq-service-hint aq-service-hint--info";
+      }
     } else {
-      $serviceHint.textContent = "Range > 14 days — a service selection is required.";
+      $serviceHint.textContent = service
+        ? "Older than 14 days — standard query, fetched in 30-day chunks."
+        : "Older than 14 days — standard query. Genesys may require a service; select one if asked.";
       $serviceHint.className   = "aq-service-hint aq-service-hint--warn";
     }
   }
@@ -309,30 +409,18 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   el.querySelectorAll(".aq-preset-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const preset = btn.dataset.preset;
-      const t = todayStr();
-      $dateTo.value   = t;
+      $dateTo.value   = localDateStr();
       $timeTo.value   = "23:59";
-      if (preset === "today") {
-        $dateFrom.value = t;
-        $timeFrom.value = "00:00";
-      } else if (preset === "7d") {
-        $dateFrom.value = daysAgoStr(7);
-        $timeFrom.value = "00:00";
-      } else if (preset === "30d") {
-        $dateFrom.value = daysAgoStr(30);
-        $timeFrom.value = "00:00";
-      } else if (preset === "90d") {
-        $dateFrom.value = daysAgoStr(90);
-        $timeFrom.value = "00:00";
-      }
+      $timeFrom.value = "00:00";
+      if (preset === "today")     $dateFrom.value = localDateStr();
+      else if (preset === "7d")   $dateFrom.value = daysAgoLocalStr(7);
+      else if (preset === "30d")  $dateFrom.value = daysAgoLocalStr(30);
+      else if (preset === "90d")  $dateFrom.value = daysAgoLocalStr(90);
       // Highlight active preset
       el.querySelectorAll(".aq-preset-btn").forEach(b => b.classList.remove("aq-preset-btn--active"));
       btn.classList.add("aq-preset-btn--active");
       updateServiceMode();
-      // ≤14 day presets: always auto-run (allMode works without a service)
-      // >14 day presets: only auto-run if a service is selected
-      const isShortRange = ["today", "7d"].includes(preset);
-      if (isShortRange || ssService.getValue()) runSearch();
+      runSearch();
     });
   });
 
@@ -346,6 +434,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   );
 
   $searchBtn.addEventListener("click", () => runSearch());
+  $entityId.addEventListener("keydown", e => { if (e.key === "Enter") runSearch(); });
 
   async function runSearch() {
     if (isRunning) return;
@@ -355,14 +444,18 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     const to       = $dateTo.value;
     const toTime   = $timeTo.value   || "23:59";
     const service  = ssService.getValue();
-    const days     = calcRangeDays(from, to);
-    const allMode  = !service && days <= 14; // no service + ≤14 days → all realtime services
+    const entityId = $entityId.value.trim();
+    const filters  = entityId ? [{ property: "EntityId", value: entityId }] : undefined;
 
-    if (!from)                 return setStatus("Please select a Date From.", "error");
-    if (!to)                   return setStatus("Please select a Date To.", "error");
-    if (!service && days > 14) return setStatus("Please select a service for ranges over 14 days.", "error");
-    if (from > to || (from === to && fromTime > toTime))
+    if (!from) return setStatus("Please select a Date From.", "error");
+    if (!to)   return setStatus("Please select a Date To.", "error");
+    if (localDateTime(from, fromTime) > localDateTime(to, toTime))
       return setStatus("Date/time From must be before Date/time To.", "error");
+
+    const realtime = withinRealtimeWindow(from, fromTime)
+      && realtimeServiceNames.size > 0
+      && (!service || realtimeServiceNames.has(service));
+    const allMode  = !service;
 
     if (service) localStorage.setItem("aq-last-service", service);
 
@@ -370,7 +463,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     $searchBtn.disabled = true;
     allResults    = [];
     actorMap      = {};
+    clientMap     = {};
     entityNameMap = {};
+    failures      = [];
+    renderFailures();
     $tableBody.innerHTML = "";
     $resultsZone.style.display = "none";
 
@@ -381,56 +477,48 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     ssAction.setEnabled(false);
     ssChangedBy.setValue("");
     ssChangedBy.setEnabled(false);
+    ssStatus.setValue("");
+    ssStatus.setEnabled(false);
 
+    let totalJobs = 0;
     try {
-      if (days <= 14 && allMode) {
-        // ── Realtime: all supported services, 1-day chunks, services concurrent ──
-        const svcList   = [...realtimeServiceNames].sort();
-        const rtChunks  = buildIntervalChunks(from, fromTime, to, toTime, REALTIME_CHUNK_DAYS);
-        const totalJobs = rtChunks.length;
-        setStatus(`Querying ${svcList.length} services over ${totalJobs} day${totalJobs !== 1 ? "s" : ""} (realtime)…`);
+      if (realtime) {
+        // ── Realtime: one job per (service, day); a bounded number in flight ──
+        const svcList = allMode ? [...realtimeServiceNames].sort() : [service];
+        const chunks  = buildIntervalChunks(from, fromTime, to, toTime, REALTIME_CHUNK_DAYS);
+        const jobs    = [];
+        for (const interval of chunks)
+          for (const svcName of svcList) jobs.push({ interval, svcName });
+        totalJobs = jobs.length;
+
+        let done = 0;
+        setStatus(`Querying ${svcList.length} service${svcList.length !== 1 ? "s" : ""} over ${chunks.length} day${chunks.length !== 1 ? "s" : ""} (realtime)…`);
         showProgress(5);
 
-        for (let ci = 0; ci < rtChunks.length; ci++) {
-          const interval = rtChunks[ci];
-          const dayLabel = interval.slice(0, 10); // YYYY-MM-DD for status
-          setStatus(`Realtime: fetching ${dayLabel} across ${svcList.length} services…`);
-          showProgress(5 + ((ci / totalJobs) * 80));
-
-          const settled = await Promise.allSettled(
-            svcList.map(svcName =>
-              gc.submitRealtimeAuditQuery(api, orgId, { interval, serviceName: svcName })
-            )
-          );
-          for (const r of settled) {
-            if (r.status === "fulfilled") allResults.push(...r.value);
-            else console.warn("Realtime query failed:", r.reason?.message);
+        const settled = await runLimited(jobs, QUERY_CONCURRENCY, async ({ interval, svcName }) => {
+          const entries = await gc.submitRealtimeAuditQuery(api, orgId, { interval, serviceName: svcName, filters });
+          done++;
+          setStatus(`Realtime: ${done} of ${totalJobs} queries done (${allResults.length + entries.length} entries)…`);
+          showProgress(5 + (done / totalJobs) * 80);
+          allResults.push(...entries);
+          return entries.length;
+        });
+        settled.forEach((r, i) => {
+          if (r.status === "rejected") {
+            failures.push({ label: `${jobs[i].svcName} ${jobs[i].interval.slice(0, 10)}`, message: friendlyError(r.reason) });
           }
-        }
-
-      } else if (days <= 14 && realtimeServiceNames.has(service)) {
-        // ── Realtime: single service, 1-day chunks ────────────────────
-        const rtChunks = buildIntervalChunks(from, fromTime, to, toTime, REALTIME_CHUNK_DAYS);
-        for (let ci = 0; ci < rtChunks.length; ci++) {
-          const interval = rtChunks[ci];
-          const dayLabel = interval.slice(0, 10);
-          setStatus(`Realtime: ${service} — ${dayLabel}…`);
-          showProgress(5 + ((ci / rtChunks.length) * 80));
-          try {
-            const entries = await gc.submitRealtimeAuditQuery(api, orgId, { interval, serviceName: service });
-            allResults.push(...entries);
-          } catch (err) { console.warn(`Realtime chunk ${dayLabel} failed:`, err.message); }
-        }
+        });
 
       } else {
-        // ── Async: >14 days, or service not in realtime mapping ─────
-        if (days <= 14) setStatus(`${service} not in realtime mapping — using standard query…`);
-        await runAsyncQuery(service, from, fromTime, to, toTime);
+        // ── Async: older than 14 days, or service not in realtime mapping ─
+        if (withinRealtimeWindow(from, fromTime)) setStatus(`${service} not in realtime mapping — using standard query…`);
+        totalJobs = await runAsyncQuery(service, from, fromTime, to, toTime, filters);
       }
 
       showProgress(90);
       setStatus("Resolving names…");
       await resolveActors();
+      await resolveClients();
       await resolveEntities();
 
       allResults.sort((a, b) => {
@@ -440,9 +528,15 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       });
 
       showProgress(100);
-      const n = allResults.length;
-      setStatus(`Done — ${n} result${n !== 1 ? "s" : ""} found.`, "success");
       hideProgress();
+      const n = allResults.length;
+      const found = `${n} result${n !== 1 ? "s" : ""} found`;
+      if (failures.length) {
+        setStatus(`Done — ${found}, but results are incomplete: ${failures.length} of ${totalJobs} queries failed (${failures[0].message}).`, "warn");
+      } else {
+        setStatus(`Done — ${found}.`, "success");
+      }
+      renderFailures();
 
       populateClientFilters(allMode ? null : service);
       currentPage = 1;
@@ -450,42 +544,56 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       $resultsZone.style.display = "";
 
     } catch (err) {
-      setStatus(`Error: ${friendlyError(err)}`, "error");
       hideProgress();
+      if (isServiceRequiredError(err)) {
+        setStatus("Genesys requires a service for this query — select one and search again.", "error");
+      } else {
+        setStatus(`Error: ${friendlyError(err)}`, "error");
+      }
     } finally {
       isRunning = false;
       $searchBtn.disabled = false;
     }
   }
 
-  // Chunked async query helper (>14 days, or realtime-unsupported service)
-  async function runAsyncQuery(service, from, fromTime, to, toTime) {
+  /**
+   * Chunked async query (older than 14 days, or realtime-unsupported service).
+   * Returns the number of chunks attempted. A 400 that names the service on the
+   * FIRST chunk is thrown so the caller can ask for a service; any other chunk
+   * failure is recorded and the run continues.
+   */
+  async function runAsyncQuery(service, from, fromTime, to, toTime, filters) {
     const chunks = buildIntervalChunks(from, fromTime, to, toTime);
     const total  = chunks.length;
+    const label  = service || "all services";
     for (let i = 0; i < chunks.length; i++) {
       const interval = chunks[i];
-      setStatus(`Fetching interval ${i + 1} of ${total} (${service})…`);
+      const chunkLabel = `${label} ${interval.slice(0, 10)}`;
+      setStatus(`Fetching interval ${i + 1} of ${total} (${label})…`);
       showProgress(5 + (i / total) * 80);
-      let txId;
       try {
-        txId = await gc.submitAuditQuery(api, orgId, { interval, serviceName: service });
-      } catch (err) { console.warn(`Chunk ${i + 1} submit failed:`, err.message); continue; }
-      try {
+        const body = { interval, filters };
+        if (service) body.serviceName = service;
+        const txId = await gc.submitAuditQuery(api, orgId, body);
         await gc.pollAuditQuery(api, orgId, txId, {
-          onPoll: () => setStatus(`Interval ${i + 1} of ${total}: waiting…`),
+          onPoll: (elapsed, state) =>
+            setStatus(`Interval ${i + 1} of ${total}: ${(state || "waiting").toLowerCase()} (${Math.round(elapsed)}s)…`),
         });
-      } catch (err) { console.warn(`Chunk ${i + 1} poll failed:`, err.message); continue; }
-      try {
         const entries = await gc.fetchAuditQueryResults(api, orgId, txId, {
           onProgress: (n) => setStatus(`Interval ${i + 1} of ${total}: fetching… (${n} so far)`),
         });
         allResults.push(...entries);
-      } catch (err) { console.warn(`Chunk ${i + 1} result fetch failed:`, err.message); }
+      } catch (err) {
+        if (i === 0 && !service && isServiceRequiredError(err)) throw err;
+        failures.push({ label: chunkLabel, message: friendlyError(err) });
+      }
     }
+    return total;
   }
 
   // ── Entity name resolution ───────────────────────────────────────
-  // Maps service+entityType to a Genesys API path function.
+  // Maps service+entityType to a Genesys API path function. Only used when
+  // the audit entry carries no entity.name of its own.
   // entity.id in audit entries is always the resource GUID (or for
   // Datatables/Row it is the parent datatable ID).
   const ENTITY_PATH = {
@@ -552,58 +660,63 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   };
 
   async function resolveEntities() {
-    // Collect unique (service/entityType, id) pairs that have a resolver
+    // Unique (service/entityType, id) pairs that have a resolver AND no name
+    // of their own. An entity.name in the audit is the name at the time of the
+    // change, which beats today's name — and beats "(deleted)".
     const toResolve = [];
     for (const entry of allResults) {
       const id      = entry.entity?.id;
+      if (!id || entry.entity?.name) continue;
       const service = entry.serviceName || "";
       const type    = entry.entityType  || entry.entity?.type || "";
       const key     = `${service}/${type}`;
-      if (id && ENTITY_PATH[key] && !entityNameMap[id]) {
+      if (ENTITY_PATH[key] && !(id in entityNameMap)) {
         entityNameMap[id] = null; // mark as in-flight
         toResolve.push({ key, id });
       }
     }
 
-    await Promise.all(
-      toResolve.map(async ({ key, id }) => {
-        try {
-          const path = ENTITY_PATH[key](id);
-          const res  = await gc.fetchEntityByPath(api, orgId, path);
-          entityNameMap[id] = res?.name || id;
-        } catch (err) {
-          entityNameMap[id] = err?.status === 404
-            ? `(deleted) ${id}`
-            : id; // other errors (permissions, network) — just show GUID
-        }
-      }),
-    );
+    await runLimited(toResolve, LOOKUP_CONCURRENCY, async ({ key, id }) => {
+      try {
+        const path = ENTITY_PATH[key](id);
+        const res  = await gc.fetchEntityByPath(api, orgId, path);
+        entityNameMap[id] = res?.name || id;
+      } catch (err) {
+        entityNameMap[id] = err?.status === 404
+          ? `(deleted) ${id}`
+          : id; // other errors (permissions, network) — just show GUID
+      }
+    });
   }
 
   // ── Actor name resolution ────────────────────────────────────────
-  // Tries user API first; if that fails (e.g. the actor is an OAuth client
-  // rather than a human user), falls back to the OAuth client API.
-  // Changes made by this app are attributed to the OAuth client ID.
+  // `expand=user` already puts user.name on most entries. Anything left —
+  // typically a trustee user from another org — gets one lookup here.
   async function resolveActors() {
-    const ids = [...new Set(allResults.map(e => e.user?.id).filter(Boolean))];
-    await Promise.all(
-      ids.map(async (userId) => {
-        // 1. Try user lookup
-        try {
-          const user = await gc.getUser(api, orgId, userId);
-          if (user?.name) { actorMap[userId] = user.name; return; }
-        } catch { /* not a user — try OAuth next */ }
+    const ids = [...new Set(
+      allResults.filter(e => e.user?.id && !e.user?.name).map(e => e.user.id)
+    )];
+    await runLimited(ids, LOOKUP_CONCURRENCY, async (userId) => {
+      try {
+        const user = await gc.getUser(api, orgId, userId);
+        if (user?.name) { actorMap[userId] = user.name; return; }
+      } catch { /* not a user in this org */ }
+      actorMap[userId] = userId;
+    });
+  }
 
-        // 2. Try OAuth client lookup
-        try {
-          const client = await gc.getOAuthClient(api, orgId, userId);
-          if (client?.name) { actorMap[userId] = client.name; return; }
-        } catch { /* not an OAuth client either */ }
-
-        // 3. Fall back to raw ID
-        actorMap[userId] = userId;
-      }),
-    );
+  // `client` is the OAuth client the action came through — separate from
+  // `user`. Changes made by this app are attributed to its client.
+  async function resolveClients() {
+    const ids = [...new Set(allResults.map(e => e.client?.id).filter(Boolean))];
+    await runLimited(ids, LOOKUP_CONCURRENCY, async (clientId) => {
+      try {
+        const client = await gc.getOAuthClient(api, orgId, clientId);
+        clientMap[clientId] = client?.name || clientId;
+      } catch {
+        clientMap[clientId] = clientId; // Genesys-internal clients 404 here
+      }
+    });
   }
 
   // ── Populate client-side filter dropdowns ────────────────────────
@@ -632,9 +745,12 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     ssEntityType.setEnabled(true);
     ssAction.setItems([]);
     ssAction.setEnabled(false);
-    const actorNames = [...new Set(Object.values(actorMap))].sort();
+    const actorNames = [...new Set(allResults.map(getActorName))].filter(n => n !== "—").sort();
     ssChangedBy.setItems(actorNames.map(n => ({ id: n, label: n })));
     ssChangedBy.setEnabled(true);
+    const statuses = [...new Set(allResults.map(e => e.status).filter(Boolean))].sort();
+    ssStatus.setItems(statuses.map(s => ({ id: s, label: s })));
+    ssStatus.setEnabled(statuses.length > 0);
   }
 
   // ── Entity Type change → refresh Action options ──────────────────
@@ -673,14 +789,13 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     const entityType = ssEntityType.getValue();
     const action     = ssAction.getValue();
     const changedBy  = ssChangedBy.getValue();
+    const status     = ssStatus.getValue();
 
     filteredRows = allResults.filter(entry => {
       if (entityType && getEntityType(entry) !== entityType) return false;
       if (action     && entry.action !== action)             return false;
-      if (changedBy) {
-        const actor = actorMap[entry.user?.id] || entry.user?.name || entry.user?.id || "";
-        if (actor !== changedBy) return false;
-      }
+      if (status     && entry.status !== status)             return false;
+      if (changedBy  && getActorName(entry) !== changedBy)   return false;
       return true;
     });
 
@@ -695,14 +810,22 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   }
 
   function getEntityName(entry) {
+    if (entry.entity?.name) return entry.entity.name;
     const id = entry.entity?.id;
-    if (id && entityNameMap[id] && entityNameMap[id] !== id) return entityNameMap[id];
-    return entry.entity?.name || id || "";
+    if (id && entityNameMap[id]) return entityNameMap[id];
+    return id || "";
+  }
+
+  function getClientName(entry) {
+    const id = entry.client?.id;
+    if (!id) return "";
+    return clientMap[id] || id;
   }
 
   function getActorName(entry) {
-    if (entry.user?.id && actorMap[entry.user.id]) return actorMap[entry.user.id];
-    return entry.user?.name || entry.user?.id || "—";
+    if (entry.user?.name) return entry.user.name;
+    if (entry.user?.id)   return actorMap[entry.user.id] || entry.user.id;
+    return getClientName(entry) || "—";
   }
 
   // ── Pagination wiring ────────────────────────────────────────────
@@ -758,6 +881,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       const ts         = formatDateTime(entry.eventDate || entry.createdDate);
       const action     = entry.action || "—";
       const service    = entry.serviceName || ssService.getValue() || "—";
+      const status     = entry.status || "";
+      const statusHtml = status && status !== "SUCCESS"
+        ? ` <span class="aq-status aq-status--${escapeHtml(status.toLowerCase())}" title="Genesys audited this action as ${escapeHtml(status)}">${escapeHtml(status)}</span>`
+        : "";
 
       // ── Main row ──────────────────────────────────────
       const tr = document.createElement("tr");
@@ -767,23 +894,28 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         <td>${escapeHtml(service)}</td>
         <td>${escapeHtml(entityType)}</td>
         <td class="aq-entity-name" title="${escapeHtml(entityName)}">${escapeHtml(entityName)}</td>
-        <td>${escapeHtml(action)}</td>
+        <td>${escapeHtml(action)}${statusHtml}</td>
         <td>${escapeHtml(actor)}</td>
         <td class="aq-details-cell">
           <button class="aq-expand-btn" type="button" aria-expanded="false" title="Show changes">▶</button>
         </td>
       `;
 
-      // ── Detail row (hidden by default) ────────────────
+      // ── Detail row (hidden by default, built on first open) ──
       const detailTr = document.createElement("tr");
       detailTr.className = "aq-detail-row";
       detailTr.hidden = true;
-      detailTr.innerHTML = `<td colspan="7">${buildDiffHtml(entry, entityName, action, ts)}</td>`;
+      let detailBuilt = false;
 
       // ── Toggle expand / collapse (click anywhere on the row) ──
       const expandBtn = tr.querySelector(".aq-expand-btn");
       function toggleRow() {
         const opening = detailTr.hidden;
+        if (opening && !detailBuilt) {
+          detailTr.innerHTML = `<td colspan="7">${buildDiffHtml(entry)}</td>`;
+          wireRelatedButton(detailTr, entry);
+          detailBuilt = true;
+        }
         detailTr.hidden = !opening;
         expandBtn.textContent = opening ? "▼" : "▶";
         expandBtn.setAttribute("aria-expanded", String(opening));
@@ -795,16 +927,64 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     }
   }
 
+  // ── Related audits (all audits written by the same action) ────────
+  function wireRelatedButton(detailTr, entry) {
+    const btn = detailTr.querySelector(".aq-related-btn");
+    const out = detailTr.querySelector(".aq-related-out");
+    if (!btn || !out) return;
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      out.innerHTML = `<span class="di-status"><span class="spin spin--sm" aria-hidden="true"></span> Loading related audits…</span>`;
+      try {
+        const related = (await gc.fetchRelatedAudits(api, orgId, entry.id))
+          .filter(r => r.id !== entry.id)
+          .sort((a, b) => new Date(a.eventDate || 0) - new Date(b.eventDate || 0));
+        if (!related.length) {
+          out.innerHTML = `<p class="aq-diff-empty">No other audits were written by this action.</p>`;
+          return;
+        }
+        out.innerHTML = `
+          <table class="data-table aq-diff-table aq-related-table">
+            <thead><tr><th>Date &amp; Time</th><th>Service</th><th>Entity Type</th><th>Entity</th><th>Action</th><th>Status</th></tr></thead>
+            <tbody>${related.map(r => `
+              <tr>
+                <td>${escapeHtml(formatDateTime(r.eventDate))}</td>
+                <td>${escapeHtml(r.serviceName || "")}</td>
+                <td>${escapeHtml(getEntityType(r))}</td>
+                <td>${escapeHtml(r.entity?.name || r.entity?.id || "")}</td>
+                <td>${escapeHtml(r.action || "")}</td>
+                <td>${escapeHtml(r.status || "")}</td>
+              </tr>`).join("")}
+            </tbody>
+          </table>`;
+      } catch (err) {
+        out.innerHTML = `<p class="aq-diff-empty">Could not load related audits: ${escapeHtml(friendlyError(err))}</p>`;
+        btn.disabled = false;
+      }
+    });
+  }
+
   // ── Build diff HTML for an expanded row ───────────────────────────
-  function buildDiffHtml(entry, entityName, action, ts) {
-    // ── Metadata row ─────────────────────────────────────────────
+  function buildDiffHtml(entry) {
+    // ── Metadata ────────────────────────────────────────────────
+    const initiating = entry.initiatingAction
+      ? `${entry.initiatingAction.actionContext || ""}${entry.initiatingAction.transactionId ? ` (${entry.initiatingAction.transactionId})` : ""}`.trim()
+      : "";
     const metaFields = [
-      ["Service",    entry.serviceName],
-      ["Entity Type",entry.entityType],
-      ["Action",     entry.action],
-      ["Level",      entry.level],
-      ["Date",       entry.eventDate ? formatDateTime(entry.eventDate) : null],
-      ["Remote IP",  (entry.remoteIp || []).filter(Boolean).join(", ") || null],
+      ["Service",     entry.serviceName],
+      ["Entity Type", entry.entityType],
+      ["Entity ID",   entry.entity?.id],
+      ["Action",      entry.action],
+      ["Status",      entry.status],
+      ["Message",     entry.message?.message],
+      ["Changed By",  entry.user?.name || actorMap[entry.user?.id] || entry.user?.id],
+      ["Client",      getClientName(entry)],
+      ["Application", entry.application],
+      ["Level",       entry.level],
+      ["Date",        entry.eventDate ? formatDateTime(entry.eventDate) : null],
+      ["Remote IP",   (entry.remoteIp || []).filter(Boolean).join(", ") || null],
+      ["Initiated by", initiating || null],
+      ["Transaction",  entry.transactionInitiator === true ? "this audit started the transaction" : null],
     ].filter(([, v]) => v);
 
     const metaHtml = metaFields.length ? `
@@ -818,22 +998,16 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         </tbody>
       </table>` : "";
 
-    // ── Changed Properties (real field: propertyChanges) ─────────
-    const propChanges = entry.propertyChanges || entry.properties || [];
+    // ── Changed Properties (propertyChanges[]) ───────────────────
+    const propChanges = entry.propertyChanges || [];
     let propsHtml = "";
     if (propChanges.length) {
-      const rows = propChanges.map(p => {
-        const prop   = p.property  ?? p.Property  ?? "";
-        // Values come as arrays; join for display
-        const oldVal = [].concat(p.oldValues ?? p.oldValue ?? []).join(", ");
-        const newVal = [].concat(p.newValues ?? p.newValue ?? []).join(", ");
-        return `
+      const rows = propChanges.map(p => `
           <tr>
-            <td class="aq-diff-prop">${escapeHtml(String(prop))}</td>
-            <td class="aq-diff-old">${escapeHtml(oldVal)}</td>
-            <td class="aq-diff-new">${escapeHtml(newVal)}</td>
-          </tr>`;
-      }).join("");
+            <td class="aq-diff-prop">${escapeHtml(String(p.property ?? ""))}</td>
+            <td class="aq-diff-old">${escapeHtml([].concat(p.oldValues ?? []).join(", "))}</td>
+            <td class="aq-diff-new">${escapeHtml([].concat(p.newValues ?? []).join(", "))}</td>
+          </tr>`).join("");
       propsHtml = `
         <h4 class="aq-diff-section-title">Changed Properties</h4>
         <table class="data-table aq-diff-table">
@@ -842,58 +1016,95 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         </table>`;
     }
 
-    // ── Additional Context (entry.context plain object) ──────────
-    let ctxHtml = "";
-    const ctxRaw = entry.context ?? entry.additionalContext ?? null;
-    if (ctxRaw) {
-      let pairs = [];
-      if (Array.isArray(ctxRaw)) {
-        pairs = ctxRaw.map(item =>
-          typeof item === "object" && item !== null
-            ? { k: String(item.key ?? item.name ?? ""), v: String(item.value ?? "") }
-            : { k: String(item), v: "" }
-        );
-      } else if (typeof ctxRaw === "object") {
-        pairs = Object.entries(ctxRaw)
-          .filter(([, v]) => v !== null && v !== undefined && v !== "")
-          .map(([k, v]) => ({ k, v: String(v) }));
-      }
-      if (pairs.length) {
-        const ctxRows = pairs.map(({ k, v }) => `
+    // ── Changed Entities (entityChanges[] — e.g. queue members) ──
+    const entChanges = entry.entityChanges || [];
+    let entHtml = "";
+    if (entChanges.length) {
+      const rows = entChanges.map(c => `
           <tr>
-            <td class="aq-diff-ctx-key">${escapeHtml(k)}</td>
-            <td class="aq-diff-ctx-val">${escapeHtml(v)}</td>
+            <td class="aq-diff-prop">${escapeHtml(c.entityType || "")}</td>
+            <td>${escapeHtml(c.entityName || c.entityId || "")}</td>
+            <td class="aq-diff-old">${escapeHtml([].concat(c.oldValues ?? []).join(", "))}</td>
+            <td class="aq-diff-new">${escapeHtml([].concat(c.newValues ?? []).join(", "))}</td>
           </tr>`).join("");
-        ctxHtml = `
-          <h4 class="aq-diff-section-title aq-diff-section-title--ctx">Additional Context</h4>
-          <table class="data-table aq-diff-table aq-diff-ctx-table">
-            <thead><tr><th>Key</th><th>Value</th></tr></thead>
-            <tbody>${ctxRows}</tbody>
-          </table>`;
-      }
+      entHtml = `
+        <h4 class="aq-diff-section-title aq-diff-section-title--ctx">Changed Entities</h4>
+        <table class="data-table aq-diff-table">
+          <thead><tr><th>Type</th><th>Entity</th><th>Old Value</th><th>New Value</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
     }
 
-    return `${metaHtml}${propsHtml}${ctxHtml}
+    // ── Additional Context (entry.context plain object) ──────────
+    const pairs = contextPairs(entry);
+    let ctxHtml = "";
+    if (pairs.length) {
+      const ctxRows = pairs.map(({ k, v }) => `
+        <tr>
+          <td class="aq-diff-ctx-key">${escapeHtml(k)}</td>
+          <td class="aq-diff-ctx-val">${escapeHtml(v)}</td>
+        </tr>`).join("");
+      ctxHtml = `
+        <h4 class="aq-diff-section-title aq-diff-section-title--ctx">Additional Context</h4>
+        <table class="data-table aq-diff-table aq-diff-ctx-table">
+          <thead><tr><th>Key</th><th>Value</th></tr></thead>
+          <tbody>${ctxRows}</tbody>
+        </table>`;
+    }
+
+    const noChanges = !propChanges.length && !entChanges.length
+      ? `<p class="aq-diff-empty">Genesys recorded no property changes for this audit.</p>` : "";
+
+    const relatedHtml = entry.id ? `
+      <div class="aq-related">
+        <button class="btn aq-related-btn" type="button" title="Genesys writes several audits for one action — list the others">Show related audits</button>
+        <div class="aq-related-out"></div>
+      </div>` : "";
+
+    return `${metaHtml}${propsHtml}${entHtml}${noChanges}${ctxHtml}${relatedHtml}
       <details class="aq-raw-details">
         <summary class="aq-raw-summary">Raw API response</summary>
         <pre class="aq-raw-json">${escapeHtml(JSON.stringify(entry, null, 2))}</pre>
       </details>`;
   }
 
+  /** entry.context as [{k, v}] — it is a plain object per the spec, but tolerate arrays. */
+  function contextPairs(entry) {
+    const ctxRaw = entry.context ?? entry.additionalContext ?? null;
+    if (!ctxRaw) return [];
+    if (Array.isArray(ctxRaw)) {
+      return ctxRaw.map(item =>
+        typeof item === "object" && item !== null
+          ? { k: String(item.key ?? item.name ?? ""), v: String(item.value ?? "") }
+          : { k: String(item), v: "" });
+    }
+    if (typeof ctxRaw === "object") {
+      return Object.entries(ctxRaw)
+        .filter(([, v]) => v !== null && v !== undefined && v !== "")
+        .map(([k, v]) => ({ k, v: typeof v === "object" ? JSON.stringify(v) : String(v) }));
+    }
+    return [];
+  }
+
   // ── Export to Excel ─────────────────────────────────────────────────────────
   const EXPORT_COLUMNS = [
-    { key: "dateTime",   label: "Date & Time",       wch: 22 },
-    { key: "service",    label: "Service",            wch: 20 },
-    { key: "entityType", label: "Entity Type",        wch: 25 },
-    { key: "entityName", label: "Entity Name",        wch: 35 },
-    { key: "action",     label: "Action",             wch: 20 },
-    { key: "changedBy",  label: "Changed By",         wch: 30 },
-    { key: "level",      label: "Level",              wch: 12 },
-    { key: "remoteIp",   label: "Remote IP",          wch: 20 },
-    { key: "property",   label: "Property",           wch: 30 },
-    { key: "oldValue",   label: "Old Value",          wch: 40 },
-    { key: "newValue",   label: "New Value",          wch: 40 },
-    { key: "context",    label: "Additional Context", wch: 50 },
+    { key: "dateTime",    label: "Date & Time",       wch: 22 },
+    { key: "service",     label: "Service",            wch: 20 },
+    { key: "entityType",  label: "Entity Type",        wch: 25 },
+    { key: "entityName",  label: "Entity Name",        wch: 35 },
+    { key: "entityId",    label: "Entity ID",          wch: 38 },
+    { key: "action",      label: "Action",             wch: 20 },
+    { key: "status",      label: "Status",             wch: 10 },
+    { key: "changedBy",   label: "Changed By",         wch: 30 },
+    { key: "client",      label: "Client",             wch: 30 },
+    { key: "application", label: "Application",        wch: 24 },
+    { key: "message",     label: "Message",            wch: 50 },
+    { key: "level",       label: "Level",              wch: 12 },
+    { key: "remoteIp",    label: "Remote IP",          wch: 20 },
+    { key: "property",    label: "Property",           wch: 30 },
+    { key: "oldValue",    label: "Old Value",          wch: 40 },
+    { key: "newValue",    label: "New Value",          wch: 40 },
+    { key: "context",     label: "Additional Context", wch: 50 },
   ];
 
   function exportToExcel() {
@@ -901,48 +1112,38 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
     const rows = [];
     for (const entry of filteredRows) {
-      const dateTime   = formatDateTime(entry.eventDate || entry.createdDate);
-      const service    = entry.serviceName || ssService.getValue() || "";
-      const entityType = getEntityType(entry);
-      const entityName = getEntityName(entry);
-      const action     = entry.action || "";
-      const changedBy  = getActorName(entry);
-      const level      = entry.level || "";
-      const remoteIp   = (entry.remoteIp || []).filter(Boolean).join(", ");
+      const base = {
+        dateTime:    formatDateTime(entry.eventDate || entry.createdDate),
+        service:     entry.serviceName || ssService.getValue() || "",
+        entityType:  getEntityType(entry),
+        entityName:  getEntityName(entry),
+        entityId:    entry.entity?.id || "",
+        action:      entry.action || "",
+        status:      entry.status || "",
+        changedBy:   getActorName(entry),
+        client:      getClientName(entry),
+        application: entry.application || "",
+        message:     entry.message?.message || "",
+        level:       entry.level || "",
+        remoteIp:    (entry.remoteIp || []).filter(Boolean).join(", "),
+        context:     contextPairs(entry).map(({ k, v }) => `${k}: ${v}`).join("; "),
+      };
 
-      // Additional context → "key: value; key: value"
-      const ctxRaw = entry.context ?? entry.additionalContext ?? null;
-      let context = "";
-      if (ctxRaw) {
-        if (Array.isArray(ctxRaw)) {
-          context = ctxRaw
-            .map(item => typeof item === "object"
-              ? `${item.key ?? item.name ?? ""}: ${item.value ?? ""}`
-              : String(item))
-            .filter(Boolean).join("; ");
-        } else if (typeof ctxRaw === "object") {
-          context = Object.entries(ctxRaw)
-            .filter(([, v]) => v !== null && v !== undefined && v !== "")
-            .map(([k, v]) => `${k}: ${v}`)
-            .join("; ");
-        }
-      }
+      const changes = [
+        ...(entry.propertyChanges || []).map(p => ({
+          property: String(p.property ?? ""),
+          oldValue: [].concat(p.oldValues ?? []).join(", "),
+          newValue: [].concat(p.newValues ?? []).join(", "),
+        })),
+        ...(entry.entityChanges || []).map(c => ({
+          property: `${c.entityType || "Entity"}: ${c.entityName || c.entityId || ""}`,
+          oldValue: [].concat(c.oldValues ?? []).join(", "),
+          newValue: [].concat(c.newValues ?? []).join(", "),
+        })),
+      ];
 
-      const propChanges = entry.propertyChanges || entry.properties || [];
-      if (propChanges.length) {
-        for (const p of propChanges) {
-          rows.push({
-            dateTime, service, entityType, entityName, action, changedBy, level, remoteIp,
-            property: String(p.property ?? p.Property ?? ""),
-            oldValue: [].concat(p.oldValues ?? p.oldValue ?? []).join(", "),
-            newValue: [].concat(p.newValues ?? p.newValue ?? []).join(", "),
-            context,
-          });
-        }
-      } else {
-        rows.push({ dateTime, service, entityType, entityName, action, changedBy, level, remoteIp,
-          property: "", oldValue: "", newValue: "", context });
-      }
+      if (changes.length) for (const c of changes) rows.push({ ...base, ...c });
+      else rows.push({ ...base, property: "", oldValue: "", newValue: "" });
     }
 
     const org      = orgContext?.getDetails?.();
