@@ -40,7 +40,8 @@ import { createSingleSelect } from "../../components/multiSelect.js";
 const CHUNK_DAYS          = 30;
 const REALTIME_CHUNK_DAYS = 1;  // realtime endpoint times out on multi-day intervals
 const REALTIME_WINDOW_MS  = 14 * 86_400_000;
-const QUERY_CONCURRENCY   = 6;  // realtime jobs in flight at once
+const QUERY_CONCURRENCY   = 3;  // realtime jobs in flight at once — 6 drew 429s on an 8-day, 46-service run
+const RETRY_PAUSE_MS      = 8_000; // breather before the second pass over rate-limited jobs
 const LOOKUP_CONCURRENCY  = 6;  // name-resolution GETs in flight at once
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -496,19 +497,34 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         setStatus(`Querying ${svcList.length} service${svcList.length !== 1 ? "s" : ""} over ${chunks.length} day${chunks.length !== 1 ? "s" : ""} (realtime)…`);
         showProgress(5);
 
-        const settled = await runLimited(jobs, QUERY_CONCURRENCY, async ({ interval, svcName }) => {
+        const runJob = async ({ interval, svcName }) => {
           const entries = await gc.submitRealtimeAuditQuery(api, orgId, { interval, serviceName: svcName, filters });
           done++;
           setStatus(`Realtime: ${done} of ${totalJobs} queries done (${allResults.length + entries.length} entries)…`);
           showProgress(5 + (done / totalJobs) * 80);
           allResults.push(...entries);
           return entries.length;
-        });
+        };
+        const settled = await runLimited(jobs, QUERY_CONCURRENCY, runJob);
+
+        // Anything Genesys rate-limited past withRateLimitRetry's own attempts
+        // gets one more pass after a pause, one job at a time. Only 429s —
+        // a 403 or a 400 will not improve by waiting.
+        const rateLimited = [];
         settled.forEach((r, i) => {
-          if (r.status === "rejected") {
-            failures.push({ label: `${jobs[i].svcName} ${jobs[i].interval.slice(0, 10)}`, message: friendlyError(r.reason) });
-          }
+          if (r.status !== "rejected") return;
+          if (r.reason?.status === 429) rateLimited.push(jobs[i]);
+          else failures.push({ label: `${jobs[i].svcName} ${jobs[i].interval.slice(0, 10)}`, message: friendlyError(r.reason) });
         });
+        if (rateLimited.length) {
+          setStatus(`Rate limited on ${rateLimited.length} queries — pausing, then retrying them one at a time…`);
+          await new Promise(r => setTimeout(r, RETRY_PAUSE_MS));
+          const again = await runLimited(rateLimited, 1, runJob);
+          again.forEach((r, i) => {
+            if (r.status === "rejected")
+              failures.push({ label: `${rateLimited[i].svcName} ${rateLimited[i].interval.slice(0, 10)}`, message: friendlyError(r.reason) });
+          });
+        }
 
       } else {
         // ── Async: older than 14 days, or service not in realtime mapping ─
@@ -821,16 +837,60 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     await resolvePaths(items);
   }
 
+  /**
+   * Some audits carry a composite entity id — Role MemberAdd/MemberRemove
+   * uses "roleId--subjectId". Split it into its GUID parts; the first is the
+   * entity itself, the rest are members (users, or groups).
+   */
+  function compositeParts(id) {
+    if (!id || !id.includes("--")) return null;
+    const parts = id.split("--");
+    return parts.every(p => GUID_RE.test(p)) ? parts : null;
+  }
+
   /** The entity of every result, unless the audit already carries its name. */
   async function resolveEntities() {
     const items = [];
+    const members = [];
     for (const entry of allResults) {
       const id = entry.entity?.id;
       if (!id || entry.entity?.name) continue;
+      const parts = compositeParts(id);
+      if (parts) {
+        const path = pathFor(entry.serviceName || "", getEntityType(entry), parts[0]);
+        if (path) items.push({ path, id: parts[0] });
+        for (const m of parts.slice(1)) members.push(m);
+        continue;
+      }
       const path = pathFor(entry.serviceName || "", getEntityType(entry), id);
       if (path) items.push({ path, id });
     }
     await resolvePaths(items);
+    // A member is a user or, failing that, a group.
+    await resolvePaths(members.map(m => ({ path: TYPE_PATH.User(m), id: m })));
+    const notUsers = members.filter(m => nameCache[m] === `(deleted) ${m}`);
+    for (const m of notUsers) delete nameCache[m];
+    await resolvePaths(notUsers.map(m => ({ path: TYPE_PATH.Group(m), id: m })));
+    recoverDeletedNames();
+  }
+
+  /**
+   * A deleted object still has a name in the audits themselves: its Delete
+   * audit (or any Create/Update) usually lists "name" among the property
+   * changes. Use that instead of "(deleted) <guid>".
+   */
+  function recoverDeletedNames() {
+    const deleted = new Set(Object.keys(nameCache).filter(id => nameCache[id] === `(deleted) ${id}`));
+    if (!deleted.size) return;
+    for (const entry of allResults) {
+      const id = entry.entity?.id;
+      if (!id || !deleted.has(id)) continue;
+      for (const p of (entry.propertyChanges || [])) {
+        if (!/^name$/i.test(String(p.property || ""))) continue;
+        const name = [].concat(p.newValues ?? [], p.oldValues ?? []).find(v => v && String(v).trim());
+        if (name) { nameCache[id] = `(deleted) ${name}`; deleted.delete(id); break; }
+      }
+    }
   }
 
   // ── Actor name resolution ────────────────────────────────────────
@@ -963,8 +1023,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   function getEntityName(entry) {
     if (entry.entity?.name) return entry.entity.name;
     const id = entry.entity?.id;
-    if (id && nameCache[id]) return nameCache[id];
-    return id || "";
+    if (!id) return "";
+    const parts = compositeParts(id);
+    if (parts) return parts.map(p => nameCache[p] || p).join(" → ");
+    return nameCache[id] || id;
   }
 
   /** A value as displayed: its resolved name when it is a known GUID, else itself. */

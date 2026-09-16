@@ -96,7 +96,7 @@ every page is read.
   - Expect: green "Done — N results found." and **no** failures line
   - Notes: `______________________`
 - [ ] **4.3** — Watch the network tab during **Last 7 days**, all services
-  - Expect: no more than ~6 audit requests in flight at once; no 429 responses (if a 429 does appear it is retried, not listed as a failure, unless it fails four times)
+  - Expect: no more than 3 audit requests in flight at once. A 429 is retried in place; if it still fails, the status says "Rate limited on N queries — pausing, then retrying them one at a time…" and only what fails that second pass is listed. (An 8-day, 46-service run at 6 in flight lost 27 of 368 queries on 2026-09-16.)
   - Notes: `______________________`
 
 ---
@@ -115,8 +115,11 @@ every page is read.
 - [ ] **5.2b** — Find a PeoplePermissions › AccessToken row
   - Expect: Entity Name stays the token string — there is nothing to resolve it to; Changed By is the user or client that obtained the token
   - Notes: `______________________`
-- [ ] **5.3** — Find an audit on an object that has since been **deleted**
-  - Expect: Entity Name is the name at the time of the change when Genesys sent one; otherwise "(deleted) <guid>"
+- [ ] **5.3** — Find an audit on an object that has since been **deleted** (e.g. the Row audits of a datatable deleted the same afternoon)
+  - Expect: Entity Name is "(deleted) <name>" when any audit in the result set carries the object's `name` in its property changes (the Delete or Create audit normally does); "(deleted) <guid>" only when none does
+  - Notes: `______________________`
+- [ ] **5.3a** — Find a PeoplePermissions › Role **MemberAdd** or **MemberRemove** row
+  - Expect: the composite id `roleId--userId` is shown as "Role name → User name" (a group member resolves to the group name)
   - Notes: `______________________`
 - [ ] **5.4** — Find an audit on an object that still exists and whose Raw API response has **no** `entity.name`
   - Expect: Entity Name is resolved by lookup (the current name)
