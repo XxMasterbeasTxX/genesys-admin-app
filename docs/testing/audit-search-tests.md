@@ -16,9 +16,9 @@ completed run part of the history.
 - **Fail a case?** Leave the box unticked and write what happened on the
   _Notes_ line under it. An unticked box with no note reads as "not run yet",
   which is a different thing.
-- **★ marks an open question**, not a regression check. These are behaviours
-  the Genesys spec leaves open and nobody has confirmed against a live tenant.
-  Fill in the _Answer_ line even when nothing looks broken.
+- **★ marks an open question**, not a regression check. Both questions this
+  plan opened with were answered on live tenants on 2026-09-16 (§2.4, §5.5)
+  and are now ordinary checks.
 - This page only reads. Nothing here writes to Genesys.
 
 Several cases need a **busy day** — a day on which one service wrote more than
@@ -124,9 +124,9 @@ every page is read.
 - [ ] **5.4** — Find an audit on an object that still exists and whose Raw API response has **no** `entity.name`
   - Expect: Entity Name is resolved by lookup (the current name)
   - Notes: `______________________`
-- [ ] **5.5** ★ — A change made by a **trustee user** from another org, if the test org has a trust relationship
-  - Expect: Changed By shows a name; if `expand=user` does not name trustee users it falls back to the GUID
-  - Answer: `______________________`
+- [ ] **5.5** — A change made by a **trustee user** from another org (log into the customer org through the trust and add a datatable row)
+  - Expect: Changed By shows the trustee's name (confirmed 2026-09-16 on Nuuday: a row added by a trustee showed "Thomas Valhøj")
+  - Notes: `______________________`
 
 ---
 
