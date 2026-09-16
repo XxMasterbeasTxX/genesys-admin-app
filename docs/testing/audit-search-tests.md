@@ -124,6 +124,9 @@ every page is read.
 - [ ] **5.3c** — Find a Telephony › DID row for a user's own number and a ContactCenter › AgentRoutingInfo row
   - Expect: DID reads "+4540153795 (phone_cell)" rather than the org-id-prefixed internal name; AgentRoutingInfo reads "Agent <user's name>"
   - Notes: `______________________`
+- [ ] **5.3d** — Find a Quality › Evaluation row and a Quality › Recording row (both carry `conversationId` in context)
+  - Expect: "Evaluation: <form> · agent <name> · by <evaluator> · <status>" and "Recording (<media> <subtype>) of conversation <id>"; needs `quality:evaluation:view` / `recording:recording:view`, otherwise the id stays
+  - Notes: `______________________`
 - [ ] **5.3a** — Find a PeoplePermissions › Role **MemberAdd** or **MemberRemove** row
   - Expect: "Role name → Member name (division)" — Genesys puts the grant triple `subjectId--roleId--divisionId` in `entity.name`, `*` reads "all divisions"; a group member resolves to the group name
   - Notes: `______________________`
@@ -150,8 +153,8 @@ every page is read.
 - [ ] **6.4** — Press **Show related audits** on a realtime result
   - Expect: a table of the other audits written by the same action, oldest first, or "No other audits were written by this action."
   - Notes: `______________________`
-- [ ] **6.5** — Press **Show related audits** on a result older than 14 days
-  - Expect: a "Could not load related audits: …" line; the button re-enables; the detail row stays open
+- [ ] **6.5** — Expand a result older than 14 days
+  - Expect: no button — "Related audits are only available for the last 14 days." in its place
   - Notes: `______________________`
 - [ ] **6.6** — Click inside the detail row (select text, press the button)
   - Expect: the row does **not** collapse

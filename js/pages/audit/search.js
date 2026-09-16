@@ -813,15 +813,15 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
    */
   async function resolvePaths(items) {
     const todo = [];
-    for (const { path, id } of items) {
+    for (const { path, id, label } of items) {
       if (!path || !id || id in nameCache) continue;
       nameCache[id] = null; // in flight
-      todo.push({ path, id });
+      todo.push({ path, id, label });
     }
-    await runLimited(todo, LOOKUP_CONCURRENCY, async ({ path, id }) => {
+    await runLimited(todo, LOOKUP_CONCURRENCY, async ({ path, id, label }) => {
       try {
         const res = await gc.fetchEntityByPath(api, orgId, path);
-        nameCache[id] = res?.name || res?.displayName || id;
+        nameCache[id] = (label && label(res)) || res?.name || res?.displayName || id;
       } catch (err) {
         if (err?.status !== 404) { nameCache[id] = id; return; }
         // A deleted user is still readable with state=deleted — the only
@@ -924,6 +924,8 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       } else if (realEntityName(entry)) {
         continue;
       }
+      const scoped = conversationScoped(entry);
+      if (scoped) { items.push(scoped); continue; }
       const path = pathFor(entry.serviceName || "", getEntityType(entry), id);
       if (path) items.push({ path, id });
     }
@@ -983,6 +985,43 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     const quoted = text.match(/["'\u2018\u2019\u201c\u201d]([^"'\u2018\u2019\u201c\u201d]{1,120})["'\u2018\u2019\u201c\u201d]/);
     if (quoted && !GUID_RE.test(quoted[1])) return quoted[1];
     return "";
+  }
+
+  /**
+   * Evaluations and recordings have no name and are only addressable
+   * together with their conversation, which the audit's context supplies.
+   * Returns a resolvePaths item with a label builder, or null.
+   */
+  function conversationScoped(entry) {
+    const id   = entry.entity?.id;
+    const conv = String(entry.context?.conversationId ?? "");
+    if (!id || !GUID_RE.test(conv)) return null;
+    const type = getEntityType(entry);
+    if (type === "Evaluation") {
+      return {
+        id,
+        path: `/api/v2/quality/conversations/${conv}/evaluations/${id}?expand=agent,evaluator,evaluationForm`,
+        label: res => {
+          const bits = [];
+          if (res?.evaluationForm?.name) bits.push(res.evaluationForm.name);
+          if (res?.agent?.name)          bits.push(`agent ${res.agent.name}`);
+          if (res?.evaluator?.name)      bits.push(`by ${res.evaluator.name}`);
+          if (res?.status)               bits.push(res.status.toLowerCase());
+          return bits.length ? `Evaluation: ${bits.join(" · ")}` : "";
+        },
+      };
+    }
+    if (type === "Recording") {
+      return {
+        id,
+        path: `/api/v2/conversations/${conv}/recordings/${id}`,
+        label: res => {
+          const kind = [res?.media, res?.mediaSubtype].filter(Boolean).join(" ");
+          return `Recording${kind ? ` (${kind})` : ""} of conversation ${conv}`;
+        },
+      };
+    }
+    return null;
   }
 
   // ── Actor name resolution ────────────────────────────────────────
@@ -1395,11 +1434,14 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   /** The part of the detail row that is NOT repainted when names resolve. */
   function relatedHtml(entry) {
-    const related = entry.id ? `
+    // The related endpoint is part of the realtime API and shares its window.
+    const age = Date.now() - new Date(entry.eventDate || 0).getTime();
+    const related = !entry.id ? "" : age > REALTIME_WINDOW_MS ? `
+      <p class="aq-diff-empty">Related audits are only available for the last 14 days.</p>` : `
       <div class="aq-related">
         <button class="btn aq-related-btn" type="button" title="Genesys writes several audits for one action — list the others">Show related audits</button>
         <div class="aq-related-out"></div>
-      </div>` : "";
+      </div>`;
     return `${related}
       <details class="aq-raw-details">
         <summary class="aq-raw-summary">Raw API response</summary>
