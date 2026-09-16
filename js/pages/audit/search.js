@@ -824,6 +824,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     SkillGroup:            id => `/api/v2/routing/skillgroups/${id}`,
     // Routing
     Queue:                 id => `/api/v2/routing/queues/${id}`,
+    AssistantQueue:        id => `/api/v2/routing/queues/${id}`,   // Agent Copilot binding; entity id is the queue
     Skill:                 id => `/api/v2/routing/skills/${id}`,
     RoutingSkill:          id => `/api/v2/routing/skills/${id}`,
     Language:              id => `/api/v2/routing/languages/${id}`,
@@ -961,6 +962,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   ];
 
   const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const GUID_G  = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
   /** Type a property's GUID values point at, or null when nothing in the name says. */
   function hintedType(property) {
@@ -979,8 +981,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     for (const p of (entry.propertyChanges || [])) {
       const type = hintedType(p.property);
       if (!type) continue;
-      for (const v of [].concat(p.oldValues ?? [], p.newValues ?? []))
-        if (GUID_RE.test(String(v))) refs.push({ type, id: String(v) });
+      // GUIDs may sit in the property name itself ("QueueMember/<queue>:<user>:joined")
+      // or anywhere inside a value, not only as the whole value.
+      const texts = [String(p.property ?? ""), ...[].concat(p.oldValues ?? [], p.newValues ?? []).map(String)];
+      for (const t of texts) for (const g of t.match(GUID_G) || []) refs.push({ type, id: g });
     }
     for (const { k, v } of contextPairs(entry)) {
       const type = hintedType(k);
@@ -1096,6 +1100,14 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   }
 
   async function resolveEntities() {
+    // An audit that names its own entity names that id for every other audit
+    // too — AssistantQueue rows carry the queue's id without its name, while
+    // the Queue rows beside them carry both.
+    for (const entry of allResults) {
+      const id = entry.entity?.id;
+      const name = realEntityName(entry);
+      if (id && name && !grantParts(entry) && !(id in nameCache)) nameCache[id] = name;
+    }
     const items = [];
     const members = [];
     for (const entry of allResults) {
@@ -1322,8 +1334,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
   /** A value as displayed: its resolved name when it is a known GUID, else itself. */
   function displayValue(v) {
-    const str = String(v ?? "");
-    return (GUID_RE.test(str) && nameCache[str]) ? nameCache[str] : str;
+    return String(v ?? "").replace(GUID_G, g => nameCache[g] || g);
   }
 
   /** Comma-joined values with GUIDs resolved. */
@@ -1532,7 +1543,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     if (propChanges.length) {
       const rows = propChanges.map(p => `
           <tr>
-            <td class="aq-diff-prop">${escapeHtml(String(p.property ?? ""))}</td>
+            <td class="aq-diff-prop" title="${escapeHtml(String(p.property ?? ""))}">${escapeHtml(displayValue(p.property))}</td>
             <td class="aq-diff-old" title="${escapeHtml([].concat(p.oldValues ?? []).join(", "))}">${escapeHtml(joinValues(p.oldValues))}</td>
             <td class="aq-diff-new" title="${escapeHtml([].concat(p.newValues ?? []).join(", "))}">${escapeHtml(joinValues(p.newValues))}</td>
           </tr>`).join("");
@@ -1680,7 +1691,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
 
       const changes = [
         ...(entry.propertyChanges || []).map(p => ({
-          property: String(p.property ?? ""),
+          property: displayValue(p.property),
           oldValue: joinValues(p.oldValues),
           newValue: joinValues(p.newValues),
         })),

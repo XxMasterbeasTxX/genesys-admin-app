@@ -172,6 +172,12 @@ every page is read.
 - [ ] **6.8** — Expand an audit whose old/new values are GUIDs (a queue's members, a user's division or skills, a flow's division)
   - Expect: the GUIDs turn into names a moment after the row opens (hover shows the raw GUID); a deleted object reads "(deleted) <guid>"
   - Notes: `______________________`
+- [ ] **6.8a** — Expand a ContactCenter › Queue **MemberUpdate** row
+  - Expect: the property "QueueMember/<queueId>:<userId>:joined" reads "QueueMember/<queue name>:<user name>:joined" — GUIDs inside a property name resolve too, not only whole values
+  - Notes: `______________________`
+- [ ] **6.8b** — In an object search for a queue, find an Assistants › AssistantQueue row
+  - Expect: Entity Name is the queue's name — taken from the Queue rows in the same results, which name it, without a lookup
+  - Notes: `______________________`
 - [ ] **6.9** — Expand an audit whose property name gives no hint of what its GUID values are
   - Expect: the GUIDs stay as they are — no lookup is guessed
   - Notes: `______________________`
