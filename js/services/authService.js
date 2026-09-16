@@ -340,7 +340,7 @@ function renderPopupStatus(text) {
     const host = document.body || document.documentElement;
     host.textContent = "";
     const box = document.createElement("div");
-    box.style.cssText = "font:14px/1.5 system-ui,-apple-system,sans-serif;padding:2rem;color:#333";
+    box.style.cssText = "font:14px/1.5 system-ui,-apple-system,sans-serif;padding:2rem;color:var(--text)";
     box.textContent = text;
     host.appendChild(box);
   } catch (_) { /* DOM not ready — ignore */ }

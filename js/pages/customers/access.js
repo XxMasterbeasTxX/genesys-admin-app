@@ -35,13 +35,13 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
       .ca-add { position:relative; max-width:520px; margin-bottom:18px; }
       .ca-add-row { display:flex; gap:8px; align-items:center; }
       .ca-input { flex:1; padding:8px 12px; background:var(--panel); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; }
-      .ca-input:focus { border-color:#3b82f6; outline:none; }
+      .ca-input:focus { border-color:var(--accent-strong); outline:none; }
       .ca-input::placeholder { color:var(--muted); }
-      .ca-dropdown { position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:200; background:var(--panel); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.4); max-height:260px; overflow-y:auto; display:none; }
+      .ca-dropdown { position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:200; background:var(--panel); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px color-mix(in srgb, var(--backdrop) 40%, transparent); max-height:260px; overflow-y:auto; display:none; }
       .ca-dropdown.open { display:block; }
       .ca-option { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--border); margin:0; }
       .ca-option:last-child { border-bottom:none; }
-      .ca-option:hover { background:rgba(59,130,246,.15); }
+      .ca-option:hover { background:color-mix(in srgb, var(--accent-strong) 15%, transparent); }
       .ca-option.is-added { cursor:default; opacity:.6; }
       .ca-option.is-added:hover { background:transparent; }
       .ca-option input[type=checkbox] { margin:0; flex:none; }
@@ -51,9 +51,9 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
       .ca-option-tag { font-size:11px; color:var(--muted); white-space:nowrap; }
       .ca-selected { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
       .ca-selected:empty { display:none; }
-      .ca-chip { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; background:rgba(30,58,95,.8); border:1px solid #3b82f6; border-radius:8px; font-size:12px; color:#93c5fd; }
+      .ca-chip { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; background:color-mix(in srgb, var(--accent-strong) 30%, var(--panel)); border:1px solid var(--accent-strong); border-radius:8px; font-size:12px; color:var(--accent-quiet); }
       .ca-chip-x { cursor:pointer; color:var(--muted); font-size:14px; line-height:1; }
-      .ca-chip-x:hover { color:#f87171; }
+      .ca-chip-x:hover { color:var(--danger); }
       .ca-hint { color:var(--muted); font-style:italic; padding:10px 12px; cursor:default; font-size:13px; }
       .ca-table td.ca-actions { text-align:right; white-space:nowrap; }
       .ca-muted { color:var(--muted); }

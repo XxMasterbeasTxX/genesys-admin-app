@@ -105,7 +105,7 @@ export default function renderTemplateSchedules({ route, me, api, orgContext }) 
           <td><span class="ts-mode ts-mode--${s.mode}">${escapeHtml(s.mode)}</span></td>
           <td>${escapeHtml(describeSchedule(s))}</td>
           <td>${s.enabled
-            ? `<span style="color:var(--success, #22c55e)">✓ Enabled</span>`
+            ? `<span style="color:var(--ok-strong)">✓ Enabled</span>`
             : `<span class="muted">✗ Disabled</span>`}</td>
           <td>${s.lastRun ? new Date(s.lastRun).toLocaleString() : "—"}</td>
           <td class="${statusClass}">${escapeHtml(s.lastStatus || "—")}</td>

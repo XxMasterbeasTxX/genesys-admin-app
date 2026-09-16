@@ -433,13 +433,13 @@ export default function renderChangeSite({ route, me, api, orgContext }) {
     const preview = phonesToMove.slice(0, 12);
 
     const overlay = document.createElement("div");
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 60%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
     overlay.innerHTML = `
       <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:22px;min-width:420px;max-width:620px;width:92%">
         <h3 style="margin:0 0 12px;font-size:1.05rem">
           Move ${phonesToMove.length} phone${phonesToMove.length === 1 ? "" : "s"} to “${escapeHtml(toSite.name)}”?
         </h3>
-        <p style="margin:0 0 10px;font-size:.85rem;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:6px;padding:8px 11px">
+        <p style="margin:0 0 10px;font-size:.85rem;background:color-mix(in srgb, var(--warn) 8%, transparent);border:1px solid color-mix(in srgb, var(--warn) 30%, transparent);border-radius:6px;padding:8px 11px">
           Each phone re-registers against the new site. Anyone on a call through
           one of these phones can be disconnected. The move is reversible by
           moving them back.

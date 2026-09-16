@@ -41,14 +41,14 @@ export default function renderBillingOverageAlerts({ me, api, orgContext }) {
       .oa-items { display:flex; flex-direction:column; gap:6px; margin:6px 0 14px; }
       .oa-item { display:flex; align-items:center; gap:10px; font-size:13px; }
       .oa-item input[type=checkbox] { margin:0; }
-      .oa-item .oa-over { font-size:11px; color:#fbbf24; }
+      .oa-item .oa-over { font-size:11px; color:var(--warn); }
       .oa-item .oa-thr { display:inline-flex; align-items:center; gap:6px; margin-left:6px; color:var(--muted); }
-      .oa-item .oa-thr input { width:64px; padding:3px 6px; background:var(--panel-2,rgba(255,255,255,.04)); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; }
+      .oa-item .oa-thr input { width:64px; padding:3px 6px; background:var(--panel-2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; }
       .oa-row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
       .oa-field { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
       .oa-field[hidden], .oa-card[hidden] { display:none; }
       .oa-toolbar { margin-bottom:14px; }
-      .oa-field select, .oa-field input[type=text] { padding:6px 10px; background:var(--panel-2,rgba(255,255,255,.04)); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; }
+      .oa-field select, .oa-field input[type=text] { padding:6px 10px; background:var(--panel-2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; }
       .oa-field input[type=text] { min-width:320px; }
       .oa-mode { display:flex; flex-direction:column; gap:6px; font-size:13px; margin-bottom:12px; }
       .oa-mode label { display:flex; gap:8px; align-items:flex-start; }

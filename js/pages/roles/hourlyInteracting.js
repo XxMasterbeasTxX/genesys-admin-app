@@ -194,23 +194,23 @@ export function renderHourlyContent(container, { me, api, orgContext }) {
       .hi-pill { padding:6px 18px; border-radius:20px; border:1px solid var(--border); background:transparent;
                  color:var(--muted); cursor:pointer; font:inherit; font-size:13px; font-weight:600;
                  transition:background .12s, color .12s, border-color .12s; user-select:none; }
-      .hi-pill:hover:not(.active) { border-color:#6b7280; color:var(--text); }
-      .hi-pill.active { background:rgba(59,130,246,.22); border-color:#3b82f6; color:#60a5fa; }
+      .hi-pill:hover:not(.active) { border-color:var(--muted); color:var(--text); }
+      .hi-pill.active { background:color-mix(in srgb, var(--accent-strong) 22%, transparent); border-color:var(--accent-strong); color:var(--accent); }
       .hi-pill .hi-pill-count { margin-left:6px; font-size:11px; opacity:.7; }
       /* ── Forbidden-role badge ── */
       .hi-badge--forbidden { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;
-                             white-space:nowrap; background:rgba(239,68,68,.15); color:#fca5a5; border:1px solid #ef4444; margin:1px 2px; }
+                             white-space:nowrap; background:color-mix(in srgb, var(--danger-strong) 15%, transparent); color:var(--danger-quiet); border:1px solid var(--danger-strong); margin:1px 2px; }
       .hi-badge--none { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;
-                        white-space:nowrap; background:rgba(22,163,74,.12); color:#86efac; border:1px solid #16a34a; }
+                        white-space:nowrap; background:color-mix(in srgb, var(--ok-strong) 12%, transparent); color:var(--ok-quiet); border:1px solid var(--ok-strong); }
       /* ── Category colour ── */
-      .hi-cat-hourly { color:#86efac; font-weight:600; }
-      .hi-cat-fullcx { color:#fbbf24; font-weight:600; }
+      .hi-cat-hourly { color:var(--ok-quiet); font-weight:600; }
+      .hi-cat-fullcx { color:var(--warn); font-weight:600; }
     </style>
 
     <p style="font-size:13px;color:var(--muted);margin-bottom:18px">
       Find all users with the <strong>billing:user:hourlyInteracting</strong> permission and classify them
-      as <span style="color:#86efac;font-weight:600">Hourly</span> (no disqualifying permissions) or
-      <span style="color:#fbbf24;font-weight:600">Full CX</span> (has disqualifying permissions).
+      as <span style="color:var(--ok-quiet);font-weight:600">Hourly</span> (no disqualifying permissions) or
+      <span style="color:var(--warn);font-weight:600">Full CX</span> (has disqualifying permissions).
     </p>
 
     <div style="margin-bottom:18px">

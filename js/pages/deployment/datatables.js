@@ -60,10 +60,10 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
 
   function addResult(sheetName, ok, detail) {
     const li = document.createElement("li");
-    li.style.cssText = "padding:4px 0;border-bottom:1px solid var(--border,#334)";
+    li.style.cssText = "padding:4px 0;border-bottom:1px solid var(--border)";
     li.innerHTML = ok
-      ? `<span style="color:#4ade80">✓</span> <strong>${escapeHtml(sheetName)}</strong>`
-      : `<span style="color:#f87171">✗</span> <strong>${escapeHtml(sheetName)}</strong> — ${escapeHtml(detail)}`;
+      ? `<span style="color:var(--ok)">✓</span> <strong>${escapeHtml(sheetName)}</strong>`
+      : `<span style="color:var(--danger)">✗</span> <strong>${escapeHtml(sheetName)}</strong> — ${escapeHtml(detail)}`;
     $results.appendChild(li);
   }
 
@@ -241,7 +241,7 @@ export default function renderDeploymentDataTables({ route, me, api, orgContext 
     }).join("");
 
     const overlay = document.createElement("div");
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 60%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
 
     overlay.innerHTML = `
       <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:340px;max-width:640px;width:90%">

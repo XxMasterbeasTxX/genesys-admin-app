@@ -41,9 +41,12 @@ function setHeader({ authText }) {
  */
 function printSecurityNotice() {
   try {
+    // The console cannot resolve var(), so the two colours are read from the
+    // live token sheet here — still the one place, resolved a moment later.
+    const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     console.log(
       "%cStop!",
-      "color:#c00;font-size:32px;font-weight:bold;",
+      `color:${token("--danger")};font-size:32px;font-weight:bold;`,
     );
     console.log(
       "%cThis is a browser feature intended for developers. If someone told you to " +
@@ -53,7 +56,7 @@ function printSecurityNotice() {
     );
     console.log(
       "%c© 2026 TDC Erhverv. Proprietary and confidential — unauthorized copying or reuse is prohibited.",
-      "color:#666;font-size:12px;",
+      `color:${token("--muted")};font-size:12px;`,
     );
   } catch (_) { /* console not available — ignore */ }
 }

@@ -223,7 +223,7 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
       .wd-sect { border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden; }
       .wd-sect-head { padding:9px 12px;background:var(--panel);border-bottom:1px solid var(--border);
                       font-size:.95rem;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
-      .wd-sect--locked .wd-sect-head { background:rgba(251,191,36,.07); }
+      .wd-sect--locked .wd-sect-head { background:color-mix(in srgb, var(--warn) 7%, transparent); }
       .wd-sect-blurb { padding:7px 12px;color:var(--muted);font-size:.8rem;border-bottom:1px solid var(--border);line-height:1.5; }
       .wd-sect-body { max-height:360px;overflow:auto; }
       .wd-tbl { width:100%;border-collapse:collapse;font-size:.85rem; }
@@ -234,17 +234,17 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
       .wd-muted { color:var(--muted);font-size:.79rem; }
       .wd-badge { display:inline-block;font-size:.72rem;padding:1px 7px;border-radius:999px;
                   border:1px solid var(--border);color:var(--muted); }
-      .wd-warn { color:#fbbf24; }
-      .wd-bad { color:#f87171; }
-      .wd-good { color:#34d399; }
-      .wd-find { background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.28);
+      .wd-warn { color:var(--warn); }
+      .wd-bad { color:var(--danger); }
+      .wd-good { color:var(--ok); }
+      .wd-find { background:color-mix(in srgb, var(--accent) 7%, transparent);border:1px solid color-mix(in srgb, var(--accent) 28%, transparent);
                  border-radius:8px;padding:11px 13px;margin:12px 0;font-size:.84rem; }
       .wd-find ul { margin:6px 0 0;padding-left:18px;line-height:1.6; }
-      .wd-caveat { background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.35);
+      .wd-caveat { background:color-mix(in srgb, var(--danger) 8%, transparent);border:1px solid color-mix(in srgb, var(--danger) 35%, transparent);
                    border-radius:8px;padding:11px 13px;margin:0 0 12px;font-size:.83rem; }
       /* Destructive action — deliberately not the same colour as Analyse. */
-      .wd-danger { background:#b91c1c;border-color:#b91c1c;color:#fff; }
-      .wd-danger:hover:not(:disabled) { background:#dc2626;border-color:#dc2626; }
+      .wd-danger { background:color-mix(in srgb, var(--danger-strong), var(--backdrop) 25%);border-color:color-mix(in srgb, var(--danger-strong), var(--backdrop) 25%);color:var(--text-inverse); }
+      .wd-danger:hover:not(:disabled) { background:var(--danger-strong);border-color:var(--danger-strong); }
     </style>
 
     <h1 class="h1">Phones — WebRTC — Delete</h1>
@@ -620,7 +620,7 @@ export default function renderWebRtcDelete({ route, me, api, orgContext }) {
     const inactive = rows.filter((r) => r.category === "INACTIVE_USER").length;
 
     const overlay = document.createElement("div");
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 60%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
     overlay.innerHTML = `
       <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:22px;min-width:420px;max-width:640px;width:92%">
         <h3 style="margin:0 0 12px;font-size:1.05rem">

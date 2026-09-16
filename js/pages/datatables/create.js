@@ -71,11 +71,11 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
       <!-- Core fields -->
       <div class="dt-controls">
         <div class="dt-control-group">
-          <label class="dt-label" for="dtcName">Name <span style="color:#f87171">*</span></label>
+          <label class="dt-label" for="dtcName">Name <span style="color:var(--danger)">*</span></label>
           <input class="dt-input" id="dtcName" type="text" placeholder="e.g. AgentSkillMatrix" autocomplete="off" />
         </div>
         <div class="dt-control-group">
-          <label class="dt-label" for="dtcDivision" id="dtcDivisionLabel">Division <span style="color:#f87171">*</span></label>
+          <label class="dt-label" for="dtcDivision" id="dtcDivisionLabel">Division <span style="color:var(--danger)">*</span></label>
           <select class="dt-select" id="dtcDivision">
             <option value="">Loading divisions…</option>
           </select>
@@ -85,7 +85,7 @@ export default function renderCreateDataTable({ route, me, api, orgContext }) {
           <input class="dt-input" id="dtcDescription" type="text" placeholder="Optional description" autocomplete="off" />
         </div>
         <div class="dt-control-group">
-          <label class="dt-label" for="dtcKey">Key <span style="color:#f87171">*</span></label>
+          <label class="dt-label" for="dtcKey">Key <span style="color:var(--danger)">*</span></label>
           <input class="dt-input" id="dtcKey" type="text" placeholder="e.g. userId" autocomplete="off" />
           <span class="dt-field-hint">Display name of the primary key column (e.g. "userId"). Always stored as string.</span>
         </div>

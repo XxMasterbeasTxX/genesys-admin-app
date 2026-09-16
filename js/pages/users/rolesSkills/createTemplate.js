@@ -881,7 +881,7 @@ export default function renderCreateTemplate({ route, me, api, orgContext, acces
           }),
         );
       } catch (err) {
-        $userResults.innerHTML = `<p class="muted" style="font-size:12px;color:#c33">Search failed</p>`;
+        $userResults.innerHTML = `<p class="muted" style="font-size:12px;color:var(--danger)">Search failed</p>`;
       } finally {
         $userBtn.disabled = false;
         $userBtn.textContent = "Search";

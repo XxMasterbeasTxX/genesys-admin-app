@@ -65,7 +65,7 @@ export default function renderBillingCustomOrgsExport({ me, api }) {
       </select>
     </div>
 
-    <div class="te-org-picker" style="border:1px solid var(--border, #ddd);border-radius:6px;padding:12px;margin-bottom:10px;max-height:300px;overflow:auto">
+    <div class="te-org-picker" style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px;max-height:300px;overflow:auto">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <strong>Organizations</strong>
         <span id="bcoSelCount" class="em-hint">(0 selected)</span>

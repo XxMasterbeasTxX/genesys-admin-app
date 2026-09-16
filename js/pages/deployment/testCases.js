@@ -36,10 +36,9 @@ import {
   manualChecks,
 } from "../../lib/flowTestCases.js";
 
-// Colours come from the app's theme variables, never hardcoded. styles.css is
-// dark by default with a light override on prefers-color-scheme, so a page that
-// hardcodes dark hex values renders dark-on-dark for anyone in light mode — the
-// flow picker's names were invisible until this was fixed.
+// Colours come from the app's tokens, never hardcoded — a page that hardcodes
+// dark hex values renders dark-on-dark for anyone in light mode; the flow
+// picker's names were invisible until this was fixed.
 const MUTED = "var(--muted)";
 const BORDER = "var(--border)";
 
@@ -63,17 +62,12 @@ export default function renderTestCases({ route, me, api, orgContext }) {
 
   el.innerHTML = `
     <style>
-      /* Dark is the app's default; the light values override it, matching how
-         css/styles.css is organised. Everything else uses --text/--muted/--border
-         so both themes are handled without a second set of rules. */
-      .tc-page { --tc-high:#4ade80; --tc-med:#fbbf24; --tc-low:var(--muted); --tc-hover:rgba(255,255,255,.07); }
-      @media (prefers-color-scheme: light) {
-        .tc-page { --tc-high:#15803d; --tc-med:#b45309; --tc-hover:rgba(0,0,0,.05); }
-      }
+      /* The page's own names for the shared tokens; both themes come with them. */
+      .tc-page { --tc-high:var(--ok); --tc-med:var(--warn); --tc-low:var(--muted); --tc-hover:color-mix(in srgb, var(--lift) 7%, transparent); }
 
       .tc-wip { display:inline-block; margin-left:10px; padding:2px 9px; border-radius:999px;
                 font-size:11.5px; font-weight:600; letter-spacing:.02em; vertical-align:middle;
-                color:var(--tc-med); border:1px solid var(--tc-med); background:rgba(251,191,36,.10); }
+                color:var(--tc-med); border:1px solid var(--tc-med); background:color-mix(in srgb, var(--warn) 10%, transparent); }
       .tc-flow-combo { position:relative; }
       .tc-flow-menu { position:absolute; z-index:40; top:100%; left:0; right:0; margin-top:2px; max-height:300px;
                       overflow-y:auto; overflow-x:hidden; background:var(--panel); color:var(--text);
@@ -86,13 +80,13 @@ export default function renderTestCases({ route, me, api, orgContext }) {
       .tc-flow-item .tc-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .tc-flow-item .tc-meta { color:var(--muted); font-size:11px; flex:none; white-space:nowrap; }
       .tc-mode { display:flex; gap:6px; }
-      .tc-mode .btn.is-active { background:rgba(240,180,41,.18); border-color:rgba(240,180,41,.5); color:var(--tc-med); }
+      .tc-mode .btn.is-active { background:color-mix(in srgb, var(--warn-strong) 18%, transparent); border-color:color-mix(in srgb, var(--warn-strong) 50%, transparent); color:var(--tc-med); }
       .tc-summary { display:flex; gap:18px; flex-wrap:wrap; margin:14px 0 6px; font-size:12.5px; }
       .tc-stat { border:1px solid var(--border); border-radius:8px; padding:8px 12px; min-width:110px; }
       .tc-stat b { display:block; font-size:19px; font-weight:600; margin-bottom:2px; }
       .tc-stat span { color:var(--muted); font-size:11px; }
       .tc-findings { margin:10px 0; padding:9px 12px; border-radius:8px; font-size:12.5px; line-height:1.55;
-                     border:1px solid rgba(251,191,36,.45); background:rgba(251,191,36,.10); }
+                     border:1px solid color-mix(in srgb, var(--warn) 45%, transparent); background:color-mix(in srgb, var(--warn) 10%, transparent); }
       .tc-findings ul { margin:4px 0 0; padding-left:18px; }
       .tc-flowsec { margin-top:16px; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
       .tc-flowhead { padding:8px 12px; background:var(--panel-2); border-bottom:1px solid var(--border);

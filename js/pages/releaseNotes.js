@@ -76,7 +76,7 @@ export function renderReleaseNotesPage(isInternal = false) {
       <div class="release-notes__entry-head">
         ${versionLabel ? `<span class="release-notes__version">v${escapeHtml(versionLabel)}</span>` : ""}
         ${i === 0 ? `<span class="release-notes__badge">Latest</span>` : ""}
-        ${isInternal && entry.internalOnly ? `<span class="release-notes__badge" style="background:#7c3aed">Internal only</span>` : ""}
+        ${isInternal && entry.internalOnly ? `<span class="release-notes__badge" style="background:var(--tag-purple)">Internal only</span>` : ""}
         ${entry.date ? `<span class="release-notes__date">${escapeHtml(entry.date)}</span>` : ""}
       </div>
       ${title ? `<h2 class="release-notes__title">${escapeHtml(title)}</h2>` : ""}

@@ -260,13 +260,13 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
       .wc-muted { color:var(--muted);font-size:.79rem; }
       .wc-badge { display:inline-block;font-size:.72rem;padding:1px 7px;border-radius:999px;
                   border:1px solid var(--border);color:var(--muted);margin-left:6px; }
-      .wc-warn { color:#fbbf24; }
-      .wc-bad { color:#f87171; }
-      .wc-good { color:#34d399; }
-      .wc-find { background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.28);
+      .wc-warn { color:var(--warn); }
+      .wc-bad { color:var(--danger); }
+      .wc-good { color:var(--ok); }
+      .wc-find { background:color-mix(in srgb, var(--accent) 7%, transparent);border:1px solid color-mix(in srgb, var(--accent) 28%, transparent);
                  border-radius:8px;padding:11px 13px;margin:12px 0;font-size:.84rem; }
       .wc-find ul { margin:6px 0 0;padding-left:18px;line-height:1.6; }
-      .wc-caveat { background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);
+      .wc-caveat { background:color-mix(in srgb, var(--warn) 8%, transparent);border:1px solid color-mix(in srgb, var(--warn) 30%, transparent);
                    border-radius:6px;padding:8px 11px;margin:0;font-size:.82rem; }
       .wc-details summary { cursor:pointer;padding:9px 12px;background:var(--panel);font-size:.9rem;font-weight:600; }
     </style>
@@ -770,7 +770,7 @@ export default function renderWebRtcCreate({ route, me, api, orgContext }) {
     const preview = rows.slice(0, 12);
 
     const overlay = document.createElement("div");
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 60%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
     overlay.innerHTML = `
       <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:22px;min-width:420px;max-width:620px;width:92%">
         <h3 style="margin:0 0 12px;font-size:1.05rem">

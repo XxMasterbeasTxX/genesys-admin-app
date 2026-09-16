@@ -87,7 +87,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext, 
   function showConfirmModal({ title, bodyHTML, confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false }) {
     return new Promise((resolve) => {
       const overlay = document.createElement("div");
-      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center";
+      overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 45%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
       const confirmClass = danger ? "btn btn--danger" : "btn";
       overlay.innerHTML = `
         <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:340px;max-width:640px;width:90%;box-shadow:var(--shadow);color:var(--text)">
@@ -787,7 +787,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext, 
     const confirmed = await showConfirmModal({
       title: "Remove Groups from Template",
       bodyHTML: `
-        <p style="color:#f59e0b;font-weight:600">⚠ This will remove all template properties from members of ${toRemove.length} group${toRemove.length > 1 ? "s" : ""}.</p>
+        <p style="color:var(--warn-strong);font-weight:600">⚠ This will remove all template properties from members of ${toRemove.length} group${toRemove.length > 1 ? "s" : ""}.</p>
         <p style="margin-top:8px"><strong>Groups:</strong> ${toRemove.map((a) => escapeHtml(a.groupName || a.groupId)).join(", ")}</p>`,
       confirmLabel: "Remove",
       danger: true,
@@ -854,7 +854,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext, 
     const confirmed = await showConfirmModal({
       title: "Remove Work Teams from Template",
       bodyHTML: `
-        <p style="color:#f59e0b;font-weight:600">⚠ This will remove all template properties from members of ${toRemove.length} work team${toRemove.length > 1 ? "s" : ""}.</p>
+        <p style="color:var(--warn-strong);font-weight:600">⚠ This will remove all template properties from members of ${toRemove.length} work team${toRemove.length > 1 ? "s" : ""}.</p>
         <p style="margin-top:8px"><strong>Work Teams:</strong> ${toRemove.map((a) => escapeHtml(a.workteamName || a.workteamId)).join(", ")}</p>`,
       confirmLabel: "Remove",
       danger: true,
@@ -1093,7 +1093,7 @@ export default function renderAddUsersToTemplates({ route, me, api, orgContext, 
 
     const confirmed = await showConfirmModal({
       title: "Confirm Removal",
-      bodyHTML: `<p style="color:#f59e0b;font-weight:600">⚠ This will remove all template properties from these users.</p>
+      bodyHTML: `<p style="color:var(--warn-strong);font-weight:600">⚠ This will remove all template properties from these users.</p>
         <table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-top:10px">${rows.join("")}</table>`,
       confirmLabel: "Remove",
       danger: true,

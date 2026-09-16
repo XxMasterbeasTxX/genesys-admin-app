@@ -2,8 +2,8 @@
 /**
  * check-colours — every colour in the app must come from css/tokens.css.
  *
- * Scans the stylesheet, the page and component modules, and the two HTML
- * files for colour literals — hex, rgb()/rgba(), hsl()/hsla(), and CSS named
+ * Scans the stylesheet, every app module under js/ (vendor bundles excluded
+ * by name), and the two HTML files for colour literals — hex, rgb()/rgba(), hsl()/hsla(), and CSS named
  * colours in a declaration — and reports every one found outside tokens.css.
  *
  *   node scripts/check-colours.mjs            report; always exits 0
@@ -30,8 +30,16 @@ const PER_FILE = ALL ? Infinity : 6;
 // ── What is scanned ─────────────────────────────────────────────────────────
 
 const TOKENS = "css/tokens.css";                   // the one place; never flagged
-const SKIP_DIRS = new Set(["js/lib", "node_modules", ".git", "api", "docs",
+const SKIP_DIRS = new Set(["node_modules", ".git", "api", "docs",
                            "timer-functions", "timer-functions-check", "onboarding-runner"]);
+// js/lib mixes vendor bundles with our own modules (flowModel.js and friends
+// are app code). Skip by name, not by directory, so ours are still scanned.
+const VENDOR = /\.(min|bundled|bundle)\.js$/;
+// Document palettes: the colours of an exported Excel workbook are the look of
+// the document, not the app's theme, and deliberately do not follow it. They
+// are to be consolidated into one file of their own — see
+// docs/colour-tokens-design.md §12 — but they are not this file's business.
+const DOCUMENT_PALETTES = new Set(["js/utils/excelStyles.js", "js/utils/billingExcelStyles.js"]);
 const ROOTS = ["css", "js", "index.html", "download.html"];
 const EXT = new Set([".css", ".js", ".mjs", ".html"]);
 
@@ -44,7 +52,7 @@ function* walk(rel) {
     if (SKIP_DIRS.has(child)) continue;
     const st = statSync(join(ROOT, child));
     if (st.isDirectory()) yield* walk(child);
-    else if (EXT.has(child.slice(child.lastIndexOf(".")))) yield child;
+    else if (EXT.has(child.slice(child.lastIndexOf("."))) && !VENDOR.test(child)) yield child;
   }
 }
 
@@ -91,7 +99,7 @@ let total = 0;
 
 for (const root of ROOTS) {
   for (const file of walk(root)) {
-    if (file === TOKENS) continue;
+    if (file === TOKENS || DOCUMENT_PALETTES.has(file)) continue;
     const src = stripBlockComments(readFileSync(join(ROOT, file), "utf8"));
     const lines = src.split("\n");
     const hits = [];

@@ -1,6 +1,6 @@
 # Colour Tokens — Design
 
-Status: **In development** — steps 1–3 of §11 done
+Status: **In development** — steps 1–4 of §11 done
 Author: Genesys Admin App
 Last updated: 2026-09-16
 
@@ -402,15 +402,32 @@ what "one place" turns into without it. Every one was reasonable at the time.
 | 1 | `tokens.css` with today's values; head script; load order | 3 files | **done** |
 | 2 | `check-colours.mjs`, reporting only (prints the count, does not fail) | 1 file | **done** |
 | 3 | Sweep `styles.css` by family; delete the 24 light blocks | 1 file, 882 values | **done** |
-| 4 | Sweep the 13 page style blocks and 51 inline attributes | 13 files, ~570 values | |
+| 4 | Sweep the page style blocks, inline attributes and JS strings | 32 files, 397 values | **done** |
 | 5 | Canvas palettes → scoped tokens + runtime reader; `flowModel` kinds | 4 files | |
 | 6 | `download.html` | 1 file, 6 values | |
 | 7 | Check switches to failing; added to the SWA workflow | 2 files | |
 
 Step 2 before step 3 on purpose: the count is the progress bar for the work,
 and the check is how the last few hidden ones are found. It started at
-**1,383**; step 3 took it to **501**, all of it now in JavaScript and
-`download.html`.
+**1,383**; step 3 took it to **501**. Widening the check to the app modules in
+`js/lib/` (it had been skipping the whole directory, vendor bundles and ours
+alike) found 17 more in `flowModel.js`, for an honest **518**. Step 4 took it
+to **121**: the three diagram files and `download.html`, nothing else.
+
+**How step 4 was verified.** All 95 page modules mounted; every page style
+block's 577 rules were applied to a live element under the old token set and
+the new — both scoped side by side in one document, since toggling a `<link>`
+makes Chrome re-fetch it and briefly read as no tokens at all — and 4,039
+computed properties compared. Twenty-five distinct changes, every one an
+approved merge or a derived value chosen on purpose: filled buttons whose
+hover was a hand-picked darker shade now derive it (`color-mix` of the token
+toward `--backdrop`), the two destructive-action buttons likewise, and the
+`createEditMapping` toggle, which was painted light-on-dark with its own greys,
+now uses `--muted`, `--backdrop` and `--text-inverse`. `app.js` styles the
+security notice printed to the *devtools console*, where `var()` cannot
+resolve; it now reads `--danger` and `--muted` from the live token sheet at
+call time — still the one place, resolved a moment later. The two Excel
+palette files are excluded from the check by name, with the reason.
 
 **How step 3 was verified.** Every one of the stylesheet's 1,379 rules was
 applied to a live element under the old stylesheet and again under the new,

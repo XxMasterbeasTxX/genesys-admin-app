@@ -46,11 +46,11 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         transition: background .12s, color .12s;
       }
       .dte-mode-btn.active {
-        background: rgba(59,130,246,.22);
-        color: #60a5fa;
+        background: color-mix(in srgb, var(--accent-strong) 22%, transparent);
+        color: var(--accent);
       }
       .dte-mode-btn:not(.active):hover {
-        background: rgba(255,255,255,.05);
+        background: color-mix(in srgb, var(--lift) 5%, transparent);
         color: var(--text);
       }
 
@@ -108,7 +108,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         box-sizing: border-box;
       }
       .dte-row-grid tr.dte-row-dirty {
-        background: rgba(59,130,246,.08);
+        background: color-mix(in srgb, var(--accent-strong) 8%, transparent);
       }
       .dte-row-status {
         font-size: 11px;
@@ -240,11 +240,11 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       <div id="dteSchemaMode">
         <div class="dt-controls">
           <div class="dt-control-group">
-            <label class="dt-label" for="dteName">Name <span style="color:#f87171">*</span></label>
+            <label class="dt-label" for="dteName">Name <span style="color:var(--danger)">*</span></label>
             <input class="dt-input" id="dteName" type="text" placeholder="e.g. AgentSkillMatrix" autocomplete="off" />
           </div>
           <div class="dt-control-group">
-            <label class="dt-label" for="dteDivision" id="dteDivisionLabel">Division <span style="color:#f87171">*</span></label>
+            <label class="dt-label" for="dteDivision" id="dteDivisionLabel">Division <span style="color:var(--danger)">*</span></label>
             <select class="dt-select" id="dteDivision">
               <option value="">Loading divisions…</option>
             </select>
@@ -1146,7 +1146,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     );
 
     const overlay = document.createElement("div");
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 60%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
     overlay.innerHTML = `
       <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:320px;max-width:440px;width:90%">
         <h3 style="margin:0 0 8px;font-size:1.1rem">Copy Row</h3>

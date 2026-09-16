@@ -307,7 +307,7 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
       <button class="btn btn-secondary" id="bpcReloadBtn" type="button" disabled>Reload periods</button>
     </div>
 
-    <div id="bpcPeriodsBox" style="display:none;border:1px solid var(--border, #ddd);border-radius:6px;padding:12px;margin-bottom:10px">
+    <div id="bpcPeriodsBox" style="display:none;border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px">
       <div style="margin-bottom:8px">
         <strong>Periods</strong>
         <span class="em-hint">— select ${MIN_PERIODS}–${MAX_PERIODS} (oldest → newest order on the sheet)</span>
@@ -396,7 +396,7 @@ export default function renderBillingPeriodComparisonExport({ me, api }) {
     }
     $list.innerHTML = periods.map((p) => {
       const label = p.error
-        ? `<span style="color:#999">${escapeHtml(p.label)} (unavailable)</span>`
+        ? `<span style="color:var(--muted)">${escapeHtml(p.label)} (unavailable)</span>`
         : escapeHtml(p.label);
       const disabled = p.error ? "disabled" : "";
       return `<label style="display:flex;align-items:center;gap:8px;padding:4px 0">
