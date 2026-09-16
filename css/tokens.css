@@ -1,0 +1,109 @@
+@charset "UTF-8";
+/* ══════════════════════════════════════════════════════════════════════
+   Genesys Admin Tool — Colour tokens
+
+   Every colour in the app comes from this file. Nothing else in the app
+   holds a colour literal: not styles.css, not a page's <style> block, not an
+   inline style. scripts/check-colours.mjs enforces that.
+
+   Two blocks: dark (the default) and light. Which one applies is decided by
+   the data-theme attribute on <html>, set by the inline script in
+   index.html from the OS preference — never by a media query in CSS. A
+   manual theme switch later only has to set that attribute.
+
+   To recolour a mode: edit its block. See docs/colour-tokens-design.md.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Dark — the default ────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+
+  /* neutrals */
+  --bg:              #0b0f14;
+  --panel:           #111824;
+  --panel-2:         #0f1621;
+  --text:            #e7eef7;
+  --muted:           #93a4b8;
+  --text-inverse:    #ffffff;                 /* text on a filled accent */
+  --border:          rgba(255,255,255,0.08);
+  --surface-hover:   rgba(255,255,255,0.06);  /* "slightly lighter than the panel" */
+  --surface-raised:  rgba(255,255,255,0.10);
+  --backdrop:        rgba(0,0,0,0.55);
+  --shadow:          0 10px 30px rgba(0,0,0,0.35);
+
+  /* accent (blue) */
+  --accent:          #60a5fa;                 /* interactive text, icons, links */
+  --accent-strong:   #3b82f6;                 /* filled buttons, bars, active state */
+  --accent-quiet:    #93c5fd;                 /* secondary accent text */
+  --accent-tint:     rgba(59,130,246,0.12);   /* soft background */
+  --accent-border:   rgba(59,130,246,0.30);
+
+  /* ok (green) */
+  --ok:              #34d399;
+  --ok-strong:       #22c55e;
+  --ok-quiet:        #86efac;
+  --ok-tint:         rgba(52,211,153,0.12);
+  --ok-border:       rgba(52,211,153,0.30);
+
+  /* warn (amber) */
+  --warn:            #fbbf24;
+  --warn-strong:     #f59e0b;
+  --warn-quiet:      #ffd28a;
+  --warn-tint:       rgba(251,191,36,0.10);
+  --warn-border:     rgba(251,191,36,0.45);
+
+  /* danger (red) */
+  --danger:          #f87171;
+  --danger-strong:   #ef4444;
+  --danger-quiet:    #fca5a5;
+  --danger-tint:     rgba(239,68,68,0.15);
+  --danger-border:   rgba(239,68,68,0.30);
+
+  /* named accents for badges and kind markers — "a distinct category" */
+  --tag-purple:      #c084fc;
+  --tag-teal:        #2dd4bf;
+}
+
+/* ── Light ─────────────────────────────────────────────────────────── */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:              #f8fafc;
+  --panel:           #ffffff;
+  --panel-2:         #f1f5f9;
+  --text:            #0f172a;
+  --muted:           #64748b;
+  --text-inverse:    #ffffff;
+  --border:          rgba(0,0,0,0.10);
+  --surface-hover:   rgba(0,0,0,0.04);
+  --surface-raised:  rgba(0,0,0,0.07);
+  --backdrop:        rgba(0,0,0,0.45);
+  --shadow:          0 10px 30px rgba(0,0,0,0.08);
+
+  --accent:          #2563eb;
+  --accent-strong:   #1d4ed8;
+  --accent-quiet:    #3b82f6;      /* placeholder — no light source existed; tune in Phase 2 */
+  --accent-tint:     rgba(59,130,246,0.10);
+  --accent-border:   rgba(59,130,246,0.30);
+
+  --ok:              #16a34a;
+  --ok-strong:       #15803d;
+  --ok-quiet:        #22c55e;      /* placeholder */
+  --ok-tint:         rgba(22,163,74,0.10);
+  --ok-border:       rgba(22,163,74,0.30);
+
+  --warn:            #b45309;
+  --warn-strong:     #92400e;
+  --warn-quiet:      #d97706;      /* placeholder */
+  --warn-tint:       rgba(180,83,9,0.10);
+  --warn-border:     rgba(180,83,9,0.35);
+
+  --danger:          #dc2626;
+  --danger-strong:   #b91c1c;
+  --danger-quiet:    #ef4444;      /* placeholder */
+  --danger-tint:     rgba(220,38,38,0.10);
+  --danger-border:   rgba(220,38,38,0.30);
+
+  --tag-purple:      #7c3aed;
+  --tag-teal:        #0f766e;
+}

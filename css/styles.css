@@ -1,18 +1,13 @@
 @charset "UTF-8";
 /* ══════════════════════════════════════════════════════════
    Genesys Admin Tool — Core Styles
-   Dark-first + automatic light-mode via prefers-color-scheme
+
+   Colours come from css/tokens.css, loaded before this file — this file
+   holds none of its own. The theme is chosen by data-theme on <html>, not
+   by prefers-color-scheme. See docs/colour-tokens-design.md.
    ══════════════════════════════════════════════════════════ */
 
 :root {
-  color-scheme: dark;
-  --bg: #0b0f14;
-  --panel: #111824;
-  --panel-2: #0f1621;
-  --text: #e7eef7;
-  --muted: #93a4b8;
-  --border: rgba(255,255,255,0.08);
-  --shadow: 0 10px 30px rgba(0,0,0,0.35);
   --radius: 14px;
   --pad: 14px;
   --nav-w: 240px;
@@ -1654,17 +1649,6 @@ body {
    Light theme
    ══════════════════════════════════════════════════════════ */
 @media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --bg: #f8fafc;
-    --panel: #ffffff;
-    --panel-2: #f1f5f9;
-    --text: #0f172a;
-    --muted: #64748b;
-    --border: rgba(0,0,0,0.10);
-    --shadow: 0 10px 30px rgba(0,0,0,0.08);
-  }
-
   /* App shell / header */
   .app-header {
     background: linear-gradient(180deg, rgba(0,0,0,0.02), transparent);
