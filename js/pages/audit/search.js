@@ -398,7 +398,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   $serviceDrop.append(ssService.el);
   el.querySelector("#aqKindDropdown").append(ssKind.el);
   el.querySelector("#aqObjectDropdown").append(ssObject.el);
-  ssKind.setItems(KINDS.map(([label]) => ({ id: label, label })));
+  ssKind.setItems(KINDS.map(([label]) => ({ id: label, label })).sort((a, b) => a.label.localeCompare(b.label)));
 
   $toggleId.addEventListener("click", () => {
     $idWrap.hidden = !$idWrap.hidden;
