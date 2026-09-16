@@ -288,7 +288,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
               <td class="ca-muted">${escapeHtml(u.assignedByName || u.assignedByEmail || "")}</td>
               <td class="ca-muted">${escapeHtml(fmtDate(u.assignedAt))}</td>
               <td class="ca-muted">${escapeHtml(u.modifiedByName || u.modifiedByEmail || "")}</td>
-              <td class="ca-muted">${escapeHtml(fmtDate(u.modifiedAt))}</td>
+              <td class="ca-muted" title="${escapeHtml(u.modifiedAt || "")}">${escapeHtml(fmtDateTime(u.modifiedAt))}</td>
               ${manageCol ? `<td><input type="checkbox" data-manage="${escapeHtml(u.userId)}" ${u.role === "customer-manager" ? "checked" : ""} title="May add and remove users for customer organisations"></td>` : ""}
               <td class="ca-actions">
                 ${roleCol ? `<button type="button" class="btn btn-secondary btn-sm" data-edit="${escapeHtml(u.userId)}">Edit</button>` : ""}
@@ -391,6 +391,15 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     if (!iso) return "";
     const d = new Date(iso);
     return isNaN(d) ? iso : d.toISOString().slice(0, 10);
+  }
+
+  /** Date and time in the browser's own zone — the stamp is stored in UTC. */
+  function fmtDateTime(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
   async function loadList() {
