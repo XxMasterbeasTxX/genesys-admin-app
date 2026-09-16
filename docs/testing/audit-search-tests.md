@@ -48,7 +48,7 @@ how old the *start* of the range is, not by how long the range is.
   - Expect: **Today** is highlighted and a search runs on its own across all services; the hint under Service reads "Last 14 days — all supported services shown"
   - Notes: `______________________`
 - [ ] **2.1a** — Press **Yesterday**
-  - Expect: From and To both become yesterday's date, 00:00–23:59, and the search runs; the buttons read Today · Yesterday · Last 7 days · Last 30 days · Last 3 months
+  - Expect: From and To both become yesterday's date, 00:00–23:59, and the preset highlights — but **no search runs** until Search is pressed; only the page's first load searches on its own. The buttons read Today · Yesterday · Last 7 days · Last 30 days · Last 3 months
   - Notes: `______________________`
 - [ ] **2.2** — Set From to **3 days ago**, To to today, no service
   - Expect: hint stays on the "Last 14 days" text; status counts "N of M queries done"
@@ -65,8 +65,8 @@ how old the *start* of the range is, not by how long the range is.
 - [ ] **2.6** — From within 14 days, service picked that is **not** in the realtime set (compare the Service list against `GET /audits/query/realtime/servicemapping`)
   - Expect: hint says "… is not in the realtime set — the standard query will be used"; the run polls
   - Notes: `______________________`
-- [ ] **2.7** — Press **Last 3 months** with no service
-  - Expect: the search runs on its own (three 30-day intervals) and returns results across all services
+- [ ] **2.7** — Press **Last 3 months** with no service, then **Search**
+  - Expect: three 30-day intervals, results across all services
   - Notes: `______________________`
 
 ---

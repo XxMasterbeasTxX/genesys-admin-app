@@ -582,7 +582,8 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       el.querySelectorAll(".aq-preset-btn").forEach(b => b.classList.remove("aq-preset-btn--active"));
       btn.classList.add("aq-preset-btn--active");
       updateServiceMode();
-      runSearch();
+      // A preset only sets the dates; the user presses Search. Only the
+      // page's first load runs on its own (Today, in loadServiceMapping).
     });
   });
 
