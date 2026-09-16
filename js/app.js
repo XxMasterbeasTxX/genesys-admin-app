@@ -256,7 +256,9 @@ function renderSignInGate() {
     if (orgCfg.mode === "customer" && orgCfg.customer) {
       // Entitlements shape the menu; the user's own permissions, read on THEIR
       // region, grey the actions they cannot take. Same refinement as internal.
-      access = await resolveCustomerAccess(orgCfg.entitlements, res.accessToken, getSessionApiBase());
+      // The key set is the role's: everything for an Administrator, a
+      // Supervisor's effective pages otherwise (docs/customer-roles-design.md §7).
+      access = await resolveCustomerAccess(orgCfg.entitlements, res.accessToken, getSessionApiBase(), { role: orgCfg.role });
       isInternalMode = false;
 
       const customer = orgCfg.customer;

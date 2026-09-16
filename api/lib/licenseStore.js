@@ -13,11 +13,13 @@
  *   rowKey        `<userId>|<assignedAt>` — a user removed and re-added has
  *                 two rows, both true
  *   userId, email, name, assignedBy, assignedAt, revokedBy, revokedAt
- *   role          "" for a plain named user. "customer-manager" on an INTERNAL
- *                 row lets that colleague name users for customer orgs
- *                 (docs/internal-user-access-design.md §5). The customer
- *                 roles "administrator" / "supervisor" are reserved for later
- *                 (§10) and read by nothing yet.
+ *   role          "" for a plain named colleague; "customer-manager" on an
+ *                 INTERNAL row lets that colleague name users for customer
+ *                 orgs (docs/internal-user-access-design.md §5). On a CUSTOMER
+ *                 row, "administrator" or "supervisor", required
+ *                 (docs/customer-roles-design.md §4).
+ *   features      JSON array of page access keys — a supervisor's own pages,
+ *                 a subset of the org's Supervisor scope. [] otherwise.
  *
  * The internal org has rows too, under its own slug: an internal colleague is
  * named exactly as a customer user is. Its rows carry no billing meaning —
@@ -74,7 +76,14 @@ function entityToRow(e) {
     revokedBy:  e.revokedBy || null,
     revokedAt:  e.revokedAt || null,
     role:       e.role || "",
+    features:   parseFeatures(e.features),
   };
+}
+
+function parseFeatures(raw) {
+  if (!raw) return [];
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v.map(String) : []; }
+  catch { return []; }
 }
 
 async function listRows(customerId) {
@@ -115,7 +124,7 @@ async function activeRow(customerId, userId) {
  * @param {{ id: string, email?: string }} by   the caller's VERIFIED identity
  * @returns {Promise<{ row: object, created: boolean }>}
  */
-async function assign(customerId, user, by) {
+async function assign(customerId, user, by, { role = "", features = [] } = {}) {
   const rows = await listRows(customerId);
   const existing = rows.find((r) => r.userId === user.id && !r.revokedAt);
   if (existing) return { row: existing, created: false };
@@ -130,6 +139,8 @@ async function assign(customerId, user, by) {
     assignedBy:   by.id || "",
     assignedByEmail: by.email || "",
     assignedAt,
+    role:         role || "",
+    features:     JSON.stringify(Array.isArray(features) ? features : []),
   };
   await getClient().createEntity(entity);
   return { row: entityToRow(entity), created: true };
@@ -142,23 +153,27 @@ async function assign(customerId, user, by) {
  *
  * @returns {Promise<{ row: object|null, changed: boolean }>}
  */
-async function setRole(customerId, userId, role, by) {
+async function setRole(customerId, userId, role, by, features = null) {
   const active = await activeRow(customerId, userId);
   if (!active) return { row: null, changed: false };
-  if ((active.role || "") === (role || "")) return { row: active, changed: false };
+  const nextFeatures = Array.isArray(features) ? [...features].sort() : [];
+  const sameRole = (active.role || "") === (role || "");
+  const sameFeatures = JSON.stringify([...(active.features || [])].sort()) === JSON.stringify(nextFeatures);
+  if (sameRole && sameFeatures) return { row: active, changed: false };
   const roleSetAt = new Date().toISOString();
   await getClient().updateEntity(
     {
       partitionKey: safeKey(customerId),
       rowKey:       `${safeKey(userId)}|${active.assignedAt}`,
       role:         role || "",
+      features:     JSON.stringify(nextFeatures),
       roleSetBy:    by.id || "",
       roleSetByEmail: by.email || "",
       roleSetAt,
     },
     "Merge",
   );
-  return { row: { ...active, role: role || "" }, changed: true };
+  return { row: { ...active, role: role || "", features: nextFeatures }, changed: true };
 }
 
 /**

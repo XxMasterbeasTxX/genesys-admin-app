@@ -5,7 +5,7 @@
  * (using the PKCE access token) and resolves which app features they can access.
  */
 import { CONFIG } from "../config.js";
-import { SUPERUSER_ONLY_KEYS, CUSTOMER_MANAGER_KEYS } from "../accessConfig.js";
+import { SUPERUSER_ONLY_KEYS, CUSTOMER_MANAGER_KEYS, CUSTOMER_EXCLUDED_KEYS, CUSTOMER_ADMIN_KEYS } from "../accessConfig.js";
 import {
   isWriteGated, getRequiredPermissions, getActionPermissions,
   isReadGated, getReadPermissions,
@@ -234,6 +234,9 @@ export async function resolveAccess(accessToken, who = {}) {
    */
   function hasAccess(pageKey) {
     if (!pageKey) return true;
+    // The customer Administrator's section: internal sessions have the same
+    // pages under Customers, with an org selector.
+    if (CUSTOMER_ADMIN_KEYS.includes(pageKey)) return false;
     if (isSuper) return true;
     if (SUPERUSER_ONLY_KEYS.includes(pageKey)) return false;
     if (CUSTOMER_MANAGER_KEYS.includes(pageKey)) return canManageCustomers;
@@ -257,12 +260,15 @@ export async function resolveAccess(accessToken, who = {}) {
 }
 
 /**
- * Resolve access for a CUSTOMER session: entitlements shape the menu, the
+ * Resolve access for a CUSTOMER session: the key set shapes the menu, the
  * user's own permissions refine the actions.
  *
- * Entitlements (e.g. "interactions.*", "export.users.*") decide what the org
- * has bought and therefore what is SHOWN, through the same wildcard key
- * machinery as internal group access. What this user may DO within that is
+ * The key set is what the server said this session may see: for an
+ * Administrator the org's entitlements (everything — customers pay per user,
+ * not for content); for a Supervisor their effective pages, ticks ∩ the org's
+ * Supervisor scope, as leaf keys (docs/customer-roles-design.md §7). A page
+ * outside the set is `hidden` — absent from the sidebar, exactly as an
+ * internal-only page is — never greyed. What this user may DO within that is
  * refined from their own Genesys permissions by the shared builder, exactly as
  * for internal users — so a control they cannot use is greyed with the missing
  * permission named, instead of erroring after the click. Genesys still enforces
@@ -271,18 +277,24 @@ export async function resolveAccess(accessToken, who = {}) {
  * Exposes the same interface as resolveAccess() so nav, routing, and pages are
  * unchanged.
  *
- * @param {string[]} entitlements  Module access-key prefixes for the customer.
+ * @param {string[]} entitlements  Access keys or prefixes the session may see.
  * @param {string}   [accessToken] The session token. Omitted (the org-config
  *                                 fallback path) → no fetch, permissions
  *                                 unavailable, every gated action fails closed.
  * @param {string}   [apiBase]     The session's region base. A customer's token
  *                                 answers only on its own region.
+ * @param {{ role?: string }} [who] The role on the caller's own row, decided
+ *                                 server-side: "administrator" sees the
+ *                                 Administrator section; anything else does not.
  */
-export async function resolveCustomerAccess(entitlements, accessToken, apiBase) {
+export async function resolveCustomerAccess(entitlements, accessToken, apiBase, who = {}) {
   const keys = new Set((entitlements || []).filter((k) => typeof k === "string" && k.trim()));
+  const isAdministrator = who.role === "administrator";
 
   function hasAccess(pageKey) {
     if (!pageKey) return true;
+    // The Administrator's own pages are decided by the role, not the key set.
+    if (CUSTOMER_ADMIN_KEYS.includes(pageKey)) return isAdministrator;
     // Internal-only features are never available in customer mode, even if an
     // entitlement prefix would otherwise grant them (belt-and-suspenders on top
     // of the server-side proxy denylist + org-lock). See docs/customer-facing-plan.md §5.
@@ -300,8 +312,10 @@ export async function resolveCustomerAccess(entitlements, accessToken, apiBase) 
 
   return {
     hasAccess,
-    hasAnyAccess() { return keys.size > 0; },
+    hasAnyAccess() { return keys.size > 0 || isAdministrator; },
     ...refined,
+    role: who.role || "",
+    isCustomerAdministrator: isAdministrator,
     verificationFailed: false,
   };
 }
@@ -319,39 +333,6 @@ export async function resolveCustomerAccess(entitlements, accessToken, apiBase) 
  * carries it implicitly, so a package meant to exclude bulk phone deletion has
  * to name the phone pages it does grant rather than use the wildcard.
  */
-const CUSTOMER_EXCLUDED_KEYS = [
-  "data-actions.copy.betweenOrgs",
-  "data-tables.copy.betweenOrgs",
-  "roles.copy.betweenOrgs",
-  "export.users.trustee",
-  "export.roles.allOrgs",
-  // Billing: the four multi-org / arbitrary-range reports stay internal. Billing
-  // Period and Period Comparison are customer-visible — a customer's own
-  // overage, read for them by the server as their trustee
-  // (docs/customer-billing-design.md). Named individually rather than as the
-  // `export.billing` prefix, because the prefix would hide those two.
-  "export.billing.allOrgsLatest",
-  "export.billing.calendarYear",
-  "export.billing.dateRange",
-  "export.billing.customOrgs",
-  "utilities",
-  "deployment",
-  // Who may use the app is Netdesign's list about the customer, never the
-  // customer's page (docs/customer-user-licensing-design.md §6).
-  "customers",
-  // Flows is otherwise a customer-suitable module, so a `flows.*` entitlement
-  // would hand a customer the ability to permanently delete a callflow and its
-  // dependencies — irreversibly, with no rollback. Listed explicitly because the
-  // wildcard would grant it silently.
-  "flows.delete",
-  // Recording export jobs pull the org's actual call recordings out in bulk.
-  // That is customer data egress, not an interaction operation, and it arrived
-  // bundled with Disconnect and Move because `interaction-ops` is the whole
-  // `interactions.*` namespace — so both the package wildcard and `demo` granted
-  // it silently. Same shape as `flows.delete` above: the module is otherwise
-  // customer-suitable, and only the named leaf is held back.
-  "interactions.recordings",
-];
 
 /** True if a page key is an internal-only feature excluded from customer mode. */
 function isCustomerExcluded(pageKey) {

@@ -2189,6 +2189,7 @@ body {
 }
 .cs-status--success { color: var(--ok); }
 .cs-status--error   { color: var(--danger); }
+.cs-status--warn    { color: var(--warn); }
 .cs-progress-wrap {
   height: 4px;
   border-radius: 2px;

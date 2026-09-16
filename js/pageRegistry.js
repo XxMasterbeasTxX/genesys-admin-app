@@ -213,6 +213,13 @@ const registry = {
   // ── Deployment ────────────────────────────────────────
   "/customers/access": (ctx) =>
     import("./pages/customers/access.js").then((m) => m.default(ctx)),
+  "/customers/supervisor-access": (ctx) =>
+    import("./pages/customers/supervisorAccess.js").then((m) => m.default(ctx)),
+  // A customer Administrator's own two pages — the same modules, in customer mode.
+  "/administrator/supervisor-access": (ctx) =>
+    import("./pages/customers/supervisorAccess.js").then((m) => m.default(ctx)),
+  "/administrator/users": (ctx) =>
+    import("./pages/customers/access.js").then((m) => m.default(ctx)),
   "/deployment/basic": (ctx) =>
     import("./pages/deployment/basic.js").then((m) => m.default(ctx)),
   "/deployment/datatables": (ctx) =>

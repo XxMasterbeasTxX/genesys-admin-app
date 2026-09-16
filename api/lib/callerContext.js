@@ -57,8 +57,10 @@ function getRequestHint(req) {
  *   configured: boolean,
  *   customerId: string|null,   // customer slug when in customer mode, else null
  *   ownerOrgId: string,        // owner tag for OWNER-scoped stores
- *   superuser: boolean,        // internal only: on the SUPERUSER_IDS app setting
- *   role: string,              // internal only: the caller's row role ("" | "customer-manager"); "superuser" for a superuser
+ *   superuser: boolean,        // on the SUPERUSER_IDS app setting (internal only)
+ *   role: string,              // the caller's row role: internal "" | "customer-manager" | "superuser";
+ *                              //                        customer "administrator" | "supervisor"
+ *   features: string[]|null,   // customer supervisor: effective page keys; null = everything
  *   userId: string|null,       // VERIFIED Genesys user id, from the token
  *   userEmail: string,         // verified; "" when identity is unavailable
  *   userName: string,          // verified; "" when identity is unavailable
@@ -147,6 +149,9 @@ async function getCallerContext(context, req, { hintId = null, identify = true }
         configured,
         customerId: classification.customer.id,
         ownerOrgId: classification.customer.id,
+        superuser: false,
+        role: licence.role || "",              // "administrator" | "supervisor"
+        features: licence.features || null,    // null = everything
       });
     }
     case "verify_failed":

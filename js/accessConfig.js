@@ -35,4 +35,58 @@ export const SUPERUSER_ONLY_KEYS = Object.freeze([
  */
 export const CUSTOMER_MANAGER_KEYS = Object.freeze([
   "customers.access",
+  "customers.supervisorAccess",
+]);
+
+/**
+ * Never available to a customer session, whatever they hold. Internal
+ * tooling, cross-org copies, and the multi-org exports. A prefix here hides
+ * everything under it. Read by accessService for the sidebar, and by
+ * scripts/build-customer-pages.mjs to produce api/lib/customerPages.json —
+ * the server's list of every page a customer may be given, which the
+ * Supervisor scope and a Supervisor's pages are validated against.
+ */
+export const CUSTOMER_EXCLUDED_KEYS = [
+  "data-actions.copy.betweenOrgs",
+  "data-tables.copy.betweenOrgs",
+  "roles.copy.betweenOrgs",
+  "export.users.trustee",
+  "export.roles.allOrgs",
+  // Billing: the four multi-org / arbitrary-range reports stay internal. Billing
+  // Period and Period Comparison are customer-visible — a customer's own
+  // overage, read for them by the server as their trustee
+  // (docs/customer-billing-design.md). Named individually rather than as the
+  // `export.billing` prefix, because the prefix would hide those two.
+  "export.billing.allOrgsLatest",
+  "export.billing.calendarYear",
+  "export.billing.dateRange",
+  "export.billing.customOrgs",
+  "utilities",
+  "deployment",
+  // Who may use the app is Netdesign's list about the customer, never the
+  // customer's page (docs/customer-user-licensing-design.md §6).
+  "customers",
+  // Flows is otherwise a customer-suitable module, so a `flows.*` entitlement
+  // would hand a customer the ability to permanently delete a callflow and its
+  // dependencies — irreversibly, with no rollback. Listed explicitly because the
+  // wildcard would grant it silently.
+  "flows.delete",
+  // Recording export jobs pull the org's actual call recordings out in bulk.
+  // That is customer data egress, not an interaction operation, and it arrived
+  // bundled with Disconnect and Move because `interaction-ops` is the whole
+  // `interactions.*` namespace — so both the package wildcard and `demo` granted
+  // it silently. Same shape as `flows.delete` above: the module is otherwise
+  // customer-suitable, and only the named leaf is held back.
+  "interactions.recordings",
+];
+
+/**
+ * A customer Administrator's own pages: the Supervisor scope, and their
+ * org's users (role and pages only — never who is named). Shown to a
+ * customer session whose row is "administrator", hidden from Supervisors,
+ * and never shown to internal sessions, who have Customers › … instead.
+ */
+export const CUSTOMER_ADMIN_KEYS = Object.freeze([
+  "administrator.supervisorAccess",
+  "administrator.users",
 ]);

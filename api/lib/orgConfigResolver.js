@@ -429,7 +429,12 @@ async function resolveOrgConfig(context, req) {
         licensed: true,
         org: classification.org,
         customer: classification.customer,
-        entitlements: classification.entitlements,
+        // A supervisor's entitlements ARE their effective pages — the sidebar
+        // hides everything else, exactly as it hides internal-only pages
+        // (docs/customer-roles-design.md §7). An administrator keeps the
+        // org's entitlements; the role opens the Administrator section.
+        entitlements: licence.features || classification.entitlements,
+        role: licence.role || "",
       },
     };
   }

@@ -1,9 +1,14 @@
 /**
- * Named-user licences — the client side of /api/licenses.
+ * Named-user licences — the client side of /api/licenses and
+ * /api/supervisor-scope.
  *
- * Internal only: the page these serve is gated to Master Admin, and the
- * endpoint checks the same group again server-side. The caller's identity
- * comes from the forwarded token, never from anything sent here.
+ * Who may do what is decided server-side from the caller's own row: naming
+ * and removing by Netdesign (superusers and customer-managers); a customer
+ * Administrator may read their own org's list, change any user's role and
+ * pages, and set the org's Supervisor scope (docs/customer-roles-design.md
+ * §5). The caller's identity comes from the forwarded token, never from
+ * anything sent here; a customer's customerId is ignored by the server in
+ * favour of the verified one.
  */
 import { withUserToken } from "./apiAuth.js";
 
@@ -32,6 +37,12 @@ function licenseMessage(code, json, status) {
     case "user_not_named":            return "That person is not on the list.";
     case "invalid_role":              return "That is not a role this page knows.";
     case "internal_only":             return "This page is for Netdesign staff.";
+    case "administrator_required":    return "Only an Administrator of your organisation can do this.";
+    case "role_required":             return "Choose Administrator or Supervisor.";
+    case "scope_empty":               return "Nothing is in the Supervisor scope for this organisation yet. Set it on Supervisor Access first.";
+    case "pages_required":            return "Tick at least one page from the Supervisor scope.";
+    case "internal_org_has_no_scope": return "The internal organisation has no Supervisor scope.";
+    case "customerId_required":       return "Select a customer organisation first.";
     case "not_a_customer":   return "This organisation is not set up as a customer yet — it has no registry entry, so nobody can sign in to it as a customer.";
     default:                 return `The request failed (${code || status}).`;
   }
@@ -43,18 +54,36 @@ export async function listLicensedUsers(customerId) {
   return r.users || [];
 }
 
-/** Name a user. Returns { user, created } — created is false if they already had access. */
-export function assignLicense(customerId, { id, email, name }) {
-  return call("POST", "/api/licenses/assign", { customerId, userId: id, email, name });
+/**
+ * Name a user. Returns { user, created } — created is false if they already
+ * had access. For a customer org, `role` ("administrator" | "supervisor") is
+ * required and a supervisor's `features` (page keys inside the org's scope)
+ * must be non-empty; the internal org's rows carry neither on add.
+ */
+export function assignLicense(customerId, { id, email, name }, { role = "", features = [] } = {}) {
+  return call("POST", "/api/licenses/assign", { customerId, userId: id, email, name, role, features });
 }
 
 /**
- * Set the role on an internal user's row: "customer-manager" lets them name
- * users for customer orgs; "" takes that back. Superusers only, server-checked.
- * Returns { user, changed }.
+ * Set the role on a row. On the internal org: "customer-manager" lets a
+ * colleague name users for customer orgs; "" takes that back (superusers
+ * only). On a customer org: "administrator" | "supervisor", with a
+ * supervisor's `features`; by whoever may manage that org's list, and by the
+ * org's own Administrators. Server-checked. Returns { user, changed }.
  */
-export function setLicenseRole(customerId, userId, role) {
-  return call("POST", "/api/licenses/role", { customerId, userId, role });
+export function setLicenseRole(customerId, userId, role, features = []) {
+  return call("POST", "/api/licenses/role", { customerId, userId, role, features });
+}
+
+/** The org's Supervisor scope: sorted page keys, [] when none set. */
+export async function getSupervisorScope(customerId) {
+  const r = await call("GET", `/api/supervisor-scope?customerId=${encodeURIComponent(customerId)}`);
+  return r.features || [];
+}
+
+/** Overwrite the org's Supervisor scope. Returns { customerId, features, dropped }. */
+export function setSupervisorScope(customerId, features) {
+  return call("PUT", "/api/supervisor-scope", { customerId, features });
 }
 
 /** Remove a user's access. Returns { user, revoked }. */

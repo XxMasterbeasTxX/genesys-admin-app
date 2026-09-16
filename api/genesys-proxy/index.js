@@ -187,7 +187,9 @@ module.exports = async function (context, req) {
         return;
       }
 
-      const guard = checkCustomerRequest(path, classification.entitlements);
+      // A supervisor's effective pages stand in for the org's entitlements, so a
+      // call outside their pages is refused as one outside the entitlements is.
+      const guard = checkCustomerRequest(path, licence.features || classification.entitlements);
       if (!guard.allowed) {
         context.res = {
           status: 403,

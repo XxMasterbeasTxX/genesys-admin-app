@@ -33,6 +33,7 @@ const crypto = require("crypto");
 const { identifyCaller } = require("./orgConfigResolver");
 const { isSuperuser } = require("./superusers");
 const store = require("./licenseStore");
+const orgSettings = require("./orgSettingsStore");
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map();
@@ -55,10 +56,12 @@ function tokenKey(token) {
  *   { licensed: true,  userId: string, role: string, superuser: boolean, unenforced?: true }
  * | { licensed: false, reason: "not_assigned"|"identity_unavailable"|"license_check_failed", userId?: string }>}
  *
- * `role` is the row's role ("" for a plain named user, "customer-manager" for
- * an internal colleague who may name customer users); "superuser" for a
- * superuser, who has no row. `unenforced` marks an internal caller admitted
- * only because INTERNAL_NAMED_USERS_ENFORCED is not yet "true".
+ * `role` is the row's role ("" for a plain named colleague, "customer-manager"
+ * for one who may name customer users; "administrator" or "supervisor" for a
+ * customer); "superuser" for a superuser, who has no row. For a customer,
+ * `features` is null (an administrator — everything) or the supervisor's
+ * effective page keys. `unenforced` marks an internal caller admitted only
+ * because INTERNAL_NAMED_USERS_ENFORCED is not yet "true".
  */
 async function checkLicense(context, token, classification) {
   const key = tokenKey(token);
@@ -96,7 +99,34 @@ async function checkLicense(context, token, classification) {
   }
 
   let value;
-  if (row) {
+  if (row && !internal) {
+    // A customer: their role decides what they may see. An administrator
+    // sees everything the app offers customers (features null = no
+    // narrowing); a supervisor sees their own pages ∩ the org's Supervisor
+    // scope, computed here so a scope edit reaches every supervisor without
+    // touching their rows (docs/customer-roles-design.md §2, §7).
+    let role = row.role || "";
+    if (role !== "administrator" && role !== "supervisor") {
+      // Rows from before roles existed. Treated as an administrator and said
+      // so, rather than locking a test account out over data that predates
+      // the field. No production row should ever hit this.
+      context?.log?.warn?.(`[license] customer row without a role treated as administrator: ${orgId} ${user.id}`);
+      role = "administrator";
+    }
+    let features = null;
+    if (role === "supervisor") {
+      let scope;
+      try {
+        scope = await orgSettings.getSupervisorScope(orgId);
+      } catch (err) {
+        context?.log?.error?.(`[license] scope read failed for ${orgId}: ${err.message || err}`);
+        return { licensed: false, reason: "license_check_failed", userId: user.id };
+      }
+      const own = new Set(Array.isArray(row.features) ? row.features : []);
+      features = scope.filter((k) => own.has(k));
+    }
+    value = { licensed: true, userId: user.id, role, features, superuser: false };
+  } else if (row) {
     value = { licensed: true, userId: user.id, role: row.role || "", superuser: false };
   } else if (internal && !internalEnforced()) {
     // Reporting mode: admitted, and said so, so the log is the list of who

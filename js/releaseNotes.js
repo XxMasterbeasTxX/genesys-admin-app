@@ -21,6 +21,55 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "6.0",
+    date: "2026-09-16",
+    title: "Who may use the app: named colleagues, and customer Administrators and Supervisors (internal)",
+    internalOnly: true,
+    changes: [
+      "Internal colleagues must now be named in the app before they can use it, exactly as customer users "
+        + "already had to be. Being in the Genesys group the OAuth integration is restricted to still gets a "
+        + "person through the sign-in door; being on the list is what gets them past it. The list is the "
+        + "internal organisation's own row on Customers › Access to Admin Tool, and only a superuser (the "
+        + "SUPERUSER_IDS app setting) can add to it or remove from it. Nobody was seeded: everyone, including "
+        + "the people who built the app, has to be added by a superuser. Superusers themselves need no row and "
+        + "can never be locked out by anything editable in the app.",
+      "There are no internal roles. What a named colleague may do is still their own Genesys permissions, "
+        + "page by page, as before. The one exception is a capability, not a role: “Manages customer access”, "
+        + "a tick per row on the internal list that only a superuser can set, lets that colleague add and "
+        + "remove users for customer organisations — start charges — without being able to touch the "
+        + "internal list or grant the same right to anyone else. The Master Admin group that used to gate "
+        + "customer access gates nothing now.",
+      "The server enforces all of it. Every Genesys call the app makes for an internal session runs on the "
+        + "app's own client credentials, which meant the server had never checked whether the person asking "
+        + "was allowed to — any internal token was elevated wholesale. Now the named-user gate runs at sign-in, "
+        + "on every store endpoint and on every proxied call, and a table of 208 method-and-path rules maps "
+        + "each Genesys endpoint to the permission the caller must hold themselves. The proxy check has two "
+        + "modes, report and enforce (PROXY_PERMISSION_CHECK); it reports on dev until its log has been read.",
+      "Customer users now carry a role, chosen when they are added: Administrator, who sees everything the "
+        + "app offers customers, or Supervisor, who sees a chosen subset. Every customer gets everything — "
+        + "they pay per user, not for content — so there is no package to check against, only the role. "
+        + "A customer row cannot be added without one.",
+      "What a Supervisor may have at all is the organisation's Supervisor scope: every customer page as a "
+        + "tree of checkboxes, sections and pages, on the new Supervisor Access page. Internal superusers and "
+        + "customer-managers set it for any org under Customers › Supervisor Access, so it can be set on the "
+        + "day a customer is onboarded; a customer's own Administrators set it for their org under "
+        + "Administrator › Supervisor Access. A Supervisor's own pages are ticked from the scope when they are "
+        + "added or edited, and what they actually see is the two intersected at sign-in — untick a page from "
+        + "the scope and every Supervisor who had it loses it within five minutes, with nobody editing rows. "
+        + "Pages outside a Supervisor's set are absent from their menu, not greyed. An empty scope refuses a "
+        + "Supervisor add and says where to set it.",
+      "A customer Administrator has a second page, Administrator › Users: their organisation's list, with "
+        + "an Edit per row to promote a Supervisor, demote an Administrator or re-tick a Supervisor's pages. "
+        + "They can never add or remove a name — naming starts a charge and stays Netdesign's — and the "
+        + "server refuses add and remove from any customer session regardless of what the page shows. "
+        + "Every scope change and every role change is written to the Activity Log under the verified "
+        + "identity of whoever made it, and appears in the customer's own log when a customer made it.",
+      "Internal users are untouched by the roles: no role choice on the internal list, no scope, and the "
+        + "sidebar as before. Design and the reasoning behind each decision: "
+        + "docs/internal-user-access-design.md and docs/customer-roles-design.md.",
+    ],
+  },
+  {
     version: "5.9",
     date: "2026-09-16",
     title: "Choose your theme, and light mode everywhere",

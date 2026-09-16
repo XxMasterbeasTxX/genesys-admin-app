@@ -273,6 +273,12 @@ Written in the same commit as the change, never after
 
 ## 10. Later — customer roles
 
+> **Built** the same day, as designed in
+> [`customer-roles-design.md`](customer-roles-design.md). One change of
+> substance from the sketch below: customers get *everything* the app
+> offers customers — they pay per user, not for content — so "the org's
+> package" is simply every customer page. The rest stands.
+
 Customer users will be added with one of two roles:
 
 - **Administrator** — everything in the org's package.

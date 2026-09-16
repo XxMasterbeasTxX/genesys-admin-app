@@ -30,6 +30,12 @@ jobs:
       # See docs/colour-tokens-design.md §9.
       - name: Check colours derive from tokens.css
         run: node scripts/check-colours.mjs --strict
+      # The server's list of pages a customer may hold is generated from the
+      # nav (api/lib/customerPages.json). A page added without regenerating it
+      # would be one no Supervisor could ever be given, so a stale list fails
+      # the build. See docs/customer-roles-design.md §6.
+      - name: Check customer pages list is current
+        run: node scripts/build-customer-pages.mjs --check
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
