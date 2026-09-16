@@ -5,7 +5,7 @@
  * (using the PKCE access token) and resolves which app features they can access.
  */
 import { CONFIG } from "../config.js";
-import { SUPERUSER_IDS } from "../accessConfig.js";
+import { SUPERUSER_ONLY_KEYS, CUSTOMER_MANAGER_KEYS } from "../accessConfig.js";
 import {
   isWriteGated, getRequiredPermissions, getActionPermissions,
   isReadGated, getReadPermissions,
@@ -16,51 +16,8 @@ import {
 // docs/customer-facing-plan.md §6), customers in theirs
 // (docs/customer-permission-refinement-design.md). Read-only features are never
 // affected; superusers always bypass. Set to false to disable the permission
-// refinement entirely on both sides (group / entitlement access only).
+// refinement entirely on both sides (named-user / entitlement access only).
 const ENFORCE_PERMISSION_REFINEMENT = true;
-
-/** Fetch the names of all groups the authenticated user belongs to. */
-async function fetchUserGroupNames(accessToken) {
-  const headers = { Authorization: `Bearer ${accessToken}` };
-
-  // Step 1: get group IDs via expand (CORS-safe endpoint)
-  let groupIds;
-  try {
-    const resp = await fetch(`${CONFIG.apiBase}/api/v2/users/me?expand=groups`, { headers });
-    const json = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      console.error("[accessService] users/me API error:", resp.status, json);
-      return null;
-    }
-    groupIds = (json.groups || []).map((g) => g.id).filter(Boolean);
-  } catch (err) {
-    console.error("[accessService] users/me fetch failed:", err);
-    return null;
-  }
-
-  if (groupIds.length === 0) {
-    console.info("[accessService] user belongs to no groups");
-    return [];
-  }
-
-  // Step 2: resolve names in parallel by fetching each group by ID
-  try {
-    const results = await Promise.all(
-      groupIds.map((id) =>
-        fetch(`${CONFIG.apiBase}/api/v2/groups/${id}`, { headers })
-          .then((r) => r.json())
-          .then((g) => g.name || null)
-          .catch(() => null),
-      ),
-    );
-    const names = results.filter(Boolean);
-    console.info("[accessService] user groups:", names);
-    return names;
-  } catch (err) {
-    console.error("[accessService] group name lookup failed:", err);
-    return null;
-  }
-}
 
 /**
  * Fetch the authenticated user's effective Genesys permissions.
@@ -162,7 +119,6 @@ function buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode = "inter
   const permsAvailable = Array.isArray(permList);
   const hasPermission = (perm) => permsAvailable && permList.some((g) => permGrants(g, perm));
 
-
   /**
    * Refined state for a page key:
    *   "hidden"                — no group access (never show)
@@ -255,63 +211,48 @@ function buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode = "inter
  * Genesys permissions for WRITE actions (see docs/customer-facing-plan.md §6).
  *
  * @param {string} accessToken   PKCE access token (your own Genesys org).
- * @param {Object} groupAccessMap  GROUP_ACCESS from accessConfig.js.
- * @param {string} [userId]        The authenticated user's Genesys user ID.
+ * @param {{ superuser?: boolean, role?: string }} who
+ *        What org-config said about this caller, decided server-side by the
+ *        named-user gate: whether they are a superuser (the SUPERUSER_IDS app
+ *        setting) and the role on their own row ("" or "customer-manager").
  * @returns {Promise<{ hasAccess, hasAnyAccess, accessState, getMissingPermissions }>}
  */
-export async function resolveAccess(accessToken, groupAccessMap, userId) {
-  const isSuper = !!(userId && SUPERUSER_IDS.includes(userId));
+export async function resolveAccess(accessToken, who = {}) {
+  const isSuper = !!who.superuser;
+  const canManageCustomers = isSuper || who.role === "customer-manager";
 
-  // Fetch groups and permissions in parallel.
-  const [groupNames, permList] = await Promise.all([
-    isSuper ? Promise.resolve([]) : fetchUserGroupNames(accessToken),
-    isSuper ? Promise.resolve(null) : fetchUserPermissions(accessToken),
-  ]);
-
-  // Fail CLOSED. This used to grant every group's access when the lookup
-  // failed, which handed full read access to anyone whose token could not read
-  // its own groups — while the permission gate twelve lines below was already
-  // explicitly fail-closed. Two halves of one function cannot disagree about
-  // which way to fail. The failure is surfaced (see `verificationFailed`) so it
-  // reads as "we could not check" rather than as an empty menu.
-  const groupsFailed = groupNames === null;
-  if (groupsFailed) {
-    console.error("[accessService] Could not fetch groups — denying access until verified.");
-  }
-
-  const keys = new Set();
-  for (const name of (groupNames || [])) {
-    const granted = groupAccessMap[name];
-    if (Array.isArray(granted)) granted.forEach((k) => keys.add(k));
-  }
+  // A named user's permissions are the whole of what they may do. There is no
+  // group lookup any more: being named is decided by the server before this
+  // runs, and what Genesys lets them do is read here, exactly as before.
+  const permList = isSuper ? null : await fetchUserPermissions(accessToken);
 
   /**
-   * Group-level access check (unchanged semantics).
-   * Checks (in order): *, section.*, section.group.*, exact key.
+   * Page-level access. A named user may see every page except the two kinds
+   * a permission cannot express (accessConfig.js); the permission refinement
+   * below then hides or greys what their Genesys permissions do not cover.
    * Falsy pageKey (unprotected page) → true.
    */
   function hasAccess(pageKey) {
     if (!pageKey) return true;
     if (isSuper) return true;
-    if (groupsFailed) return false;
-    if (keys.has("*")) return true;
-    const parts = pageKey.split(".");
-    for (let i = parts.length - 1; i > 0; i--) {
-      if (keys.has(parts.slice(0, i).join(".") + ".*")) return true;
-    }
-    return keys.has(pageKey);
+    if (SUPERUSER_ONLY_KEYS.includes(pageKey)) return false;
+    if (CUSTOMER_MANAGER_KEYS.includes(pageKey)) return canManageCustomers;
+    return true;
   }
 
   const refined = buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode: "internal" });
 
   return {
     hasAccess,
-    hasAnyAccess() { return isSuper || keys.size > 0; },
+    hasAnyAccess() { return true; },     // named, or a superuser — the server said so
     ...refined,
-    // True when the group lookup failed, so nothing could be verified. Lets the
-    // shell say "could not verify your access" instead of showing an empty menu
-    // that looks like a permissions decision.
-    verificationFailed: groupsFailed,
+    canManageCustomers,
+    isSuperuser: isSuper,
+    // True when the permission read failed, so nothing beyond "you are named"
+    // could be verified. The refinement already fails closed on every gated
+    // page; this lets the shell say "could not verify" instead of showing a
+    // menu of greyed pages that looks like a permissions decision.
+    verificationFailed: !isSuper && permList === null,
   };
 }
 

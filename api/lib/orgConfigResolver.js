@@ -366,10 +366,32 @@ async function resolveOrgConfig(context, req) {
   }
 
   if (classification.mode === "internal") {
+    // The named-user gate, for the internal org (licenseGate.js). Unnamed →
+    // the client renders one screen instead of the shell, exactly as for a
+    // customer. Superusers pass; while INTERNAL_NAMED_USERS_ENFORCED is not
+    // "true" an unnamed colleague passes and is logged.
+    const { checkLicense, INTERNAL_ORG_SLUG } = require("./licenseGate");
+    const licence = await checkLicense(context, accessToken, classification);
+    if (!licence.licensed) {
+      return {
+        status: 200,
+        body: {
+          mode: "internal",
+          licensed: false,
+          reason: licence.reason,
+          org: classification.org,
+          orgHint,
+        },
+      };
+    }
     return {
       status: 200,
       body: {
         mode: "internal",
+        licensed: true,
+        superuser: !!licence.superuser,
+        role: licence.role || "",
+        internalOrgSlug: INTERNAL_ORG_SLUG,
         org: classification.org,
         customers: safeCustomers,
         orgHint,

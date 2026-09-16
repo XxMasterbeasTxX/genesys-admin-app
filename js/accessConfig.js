@@ -1,218 +1,38 @@
 /**
- * Access control configuration.
+ * Access rules that a Genesys permission cannot express.
  *
- * Maps Genesys Cloud group names (in your own org) to access key arrays.
+ * Almost everything an internal user may see or do is decided by their own
+ * Genesys permissions in the company org, through featurePermissionMap.js —
+ * 92 of the 95 features carry a permission, and the rest are app-owned or
+ * public data open to any named user. This file holds the exceptions: the
+ * two features whose gate is WHO you are in the app, not what Genesys lets
+ * you do. Both are checked server-side as well; this copy only decides what
+ * the sidebar draws.
  *
- * HOW IT WORKS
- * ────────────
- * Each leaf page in navConfig.js has an `access` field — e.g. "interactions.search".
- * When a user logs in, their Genesys group memberships are fetched and looked up
- * in GROUP_ACCESS below. All matching keys are collected into a set.
- * A page is visible if the user's key set contains a matching entry (see below).
- * The URL path is NOT used for access checks — only the `access` field on the nav node.
+ * Whether a person may use the app at all is not decided here either. They
+ * must be named for the internal org by a superuser (the SUPERUSER_IDS app
+ * setting — the server's, never a list in this bundle), or be a superuser
+ * themselves. See docs/internal-user-access-design.md.
  *
- * Key formats you can put in GROUP_ACCESS values:
- *   "*"                        — full access (every page)
- *   "section.*"                — all pages whose access key starts with "section."
- *   "section.group.*"          — all pages whose access key starts with "section.group."
- *   "section.group.page"       — exactly one page
- *
- * Examples:
- *   ["*"]                          — everything
- *   ["export.*"]                   — all export pages
- *   ["export.users.*"]             — all export › users pages
- *   ["interactions.search", "interactions.move"]  — two specific pages
- *
- * To grant or restrict access:
- *   1. Create/update the group in your Genesys Cloud org
- *   2. Add or edit the entry here
- *   3. No other code changes needed
- *
- * FULL ACCESS KEY LIST  (these are the `access` values on each nav leaf)
- * Listed alphabetically by section name.
- * ──────────────────────────────────────────────────────────────────────
- *   AUDIT
- *   audit.search                       Search
- *
- *   DATA ACTIONS
- *   data-actions.copy.betweenOrgs      Copy - Between Orgs
- *   data-actions.edit                  Edit
- *   data-actions.test                  Test (execute only)
- *
- *   DATA TABLES
- *   data-tables.create                 Create
- *   data-tables.edit                   Edit
- *   data-tables.copy.betweenOrgs       Copy - Between Orgs
- *   data-tables.copy.singleOrg         Copy
- *
- *   DASHBOARDS  (read-only; no writes of any kind)
- *   dashboards.quality.coverage        Quality — Evaluation Coverage
- *   dashboards.quality.scores          Quality — Evaluation Scores
- *   dashboards.quality.gaps            Quality — Evaluation Gaps
- *   dashboards.quality.staConfiguration  Quality — STA Configuration
- *   dashboards.agentCopilot.checklists   Agent Copilot — Checklists & Summaries
- *
- *   DEPLOYMENT
- *   deployment.basic                   Basic
- *   deployment.datatables              Data Tables
- *   deployment.onboarding              Onboarding  (SUPERUSER only — never granted via GROUP_ACCESS)
- *
- *   CUSTOMERS  (Master Admin only)
- *   customers.access                   Access to Admin Tool — who may use this app, per customer
- *   deployment.test.testCases          Test — Test Cases  (read-only; generates a test document from a flow)
- *
- *   DIVISIONS  (reassign objects between divisions)
- *   divisions.people.users                  People — Users
- *   divisions.people.team                   People — Work Teams
- *   divisions.routing.queues                Routing — Queues
- *   divisions.routing.callroute             Routing — Call Routes
- *   divisions.routing.emergencyGroups       Routing — Emergency Groups
- *   divisions.routing.extensionPool         Routing — Extension Pools
- *   divisions.routing.routingSchedules      Routing — Routing Schedules
- *   divisions.routing.routingScheduleGroups Routing — Routing Schedule Groups
- *   divisions.routing.skillGroup            Routing — Skill Groups
- *   divisions.routing.skill                 Routing — Skills
- *   divisions.routing.wrapupCode            Routing — Wrap-up Codes
- *   divisions.architect.flow                Architect — Flows
- *   divisions.architect.flowMilestone       Architect — Milestones
- *   divisions.architect.flowOutcome         Architect — Flow Outcomes
- *   divisions.architect.script              Architect — Scripts
- *   divisions.architect.dataTables          Architect — Data Tables
- *   divisions.outbound.campaign             Outbound — Campaigns
- *   divisions.outbound.contactList          Outbound — Contact Lists
- *   divisions.outbound.dncList              Outbound — DNC Lists
- *   divisions.outbound.emailCampaign        Outbound — Email Campaigns
- *   divisions.outbound.messagingCampaign    Outbound — Messaging Campaigns
- *   divisions.workforce.businessUnit        Workforce Mgmt — Business Units
- *   divisions.workforce.managementUnit      Workforce Mgmt — Management Units
- *   divisions.task.workbin                  Task Mgmt — Workbins
- *   divisions.task.worktype                 Task Mgmt — Work Types
- *   divisions.response.library              Response Mgmt — Libraries
- *
- *   EXPORT
- *   export.scheduled                   Scheduled Exports
- *   export.roles.allOrgs               Roles — All Orgs
- *   export.roles.singleOrg             Roles — Single Org
- *   export.licenses.consumption        Licenses — Consumption
- *   export.billing.singleOrg           Billing — Single Org
- *   export.billing.allOrgsLatest       Billing — All Orgs (Latest)
- *   export.billing.calendarYear        Billing — Calendar Year
- *   export.billing.dateRange           Billing — Date Range
- *   export.billing.customOrgs          Billing — Custom Orgs
- *   export.billing.periodComparison    Billing — Period Comparison
- *   export.documentation.create        Documentation — Create
- *   export.interactions.totals         Interactions — Totals
- *   export.users.allGroups             Users — All Groups
- *   export.users.allRoles              Users — All Roles
- *   export.users.filteredRoles         Users — Filtered on Role(s)
- *   export.users.lastLogin             Users — Last Login
- *   export.users.queuesSkills          Users — Queues/Skills
- *   export.users.skillTemplates        Users — Skill/Role/Queue Templates
- *   export.users.trustee               Users — Trustee
- *
- *   FLOWS
- *   flows.flowoverview                 Flow Overview  (read-only flow visualiser)
- *   flows.journey                      Journey Flow
- *   flows.delete                       Delete Flow  (Master Admin + SUPERUSER only; never available to customers)
- *
- *   GDPR
- *   gdpr.subjectRequest                Subject Request
- *   gdpr.requestStatus                 Request Status
- *   gdpr.exportReader                  Article 15 - Export Reader  (reads a downloaded archive; no Genesys call)
- *
- *   INTERACTIONS
- *   interactions.disconnect                          Disconnect (force-disconnect stuck conversations)
- *   interactions.search.participantData.recent       Search > Participant Data > Recent (<48h)
- *   interactions.search.participantData.historical   Search > Participant Data > Historical (>48h)
- *   interactions.search.participantData.*            Both Participant Data search pages
- *   interactions.search.transcripts.search           Search > Transcripts > Search
- *   interactions.search.transcripts.*                All transcript pages
- *   interactions.search.*                            All search pages (any sub-group)
- *   interactions.move                                Move (move interactions between queues)
- *   interactions.recordings.create                   Recordings > Create Export Job
- *   interactions.recordings.jobs                     Recordings > Export Jobs
- *   interactions.recordings.*                        All recordings pages
- *
- *   PHONES
- *   phones.webrtc.changeSite           WebRTC — Change Site
- *   phones.webrtc.create               WebRTC — Create WebRTC
- *   phones.webrtc.delete               WebRTC — Delete (Master Admin; customers by entitlement)
- *
- *   ROLES
- *   roles.copy.singleOrg               Copy (within the selected org)
- *   roles.copy.betweenOrgs             Copy — Copy between orgs
- *   roles.compare                      Compare
- *   roles.search                       Permissions vs. Users
- *   roles.create                       Create
- *   roles.edit                         Edit
- *
- *   USERS
- *   users.directRouting.add                Direct Routing — Add user(s)
- *   users.rolesSkills.configureUsers       Roles, Queues & Skills — Configure Users
- *   users.rolesSkills.createTemplate       Roles, Queues & Skills — Create/Edit Template
- *   users.rolesSkills.addUsersToTemplates  Roles, Queues & Skills — Manage Templates
- *   users.rolesSkills.templateSchedules    Roles, Queues & Skills — Template Schedules
- *   users.rolesSkills.copyFromUser         Roles, Queues & Skills — Copy from User
- *
- *   UTILITIES
- *   utilities.getLists                 Get Lists
- *   utilities.ipRanges                 IP Ranges
- *
- *   WRAPUP CODES
- *   wrapupCodes.createEditMapping      Create/Edit/Mapping
+ * HOW ACCESS KEYS WORK
+ * ────────────────────
+ * Each leaf page in navConfig.js has an `access` field — e.g.
+ * "interactions.search". The URL path is NOT used for access checks — only
+ * that field. featurePermissionMap.js maps a key to the permission(s) it
+ * needs; a key with no entry there and no rule here is open to any named
+ * user.
  */
 
-/**
- * Shared base for the admin groups: everything except the restricted pages.
- * Most sections are granted by wildcard; Deployment and Flows are granted
- * per-page so `deployment.onboarding` and `flows.delete` are never handed out
- * implicitly. Add new top-level sections here to keep admins current.
- *
- * NB: a wildcard grants keys that do not exist yet. `flows.*` used to be listed
- * here, which would have handed `flows.delete` to both admin groups the moment
- * it was registered — hence the explicit leaves. Adding a new restricted page
- * under an existing section means breaking that section's wildcard too.
- *
- * `phones.*` was broken up for exactly that reason when `phones.webrtc.delete`
- * was added: leaving the wildcard would have handed both admin groups the
- * ability to bulk-delete phones without anyone granting it.
- */
-const ADMIN_BASE = [
-  "audit.*", "dashboards.*", "data-actions.*", "data-tables.*", "divisions.*", "export.*",
-  "gdpr.*", "interactions.*", "roles.*", "users.*",
-  "utilities.*", "wrapupCodes.*",
-  "deployment.basic", "deployment.datatables", "deployment.test.testCases",
-  "flows.flowoverview", "flows.journey",
-  "phones.webrtc.changeSite", "phones.webrtc.create",
-];
-export const GROUP_ACCESS = {
-  // "*" can't express an exclusion, so the admin groups enumerate every section
-  // and grant Deployment and Flows per page. Superusers bypass this map entirely
-  // (see accessService.js).
-  //
-  // Master Admin additionally gets `flows.delete` and `phones.webrtc.delete`.
-  // Both are destructive and irreversible, so they are granted to the top admin
-  // group by name rather than inherited through a wildcard — and
-  // `deployment.onboarding`, which writes into customer orgs with client
-  // credentials, stays superuser-only for both groups.
-  // `customers.*` — who may use the app, per customer — sits here too: adding
-  // a name starts a charge. The endpoint checks the same group server-side.
-  "Genesys App - Master Admin": [...ADMIN_BASE, "flows.delete", "phones.webrtc.delete", "customers.*"],
-  "Genesys App - Admin": ADMIN_BASE,
-  // Support gets `data-actions.test` and NOT `data-actions.*`: the Test page is
-  // mapped to `integrations:action:execute` alone, so this grants running an
-  // action without the ability to edit, publish or copy one. Naming the single
-  // key rather than the section is the whole point — a wildcard here would hand
-  // over the editor as well.
-  "Genesys App - Support": ["audit.*", "interactions.search.*", "export.*", "roles.compare", "roles.search", "flows.journey", "data-actions.test"],
-  "Genesys App - Export": ["export.*"],
-};
+/** Superusers only. Nothing in Genesys means "may onboard a customer org". */
+export const SUPERUSER_ONLY_KEYS = Object.freeze([
+  "deployment.onboarding",
+]);
 
 /**
- * Users who always get full access, regardless of group membership.
- * Add Genesys Cloud user IDs here.
+ * Superusers, and internal colleagues whose own row says "customer-manager".
+ * Naming a customer user starts a charge; the right to do that is granted in
+ * the app by a superuser, never derived from Genesys.
  */
-export const SUPERUSER_IDS = [
-  "519fd42d-d19b-4d6b-9827-d77c9ceb8dc3",
-  "88a27e0a-ef94-499a-91c5-cf34ef661adc",
-];
+export const CUSTOMER_MANAGER_KEYS = Object.freeze([
+  "customers.access",
+]);

@@ -248,6 +248,26 @@ module.exports = async function (context, req) {
     }
 
     // --- INTERNAL / FALLBACK MODE: client-credentials (existing behavior) ---
+
+    // The named-user gate, for internal sessions (licenseGate.js). Until this
+    // check the proxy asked an internal caller nothing beyond "is your token
+    // from our org" and elevated them to client credentials for any customer
+    // org; the app's whole internal access model lived in the browser. An
+    // unnamed colleague now gets no Genesys call through here. Superusers
+    // pass; while INTERNAL_NAMED_USERS_ENFORCED is not "true" an unnamed
+    // colleague passes and is logged.
+    if (classification.mode === "internal") {
+      const licence = await checkLicense(context, userToken, classification);
+      if (!licence.licensed) {
+        context.res = {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+          body: { error: "user_not_licensed", reason: licence.reason },
+        };
+        return;
+      }
+    }
+
     if (!customerId) {
       context.res = {
         status: 400,

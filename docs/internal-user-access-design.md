@@ -1,6 +1,6 @@
 # Internal User Access — Design
 
-Status: **Agreed** — design signed off 2026-09-16; not to be built until the production hold lifts and the user says go
+Status: **In development** — built on `main` 2026-09-16 (gate, endpoint, page, client); the proxy's permission-domain check (§7) is next. Production merge waits for the hold to lift.
 Author: Genesys Admin App
 Last updated: 2026-09-16
 
@@ -14,9 +14,9 @@ them anything past it. Nobody is seeded. Everyone is added on purpose.
 This is the pattern the app already applies to customers — group for the
 door, named in the app to get in (`docs/customer-user-licensing-design.md`)
 — extended to the internal org. It is also the pattern the user intends to
-carry forward: customer users will later be added with one of two roles,
-Administrator or Supervisor. The field this design adds is shaped so those
-two values drop straight into it (§4).
+carry forward: customer users will later be added — by Netdesign, always —
+with one of two roles, Administrator or Supervisor. The field this design
+adds is shaped so those two values drop straight into it (§4).
 
 ## 1. Confirmed decisions
 
@@ -142,9 +142,11 @@ the root authority and bypasses the gate for the internal org (§7), so a
 superuser can always sign in and always add the first name. Nothing that can
 be edited from the app can lock a superuser out.
 
-Customers are unchanged: group for the door, named to get in, and today no
-customer can name anyone. §10 changes the last part: a customer Administrator
-will be able to name users in their own org.
+Customers are unchanged: group for the door, named to get in, and **no
+customer can ever name anyone** — not now, and not under §10. Naming a
+customer user is an internal act, because it starts a charge. The most a
+customer Administrator will ever be able to do is adjust what a Supervisor
+may access (§10), and that does not exist yet.
 
 ## 6. What replaces the roles
 
@@ -256,17 +258,20 @@ Written in the same commit as the change, never after
 
 Customer users will be added with one of two roles:
 
-- **Administrator** — everything in the org's package, and may name users in
-  the org.
+- **Administrator** — everything in the org's package.
 - **Supervisor** — a subset, chosen per person. When Supervisor is selected on
-  the add flow, checkboxes appear, one per feature, and the person doing the
-  adding ticks the ones this Supervisor gets.
+  the add flow, checkboxes appear, one per feature, and the internal person
+  doing the adding ticks the ones this Supervisor gets.
+
+Neither role can name a user. Adding a customer user is always done by
+Netdesign, from this page, because it starts a charge.
 
 The checkboxes are not the whole package. They are **the Supervisor scope**:
-the set of features an Administrator — internal, or the customer's own — has
-decided a Supervisor in that org may have at all. Defining that scope is its
-own control, per org, and is what makes "Supervisor" mean something
-consistent inside one customer while differing between customers.
+the set of features a Supervisor in that org may have at all. Today an
+internal Administrator defines it; later — a feature that does not yet exist
+— a customer Administrator will be able to adjust it for their own org. That
+is the whole of a customer Administrator's future power over access:
+tweaking what Supervisors may see, never who is a user.
 
 So three things carry it: the org's Supervisor scope (per-org configuration,
 alongside its entitlements); the `role` on the row; and the `features` list

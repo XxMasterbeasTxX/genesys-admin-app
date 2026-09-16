@@ -22,7 +22,6 @@ import {
 import { createApiClient } from "./services/apiClient.js";
 import { orgContext } from "./services/orgContext.js";
 import { fetchOrgConfig } from "./services/orgConfigService.js";
-import { GROUP_ACCESS } from "./accessConfig.js";
 import { resolveAccess, resolveCustomerAccess } from "./services/accessService.js";
 import { APP_VERSION } from "./releaseNotes.js";
 import { renderReleaseNotesPage } from "./pages/releaseNotes.js";
@@ -116,8 +115,8 @@ function renderOrgRecovery() {
  * trickling in from features. The reason is shown only when it is something
  * the person could act on; "not_assigned" needs no elaboration.
  */
-function renderNotLicensed(customer, reason) {
-  setHeader({ authText: "Auth: no licence" });
+function renderNotLicensed(customer, reason, { internal = false } = {}) {
+  setHeader({ authText: internal ? "Auth: not named" : "Auth: no licence" });
   const orgSelectEl = document.getElementById("orgSelect");
   if (orgSelectEl) {
     orgSelectEl.innerHTML = `<option value="">${escapeHtml(customer?.name || "")}</option>`;
@@ -130,10 +129,14 @@ function renderNotLicensed(customer, reason) {
     : reason === "license_check_failed"
       ? "The licence check is temporarily unavailable. Try again in a moment."
       : "If access was just added for you, it can take up to five minutes to apply — or sign out and back in to apply it now.";
+  // An internal colleague who has not been named: same gate, same screen,
+  // different sentence — a superuser adds them, not "your administrator".
+  const title = internal ? "You have not been given access to this app yet" : "No licence for this app is assigned to you";
+  const ask   = internal ? "Ask a superuser to add you." : "Ask your administrator to have access added for your user.";
   document.getElementById("appMain").innerHTML = `
     <section class="card">
-      <h1 class="h1">No licence for this app is assigned to you</h1>
-      <p class="p">Ask your administrator to have access added for your user.</p>
+      <h1 class="h1">${escapeHtml(title)}</h1>
+      <p class="p">${escapeHtml(ask)}</p>
       ${detail ? `<p class="p" style="opacity:0.8;">${escapeHtml(detail)}</p>` : ""}
     </section>
   `;
@@ -241,10 +244,12 @@ function renderSignInGate() {
     // Org context resolved — clear any prior self-heal guard.
     sessionStorage.removeItem(ORGCFG_RETRY_KEY);
 
-    if (orgCfg.mode === "customer" && orgCfg.licensed === false) {
+    if (orgCfg.licensed === false) {
       // Named-user gate: the org is registered, this person is not on its
-      // list. Stop here — nothing else on the customer path will answer them.
-      renderNotLicensed(orgCfg.customer, orgCfg.reason);
+      // list. Stop here — nothing else will answer them. The same gate now
+      // runs for the internal org (docs/internal-user-access-design.md).
+      const internal = orgCfg.mode === "internal";
+      renderNotLicensed(internal ? orgCfg.org : orgCfg.customer, orgCfg.reason, { internal });
       return;
     }
 
@@ -264,11 +269,15 @@ function renderSignInGate() {
       orgSelectEl.disabled = true;
       orgContext.set(customer.id);
     } else {
-      access = await resolveAccess(res.accessToken, GROUP_ACCESS, res.me?.id);
+      // Named (or a superuser) — the server said so. What they may do is their
+      // own Genesys permissions; the two things a permission cannot express
+      // come from the role the server read off their row.
+      access = await resolveAccess(res.accessToken, { superuser: orgCfg.superuser, role: orgCfg.role });
 
       const customers = Array.isArray(orgCfg.customers) ? orgCfg.customers : [];
       orgContext.setMode("internal");
       orgContext.setCustomers(customers);
+      orgContext.setInternalOrgSlug(orgCfg.internalOrgSlug || "demo");
 
       orgSelectEl.innerHTML = `<option value="">Select customer…</option>`
         + customers.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.region)})</option>`).join("");
@@ -312,9 +321,11 @@ function renderSignInGate() {
     orgSelectEl.disabled = true;
     // Fail-closed for a customer deep link; keep internal resilience otherwise.
     isInternalMode = !res.orgHint;
+    // Nobody vouched for this caller, so nothing is granted beyond what their
+    // own permissions cover — no superuser, no role.
     access = res.orgHint
       ? await resolveCustomerAccess([])
-      : await resolveAccess(res.accessToken, GROUP_ACCESS, res.me?.id);
+      : await resolveAccess(res.accessToken, {});
   }
 
   orgSelectEl.addEventListener("change", () => {

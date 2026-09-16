@@ -25,10 +25,13 @@ async function call(method, path, body) {
 
 function licenseMessage(code, json, status) {
   switch (code) {
-    case "group_required":   return `Only members of "${json.required}" can change who has access.`;
-    case "group_unverified": return "Your group membership could not be verified, so this change was not made.";
-    case "internal_only":    return "This page is for Netdesign staff.";
-    case "internal_org":     return "This is the internal organisation. Its users are granted access by group, not by licence.";
+    case "superuser_required":        return "Only a superuser can change who has access to the internal organisation.";
+    case "customer_manager_required": return "You have not been given the right to manage customer access. Ask a superuser.";
+    case "identity_unavailable":      return "We could not verify who you are just now, so this change was not made. Try again in a moment.";
+    case "internal_org_only":         return "Only users of the internal organisation can be given that right.";
+    case "user_not_named":            return "That person is not on the list.";
+    case "invalid_role":              return "That is not a role this page knows.";
+    case "internal_only":             return "This page is for Netdesign staff.";
     case "not_a_customer":   return "This organisation is not set up as a customer yet — it has no registry entry, so nobody can sign in to it as a customer.";
     default:                 return `The request failed (${code || status}).`;
   }
@@ -43,6 +46,15 @@ export async function listLicensedUsers(customerId) {
 /** Name a user. Returns { user, created } — created is false if they already had access. */
 export function assignLicense(customerId, { id, email, name }) {
   return call("POST", "/api/licenses/assign", { customerId, userId: id, email, name });
+}
+
+/**
+ * Set the role on an internal user's row: "customer-manager" lets them name
+ * users for customer orgs; "" takes that back. Superusers only, server-checked.
+ * Returns { user, changed }.
+ */
+export function setLicenseRole(customerId, userId, role) {
+  return call("POST", "/api/licenses/role", { customerId, userId, role });
 }
 
 /** Remove a user's access. Returns { user, revoked }. */

@@ -13,6 +13,15 @@
  *   rowKey        `<userId>|<assignedAt>` — a user removed and re-added has
  *                 two rows, both true
  *   userId, email, name, assignedBy, assignedAt, revokedBy, revokedAt
+ *   role          "" for a plain named user. "customer-manager" on an INTERNAL
+ *                 row lets that colleague name users for customer orgs
+ *                 (docs/internal-user-access-design.md §5). The customer
+ *                 roles "administrator" / "supervisor" are reserved for later
+ *                 (§10) and read by nothing yet.
+ *
+ * The internal org has rows too, under its own slug: an internal colleague is
+ * named exactly as a customer user is. Its rows carry no billing meaning —
+ * the internal org is a trustee org and is never billed.
  *
  * Timestamps are UTC ISO-8601. Genesys billing periods arrive the same way,
  * so the peak sweep compares like with like.
@@ -64,6 +73,7 @@ function entityToRow(e) {
     assignedAt: e.assignedAt,
     revokedBy:  e.revokedBy || null,
     revokedAt:  e.revokedAt || null,
+    role:       e.role || "",
   };
 }
 
@@ -87,8 +97,13 @@ async function listActive(customerId) {
 
 /** The gate's question: is this user named right now? */
 async function isActive(customerId, userId) {
+  return !!(await activeRow(customerId, userId));
+}
+
+/** The active row for a user, or null — the gate reads the role off it. */
+async function activeRow(customerId, userId) {
   const rows = await listRows(customerId);
-  return rows.some((r) => r.userId === userId && !r.revokedAt);
+  return rows.find((r) => r.userId === userId && !r.revokedAt) || null;
 }
 
 /**
@@ -118,6 +133,32 @@ async function assign(customerId, user, by) {
   };
   await getClient().createEntity(entity);
   return { row: entityToRow(entity), created: true };
+}
+
+/**
+ * Set the role on a user's active row. Only "" and "customer-manager" mean
+ * anything today; the endpoint decides who may call this. Stamped with who
+ * and when, so a grant is as traceable as an assignment.
+ *
+ * @returns {Promise<{ row: object|null, changed: boolean }>}
+ */
+async function setRole(customerId, userId, role, by) {
+  const active = await activeRow(customerId, userId);
+  if (!active) return { row: null, changed: false };
+  if ((active.role || "") === (role || "")) return { row: active, changed: false };
+  const roleSetAt = new Date().toISOString();
+  await getClient().updateEntity(
+    {
+      partitionKey: safeKey(customerId),
+      rowKey:       `${safeKey(userId)}|${active.assignedAt}`,
+      role:         role || "",
+      roleSetBy:    by.id || "",
+      roleSetByEmail: by.email || "",
+      roleSetAt,
+    },
+    "Merge",
+  );
+  return { row: { ...active, role: role || "" }, changed: true };
 }
 
 /**
@@ -193,4 +234,4 @@ function peakOfRows(rows, start, end) {
   return peak;
 }
 
-module.exports = { listActive, isActive, assign, revoke, peakAssigned, peakOfRows, TABLE_NAME };
+module.exports = { listActive, isActive, activeRow, assign, setRole, revoke, peakAssigned, peakOfRows, TABLE_NAME };

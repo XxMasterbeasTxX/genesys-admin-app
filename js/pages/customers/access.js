@@ -1,30 +1,41 @@
 /**
- * Customers › Access to Admin Tool
+ * Customers › Access to Admin Tool — and the internal org's own list.
  *
- * Who, in the selected customer's org, may use this app. Customers pay per
- * named user and the list on this page IS the contract — there is no seat
- * count to keep in step with it (docs/customer-user-licensing-design.md).
+ * Who, in the selected org, may use this app. For a customer the list IS the
+ * contract — they pay per named user, and there is no seat count to keep in
+ * step with it (docs/customer-user-licensing-design.md). For the internal
+ * org it is the same list with no money behind it: a colleague nobody has
+ * named cannot use the app (docs/internal-user-access-design.md).
  *
  *   - Add users: search by name or e-mail, tick the users you mean, press
  *     "Add users", confirm against the list of who. Three deliberate steps,
- *     because adding a name starts a charge — a single click on a search
- *     result is not enough of a decision.
+ *     because adding a customer name starts a charge — a single click on a
+ *     search result is not enough of a decision.
  *   - Users with access: the current list, with Remove (also confirmed).
+ *   - On the internal org only, for superusers only: "Manages customer
+ *     access", one tick per row. It is the right to name users for customer
+ *     orgs — to start charges — and it is granted here, by a superuser,
+ *     logged, never derived from a Genesys group.
+ *
+ * Who may change which list is decided by the server, from the caller's own
+ * row: the internal org's list by superusers only; a customer's by superusers
+ * and colleagues who manage customer access. This page reads the same answer
+ * off `access` and does not offer what the server would refuse.
  *
  * The org is the header selector's, like every other internal page. Search
- * runs through the proxy on the selected customer (POST /users/search);
- * add and remove go to /api/licenses, which checks Master Admin membership
- * again server-side and logs every change with the caller's verified identity.
+ * runs through the proxy on the selected org (POST /users/search); add,
+ * remove and the role go to /api/licenses, which checks the caller again
+ * server-side and logs every change with the caller's verified identity.
  *
- * Remove is a revocation, not a deletion: the row stays as billing history.
- * Nothing on this page shows that history, and nothing here mentions money.
+ * Remove is a revocation, not a deletion: the row stays as history.
  */
 import { escapeHtml, makeStatus } from "../../utils.js";
-import { listLicensedUsers, assignLicense, revokeLicense } from "../../services/licenseService.js";
+import { listLicensedUsers, assignLicense, revokeLicense, setLicenseRole } from "../../services/licenseService.js";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
-export default function renderCustomerAccess({ me, api, orgContext }) {
+export default function renderCustomerAccess({ me, api, orgContext, access }) {
+  const isSuperuser = !!(access && access.isSuperuser);
   const el = document.createElement("div");
   el.innerHTML = `
     <style>
@@ -62,7 +73,7 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
     <div class="ca-wrap">
       <h1 class="h1">Customers — Access to Admin Tool</h1>
       <hr class="hr">
-      <p class="page-desc">
+      <p class="page-desc" id="caIntro">
         The users in the selected customer's organisation who may use this app. Only the people
         listed here can sign in; everyone else in the org sees a message asking them to contact
         their administrator. Adding a name is what the customer is billed for.
@@ -90,6 +101,7 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
     </div>
   `;
 
+  const $intro    = el.querySelector("#caIntro");
   const $orgName  = el.querySelector("#caOrgName");
   const $count    = el.querySelector("#caCount");
   const $add      = el.querySelector("#caAdd");
@@ -120,9 +132,12 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
       $list.innerHTML = `<div class="ca-empty">Nobody in ${escapeHtml(currentOrg.name)} has access yet. Add a user above.</div>`;
       return;
     }
+    // The role column exists on the internal org's list only, and only a
+    // superuser sees it: it is the right to start charges to customers.
+    const roleCol = isInternal() && isSuperuser;
     $list.innerHTML = `
       <table class="data-table ca-table">
-        <thead><tr><th>Name</th><th>E-mail</th><th>Added by</th><th>Added on</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>E-mail</th><th>Added by</th><th>Added on</th>${roleCol ? "<th>Manages customer access</th>" : ""}<th></th></tr></thead>
         <tbody>
           ${licensed.map((u) => `
             <tr data-user="${escapeHtml(u.userId)}">
@@ -130,6 +145,7 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
               <td class="ca-muted">${escapeHtml(u.email || "")}</td>
               <td class="ca-muted">${escapeHtml(u.assignedByEmail || u.assignedBy || "")}</td>
               <td class="ca-muted">${escapeHtml(fmtDate(u.assignedAt))}</td>
+              ${roleCol ? `<td><input type="checkbox" data-role="${escapeHtml(u.userId)}" ${u.role === "customer-manager" ? "checked" : ""} title="May add and remove users for customer organisations"></td>` : ""}
               <td class="ca-actions"><button type="button" class="btn btn-secondary btn-sm" data-remove="${escapeHtml(u.userId)}">Remove</button></td>
             </tr>`).join("")}
         </tbody>
@@ -138,6 +154,36 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
     $list.querySelectorAll("[data-remove]").forEach((btn) => {
       btn.addEventListener("click", () => remove(btn.getAttribute("data-remove")));
     });
+    $list.querySelectorAll("[data-role]").forEach((box) => {
+      box.addEventListener("change", () => setRole(box.getAttribute("data-role"), box.checked, box));
+    });
+  }
+
+  function isInternal() {
+    return !!(currentOrg && orgContext.isInternalOrg(currentOrg.id));
+  }
+
+  /** Grant or withdraw the right to manage customer access. Superusers only; the server checks again. */
+  async function setRole(userId, on, box) {
+    const row   = licensed.find((l) => l.userId === userId);
+    const label = row ? (row.name || row.email || userId) : userId;
+    const role  = on ? "customer-manager" : "";
+    const ok = window.confirm(on
+      ? `Let ${label} add and remove users for customer organisations?\n\nAdding a customer user starts a charge to that customer.`
+      : `Withdraw ${label}'s right to manage customer access?`);
+    if (!ok) { box.checked = !on; return; }
+    box.disabled = true;
+    setStatus(on ? `Letting ${label} manage customer access…` : `Withdrawing ${label}'s right to manage customer access…`);
+    try {
+      await setLicenseRole(currentOrg.id, userId, role);
+      if (row) row.role = role;
+      setStatus(on ? `${label} can now manage customer access.` : `${label} no longer manages customer access.`, "ok");
+    } catch (err) {
+      box.checked = !on;
+      setStatus(err.message || String(err), "error");
+    } finally {
+      box.disabled = false;
+    }
   }
 
   function fmtDate(iso) {
@@ -291,7 +337,9 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
     const label = u ? (u.name || u.email || userId) : userId;
     const ok = window.confirm(
       `Remove ${label}'s access to the Admin Tool for ${currentOrg.name}?\n\n` +
-      `They will be signed out within five minutes and see a message to contact their administrator.`
+      (isInternal()
+        ? `They will be signed out within five minutes and see a message to ask a superuser.`
+        : `They will be signed out within five minutes and see a message to contact their administrator.`)
     );
     if (!ok) return;
 
@@ -323,19 +371,33 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
   $addBtn.addEventListener("click", addSelected);
 
   /**
-   * Only an org that can sign in as a customer has a list. The internal org's
-   * users are granted by group and never meet the licence gate; an org without
-   * a registry entry cannot sign in as a customer at all. The server refuses
-   * both; this just says so instead of offering a box that would fail.
+   * An org has a list if it can sign in as a customer, or if it is the
+   * internal org. One without a registry entry cannot sign in as a customer
+   * at all. The internal org's list may be changed by superusers only; the
+   * server refuses anyone else, and this says so instead of offering a box
+   * that would fail.
    */
   function notLicensable(org) {
     if (!org) return null;
-    if (org.internal === true || org.registered === false) {
-      return org.internal
-        ? `${org.name} is the internal organisation. Its users are granted access by group, not by licence — there is nothing to name here.`
-        : `${org.name} is not set up as a customer yet: it has no registry entry, so nobody can sign in to it as a customer. Add the registry entry first (see the onboarding runbook), then name its users here.`;
+    if (org.registered === false && !orgContext.isInternalOrg(org.id)) {
+      return `${org.name} is not set up as a customer yet: it has no registry entry, so nobody can sign in to it as a customer. Add the registry entry first (see the onboarding runbook), then name its users here.`;
+    }
+    if (orgContext.isInternalOrg(org.id) && !isSuperuser) {
+      return `${org.name} is the internal organisation. Only a superuser can change who has access to it.`;
     }
     return null;
+  }
+
+  /** The intro says which kind of list this is. */
+  function renderIntro() {
+    $intro.textContent = isInternal()
+      ? "The colleagues in the internal organisation who may use this app. Only the people listed "
+        + "here can sign in; everyone else in the org sees a message asking them to contact a "
+        + "superuser. Nothing here is billed. Tick \"Manages customer access\" to let a colleague add "
+        + "and remove users for customer organisations."
+      : "The users in the selected customer's organisation who may use this app. Only the people "
+        + "listed here can sign in; everyone else in the org sees a message asking them to contact "
+        + "their administrator. Adding a name is what the customer is billed for.";
   }
 
   function setOrg(org) {
@@ -353,6 +415,7 @@ export default function renderCustomerAccess({ me, api, orgContext }) {
       return;
     }
     $orgName.textContent = currentOrg.name;
+    renderIntro();
     const why = notLicensable(currentOrg);
     if (why) {
       $add.hidden = true;

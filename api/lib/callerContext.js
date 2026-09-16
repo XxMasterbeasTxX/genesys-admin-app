@@ -57,6 +57,8 @@ function getRequestHint(req) {
  *   configured: boolean,
  *   customerId: string|null,   // customer slug when in customer mode, else null
  *   ownerOrgId: string,        // owner tag for OWNER-scoped stores
+ *   superuser: boolean,        // internal only: on the SUPERUSER_IDS app setting
+ *   role: string,              // internal only: the caller's row role ("" | "customer-manager"); "superuser" for a superuser
  *   userId: string|null,       // VERIFIED Genesys user id, from the token
  *   userEmail: string,         // verified; "" when identity is unavailable
  *   userName: string,          // verified; "" when identity is unavailable
@@ -112,9 +114,25 @@ async function getCallerContext(context, req, { hintId = null, identify = true }
   };
 
   switch (classification.mode) {
-    case "internal":
     case "fallback":
-      return withIdentity({ authorized: true, mode: "internal", configured, customerId: null, ownerOrgId: INTERNAL_OWNER });
+      // Unconfigured environment (local dev): no registry, no internal org to
+      // gate against. Behaves as internal, ungated, as it always has.
+      return withIdentity({ authorized: true, mode: "internal", configured, customerId: null, ownerOrgId: INTERNAL_OWNER, superuser: false, role: "" });
+    case "internal": {
+      // The named-user gate (licenseGate.js), now for internal sessions too:
+      // a colleague nobody has named is refused here, so every store endpoint
+      // inherits it. Superusers pass; while INTERNAL_NAMED_USERS_ENFORCED is
+      // not "true" an unnamed colleague passes and is logged.
+      const licence = await checkLicense(context, token, classification);
+      if (!licence.licensed) {
+        return { authorized: false, status: 403, error: "user_not_licensed", reason: licence.reason, mode: "internal", configured, customerId: null, ownerOrgId: INTERNAL_OWNER, ...NO_IDENTITY };
+      }
+      return withIdentity({
+        authorized: true, mode: "internal", configured, customerId: null, ownerOrgId: INTERNAL_OWNER,
+        superuser: !!licence.superuser,
+        role: licence.role || "",
+      });
+    }
     case "customer": {
       // The named-user gate (licenseGate.js): a customer session whose user
       // has not been named for the org is refused here, so every store

@@ -1,11 +1,10 @@
 /**
  * The caller's Genesys group names, server-side.
  *
- * Internal access is shaped by group membership (js/accessConfig.js
- * GROUP_ACCESS), and until now only the browser ever asked. The licence
- * endpoints ask again here: naming a user for a customer starts a charge,
- * so the endpoint checks that the verified caller is in the group the page
- * is gated on, rather than trusting that only the page would call it.
+ * Internal access used to be shaped by group membership; it is not any more
+ * (docs/internal-user-access-design.md — being named in the app decides who
+ * may use it, and Genesys permissions decide what they may do). The one
+ * remaining caller is the All Roles export, which lists groups as data.
  *
  * Same two-step read the client's accessService makes: users/me?expand=groups
  * for the ids, then each group by id for its name. Returns null when the
