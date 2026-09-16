@@ -1510,7 +1510,7 @@ conversations.
 | Not recorded | Same detail query with a `recording` segment filter (13.2a) | one call |
 | Not transcribed | `nSpeechTextAnalyzedConversations` from `analytics/transcripts/aggregates/query` over the same scope | one call |
 | Evaluations received, per agent | `analytics/evaluations/aggregates/query`, `nEvaluations` grouped by `userId` - already what Coverage does | one call |
-| Agent lacks Participate | Roles, as Coverage resolves today | two calls |
+| Agent lacks Participate permission | Roles, as Coverage resolves today | two calls |
 | AI tried and failed | `aiScoringFailureType`, already on Coverage | one call |
 | **expected / missed** | Derived per 13.0a from the rule's sampling and the qualifying count | free |
 
@@ -1560,7 +1560,7 @@ the right instrument here despite being the heavier one.
 |    No program covers the queue or flow            certain        |
 |    Transcription off (org, or that queue)         certain        |
 |    Scoring rule disabled or unpublished           certain        |
-|    Agent lacks Participate                        certain        |
+|    Agent lacks Participate permission             certain        |
 |    AI tried and could not score                   certain        |
 |    - - - - - - - - - - - - - - - - - - - - - - - - - - - - -     |
 |    Unexplained                          <- the one that matters  |

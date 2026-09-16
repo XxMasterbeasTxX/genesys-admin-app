@@ -60,7 +60,7 @@ transcribed" in any useful sense.
 |---|---|---|---|---|
 | 3.1 | Read the bars | One row per reason that occurred, largest first | | |
 | 3.2 | Hover a reason | An explanation of what it means | | |
-| 3.3 | **Agent lacks Participate** | Agents without `quality:evaluation:participate` | | |
+| 3.3 | **Agent lacks Participate permission** | Agents without `quality:evaluation:participate` | | |
 | 3.4 | ~~No program covers the queue~~ | Gone. Scope is chosen by program now, so every queue in view is covered by construction. A queue no program covers is a configuration question — STA Configuration answers it | | |
 | 3.5 | **No live scoring rule** | The covering program has no enabled *and* published rule | | |
 | 3.6 | **Queue transcription off** | Only when the org is on Enabled Queue Flow | | |

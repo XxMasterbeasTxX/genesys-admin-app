@@ -80,7 +80,7 @@ const RECORDING_PRESENT = new Set(
  * any useful sense — the recording is the thing to fix.
  */
 const REASONS = Object.freeze([
-  { key: "noPermission", label: "Agent lacks Participate", fill: "dq-fill-bad",
+  { key: "noPermission", label: "Agent lacks Participate permission", fill: "dq-fill-bad",
     hint: "The agent does not hold quality:evaluation:participate, so no evaluation "
       + "can be created against them at all." },
   { key: "noRule", label: "No live scoring rule", fill: "dq-fill-bad",
