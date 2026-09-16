@@ -823,9 +823,40 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         const res = await gc.fetchEntityByPath(api, orgId, path);
         nameCache[id] = res?.name || res?.displayName || id;
       } catch (err) {
-        nameCache[id] = err?.status === 404 ? `(deleted) ${id}` : id;
+        if (err?.status !== 404) { nameCache[id] = id; return; }
+        // A deleted user is still readable with state=deleted — the only
+        // resource type Genesys keeps after deletion.
+        if (/^\/api\/v2\/users\/[^/?]+$/.test(path)) {
+          try {
+            const res = await gc.fetchEntityByPath(api, orgId, `${path}?state=deleted`);
+            if (res?.name) { nameCache[id] = `(deleted) ${res.name}`; return; }
+          } catch { /* fall through */ }
+        }
+        nameCache[id] = `(deleted) ${id}`;
       }
     });
+  }
+
+  /**
+   * User ids that hide inside an entity NAME rather than the id:
+   * ContactCenter/AgentRoutingInfo is "Agent <orgId>:<userId>".
+   */
+  function embeddedUserId(entry) {
+    const m = String(entry.entity?.name ?? "").match(/^Agent [0-9a-f-]{36}:([0-9a-f-]{36})$/i);
+    return m ? m[1] : "";
+  }
+
+  /**
+   * Genesys-internal name formats made readable. Telephony/DID names a
+   * user-owned number "<orgId>+4540153795contactInfo.phone_cell-<rest>":
+   * the number and the contact field are the parts a person wants.
+   */
+  function prettyEntityName(entry, name) {
+    const did = name.match(/^[0-9a-f-]{36}\+(\d+)(?:contactInfo\.([a-z_]+))?/i);
+    if (did) return `+${did[1]}${did[2] ? ` (${did[2]})` : ""}`;
+    const agent = embeddedUserId(entry);
+    if (agent) return `Agent ${nameCache[agent] || agent}`;
+    return name;
   }
 
   /** Resolve the GUIDs inside the values of these entries (bounded, cached). */
@@ -883,9 +914,13 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       const id = entry.entity?.id;
       if (!id) continue;
       const grant = grantParts(entry);
+      const embedded = embeddedUserId(entry);
       if (grant) {
         members.push(grant.subjectId);
         if (GUID_RE.test(grant.divisionId)) items.push({ path: TYPE_PATH.Division(grant.divisionId), id: grant.divisionId });
+      } else if (embedded) {
+        members.push(embedded);
+        continue;
       } else if (realEntityName(entry)) {
         continue;
       }
@@ -1088,7 +1123,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       return `${role} → ${member}${division ? ` (${division})` : ""}`;
     }
     const own = realEntityName(entry);
-    if (own) return own;
+    if (own) return prettyEntityName(entry, own);
     if (!id) return "";
     return nameCache[id] || id;
   }

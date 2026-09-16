@@ -113,10 +113,16 @@ every page is read.
   - Expect: Entity Name is the **agent's name** (the entity id is the user); Changed By is the agent, or "Genesys (system)" for a SYSTEM-level audit
   - Notes: `______________________`
 - [ ] **5.2b** — Find a PeoplePermissions › AccessToken row
-  - Expect: Entity Name stays the token string — there is nothing to resolve it to; Changed By is the user or client that obtained the token
+  - Expect: Entity Name is the token's identifier (Genesys's fingerprint of the issued OAuth token — not the token, and not resolvable); Changed By is the user or client that obtained it, which is the useful part
   - Notes: `______________________`
 - [ ] **5.3** — Find an audit on an object that has since been **deleted** (e.g. the Row audits of a datatable deleted the same afternoon)
   - Expect: Entity Name is "(deleted) <name>" when any audit in the result set carries the object's `name` in its property changes (the Delete or Create audit normally does); "(deleted) <guid>" only when none does
+  - Notes: `______________________`
+- [ ] **5.3b** — Find a Directory › User **Delete** row, or any audit on a user deleted since
+  - Expect: "(deleted) <user's name>" — Genesys still returns deleted users with `state=deleted`
+  - Notes: `______________________`
+- [ ] **5.3c** — Find a Telephony › DID row for a user's own number and a ContactCenter › AgentRoutingInfo row
+  - Expect: DID reads "+4540153795 (phone_cell)" rather than the org-id-prefixed internal name; AgentRoutingInfo reads "Agent <user's name>"
   - Notes: `______________________`
 - [ ] **5.3a** — Find a PeoplePermissions › Role **MemberAdd** or **MemberRemove** row
   - Expect: "Role name → Member name (division)" — Genesys puts the grant triple `subjectId--roleId--divisionId` in `entity.name`, `*` reads "all divisions"; a group member resolves to the group name
