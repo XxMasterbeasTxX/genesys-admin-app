@@ -278,7 +278,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     const roleCol   = !isInternal();
     $list.innerHTML = `
       <table class="data-table ca-table">
-        <thead><tr><th>Name</th><th>E-mail</th>${roleCol ? "<th>Role</th>" : ""}<th>Added by</th><th>Added on</th>${manageCol ? "<th>Manages customer access</th>" : ""}<th></th></tr></thead>
+        <thead><tr><th>Name</th><th>E-mail</th>${roleCol ? "<th>Role</th>" : ""}<th>Added by</th><th>Added on</th><th>Modified by</th><th>Modified on</th>${manageCol ? "<th>Manages customer access</th>" : ""}<th></th></tr></thead>
         <tbody>
           ${licensed.map((u) => `
             <tr data-user="${escapeHtml(u.userId)}">
@@ -287,6 +287,8 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
               ${roleCol ? `<td data-role-cell>${roleCell(u)}</td>` : ""}
               <td class="ca-muted">${escapeHtml(u.assignedByEmail || u.assignedBy || "")}</td>
               <td class="ca-muted">${escapeHtml(fmtDate(u.assignedAt))}</td>
+              <td class="ca-muted">${escapeHtml(u.modifiedByEmail || u.modifiedBy || "")}</td>
+              <td class="ca-muted">${escapeHtml(fmtDate(u.modifiedAt))}</td>
               ${manageCol ? `<td><input type="checkbox" data-manage="${escapeHtml(u.userId)}" ${u.role === "customer-manager" ? "checked" : ""} title="May add and remove users for customer organisations"></td>` : ""}
               <td class="ca-actions">
                 ${roleCol ? `<button type="button" class="btn btn-secondary btn-sm" data-edit="${escapeHtml(u.userId)}">Edit</button>` : ""}
@@ -319,8 +321,9 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     box.disabled = true;
     setStatus(on ? `Letting ${label} manage customer access…` : `Withdrawing ${label}'s right to manage customer access…`);
     try {
-      await setLicenseRole(currentOrg.id, userId, role);
-      if (row) row.role = role;
+      const r = await setLicenseRole(currentOrg.id, userId, role);
+      if (row) Object.assign(row, r.user || {}, { role });
+      renderList();
       setStatus(on ? `${label} can now manage customer access.` : `${label} no longer manages customer access.`, "success");
     } catch (err) {
       box.checked = !on;
@@ -373,7 +376,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     control.setEnabled(false);
     try {
       const r = await withBusy($save, () => setLicenseRole(currentOrg.id, row.userId, value.role, value.features));
-      if (r.user) { row.role = r.user.role; row.features = r.user.features; }
+      if (r.user) Object.assign(row, r.user);   // role, pages and the modified stamp
       renderList();
       const n = value.features.length;
       const what = value.role === "administrator" ? "an Administrator" : `a Supervisor with ${n} page${n === 1 ? "" : "s"}`;

@@ -127,3 +127,4 @@ integration's group; a superuser session; a customer-manager session.
 | 18 | Customer-manager | As an internal customer-manager: Supervisor Access for the customer; edit a user's role | Both work; for the internal org → 400 / "no scope" | |
 | 19 | Plain colleague | As a named colleague with no role | No Customers section at all | |
 | 20 | Internal list untouched | Customers › Access, select Demo | No role column, no role control; "Manages customer access" tick for superusers as before | |
+| 21 | Modified by / on | After #13 (or a customer-manager tick on the internal list), look at the row | **Modified by** and **Modified on** show who last changed the role or pages and when; blank for a row never edited since it was added | |

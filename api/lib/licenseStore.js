@@ -77,6 +77,11 @@ function entityToRow(e) {
     revokedAt:  e.revokedAt || null,
     role:       e.role || "",
     features:   parseFeatures(e.features),
+    // The last change to the row after the add — a role or pages edit, or
+    // the customer-manager tick on an internal row. Null until there is one.
+    modifiedBy:      e.roleSetBy || "",
+    modifiedByEmail: e.roleSetByEmail || "",
+    modifiedAt:      e.roleSetAt || null,
   };
 }
 
@@ -173,7 +178,13 @@ async function setRole(customerId, userId, role, by, features = null) {
     },
     "Merge",
   );
-  return { row: { ...active, role: role || "", features: nextFeatures }, changed: true };
+  return {
+    row: {
+      ...active, role: role || "", features: nextFeatures,
+      modifiedBy: by.id || "", modifiedByEmail: by.email || "", modifiedAt: roleSetAt,
+    },
+    changed: true,
+  };
 }
 
 /**
