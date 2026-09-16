@@ -4638,6 +4638,9 @@ body {
 /* The post-filter section is about the results, not the query — say so */
 .aq-zone-title  { font-size: 13px; font-weight: 600; color: var(--muted); margin: 14px 0 0; }
 
+/* Cancel sits beside Search only while a search runs */
+.aq-cancel-btn { margin-left: 8px; }
+
 /* Per-row actions inside the detail row */
 .aq-row-actions { margin-top: 12px; }
 .aq-history-btn { font-size: 12px; padding: 4px 10px; }

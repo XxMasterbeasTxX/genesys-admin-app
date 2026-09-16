@@ -102,6 +102,12 @@ every page is read.
 - [ ] **4.3** — Watch the network tab during **Last 7 days**, all services
   - Expect: no more than 3 audit requests in flight at once. A 429 is retried in place; if it still fails, the status says "Rate limited on N queries — pausing, then retrying them one at a time…" and only what fails that second pass is listed. (An 8-day, 46-service run at 6 in flight lost 27 of 368 queries on 2026-09-16.)
   - Notes: `______________________`
+- [ ] **4.3a** — Run **Last 3 months** on a large org and press **Cancel** mid-way
+  - Expect: Cancel appears beside Search only while a search runs; pressing it says "Cancelling — finishing the request in flight…", then an amber "Cancelled — N results before stopping; the range was not fully read." and the partial results render
+  - Notes: `______________________`
+- [ ] **4.3b** — Run **Last 3 months** on a large org and read the status line
+  - Expect: up to three intervals run at once — "all services — 0 of 3 intervals done (… entries) — 1: running 40s · 2: fetching 12000 · 3: queued…"; an interval that Genesys takes more than 5 minutes on is **not** dropped as timed out (limit is 30 minutes)
+  - Notes: `______________________`
 - [ ] **4.4** — Run **Last 3 months** with no service (standard query, 3+ intervals) and watch for 429s
   - Expect: submission backs off 3 s doubling up to six attempts; intervals still rate-limited get a second pass after a pause ("Rate limited on N intervals — pausing, then retrying…"). (A 9-interval run on 2026-09-16 lost 4 to 429s with the old 1/2/4 s back-off.)
   - Notes: `______________________`
@@ -208,7 +214,7 @@ the id appears anywhere in the audit except the actor fields.
   - Expect: an amber note appears under the query: the search reads every audit in the range and can take several minutes; narrow the dates. It disappears when the object is cleared and no id is pasted
   - Notes: `______________________`
 - [ ] **8.2** — Pick a queue that had members added or removed in the range; press **Search** (Last 7 days, no service)
-  - Expect: status reads "Done — N audits mention “<queue>”"; the rows include the queue's own Update/MemberUpdate audits **and** anything else that carries its id
+  - Expect: while running, the status counts "N read, M match"; at the end "Done — M audits mention “<queue>”"; the rows include the queue's own Update/MemberUpdate audits **and** anything else that carries its id
   - Notes: `______________________`
 - [ ] **8.3** — Choose **Object › User** and pick a user who was added to a role in the range
   - Expect: the results include the user's own Directory/Presence/AuthUser audits **and** the Role MemberAdd row where they are the member — the id sits in the role audit's entity name, not its entity id

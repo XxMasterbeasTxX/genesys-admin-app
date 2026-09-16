@@ -43,6 +43,7 @@ const CHUNK_DAYS          = 30;
 const REALTIME_CHUNK_DAYS = 1;  // realtime endpoint times out on multi-day intervals
 const REALTIME_WINDOW_MS  = 14 * 86_400_000;
 const QUERY_CONCURRENCY   = 3;  // realtime jobs in flight at once — 6 drew 429s on an 8-day, 46-service run
+const ASYNC_CONCURRENCY   = 3;  // standard-query intervals in flight at once; each pages its own results
 const RETRY_PAUSE_MS      = 8_000; // breather before the second pass over rate-limited jobs
 const LOOKUP_CONCURRENCY  = 6;  // name-resolution GETs in flight at once
 
@@ -100,11 +101,12 @@ function withinRealtimeWindow(from, fromTime) {
  * Run `fn` over `items` with at most `limit` in flight. Resolves to an
  * allSettled-style array in input order.
  */
-async function runLimited(items, limit, fn) {
+async function runLimited(items, limit, fn, shouldStop) {
   const results = new Array(items.length);
   let next = 0;
   async function worker() {
     while (next < items.length) {
+      if (shouldStop && shouldStop()) return;
       const i = next++;
       try { results[i] = { status: "fulfilled", value: await fn(items[i], i) }; }
       catch (reason) { results[i] = { status: "rejected", reason }; }
@@ -157,6 +159,8 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   let nameCache      = {};     // { guid → name } for entities and the GUIDs inside values
   let failures       = [];     // [{ label, message }] queries that returned nothing
   let isRunning      = false;
+  let cancelRequested = false;
+  const stopped = () => cancelRequested;
   let currentPage    = 1;
   let pageSize       = 50;
 
@@ -210,6 +214,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       </div>
       <div class="di-control-group" style="justify-content:flex-end;padding-top:20px">
         <button class="btn" id="aqSearchBtn" disabled>Search</button>
+        <button class="btn aq-cancel-btn" id="aqCancelBtn" hidden title="Stop and show what has arrived so far">Cancel</button>
       </div>
     </div>
     <div class="aq-id-row">
@@ -314,6 +319,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   const $objectHint   = el.querySelector("#aqObjectHint");
   const $objectNote   = el.querySelector("#aqObjectNote");
   const $searchBtn    = el.querySelector("#aqSearchBtn");
+  const $cancelBtn    = el.querySelector("#aqCancelBtn");
   const $status       = el.querySelector("#aqStatus");
   const $progressWrap = el.querySelector("#aqProgressWrap");
   const $progressBar  = el.querySelector("#aqProgressBar");
@@ -608,6 +614,11 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   );
 
   $searchBtn.addEventListener("click", () => runSearch());
+  $cancelBtn.addEventListener("click", () => {
+    cancelRequested = true;
+    $cancelBtn.disabled = true;
+    setStatus("Cancelling — finishing the request in flight…");
+  });
   $entityId.addEventListener("keydown", e => { if (e.key === "Enter") runSearch(); });
 
   async function runSearch() {
@@ -634,7 +645,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     if (service) localStorage.setItem("aq-last-service", service);
 
     isRunning = true;
+    cancelRequested = false;
     $searchBtn.disabled = true;
+    $cancelBtn.hidden = false;
+    $cancelBtn.disabled = false;
     allResults    = [];
     actorMap      = {};
     clientMap     = {};
@@ -654,6 +668,15 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     ssStatus.setValue("");
     ssStatus.setEnabled(false);
 
+    // Keep only what the search is about, as it arrives: an object search
+    // over a big org reads 50k+ rows per interval to keep a few dozen.
+    let scanned = 0;
+    const ingest = (items) => {
+      scanned += items.length;
+      allResults.push(...(target ? items.filter(e => mentionsId(e, target.id)) : items));
+    };
+    const progressNote = () => target ? `${scanned} read, ${allResults.length} match` : `${allResults.length} entries`;
+
     let totalJobs = 0;
     try {
       if (realtime) {
@@ -672,28 +695,28 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         const runJob = async ({ interval, svcName }) => {
           const entries = await gc.submitRealtimeAuditQuery(api, orgId, { interval, serviceName: svcName, filters });
           done++;
-          setStatus(`Realtime: ${done} of ${totalJobs} queries done (${allResults.length + entries.length} entries)…`);
+          ingest(entries);
+          setStatus(`Realtime: ${done} of ${totalJobs} queries done (${progressNote()})…`);
           showProgress(5 + (done / totalJobs) * 80);
-          allResults.push(...entries);
           return entries.length;
         };
-        const settled = await runLimited(jobs, QUERY_CONCURRENCY, runJob);
+        const settled = await runLimited(jobs, QUERY_CONCURRENCY, runJob, stopped);
 
         // Anything Genesys rate-limited past withRateLimitRetry's own attempts
         // gets one more pass after a pause, one job at a time. Only 429s —
         // a 403 or a 400 will not improve by waiting.
         const rateLimited = [];
         settled.forEach((r, i) => {
-          if (r.status !== "rejected") return;
+          if (!r || r.status !== "rejected") return;
           if (r.reason?.status === 429) rateLimited.push(jobs[i]);
           else failures.push({ label: `${jobs[i].svcName} ${jobs[i].interval.slice(0, 10)}`, message: friendlyError(r.reason) });
         });
-        if (rateLimited.length) {
+        if (rateLimited.length && !cancelRequested) {
           setStatus(`Rate limited on ${rateLimited.length} queries — pausing, then retrying them one at a time…`);
           await new Promise(r => setTimeout(r, RETRY_PAUSE_MS));
-          const again = await runLimited(rateLimited, 1, runJob);
+          const again = await runLimited(rateLimited, 1, runJob, stopped);
           again.forEach((r, i) => {
-            if (r.status === "rejected")
+            if (r && r.status === "rejected")
               failures.push({ label: `${rateLimited[i].svcName} ${rateLimited[i].interval.slice(0, 10)}`, message: friendlyError(r.reason) });
           });
         }
@@ -701,13 +724,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       } else {
         // ── Async: older than 14 days, or service not in realtime mapping ─
         if (withinRealtimeWindow(from, fromTime)) setStatus(`${service} not in realtime mapping — using standard query…`);
-        totalJobs = await runAsyncQuery(service, from, fromTime, to, toTime, filters);
-      }
-
-      if (target) {
-        const before = allResults.length;
-        allResults = allResults.filter(e => mentionsId(e, target.id));
-        console.debug(`Object search: ${allResults.length} of ${before} audits mention ${target.id}`);
+        totalJobs = await runAsyncQuery(service, from, fromTime, to, toTime, filters, ingest, progressNote);
       }
 
       showProgress(90);
@@ -733,7 +750,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       const found = target
         ? `${n} audit${n !== 1 ? "s" : ""} mention${n === 1 ? "s" : ""} ${target.name ? `“${target.name}”` : "that id"}`
         : `${n} result${n !== 1 ? "s" : ""} found`;
-      if (failures.length) {
+      if (cancelRequested) {
+        setStatus(`Cancelled — ${found} before stopping; the range was not fully read.`, "warn");
+      } else if (failures.length) {
         setStatus(`Done — ${found}, but results are incomplete: ${failures.length} of ${totalJobs} queries failed (${failures[0].message}).`, "warn");
       } else {
         setStatus(`Done — ${found}.`, "success");
@@ -755,6 +774,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     } finally {
       isRunning = false;
       $searchBtn.disabled = false;
+      $cancelBtn.hidden = true;
     }
   }
 
@@ -764,45 +784,57 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
    * FIRST chunk is thrown so the caller can ask for a service; any other chunk
    * failure is recorded and the run continues.
    */
-  async function runAsyncQuery(service, from, fromTime, to, toTime, filters) {
+  async function runAsyncQuery(service, from, fromTime, to, toTime, filters, ingest, progressNote) {
     const chunks = buildIntervalChunks(from, fromTime, to, toTime);
     const total  = chunks.length;
     const label  = service || "all services";
+    // One status line for several intervals in flight: each reports its own
+    // phase and the line is rebuilt from all of them.
+    const phase  = new Array(total).fill("queued");
+    let doneCount = 0;
+    const paint = () => {
+      const active = phase.map((p, i) => p === "done" ? null : `${i + 1}: ${p}`).filter(Boolean).join(" · ");
+      setStatus(`${label} — ${doneCount} of ${total} intervals done (${progressNote()})${active ? ` — ${active}` : ""}…`);
+      showProgress(5 + (doneCount / total) * 80);
+    };
+
     const runChunk = async (interval, i) => {
       const body = { interval, filters };
       if (service) body.serviceName = service;
+      phase[i] = "submitting"; paint();
       const txId = await gc.submitAuditQuery(api, orgId, body);
       await gc.pollAuditQuery(api, orgId, txId, {
-        onPoll: (elapsed, state) =>
-          setStatus(`Interval ${i + 1} of ${total}: ${(state || "waiting").toLowerCase()} (${Math.round(elapsed)}s)…`),
+        shouldStop: stopped,
+        onPoll: (elapsed, state) => { phase[i] = `${(state || "waiting").toLowerCase()} ${Math.round(elapsed)}s`; paint(); },
       });
-      const entries = await gc.fetchAuditQueryResults(api, orgId, txId, {
-        onProgress: (n) => setStatus(`Interval ${i + 1} of ${total}: fetching… (${n} so far)`),
+      await gc.fetchAuditQueryResults(api, orgId, txId, {
+        shouldStop: stopped,
+        onPage: ingest,
+        onProgress: (n) => { phase[i] = `fetching ${n}`; paint(); },
       });
-      allResults.push(...entries);
+      phase[i] = "done"; doneCount++; paint();
     };
 
+    paint();
+    const settled = await runLimited(chunks, ASYNC_CONCURRENCY, runChunk, stopped);
     const rateLimited = [];
-    for (let i = 0; i < chunks.length; i++) {
-      const interval = chunks[i];
-      setStatus(`Fetching interval ${i + 1} of ${total} (${label})…`);
-      showProgress(5 + (i / total) * 80);
-      try {
-        await runChunk(interval, i);
-      } catch (err) {
-        if (i === 0 && !service && isServiceRequiredError(err)) throw err;
-        if (err?.status === 429) rateLimited.push(i);
-        else failures.push({ label: `${label} ${interval.slice(0, 10)}`, message: friendlyError(err) });
-      }
-    }
+    settled.forEach((r, i) => {
+      if (!r || r.status !== "rejected") return;
+      const err = r.reason;
+      if (err?.cancelled) return;
+      if (i === 0 && !service && isServiceRequiredError(err)) throw err;
+      if (err?.status === 429) rateLimited.push(i);
+      else failures.push({ label: `${label} ${chunks[i].slice(0, 10)}`, message: friendlyError(err) });
+    });
     // The audit-job limit clears with time, not retries: give it a breather
     // and take the rate-limited chunks again, one by one.
-    if (rateLimited.length) {
+    if (rateLimited.length && !cancelRequested) {
       setStatus(`Rate limited on ${rateLimited.length} interval${rateLimited.length !== 1 ? "s" : ""} — pausing, then retrying…`);
       await new Promise(r => setTimeout(r, RETRY_PAUSE_MS));
       for (const i of rateLimited) {
+        if (cancelRequested) break;
         try { await runChunk(chunks[i], i); }
-        catch (err) { failures.push({ label: `${label} ${chunks[i].slice(0, 10)}`, message: friendlyError(err) }); }
+        catch (err) { if (!err?.cancelled) failures.push({ label: `${label} ${chunks[i].slice(0, 10)}`, message: friendlyError(err) }); }
       }
     }
     return total;

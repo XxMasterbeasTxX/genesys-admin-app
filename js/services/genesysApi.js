@@ -2127,20 +2127,23 @@ export async function submitAuditQuery(api, orgId, body) {
  * @param {string}   transactionId
  * @param {Object}   [opts]
  * @param {number}   [opts.pollIntervalMs=2000]
- * @param {number}   [opts.maxWaitSeconds=300]
+ * @param {number}   [opts.maxWaitSeconds=1800]  A 30-day interval on a large org runs for minutes.
  * @param {Function} [opts.onPoll]  Called each tick with (elapsedSeconds, state).
+ * @param {Function} [opts.shouldStop]  Return true to abandon the wait (the job keeps running on Genesys).
  * @returns {Promise<void>}
  */
 export async function pollAuditQuery(api, orgId, transactionId, opts = {}) {
   const {
     pollIntervalMs = 2000,
-    maxWaitSeconds = 300,
+    maxWaitSeconds = 1800,
     onPoll,
+    shouldStop,
   } = opts;
 
   const start = Date.now();
   while (true) {
     await sleep(pollIntervalMs);
+    if (shouldStop && shouldStop()) throw Object.assign(new Error("Cancelled"), { cancelled: true });
     const elapsed = (Date.now() - start) / 1000;
     if (elapsed > maxWaitSeconds) {
       throw new Error(`Audit query timed out after ${maxWaitSeconds}s`);
@@ -2175,11 +2178,16 @@ export async function pollAuditQuery(api, orgId, transactionId, opts = {}) {
  * @param {string}   transactionId
  * @param {Object}   [opts]
  * @param {Function} [opts.onProgress]  Called with (fetchedSoFar).
- * @returns {Promise<Object[]>}  All audit entries.
+ * @param {Function} [opts.onPage]      Called with each page's entries as it arrives. When given,
+ *                                      entries are handed over rather than accumulated — a 30-day
+ *                                      interval on a large org is 50k+ rows.
+ * @param {Function} [opts.shouldStop]  Return true to stop paging; what arrived so far is returned.
+ * @returns {Promise<Object[]>}  All audit entries (empty when onPage is used).
  */
 export async function fetchAuditQueryResults(api, orgId, transactionId, opts = {}) {
-  const { onProgress } = opts;
+  const { onProgress, onPage, shouldStop } = opts;
   const all = [];
+  let fetched = 0;
   let cursor = null;
 
   while (true) {
@@ -2191,8 +2199,10 @@ export async function fetchAuditQueryResults(api, orgId, transactionId, opts = {
     const resp = await withRateLimitRetry(() => api.proxyGenesys(orgId, "GET", path));
 
     const items = resp.entities || [];
-    all.push(...items);
-    if (onProgress) onProgress(all.length);
+    fetched += items.length;
+    if (onPage) onPage(items); else all.push(...items);
+    if (onProgress) onProgress(fetched);
+    if (shouldStop && shouldStop()) break;
 
     let next = resp.cursor || null;
     if (!next && resp.nextUri) {

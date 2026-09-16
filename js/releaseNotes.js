@@ -39,7 +39,8 @@ export const RELEASE_NOTES = [
       "Every page of results is read — previously each realtime query stopped after its first 25 "
         + "rows and each standard-query interval after 500. The last 14 days are queried live; older "
         + "ranges use the standard query across all services and no longer require a service. Rate "
-        + "limits are retried and anything still missing is listed, so “Done” means done.",
+        + "limits are retried and anything still missing is listed, so “Done” means done. "
+        + "Long searches can be cancelled and show what had arrived.",
       "Each row now shows the audit's status (a FAILURE or WARNING badge), Genesys's own message, the "
         + "client and application, entity changes such as queue membership, and “Show related "
         + "audits” for the other audits the same action wrote. Presets gain Yesterday; Last month "
