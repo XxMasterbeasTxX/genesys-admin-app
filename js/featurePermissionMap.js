@@ -254,6 +254,10 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   "export.licenses.consumption":  { view: ["authorization:grant:add", "authorization:license:view"] },
   "export.roles.allOrgs":         { view: ["authorization:role:view"] },
   "export.roles.singleOrg":       { view: ["authorization:role:view"] },
+  // Groups AND users: the export lists every group with its members, and the
+  // members come from /users?expand=groups. Two datasets, so `all:` — holding
+  // directory:group:view alone must not hand over the user directory.
+  "export.users.allGroups":       { view: { all: ["directory:group:view", "directory:user:view"] } },
   "export.users.allRoles":        { view: { all: ["authorization:role:view", "authorization:grant:view"] } },
   "export.users.filteredRoles":   { view: { all: ["authorization:role:view", "authorization:grant:view"] } },
   "export.users.queuesSkills":    { view: { all: ["routing:queue:view", "routing:skill:view"] } },
@@ -264,6 +268,10 @@ export const FEATURE_READ_PERMISSIONS = Object.freeze({
   // export.licenses.consumption is gated on. Ungated, it is simply the way
   // round that gate, and a gate you can walk around is not a gate.
   "export.users.lastLogin":       { view: ["authorization:grant:add", "authorization:license:view"] },
+  // export.users.skillTemplates and export.scheduled have no entry on purpose:
+  // both read only the app's own Table Storage (templates, assignments,
+  // schedules) and call no Genesys endpoint, so there is no permission to
+  // check. Being a named user of the app is the gate.
 
   // ── Flows ────────────────────────────────────────────
   "flows.flowoverview":        { view: ["architect:flow:view"] },
