@@ -1,6 +1,6 @@
 # Colour Tokens — Design
 
-Status: **In development** — steps 1–5 of §11 done
+Status: **Implemented** — all seven steps of §11 done; Phase 2 (the recolour) is the user's
 Author: Genesys Admin App
 Last updated: 2026-09-16
 
@@ -175,7 +175,8 @@ opaque black in both modes.
 ## 5. Choosing the theme
 
 No `@media (prefers-color-scheme)` anywhere in CSS. The attribute decides, and a
-script ahead of the stylesheet sets it, so there is no flash of the wrong theme:
+script ahead of the stylesheets — `js/theme.js`, shared by `index.html` and
+`download.html` — sets it, so there is no flash of the wrong theme:
 
 ```html
 <script>
@@ -415,8 +416,8 @@ what "one place" turns into without it. Every one was reasonable at the time.
 | 3 | Sweep `styles.css` by family; delete the 24 light blocks | 1 file, 882 values | **done** |
 | 4 | Sweep the page style blocks, inline attributes and JS strings | 32 files, 397 values | **done** |
 | 5 | Canvas palettes → scoped tokens + runtime reader; `flowModel` kinds | 4 files, 115 values | **done** |
-| 6 | `download.html` | 1 file, 6 values | |
-| 7 | Check switches to failing; added to the SWA workflow | 2 files | |
+| 6 | `download.html` | 1 file, 6 values | **done** |
+| 7 | Check switches to failing; added to the SWA workflow | 2 files | **done** |
 
 Step 2 before step 3 on purpose: the count is the progress bar for the work,
 and the check is how the last few hidden ones are found. It started at
@@ -424,8 +425,18 @@ and the check is how the last few hidden ones are found. It started at
 `js/lib/` (it had been skipping the whole directory, vendor bundles and ours
 alike) found 17 more in `flowModel.js`, for an honest **518**. Step 4 took it
 to **121**: the three diagram files and `download.html`, nothing else. Step 5
-took it to **6** — all in `download.html`. No JavaScript file in the app holds
-a colour.
+took it to **6** — all in `download.html`. Step 6 took it to **zero**, and
+step 7 makes zero the only number the build accepts.
+
+**Steps 6 and 7.** `download.html` is a standalone pop-up with its own inline
+stylesheet, so it now loads `tokens.css` and follows the theme like the app
+does. The theme script it needed is the same one `index.html` had inline;
+rather than paste it into a second `<head>` it is one file, `js/theme.js`,
+loaded as a plain script by both. The check runs `--strict` as a step in the
+Static Web Apps workflow, before the deploy step, so a literal fails the build
+rather than shipping; it was confirmed to exit 1 on a planted `#ff0000` and 0
+without it. The production branch carries its own copy of that workflow and
+gets the same step at the next merge.
 
 **How step 5 was verified.** The three canvas palettes were resolved through
 `resolveTokens` and compared with the old `THEMES` object value by value: 42
