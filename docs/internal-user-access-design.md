@@ -20,7 +20,10 @@ adds is shaped so those two values drop straight into it (§4).
 
 ## 1. Confirmed decisions
 
-- **On the list, or not. No app-level roles for internal users.** What a
+- **On the list, or not.** ~~No app-level roles for internal users.~~
+  *Reversed 2026-09-17: internal users carry Administrator / Supervisor too,
+  see [`internal-roles-design.md`](internal-roles-design.md). The rest of
+  this row still holds for what a page lets you DO.* What a
   named user may *do* is what their own Genesys permissions in the company
   org say, as the permission refinement already decides for write actions.
   Roles in the app would be a second, hand-kept copy of a fact Genesys

@@ -33,12 +33,19 @@ export const RELEASE_NOTES = [
         + "SUPERUSER_IDS app setting) can add to it or remove from it. Nobody was seeded: everyone, including "
         + "the people who built the app, has to be added by a superuser. Superusers themselves need no row and "
         + "can never be locked out by anything editable in the app.",
-      "There are no internal roles. What a named colleague may do is still their own Genesys permissions, "
-        + "page by page, as before. The one exception is a capability, not a role: “Manages customer access”, "
-        + "a tick per row on the internal list that only a superuser can set, lets that colleague add and "
-        + "remove users for customer organisations — start charges — without being able to touch the "
-        + "internal list or grant the same right to anyone else. The Master Admin group that used to gate "
-        + "customer access gates nothing now.",
+      "Internal colleagues carry the same two roles as customer users, chosen when they are added: "
+        + "Administrator — every page except Onboarding, as everyone had until now — or Supervisor — only the "
+        + "pages ticked for them from the internal organisation's own Supervisor scope, which a superuser "
+        + "sets on Customers › Supervisor Access with the internal org selected. A colleague who should only "
+        + "see Export sees only Export: the rest of the menu is absent, not greyed. What they may do on a "
+        + "page is still their own Genesys permissions. Only superusers set the internal scope and the "
+        + "roles; an internal Administrator is a page role, not an administrator of access.",
+      "Separate from the role, and independent of it: “Manages customer access”, a tick per row on the "
+        + "internal list that only a superuser can set, lets that colleague add and remove users for customer "
+        + "organisations — start charges — and set customer scopes and roles, without being able to touch "
+        + "the internal list or grant the same right to anyone else. A Supervisor can hold it; they then "
+        + "see the two Customers pages beside their own. The Master Admin group that used to gate customer "
+        + "access gates nothing now.",
       "The server enforces all of it. Every Genesys call the app makes for an internal session runs on the "
         + "app's own client credentials, which meant the server had never checked whether the person asking "
         + "was allowed to — any internal token was elevated wholesale. Now the named-user gate runs at sign-in, "
@@ -64,9 +71,12 @@ export const RELEASE_NOTES = [
         + "server refuses add and remove from any customer session regardless of what the page shows. "
         + "Every scope change and every role change is written to the Activity Log under the verified "
         + "identity of whoever made it, and appears in the customer's own log when a customer made it.",
-      "Internal users are untouched by the roles: no role choice on the internal list, no scope, and the "
-        + "sidebar as before. Design and the reasoning behind each decision: "
-        + "docs/internal-user-access-design.md and docs/customer-roles-design.md.",
+      "The list on Customers › Access shows, per row, who added the user and who last changed their role or "
+        + "pages, by name and with the time in your own time zone. A customer's own view of their list "
+        + "(Administrator › Users) reads “TDC Erhverv” for every internal person and names only their own "
+        + "Administrator's edits; no id or e-mail crosses. Design and the reasoning behind each decision: "
+        + "docs/internal-user-access-design.md, docs/customer-roles-design.md and "
+        + "docs/internal-roles-design.md.",
     ],
   },
   {

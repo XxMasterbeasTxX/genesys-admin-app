@@ -5,6 +5,7 @@
  *   POST   /api/licenses/assign           { customerId, userId, email, name, role, features }
  *   DELETE /api/licenses/assign           { customerId, userId }
  *   POST   /api/licenses/role             { customerId, userId, role, features }
+ *   POST   /api/licenses/manages          { customerId, userId, manages }   internal org only
  *   GET    /api/licenses/peak?customerId=&start=&end=
  *                                         → { users: n }  the period's peak
  *
@@ -13,25 +14,28 @@
  * docs/customer-roles-design.md §5):
  *
  *   the internal org's list    superusers only (the SUPERUSER_IDS app setting)
+ *                              — naming, removing, roles and pages alike
+ *                              (docs/internal-roles-design.md §4)
  *   a customer's list          superusers, and internal colleagues whose own
- *                              row carries role "customer-manager"
- *   setting "customer-manager" superusers only
+ *                              row says they manage customer access
+ *   "Manages customer access"  superusers only (/manages)
  *   a customer's own list      its Administrators may READ it and change any
  *                              user's role and pages (/role) — never add or
  *                              remove a name. The customerId they send is
  *                              ignored and their verified org used.
  *
- * A customer-manager therefore cannot add anyone to the internal org, and
- * cannot make anyone else a customer-manager. Adding a customer name starts a
+ * A colleague who manages customer access therefore cannot add anyone to the
+ * internal org, and cannot give anyone else that right. Adding a customer name starts a
  * charge, so that right is granted in the app by a superuser and logged — not
  * administered through a Genesys group by people who may not know the group
  * does that. The Master Admin group that used to gate this endpoint gates
  * nothing now.
  *
- * A customer row carries a role, "administrator" or "supervisor", required on
- * every add (customer-roles-design §4). A supervisor also carries their own
- * pages: a non-empty subset of the org's Supervisor scope. An empty scope
- * refuses the add with "scope_empty" — the scope must be set first.
+ * Every row carries a role, "administrator" or "supervisor", required on
+ * every add, for both kinds of org (customer-roles-design §4,
+ * internal-roles-design §3). A supervisor also carries their own pages: a
+ * non-empty subset of the org's Supervisor scope. An empty scope refuses the
+ * add with "scope_empty" — the scope must be set first.
  *
  * The peak is different: reading a count is not the commercial act. Any
  * internal session may ask for any org; a customer session may ask only
@@ -45,13 +49,12 @@ const { getCallerContext } = require("../lib/callerContext");
 const { parseRegistry } = require("../lib/orgConfigResolver");
 const store = require("../lib/licenseStore");
 const orgSettings = require("../lib/orgSettingsStore");
-const { filterCustomerPages } = require("../lib/customerPages");
+const { filterPages } = require("../lib/pages");
 const activityLog = require("../lib/activityLogStore");
 const customers = require("../lib/customers.json");
 
 const INTERNAL_ORG_SLUG = String(process.env.INTERNAL_ORG_SLUG || "demo").trim();
-const INTERNAL_ROLES = new Set(["", "customer-manager"]);
-const CUSTOMER_ROLES = new Set(["administrator", "supervisor"]);
+const ROLES = new Set(["administrator", "supervisor"]);
 
 /**
  * What a customer session is told about WHO did something to a row. An
@@ -87,31 +90,33 @@ function listableOrg(context, customerId) {
 
 /**
  * May this caller change THIS org's list? Superusers may change any. A
- * colleague whose own row says "customer-manager" may change a customer's,
- * never the internal org's. The caller's role arrives on the context from
- * the gate, read off their own row — not from anything the page sent.
+ * colleague whose own row says they manage customer access may change a
+ * customer's, never the internal org's. The capability arrives on the
+ * context from the gate, read off their own row — not from anything the
+ * page sent.
  */
 function mayManage(caller, org) {
   if (caller.superuser) return { ok: true };
   if (org.internal) return { ok: false, error: "superuser_required" };
-  if (caller.role === "customer-manager") return { ok: true };
+  if (caller.managesCustomers) return { ok: true };
   return { ok: false, error: "customer_manager_required" };
 }
 
 /**
- * The role and pages a customer row is to carry, checked against the org's
- * Supervisor scope. An administrator has no pages of their own (everything);
- * a supervisor must hold at least one page, all of them inside the scope.
+ * The role and pages a row is to carry, checked against the org's Supervisor
+ * scope. An administrator has no pages of their own (everything); a
+ * supervisor must hold at least one page, all of them inside the scope. The
+ * pages an org may hold at all depend on its kind (pages.js).
  * @returns {Promise<{ ok: true, role, features } | { ok: false, error, status }>}
  */
-async function customerRoleAndPages(customerId, body) {
+async function roleAndPages(customerId, body, kind) {
   const role = String(body.role || "").trim();
-  if (!CUSTOMER_ROLES.has(role)) return { ok: false, status: 400, error: "role_required" };
+  if (!ROLES.has(role)) return { ok: false, status: 400, error: "role_required" };
   if (role === "administrator") return { ok: true, role, features: [] };
 
   const scope = await orgSettings.getSupervisorScope(customerId);
   if (!scope.length) return { ok: false, status: 400, error: "scope_empty" };
-  const { kept } = filterCustomerPages(body.features);
+  const { kept } = filterPages(body.features, kind);
   const features = kept.filter((k) => scope.includes(k));
   if (!features.length) return { ok: false, status: 400, error: "pages_required" };
   return { ok: true, role, features };
@@ -179,7 +184,7 @@ module.exports = async function (context, req) {
       if (method === "POST" && action === "role") {
         const userId = String(body.userId || "").trim();
         if (!userId) return json(context, 400, { error: "customerId_and_userId_required" });
-        const out = await setCustomerRole(context, customerId, userId, body, by, customerId);
+        const out = await setRoleAndPages(context, customerId, userId, body, by, customerId, "customer");
         if (context.res && context.res.status === 200 && context.res.body.user) {
           context.res.body.user = forCustomer(context.res.body.user, customerId);
         }
@@ -211,14 +216,10 @@ module.exports = async function (context, req) {
       if (!may.ok) return json(context, 403, { error: may.error });
       if (!userId) return json(context, 400, { error: "customerId_and_userId_required" });
 
-      // A customer row needs its role (and a supervisor its pages) from the
-      // first day; an internal row carries neither on add.
-      let rolePages = { role: "", features: [] };
-      if (!org.internal) {
-        const checked = await customerRoleAndPages(customerId, body);
-        if (!checked.ok) return json(context, checked.status, { error: checked.error });
-        rolePages = checked;
-      }
+      // Every row needs its role (and a supervisor its pages) from the
+      // first day. The capability is granted separately (/manages).
+      const rolePages = await roleAndPages(customerId, body, org.internal ? "internal" : "customer");
+      if (!rolePages.ok) return json(context, rolePages.status, { error: rolePages.error });
 
       const result = await store.assign(customerId, { id: userId, email: body.email, name: body.name }, by, rolePages);
       if (result.created) {
@@ -226,8 +227,7 @@ module.exports = async function (context, req) {
           userId: by.id, userEmail: by.email, userName: by.name,
           orgId: customerId, orgName: customerName(customerId), ownerOrgId: "internal",
           action: "licenses.assign",
-          description: `Gave ${body.name || body.email || userId} access to the Admin Tool for ${customerName(customerId)}`
-            + (rolePages.role ? ` as ${rolePages.role}` : ""),
+          description: `Gave ${body.name || body.email || userId} access to the Admin Tool for ${customerName(customerId)} as ${rolePages.role}`,
           details: { customerId, userId, email: body.email || "", name: body.name || "", role: rolePages.role, features: rolePages.features },
         });
       }
@@ -258,35 +258,42 @@ module.exports = async function (context, req) {
     }
 
     // ── POST /api/licenses/role ──────────────────────────────────────────
-    // On the internal org only a superuser sets one: "customer-manager" is
-    // the right to start charges to customers. On a customer org, whoever
-    // may manage the list may set a user's role and pages.
+    // Whoever may manage the list may set a user's role and pages: on the
+    // internal org that is a superuser; on a customer org, a superuser or a
+    // colleague who manages customer access.
     if (method === "POST" && action === "role") {
       const customerId = String(body.customerId || "").trim();
       const userId     = String(body.userId || "").trim();
-      const role       = String(body.role || "").trim();
       if (!userId) return json(context, 400, { error: "customerId_and_userId_required" });
-      if (customerId !== INTERNAL_ORG_SLUG) {
-        const org = listableOrg(context, customerId);
-        if (!org.ok) return json(context, 400, { error: org.error });
-        const may = mayManage(caller, org);
-        if (!may.ok) return json(context, 403, { error: may.error });
-        return setCustomerRole(context, customerId, userId, body, by, "internal");
-      }
-      if (!caller.superuser) return json(context, 403, { error: "superuser_required" });
-      if (!INTERNAL_ROLES.has(role)) return json(context, 400, { error: "invalid_role" });
+      const org = listableOrg(context, customerId);
+      if (!org.ok) return json(context, 400, { error: org.error });
+      const may = mayManage(caller, org);
+      if (!may.ok) return json(context, 403, { error: may.error });
+      return setRoleAndPages(context, customerId, userId, body, by, "internal", org.internal ? "internal" : "customer");
+    }
 
-      const result = await store.setRole(customerId, userId, role, by);
+    // ── POST /api/licenses/manages ───────────────────────────────────────
+    // "Manages customer access": the right to start charges to customers.
+    // Internal rows only, superusers only, independent of the row's role.
+    if (method === "POST" && action === "manages") {
+      const customerId = String(body.customerId || "").trim();
+      const userId     = String(body.userId || "").trim();
+      const on         = body.manages === true || body.manages === "true";
+      if (!userId) return json(context, 400, { error: "customerId_and_userId_required" });
+      if (!caller.superuser) return json(context, 403, { error: "superuser_required" });
+      if (customerId !== INTERNAL_ORG_SLUG) return json(context, 400, { error: "internal_org_only" });
+
+      const result = await store.setManagesCustomers(customerId, userId, on, by);
       if (!result.row) return json(context, 404, { error: "user_not_named" });
       if (result.changed) {
         await logQuietly(context, {
           userId: by.id, userEmail: by.email, userName: by.name,
           orgId: customerId, orgName: customerName(customerId), ownerOrgId: "internal",
-          action: "licenses.role",
-          description: role
+          action: "licenses.manages",
+          description: on
             ? `Let ${result.row.name || result.row.email || userId} manage customer access to the Admin Tool`
             : `Withdrew ${result.row.name || result.row.email || userId}'s right to manage customer access`,
-          details: { customerId, userId, email: result.row.email, name: result.row.name, role },
+          details: { customerId, userId, email: result.row.email, name: result.row.name, manages: on },
         });
       }
       return json(context, 200, { user: result.row, changed: result.changed });
@@ -300,13 +307,13 @@ module.exports = async function (context, req) {
 };
 
 /**
- * Set a customer user's role and pages. Shared by the internal path (any org
- * the caller may manage) and the customer path (their own org), which have
- * already decided the caller may. `ownerOrgId` says whose log the entry
- * belongs in.
+ * Set a user's role and pages. Shared by the internal path (any org the
+ * caller may manage, the internal org included) and the customer path (their
+ * own org), which have already decided the caller may. `ownerOrgId` says
+ * whose log the entry belongs in; `kind` which pages the org may hold.
  */
-async function setCustomerRole(context, customerId, userId, body, by, ownerOrgId) {
-  const checked = await customerRoleAndPages(customerId, body);
+async function setRoleAndPages(context, customerId, userId, body, by, ownerOrgId, kind) {
+  const checked = await roleAndPages(customerId, body, kind);
   if (!checked.ok) return json(context, checked.status, { error: checked.error });
 
   const result = await store.setRole(customerId, userId, checked.role, by, checked.features);

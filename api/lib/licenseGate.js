@@ -56,12 +56,13 @@ function tokenKey(token) {
  *   { licensed: true,  userId: string, role: string, superuser: boolean, unenforced?: true }
  * | { licensed: false, reason: "not_assigned"|"identity_unavailable"|"license_check_failed", userId?: string }>}
  *
- * `role` is the row's role ("" for a plain named colleague, "customer-manager"
- * for one who may name customer users; "administrator" or "supervisor" for a
- * customer); "superuser" for a superuser, who has no row. For a customer,
- * `features` is null (an administrator — everything) or the supervisor's
- * effective page keys. `unenforced` marks an internal caller admitted only
- * because INTERNAL_NAMED_USERS_ENFORCED is not yet "true".
+ * `role` is the row's role, "administrator" or "supervisor", for both kinds
+ * of org; "superuser" for a superuser, who has no row. `features` is null
+ * (an administrator — everything) or the supervisor's effective page keys.
+ * `managesCustomers` (internal only) is the row's capability to name users
+ * for customer orgs; always true for a superuser. `unenforced` marks an
+ * internal caller admitted only because INTERNAL_NAMED_USERS_ENFORCED is not
+ * yet "true".
  */
 async function checkLicense(context, token, classification) {
   const key = tokenKey(token);
@@ -84,7 +85,7 @@ async function checkLicense(context, token, classification) {
   // The root authority for the internal org. Checked before the store so an
   // unreadable store can never lock a superuser out.
   if (internal && isSuperuser({ userId: user.id })) {
-    const value = { licensed: true, userId: user.id, role: "superuser", superuser: true };
+    const value = { licensed: true, userId: user.id, role: "superuser", features: null, superuser: true, managesCustomers: true };
     cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
     return value;
   }
@@ -99,18 +100,19 @@ async function checkLicense(context, token, classification) {
   }
 
   let value;
-  if (row && !internal) {
-    // A customer: their role decides what they may see. An administrator
-    // sees everything the app offers customers (features null = no
+  if (row) {
+    // Their role decides what they may see, for both kinds of org. An
+    // administrator sees everything the org offers (features null = no
     // narrowing); a supervisor sees their own pages ∩ the org's Supervisor
     // scope, computed here so a scope edit reaches every supervisor without
-    // touching their rows (docs/customer-roles-design.md §2, §7).
+    // touching their rows (docs/customer-roles-design.md §2, §7;
+    // docs/internal-roles-design.md §2).
     let role = row.role || "";
     if (role !== "administrator" && role !== "supervisor") {
       // Rows from before roles existed. Treated as an administrator and said
       // so, rather than locking a test account out over data that predates
       // the field. No production row should ever hit this.
-      context?.log?.warn?.(`[license] customer row without a role treated as administrator: ${orgId} ${user.id}`);
+      context?.log?.warn?.(`[license] row without a role treated as administrator: ${orgId} ${user.id}`);
       role = "administrator";
     }
     let features = null;
@@ -126,13 +128,12 @@ async function checkLicense(context, token, classification) {
       features = scope.filter((k) => own.has(k));
     }
     value = { licensed: true, userId: user.id, role, features, superuser: false };
-  } else if (row) {
-    value = { licensed: true, userId: user.id, role: row.role || "", superuser: false };
+    if (internal) value.managesCustomers = !!row.managesCustomers;
   } else if (internal && !internalEnforced()) {
-    // Reporting mode: admitted, and said so, so the log is the list of who
-    // still needs naming before the setting flips.
+    // Reporting mode: admitted as an administrator, and said so, so the log
+    // is the list of who still needs naming before the setting flips.
     context?.log?.warn?.(`[license] internal caller not named (unenforced): ${user.id} ${user.email || ""} ${user.name || ""}`);
-    value = { licensed: true, userId: user.id, role: "", superuser: false, unenforced: true };
+    value = { licensed: true, userId: user.id, role: "administrator", features: null, superuser: false, managesCustomers: false, unenforced: true };
   } else {
     value = { licensed: false, reason: "not_assigned", userId: user.id };
   }

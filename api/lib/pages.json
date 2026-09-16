@@ -1,0 +1,563 @@
+{
+  "generatedBy": "scripts/build-pages.mjs",
+  "pages": [
+    {
+      "key": "audit.search",
+      "label": "Search",
+      "section": "Audit",
+      "customer": true
+    },
+    {
+      "key": "dashboards.agentCopilot.checklists",
+      "label": "Checklists & Summaries",
+      "section": "Dashboards › Agent Copilot",
+      "customer": true
+    },
+    {
+      "key": "dashboards.quality.coverage",
+      "label": "Evaluation Coverage",
+      "section": "Dashboards › Quality",
+      "customer": true
+    },
+    {
+      "key": "dashboards.quality.gaps",
+      "label": "Evaluation Gaps",
+      "section": "Dashboards › Quality",
+      "customer": true
+    },
+    {
+      "key": "dashboards.quality.scores",
+      "label": "Evaluation Scores",
+      "section": "Dashboards › Quality",
+      "customer": true
+    },
+    {
+      "key": "dashboards.quality.staConfiguration",
+      "label": "STA Configuration",
+      "section": "Dashboards › Quality",
+      "customer": true
+    },
+    {
+      "key": "data-actions.copy.betweenOrgs",
+      "label": "Copy - Between Orgs",
+      "section": "Data Actions",
+      "customer": false
+    },
+    {
+      "key": "data-actions.edit",
+      "label": "Edit",
+      "section": "Data Actions",
+      "customer": true
+    },
+    {
+      "key": "data-actions.test",
+      "label": "Test",
+      "section": "Data Actions",
+      "customer": true
+    },
+    {
+      "key": "data-tables.copy.betweenOrgs",
+      "label": "Copy - Between Orgs",
+      "section": "Data Tables",
+      "customer": false
+    },
+    {
+      "key": "data-tables.copy.singleOrg",
+      "label": "Copy",
+      "section": "Data Tables",
+      "customer": true
+    },
+    {
+      "key": "data-tables.create",
+      "label": "Create",
+      "section": "Data Tables",
+      "customer": true
+    },
+    {
+      "key": "data-tables.edit",
+      "label": "Edit",
+      "section": "Data Tables",
+      "customer": true
+    },
+    {
+      "key": "deployment.basic",
+      "label": "Basic",
+      "section": "Deployment",
+      "customer": false
+    },
+    {
+      "key": "deployment.datatables",
+      "label": "Data Tables",
+      "section": "Deployment",
+      "customer": false
+    },
+    {
+      "key": "deployment.test.testCases",
+      "label": "Test Cases",
+      "section": "Deployment › Test",
+      "customer": false
+    },
+    {
+      "key": "divisions.architect.dataTables",
+      "label": "Data Tables",
+      "section": "Divisions › Architect",
+      "customer": true
+    },
+    {
+      "key": "divisions.architect.flow",
+      "label": "Flows",
+      "section": "Divisions › Architect",
+      "customer": true
+    },
+    {
+      "key": "divisions.architect.flowMilestone",
+      "label": "Milestones",
+      "section": "Divisions › Architect",
+      "customer": true
+    },
+    {
+      "key": "divisions.architect.flowOutcome",
+      "label": "Flow Outcomes",
+      "section": "Divisions › Architect",
+      "customer": true
+    },
+    {
+      "key": "divisions.architect.script",
+      "label": "Scripts",
+      "section": "Divisions › Architect",
+      "customer": true
+    },
+    {
+      "key": "divisions.outbound.campaign",
+      "label": "Campaigns",
+      "section": "Divisions › Outbound",
+      "customer": true
+    },
+    {
+      "key": "divisions.outbound.contactList",
+      "label": "Contact Lists",
+      "section": "Divisions › Outbound",
+      "customer": true
+    },
+    {
+      "key": "divisions.outbound.dncList",
+      "label": "DNC Lists",
+      "section": "Divisions › Outbound",
+      "customer": true
+    },
+    {
+      "key": "divisions.outbound.emailCampaign",
+      "label": "Email Campaigns",
+      "section": "Divisions › Outbound",
+      "customer": true
+    },
+    {
+      "key": "divisions.outbound.messagingCampaign",
+      "label": "Messaging Campaigns",
+      "section": "Divisions › Outbound",
+      "customer": true
+    },
+    {
+      "key": "divisions.people.team",
+      "label": "Work Teams",
+      "section": "Divisions › People",
+      "customer": true
+    },
+    {
+      "key": "divisions.people.users",
+      "label": "Users",
+      "section": "Divisions › People",
+      "customer": true
+    },
+    {
+      "key": "divisions.response.library",
+      "label": "Libraries",
+      "section": "Divisions › Response Mgmt",
+      "customer": true
+    },
+    {
+      "key": "divisions.routing.callroute",
+      "label": "Call Routes",
+      "section": "Divisions › Routing",
+      "customer": true
+    },
+    {
+      "key": "divisions.routing.emergencyGroups",
+      "label": "Emergency Groups",
+      "section": "Divisions › Routing",
+      "customer": true
+    },
+    {
+      "key": "divisions.routing.extensionPool",
+      "label": "Extension Pools",
+      "section": "Divisions › Routing",
+      "customer": true
+    },
+    {
+      "key": "divisions.routing.queues",
+      "label": "Queues",
+      "section": "Divisions › Routing",
+      "customer": true
+    },
+    {
+      "key": "divisions.routing.routingScheduleGroups",
+      "label": "Routing Schedule Groups",
+      "section": "Divisions › Routing",
+      "customer": true
+    },
+    {
+      "key": "divisions.routing.routingSchedules",
+      "label": "Routing Schedules",
+      "section": "Divisions › Routing",
+      "customer": true
+    },
+    {
+      "key": "divisions.routing.skill",
+      "label": "Skills",
+      "section": "Divisions › Routing",
+      "customer": true
+    },
+    {
+      "key": "divisions.routing.skillGroup",
+      "label": "Skill Groups",
+      "section": "Divisions › Routing",
+      "customer": true
+    },
+    {
+      "key": "divisions.routing.wrapupCode",
+      "label": "Wrap-up Codes",
+      "section": "Divisions › Routing",
+      "customer": true
+    },
+    {
+      "key": "divisions.task.workbin",
+      "label": "Workbins",
+      "section": "Divisions › Task Mgmt",
+      "customer": true
+    },
+    {
+      "key": "divisions.task.worktype",
+      "label": "Work Types",
+      "section": "Divisions › Task Mgmt",
+      "customer": true
+    },
+    {
+      "key": "divisions.workforce.businessUnit",
+      "label": "Business Units",
+      "section": "Divisions › Workforce Mgmt",
+      "customer": true
+    },
+    {
+      "key": "divisions.workforce.managementUnit",
+      "label": "Management Units",
+      "section": "Divisions › Workforce Mgmt",
+      "customer": true
+    },
+    {
+      "key": "export.billing.allOrgsLatest",
+      "label": "All Orgs (Latest)",
+      "section": "Export › Billing",
+      "customer": false
+    },
+    {
+      "key": "export.billing.calendarYear",
+      "label": "Calendar Year",
+      "section": "Export › Billing",
+      "customer": false
+    },
+    {
+      "key": "export.billing.customOrgs",
+      "label": "Custom Orgs",
+      "section": "Export › Billing",
+      "customer": false
+    },
+    {
+      "key": "export.billing.dateRange",
+      "label": "Date Range",
+      "section": "Export › Billing",
+      "customer": false
+    },
+    {
+      "key": "export.billing.overageAlerts",
+      "label": "Overage Alerts",
+      "section": "Export › Billing",
+      "customer": true
+    },
+    {
+      "key": "export.billing.periodComparison",
+      "label": "Period Comparison",
+      "section": "Export › Billing",
+      "customer": true
+    },
+    {
+      "key": "export.billing.singleOrg",
+      "label": "Billing Period",
+      "section": "Export › Billing",
+      "customer": true
+    },
+    {
+      "key": "export.documentation.create",
+      "label": "Create",
+      "section": "Export › Documentation",
+      "customer": true
+    },
+    {
+      "key": "export.interactions.totals",
+      "label": "Totals",
+      "section": "Export › Interactions",
+      "customer": true
+    },
+    {
+      "key": "export.licenses.consumption",
+      "label": "Consumption",
+      "section": "Export › Licenses",
+      "customer": true
+    },
+    {
+      "key": "export.roles.allOrgs",
+      "label": "All Orgs",
+      "section": "Export › Roles",
+      "customer": false
+    },
+    {
+      "key": "export.roles.singleOrg",
+      "label": "Single Org",
+      "section": "Export › Roles",
+      "customer": true
+    },
+    {
+      "key": "export.scheduled",
+      "label": "Scheduled Exports",
+      "section": "Export",
+      "customer": true
+    },
+    {
+      "key": "export.users.allGroups",
+      "label": "All Groups",
+      "section": "Export › Users",
+      "customer": true
+    },
+    {
+      "key": "export.users.allRoles",
+      "label": "All Roles",
+      "section": "Export › Users",
+      "customer": true
+    },
+    {
+      "key": "export.users.filteredRoles",
+      "label": "Filtered on Role(s)",
+      "section": "Export › Users",
+      "customer": true
+    },
+    {
+      "key": "export.users.lastLogin",
+      "label": "Last Login",
+      "section": "Export › Users",
+      "customer": true
+    },
+    {
+      "key": "export.users.queuesSkills",
+      "label": "Queues/Skills",
+      "section": "Export › Users",
+      "customer": true
+    },
+    {
+      "key": "export.users.skillTemplates",
+      "label": "Skill/Role/Queue Templates",
+      "section": "Export › Users",
+      "customer": true
+    },
+    {
+      "key": "export.users.trustee",
+      "label": "Trustee",
+      "section": "Export › Users",
+      "customer": false
+    },
+    {
+      "key": "flows.delete",
+      "label": "Delete Flow",
+      "section": "Flows",
+      "customer": false
+    },
+    {
+      "key": "flows.flowoverview",
+      "label": "Flow Overview",
+      "section": "Flows",
+      "customer": true
+    },
+    {
+      "key": "flows.journey",
+      "label": "Journey Flow",
+      "section": "Flows",
+      "customer": true
+    },
+    {
+      "key": "gdpr.exportReader",
+      "label": "Article 15 - Export Reader",
+      "section": "GDPR",
+      "customer": true
+    },
+    {
+      "key": "gdpr.requestStatus",
+      "label": "Request Status",
+      "section": "GDPR",
+      "customer": true
+    },
+    {
+      "key": "gdpr.subjectRequest",
+      "label": "Subject Request",
+      "section": "GDPR",
+      "customer": true
+    },
+    {
+      "key": "interactions.disconnect",
+      "label": "Disconnect",
+      "section": "Interactions",
+      "customer": true
+    },
+    {
+      "key": "interactions.move",
+      "label": "Move",
+      "section": "Interactions",
+      "customer": true
+    },
+    {
+      "key": "interactions.recordings.create",
+      "label": "Create Export Job",
+      "section": "Interactions › Recordings",
+      "customer": false
+    },
+    {
+      "key": "interactions.recordings.jobs",
+      "label": "Export Jobs",
+      "section": "Interactions › Recordings",
+      "customer": false
+    },
+    {
+      "key": "interactions.search.participantData.historical",
+      "label": "Historical (>48h)",
+      "section": "Interactions › Search › Participant Data",
+      "customer": true
+    },
+    {
+      "key": "interactions.search.participantData.recent",
+      "label": "Recent (<48h)",
+      "section": "Interactions › Search › Participant Data",
+      "customer": true
+    },
+    {
+      "key": "interactions.search.transcripts.search",
+      "label": "Search",
+      "section": "Interactions › Search › Transcripts",
+      "customer": true
+    },
+    {
+      "key": "phones.webrtc.changeSite",
+      "label": "Change Site",
+      "section": "Phones › WebRTC",
+      "customer": true
+    },
+    {
+      "key": "phones.webrtc.create",
+      "label": "Create WebRTC",
+      "section": "Phones › WebRTC",
+      "customer": true
+    },
+    {
+      "key": "phones.webrtc.delete",
+      "label": "Delete",
+      "section": "Phones › WebRTC",
+      "customer": true
+    },
+    {
+      "key": "roles.compare",
+      "label": "Compare",
+      "section": "Roles",
+      "customer": true
+    },
+    {
+      "key": "roles.copy.betweenOrgs",
+      "label": "Copy between orgs",
+      "section": "Roles › Copy",
+      "customer": false
+    },
+    {
+      "key": "roles.copy.singleOrg",
+      "label": "Copy",
+      "section": "Roles › Copy",
+      "customer": true
+    },
+    {
+      "key": "roles.create",
+      "label": "Create",
+      "section": "Roles",
+      "customer": true
+    },
+    {
+      "key": "roles.edit",
+      "label": "Edit",
+      "section": "Roles",
+      "customer": true
+    },
+    {
+      "key": "roles.search",
+      "label": "Permissions vs. Users",
+      "section": "Roles",
+      "customer": true
+    },
+    {
+      "key": "users.directRouting.add",
+      "label": "Add user(s)",
+      "section": "Users › Direct Routing",
+      "customer": true
+    },
+    {
+      "key": "users.rolesSkills.addUsersToTemplates",
+      "label": "Manage Templates",
+      "section": "Users › Roles, Queues & Skills",
+      "customer": true
+    },
+    {
+      "key": "users.rolesSkills.configureUsers",
+      "label": "Configure Users",
+      "section": "Users › Roles, Queues & Skills",
+      "customer": true
+    },
+    {
+      "key": "users.rolesSkills.copyFromUser",
+      "label": "Copy from User",
+      "section": "Users › Roles, Queues & Skills",
+      "customer": true
+    },
+    {
+      "key": "users.rolesSkills.createTemplate",
+      "label": "Create/Edit Template",
+      "section": "Users › Roles, Queues & Skills",
+      "customer": true
+    },
+    {
+      "key": "users.rolesSkills.templateSchedules",
+      "label": "Template Schedules",
+      "section": "Users › Roles, Queues & Skills",
+      "customer": true
+    },
+    {
+      "key": "utilities.getLists",
+      "label": "Get Lists",
+      "section": "Utilities",
+      "customer": false
+    },
+    {
+      "key": "utilities.ipRanges",
+      "label": "IP Ranges",
+      "section": "Utilities",
+      "customer": false
+    },
+    {
+      "key": "wrapupCodes.createEditMapping",
+      "label": "Create/Edit/Mapping",
+      "section": "Wrapup Codes",
+      "customer": true
+    }
+  ]
+}

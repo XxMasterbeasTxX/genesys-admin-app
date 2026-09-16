@@ -391,6 +391,10 @@ async function resolveOrgConfig(context, req) {
         licensed: true,
         superuser: !!licence.superuser,
         role: licence.role || "",
+        // A supervisor's effective pages; null for an administrator or a
+        // superuser (docs/internal-roles-design.md §5).
+        features: licence.features || null,
+        managesCustomers: !!licence.superuser || !!licence.managesCustomers,
         internalOrgSlug: INTERNAL_ORG_SLUG,
         org: classification.org,
         customers: safeCustomers,

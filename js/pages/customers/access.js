@@ -12,18 +12,19 @@
  *     "Add users", confirm against the list of who. Three deliberate steps,
  *     because adding a customer name starts a charge — a single click on a
  *     search result is not enough of a decision.
- *   - On a customer org, adding also decides the role: Administrator
- *     (everything the app offers customers) or Supervisor (a chosen subset of
- *     the org's Supervisor scope, ticked here). Both are required
- *     (docs/customer-roles-design.md §4, §8). An empty scope refuses a
- *     Supervisor and says where to set it.
- *   - Users with access: the current list, with Remove (also confirmed), and
- *     on a customer org the role per row and an Edit that changes it — promote,
- *     demote, re-tick — through /api/licenses/role.
+ *   - Adding also decides the role, on both kinds of org: Administrator
+ *     (everything the org offers) or Supervisor (a chosen subset of the
+ *     org's Supervisor scope, ticked here). Both are required
+ *     (docs/customer-roles-design.md §4, §8; docs/internal-roles-design.md
+ *     §3). An empty scope refuses a Supervisor and says where to set it.
+ *   - Users with access: the current list, with Remove (also confirmed), the
+ *     role per row and an Edit that changes it — promote, demote, re-tick —
+ *     through /api/licenses/role.
  *   - On the internal org only, for superusers only: "Manages customer
- *     access", one tick per row. It is the right to name users for customer
- *     orgs — to start charges — and it is granted here, by a superuser,
- *     logged, never derived from a Genesys group.
+ *     access", one tick per row, independent of the role. It is the right
+ *     to name users for customer orgs — to start charges — and it is
+ *     granted here, by a superuser, logged, never derived from a Genesys
+ *     group.
  *
  * Administrator › Users is this page in customer mode: the org is the
  * session's, the add box and Remove are absent — a customer never names
@@ -40,9 +41,9 @@
  */
 import { escapeHtml, makeStatus, withBusy } from "../../utils.js";
 import {
-  listLicensedUsers, assignLicense, revokeLicense, setLicenseRole, getSupervisorScope,
+  listLicensedUsers, assignLicense, revokeLicense, setLicenseRole, setManagesCustomers, getSupervisorScope,
 } from "../../services/licenseService.js";
-import { customerPageTree, pruneTree } from "../../services/customerPageTree.js";
+import { pageTreeFor, pruneTree } from "../../services/customerPageTree.js";
 import { createPageTree, describePages, ensurePageTreeStyles } from "../../components/pageTree.js";
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -52,7 +53,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
   const isSuperuser  = !!(access && access.isSuperuser);
   const customerMode = !!(orgContext && orgContext.isCustomer && orgContext.isCustomer());
   const scopeRoute   = customerMode ? "#/administrator/supervisor-access" : "#/customers/supervisor-access";
-  const fullTree     = customerPageTree();
+  let fullTree       = pageTreeFor(false);   // the org's kind decides which pages exist; rebuilt in setOrg
 
   const el = document.createElement("div");
   el.innerHTML = `
@@ -165,6 +166,13 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     return !!(currentOrg && orgContext.isInternalOrg(currentOrg.id));
   }
 
+  /** What the role means on this org, for the control's description. */
+  function everythingText() {
+    return isInternal()
+      ? "Every page except Onboarding, narrowed by their own Genesys permissions."
+      : "Everything the app offers customers, narrowed by their own Genesys permissions. Administrators also set the Supervisor scope and edit users' roles here.";
+  }
+
   // ── The role control ─────────────────────────────────────────────────
 
   /**
@@ -214,7 +222,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       const r = role();
       $pages.hidden = r !== "supervisor";
       if (r === "administrator") {
-        $desc.textContent = "Everything the app offers customers, narrowed by their own Genesys permissions. Administrators also set the Supervisor scope and edit users' roles here.";
+        $desc.textContent = everythingText();
       } else if (r === "supervisor") {
         const n = tree.getSelected().length;
         $desc.textContent = "Only the pages ticked below, narrowed by their own Genesys permissions. Nothing else appears in their menu.";
@@ -244,7 +252,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
 
   /** The sentence for a confirm step: the role, and a Supervisor's pages. */
   function describeRole({ role, features }) {
-    if (role === "administrator") return "as Administrator (everything the app offers customers)";
+    if (role === "administrator") return isInternal() ? "as Administrator (every page except Onboarding)" : "as Administrator (everything the app offers customers)";
     const lines = describePages(fullTree, features);
     return `as Supervisor with ${lines.length} page${lines.length === 1 ? "" : "s"}:\n${lines.map((l) => `    – ${l}`).join("\n")}`;
   }
@@ -275,7 +283,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     // a superuser sees it: it is the right to start charges to customers.
     // The role column exists on a customer's list.
     const manageCol = isInternal() && isSuperuser;
-    const roleCol   = !isInternal();
+    const roleCol   = true;
     $list.innerHTML = `
       <table class="data-table ca-table">
         <thead><tr><th>Name</th><th>E-mail</th>${roleCol ? "<th>Role</th>" : ""}<th>Added by</th><th>Added on</th><th>Modified by</th><th>Modified on</th>${manageCol ? "<th>Manages customer access</th>" : ""}<th></th></tr></thead>
@@ -289,7 +297,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
               <td class="ca-muted">${escapeHtml(fmtDate(u.assignedAt))}</td>
               <td class="ca-muted">${escapeHtml(u.modifiedByName || u.modifiedByEmail || "")}</td>
               <td class="ca-muted" title="${escapeHtml(u.modifiedAt || "")}">${escapeHtml(fmtDateTime(u.modifiedAt))}</td>
-              ${manageCol ? `<td><input type="checkbox" data-manage="${escapeHtml(u.userId)}" ${u.role === "customer-manager" ? "checked" : ""} title="May add and remove users for customer organisations"></td>` : ""}
+              ${manageCol ? `<td><input type="checkbox" data-manage="${escapeHtml(u.userId)}" ${u.managesCustomers ? "checked" : ""} title="May add and remove users for customer organisations"></td>` : ""}
               <td class="ca-actions">
                 ${roleCol ? `<button type="button" class="btn btn-secondary btn-sm" data-edit="${escapeHtml(u.userId)}">Edit</button>` : ""}
                 ${customerMode ? "" : `<button type="button" class="btn btn-secondary btn-sm" data-remove="${escapeHtml(u.userId)}">Remove</button>`}
@@ -313,7 +321,6 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
   async function setManages(userId, on, box) {
     const row   = licensed.find((l) => l.userId === userId);
     const label = row ? (row.name || row.email || userId) : userId;
-    const role  = on ? "customer-manager" : "";
     const ok = window.confirm(on
       ? `Let ${label} add and remove users for customer organisations?\n\nAdding a customer user starts a charge to that customer.`
       : `Withdraw ${label}'s right to manage customer access?`);
@@ -321,8 +328,8 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     box.disabled = true;
     setStatus(on ? `Letting ${label} manage customer access…` : `Withdrawing ${label}'s right to manage customer access…`);
     try {
-      const r = await setLicenseRole(currentOrg.id, userId, role);
-      if (row) Object.assign(row, r.user || {}, { role });
+      const r = await setManagesCustomers(currentOrg.id, userId, on);
+      if (row) Object.assign(row, r.user || {}, { managesCustomers: on });
       renderList();
       setStatus(on ? `${label} can now manage customer access.` : `${label} no longer manages customer access.`, "success");
     } catch (err) {
@@ -409,7 +416,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     try {
       const [rows, scopeKeys] = await Promise.all([
         listLicensedUsers(currentOrg.id),
-        isInternal() ? Promise.resolve(null) : getSupervisorScope(currentOrg.id),
+        getSupervisorScope(currentOrg.id),
       ]);
       if (seq !== loadSeq) return;
       licensed = rows;
@@ -433,7 +440,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
   function renderAddRole() {
     $roleBox.innerHTML = "";
     addRole = null;
-    if (customerMode || !currentOrg || isInternal()) { renderSelected(); return; }
+    if (customerMode || !currentOrg) { renderSelected(); return; }
     addRole = createRoleControl({}, renderSelected);
     $roleBox.append(addRole.el);
     renderSelected();
@@ -635,8 +642,10 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     $intro.textContent = isInternal()
       ? "The colleagues in the internal organisation who may use this app. Only the people listed "
         + "here can sign in; everyone else in the org sees a message asking them to contact a "
-        + "superuser. Nothing here is billed. Tick \"Manages customer access\" to let a colleague add "
-        + "and remove users for customer organisations."
+        + "superuser. Nothing here is billed. Every colleague is an Administrator (every page) or a "
+        + "Supervisor (chosen pages from the internal Supervisor scope). Tick \"Manages customer "
+        + "access\" to let a colleague add and remove users for customer organisations, whatever "
+        + "their role."
       : "The users in the selected customer's organisation who may use this app. Only the people "
         + "listed here can sign in; everyone else in the org sees a message asking them to contact "
         + "their administrator. Adding a name is what the customer is billed for. Every user is an "
@@ -659,6 +668,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       return;
     }
     $orgName.textContent = currentOrg.name;
+    fullTree = pageTreeFor(isInternal());
     renderIntro();
     const why = customerMode ? null : notLicensable(currentOrg);
     if (why) {

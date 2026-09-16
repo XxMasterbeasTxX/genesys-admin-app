@@ -4,13 +4,17 @@
  * Two routes, one module (docs/customer-roles-design.md §8):
  *
  *   Customers › Supervisor Access       internal — superusers and customer-
- *                                       managers, for the org in the header
+ *                                       managers, for the org in the header;
+ *                                       with the internal org selected, its
+ *                                       own scope, superusers only
+ *                                       (docs/internal-roles-design.md §4)
  *   Administrator › Supervisor Access   a customer Administrator, for their
  *                                       own org; the server ignores any other
  *
  * The scope is what a Supervisor in the org may have AT ALL: every page the
- * app offers customers, drawn as the sidebar draws them, one box per page and
- * a box per section. A Supervisor's own pages are a subset of it, chosen when
+ * org offers — a customer's pages, or every internal page bar the
+ * superuser-only and Customers ones — drawn as the sidebar draws them, one
+ * box per page and a box per section. A Supervisor's own pages are a subset of it, chosen when
  * they are added or edited on the users list; their effective pages are the
  * two intersected at sign-in, so a change here reaches every Supervisor
  * within the gate's five-minute cache, with nobody editing rows.
@@ -20,12 +24,13 @@
  */
 import { makeStatus, withBusy } from "../../utils.js";
 import { getSupervisorScope, setSupervisorScope } from "../../services/licenseService.js";
-import { customerPageTree } from "../../services/customerPageTree.js";
+import { pageTreeFor } from "../../services/customerPageTree.js";
 import { createPageTree, ensurePageTreeStyles } from "../../components/pageTree.js";
 
-export default function renderSupervisorAccess({ orgContext }) {
+export default function renderSupervisorAccess({ orgContext, access }) {
   ensurePageTreeStyles();
   const customerMode = !!(orgContext && orgContext.isCustomer && orgContext.isCustomer());
+  const isSuperuser  = !!(access && access.isSuperuser);
 
   const el = document.createElement("div");
   el.innerHTML = `
@@ -46,7 +51,7 @@ export default function renderSupervisorAccess({ orgContext }) {
         The pages a Supervisor in this organisation may be given. Tick a section to include every page
         under it. When a Supervisor is added or edited, only the pages ticked here can be chosen for
         them; unticking a page here takes it from every Supervisor who had it. Administrators always
-        see everything.
+        see everything the organisation offers.
       </p>
 
       <div class="sa-org" ${customerMode ? "hidden" : ""}>
@@ -80,15 +85,22 @@ export default function renderSupervisorAccess({ orgContext }) {
   const $status  = el.querySelector("#saStatus");
   const setStatus = makeStatus($status, "cs-status");
 
-  const treeData = customerPageTree();
-  // Collapsed: 76 pages under 13 sections is a wall; the section counts say
-  // where the ticks are, and a section opens on its chevron.
-  const tree = createPageTree({ tree: treeData, onChange: onEdit, open: false });
-  $treeBox.append(tree.el);
-
   let currentOrg = null;
   let saved = [];           // what the server holds, sorted
   let loadSeq = 0;
+  let tree = null;          // built per org: the internal org's pages differ from a customer's
+  let treeKind = null;
+
+  /** The tree for this org's kind — rebuilt only when the kind changes. */
+  function ensureTree(internal) {
+    const kind = internal ? "internal" : "customer";
+    if (tree && treeKind === kind) return;
+    treeKind = kind;
+    // Collapsed: ~80 pages under 13 sections is a wall; the section counts
+    // say where the ticks are, and a section opens on its chevron.
+    tree = createPageTree({ tree: pageTreeFor(internal), onChange: onEdit, open: false });
+    $treeBox.replaceChildren(tree.el);
+  }
 
   function onEdit(keys) {
     $count.textContent = `${keys.length} of ${tree.size} pages in the scope`;
@@ -136,15 +148,15 @@ export default function renderSupervisorAccess({ orgContext }) {
     }
   }
 
-  $all.addEventListener("click", () => tree.selectAll(true));
-  $none.addEventListener("click", () => tree.selectAll(false));
+  $all.addEventListener("click", () => tree && tree.selectAll(true));
+  $none.addEventListener("click", () => tree && tree.selectAll(false));
   $save.addEventListener("click", save);
 
-  /** Why this org has no scope to edit, or null. */
+  /** Why this org's scope cannot be edited here, or null. */
   function notScopable(org) {
     if (!org) return null;
-    if (orgContext.isInternalOrg(org.id)) {
-      return `${org.name} is the internal organisation. It has no Supervisor scope: colleagues are gated by their own Genesys permissions, not by a role.`;
+    if (!customerMode && orgContext.isInternalOrg(org.id) && !isSuperuser) {
+      return `${org.name} is the internal organisation. Only a superuser can set what its Supervisors may see.`;
     }
     if (org.registered === false) {
       return `${org.name} is not set up as a customer yet: it has no registry entry. Add the registry entry first (see the onboarding runbook), then set its Supervisor scope here.`;
@@ -168,6 +180,7 @@ export default function renderSupervisorAccess({ orgContext }) {
       setStatus(why, "warn");
       return;
     }
+    ensureTree(!customerMode && orgContext.isInternalOrg(currentOrg.id));
     $body.hidden = false;
     load();
   }

@@ -137,3 +137,66 @@ integration's group; a superuser session; a customer-manager session.
 | 21 | Modified by / on | After #13 (or a customer-manager tick on the internal list), look at the row | **Modified by** and **Modified on** show the **name** of who last changed the role or pages and when; blank for a row never edited since it was added | |
 | 22 | Names, not e-mails | Internal: Customers › Access for the customer | **Added by** and **Modified by** are names (e-mail only for rows added before names were recorded) | |
 | 23 | Customer sees the company | As #8, Administrator › Users | **Added by** reads **TDC Erhverv** on every row; **Modified by** reads TDC Erhverv where an internal person edited, and the Administrator's own name where they did (#13) | |
+
+## C. Internal roles (2026-09-17)
+
+Design: [`docs/internal-roles-design.md`](../internal-roles-design.md). The
+same two roles for the internal org; "Manages customer access" moved from
+the `role` column to its own `managesCustomers` column, independent of the
+role.
+
+**Automated — server**: the harness above re-run at 82 checks (from 62), plus
+the 25 of the internal-user pass with the callers in the new shape. New:
+
+| | Superuser | Colleague who manages customers | Colleague who does not |
+|---|---|---|---|
+| GET / PUT the internal org's scope | 200; internal-only pages kept, Onboarding / Customers / `administrator.*` dropped | 403 `superuser_required` | 403 |
+| A customer's scope cannot hold an internal-only page | dropped, named | | |
+| Add to the internal org without a role | 400 `role_required` | 403 | 403 |
+| Add an internal Administrator / Supervisor | 200; a Supervisor's pages ∩ the internal scope | 403 `superuser_required` | 403 |
+| `/role` on the internal org | 200 (`customer-manager` is no longer a role → `role_required`) | 403 | 403 |
+| `/manages` on the internal org | 200, logged `licenses.manages`; the role survives; promote afterwards and the capability survives | 403 `superuser_required` | 403 |
+| `/manages` on a customer org | 400 `internal_org_only` | | |
+| An internal **Supervisor** who manages customers | — | sets a customer scope, edits a customer role, adds a customer user: 200 | |
+
+The gate: an internal Administrator's verdict is `features: null,
+managesCustomers: false`; an internal Supervisor's is ticks ∩ the internal
+scope with the capability from the row; a legacy `role: "customer-manager"`
+row reads as `administrator` + `managesCustomers: true`; a pre-roles
+internal row reads as `administrator` and is logged; a superuser's verdict
+carries `managesCustomers: true`; an unnamed colleague in report mode is
+admitted as an administrator.
+
+**Automated — client**: 31 checks in a browser harness:
+
+- The internal tree has 93 pages (the customer tree 76); it holds
+  internal-only pages and not Onboarding, the Customers pages or
+  `administrator.*`.
+- `resolveAccess`: superuser 96 pages; internal Administrator 93 (no
+  Onboarding, no Customers); with the tick 95; a Supervisor exactly their
+  pages, the rest `hidden`, sidebar draws only their sections; a Supervisor
+  with the tick also gets Customers; no pages and no tick → no access; the
+  customer resolver untouched.
+- Customers › Access on the internal org: Role column, Edit, the role
+  control on add; the manages column reads the capability, not the role;
+  Edit shows the internal scope's pages including an internal-only one and
+  names Onboarding as the Administrator's exception; the tick calls
+  `/manages` and leaves the role untouched; adding a Supervisor sends role
+  and pages; switching to a customer swaps the tree to the customer's and
+  drops the manages column.
+- Supervisor Access: the internal org shows 93 boxes to a superuser and
+  follows the selector to a customer's 76 and back; a non-superuser is
+  refused with a sentence.
+
+**By hand — in dev, then prod**
+
+| # | Case | Steps | Expect | Result |
+|---|---|---|---|---|
+| 24 | Internal scope | Customers › Supervisor Access, select Demo, as a superuser; tick Export; Save | 93 pages; saved; log `supervisorScope.set` for Demo | |
+| 25 | Internal scope, not a superuser | Same page as a colleague who manages customers | "Only a superuser can set what its Supervisors may see." | |
+| 26 | Existing rows | Customers › Access, select Demo | Every existing row reads **Administrator** (or "Administrator (unset)" for a row from before roles); the manages tick as before | |
+| 27 | Add an internal Supervisor | Add a colleague, choose Supervisor, tick Export › Users › Last Login | In. Their sidebar shows Export › Users › Last Login and nothing else | |
+| 28 | Supervisor + manages | Tick "Manages customer access" on #27's row | They also see Customers › Access and Customers › Supervisor Access; can name customer users | |
+| 29 | Demote / promote | Edit an internal Administrator to Supervisor with one page; back again | Each logged; the manages tick unchanged throughout | |
+| 30 | Legacy row rewritten | Edit a row that had `customer-manager` before this change; save | Role saved; the manages tick still on (the store carried it across) | |
+| 31 | Superuser untouched | Sign in as a superuser | Everything, Onboarding included, whatever the internal scope says | |

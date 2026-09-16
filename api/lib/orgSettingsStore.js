@@ -60,7 +60,7 @@ async function getSupervisorScope(orgId) {
 
 /**
  * Overwrite the org's Supervisor scope. The caller has already validated the
- * keys (customerPages.js); this stores what it is given.
+ * keys (pages.js); this stores what it is given.
  * @returns {Promise<{ features: string[], setAt: string }>}
  */
 async function setSupervisorScope(orgId, features, by) {

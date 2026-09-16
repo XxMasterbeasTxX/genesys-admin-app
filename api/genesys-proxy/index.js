@@ -5,7 +5,7 @@ const {
   getBearerToken,
   parseRegistry,
 } = require("../lib/orgConfigResolver");
-const { checkCustomerRequest } = require("../lib/entitlementAllowlist");
+const { checkCustomerRequest, checkFeatureRequest } = require("../lib/entitlementAllowlist");
 const { checkLicense } = require("../lib/licenseGate");
 const { checkProxyPermission } = require("../lib/proxyPermissions");
 
@@ -285,6 +285,22 @@ module.exports = async function (context, req) {
           body: { error: perm.error, required: perm.required || [] },
         };
         return;
+      }
+
+      // An internal Supervisor's pages, through the same coarse allowlist a
+      // customer's are, under the same flag (docs/internal-roles-design.md
+      // §5). The permission check above is the security layer; this is the
+      // menu, held to server-side when the allowlist is on.
+      if (Array.isArray(licence.features)) {
+        const guard = checkFeatureRequest(path, licence.features);
+        if (!guard.allowed) {
+          context.res = {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+            body: { error: guard.reason },
+          };
+          return;
+        }
       }
     }
 

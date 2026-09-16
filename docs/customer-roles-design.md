@@ -65,8 +65,10 @@ is named.
   only pages from a customer hides pages outside the features (§7).
 - **Roles and features are editable after the fact**, per row, by whoever may
   edit that org's list. Promote, demote, add a feature — no remove-and-re-add.
-- **Internal users are untouched.** They have no role beyond the
-  `customer-manager` capability, and no scope. This is customer-only.
+- ~~**Internal users are untouched.**~~ They got the same two roles the
+  next day: [`internal-roles-design.md`](internal-roles-design.md). The
+  `customer-manager` capability became its own column, independent of
+  the role.
 
 ## 2. The three layers
 

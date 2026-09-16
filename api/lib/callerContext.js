@@ -58,9 +58,9 @@ function getRequestHint(req) {
  *   customerId: string|null,   // customer slug when in customer mode, else null
  *   ownerOrgId: string,        // owner tag for OWNER-scoped stores
  *   superuser: boolean,        // on the SUPERUSER_IDS app setting (internal only)
- *   role: string,              // the caller's row role: internal "" | "customer-manager" | "superuser";
- *                              //                        customer "administrator" | "supervisor"
- *   features: string[]|null,   // customer supervisor: effective page keys; null = everything
+ *   role: string,              // the caller's row role: "administrator" | "supervisor"; "superuser" for a superuser
+ *   features: string[]|null,   // a supervisor's effective page keys; null = everything
+ *   managesCustomers: boolean, // internal only: may name users for customer orgs (superusers always)
  *   userId: string|null,       // VERIFIED Genesys user id, from the token
  *   userEmail: string,         // verified; "" when identity is unavailable
  *   userName: string,          // verified; "" when identity is unavailable
@@ -119,7 +119,7 @@ async function getCallerContext(context, req, { hintId = null, identify = true }
     case "fallback":
       // Unconfigured environment (local dev): no registry, no internal org to
       // gate against. Behaves as internal, ungated, as it always has.
-      return withIdentity({ authorized: true, mode: "internal", configured, customerId: null, ownerOrgId: INTERNAL_OWNER, superuser: false, role: "" });
+      return withIdentity({ authorized: true, mode: "internal", configured, customerId: null, ownerOrgId: INTERNAL_OWNER, superuser: false, role: "administrator", features: null, managesCustomers: false });
     case "internal": {
       // The named-user gate (licenseGate.js), now for internal sessions too:
       // a colleague nobody has named is refused here, so every store endpoint
@@ -133,6 +133,8 @@ async function getCallerContext(context, req, { hintId = null, identify = true }
         authorized: true, mode: "internal", configured, customerId: null, ownerOrgId: INTERNAL_OWNER,
         superuser: !!licence.superuser,
         role: licence.role || "",
+        features: licence.features || null,
+        managesCustomers: !!licence.superuser || !!licence.managesCustomers,
       });
     }
     case "customer": {

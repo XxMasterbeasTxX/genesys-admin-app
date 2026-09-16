@@ -271,10 +271,14 @@ function renderSignInGate() {
       orgSelectEl.disabled = true;
       orgContext.set(customer.id);
     } else {
-      // Named (or a superuser) — the server said so. What they may do is their
-      // own Genesys permissions; the two things a permission cannot express
-      // come from the role the server read off their row.
-      access = await resolveAccess(res.accessToken, { superuser: orgCfg.superuser, role: orgCfg.role });
+      // Named (or a superuser) — the server said so. Their role decides the
+      // pages (a Supervisor's effective pages arrive as `features`); what they
+      // may do within them is their own Genesys permissions; the two things a
+      // permission cannot express come from the row too.
+      access = await resolveAccess(res.accessToken, {
+        superuser: orgCfg.superuser, role: orgCfg.role,
+        features: orgCfg.features, managesCustomers: orgCfg.managesCustomers,
+      });
 
       const customers = Array.isArray(orgCfg.customers) ? orgCfg.customers : [];
       orgContext.setMode("internal");

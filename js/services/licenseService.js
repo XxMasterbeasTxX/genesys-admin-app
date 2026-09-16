@@ -34,6 +34,7 @@ function licenseMessage(code, json, status) {
     case "customer_manager_required": return "You have not been given the right to manage customer access. Ask a superuser.";
     case "identity_unavailable":      return "We could not verify who you are just now, so this change was not made. Try again in a moment.";
     case "internal_org_only":         return "Only users of the internal organisation can be given that right.";
+    case "internal_org_has_no_scope": return "The internal organisation has no Supervisor scope.";
     case "user_not_named":            return "That person is not on the list.";
     case "invalid_role":              return "That is not a role this page knows.";
     case "internal_only":             return "This page is for Netdesign staff.";
@@ -41,7 +42,6 @@ function licenseMessage(code, json, status) {
     case "role_required":             return "Choose Administrator or Supervisor.";
     case "scope_empty":               return "Nothing is in the Supervisor scope for this organisation yet. Set it on Supervisor Access first.";
     case "pages_required":            return "Tick at least one page from the Supervisor scope.";
-    case "internal_org_has_no_scope": return "The internal organisation has no Supervisor scope.";
     case "customerId_required":       return "Select a customer organisation first.";
     case "not_a_customer":   return "This organisation is not set up as a customer yet — it has no registry entry, so nobody can sign in to it as a customer.";
     default:                 return `The request failed (${code || status}).`;
@@ -56,23 +56,31 @@ export async function listLicensedUsers(customerId) {
 
 /**
  * Name a user. Returns { user, created } — created is false if they already
- * had access. For a customer org, `role` ("administrator" | "supervisor") is
- * required and a supervisor's `features` (page keys inside the org's scope)
- * must be non-empty; the internal org's rows carry neither on add.
+ * had access. `role` ("administrator" | "supervisor") is required for both
+ * kinds of org, and a supervisor's `features` (page keys inside the org's
+ * scope) must be non-empty.
  */
 export function assignLicense(customerId, { id, email, name }, { role = "", features = [] } = {}) {
   return call("POST", "/api/licenses/assign", { customerId, userId: id, email, name, role, features });
 }
 
 /**
- * Set the role on a row. On the internal org: "customer-manager" lets a
- * colleague name users for customer orgs; "" takes that back (superusers
- * only). On a customer org: "administrator" | "supervisor", with a
- * supervisor's `features`; by whoever may manage that org's list, and by the
- * org's own Administrators. Server-checked. Returns { user, changed }.
+ * Set the role and pages on a row: "administrator" | "supervisor", with a
+ * supervisor's `features`. By whoever may manage that org's list — the
+ * internal org's by superusers only — and by a customer org's own
+ * Administrators. Server-checked. Returns { user, changed }.
  */
 export function setLicenseRole(customerId, userId, role, features = []) {
   return call("POST", "/api/licenses/role", { customerId, userId, role, features });
+}
+
+/**
+ * Grant or withdraw "Manages customer access" on an internal row — the right
+ * to name users for customer orgs. Superusers only, internal org only,
+ * independent of the role. Returns { user, changed }.
+ */
+export function setManagesCustomers(customerId, userId, manages) {
+  return call("POST", "/api/licenses/manages", { customerId, userId, manages: !!manages });
 }
 
 /** The org's Supervisor scope: sorted page keys, [] when none set. */

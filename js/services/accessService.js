@@ -207,19 +207,24 @@ function buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode = "inter
 }
 
 /**
- * Resolve the user's access from their group memberships, refined by their own
- * Genesys permissions for WRITE actions (see docs/customer-facing-plan.md §6).
+ * Resolve an internal user's access: their role decides the pages, their own
+ * Genesys permissions refine the actions (see docs/customer-facing-plan.md §6,
+ * docs/internal-roles-design.md §5).
  *
  * @param {string} accessToken   PKCE access token (your own Genesys org).
- * @param {{ superuser?: boolean, role?: string }} who
+ * @param {{ superuser?: boolean, role?: string, features?: string[]|null, managesCustomers?: boolean }} who
  *        What org-config said about this caller, decided server-side by the
  *        named-user gate: whether they are a superuser (the SUPERUSER_IDS app
- *        setting) and the role on their own row ("" or "customer-manager").
+ *        setting), the role on their own row, a Supervisor's effective pages
+ *        (null for an Administrator — everything), and whether their row lets
+ *        them manage customer access.
  * @returns {Promise<{ hasAccess, hasAnyAccess, accessState, getMissingPermissions }>}
  */
 export async function resolveAccess(accessToken, who = {}) {
   const isSuper = !!who.superuser;
-  const canManageCustomers = isSuper || who.role === "customer-manager";
+  const canManageCustomers = isSuper || !!who.managesCustomers;
+  // A Supervisor's pages; null means an Administrator (or a superuser).
+  const pages = Array.isArray(who.features) ? new Set(who.features) : null;
 
   // A named user's permissions are the whole of what they may do. There is no
   // group lookup any more: being named is decided by the server before this
@@ -227,9 +232,10 @@ export async function resolveAccess(accessToken, who = {}) {
   const permList = isSuper ? null : await fetchUserPermissions(accessToken);
 
   /**
-   * Page-level access. A named user may see every page except the two kinds
-   * a permission cannot express (accessConfig.js); the permission refinement
-   * below then hides or greys what their Genesys permissions do not cover.
+   * Page-level access. An Administrator may see every page except the two
+   * kinds a permission cannot express (accessConfig.js); a Supervisor only
+   * the pages in their set — absent, not greyed. The permission refinement
+   * below then greys what their Genesys permissions do not cover.
    * Falsy pageKey (unprotected page) → true.
    */
   function hasAccess(pageKey) {
@@ -239,7 +245,9 @@ export async function resolveAccess(accessToken, who = {}) {
     if (CUSTOMER_ADMIN_KEYS.includes(pageKey)) return false;
     if (isSuper) return true;
     if (SUPERUSER_ONLY_KEYS.includes(pageKey)) return false;
+    // The two Customers pages come from the capability, never from a scope.
     if (CUSTOMER_MANAGER_KEYS.includes(pageKey)) return canManageCustomers;
+    if (pages) return pages.has(pageKey);
     return true;
   }
 
@@ -247,10 +255,13 @@ export async function resolveAccess(accessToken, who = {}) {
 
   return {
     hasAccess,
-    hasAnyAccess() { return true; },     // named, or a superuser — the server said so
+    // Named, or a superuser — the server said so. A Supervisor with no pages
+    // and no capability has nothing to see, and the shell says so.
+    hasAnyAccess() { return !pages || pages.size > 0 || canManageCustomers; },
     ...refined,
     canManageCustomers,
     isSuperuser: isSuper,
+    role: who.role || "",
     // True when the permission read failed, so nothing beyond "you are named"
     // could be verified. The refinement already fails closed on every gated
     // page; this lets the shell say "could not verify" instead of showing a

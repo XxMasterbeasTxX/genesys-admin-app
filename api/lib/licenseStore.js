@@ -13,13 +13,18 @@
  *   rowKey        `<userId>|<assignedAt>` — a user removed and re-added has
  *                 two rows, both true
  *   userId, email, name, assignedBy, assignedAt, revokedBy, revokedAt
- *   role          "" for a plain named colleague; "customer-manager" on an
- *                 INTERNAL row lets that colleague name users for customer
- *                 orgs (docs/internal-user-access-design.md §5). On a CUSTOMER
- *                 row, "administrator" or "supervisor", required
- *                 (docs/customer-roles-design.md §4).
+ *   role          "administrator" or "supervisor", required on add for both
+ *                 kinds of org (docs/customer-roles-design.md §4,
+ *                 docs/internal-roles-design.md §3).
  *   features      JSON array of page access keys — a supervisor's own pages,
  *                 a subset of the org's Supervisor scope. [] otherwise.
+ *   managesCustomers
+ *                 "true" on an INTERNAL row lets that colleague name users
+ *                 for customer orgs (docs/internal-user-access-design.md §5).
+ *                 Independent of the role. Before internal roles existed this
+ *                 lived in `role` as "customer-manager"; such a row is read
+ *                 as administrator + managesCustomers and rewritten in the
+ *                 new shape on its next edit.
  *   assignedBy, assignedByEmail, assignedByName
  *                 who named them — always an internal person.
  *   roleSetBy, roleSetByEmail, roleSetByName, roleSetByOrg, roleSetAt
@@ -71,6 +76,8 @@ function safeKey(s) {
 }
 
 function entityToRow(e) {
+  // The capability used to be a role value; read the old shape as the new one.
+  const legacyManager = e.role === "customer-manager";
   return {
     customerId: e.partitionKey,
     userId:     e.userId,
@@ -82,8 +89,9 @@ function entityToRow(e) {
     assignedAt: e.assignedAt,
     revokedBy:  e.revokedBy || null,
     revokedAt:  e.revokedAt || null,
-    role:       e.role || "",
+    role:       legacyManager ? "administrator" : (e.role || ""),
     features:   parseFeatures(e.features),
+    managesCustomers: legacyManager || e.managesCustomers === "true",
     // The last change to the row after the add — a role or pages edit, or
     // the customer-manager tick on an internal row. Null until there is one.
     modifiedBy:      e.roleSetBy || "",
@@ -139,7 +147,7 @@ async function activeRow(customerId, userId) {
  * @param {{ id: string, email?: string, name?: string }} by   the caller's VERIFIED identity
  * @returns {Promise<{ row: object, created: boolean }>}
  */
-async function assign(customerId, user, by, { role = "", features = [] } = {}) {
+async function assign(customerId, user, by, { role = "", features = [], managesCustomers = false } = {}) {
   const rows = await listRows(customerId);
   const existing = rows.find((r) => r.userId === user.id && !r.revokedAt);
   if (existing) return { row: existing, created: false };
@@ -157,15 +165,19 @@ async function assign(customerId, user, by, { role = "", features = [] } = {}) {
     assignedAt,
     role:         role || "",
     features:     JSON.stringify(Array.isArray(features) ? features : []),
+    managesCustomers: managesCustomers ? "true" : "",
   };
   await getClient().createEntity(entity);
   return { row: entityToRow(entity), created: true };
 }
 
 /**
- * Set the role on a user's active row. Only "" and "customer-manager" mean
- * anything today; the endpoint decides who may call this. Stamped with who
- * and when, so a grant is as traceable as an assignment.
+ * Set the role and pages on a user's active row. The endpoint decides who
+ * may call this and has validated the values. Stamped with who and when, so
+ * a change is as traceable as an assignment. The capability column is
+ * carried across untouched — and a legacy "customer-manager" row is
+ * rewritten in the new shape here, since Merge would otherwise leave the
+ * old value nowhere.
  *
  * @returns {Promise<{ row: object|null, changed: boolean }>}
  */
@@ -183,6 +195,7 @@ async function setRole(customerId, userId, role, by, features = null) {
       rowKey:       `${safeKey(userId)}|${active.assignedAt}`,
       role:         role || "",
       features:     JSON.stringify(nextFeatures),
+      managesCustomers: active.managesCustomers ? "true" : "",
       roleSetBy:    by.id || "",
       roleSetByEmail: by.email || "",
       roleSetByName:  by.name || "",
@@ -194,6 +207,42 @@ async function setRole(customerId, userId, role, by, features = null) {
   return {
     row: {
       ...active, role: role || "", features: nextFeatures,
+      modifiedBy: by.id || "", modifiedByEmail: by.email || "", modifiedByName: by.name || "",
+      modifiedByOrg: by.org || "internal", modifiedAt: roleSetAt,
+    },
+    changed: true,
+  };
+}
+
+/**
+ * Grant or withdraw "Manages customer access" on an internal row. The role
+ * is carried across untouched — a legacy "customer-manager" row becomes an
+ * explicit administrator here. Stamped like a role change: it is one.
+ *
+ * @returns {Promise<{ row: object|null, changed: boolean }>}
+ */
+async function setManagesCustomers(customerId, userId, on, by) {
+  const active = await activeRow(customerId, userId);
+  if (!active) return { row: null, changed: false };
+  if (!!active.managesCustomers === !!on) return { row: active, changed: false };
+  const roleSetAt = new Date().toISOString();
+  await getClient().updateEntity(
+    {
+      partitionKey: safeKey(customerId),
+      rowKey:       `${safeKey(userId)}|${active.assignedAt}`,
+      role:         active.role || "",
+      managesCustomers: on ? "true" : "",
+      roleSetBy:    by.id || "",
+      roleSetByEmail: by.email || "",
+      roleSetByName:  by.name || "",
+      roleSetByOrg:   by.org || "internal",
+      roleSetAt,
+    },
+    "Merge",
+  );
+  return {
+    row: {
+      ...active, managesCustomers: !!on,
       modifiedBy: by.id || "", modifiedByEmail: by.email || "", modifiedByName: by.name || "",
       modifiedByOrg: by.org || "internal", modifiedAt: roleSetAt,
     },
@@ -274,4 +323,4 @@ function peakOfRows(rows, start, end) {
   return peak;
 }
 
-module.exports = { listActive, isActive, activeRow, assign, setRole, revoke, peakAssigned, peakOfRows, TABLE_NAME };
+module.exports = { listActive, isActive, activeRow, assign, setRole, setManagesCustomers, revoke, peakAssigned, peakOfRows, TABLE_NAME };
