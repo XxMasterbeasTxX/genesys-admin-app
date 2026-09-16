@@ -5256,6 +5256,13 @@ body {
   color: var(--accent);
   border: 1px solid color-mix(in srgb, var(--accent-strong) 25%, transparent);
 }
+/* The internal-only stamp: the same tinted shape in purple. It used to be a
+   solid purple fill under the accent-blue text, which read in neither theme. */
+.release-notes__badge--internal {
+  background: color-mix(in srgb, var(--tag-purple) 15%, transparent);
+  color: var(--tag-purple);
+  border-color: color-mix(in srgb, var(--tag-purple) 35%, transparent);
+}
 .release-notes__date {
   font-size: 12px;
   color: var(--muted);
