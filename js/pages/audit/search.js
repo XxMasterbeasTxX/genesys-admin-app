@@ -885,12 +885,42 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     for (const entry of allResults) {
       const id = entry.entity?.id;
       if (!id || !deleted.has(id)) continue;
-      for (const p of (entry.propertyChanges || [])) {
-        if (!/^name$/i.test(String(p.property || ""))) continue;
-        const name = [].concat(p.newValues ?? [], p.oldValues ?? []).find(v => v && String(v).trim());
-        if (name) { nameCache[id] = `(deleted) ${name}`; deleted.delete(id); break; }
+      const name = nameFromAudit(entry, id);
+      if (name) { nameCache[id] = `(deleted) ${name}`; deleted.delete(id); }
+      if (!deleted.size) return;
+    }
+  }
+
+  /**
+   * Where an audit may carry its own entity's name, in order of trust:
+   * entity.name; a "name"/"…Name" property change; an entityChanges row
+   * for the same id; a name-like key in context or in message.messageParams;
+   * and finally the quoted name in Genesys's own message text.
+   */
+  function nameFromAudit(entry, id) {
+    const clean = v => (v === null || v === undefined) ? "" : String(v).trim();
+    if (clean(entry.entity?.name)) return clean(entry.entity.name);
+
+    for (const p of (entry.propertyChanges || [])) {
+      if (!/(^|[^a-z])name$/i.test(String(p.property || ""))) continue;
+      const v = [].concat(p.newValues ?? [], p.oldValues ?? []).map(clean).find(Boolean);
+      if (v && !GUID_RE.test(v)) return v;
+    }
+    for (const c of (entry.entityChanges || [])) {
+      if (c.entityId === id && clean(c.entityName)) return clean(c.entityName);
+    }
+    const bags = [entry.context, entry.message?.messageParams].filter(b => b && typeof b === "object");
+    for (const bag of bags) {
+      for (const [k, v] of Object.entries(bag)) {
+        if (!/name$/i.test(k) || /user|actor|client|division|type/i.test(k)) continue;
+        const str = clean(v);
+        if (str && !GUID_RE.test(str)) return str;
       }
     }
+    const text = clean(entry.message?.message);
+    const quoted = text.match(/["'\u2018\u2019\u201c\u201d]([^"'\u2018\u2019\u201c\u201d]{1,120})["'\u2018\u2019\u201c\u201d]/);
+    if (quoted && !GUID_RE.test(quoted[1])) return quoted[1];
+    return "";
   }
 
   // ── Actor name resolution ────────────────────────────────────────
