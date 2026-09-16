@@ -52,9 +52,9 @@ how old the *start* of the range is, not by how long the range is.
 - [ ] **2.3** — Set From to **20 days ago** and To to **18 days ago** (a 2-day range, older than 14 days), no service
   - Expect: hint turns amber — "Older than 14 days — standard query"; the run reports "Fetching interval 1 of 1 (all services)". It must **not** report "Done — 0 results" instantly
   - Notes: `______________________`
-- [ ] **2.4** ★ — Same range as 2.3, no service. Does Genesys accept the query?
-  - Expect either: results across services, **or** the red line "Genesys requires a service for this query — select one and search again"
-  - Answer: `______________________`
+- [ ] **2.4** — Same range as 2.3, no service
+  - Expect: results across services (confirmed 2026-09-16 — the standard query accepts no `serviceName`; "Last month" returned 3105 rows). If Genesys ever starts refusing, the page shows "Genesys requires a service for this query — select one and search again"
+  - Notes: `______________________`
 - [ ] **2.5** — Same range as 2.3 with a service selected
   - Expect: standard query runs; results appear
   - Notes: `______________________`
@@ -62,7 +62,7 @@ how old the *start* of the range is, not by how long the range is.
   - Expect: hint says "… is not in the realtime set — the standard query will be used"; the run polls
   - Notes: `______________________`
 - [ ] **2.7** — Press **Last 3 months** with no service
-  - Expect: the search runs on its own (three 30-day intervals); either results or the "requires a service" line — never silence
+  - Expect: the search runs on its own (three 30-day intervals) and returns results across all services
   - Notes: `______________________`
 
 ---

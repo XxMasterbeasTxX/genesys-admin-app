@@ -155,7 +155,7 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 | GET | `/api/v2/audits/query/realtime/servicemapping` | Load service map for realtime audit queries |
 | POST | `/api/v2/audits/query/realtime?expand=user` | Synchronous audit query — holds the **last 14 days** only. `pageSize`/`pageNumber` go in the **body**; the response carries `pageNumber`/`pageCount`/`total` (no cursor). Optional `filters` (`EntityId`, `UserId`, `ClientId`, `Action`, `EntityType`) |
 | POST | `/api/v2/audits/query/realtime/related` | All audits written by the same action as a given `auditId` ("Show related audits" in a row's details) |
-| POST | `/api/v2/audits/query` | Submit async audit query (any range; only `interval` is required by the spec — `serviceName` optional, same `filters`) |
+| POST | `/api/v2/audits/query` | Submit async audit query (any range). `serviceName` is optional — confirmed 2026-09-16: without it the query covers all services. Same `filters` as realtime |
 | GET | `/api/v2/audits/query/{transactionId}` | Poll async job status: `Queued`, `Running`, `Succeeded`, `Failed`, `Cancelled` |
 | GET | `/api/v2/audits/query/{transactionId}/results?pageSize=500&expand=user` | Fetch async audit results. Response is `{ id, pageSize, cursor, entities }` — pass `cursor` back until it is absent |
 | GET | `/api/v2/users/{id}` | Only for actors `expand=user` did not name (trustee users from another org) |

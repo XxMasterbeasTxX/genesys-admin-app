@@ -6,10 +6,11 @@
  *   start within 14 days, no service   → realtime API, all realtime-supported services
  *   start within 14 days, service in realtime mapping → realtime API (sync, fast)
  *   start within 14 days, service NOT in realtime mapping → async API
- *   start older than 14 days           → async API; service optional. The spec
- *                                        requires only `interval`; if Genesys
- *                                        rejects a service-less query the user
- *                                        is asked to pick one.
+ *   start older than 14 days           → async API, all services unless one is
+ *                                        picked. Confirmed 2026-09-16: a
+ *                                        service-less query is accepted (3105
+ *                                        rows over 30 days). The 400 handler
+ *                                        below is kept in case that changes.
  *
  * Realtime endpoints (synchronous, last 14 days, page-number pagination in body):
  *   GET  /api/v2/audits/query/realtime/servicemapping
@@ -162,7 +163,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     <hr class="hr">
     <p class="page-desc">
       The last 14 days query all supported services automatically.
-      Older ranges use the standard audit query, which is slower and may need a service.
+      Older ranges use the standard audit query, which is slower; pick a service to narrow it.
       Times are local.
     </p>
 
@@ -400,7 +401,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     } else {
       $serviceHint.textContent = service
         ? "Older than 14 days — standard query, fetched in 30-day chunks."
-        : "Older than 14 days — standard query. Genesys may require a service; select one if asked.";
+        : "Older than 14 days — standard query across all services, in 30-day chunks. Select one to narrow.";
       $serviceHint.className   = "aq-service-hint aq-service-hint--warn";
     }
   }
