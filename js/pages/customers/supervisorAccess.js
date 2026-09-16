@@ -81,7 +81,9 @@ export default function renderSupervisorAccess({ orgContext }) {
   const setStatus = makeStatus($status, "cs-status");
 
   const treeData = customerPageTree();
-  const tree = createPageTree({ tree: treeData, onChange: onEdit });
+  // Collapsed: 76 pages under 13 sections is a wall; the section counts say
+  // where the ticks are, and a section opens on its chevron.
+  const tree = createPageTree({ tree: treeData, onChange: onEdit, open: false });
   $treeBox.append(tree.el);
 
   let currentOrg = null;

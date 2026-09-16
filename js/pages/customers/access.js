@@ -174,8 +174,11 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
    *
    * @param {{ role?: string, features?: string[] }} initial
    * @param {Function} onChange  Called after every change.
+   * @param {{ open?: boolean }} [opts]  Whether the page tree starts expanded.
+   *        Expanded on add (the pages are the decision being made), collapsed
+   *        on edit (the row already has its pages; the counts say where).
    */
-  function createRoleControl(initial, onChange) {
+  function createRoleControl(initial, onChange, { open = true } = {}) {
     const box = document.createElement("div");
     box.className = "ca-role";
     const scopeEmpty = !scope || !scope.length;
@@ -200,7 +203,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     const $pages = box.querySelector(".ca-role-pages");
     const $pagesCount = box.querySelector(".ca-role-pages-count");
     const radios = [...box.querySelectorAll("input[type=radio]")];
-    const tree = createPageTree({ tree: pruneTree(fullTree, scope || []), onChange: () => refresh() });
+    const tree = createPageTree({ tree: pruneTree(fullTree, scope || []), onChange: () => refresh(), open });
     box.querySelector(".ca-role-tree").append(tree.el);
     box.querySelector("[data-all]").addEventListener("click", () => tree.selectAll(true));
     box.querySelector("[data-none]").addEventListener("click", () => tree.selectAll(false));
@@ -349,7 +352,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     let $save = null;      // assigned below; the control fires onChange while it is built
     const control = createRoleControl({ role: row.role, features: row.features }, () => {
       if ($save) $save.disabled = !control.valid();
-    });
+    }, { open: false });
     const actions = document.createElement("div");
     actions.className = "ca-edit-actions";
     actions.innerHTML = `<button type="button" class="btn btn-secondary btn-sm" data-cancel>Cancel</button><button type="button" class="btn btn-sm" data-save>Save</button>`;

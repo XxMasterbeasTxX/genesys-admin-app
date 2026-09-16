@@ -80,11 +80,12 @@ administrator.
 - Administrator › Users (customer mode): title, add box absent, no Remove,
   Edit per row, role column (`Administrator`, `Supervisor · 1 page`). Edit
   opens with the role pre-selected, the tree pruned to the scope's three
-  pages, the user's page ticked; ticking another and saving PUTs
+  pages and starting **collapsed**, the user's page ticked; ticking another and saving PUTs
   `{ role: "supervisor", features: [both] }` and the row re-renders with
   `Supervisor · 2 pages`. Editing an administrator shows the pages hidden.
-- Supervisor Access (customer mode): 76 page boxes, the three from the server
-  ticked, Save disabled until a change; a section box is mixed when some of
+- Supervisor Access (customer mode): 76 page boxes under sections that start
+  **collapsed** (the per-section `n / total` says where the ticks are), the
+  three from the server ticked, Save disabled until a change; a section box is mixed when some of
   its pages are ticked and ticking it ticks them all; Save PUTs the ticked
   keys.
 - Customers › Access (internal): the add box and Remove present; on a
