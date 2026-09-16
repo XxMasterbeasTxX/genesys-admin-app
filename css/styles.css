@@ -128,6 +128,20 @@ body {
   color: var(--text);
 }
 
+/* The theme switch: one round button showing the icon of the mode that is on
+   (moon, sun, or a monitor for "follow the OS"), cycling on click. js/theme.js
+   owns it. Same pill as its neighbours, sized for an icon rather than a word. */
+.header-theme-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text);
+}
+.header-theme-btn svg { display: block; }
+
 .app-body {
   display: grid;
   grid-template-columns: var(--nav-w) 1fr;

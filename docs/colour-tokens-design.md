@@ -485,10 +485,7 @@ recorded here because it will bite the next person too.
 
 ## 12. Parked, deliberately
 
-**The manual theme switch.** Everything it needs is laid by §5 — attribute,
-saved preference, OS fallback. What is not decided: the control itself, whether
-it lives in the header or the sidebar, and whether "follow the OS" is a third
-option or just the absence of a choice. Next conversation, after Phase 1.
+**The manual theme switch** — decided and built after Phase 1; see §14.
 
 **Excel and PDF document palettes.** A document's look must be fixed — a
 workbook exported by a dark-mode user must not come out dark. So these do *not*
@@ -507,3 +504,33 @@ All four were put to the user on 2026-09-16 and answered; the answers are in §2
 4. The five one-offs — **folded** into the nearest family.
 
 Nothing remains open. The design is complete and waits only on the go-ahead.
+
+## 14. The manual switch
+
+Decided on 2026-09-16, after the user had tested Phase 1, and built the same
+day. Four questions, four answers:
+
+- **Where:** the header, next to Refresh Token. It is a global setting, and the
+  header is where the other global things are.
+- **How many modes:** three — Dark, Light, System. System follows the OS, as the
+  app always had, and keeps following it if it changes while the app is open.
+  Once Dark or Light is chosen, System is how the OS gets a say again.
+- **Remembered:** per browser, in `localStorage.theme`. System is the absence of
+  a value. This is exactly the seam §5 laid; nothing else changed.
+- **The control:** a single round button showing the icon of the mode that is
+  *on* — moon, sun, or a monitor for System — cycling dark → light → system on
+  click. The user asked for this rather than a select or a segmented control:
+  the state is readable at a glance, and every click has a visible effect
+  (a different theme, or at least a different icon). The tooltip spells it out:
+  "Theme: System (following your OS — currently dark). Click for Dark."
+
+`js/theme.js` owns all of it — the boot-time choice it already made, the
+button, the cycle, the saved value — so the switch works on every page state,
+including the sign-in gate, and `download.html` gets the theme without the
+button. The button lives in `index.html` beside its neighbours and uses their
+pill style, sized for an icon.
+
+Verified: the cycle in all three states with icon, saved value, applied
+attribute and tooltip agreeing at each step; a saved Light surviving a reload
+against an OS that prefers dark, with the sun icon present from first paint;
+`color-scheme` following.

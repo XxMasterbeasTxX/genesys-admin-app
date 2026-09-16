@@ -21,6 +21,28 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "5.9",
+    date: "2026-09-16",
+    title: "Choose your theme, and light mode everywhere",
+    changes: [
+      "A theme switch in the header, next to Refresh Token. One button, cycling Dark → Light → System, showing "
+        + "the icon of whichever is on — a moon, a sun, or a monitor for “follow what the operating system says”. "
+        + "System is what the app has always done and still does until you choose; pick Dark or Light and it "
+        + "stays that way in this browser, whatever the OS is set to, until you pick System again.",
+      "Light mode now reaches every page. Twelve pages — Roles Create, Compare and Search, Flow Overview's side "
+        + "panel, Journey Flow, the wrap-up mapping editor and others — had only ever been designed dark and "
+        + "rendered their dark colours on a light desktop, and a good many error and warning messages were pale "
+        + "pink or amber on white across the app. All of it now switches, and reads, in both.",
+      "The export download window follows the theme too. It was always dark.",
+      "Flow Overview's diagram keeps its own Background selector — dark, light or white — and still starts dark "
+        + "regardless of the app theme, because a flow is easiest to read that way; switch it to light before "
+        + "exporting a PDF as before. What is new is fullscreen: the side panel and tabs now follow the diagram's "
+        + "background rather than the app's, so a dark diagram in fullscreen on a light desktop is readable.",
+      "Underneath, every colour in the app now comes from one place, which is what makes a theme switch honest "
+        + "rather than a switch that most pages ignore — and what makes the next recolour an edit to one file.",
+    ],
+  },
+  {
     version: "5.8",
     date: "2026-09-16",
     title: "Audit Search: everything about one object, and names instead of ids",
