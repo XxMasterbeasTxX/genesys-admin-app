@@ -46,6 +46,9 @@ how old the *start* of the range is, not by how long the range is.
 - [ ] **2.1** — Open the page
   - Expect: **Today** is highlighted and a search runs on its own across all services; the hint under Service reads "Last 14 days — all supported services shown"
   - Notes: `______________________`
+- [ ] **2.1a** — Press **Yesterday**
+  - Expect: From and To both become yesterday's date, 00:00–23:59, and the search runs; the buttons read Today · Yesterday · Last 7 days · Last 30 days · Last 3 months
+  - Notes: `______________________`
 - [ ] **2.2** — Set From to **3 days ago**, To to today, no service
   - Expect: hint stays on the "Last 14 days" text; status counts "N of M queries done"
   - Notes: `______________________`
@@ -53,7 +56,7 @@ how old the *start* of the range is, not by how long the range is.
   - Expect: hint turns amber — "Older than 14 days — standard query"; the run reports "Fetching interval 1 of 1 (all services)". It must **not** report "Done — 0 results" instantly
   - Notes: `______________________`
 - [ ] **2.4** — Same range as 2.3, no service
-  - Expect: results across services (confirmed 2026-09-16 — the standard query accepts no `serviceName`; "Last month" returned 3105 rows). If Genesys ever starts refusing, the page shows "Genesys requires a service for this query — select one and search again"
+  - Expect: results across services (confirmed 2026-09-16 — the standard query accepts no `serviceName`; "Last 30 days" returned 3105 rows). If Genesys ever starts refusing, the page shows "Genesys requires a service for this query — select one and search again"
   - Notes: `______________________`
 - [ ] **2.5** — Same range as 2.3 with a service selected
   - Expect: standard query runs; results appear

@@ -171,8 +171,9 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     <!-- Preset quick filters -->
     <div class="aq-presets">
       <button class="btn aq-preset-btn" data-preset="today">Today</button>
+      <button class="btn aq-preset-btn" data-preset="yesterday">Yesterday</button>
       <button class="btn aq-preset-btn" data-preset="7d">Last 7 days</button>
-      <button class="btn aq-preset-btn" data-preset="30d">Last month</button>
+      <button class="btn aq-preset-btn" data-preset="30d">Last 30 days</button>
       <button class="btn aq-preset-btn" data-preset="90d">Last 3 months</button>
     </div>
 
@@ -415,6 +416,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
       $timeTo.value   = "23:59";
       $timeFrom.value = "00:00";
       if (preset === "today")     $dateFrom.value = localDateStr();
+      else if (preset === "yesterday") { $dateFrom.value = daysAgoLocalStr(1); $dateTo.value = daysAgoLocalStr(1); }
       else if (preset === "7d")   $dateFrom.value = daysAgoLocalStr(7);
       else if (preset === "30d")  $dateFrom.value = daysAgoLocalStr(30);
       else if (preset === "90d")  $dateFrom.value = daysAgoLocalStr(90);
