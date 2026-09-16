@@ -2106,8 +2106,11 @@ export async function fetchRelatedAudits(api, orgId, auditId) {
  * @returns {Promise<string>}  transactionId
  */
 export async function submitAuditQuery(api, orgId, body) {
+  // The limit here is on audit JOBS per org, not requests, and it clears
+  // slowly: the default 1s/2s/4s back-off was not enough on a 9-chunk run.
   const resp = await withRateLimitRetry(() =>
-    api.proxyGenesys(orgId, "POST", "/api/v2/audits/query", { body }));
+    api.proxyGenesys(orgId, "POST", "/api/v2/audits/query", { body }),
+    { attempts: 6, initialDelayMs: 3000 });
   const txId = resp.id || resp.transactionId;
   if (!txId) {
     throw new Error(`Audit query submission failed: ${resp.message || JSON.stringify(resp)}`);

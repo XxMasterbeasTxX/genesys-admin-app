@@ -21,6 +21,32 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "5.8",
+    date: "2026-09-16",
+    title: "Audit Search: everything about one object, and names instead of ids",
+    changes: [
+      "Search for one object: pick what it is (Queue, User, Flow, Role, Data table, …) and then "
+        + "which one from a list, and the results are every audit in the range that mentions it — "
+        + "as the thing changed, as a member added to a role or a queue, or as a value inside another "
+        + "object's change. An id can still be pasted for something that no longer exists; its own "
+        + "audits then name it. “History of this object” in an expanded row runs the same "
+        + "search for that row's entity.",
+      "Ids are resolved to names wherever Genesys can name them: who made the change (including the "
+        + "app's own OAuth client and users from a partner org), the object changed, deleted users and "
+        + "deleted objects, role grants (role → member → division), evaluations and recordings "
+        + "through their conversation, and the GUIDs inside old/new values once a row is expanded or "
+        + "exported.",
+      "Every page of results is read — previously each realtime query stopped after its first 25 "
+        + "rows and each standard-query interval after 500. The last 14 days are queried live; older "
+        + "ranges use the standard query across all services and no longer require a service. Rate "
+        + "limits are retried and anything still missing is listed, so “Done” means done.",
+      "Each row now shows the audit's status (a FAILURE or WARNING badge), Genesys's own message, the "
+        + "client and application, entity changes such as queue membership, and “Show related "
+        + "audits” for the other audits the same action wrote. Presets gain Yesterday; Last month "
+        + "is now Last 30 days; times are local. The filters under the results are labelled as such.",
+    ],
+  },
+  {
     version: "5.7",
     date: "2026-09-15",
     title: "GDPR: an email when the request completes",

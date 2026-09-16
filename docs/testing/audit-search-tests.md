@@ -1,6 +1,7 @@
 # Test plan — Audit › Search
 
 **Page:** Audit › Search (`/audit/search`)
+**Released in:** 5.8
 **Environment:** ☐ dev ☐ prod
 **Tester:** `______________________`  **Date:** `______________________`
 **Build / commit:** `______________________`
@@ -101,6 +102,9 @@ every page is read.
 - [ ] **4.3** — Watch the network tab during **Last 7 days**, all services
   - Expect: no more than 3 audit requests in flight at once. A 429 is retried in place; if it still fails, the status says "Rate limited on N queries — pausing, then retrying them one at a time…" and only what fails that second pass is listed. (An 8-day, 46-service run at 6 in flight lost 27 of 368 queries on 2026-09-16.)
   - Notes: `______________________`
+- [ ] **4.4** — Run **Last 3 months** with no service (standard query, 3+ intervals) and watch for 429s
+  - Expect: submission backs off 3 s doubling up to six attempts; intervals still rate-limited get a second pass after a pause ("Rate limited on N intervals — pausing, then retrying…"). (A 9-interval run on 2026-09-16 lost 4 to 429s with the old 1/2/4 s back-off.)
+  - Notes: `______________________`
 
 ---
 
@@ -185,19 +189,38 @@ every page is read.
 
 ---
 
-## 8. Entity ID — history of one object
+## 8. Searching for one object
 
-- [ ] **8.1** — Paste a queue's GUID into **Entity ID**, range **Last 7 days**, no service
-  - Expect: only audits for that queue; the status line still reports the number of queries run
+Design: [audit-object-search-design.md](../audit-object-search-design.md).
+The search is always "deep": the normal pull for the range, kept only where
+the id appears anywhere in the audit except the actor fields.
+
+- [ ] **8.1** — Choose **Object › Queue**
+  - Expect: a **Which one** list appears, says "Loading Queue list…" then "N to choose from", searchable by name
   - Notes: `______________________`
-- [ ] **8.2** — Same GUID, From 40 days ago, service ContactCenter
-  - Expect: standard query returns only that queue's audits
+- [ ] **8.2** — Pick a queue that had members added or removed in the range; press **Search** (Last 7 days, no service)
+  - Expect: status reads "Done — N audits mention “<queue>”"; the rows include the queue's own Update/MemberUpdate audits **and** anything else that carries its id
   - Notes: `______________________`
-- [ ] **8.3** — Press **Enter** in the Entity ID field
-  - Expect: the search runs
+- [ ] **8.3** — Choose **Object › User** and pick a user who was added to a role in the range
+  - Expect: the results include the user's own Directory/Presence/AuthUser audits **and** the Role MemberAdd row where they are the member — the id sits in the role audit's entity name, not its entity id
   - Notes: `______________________`
-- [ ] **8.4** — Clear Entity ID and search again
-  - Expect: full results return
+- [ ] **8.4** — Same user, From 40 days ago, no service
+  - Expect: standard query, all services, then the same kind of match; no "entityType" error from Genesys
+  - Notes: `______________________`
+- [ ] **8.5** — Change the Object kind back to "— Any object —" and search
+  - Expect: the Which one list hides; full results return
+  - Notes: `______________________`
+- [ ] **8.6** — Press **…or paste an id**, paste the GUID of a datatable deleted in the range, search
+  - Expect: the field unfolds; results are that table's Row/Schema audits; the hint next to the field fills in "= (deleted) <name>" once the results name it
+  - Notes: `______________________`
+- [ ] **8.7** — With a pasted id, then pick an object from a list
+  - Expect: the pasted id clears — the picked object wins
+  - Notes: `______________________`
+- [ ] **8.8** — Expand any row and press **History of this object**
+  - Expect: page scrolls to the top, the id field shows the row's entity id with "= <name>", and the search runs for it
+  - Notes: `______________________`
+- [ ] **8.9** — Choose a kind whose list the token cannot read (e.g. OAuth client without `oauth:client:view`)
+  - Expect: "Could not load OAuth client list: Permission denied" in amber; the rest of the page still works
   - Notes: `______________________`
 
 ---
@@ -216,10 +239,13 @@ every page is read.
 
 ---
 
-## 10. Client-side filters, paging, export
+## 10. Post-filters, paging, export
 
+- [ ] **10.0** — Look at the block between the status line and the table
+  - Expect: it is headed **Filter these results**; Entity Type, Action, Changed By and Status list only values present in the results (not the whole service mapping)
+  - Notes: `______________________`
 - [ ] **10.1** — Pick an Entity Type, then an Action
-  - Expect: Action lists only actions for that type; count line reads "N results (M shown after filters)"
+  - Expect: Action lists only the actions seen for that type; count line reads "N results (M shown after filters)"
   - Notes: `______________________`
 - [ ] **10.2** — Pick a Changed By
   - Expect: only that actor's rows; the dropdown lists names, not GUIDs, wherever a name was found

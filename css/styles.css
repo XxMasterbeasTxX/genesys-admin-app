@@ -4621,9 +4621,23 @@ body {
   color: var(--text);
 }
 
-/* Entity ID (server-side EntityId filter) */
-.aq-entity-id-group { min-width: 300px; }
-.aq-entity-id       { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 12px; }
+/* Object search: kind + object pickers, and the folded-away id field */
+.aq-kind-group, .aq-object-group { min-width: 220px; }
+.aq-id-row      { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 2px 0 8px; }
+.aq-id-row > span { display: inline-flex; align-items: center; gap: 10px; }
+.aq-entity-id   { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 12px; min-width: 340px; }
+.aq-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-size: 12px; color: #60a5fa; text-decoration: underline;
+}
+.aq-link:hover  { color: #93c5fd; }
+
+/* The post-filter section is about the results, not the query — say so */
+.aq-zone-title  { font-size: 13px; font-weight: 600; color: var(--muted); margin: 14px 0 0; }
+
+/* Per-row actions inside the detail row */
+.aq-row-actions { margin-top: 12px; }
+.aq-history-btn { font-size: 12px; padding: 4px 10px; }
 
 /* Audit status badge — only shown when Genesys audited the action as not SUCCESS */
 .aq-status {
@@ -4660,6 +4674,8 @@ body {
   .aq-status--failure { color: #dc2626; }
   .aq-status--warning { color: #b45309; }
   .aq-failures-summary { color: #b45309; }
+  .aq-link { color: #2563eb; }
+  .aq-link:hover { color: #1d4ed8; }
 }
 
 /* ════════════════════════════════════════════════════════════

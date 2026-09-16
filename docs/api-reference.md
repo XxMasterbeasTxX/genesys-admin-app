@@ -158,7 +158,8 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 | POST | `/api/v2/audits/query` | Submit async audit query (any range). `serviceName` is optional — confirmed 2026-09-16: without it the query covers all services. Same `filters` as realtime |
 | GET | `/api/v2/audits/query/{transactionId}` | Poll async job status: `Queued`, `Running`, `Succeeded`, `Failed`, `Cancelled` |
 | GET | `/api/v2/audits/query/{transactionId}/results?pageSize=500&expand=user` | Fetch async audit results. Response is `{ id, pageSize, cursor, entities }` — pass `cursor` back until it is absent |
-| GET | `/api/v2/users/{id}` | Only for actors `expand=user` did not name (trustee users from another org) |
+| GET | `/api/v2/users/{id}` | Actors `expand=user` did not name — the app's own OAuth client id arrives in `user.id`, so a 404 here is followed by `/oauth/clients/{id}`. `?state=deleted` names a deleted user |
+| GET | list endpoints (`/routing/queues`, `/users`, `/flows?deleted=true`, `/authorization/roles`, …) | The **Object** picker — one list per kind, loaded on demand and cached per org. `EntityId` is deliberately not sent: Genesys demands `EntityType` with it and one object is audited under several types, so the match is done client-side on the pulled range |
 | GET | `/api/v2/oauth/clients/{id}` | Name of the OAuth client an audit came through (`client.id`, separate from `user`) |
 
 ---
