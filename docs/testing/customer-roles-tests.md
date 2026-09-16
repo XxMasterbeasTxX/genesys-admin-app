@@ -15,7 +15,7 @@ role is refused on add from the first deploy. A row from before the field
 with the stores, identity and registry stubbed.
 
 **Server** — `api/licenses/index.js`, `api/supervisor-scope/index.js`,
-`api/lib/licenseGate.js`. 57 checks, plus the 25 of the internal-user pass
+`api/lib/licenseGate.js`. 62 checks, plus the 25 of the internal-user pass
 re-run against the new code (two expectations updated: a customer add now
 needs a role, and a customer session without the administrator role reads
 `administrator_required` where it read `internal_only`).
@@ -49,6 +49,13 @@ the log entry `supervisorScope.set` carries `before` and `after`.
 | `/role` with `customer-manager` | 400 `role_required` | | | | |
 | `/role` on someone not named | 404 `user_not_named` | | | | |
 | Read own peak | — | — | — | 200 | 200 |
+
+Who did it: the row carries the actor's name for the add and for the last
+role/pages change, plus which org the editor belonged to. An internal list
+sees names and e-mails; a customer session's list (and its `/role`
+response) sees **"TDC Erhverv"** for every internal actor, its own
+Administrator's name for an edit made by them, and no ids or e-mails at
+all — projected on the server, never in the browser.
 
 Internal org unchanged: add needs no role and the row carries `role: ""`;
 `/role` accepts only `""` / `customer-manager` (`administrator` →
@@ -127,4 +134,6 @@ integration's group; a superuser session; a customer-manager session.
 | 18 | Customer-manager | As an internal customer-manager: Supervisor Access for the customer; edit a user's role | Both work; for the internal org → 400 / "no scope" | |
 | 19 | Plain colleague | As a named colleague with no role | No Customers section at all | |
 | 20 | Internal list untouched | Customers › Access, select Demo | No role column, no role control; "Manages customer access" tick for superusers as before | |
-| 21 | Modified by / on | After #13 (or a customer-manager tick on the internal list), look at the row | **Modified by** and **Modified on** show who last changed the role or pages and when; blank for a row never edited since it was added | |
+| 21 | Modified by / on | After #13 (or a customer-manager tick on the internal list), look at the row | **Modified by** and **Modified on** show the **name** of who last changed the role or pages and when; blank for a row never edited since it was added | |
+| 22 | Names, not e-mails | Internal: Customers › Access for the customer | **Added by** and **Modified by** are names (e-mail only for rows added before names were recorded) | |
+| 23 | Customer sees the company | As #8, Administrator › Users | **Added by** reads **TDC Erhverv** on every row; **Modified by** reads TDC Erhverv where an internal person edited, and the Administrator's own name where they did (#13) | |

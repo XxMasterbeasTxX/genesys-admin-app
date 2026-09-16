@@ -285,9 +285,9 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
               <td>${escapeHtml(u.name || u.userId)}</td>
               <td class="ca-muted">${escapeHtml(u.email || "")}</td>
               ${roleCol ? `<td data-role-cell>${roleCell(u)}</td>` : ""}
-              <td class="ca-muted">${escapeHtml(u.assignedByEmail || u.assignedBy || "")}</td>
+              <td class="ca-muted">${escapeHtml(u.assignedByName || u.assignedByEmail || "")}</td>
               <td class="ca-muted">${escapeHtml(fmtDate(u.assignedAt))}</td>
-              <td class="ca-muted">${escapeHtml(u.modifiedByEmail || u.modifiedBy || "")}</td>
+              <td class="ca-muted">${escapeHtml(u.modifiedByName || u.modifiedByEmail || "")}</td>
               <td class="ca-muted">${escapeHtml(fmtDate(u.modifiedAt))}</td>
               ${manageCol ? `<td><input type="checkbox" data-manage="${escapeHtml(u.userId)}" ${u.role === "customer-manager" ? "checked" : ""} title="May add and remove users for customer organisations"></td>` : ""}
               <td class="ca-actions">

@@ -54,6 +54,25 @@ const INTERNAL_ROLES = new Set(["", "customer-manager"]);
 const CUSTOMER_ROLES = new Set(["administrator", "supervisor"]);
 
 /**
+ * What a customer session is told about WHO did something to a row. An
+ * internal person is the company, not a name — a customer sees "TDC Erhverv"
+ * where staff see the colleague; their own Administrator's edits keep the
+ * Administrator's name, since that is their own colleague. Ids and e-mails
+ * never cross to a customer at all. Decided here, on the server, so the
+ * browser is never sent what it must not show.
+ */
+const INTERNAL_DISPLAY_NAME = "TDC Erhverv";
+function forCustomer(row, customerId) {
+  const own = row.modifiedAt && row.modifiedByOrg === customerId;
+  return {
+    ...row,
+    assignedBy: "", assignedByEmail: "", assignedByName: INTERNAL_DISPLAY_NAME,   // naming is always internal
+    modifiedBy: "", modifiedByEmail: "",
+    modifiedByName: row.modifiedAt ? (own ? row.modifiedByName : INTERNAL_DISPLAY_NAME) : "",
+  };
+}
+
+/**
  * An org has a list if it can sign in as a customer, or if it is the internal
  * org itself. Anything else is refused with a code the page turns into a
  * sentence.
@@ -139,7 +158,10 @@ module.exports = async function (context, req) {
     if (!caller.userId) return json(context, 403, { error: "identity_unavailable" });
 
     const body   = req.body && typeof req.body === "object" ? req.body : {};
-    const by     = { id: caller.userId || "", email: caller.userEmail || "", name: caller.userName || "" };
+    const by     = {
+      id: caller.userId || "", email: caller.userEmail || "", name: caller.userName || "",
+      org: caller.mode === "customer" ? caller.customerId : "internal",
+    };
 
     // ── A customer session: an Administrator's view of their own org ──────
     // Read the list; change a user's role and pages. Never add or remove a
@@ -151,13 +173,17 @@ module.exports = async function (context, req) {
       const customerId = caller.customerId;
 
       if (method === "GET" && !action) {
-        const users = await store.listActive(customerId);
+        const users = (await store.listActive(customerId)).map((r) => forCustomer(r, customerId));
         return json(context, 200, { customerId, internal: false, users });
       }
       if (method === "POST" && action === "role") {
         const userId = String(body.userId || "").trim();
         if (!userId) return json(context, 400, { error: "customerId_and_userId_required" });
-        return setCustomerRole(context, customerId, userId, body, by, customerId);
+        const out = await setCustomerRole(context, customerId, userId, body, by, customerId);
+        if (context.res && context.res.status === 200 && context.res.body.user) {
+          context.res.body.user = forCustomer(context.res.body.user, customerId);
+        }
+        return out;
       }
       return json(context, 404, { error: "not_found" });
     }

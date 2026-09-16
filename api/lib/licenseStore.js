@@ -20,6 +20,12 @@
  *                 (docs/customer-roles-design.md §4).
  *   features      JSON array of page access keys — a supervisor's own pages,
  *                 a subset of the org's Supervisor scope. [] otherwise.
+ *   assignedBy, assignedByEmail, assignedByName
+ *                 who named them — always an internal person.
+ *   roleSetBy, roleSetByEmail, roleSetByName, roleSetByOrg, roleSetAt
+ *                 the last role/pages change. roleSetByOrg is "internal" or
+ *                 the customer slug, so the endpoint can decide what a
+ *                 customer session may see of who did it.
  *
  * The internal org has rows too, under its own slug: an internal colleague is
  * named exactly as a customer user is. Its rows carry no billing meaning —
@@ -72,6 +78,7 @@ function entityToRow(e) {
     name:       e.name || "",
     assignedBy: e.assignedBy || "",
     assignedByEmail: e.assignedByEmail || "",
+    assignedByName:  e.assignedByName || "",
     assignedAt: e.assignedAt,
     revokedBy:  e.revokedBy || null,
     revokedAt:  e.revokedAt || null,
@@ -81,6 +88,9 @@ function entityToRow(e) {
     // the customer-manager tick on an internal row. Null until there is one.
     modifiedBy:      e.roleSetBy || "",
     modifiedByEmail: e.roleSetByEmail || "",
+    modifiedByName:  e.roleSetByName || "",
+    // Rows stamped before the org was recorded were all edited internally.
+    modifiedByOrg:   e.roleSetAt ? (e.roleSetByOrg || "internal") : "",
     modifiedAt:      e.roleSetAt || null,
   };
 }
@@ -126,7 +136,7 @@ async function activeRow(customerId, userId) {
  *
  * @param {string} customerId
  * @param {{ id: string, email?: string, name?: string }} user
- * @param {{ id: string, email?: string }} by   the caller's VERIFIED identity
+ * @param {{ id: string, email?: string, name?: string }} by   the caller's VERIFIED identity
  * @returns {Promise<{ row: object, created: boolean }>}
  */
 async function assign(customerId, user, by, { role = "", features = [] } = {}) {
@@ -143,6 +153,7 @@ async function assign(customerId, user, by, { role = "", features = [] } = {}) {
     name:         user.name || "",
     assignedBy:   by.id || "",
     assignedByEmail: by.email || "",
+    assignedByName:  by.name || "",
     assignedAt,
     role:         role || "",
     features:     JSON.stringify(Array.isArray(features) ? features : []),
@@ -174,6 +185,8 @@ async function setRole(customerId, userId, role, by, features = null) {
       features:     JSON.stringify(nextFeatures),
       roleSetBy:    by.id || "",
       roleSetByEmail: by.email || "",
+      roleSetByName:  by.name || "",
+      roleSetByOrg:   by.org || "internal",
       roleSetAt,
     },
     "Merge",
@@ -181,7 +194,8 @@ async function setRole(customerId, userId, role, by, features = null) {
   return {
     row: {
       ...active, role: role || "", features: nextFeatures,
-      modifiedBy: by.id || "", modifiedByEmail: by.email || "", modifiedAt: roleSetAt,
+      modifiedBy: by.id || "", modifiedByEmail: by.email || "", modifiedByName: by.name || "",
+      modifiedByOrg: by.org || "internal", modifiedAt: roleSetAt,
     },
     changed: true,
   };
