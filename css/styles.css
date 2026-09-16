@@ -4632,6 +4632,9 @@ body {
 }
 .aq-link:hover  { color: #93c5fd; }
 
+/* Shown once an object is chosen: the search reads the whole range */
+.aq-object-note { font-size: 12px; color: #f59e0b; margin: 0 0 8px; max-width: 900px; }
+
 /* The post-filter section is about the results, not the query — say so */
 .aq-zone-title  { font-size: 13px; font-weight: 600; color: var(--muted); margin: 14px 0 0; }
 
@@ -4674,6 +4677,7 @@ body {
   .aq-status--failure { color: #dc2626; }
   .aq-status--warning { color: #b45309; }
   .aq-failures-summary { color: #b45309; }
+  .aq-object-note { color: #b45309; }
   .aq-link { color: #2563eb; }
   .aq-link:hover { color: #1d4ed8; }
 }

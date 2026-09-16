@@ -204,6 +204,9 @@ the id appears anywhere in the audit except the actor fields.
 - [ ] **8.1** — Choose **Object › Queue**
   - Expect: a **Which one** list appears, says "Loading Queue list…" then "N to choose from", searchable by name
   - Notes: `______________________`
+- [ ] **8.1a** — Pick any queue from the list
+  - Expect: an amber note appears under the query: the search reads every audit in the range and can take several minutes; narrow the dates. It disappears when the object is cleared and no id is pasted
+  - Notes: `______________________`
 - [ ] **8.2** — Pick a queue that had members added or removed in the range; press **Search** (Last 7 days, no service)
   - Expect: status reads "Done — N audits mention “<queue>”"; the rows include the queue's own Update/MemberUpdate audits **and** anything else that carries its id
   - Notes: `______________________`

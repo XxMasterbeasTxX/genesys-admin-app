@@ -219,6 +219,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
         <span class="aq-service-hint aq-service-hint--info" id="aqIdHint"></span>
       </span>
     </div>
+    <p class="aq-object-note" id="aqObjectNote" hidden>
+      Searching for one object reads every audit in the date range and keeps the ones that mention it,
+      so a long range can take several minutes. Narrow the dates above if you know roughly when the change happened.
+    </p>
 
     <!-- Status + progress -->
     <div class="di-status" id="aqStatus"></div>
@@ -308,6 +312,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   const $kindHint     = el.querySelector("#aqKindHint");
   const $objectGroup  = el.querySelector("#aqObjectGroup");
   const $objectHint   = el.querySelector("#aqObjectHint");
+  const $objectNote   = el.querySelector("#aqObjectNote");
   const $searchBtn    = el.querySelector("#aqSearchBtn");
   const $status       = el.querySelector("#aqStatus");
   const $progressWrap = el.querySelector("#aqProgressWrap");
@@ -404,7 +409,10 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     $idWrap.hidden = !$idWrap.hidden;
     if (!$idWrap.hidden) $entityId.focus();
   });
-  $entityId.addEventListener("input", () => { pastedName = ""; $idHint.textContent = ""; });
+  $entityId.addEventListener("input", () => {
+    pastedName = ""; $idHint.textContent = "";
+    $objectNote.hidden = !$entityId.value.trim() && !ssObject.getValue();
+  });
 
   el.querySelector("#aqEntityTypeDropdown").append(ssEntityType.el);
   el.querySelector("#aqActionDropdown").append(ssAction.el);
@@ -425,6 +433,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   async function onKindChange(kind) {
     ssObject.setValue("");
     $objectHint.textContent = "";
+    $objectNote.hidden = !$entityId.value.trim();
     if (!kind) { $objectGroup.hidden = true; return; }
     $objectGroup.hidden = false;
     if (!kindCache[kind]) {
@@ -454,6 +463,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   }
 
   function onObjectChange(id) {
+    $objectNote.hidden = !id && !$entityId.value.trim();
     if (!id) return;
     // A picked object supersedes a pasted id.
     $entityId.value = "";
@@ -492,6 +502,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     $objectGroup.hidden = true;
     $idWrap.hidden = false;
     $entityId.value = id;
+    $objectNote.hidden = false;
     pastedName = getEntityName(entry) !== id ? getEntityName(entry) : "";
     $idHint.textContent = pastedName ? `= ${pastedName}` : "";
     window.scrollTo({ top: 0, behavior: "smooth" });
