@@ -861,17 +861,32 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   }
 
   /** The entity of every result, unless the audit already carries its name. */
+  /**
+   * Role MemberAdd / MemberRemove: entity.id is the role, and entity.name is
+   * Genesys's grant triple "subjectId--roleId--divisionId" ("*" = every
+   * division). Seen live 2026-09-16:
+   *   entity.id   a698b9e2-…   (the role)
+   *   entity.name 786d6179-…--a698b9e2-…--*
+   * Returns { subjectId, roleId, divisionId } or null.
+   */
+  function grantParts(entry) {
+    if (!/^Member(Add|Remove)$/i.test(entry.action || "")) return null;
+    const parts = compositeParts(String(entry.entity?.name ?? ""));
+    if (!parts || parts.length < 2 || !GUID_RE.test(parts[0])) return null;
+    return { subjectId: parts[0], roleId: parts[1], divisionId: parts[2] || "" };
+  }
+
   async function resolveEntities() {
     const items = [];
     const members = [];
     for (const entry of allResults) {
       const id = entry.entity?.id;
-      if (!id || realEntityName(entry)) continue;
-      const parts = compositeParts(id);
-      if (parts) {
-        const path = GUID_RE.test(parts[0]) ? pathFor(entry.serviceName || "", getEntityType(entry), parts[0]) : null;
-        if (path) items.push({ path, id: parts[0] });
-        for (const m of parts.slice(1)) if (GUID_RE.test(m)) members.push(m);
+      if (!id) continue;
+      const grant = grantParts(entry);
+      if (grant) {
+        members.push(grant.subjectId);
+        if (GUID_RE.test(grant.divisionId)) items.push({ path: TYPE_PATH.Division(grant.divisionId), id: grant.divisionId });
+      } else if (realEntityName(entry)) {
         continue;
       }
       const path = pathFor(entry.serviceName || "", getEntityType(entry), id);
@@ -1063,12 +1078,18 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   }
 
   function getEntityName(entry) {
+    const id = entry.entity?.id;
+    const grant = grantParts(entry);
+    if (grant) {
+      const role     = nameCache[id] || id;
+      const member   = nameCache[grant.subjectId] || grant.subjectId;
+      const division = grant.divisionId === "*" ? "all divisions"
+        : grant.divisionId ? (nameCache[grant.divisionId] || grant.divisionId) : "";
+      return `${role} → ${member}${division ? ` (${division})` : ""}`;
+    }
     const own = realEntityName(entry);
     if (own) return own;
-    const id = entry.entity?.id;
     if (!id) return "";
-    const parts = compositeParts(id);
-    if (parts) return parts.map(p => nameCache[p] || p).join(" → ");
     return nameCache[id] || id;
   }
 

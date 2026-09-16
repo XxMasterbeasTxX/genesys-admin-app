@@ -119,7 +119,7 @@ every page is read.
   - Expect: Entity Name is "(deleted) <name>" when any audit in the result set carries the object's `name` in its property changes (the Delete or Create audit normally does); "(deleted) <guid>" only when none does
   - Notes: `______________________`
 - [ ] **5.3a** — Find a PeoplePermissions › Role **MemberAdd** or **MemberRemove** row
-  - Expect: the composite id `roleId--userId` is shown as "Role name → User name" (a group member resolves to the group name)
+  - Expect: "Role name → Member name (division)" — Genesys puts the grant triple `subjectId--roleId--divisionId` in `entity.name`, `*` reads "all divisions"; a group member resolves to the group name
   - Notes: `______________________`
 - [ ] **5.4** — Find an audit on an object that still exists and whose Raw API response has **no** `entity.name`
   - Expect: Entity Name is resolved by lookup (the current name)
