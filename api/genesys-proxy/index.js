@@ -7,6 +7,7 @@ const {
 } = require("../lib/orgConfigResolver");
 const { checkCustomerRequest } = require("../lib/entitlementAllowlist");
 const { checkLicense } = require("../lib/licenseGate");
+const { checkProxyPermission } = require("../lib/proxyPermissions");
 
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim();
 const ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -263,6 +264,23 @@ module.exports = async function (context, req) {
           status: 403,
           headers: { "Content-Type": "application/json" },
           body: { error: "user_not_licensed", reason: licence.reason },
+        };
+        return;
+      }
+
+      // And the person's OWN permissions, for this call (proxyPermissions.js).
+      // The call below runs as the client, so Genesys checks the client's
+      // permissions, not the person's — this is the only place theirs are
+      // asked. Reports until PROXY_PERMISSION_CHECK is "enforce".
+      const perm = await checkProxyPermission(context, {
+        token: userToken, region: classification.org && classification.org.region,
+        method, path, superuser: !!licence.superuser, userId: licence.userId,
+      });
+      if (!perm.allowed) {
+        context.res = {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+          body: { error: perm.error, required: perm.required || [] },
         };
         return;
       }

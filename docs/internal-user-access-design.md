@@ -1,6 +1,6 @@
 # Internal User Access — Design
 
-Status: **In development** — built on `main` 2026-09-16 (gate, endpoint, page, client); the proxy's permission-domain check (§7) is next. Production merge waits for the hold to lift.
+Status: **Built** on `main` 2026-09-16 — gate, endpoint, page, client, and the proxy's permission check (§7). Production merge waits for the hold to lift; rollout is §8.
 Author: Genesys Admin App
 Last updated: 2026-09-16
 
@@ -196,19 +196,31 @@ offered as the way to ask.
 
 **The proxy checks the caller's permissions.** For an internal-org call it
 reads the caller's effective permissions through `userPermissions.js` (cached
-per token, as `classifyCaller` is) and refuses a request whose feature the
-caller lacks the permission for. The honest limit: the proxy sees a Genesys
-endpoint and a method, not a feature, and the map is feature → permission.
-The first cut is therefore **by permission domain**: the request's path
-(`/api/v2/routing/queues/…`, `/api/v2/authorization/roles/…`) names its
-domain, the method names view/add/edit/delete, and the caller must hold a
-permission in that domain at that level. That is real enforcement — an
-Export-only person cannot delete a flow through the proxy — and it is exact
-for the large majority of Genesys endpoints, whose path segment *is* the
-permission domain. The exceptions are catalogued during the build and either
-mapped by hand or left to Genesys, which enforces the user's permissions
-itself on every call it receives, as it always has. Genesys is the last gate
-either way; this makes the app stop being a hole in front of it.
+per token, as `classifyCaller` is) and refuses a request the caller lacks the
+permission for. The proxy sees a method and a path, not a feature, so
+[`proxyPermissions.js`](../api/lib/proxyPermissions.js) carries a table:
+every endpoint the app calls — the 208 method+path pairs in
+`docs/api-reference.md` — mapped to the permission(s) that mean it, in the
+same vocabulary as `featurePermissionMap.js`. First match wins; a value is one
+permission, an any-of list (the telephony edges endpoints accept
+`telephony:plugin:view` or `:all`), `null` for the handful that need none
+(`organizations/me`, `timezones`), or, for moving objects into a division, a
+function of the object type in the URL. The table was proven against the
+catalogue before the first commit: 208 of 208 resolve.
+
+Why this is not optional: for an internal call the proxy runs as the client
+credentials, so Genesys enforces the *client's* permissions, not the
+person's. This check is the only place the person's are asked. An
+Export-only colleague cannot delete a flow through the proxy any more,
+however they call it.
+
+It has two modes, like the gate. `PROXY_PERMISSION_CHECK` unset or
+`"report"`: a call that would be refused — a missing permission, or a path
+the table does not know — is allowed and logged with what was missing.
+`"enforce"`: refused, 403, the permission named. An unknown path is refused
+in enforce mode too; the report phase exists so that there are none left by
+then, and fail-open would leave exactly the hole this closes. Superusers
+bypass, as the browser's refinement always let them.
 
 ## 8. Rollout — surviving "no seed"
 
@@ -227,6 +239,11 @@ production page, in whatever order they like. Flip it to `"true"` — an app
 setting, no deploy. Anyone missed sees the "not named" screen and asks. Set it
 in dev first, live with it, then prod. The flag is removed once it has been
 `"true"` in production for long enough that nobody remembers it.
+
+`PROXY_PERMISSION_CHECK` follows the same path, independently: unset while
+the function log is read for `[proxy-perm]` lines — each one is either a
+person missing a permission they need (fix in Genesys) or a path the table
+missed (fix in the table) — then `"enforce"` in dev, then prod.
 
 While unset, the gate still runs and logs every internal caller it *would*
 have refused, so the list of who needs adding is in the log before the flag

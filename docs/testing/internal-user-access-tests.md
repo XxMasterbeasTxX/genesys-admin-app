@@ -33,6 +33,14 @@ is unset and is refused `not_assigned` once it is `"true"`; an unnamed
 **customer** is refused regardless of the setting; an unverifiable identity
 is `identity_unavailable` and is not cached.
 
+The proxy's permission table: all 208 catalogued method+path pairs resolve
+to a rule; 15 spot-checks land on the intended permission (a data-action test
+→ `integrations:action:execute`, a division move of a QUEUE →
+`routing:queue:edit`, a phone delete → `telephony:plugin:all`); report mode
+allows-and-logs, enforce mode refuses with the permission named, an unknown
+path is refused only when enforced, wildcards and any-of lists grant, a
+superuser is never refused, unreadable permissions refuse when enforced.
+
 The client: `resolveAccess` shows `customers.access` to superusers and
 customer-managers only, `deployment.onboarding` to superusers only, every
 other page to any named user subject to their permissions; `All Groups`
@@ -51,7 +59,10 @@ denied and `verificationFailed` is set. All 95 pages mount.
 | 5 | Unnamed colleague, report mode | Sign in as a group member with no row, setting unset | In as before. Function log shows `[license] internal caller not named (unenforced): <id>` | |
 | 6 | Unnamed colleague, enforced | Set `INTERNAL_NAMED_USERS_ENFORCED=true`, sign in as #5 | "You have not been given access to this app yet — Ask a superuser to add you." No shell | |
 | 7 | Same user, direct call | With #6's token, call `/api/genesys-proxy` and `/api/schedules` directly | 403 `user_not_licensed` from both | |
-| 8 | Named without permission, direct call | As #4, call the proxy for a Genesys endpoint their permissions do not cover | Genesys itself refuses (server-side permission-domain check is the next piece) | |
+| 8 | Named without permission, direct call, report mode | As #4, call the proxy for a Genesys endpoint their permissions do not cover (`PROXY_PERMISSION_CHECK` unset) | The call goes through; function log has `[proxy-perm] <id> lacks <permission> for <METHOD> <path> (would refuse)` | |
+| 8a | Same, enforced | Set `PROXY_PERMISSION_CHECK=enforce`, repeat | 403 `permission_required`, body names the permission | |
+| 8b | Unknown path, enforced | As #4, call the proxy with a path not in `api-reference.md` | 403 `path_not_mapped`; in report mode it goes through and logs `unmapped` | |
+| 8c | Superuser, enforced | As a superuser, any call | Never refused by this check | |
 | 9 | Grant customer access | As superuser, tick "Manages customer access" on #4's row, confirm | Tick holds; Activity Log has `licenses.role`; #4 now sees Customers › Access | |
 | 10 | Customer-manager on the internal org | As #4 (now a manager), open Customers › Access, select Demo | "Only a superuser can change who has access to it." No box, no list | |
 | 11 | Customer-manager on a customer | As #4, select a customer org, add a user | Works; Activity Log `licenses.assign` for that customer | |
@@ -72,3 +83,7 @@ denied and `verificationFailed` is set. All 95 pages mount.
 4. Set `INTERNAL_NAMED_USERS_ENFORCED=true` in dev; live with it; then prod.
 5. Once it has been `"true"` in production long enough that nobody remembers
    it, remove the flag.
+6. In parallel, and independently: read the function log for `[proxy-perm]`
+   lines. A `lacks` line is a person who needs a permission in Genesys; an
+   `unmapped` line is a path to add to `proxyPermissions.js`. When the log is
+   quiet, set `PROXY_PERMISSION_CHECK=enforce` in dev, then prod.
