@@ -842,7 +842,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
    * ContactCenter/AgentRoutingInfo is "Agent <orgId>:<userId>".
    */
   function embeddedUserId(entry) {
-    const m = String(entry.entity?.name ?? "").match(/^Agent [0-9a-f-]{36}:([0-9a-f-]{36})$/i);
+    const m = String(entry.entity?.name ?? "").match(/^Agent [0-9a-f-]{36}:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
     return m ? m[1] : "";
   }
 
