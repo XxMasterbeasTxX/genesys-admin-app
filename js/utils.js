@@ -226,6 +226,38 @@ export async function withBusy($btn, fn) {
   }
 }
 
+// ── Colour tokens, resolved ─────────────────────────────────────────
+
+/**
+ * Resolve colour tokens to the literal strings the browser computed for
+ * them — for the few places that cannot use var(): a <canvas> 2D context,
+ * an SVG built for export, a PDF, a devtools console.
+ *
+ * Every colour in the app lives in css/tokens.css. This is how that stays
+ * true for code that must hand a plain string to something that is not the
+ * DOM: the value still comes from the one place, resolved a moment later.
+ *
+ * The read goes through a throwaway element in the document, so it works
+ * whether or not the caller's own element is attached yet, and `className`
+ * / `attrs` scope it — Flow Overview reads its canvas palette with
+ * { className: "fo-canvas", attrs: { "data-canvas": "light" } }.
+ *
+ * @param {Record<string,string>} names  key → token, e.g. { bg: "--fo-bg" }
+ * @returns {Record<string,string>}      key → computed value, e.g. { bg: "#0d1117" }
+ */
+export function resolveTokens(names, { className = "", attrs = {} } = {}) {
+  const probe = document.createElement("div");
+  if (className) probe.className = className;
+  for (const [k, v] of Object.entries(attrs)) probe.setAttribute(k, v);
+  probe.style.display = "none";
+  document.body.append(probe);
+  const cs = getComputedStyle(probe);
+  const out = {};
+  for (const [key, token] of Object.entries(names)) out[key] = cs.getPropertyValue(token).trim();
+  probe.remove();
+  return out;
+}
+
 // ── Async ───────────────────────────────────────────────────────────
 
 /** Promise-based delay. */

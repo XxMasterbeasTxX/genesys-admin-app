@@ -44,16 +44,20 @@ function nodeLabel(node, milestoneNames, outcomeNames) {
 
 // ── Node type → colour ───────────────────────────────────────────────────────
 
+// Fills are tokens in css/tokens.css; every stroke was the fill darkened by
+// about a quarter, so it derives. This diagram is live SVG only — nothing is
+// rasterised or exported — so var() can go straight into the attributes.
 function nodeColor(type, outcomeValue) {
-  if (type === "Root")               return { fill: "#0e7c7b", stroke: "#0a5e5d" };
-  if (type === "Disconnect")         return { fill: "#1a6b8a", stroke: "#145474" };
-  if (type === "TransferToAcd")      return { fill: "#1a7f8a", stroke: "#136371" };
-  if (type === "Milestone")          return { fill: "#207d7d", stroke: "#175c5c" };
+  const of = (token) => ({ fill: `var(${token})`, stroke: `color-mix(in srgb, var(${token}), var(--backdrop) 25%)` });
+  if (type === "Root")               return of("--kind-start");
+  if (type === "Disconnect")         return of("--kind-transfer");
+  if (type === "TransferToAcd")      return of("--jf-acd");
+  if (type === "Milestone")          return of("--jf-milestone");
   if (type === "Outcome") {
-    if (outcomeValue === "SUCCESS")  return { fill: "#1d7d6a", stroke: "#155c4e" };
-    if (outcomeValue === "FAILURE")  return { fill: "#7d4a1d", stroke: "#5c3615" };
+    if (outcomeValue === "SUCCESS")  return of("--jf-success");
+    if (outcomeValue === "FAILURE")  return of("--jf-failure");
   }
-  return { fill: "#4a6fa5", stroke: "#375482" };
+  return of("--kind-default");
 }
 
 // ── Layout: assign depth (column) and row per column ────────────────────────
@@ -139,28 +143,28 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       .jf-combo-input { width:100%; padding:7px 11px; border:1px solid var(--border); border-radius:8px;
                         background:var(--bg,var(--panel)); color:var(--text); font:inherit; font-size:13px;
                         outline:none; box-sizing:border-box; }
-      .jf-combo-input:focus  { border-color:#3b82f6; }
+      .jf-combo-input:focus  { border-color:var(--accent-strong); }
       .jf-combo-input:disabled { opacity:.5; cursor:not-allowed; }
       .jf-combo-list { display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:400;
                        max-height:260px; overflow-y:auto; background:var(--panel);
-                       border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+                       border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px color-mix(in srgb, var(--backdrop) 40%, transparent); }
       .jf-combo-list.open { display:block; }
       .jf-combo-option { padding:7px 12px; cursor:pointer; font-size:13px;
-                         border-bottom:1px solid rgba(255,255,255,.04); }
+                         border-bottom:1px solid color-mix(in srgb, var(--lift) 4%, transparent); }
       .jf-combo-option:last-child { border-bottom:none; }
-      .jf-combo-option:hover { background:rgba(59,130,246,.15); color:#93c5fd; }
+      .jf-combo-option:hover { background:color-mix(in srgb, var(--accent-strong) 15%, transparent); color:var(--accent-quiet); }
       .jf-combo-noresult { padding:10px 12px; font-size:12px; color:var(--muted); text-align:center; }
       .jf-btn    { padding:7px 18px; border:1px solid var(--border); border-radius:8px; background:var(--bg,var(--panel));
                    color:var(--text); font:inherit; font-size:13px; cursor:pointer; white-space:nowrap; }
-      .jf-btn:hover:not(:disabled) { border-color:#6b7280; }
+      .jf-btn:hover:not(:disabled) { border-color:var(--muted); }
       .jf-btn:disabled { opacity:.45; cursor:not-allowed; }
-      .jf-btn-primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
-      .jf-btn-primary:hover:not(:disabled) { background:#2563eb; border-color:#2563eb; }
+      .jf-btn-primary { background:var(--accent-strong); color:var(--text-inverse); border-color:var(--accent-strong); }
+      .jf-btn-primary:hover:not(:disabled) { background:color-mix(in srgb, var(--accent-strong), var(--backdrop) 15%); border-color:color-mix(in srgb, var(--accent-strong), var(--backdrop) 15%); }
       .jf-meta   { font-size:13px; color:var(--text); font-weight:600; letter-spacing:.01em; }
       .jf-status { font-size:13px; color:var(--muted); min-height:20px; }
-      .jf-status--error   { color:#f87171; }
+      .jf-status--error   { color:var(--danger); }
       .jf-canvas { height:880px; min-height:300px; flex:none; position:relative; overflow:hidden;
-                   background:var(--bg,#1a1f2e); border:1px solid var(--border);
+                   background:var(--bg); border:1px solid var(--border);
                    border-radius:12px 12px 0 0; }
       .jf-canvas svg { width:100%; height:100%; display:block; }
       .jf-resize-handle { height:8px; background:var(--panel); border:1px solid var(--border);
@@ -168,28 +172,28 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
                           display:flex; align-items:center; justify-content:center; }
       .jf-resize-handle::after { content:''; width:40px; height:3px; border-radius:2px;
                                   background:var(--border); pointer-events:none; }
-      .jf-resize-handle:hover { background:rgba(59,130,246,.1); }
-      .jf-resize-handle:hover::after { background:#3b82f6; }
+      .jf-resize-handle:hover { background:color-mix(in srgb, var(--accent-strong) 10%, transparent); }
+      .jf-resize-handle:hover::after { background:var(--accent-strong); }
       .jf-node        { cursor:grab; }
       .jf-node:active { cursor:grabbing; }
       .jf-node-circle { transition:filter .1s; }
       .jf-node:hover .jf-node-circle { filter:brightness(1.25); }
-      .jf-node-label  { font-size:11px; fill:#cdd6f4; pointer-events:none; text-anchor:middle;
+      .jf-node-label  { font-size:11px; fill:var(--jf-label); pointer-events:none; text-anchor:middle;
                         dominant-baseline:middle; font-family:inherit; font-weight:600;
-                        text-shadow:0 1px 4px rgba(0,0,0,.8); }
-      .jf-node-count  { font-size:10px; fill:rgba(205,214,244,.7); pointer-events:none; text-anchor:middle;
+                        text-shadow:0 1px 4px color-mix(in srgb, var(--backdrop) 80%, transparent); }
+      .jf-node-count  { font-size:10px; fill:color-mix(in srgb, var(--jf-label) 70%, transparent); pointer-events:none; text-anchor:middle;
                         dominant-baseline:middle; font-family:inherit; }
       .jf-edge { fill:none; stroke-linecap:round; opacity:.65; pointer-events:none; }
-      .jf-tooltip { position:absolute; pointer-events:none; background:rgba(15,20,35,.95);
+      .jf-tooltip { position:absolute; pointer-events:none; background:color-mix(in srgb, var(--jf-tooltip) 95%, transparent);
                     border:1px solid var(--border); border-radius:8px; padding:8px 12px;
                     font-size:12px; color:var(--text); white-space:nowrap; z-index:200;
-                    box-shadow:0 4px 20px rgba(0,0,0,.5); transition:opacity .1s; }
+                    box-shadow:0 4px 20px color-mix(in srgb, var(--backdrop) 50%, transparent); transition:opacity .1s; }
       .jf-empty { display:flex; align-items:center; justify-content:center; height:100%;
                   font-size:14px; color:var(--muted); }
       .jf-select { padding:7px 11px; border:1px solid var(--border); border-radius:8px;
                    background:var(--bg,var(--panel)); color:var(--text); font:inherit; font-size:13px;
                    cursor:pointer; outline:none; }
-      .jf-select:focus { border-color:#3b82f6; }
+      .jf-select:focus { border-color:var(--accent-strong); }
     </style>
 
     <div class="jf-page">
@@ -489,7 +493,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
     const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
     defs.innerHTML = `
       <marker id="jf-arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-        <path d="M0,0 L0,6 L6,3 z" fill="rgba(45,190,180,.5)"/>
+        <path d="M0,0 L0,6 L6,3 z" fill="color-mix(in srgb, var(--jf-edge) 50%, transparent)"/>
       </marker>
     `;
     svg.appendChild(defs);
@@ -575,7 +579,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       path.setAttribute("id",     `jf-edge-${edge.from}-${edge.to}`);
       path.setAttribute("d",      bezierPath(p1.x + r1, p1.y, p2.x - r2, p2.y));
       path.setAttribute("class",  "jf-edge");
-      path.setAttribute("stroke", `rgba(45,190,180,${alpha})`);
+      path.setAttribute("stroke", `color-mix(in srgb, var(--jf-edge) ${Math.round(alpha * 100)}%, transparent)`);
       path.setAttribute("stroke-width", String(strokeW));
       path.setAttribute("marker-end",   "url(#jf-arr)");
       edgeG.appendChild(path);
@@ -598,7 +602,7 @@ export default function renderJourneyFlow({ me, api, orgContext }) {
       // Shadow
       const shadow = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       shadow.setAttribute("r",    String(r + 3));
-      shadow.setAttribute("fill", "rgba(0,0,0,.35)");
+      shadow.setAttribute("fill", "color-mix(in srgb, var(--backdrop) 35%, transparent)");
       shadow.setAttribute("cx",   "2");
       shadow.setAttribute("cy",   "3");
       g.appendChild(shadow);

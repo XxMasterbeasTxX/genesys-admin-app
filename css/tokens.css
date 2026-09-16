@@ -89,3 +89,82 @@
   --tag-purple:      #7c3aed;
   --tag-teal:        #0f766e;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Diagram palettes
+
+   Flow Overview draws its diagram to SVG and, for a PDF, through a <canvas>.
+   Neither can read var(), so these are resolved to literal strings at draw
+   time by resolveTokens() in js/utils.js. The canvas is independent of the
+   app theme on purpose: a flow is easiest to read dark, and the Background
+   selector on the page switches it to light or white before an export.
+   ══════════════════════════════════════════════════════════════════════ */
+
+.fo-layout[data-canvas="dark"] {
+  --fo-bg:               #0d1117;
+  --fo-node:             #161b22;
+  --fo-node-stroke:      #30363d;
+  --fo-text:             #c9d1d9;
+  --fo-subtext:          #8b949e;
+  --fo-container-stroke: #3d444d;
+  --fo-container-header: #21262d;
+  --fo-edge:             #6e7681;
+  --fo-edge-label:       #8b949e;
+}
+.fo-layout[data-canvas="light"] {
+  --fo-bg:               #f6f8fa;
+  --fo-node:             #ffffff;
+  --fo-node-stroke:      #d0d7de;
+  --fo-text:             #1f2328;
+  --fo-subtext:          #57606a;
+  --fo-container-stroke: #aeb6bf;
+  --fo-container-header: #eaeef2;
+  --fo-edge:             #6e7681;
+  --fo-edge-label:       #57606a;
+}
+.fo-layout[data-canvas="white"] {
+  --fo-bg:               #ffffff;
+  --fo-node:             #ffffff;
+  --fo-node-stroke:      #c2c9d1;
+  --fo-text:             #1f2328;
+  --fo-subtext:          #57606a;
+  --fo-container-stroke: #c2c9d1;
+  --fo-container-header: #eef1f4;
+  --fo-edge:             #5a636d;
+  --fo-edge-label:       #57606a;
+}
+
+/* Accents that read on any of the three backgrounds, the per-action-kind
+   colours named by flowModel.js ACTION_KINDS, and Journey Flow's node fills
+   (its strokes derive as the fill mixed 25% toward --backdrop). The same in
+   both app themes, so defined once. */
+:root {
+  --fo-jump:             #8957e5;
+  --fo-dep:              #2c8a9a;
+  --fo-select:           #f0b429;
+  --fo-start:            #2ea043;
+  --fo-badge-text:       #ffffff;
+
+  --kind-task:           #6e7681;
+  --kind-start:          #0e7c7b;   /* also Journey Flow's Root */
+  --kind-end:            #8a4b2f;
+  --kind-decision:       #b8860b;
+  --kind-switch:         #a9760b;
+  --kind-menu:           #6a4ba8;   /* Menu, Collect Input */
+  --kind-transfer:       #1a6b8a;   /* also Journey Flow's Disconnect */
+  --kind-common-module:  #2c7a4b;
+  --kind-data:           #2c6a7a;   /* Data Table Lookup, Call Data Action */
+  --kind-jump:           #7a5a2c;
+  --kind-bot:            #7a2c6a;
+  --kind-intent:         #8a5a2c;
+  --kind-loop:           #5a6b2c;
+  --kind-default:        #4a6fa5;   /* Set Data, Play Audio, Action, and anything unnamed */
+
+  --jf-acd:              #1a7f8a;
+  --jf-milestone:        #207d7d;
+  --jf-success:          #1d7d6a;
+  --jf-failure:          #7d4a1d;
+  --jf-edge:             #2dbeb4;
+  --jf-label:            #cdd6f4;
+  --jf-tooltip:          #0f1423;
+}

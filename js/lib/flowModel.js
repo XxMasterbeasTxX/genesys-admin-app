@@ -26,24 +26,28 @@
 // from which properties are present. Dependency-call actions are additionally
 // tagged authoritatively from the manifest (see buildManifestTags).
 
+// `color` names the token in css/tokens.css that carries the kind's colour;
+// the renderer resolves it to a literal at draw time (resolveTokens in
+// utils.js), because the diagram is also drawn to a <canvas> for export.
+// Kinds that share a colour share the token.
 export const ACTION_KINDS = Object.freeze({
-  start: { label: "Start", color: "#0e7c7b" },
-  end: { label: "End / Disconnect", color: "#8a4b2f" },
-  decision: { label: "Decision", color: "#b8860b" },
-  switch: { label: "Switch", color: "#a9760b" },
-  menu: { label: "Menu", color: "#6a4ba8" },
-  collect: { label: "Collect Input", color: "#6a4ba8" },
-  transfer: { label: "Transfer", color: "#1a6b8a" },
-  callCommonModule: { label: "Call Common Module", color: "#2c7a4b" },
-  dataTable: { label: "Data Table Lookup", color: "#2c6a7a" },
-  dataAction: { label: "Call Data Action", color: "#2c6a7a" },
-  jump: { label: "Jump to Task", color: "#7a5a2c" },
-  bot: { label: "Call Bot Flow", color: "#7a2c6a" },
-  intent: { label: "Ask for Intent", color: "#8a5a2c" },
-  loop: { label: "Loop", color: "#5a6b2c" },
-  setData: { label: "Update / Set Data", color: "#4a6fa5" },
-  audio: { label: "Play Audio / Prompt", color: "#4a6fa5" },
-  action: { label: "Action", color: "#4a6fa5" },
+  start: { label: "Start", color: "--kind-start" },
+  end: { label: "End / Disconnect", color: "--kind-end" },
+  decision: { label: "Decision", color: "--kind-decision" },
+  switch: { label: "Switch", color: "--kind-switch" },
+  menu: { label: "Menu", color: "--kind-menu" },
+  collect: { label: "Collect Input", color: "--kind-menu" },
+  transfer: { label: "Transfer", color: "--kind-transfer" },
+  callCommonModule: { label: "Call Common Module", color: "--kind-common-module" },
+  dataTable: { label: "Data Table Lookup", color: "--kind-data" },
+  dataAction: { label: "Call Data Action", color: "--kind-data" },
+  jump: { label: "Jump to Task", color: "--kind-jump" },
+  bot: { label: "Call Bot Flow", color: "--kind-bot" },
+  intent: { label: "Ask for Intent", color: "--kind-intent" },
+  loop: { label: "Loop", color: "--kind-loop" },
+  setData: { label: "Update / Set Data", color: "--kind-default" },
+  audio: { label: "Play Audio / Prompt", color: "--kind-default" },
+  action: { label: "Action", color: "--kind-default" },
 });
 
 /** Build a map of actionId → dependency tag from the manifest. */

@@ -20,7 +20,7 @@
  *   Low  — the flow + its direct dependencies.
  */
 
-import { escapeHtml, exportXlsx, makeStatus } from "../../utils.js";
+import { escapeHtml, exportXlsx, makeStatus, resolveTokens } from "../../utils.js";
 import { buildModel, ACTION_KINDS } from "../../lib/flowYaml.js";
 import {
   FLOW_TYPE_LABELS,
@@ -34,33 +34,42 @@ import { layoutModel } from "../../lib/flowLayout.js";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 
-// Visual palette (explicit colours so exported standalone SVG renders anywhere).
-const CANVAS_BG = "#0d1117";
-const NODE_FILL = "#161b22";
-const NODE_STROKE = "#30363d";
-const NODE_TEXT = "#c9d1d9";
-const NODE_SUBTEXT = "#8b949e";
-const CONTAINER_STROKE = "#3d444d";
-const CONTAINER_HEADER = "#21262d";
-const EDGE_COLOR = "#6e7681";
-const EDGE_LABEL = "#8b949e";
-const JUMP_COLOR = "#8957e5";
-const DEP_COLOR = "#2c8a9a";
-const SELECT_COLOR = "#f0b429";
-const START_STROKE = "#2ea043";
+// ── Colours ──────────────────────────────────────────────────────────────────
+// Every colour comes from css/tokens.css. The diagram is drawn to SVG and, for
+// a PDF, through a <canvas>, and neither can read var(), so the palette is
+// resolved to literal strings at draw time (resolveTokens). The canvas has its
+// own three backgrounds — dark, light, white — chosen by the Background
+// selector and independent of the app theme on purpose: a flow is easiest to
+// read dark, and it is switched to light only before an export.
 
-// Canvas colour themes (neutrals only; the accent hues jump/dep/select/start read
-// on any background). Switchable at runtime and used by exports so diagrams print
-// cleanly on white.
-const THEMES = {
-  dark:  { bg: "#0d1117", nodeFill: "#161b22", nodeStroke: "#30363d", text: "#c9d1d9", subText: "#8b949e", containerStroke: "#3d444d", containerHeader: "#21262d", edge: "#6e7681", edgeLabel: "#8b949e" },
-  light: { bg: "#f6f8fa", nodeFill: "#ffffff", nodeStroke: "#d0d7de", text: "#1f2328", subText: "#57606a", containerStroke: "#aeb6bf", containerHeader: "#eaeef2", edge: "#6e7681", edgeLabel: "#57606a" },
-  white: { bg: "#ffffff", nodeFill: "#ffffff", nodeStroke: "#c2c9d1", text: "#1f2328", subText: "#57606a", containerStroke: "#c2c9d1", containerHeader: "#eef1f4", edge: "#5a636d", edgeLabel: "#57606a" },
+const CANVAS_TOKENS = {
+  bg: "--fo-bg", nodeFill: "--fo-node", nodeStroke: "--fo-node-stroke", text: "--fo-text",
+  subText: "--fo-subtext", containerStroke: "--fo-container-stroke",
+  containerHeader: "--fo-container-header", edge: "--fo-edge", edgeLabel: "--fo-edge-label",
+  // read on any of the three backgrounds
+  jump: "--fo-jump", dep: "--fo-dep", select: "--fo-select", start: "--fo-start", badgeText: "--fo-badge-text",
 };
+const CANVAS_THEMES = ["dark", "light", "white"];
+const paletteCache = new Map();
 
+/** The literal palette for one canvas background, resolved once and cached. */
+function canvasPalette(name) {
+  if (!CANVAS_THEMES.includes(name)) name = "dark";
+  if (!paletteCache.has(name)) {
+    paletteCache.set(name, resolveTokens(CANVAS_TOKENS, { className: "fo-layout", attrs: { "data-canvas": name } }));
+  }
+  return paletteCache.get(name);
+}
+
+let kindPalette = null;
 function kindColor(kind) {
-  if (kind === "task") return "#6e7681";
-  return (ACTION_KINDS[kind] && ACTION_KINDS[kind].color) || "#4a6fa5";
+  if (!kindPalette) {
+    const names = { task: "--kind-task", fallback: "--kind-default" };
+    for (const [k, def] of Object.entries(ACTION_KINDS)) names[k] = def.color;
+    kindPalette = resolveTokens(names);
+  }
+  if (kind === "task") return kindPalette.task;
+  return kindPalette[kind] || kindPalette.fallback;
 }
 function kindLabel(kind) {
   if (kind === "task") return "Task";
@@ -141,57 +150,67 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   el.innerHTML = `
     <style>
       .fo-layout { display:flex; gap:12px; align-items:stretch; height:78vh; min-height:460px; }
-      .fo-layout:fullscreen { height:100vh; min-height:0; background:#0d1117; padding:10px; box-sizing:border-box; }
-      .fo-layout.fo-max { position:fixed; inset:0; z-index:9999; height:auto; background:#0d1117; padding:10px; box-sizing:border-box; }
+      /* Fullscreen paints the whole layout from the canvas palette, so the side
+         panel and toolbar follow the Background selector rather than the app theme. */
+      .fo-layout:fullscreen, .fo-layout.fo-max {
+        background:var(--fo-bg); padding:10px; box-sizing:border-box;
+        --text:var(--fo-text); --muted:var(--fo-subtext); --border:var(--fo-node-stroke);
+        --panel:var(--fo-node); --panel-2:var(--fo-container-header); --lift:var(--fo-text);
+        /* Set, not only re-tokened: most of the panel inherits color, and an
+           inherited colour was computed outside the layout from the app theme. */
+        color:var(--text);
+      }
+      .fo-layout:fullscreen { height:100vh; min-height:0; }
+      .fo-layout.fo-max { position:fixed; inset:0; z-index:9999; height:auto; }
       .fo-canvas-wrap { position:relative; flex:1; min-width:0; display:flex; flex-direction:column; }
-      .fo-canvas { flex:1; min-height:0; border:1px solid ${NODE_STROKE}; border-radius:8px;
-                   overflow:hidden; background:${CANVAS_BG}; position:relative; }
+      .fo-canvas { flex:1; min-height:0; border:1px solid var(--border); border-radius:8px;
+                   overflow:hidden; background:var(--fo-bg); position:relative; }
       .fo-canvas svg { width:100%; height:100%; display:block; }
       .fo-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-                  color:${NODE_SUBTEXT}; font-size:14px; text-align:center; padding:20px; }
+                  color:var(--muted); font-size:14px; text-align:center; padding:20px; }
       .fo-empty[hidden] { display:none; }
       .fo-tabs { display:flex; gap:4px; overflow-x:auto; padding:0 0 6px; align-items:flex-end; min-height:0; }
       .fo-tab { flex:none; display:inline-flex; align-items:center; gap:6px; padding:5px 10px; font-size:12px;
-                border:1px solid ${NODE_STROKE}; border-radius:6px 6px 0 0; background:rgba(255,255,255,.02);
-                color:${NODE_SUBTEXT}; cursor:pointer; white-space:nowrap; }
-      .fo-tab:hover { background:rgba(255,255,255,.06); }
-      .fo-tab.is-active { color:${NODE_TEXT}; background:rgba(240,180,41,.12); border-color:rgba(240,180,41,.4); }
-      .fo-tab.is-main { border-bottom-color:${START_STROKE}; }
+                border:1px solid var(--border); border-radius:6px 6px 0 0; background:color-mix(in srgb, var(--lift) 2%, transparent);
+                color:var(--muted); cursor:pointer; white-space:nowrap; }
+      .fo-tab:hover { background:color-mix(in srgb, var(--lift) 6%, transparent); }
+      .fo-tab.is-active { color:var(--text); background:color-mix(in srgb, var(--fo-select) 12%, transparent); border-color:color-mix(in srgb, var(--fo-select) 40%, transparent); }
+      .fo-tab.is-main { border-bottom-color:var(--fo-start); }
       .fo-tab[disabled] { opacity:.45; cursor:not-allowed; }
-      .fo-tab-badge { font-size:9.5px; padding:1px 5px; border-radius:8px; border:1px solid ${NODE_STROKE}; color:${NODE_SUBTEXT}; }
+      .fo-tab-badge { font-size:9.5px; padding:1px 5px; border-radius:8px; border:1px solid var(--border); color:var(--muted); }
       .fo-side { width:340px; flex:none; display:flex; flex-direction:column; gap:10px; }
-      .fo-side-box { border:1px solid ${NODE_STROKE}; border-radius:8px; background:rgba(255,255,255,.02);
+      .fo-side-box { border:1px solid var(--border); border-radius:8px; background:color-mix(in srgb, var(--lift) 2%, transparent);
                      display:flex; flex-direction:column; min-height:0; }
-      .fo-side-head { padding:8px 10px; font-weight:600; font-size:13px; border-bottom:1px solid ${NODE_STROKE};
+      .fo-side-head { padding:8px 10px; font-weight:600; font-size:13px; border-bottom:1px solid var(--border);
                       display:flex; align-items:center; justify-content:space-between; gap:8px; }
       .fo-search { flex:1 1 0; min-height:0; }
       .fo-results { overflow:auto; flex:1; min-height:0; }
       .fo-detail { flex:1 1 0; min-height:0; }
-      .fo-row { padding:6px 10px; border-bottom:1px solid rgba(255,255,255,.05); cursor:pointer; font-size:12.5px; }
-      .fo-row:hover { background:rgba(255,255,255,.05); }
-      .fo-row .fo-name { color:${NODE_TEXT}; }
-      .fo-row .fo-meta { color:${NODE_SUBTEXT}; font-size:11px; }
+      .fo-row { padding:6px 10px; border-bottom:1px solid color-mix(in srgb, var(--lift) 5%, transparent); cursor:pointer; font-size:12.5px; }
+      .fo-row:hover { background:color-mix(in srgb, var(--lift) 5%, transparent); }
+      .fo-row .fo-name { color:var(--text); }
+      .fo-row .fo-meta { color:var(--muted); font-size:11px; }
       .fo-chip { display:inline-block; padding:1px 6px; border-radius:10px; font-size:10.5px; line-height:1.6;
-                 border:1px solid ${NODE_STROKE}; color:${NODE_SUBTEXT}; }
-      .fo-detail-body { padding:10px; font-size:12.5px; color:${NODE_TEXT}; flex:1; overflow:auto; }
+                 border:1px solid var(--border); color:var(--muted); }
+      .fo-detail-body { padding:10px; font-size:12.5px; color:var(--text); flex:1; overflow:auto; }
       .fo-detail-body h4 { margin:0 0 4px; font-size:13px; }
-      .fo-detail-body .fo-sub { color:${NODE_SUBTEXT}; font-size:11.5px; margin-bottom:8px; }
-      .fo-detail-body code { background:rgba(255,255,255,.06); padding:1px 4px; border-radius:4px; font-size:11.5px; }
-      .fo-usage { padding:5px 8px; border:1px solid ${NODE_STROKE}; border-radius:6px; margin:4px 0; cursor:pointer; }
-      .fo-usage:hover { background:rgba(255,255,255,.05); }
+      .fo-detail-body .fo-sub { color:var(--muted); font-size:11.5px; margin-bottom:8px; }
+      .fo-detail-body code { background:color-mix(in srgb, var(--lift) 6%, transparent); padding:1px 4px; border-radius:4px; font-size:11.5px; }
+      .fo-usage { padding:5px 8px; border:1px solid var(--border); border-radius:6px; margin:4px 0; cursor:pointer; }
+      .fo-usage:hover { background:color-mix(in srgb, var(--lift) 5%, transparent); }
       .fo-legend { display:flex; flex-wrap:wrap; gap:6px 12px; padding:8px 10px; }
-      .fo-legend span { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:${NODE_SUBTEXT}; }
+      .fo-legend span { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); }
       .fo-legend i { width:11px; height:11px; border-radius:3px; display:inline-block; }
-      .fo-hint { color:${NODE_SUBTEXT}; font-size:11px; padding:0 10px 8px; }
-      .fo-level .btn.is-active { background:rgba(240,180,41,.18); border-color:rgba(240,180,41,.4); color:#f0b429; }
+      .fo-hint { color:var(--muted); font-size:11px; padding:0 10px 8px; }
+      .fo-level .btn.is-active { background:color-mix(in srgb, var(--fo-select) 18%, transparent); border-color:color-mix(in srgb, var(--fo-select) 40%, transparent); color:var(--fo-select); }
       .fo-search .dt-input { max-width:none; width:100%; box-sizing:border-box; }
       .fo-flow-combo { position:relative; }
       .fo-flow-menu { position:absolute; z-index:40; top:100%; left:0; right:0; margin-top:2px; max-height:300px;
-                      overflow:auto; background:#161b22; border:1px solid ${NODE_STROKE}; border-radius:8px; display:none; }
+                      overflow:auto; background:var(--panel); border:1px solid var(--border); border-radius:8px; display:none; }
       .fo-flow-menu.open { display:block; }
-      .fo-flow-item { padding:6px 10px; font-size:13px; cursor:pointer; color:${NODE_TEXT}; white-space:nowrap; }
-      .fo-flow-item:hover, .fo-flow-item.is-active { background:rgba(240,180,41,.15); }
-      .fo-flow-item .fo-meta { color:${NODE_SUBTEXT}; font-size:11px; }
+      .fo-flow-item { padding:6px 10px; font-size:13px; cursor:pointer; color:var(--text); white-space:nowrap; }
+      .fo-flow-item:hover, .fo-flow-item.is-active { background:color-mix(in srgb, var(--fo-select) 15%, transparent); }
+      .fo-flow-item .fo-meta { color:var(--muted); font-size:11px; }
     </style>
 
     <h2>Flows — Flow Overview</h2>
@@ -231,7 +250,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
         </div>
       </div>
       <div class="dt-actions" style="margin-bottom:12px;display:flex;align-items:flex-end;gap:8px">
-        <span id="foStatus" style="font-size:12px;color:${NODE_SUBTEXT}"></span>
+        <span id="foStatus" style="font-size:12px;color:var(--muted)"></span>
       </div>
     </div>
 
@@ -241,25 +260,25 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       <button class="btn btn--secondary btn-sm" id="foFit" disabled>Fit</button>
       <button class="btn btn--secondary btn-sm" id="foStart" disabled title="Centre the view on this flow's start">⌖ Start</button>
       <button class="btn btn--secondary btn-sm" id="foFullscreen" disabled title="Fullscreen">⛶ Fullscreen</button>
-      <label style="font-size:11px;color:${NODE_SUBTEXT};display:inline-flex;align-items:center;gap:4px">Background
+      <label style="font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:4px">Background
         <select class="dt-select" id="foTheme" style="padding:3px 6px;font-size:12px">
           <option value="dark">Dark</option><option value="light">Light</option><option value="white">White</option>
         </select>
       </label>
-      <span style="font-size:11px;color:${NODE_SUBTEXT}">Scroll to zoom · drag to pan · click a line to trace it</span>
+      <span style="font-size:11px;color:var(--muted)">Scroll to zoom · drag to pan · click a line to trace it</span>
       <span style="flex:1"></span>
       <button class="btn btn--secondary btn-sm" id="foSavePdf" disabled>Save PDF</button>
       <button class="btn btn--secondary btn-sm" id="foSaveHtml" disabled>Save HTML</button>
       <button class="btn btn--secondary btn-sm" id="foSaveJson" disabled>Save JSON</button>
-      <span style="width:1px;height:20px;background:${NODE_STROKE};margin:0 3px"></span>
-      <span style="font-size:11px;color:${NODE_SUBTEXT}">All flows:</span>
+      <span style="width:1px;height:20px;background:var(--border);margin:0 3px"></span>
+      <span style="font-size:11px;color:var(--muted)">All flows:</span>
       <button class="btn btn--secondary btn-sm" id="foSaveAllPdf" disabled title="Root flow + every dependency flow (auto-loaded, transitive) as one multi-page PDF">PDF</button>
       <button class="btn btn--secondary btn-sm" id="foSaveAllHtml" disabled title="Root flow + every dependency flow (auto-loaded, transitive) as one HTML file with tabs">HTML</button>
       <button class="btn btn--secondary btn-sm" id="foSaveAllJson" disabled title="Root flow + every dependency flow (auto-loaded, transitive) bundled into one JSON file">JSON</button>
       <button class="btn btn--secondary btn-sm" id="foSaveAllDeps" disabled title="Every dependency of the root flow and its dependency flows (auto-loaded, transitive) as a styled Excel workbook">Export Dependencies</button>
     </div>
 
-    <div class="fo-layout">
+    <div class="fo-layout" data-canvas="dark">
       <div class="fo-canvas-wrap">
         <div class="fo-tabs" id="foTabs"></div>
         <div class="fo-canvas" id="foCanvas">
@@ -369,7 +388,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     if (!list.length) {
       const t = typeFilter.value;
       const scope = t ? ` of type “${FLOW_TYPE_LABELS[t] || t}”` : "";
-      flowMenu.innerHTML = `<div class="fo-flow-item" style="cursor:default;color:${NODE_SUBTEXT}">No matching flows${escapeHtml(scope)}</div>`;
+      flowMenu.innerHTML = `<div class="fo-flow-item" style="cursor:default;color:var(--muted)">No matching flows${escapeHtml(scope)}</div>`;
       openMenu();
       return;
     }
@@ -424,6 +443,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   // ── Theme (canvas background) ───────────────────────────────────────────────
   themeSel.addEventListener("change", () => {
     state.themeName = themeSel.value;
+    layoutEl.dataset.canvas = state.themeName;
     if (state.laid) renderGraph();
   });
 
@@ -635,8 +655,8 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   }
 
   // ── Graph rendering ─────────────────────────────────────────────────────────
-  /** Active canvas colour palette. */
-  function tc() { return THEMES[state.themeName] || THEMES.dark; }
+  /** Active canvas colour palette, as literal strings. */
+  function tc() { return canvasPalette(state.themeName); }
 
   function renderGraph() {
     emptyEl.hidden = true;
@@ -651,9 +671,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
 
     const defs = svgEl("defs");
     defs.appendChild(arrowMarker("fo-arrow", th.edge));
-    defs.appendChild(arrowMarker("fo-arrow-jump", JUMP_COLOR));
-    defs.appendChild(arrowMarker("fo-arrow-dep", DEP_COLOR));
-    defs.appendChild(arrowMarker("fo-arrow-hl", SELECT_COLOR));
+    defs.appendChild(arrowMarker("fo-arrow-jump", tc().jump));
+    defs.appendChild(arrowMarker("fo-arrow-dep", tc().dep));
+    defs.appendChild(arrowMarker("fo-arrow-hl", tc().select));
     svg.appendChild(defs);
 
     const vpG = svgEl("g");
@@ -691,7 +711,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   }
 
   function edgeColor(kind) {
-    return kind === "jump" ? JUMP_COLOR : kind === "dep" ? DEP_COLOR : tc().edge;
+    return kind === "jump" ? tc().jump : kind === "dep" ? tc().dep : tc().edge;
   }
   function edgeMarker(kind) {
     return kind === "jump" ? "fo-arrow-jump" : kind === "dep" ? "fo-arrow-dep" : "fo-arrow";
@@ -756,7 +776,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       const border = svgEl("rect", {
         width: n.w, height: n.h, rx: 8,
         fill: "none",
-        stroke: selected ? SELECT_COLOR : (n.isStart ? START_STROKE : th.containerStroke),
+        stroke: selected ? tc().select : (n.isStart ? tc().start : th.containerStroke),
         "stroke-width": selected ? 2.5 : (n.isStart ? 3 : 1.2),
       });
       if (!n.isStart) border.setAttribute("stroke-dasharray", "2 3");
@@ -769,9 +789,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       // A START pill in the header, room permitting — this is what carries into
       // PDF/HTML exports, where the screen-space badge does not exist.
       if (n.isStart && n.w >= 150) {
-        gg.appendChild(svgEl("rect", { x: n.w - 52, y: 5, width: 46, height: 16, rx: 8, fill: START_STROKE }));
+        gg.appendChild(svgEl("rect", { x: n.w - 52, y: 5, width: 46, height: 16, rx: 8, fill: tc().start }));
         const pill = svgEl("text", {
-          x: n.w - 29, y: 17, fill: "#ffffff", "font-size": "10", "font-weight": "700",
+          x: n.w - 29, y: 17, fill: tc().badgeText, "font-size": "10", "font-weight": "700",
           "text-anchor": "middle", "font-family": "system-ui, sans-serif",
         });
         pill.textContent = "START";
@@ -784,10 +804,10 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       gg.appendChild(svgEl("rect", {
         width: n.w, height: n.h, rx: 6,
         fill: th.nodeFill,
-        stroke: selected ? SELECT_COLOR : (n.isStart ? START_STROKE : th.nodeStroke),
+        stroke: selected ? tc().select : (n.isStart ? tc().start : th.nodeStroke),
         "stroke-width": selected || n.isStart ? 2.5 : 1.1,
       }));
-      gg.appendChild(svgEl("rect", { width: 4, height: n.h, rx: 2, fill: n.isStart ? START_STROKE : color }));
+      gg.appendChild(svgEl("rect", { width: 4, height: n.h, rx: 2, fill: n.isStart ? tc().start : color }));
       const label = svgEl("text", { x: 12, y: n.sublabel ? 20 : n.h / 2 + 4, fill: th.text, "font-size": "12", "font-family": "system-ui, sans-serif" });
       label.textContent = truncate(n.label, Math.max(6, Math.floor((n.w - 16) / 6.6)));
       gg.appendChild(label);
@@ -875,9 +895,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
 
     const g = svgEl("g", { transform: `translate(${x},${y})`, opacity: offscreen ? "0.6" : "1" });
     g.style.cursor = "pointer";
-    g.appendChild(svgEl("rect", { width: bw, height: bh, rx: 9, fill: START_STROKE }));
+    g.appendChild(svgEl("rect", { width: bw, height: bh, rx: 9, fill: tc().start }));
     const t = svgEl("text", {
-      x: bw / 2, y: 13, fill: "#ffffff", "font-size": "10.5", "font-weight": "700",
+      x: bw / 2, y: 13, fill: tc().badgeText, "font-size": "10.5", "font-weight": "700",
       "text-anchor": "middle", "font-family": "system-ui, sans-serif",
     });
     t.textContent = "▶ START";
@@ -964,9 +984,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   // ── Selection + detail panel ────────────────────────────────────────────────
   function nodeStrokeSpec(n) {
     const th = tc();
-    if (n.id === state.selectedId || state.hlNodes.has(n.id)) return [SELECT_COLOR, "2.5"];
-    if (n.isContainer) return [n.isStart ? START_STROKE : th.containerStroke, n.isStart ? "3" : "1.2"];
-    return [n.isStart ? START_STROKE : th.nodeStroke, n.isStart ? "2.5" : "1.1"];
+    if (n.id === state.selectedId || state.hlNodes.has(n.id)) return [tc().select, "2.5"];
+    if (n.isContainer) return [n.isStart ? tc().start : th.containerStroke, n.isStart ? "3" : "1.2"];
+    return [n.isStart ? tc().start : th.nodeStroke, n.isStart ? "2.5" : "1.1"];
   }
   function refreshNodeStrokes() {
     if (!state.svg) return;
@@ -1001,7 +1021,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       const hl = svgEl("path", {
         d: edgePathD(e.points),
         fill: "none",
-        stroke: SELECT_COLOR,
+        stroke: tc().select,
         "stroke-width": "3",
         "marker-end": "url(#fo-arrow-hl)",
       });
@@ -1029,7 +1049,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       <div class="fo-sub"><span class="fo-chip" style="color:${edgeColor(e.kind)}">${kindLbl}</span>${e.label ? ` · ${escapeHtml(e.label)}` : ""}</div>
       ${e.detail ? `<div style="margin:6px 0"><strong>Condition</strong><br><code>${escapeHtml(e.detail)}</code></div>` : ""}
       <div class="fo-usage" data-go="${escapeHtml(e.source)}"><span class="fo-meta">From</span><br><span class="fo-name">${escapeHtml(s.title)}</span>${s.sub ? `<br><span class="fo-meta">${escapeHtml(s.sub)}</span>` : ""}</div>
-      <div style="text-align:center;color:${NODE_SUBTEXT};margin:2px 0">↓</div>
+      <div style="text-align:center;color:var(--muted);margin:2px 0">↓</div>
       <div class="fo-usage" data-go="${escapeHtml(e.target)}"><span class="fo-meta">To</span><br><span class="fo-name">${escapeHtml(t.title)}</span>${t.sub ? `<br><span class="fo-meta">${escapeHtml(t.sub)}</span>` : ""}</div>
       <div class="fo-sub" style="margin-top:6px">Click either end to centre it in view.</div>
     `;
@@ -1105,7 +1125,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const isStart = (state.data.tasks || []).some((t) => t.id === taskId && t.isStart);
     detailEl.innerHTML = `
       <h4>${escapeHtml(modelNode.label)}</h4>
-      <div class="fo-sub"><span class="fo-chip">${modelNode.isMenu ? "Menu" : modelNode.isState ? "State" : modelNode.isBot ? "Bot" : "Task"}</span>${modelNode.isStart ? ' · <span class="fo-chip" style="color:' + START_STROKE + '">Start</span>' : ""} · ${count} action(s)</div>
+      <div class="fo-sub"><span class="fo-chip">${modelNode.isMenu ? "Menu" : modelNode.isState ? "State" : modelNode.isBot ? "Bot" : "Task"}</span>${modelNode.isStart ? ' · <span class="fo-chip" style="color:' + tc().start + '">Start</span>' : ""} · ${count} action(s)</div>
       <div class="fo-sub">${isStart ? "This is the flow's start task." : ""}</div>
     `;
   }
@@ -1114,7 +1134,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     const isFlow = state.flowByName && state.flowByName.has(dep.name);
     detailEl.innerHTML = `
       <h4>${escapeHtml(dep.name)}</h4>
-      <div class="fo-sub"><span class="fo-chip" style="color:${DEP_COLOR}">${escapeHtml(dep.type)}</span> · used by ${dep.usages.length} action(s)</div>
+      <div class="fo-sub"><span class="fo-chip" style="color:${tc().dep}">${escapeHtml(dep.type)}</span> · used by ${dep.usages.length} action(s)</div>
       ${isFlow ? `<div class="fo-usage" data-openflowname="${escapeHtml(dep.name)}"><span class="fo-name">▸ Open this flow in a tab</span></div>` : ""}
       ${dep.usages.map((u) => `<div class="fo-usage" data-action="${escapeHtml(u.actionId)}"><span class="fo-name">${escapeHtml(u.actionName)}</span><br><span class="fo-meta">${escapeHtml(u.taskName || "")}</span></div>`).join("")}
     `;
@@ -1156,7 +1176,7 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
       rows.push(
         `<div class="fo-row" data-kind="dep" data-key="${escapeHtml(d.key)}">
            <span class="fo-name">${escapeHtml(d.name)}</span>
-           <span class="fo-chip" style="color:${DEP_COLOR}">${escapeHtml(d.type)}</span>
+           <span class="fo-chip" style="color:${tc().dep}">${escapeHtml(d.type)}</span>
            <div class="fo-meta">${d.usages.length} use(s)</div>
          </div>`
       );
@@ -1227,9 +1247,9 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
   function renderLegend() {
     const kinds = new Set(state.model.nodes.map((n) => n.kind));
     const items = [...kinds].map((k) => `<span><i style="background:${kindColor(k)}"></i>${escapeHtml(kindLabel(k))}</span>`);
-    if (state.model.nodes.some((n) => n.isStart)) items.unshift(`<span><i style="background:${START_STROKE}"></i>Start</span>`);
-    items.push(`<span><i style="background:${JUMP_COLOR}"></i>Task jump</span>`);
-    items.push(`<span><i style="background:${DEP_COLOR}"></i>Dependency</span>`);
+    if (state.model.nodes.some((n) => n.isStart)) items.unshift(`<span><i style="background:${tc().start}"></i>Start</span>`);
+    items.push(`<span><i style="background:${tc().jump}"></i>Task jump</span>`);
+    items.push(`<span><i style="background:${tc().dep}"></i>Dependency</span>`);
     legendEl.innerHTML = items.join("");
   }
 
@@ -1244,8 +1264,8 @@ export default function renderFlowOverview({ route, me, api, orgContext }) {
     svg.appendChild(svgEl("rect", { width: w, height: h, fill: th.bg }));
     const defs = svgEl("defs");
     defs.appendChild(arrowMarker("fo-arrow", th.edge));
-    defs.appendChild(arrowMarker("fo-arrow-jump", JUMP_COLOR));
-    defs.appendChild(arrowMarker("fo-arrow-dep", DEP_COLOR));
+    defs.appendChild(arrowMarker("fo-arrow-jump", tc().jump));
+    defs.appendChild(arrowMarker("fo-arrow-dep", tc().dep));
     svg.appendChild(defs);
     const g = svgEl("g", { transform: `translate(${pad},${pad})` });
     svg.appendChild(g);
@@ -1417,7 +1437,7 @@ header{padding:12px 16px;border-bottom:1px solid ${th.nodeStroke}}h1{font-size:1
 .sub{color:${th.subText};font-size:12px;margin-top:4px}
 .tabs{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px;border-bottom:1px solid ${th.nodeStroke};position:sticky;top:0;background:${th.bg};z-index:1}
 .ftab{background:${th.nodeFill};color:${th.text};border:1px solid ${th.nodeStroke};border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
-.ftab.active{border-color:${SELECT_COLOR};color:${SELECT_COLOR}}
+.ftab.active{border-color:${tc().select};color:${tc().select}}
 .fsec{display:none;padding:16px;overflow:auto}.fsec.active{display:block}
 .meta{color:${th.subText};font-size:12px;margin-bottom:8px}</style></head>
 <body><header><h1>${escapeHtml(rootName)} — all flows</h1><div class="sub">${flows.length} flow(s) · ${state.level} detail · exported ${new Date().toISOString()}</div></header>

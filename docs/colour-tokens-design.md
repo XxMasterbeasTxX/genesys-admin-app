@@ -1,6 +1,6 @@
 # Colour Tokens — Design
 
-Status: **In development** — steps 1–4 of §11 done
+Status: **In development** — steps 1–5 of §11 done
 Author: Genesys Admin App
 Last updated: 2026-09-16
 
@@ -331,8 +331,9 @@ export must render outside the app. The requirement is still "from one place";
 what changes is *when* the value is resolved.
 
 The palette moves into `tokens.css` as scoped blocks, one per background
-variant, on the canvas's own attribute — **not** on `<html>`, because the
-canvas theme is independent of the app theme by design:
+variant, on the layout element's own attribute (`.fo-layout[data-canvas]`) —
+**not** on `<html>`, because the canvas theme is independent of the app theme
+by design:
 
 ```css
 .fo-layout[data-canvas="dark"]  { --fo-bg: #0d1117; --fo-node: #161b22; --fo-stroke: #30363d;
@@ -346,9 +347,10 @@ canvas theme is independent of the app theme by design:
 ```
 
 The `Background` selector sets `data-canvas` on the layout element. A small
-reader — `paletteFrom(el, names)` in `utils.js` — calls
-`getComputedStyle(el).getPropertyValue()` for each token and returns the same
-`{ bg, nodeFill, … }` object `tc()` returns today. Nothing downstream changes:
+reader — `resolveTokens(names, { className, attrs })` in `utils.js` — reads
+each token off a throwaway probe carrying that class and attribute, so it works
+whether or not the page is attached yet, and returns the same
+`{ bg, nodeFill, … }` object `tc()` returned before, cached per background. Nothing downstream changes:
 SVG attributes, the canvas `fillStyle`, the standalone export all receive the
 same literal strings they receive now, only sourced from the stylesheet at the
 moment of drawing.
@@ -357,7 +359,16 @@ The thirteen per-action-kind colours in `flowModel.js` follow the same route:
 `ACTION_KINDS` keeps a `color` field but its value becomes a token name, and
 `kindColor()` resolves it through the reader.
 
-Journey Flow has the same pattern at smaller scale and is treated the same way.
+Journey Flow is live SVG only — nothing rasterised, nothing exported — so it
+needs no resolver: `var()` and `color-mix()` go straight into its `fill` and
+`stroke` attributes. Its strokes derive from its fills, and three of its fills
+are the same colours as action kinds and share those tokens. Its canvas already
+followed `--bg` and still does.
+
+In fullscreen the whole Flow Overview layout paints from the canvas palette —
+background, and the app tokens re-pointed at their canvas equivalents — so the
+side panel and tabs follow the `Background` selector rather than the app
+theme. Outside fullscreen the page chrome follows the app.
 
 The default background stays **dark**, as it is now — the diagram is easiest to
 read dark, and the user switches to light only before exporting. That is a
@@ -403,7 +414,7 @@ what "one place" turns into without it. Every one was reasonable at the time.
 | 2 | `check-colours.mjs`, reporting only (prints the count, does not fail) | 1 file | **done** |
 | 3 | Sweep `styles.css` by family; delete the 24 light blocks | 1 file, 882 values | **done** |
 | 4 | Sweep the page style blocks, inline attributes and JS strings | 32 files, 397 values | **done** |
-| 5 | Canvas palettes → scoped tokens + runtime reader; `flowModel` kinds | 4 files | |
+| 5 | Canvas palettes → scoped tokens + runtime reader; `flowModel` kinds | 4 files, 115 values | **done** |
 | 6 | `download.html` | 1 file, 6 values | |
 | 7 | Check switches to failing; added to the SWA workflow | 2 files | |
 
@@ -412,7 +423,26 @@ and the check is how the last few hidden ones are found. It started at
 **1,383**; step 3 took it to **501**. Widening the check to the app modules in
 `js/lib/` (it had been skipping the whole directory, vendor bundles and ours
 alike) found 17 more in `flowModel.js`, for an honest **518**. Step 4 took it
-to **121**: the three diagram files and `download.html`, nothing else.
+to **121**: the three diagram files and `download.html`, nothing else. Step 5
+took it to **6** — all in `download.html`. No JavaScript file in the app holds
+a colour.
+
+**How step 5 was verified.** The three canvas palettes were resolved through
+`resolveTokens` and compared with the old `THEMES` object value by value: 42
+values, none different. All 18 action kinds resolve to their old colours.
+Journey Flow's six node fills are exact; its strokes now derive as the fill
+mixed a quarter toward `--backdrop`, and four of six land within two units of
+the old hand-picked stroke — `Disconnect` and `TransferToAcd` sit about ten
+units off on one channel, on a one-pixel outline. `var()` and `color-mix()`
+were confirmed to compute inside SVG `fill` and `stroke` attributes. Then the
+case worth the whole exercise: fullscreen on every combination of app theme
+and canvas background. The first pass had dark text on a dark canvas when the
+app was light — the layout re-tokened `--text`, but most of the panel
+*inherits* `color`, already computed outside the layout — so the fullscreen
+rule now sets `color` itself. All six combinations read correctly. One
+regression was caught before it shipped: a `tc().start` inside the page
+template ran before `state` existed; in a style block the token can simply be
+`var(--fo-start)`.
 
 **How step 4 was verified.** All 95 page modules mounted; every page style
 block's 577 rules were applied to a live element under the old token set and
