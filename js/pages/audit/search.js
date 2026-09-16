@@ -844,8 +844,20 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
    */
   function compositeParts(id) {
     if (!id || !id.includes("--")) return null;
-    const parts = id.split("--");
-    return parts.every(p => GUID_RE.test(p)) ? parts : null;
+    const parts = id.split("--").filter(Boolean);
+    return parts.length > 1 && parts.some(p => GUID_RE.test(p)) ? parts : null;
+  }
+
+  /**
+   * entity.name when it is an actual name. Some audits (Role MemberAdd,
+   * for one) put the id — or the whole composite id — in entity.name too,
+   * and that must not stop the lookup.
+   */
+  function realEntityName(entry) {
+    const name = String(entry.entity?.name ?? "").trim();
+    if (!name || name === entry.entity?.id) return "";
+    if (GUID_RE.test(name) || compositeParts(name)) return "";
+    return name;
   }
 
   /** The entity of every result, unless the audit already carries its name. */
@@ -854,12 +866,12 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
     const members = [];
     for (const entry of allResults) {
       const id = entry.entity?.id;
-      if (!id || entry.entity?.name) continue;
+      if (!id || realEntityName(entry)) continue;
       const parts = compositeParts(id);
       if (parts) {
-        const path = pathFor(entry.serviceName || "", getEntityType(entry), parts[0]);
+        const path = GUID_RE.test(parts[0]) ? pathFor(entry.serviceName || "", getEntityType(entry), parts[0]) : null;
         if (path) items.push({ path, id: parts[0] });
-        for (const m of parts.slice(1)) members.push(m);
+        for (const m of parts.slice(1)) if (GUID_RE.test(m)) members.push(m);
         continue;
       }
       const path = pathFor(entry.serviceName || "", getEntityType(entry), id);
@@ -899,7 +911,7 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
    */
   function nameFromAudit(entry, id) {
     const clean = v => (v === null || v === undefined) ? "" : String(v).trim();
-    if (clean(entry.entity?.name)) return clean(entry.entity.name);
+    if (realEntityName(entry)) return realEntityName(entry);
 
     for (const p of (entry.propertyChanges || [])) {
       if (!/(^|[^a-z])name$/i.test(String(p.property || ""))) continue;
@@ -1051,7 +1063,8 @@ export default function renderAuditSearch({ route, me, api, orgContext }) {
   }
 
   function getEntityName(entry) {
-    if (entry.entity?.name) return entry.entity.name;
+    const own = realEntityName(entry);
+    if (own) return own;
     const id = entry.entity?.id;
     if (!id) return "";
     const parts = compositeParts(id);
