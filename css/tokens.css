@@ -26,38 +26,29 @@
   --muted:           #93a4b8;
   --text-inverse:    #ffffff;                 /* text on a filled accent */
   --border:          rgba(255,255,255,0.08);
-  --surface-hover:   rgba(255,255,255,0.06);  /* "slightly lighter than the panel" */
-  --surface-raised:  rgba(255,255,255,0.10);
-  --backdrop:        rgba(0,0,0,0.55);
+  --lift:            #ffffff;                 /* base for "slightly lighter than the panel" surfaces — always through color-mix */
+  --backdrop:        #000000;                 /* base for scrims and insets — always through color-mix */
   --shadow:          0 10px 30px rgba(0,0,0,0.35);
 
-  /* accent (blue) */
+  /* accent (blue) — tints and borders derive from these via color-mix */
   --accent:          #60a5fa;                 /* interactive text, icons, links */
   --accent-strong:   #3b82f6;                 /* filled buttons, bars, active state */
   --accent-quiet:    #93c5fd;                 /* secondary accent text */
-  --accent-tint:     rgba(59,130,246,0.12);   /* soft background */
-  --accent-border:   rgba(59,130,246,0.30);
 
   /* ok (green) */
   --ok:              #34d399;
   --ok-strong:       #22c55e;
   --ok-quiet:        #86efac;
-  --ok-tint:         rgba(52,211,153,0.12);
-  --ok-border:       rgba(52,211,153,0.30);
 
   /* warn (amber) */
   --warn:            #fbbf24;
   --warn-strong:     #f59e0b;
   --warn-quiet:      #ffd28a;
-  --warn-tint:       rgba(251,191,36,0.10);
-  --warn-border:     rgba(251,191,36,0.45);
 
   /* danger (red) */
   --danger:          #f87171;
   --danger-strong:   #ef4444;
   --danger-quiet:    #fca5a5;
-  --danger-tint:     rgba(239,68,68,0.15);
-  --danger-border:   rgba(239,68,68,0.30);
 
   /* named accents for badges and kind markers — "a distinct category" */
   --tag-purple:      #c084fc;
@@ -75,34 +66,25 @@
   --muted:           #64748b;
   --text-inverse:    #ffffff;
   --border:          rgba(0,0,0,0.10);
-  --surface-hover:   rgba(0,0,0,0.04);
-  --surface-raised:  rgba(0,0,0,0.07);
-  --backdrop:        rgba(0,0,0,0.45);
+  --lift:            #000000;                 /* on a light page a lifted surface is a whisper darker */
+  --backdrop:        #000000;
   --shadow:          0 10px 30px rgba(0,0,0,0.08);
 
   --accent:          #2563eb;
   --accent-strong:   #1d4ed8;
   --accent-quiet:    #3b82f6;      /* placeholder — no light source existed; tune in Phase 2 */
-  --accent-tint:     rgba(59,130,246,0.10);
-  --accent-border:   rgba(59,130,246,0.30);
 
   --ok:              #16a34a;
   --ok-strong:       #15803d;
   --ok-quiet:        #22c55e;      /* placeholder */
-  --ok-tint:         rgba(22,163,74,0.10);
-  --ok-border:       rgba(22,163,74,0.30);
 
   --warn:            #b45309;
   --warn-strong:     #92400e;
   --warn-quiet:      #d97706;      /* placeholder */
-  --warn-tint:       rgba(180,83,9,0.10);
-  --warn-border:     rgba(180,83,9,0.35);
 
   --danger:          #dc2626;
   --danger-strong:   #b91c1c;
   --danger-quiet:    #ef4444;      /* placeholder */
-  --danger-tint:     rgba(220,38,38,0.10);
-  --danger-border:   rgba(220,38,38,0.30);
 
   --tag-purple:      #7c3aed;
   --tag-teal:        #0f766e;

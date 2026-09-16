@@ -1,6 +1,6 @@
 # Colour Tokens — Design
 
-Status: **Agreed** — design signed off 2026-09-16, awaiting go-ahead to code
+Status: **In development** — steps 1–3 of §11 done
 Author: Genesys Admin App
 Last updated: 2026-09-16
 
@@ -84,7 +84,7 @@ nowhere** — every use runs on its fallback.
 | `styles.css`, 24 light patches | 12 | 135 | 149 | 40 |
 | 13 page `<style>` blocks + templates (JS) | 578 | 367 | 159 | — |
 | inline `style="…color:…"` attributes (JS) | 128 | 51 | — | — |
-| `download.html` | 0 | 6 | — | — |
+| `download.html` | 0 | 6 | — | — | |
 
 The 81 distinct hex values in the stylesheet are Tailwind shades and fall into
 four families with no name — blue, red, green, amber — plus a scattering of
@@ -128,117 +128,49 @@ answer is to resolve tokens to literals at draw time, not to leave them in JS
 
 ## 4. The one place: `css/tokens.css`
 
-Two blocks. Nothing else in the file.
+Two blocks. Nothing else in the file. **Twenty-three tokens** as shipped:
 
 ```css
-/* ── Dark — the default ─────────────────────────────────────────── */
-:root {
+:root {                                   /* dark — the default */
   color-scheme: dark;
-
-  /* neutrals */
-  --bg:              #0b0f14;
-  --panel:           #111824;
-  --panel-2:         #0f1621;
-  --text:            #e7eef7;
-  --muted:           #93a4b8;
-  --text-inverse:    #ffffff;                 /* text on a filled accent */
-  --border:          rgba(255,255,255,0.08);
-  --surface-hover:   rgba(255,255,255,0.06);  /* the 79 "slightly lighter" surfaces */
-  --surface-raised:  rgba(255,255,255,0.10);
-  --backdrop:        rgba(0,0,0,0.55);
-  --shadow:          0 10px 30px rgba(0,0,0,0.35);
-
-  /* accent (blue) */
-  --accent:          #60a5fa;                 /* interactive text, icons, links */
-  --accent-strong:   #3b82f6;                 /* filled buttons, bars, active */
-  --accent-quiet:    #93c5fd;                 /* secondary accent text */
-  --accent-tint:     rgba(59,130,246,0.12);   /* soft background */
-  --accent-border:   rgba(59,130,246,0.30);
-
-  /* ok (green) */
-  --ok:              #34d399;
-  --ok-strong:       #22c55e;
-  --ok-quiet:        #86efac;
-  --ok-tint:         rgba(52,211,153,0.12);
-  --ok-border:       rgba(52,211,153,0.30);
-
-  /* warn (amber) */
-  --warn:            #fbbf24;
-  --warn-strong:     #f59e0b;
-  --warn-quiet:      #ffd28a;
-  --warn-tint:       rgba(251,191,36,0.10);
-  --warn-border:     rgba(251,191,36,0.45);
-
-  /* danger (red) */
-  --danger:          #f87171;
-  --danger-strong:   #ef4444;
-  --danger-quiet:    #fca5a5;
-  --danger-tint:     rgba(239,68,68,0.15);
-  --danger-border:   rgba(239,68,68,0.30);
-
-  /* named accents used by badges and kind markers */
-  --tag-purple:      #c084fc;
-  --tag-teal:        #2dd4bf;
+  --bg  --panel  --panel-2  --text  --muted  --text-inverse  --border  --shadow
+  --lift       #ffffff   /* base for "slightly lighter than the panel" surfaces */
+  --backdrop   #000000   /* base for scrims and insets */
+  --accent  --accent-strong  --accent-quiet
+  --ok      --ok-strong      --ok-quiet
+  --warn    --warn-strong    --warn-quiet
+  --danger  --danger-strong  --danger-quiet
+  --tag-purple  --tag-teal
 }
-
-/* ── Light ──────────────────────────────────────────────────────── */
-:root[data-theme="light"] {
-  color-scheme: light;
-
-  --bg:              #f8fafc;
-  --panel:           #ffffff;
-  --panel-2:         #f1f5f9;
-  --text:            #0f172a;
-  --muted:           #64748b;
-  --text-inverse:    #ffffff;
-  --border:          rgba(0,0,0,0.10);
-  --surface-hover:   rgba(0,0,0,0.04);
-  --surface-raised:  rgba(0,0,0,0.07);
-  --backdrop:        rgba(0,0,0,0.45);
-  --shadow:          0 10px 30px rgba(0,0,0,0.08);
-
-  --accent:          #2563eb;
-  --accent-strong:   #1d4ed8;
-  --accent-quiet:    #3b82f6;      /* proposed — no current source */
-  --accent-tint:     rgba(59,130,246,0.10);
-  --accent-border:   rgba(59,130,246,0.30);
-
-  --ok:              #16a34a;
-  --ok-strong:       #15803d;
-  --ok-quiet:        #22c55e;      /* proposed */
-  --ok-tint:         rgba(22,163,74,0.10);
-  --ok-border:       rgba(22,163,74,0.30);
-
-  --warn:            #b45309;
-  --warn-strong:     #92400e;
-  --warn-quiet:      #d97706;      /* proposed */
-  --warn-tint:       rgba(180,83,9,0.10);
-  --warn-border:     rgba(180,83,9,0.35);
-
-  --danger:          #dc2626;
-  --danger-strong:   #b91c1c;
-  --danger-quiet:    #ef4444;      /* proposed */
-  --danger-tint:     rgba(220,38,38,0.10);
-  --danger-border:   rgba(220,38,38,0.30);
-
-  --tag-purple:      #7c3aed;
-  --tag-teal:        #0f766e;
-}
+:root[data-theme="light"] { color-scheme: light; /* the same 23, light values */ }
 ```
 
-Thirty-three tokens, each defined twice. Every dark value is the value the app
-uses today. Every light value is the value the existing light patches use
-today, except the four marked *proposed*, which have no current light source
-because nothing ever overrode them — those are exactly the places light mode is
-wrong now, and they are the user's to change in Phase 2 anyway.
+Every dark value is the value the app used before; every light value is the
+value the deleted light patches used, except the four `-quiet` placeholders.
 
-The three-per-family shape — plain, `-strong`, `-quiet` — is not invented. It
-is what the codebase already does with Tailwind's 400 / 500 / 300 shades in
-dark, and 600 / 700 / 500 in light. The tokens name a pattern that was already
-there.
+**Tints and borders are not tokens.** The first draft of this design had
+`--accent-tint`, `--accent-border` and so on, one pre-mixed alpha per family.
+Building the sweep showed why that cannot meet §10's "dark looks the same":
+the stylesheet uses *forty-odd* distinct alphas — blue backgrounds alone at
+0.06, 0.10, 0.12, 0.15, 0.16, 0.18, 0.22 and 0.26 — and collapsing them to
+two per family would have changed every hover state in dark. So an alpha
+variant is **derived from its base token at draw time**:
 
-The diagram canvas palette lives in this file too, in its own scoped blocks
-(§8).
+```css
+background: color-mix(in srgb, var(--accent-strong) 12%, transparent);
+```
+
+The alpha is a number, not a colour; the colour is the token. Dark stays
+exact, and in light the tint follows the light hue automatically. The eight
+tint/border tokens were removed rather than left unreferenced in the one
+file that is supposed to hold nothing dead.
+
+`--lift` and `--backdrop` exist for the same reason. The 79 "slightly lighter"
+surfaces were `rgba(255,255,255,0.0x)` — white at a low alpha — and a light
+page needs them *black* at that alpha. `--lift` is white in dark and black in
+light, and every such surface is `color-mix(in srgb, var(--lift) 6%,
+transparent)`. Scrims and insets are the same shape on `--backdrop`, which is
+opaque black in both modes.
 
 ## 5. Choosing the theme
 
@@ -290,7 +222,7 @@ token.
 | `#3b82f6` | 80 | `--accent-strong` | |
 | `#93c5fd` | 50 | `--accent-quiet` | |
 | `#4c8dff` | 15 | `--accent` | *merge* — a one-off shade, visually between the two |
-| `#9dc1ff` | 5 | `--accent-quiet` | *merge* |
+| `#9dc1ff` | 5 | `--accent-quiet` | *merge* | |
 | `#a5b4fc` | 2 | `--accent-quiet` | *merge* — indigo-300, on blue |
 | `#2563eb` `#1d4ed8` | 40 | light values of the above | absorbed by the light block |
 
@@ -322,7 +254,7 @@ token.
 | `#fbbf24` | 41 | `--warn` | |
 | `#f59e0b` `#f0b429` | 24 | `--warn-strong` | |
 | `#e0a34a` `#e8bf6a` | 10 | `--warn` | *merge* — muddier one-offs |
-| `#ffd28a` | 4 | `--warn-quiet` | |
+| `#ffd28a` | 4 | `--warn-quiet` | | |
 | `#fb923c` | 3 | `--warn-strong` | *merge* — orange-400 |
 | `#b45309` `#8a5a00` `#92400e` `#c2410c` | 25 | light values | absorbed |
 
@@ -341,11 +273,9 @@ The remaining five (`#ffb3f0`, `#933a86`, `#128274` and two others; ten uses)
 fold into the nearest family: pink → `--danger`, dark magenta → `--tag-purple`,
 dark teal → `--tag-teal`. Decided, not guessed.
 
-Alpha tints (`rgba(59,130,246,0.10)`, `0.12`, `0.15`, `0.18`…) collapse to one
-`-tint` per family at 0.12, and borders to one `-border` at 0.30. Where a rule
-today uses 0.18 on hover and 0.10 at rest, hover becomes
-`color-mix(in srgb, var(--accent-tint), var(--accent) 8%)` — derived from the
-token, not a second literal.
+Alpha variants are not collapsed. Each becomes `color-mix(in srgb,
+var(--base) N%, transparent)` at its own alpha, so `rgba(59,130,246,0.18)` and
+`rgba(59,130,246,0.10)` stay two different intensities of the same token (§4).
 
 The inventory contains a few false positives — `#334`, `#9998`, `#10005` — which
 are ID-like strings in templates, not colours. The sweep script excludes them by
@@ -365,8 +295,15 @@ The one declaration that survives is `color-scheme: light`, which moves into
 
 ### 6.3 `var(--accent, #3b82f6)` fallbacks
 
-Twenty of these. With `--accent` defined, the fallback is a literal that can
-never fire and would fail the check. They become plain `var(--accent-strong)`.
+Twenty of these. Worth recording what step 1 did to them: defining
+`--accent` (as `#60a5fa`) meant the fallback `#3b82f6` stopped firing, so
+fifteen checkboxes, radios and the block throbber silently shifted to the
+lighter blue between step 1 and step 3. The sweep maps each by the value its
+fallback *used* to produce — `var(--accent, #3b82f6)` → `var(--accent-strong)`,
+`var(--accent, #60a5fa)` → `var(--accent)` — which puts the original back.
+A fallback whose token now exists (`var(--panel-2, #1e2433)`) loses the
+literal; one whose token never existed (`--panel-3`, `--success`) is
+re-pointed at the token that means the same thing.
 
 ## 7. The JavaScript side
 
@@ -460,19 +397,33 @@ what "one place" turns into without it. Every one was reasonable at the time.
 
 ## 11. Rollout
 
-| # | Step | Scope |
-|---|---|---|
-| 1 | `tokens.css` with today's values; head script; load order | 3 files |
-| 2 | `check-colours.mjs`, reporting only (prints the count, does not fail) | 1 file |
-| 3 | Sweep `styles.css` by family; delete the 24 light blocks | 1 file, ~900 values |
-| 4 | Sweep the 13 page style blocks and 51 inline attributes | 13 files, ~570 values |
-| 5 | Canvas palettes → scoped tokens + runtime reader; `flowModel` kinds | 4 files |
-| 6 | `download.html` | 1 file, 6 values |
-| 7 | Check switches to failing; added to the SWA workflow | 2 files |
+| # | Step | Scope | State |
+|---|---|---|---|
+| 1 | `tokens.css` with today's values; head script; load order | 3 files | **done** |
+| 2 | `check-colours.mjs`, reporting only (prints the count, does not fail) | 1 file | **done** |
+| 3 | Sweep `styles.css` by family; delete the 24 light blocks | 1 file, 882 values | **done** |
+| 4 | Sweep the 13 page style blocks and 51 inline attributes | 13 files, ~570 values | |
+| 5 | Canvas palettes → scoped tokens + runtime reader; `flowModel` kinds | 4 files | |
+| 6 | `download.html` | 1 file, 6 values | |
+| 7 | Check switches to failing; added to the SWA workflow | 2 files | |
 
-Step 2 before step 3 on purpose: the count going from ~1,600 to 0 across steps
-3–6 is the progress bar for the work, and the check is how the last few hidden
-ones are found.
+Step 2 before step 3 on purpose: the count is the progress bar for the work,
+and the check is how the last few hidden ones are found. It started at
+**1,383**; step 3 took it to **501**, all of it now in JavaScript and
+`download.html`.
+
+**How step 3 was verified.** Every one of the stylesheet's 1,379 rules was
+applied to a live element under the old stylesheet and again under the new,
+in dark, and 16,548 computed colour properties compared. Fifty-six distinct
+changes came out. Fifty-five are the approved merges of §6.1 — or those same
+merges seen through a tint — with `#4ade80` → `--ok` the largest at 74
+properties, exactly as listed. The fifty-sixth was the step-1 fallback shift
+described in §6.3, which the sweep reverses. Nothing else moved. A first pass
+of that comparison read declarations back from the CSSOM and reported one
+amber border turning into the text colour; that was the probe, not the
+stylesheet — a shorthand containing `var()` does not round-trip through
+`cssText` — and a real element confirmed the border exact. The lesson is
+recorded here because it will bite the next person too.
 
 ## 12. Parked, deliberately
 
