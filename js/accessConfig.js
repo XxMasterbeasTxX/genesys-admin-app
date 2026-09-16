@@ -214,4 +214,5 @@ export const GROUP_ACCESS = {
  */
 export const SUPERUSER_IDS = [
   "519fd42d-d19b-4d6b-9827-d77c9ceb8dc3",
+  "88a27e0a-ef94-499a-91c5-cf34ef661adc",
 ];
