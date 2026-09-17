@@ -31,8 +31,8 @@ export const RELEASE_NOTES = [
         + "Mandatory and Hidden ticks. A Lookup means the value must be one that exists — the name of a queue in "
         + "the org, say, or a key of another data table (choose which); Protected means the value cannot be "
         + "changed; Mandatory means it cannot be left empty; Hidden means the column is not shown at all. "
-        + "Above the columns, two switches say whether Supervisors may add rows and delete rows — both off "
-        + "unless you turn them on. The rules are saved with Save Schema.",
+        + "Above the columns, one switch says whether Supervisors may add rows — off unless you turn it on; "
+        + "Supervisors never delete rows. The rules are saved with Save Schema.",
       "A new page, Data Tables › Supervisor, is where a Supervisor edits rows. Pick a table and the rules "
         + "apply: a lookup column is a dropdown of the allowed values instead of a text box — no typing, so no "
         + "misspelling and no stray space — a protected column is plain text, a mandatory one blocks saving "

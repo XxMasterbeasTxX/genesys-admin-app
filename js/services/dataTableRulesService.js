@@ -22,7 +22,7 @@ export const LOOKUP_TYPES = Object.freeze([
 
 export const lookupLabel = (id) => (LOOKUP_TYPES.find((t) => t.id === id) || LOOKUP_TYPES[0]).label;
 
-export const EMPTY_RULES = Object.freeze({ columns: {}, mayAddRows: false, mayDeleteRows: false });
+export const EMPTY_RULES = Object.freeze({ columns: {}, mayAddRows: false });
 
 async function call(method, path, body) {
   const resp = await fetch(path, {

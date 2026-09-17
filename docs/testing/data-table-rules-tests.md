@@ -24,7 +24,7 @@ Supervisor page as plain row editing with add and delete off.
   skill, data-table key (`GET …/rows/{value}` 200 vs 404) and group (search,
   exact) each way; the row gone → refused, not crashed; POST refused unless
   `mayAddRows`, then validated (bad queue, missing mandatory); DELETE
-  refused unless `mayDeleteRows`; Hidden changed → refused, unchanged or
+  **always** refused, and `mayDeleteRows` is not a field; Hidden changed → refused, unchanged or
   omitted → ok, a new row with a hidden value → refused, without → ok; no
   rules at all → passes with no reads.
 - `/api/datatable-rules` who-may: a customer Administrator reads and sets
@@ -72,17 +72,17 @@ Tables › Supervisor.
 
 | # | Case | Steps | Expect | Result |
 |---|---|---|---|---|
-| 1 | Set rules | Data Tables › Edit, Schema mode: Queue → Lookup Queue + Mandatory; Priority → Protected; a string column → Lookup Data Table → pick the other table; another → Hidden; tick "may delete rows"; Save Schema | Status: schema saved, "Supervisor rules saved: 4 columns, may delete rows". Activity Log `dataTableRules.set` | |
+| 1 | Set rules | Data Tables › Edit, Schema mode: Queue → Lookup Queue + Mandatory; Priority → Protected; a string column → Lookup Data Table → pick the other table; another → Hidden; tick "Supervisors may add rows"; Save Schema | Status: schema saved, "Supervisor rules saved: 4 columns, may add rows". Activity Log `dataTableRules.set` | |
 | 2 | Lookup on a number | Try Lookup on an Integer column | The dropdown is disabled with a tooltip | |
 | 3 | Hints | Switch to Rows mode | Hints under the headers; every cell still a free input | |
-| 4 | Supervisor page | As the Supervisor: Data Tables › Supervisor, pick the table | Legend with the rules; Queue a dropdown of the org's queues; the key and Priority plain text; the hidden column absent; Add Row absent, Delete Selected present | |
+| 4 | Supervisor page | As the Supervisor: Data Tables › Supervisor, pick the table | Legend with the rules; Queue a dropdown of the org's queues; the key and Priority plain text; the hidden column absent; Add Row present (ticked in #1); no Delete anywhere | |
 | 5 | Data table keys | Look at the Data Table lookup column | A dropdown of the other table's keys; the status counted the load | |
 | 6 | Out-of-list value | A row whose queue no longer exists | Shown as "… (current value, not in the list)"; saving another cell of that row works; changing the queue offers only listed values | |
 | 7 | Mandatory | Empty a mandatory field on a row that allows it (a non-lookup mandatory) | Row status "Mandatory: …", Save counts it invalid | |
 | 8 | Save | Change a queue to a listed one; Save | "✓ Saved 1 row(s)"; the value in Genesys is exactly the queue's name | |
 | 9 | Server holds the line | From the Supervisor's session, `PUT …/rows/{key}` directly with a misspelled queue | 403 `datatable_rule` with the sentence naming the column | |
 | 10 | Server: protected | Same, changing Priority | 403, "is protected and cannot be changed" | |
-| 11 | Server: delete | With "may delete rows" off, `DELETE …/rows/{key}` from the Supervisor | 403 "may not delete rows" | |
+| 11 | Server: delete | `DELETE …/rows/{key}` from the Supervisor's session | 403 "Supervisors cannot delete rows." | |
 | 12 | Administrator unbound | As the Administrator on Data Tables › Edit, Rows mode: type a misspelled queue and save | Saved — the rules bind Supervisors only | |
 | 13 | Customer Administrator | As a customer Administrator with the Edit page: set rules | Saved and logged under the customer's org | |
 | 14 | Internal Supervisor with Edit | As an internal Supervisor whose pages include Data Tables › Edit | May set rules; one with only the Supervisor page may not | |

@@ -44,13 +44,13 @@ hidden      true → a Supervisor does not see the column at all (added during t
             save, and a new row takes the table's default for it
 ```
 
-Per table, two switches for what a Supervisor may do beyond editing values
-(see §9 Q1): **may add rows**, **may delete rows**. Both off by default —
-"edit the values" is the use case; adding a row means inventing a key.
-
-The key column can carry a lookup too (a Services table keyed by queue
-name, say). When rows may be added, the key is then chosen from the list
-like any other lookup value.
+Per table, one switch for what a Supervisor may do beyond editing values:
+**may add rows**, off by default — "edit the values" is the use case, and
+adding a row means inventing a key. **Supervisors never delete rows**
+(the user, after seeing the first build: "He should never be allowed to
+delete"). A new row's key is typed; the key column carries no lookup — a
+"lookup for new rows' keys" was built and removed the same day as
+unnecessary.
 
 Where the allowed values come from:
 
@@ -175,9 +175,9 @@ rows grid, which is the Edit page's Rows grid with the rules applied:
 - The **key** column is Protected on existing rows regardless of any rule
   (renaming a key is delete-and-create in Genesys; the Edit page has a
   prompt for it, this page does not offer it).
-- **Add row** appears only when the table's rule says so; **Delete** the
-  same. Search, paging and the per-row dirty/status handling are the Edit
-  page's, unchanged.
+- **Add row** appears only when the table's rule says so. There is no
+  Delete. Search, paging and the per-row dirty/status handling are the
+  Edit page's, unchanged.
 - No Schema mode. No table metadata. Nothing else on the page.
 
 *As built:* the Supervisor page has its own grid
@@ -201,7 +201,7 @@ refuses with a named reason:
 
 | Rule | Check | Cost |
 |---|---|---|
-| may add / delete rows | the method against the table's switches | none |
+| may add rows / never delete | POST against the table's switch; DELETE always refused | none |
 | Protected | the current row is read (`GET …/rows/{key}?showbrief=false`) and each protected column compared | one read per write |
 | Mandatory | the written value is non-empty | none |
 | Lookup: Data Table | `GET /flows/datatables/{tableId}/rows/{value}` — 200 means the key exists | one read per lookup cell |
@@ -239,15 +239,13 @@ Supervisor's row before anyone sees it.
 
 Answered by the recommendation unless the user says otherwise.
 
-1. **Add and delete rows** — two table-level switches, both **off** by
-   default. The use case is editing values; a Supervisor inventing a key
-   is a different act, and a table the flow indexes by key breaks on a
-   deleted row as surely as on a misspelled value. (§2, §6)
+1. **Add rows** — one table-level switch, **off** by default; deleting is
+   never allowed (revised from two switches after the first build). (§2, §6)
 2. **A current value outside the list** — leave-able, not editable to
    anything but a listed value. A Supervisor should not be forced to fix
    history to save an unrelated change in the same row. (§6)
-3. **The key column** — Protected on existing rows always; a lookup on it
-   applies to new rows only. (§6)
+3. **The key column** — Protected on existing rows always; typed on a new
+   row, no lookup. (§6)
 4. **Server-side enforcement** — yes, exact, per §7. Cost is one or two
    reads per row write. The alternative — browser only — would make the
    rules advisory for anyone with the proxy URL and their own token.

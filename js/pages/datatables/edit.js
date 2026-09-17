@@ -52,8 +52,6 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       .dte-table-rules { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin: 4px 0 10px; font-size: 13px; }
       .dte-table-rules label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
       .dte-table-rules input { margin: 0; accent-color: var(--accent-strong); }
-      .dte-key-rule { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
-      .dte-key-rule .dt-select { max-width: 150px; }
       .dte-orphans { margin-top: 10px; font-size: 12px; color: var(--warn); }
       .dte-orphans button { margin-left: 6px; }
       .dte-col-hint { display: block; font-size: 10px; font-weight: 500; color: var(--muted); letter-spacing: 0; text-transform: none; margin-top: 2px; }
@@ -287,11 +285,6 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
             <label class="dt-label" for="dteKey">Key</label>
             <input class="dt-input" id="dteKey" type="text" readonly style="opacity:0.6;cursor:not-allowed" />
             <span class="dt-field-hint">Primary key column — cannot be changed on an existing table.</span>
-            <div class="dte-key-rule" id="dteKeyRule">
-              <span class="dt-field-hint" style="margin:0" title="Only matters when Supervisors may add rows: the key of a new row must then be chosen from this lookup.">Supervisor lookup for new rows' keys:</span>
-              <select class="dt-select dtc-rule-lookup" id="dteKeyLookup">${LOOKUP_OPTIONS_HTML}</select>
-              <select class="dt-select dtc-rule-table" id="dteKeyLookupTable" hidden></select>
-            </div>
           </div>
         </div>
 
@@ -300,10 +293,8 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
             <span class="dt-label">Schema Columns</span>
           </div>
           <div class="dte-table-rules">
-            <span class="dt-field-hint" style="margin:0">Supervisors:</span>
-            <label><input type="checkbox" id="dteMayAddRows"> may add rows</label>
-            <label><input type="checkbox" id="dteMayDeleteRows"> may delete rows</label>
-            <span class="dt-field-hint" style="margin:0">— the rule columns (Lookup, Protected, Mandatory) guide Supervisors on Data Tables › Supervisor; this page is not bound by them.</span>
+            <label><input type="checkbox" id="dteMayAddRows"> Supervisors may add rows</label>
+            <span class="dt-field-hint" style="margin:0">— Supervisors never delete rows. The rule columns (Lookup, Protected, Mandatory, Hidden) guide them on Data Tables › Supervisor; this page is not bound by them.</span>
           </div>
           <div class="dtc-schema-cols-header">
             <span></span>
@@ -394,10 +385,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   const $description = el.querySelector("#dteDescription");
   const $key = el.querySelector("#dteKey");
   const $schemaRowsContainer = el.querySelector("#dteSchemaRows");
-  const $keyLookup      = el.querySelector("#dteKeyLookup");
-  const $keyLookupTable = el.querySelector("#dteKeyLookupTable");
   const $mayAddRows     = el.querySelector("#dteMayAddRows");
-  const $mayDeleteRows  = el.querySelector("#dteMayDeleteRows");
   const $orphanRules    = el.querySelector("#dteOrphanRules");
 
   // ── Supervisor rules (docs/data-table-rules-design.md §5) ─────────────
@@ -442,11 +430,6 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   /** The rules as the controls hold them. Keyed by property key, as rows are. */
   function collectRules() {
     const columns = {};
-    const keyLookup = $keyLookup.value;
-    if (keyLookup) {
-      columns.key = { lookup: keyLookup, tableId: keyLookup === "dataTable" ? $keyLookupTable.value : "", protected: false, mandatory: false };
-      if (keyLookup === "dataTable" && !columns.key.tableId) delete columns.key;
-    }
     $schemaRowsContainer.querySelectorAll(".dtc-schema-row").forEach((row) => {
       const name = row.querySelector(".dtc-col-name").value.trim();
       if (!name) return;
@@ -461,7 +444,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     for (const [name, rule] of Object.entries(_rules.columns || {})) {
       if (!(name in columns) && _orphaned.has(name)) columns[name] = rule;
     }
-    return { columns, mayAddRows: $mayAddRows.checked, mayDeleteRows: $mayDeleteRows.checked };
+    return { columns, mayAddRows: $mayAddRows.checked };
   }
 
   let _orphaned = new Set();
@@ -481,13 +464,6 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   function applyRulesToControls(rules) {
     _rules = rules || EMPTY_RULES;
     $mayAddRows.checked = !!_rules.mayAddRows;
-    $mayDeleteRows.checked = !!_rules.mayDeleteRows;
-    syncKeyRule();
-    const keyRule = _rules.columns.key || null;
-    $keyLookupTable.innerHTML = lookupTableOptions(_currentTableId);
-    $keyLookup.value = keyRule ? keyRule.lookup : "";
-    $keyLookup.dispatchEvent(new Event("change"));
-    if (keyRule && keyRule.lookup === "dataTable") $keyLookupTable.value = keyRule.tableId || "";
     const present = new Set(["key"]);
     $schemaRowsContainer.querySelectorAll(".dtc-schema-row").forEach((row) => {
       const propKey = row.dataset.originalKey || row.querySelector(".dtc-col-name").value.trim();
@@ -506,19 +482,6 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     renderOrphans();
   }
 
-  wireLookupPair($keyLookup, $keyLookupTable, null);
-
-  // The key lookup only matters when Supervisors may add rows (an existing
-  // row's key is always protected); it is greyed until they may.
-  function syncKeyRule() {
-    const on = $mayAddRows.checked;
-    $keyLookup.disabled = !on;
-    $keyLookupTable.disabled = !on;
-    el.querySelector("#dteKeyRule").style.opacity = on ? "" : "0.5";
-    el.querySelector("#dteKeyRule").title = on ? "" : "Tick \"may add rows\" to use this: an existing row's key is always protected.";
-  }
-  $mayAddRows.addEventListener("change", syncKeyRule);
-  syncKeyRule();
   const $addSchemaRowBtn = el.querySelector("#dteAddSchemaRow");
 
   const $rowsSearch = el.querySelector("#dteRowsSearch");
@@ -1581,7 +1544,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
           const r = await setDataTableRules(orgId, _currentTableId, rules, name);
           applyRulesToControls(r.rules || rules);
           const n = Object.keys((r.rules || rules).columns).length;
-          rulesNote = ` Supervisor rules saved: ${n} column${n === 1 ? "" : "s"}${(r.rules || rules).mayAddRows ? ", may add rows" : ""}${(r.rules || rules).mayDeleteRows ? ", may delete rows" : ""}.`;
+          rulesNote = ` Supervisor rules saved: ${n} column${n === 1 ? "" : "s"}${(r.rules || rules).mayAddRows ? ", may add rows" : ""}.`;
         } catch (err) {
           rulesNote = ` Schema saved, but the Supervisor rules were not: ${err.message}`;
         }

@@ -102,7 +102,7 @@ module.exports = async function (context, req) {
             ownerOrgId: caller.mode === "customer" ? customerId : "internal",
             action: "dataTableRules.set",
             description: `Set the Supervisor rules for data table ${String(body.tableName || tableId)} in ${customerName(customerId)}: ${n} column rule${n === 1 ? "" : "s"}`
-              + `${rules.mayAddRows ? ", may add rows" : ""}${rules.mayDeleteRows ? ", may delete rows" : ""}`,
+              + `${rules.mayAddRows ? ", may add rows" : ""}`,
             details: { customerId, tableId, tableName: body.tableName || "", before: beforeRules, after: rules },
           });
         } catch (err) {

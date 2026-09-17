@@ -12,7 +12,8 @@
  *     when the row is saved;
  *   - a Mandatory column cannot be left empty; the row's status says which;
  *   - the key column is always protected on an existing row;
- *   - Add row and Delete appear only when the table's rules allow them.
+ *   - Add row appears only when the table's rules allow it; rows are never
+ *     deleted here.
  *
  * A current value that is not in the list (a queue since deleted, a value
  * typed before the rule existed) is shown as an extra option marked so, and
@@ -90,9 +91,6 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
           <div class="dt-control-group" style="align-self:flex-end">
             <button class="btn" id="dtsAddBtn" type="button" hidden>Add Row</button>
           </div>
-          <div class="dt-control-group" style="align-self:flex-end">
-            <button class="btn btn-secondary" id="dtsDeleteBtn" type="button" hidden disabled>Delete Selected</button>
-          </div>
         </div>
         <div class="dts-toolbar-right">
           <div class="dt-control-group" style="min-width:120px">
@@ -119,7 +117,7 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
 
   const $ = (id) => el.querySelector("#" + id);
   const $actions = $("dtsActions"), $undoBtn = $("dtsUndoBtn"), $saveBtn = $("dtsSaveBtn");
-  const $body = $("dtsBody"), $search = $("dtsSearch"), $addBtn = $("dtsAddBtn"), $deleteBtn = $("dtsDeleteBtn");
+  const $body = $("dtsBody"), $search = $("dtsSearch"), $addBtn = $("dtsAddBtn");
   const $pageSize = $("dtsPageSize"), $refreshBtn = $("dtsRefreshBtn"), $legend = $("dtsLegend");
   const $grid = $("dtsGrid"), $prev = $("dtsPrev"), $next = $("dtsNext"), $pagerInfo = $("dtsPagerInfo"), $summary = $("dtsSummary");
   const setStatus = makeStatus($("dtsStatus"), "dt-status");
@@ -130,7 +128,7 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
   let tableId = null, table = null, columns = [], rules = EMPTY_RULES;
   let lookups = {};            // column name → allowed values
   let lookupFailed = {};       // column name → error
-  let models = [], nextId = 1, page = 1, search = "", selected = new Set();
+  let models = [], nextId = 1, page = 1, search = "";
   let loadSeq = 0;
 
   const rule = (name) => rules.columns[name] || null;
@@ -186,7 +184,7 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
   async function load(id) {
     const orgId = orgContext.get();
     const seq = ++loadSeq;
-    tableId = id; table = null; models = []; selected = new Set(); search = ""; $search.value = ""; page = 1;
+    tableId = id; table = null; models = []; search = ""; $search.value = ""; page = 1;
     if (!id || !orgId) { $body.hidden = true; $actions.hidden = true; setStatus(""); return; }
     setStatus("Loading the table, its rules and the allowed values…");
     try {
@@ -201,7 +199,6 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
       lookups = lk.values; lookupFailed = lk.failed;
       models = (Array.isArray(rows) ? rows : []).map(toModel);
       $addBtn.hidden = !rules.mayAddRows || !can("rowsAdd");
-      $deleteBtn.hidden = !rules.mayDeleteRows || !can("rowsDelete");
       $body.hidden = false; $actions.hidden = false;
       renderLegend();
       render();
@@ -307,18 +304,16 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
     };
     const shown = visibleColumns();
     const head = shown.map((c) => `<th class="dts-col">${escapeHtml(c.title)}${(rule(c.name)?.mandatory || c.name === "key") ? " *" : ""}${hint(c)}</th>`).join("");
-    const showSelect = !$deleteBtn.hidden;
     const body = rows.map((m) => {
       const reason = invalidReason(m);
       const status = reason || m.status || (m.isNew ? "New row" : (m.isDirty ? "Pending changes" : "Clean"));
       const cls = reason && m.isDirty ? "dts-row-invalid" : (m.isDirty ? "dts-row-dirty" : "");
       return `<tr class="${cls}">
-        ${showSelect ? `<td><input type="checkbox" data-select="${m.id}" ${selected.has(m.id) ? "checked" : ""} ${m.isNew ? "disabled" : ""}></td>` : ""}
         ${shown.map((c, i) => `<td class="dts-col" data-label="${escapeHtml(c.title)}">${cell(m, c, i)}</td>`).join("")}
         <td><span class="dts-row-status ${reason && m.isDirty ? "dts-row-status--error" : ""}">${escapeHtml(status)}</span></td>
       </tr>`;
     }).join("");
-    $grid.innerHTML = `<div class="dts-grid-wrap"><table class="dts-grid"><thead><tr>${showSelect ? "<th></th>" : ""}${head}<th>Status</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    $grid.innerHTML = `<div class="dts-grid-wrap"><table class="dts-grid"><thead><tr>${head}<th>Status</th></tr></thead><tbody>${body}</tbody></table></div>`;
     validate();
   }
 
@@ -328,20 +323,11 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
     $undoBtn.disabled = !dirty.length;
     $saveBtn.disabled = !dirty.length || invalid.length > 0 || !can("rowsEdit");
     $saveBtn.textContent = dirty.length ? `Save Changes (${dirty.length}${invalid.length ? `, ${invalid.length} invalid` : ""})` : "Save Changes";
-    $deleteBtn.disabled = !selected.size;
   }
 
   // ── Editing ────────────────────────────────────────────────────────
   $grid.addEventListener("input", onEdit);
-  $grid.addEventListener("change", (e) => {
-    if (e.target.matches("[data-select]")) {
-      const id = Number(e.target.getAttribute("data-select"));
-      if (e.target.checked) selected.add(id); else selected.delete(id);
-      validate();
-      return;
-    }
-    onEdit(e);
-  });
+  $grid.addEventListener("change", onEdit);
 
   function onEdit(e) {
     const t = e.target;
@@ -401,22 +387,6 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
     models.unshift({ id: nextId++, originalKey: "", originalData: JSON.parse(JSON.stringify(data)), data, isNew: true, isDirty: true, status: "New row" });
     page = 1; search = ""; $search.value = "";
     render();
-  });
-
-  $deleteBtn.addEventListener("click", async () => {
-    const orgId = orgContext.get();
-    const targets = models.filter((m) => selected.has(m.id) && !m.isNew);
-    if (!targets.length) return;
-    if (!window.confirm(`Delete ${targets.length} row${targets.length === 1 ? "" : "s"} from "${table?.name}"? This cannot be undone.`)) return;
-    setStatus(`Deleting ${targets.length} row(s)…`);
-    let ok = 0, fail = 0;
-    for (const m of targets) {
-      try { await gc.deleteDataTableRow(api, orgId, tableId, m.originalKey); models = models.filter((x) => x !== m); selected.delete(m.id); ok++; }
-      catch (err) { m.status = `Error: ${err.message}`; fail++; }
-    }
-    render();
-    setStatus(fail ? `Deleted ${ok}, ${fail} failed.` : `✓ Deleted ${ok} row(s).`, fail ? "error" : "success");
-    logAction({ me, orgId, action: "datatable_supervisor", description: `Deleted rows in '${table?.name || tableId}' (Supervisor). Success: ${ok}, Failed: ${fail}`, result: fail ? "failure" : "success" });
   });
 
   // ── Saving ─────────────────────────────────────────────────────────
