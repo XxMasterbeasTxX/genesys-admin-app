@@ -80,6 +80,12 @@
       "customer": true
     },
     {
+      "key": "data-tables.supervisor",
+      "label": "Supervisor",
+      "section": "Data Tables",
+      "customer": true
+    },
+    {
       "key": "deployment.basic",
       "label": "Basic",
       "section": "Deployment",

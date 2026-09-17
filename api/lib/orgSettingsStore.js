@@ -1,17 +1,25 @@
 /**
- * Per-org settings the app owns. One today: the Supervisor scope.
+ * Per-org settings the app owns.
  *
- * The scope is the set of pages a Supervisor in that org may have AT ALL
- * (docs/customer-roles-design.md §2). A Supervisor's own pages are a subset
- * of it, and the intersection is computed at sign-in, so editing the scope
- * reaches every Supervisor without touching their rows.
+ * The Supervisor scope: the set of pages a Supervisor in that org may have
+ * AT ALL (docs/customer-roles-design.md §2). A Supervisor's own pages are a
+ * subset of it, and the intersection is computed at sign-in, so editing
+ * the scope reaches every Supervisor without touching their rows.
  *
  *   partitionKey  customer slug
  *   rowKey        "supervisorScope"
  *   features      JSON array of page access keys
  *   setBy, setByEmail, setAt
  *
- * Absent means empty. Nothing is deleted; a save overwrites.
+ * Data table rules: what a Supervisor may write into one table
+ * (docs/data-table-rules-design.md §4).
+ *
+ *   partitionKey  customer slug
+ *   rowKey        "dataTableRules|<tableId>"
+ *   rules         JSON (dataTableRules.normalizeRules shape)
+ *   setBy, setByEmail, setAt
+ *
+ * Absent means empty / no rules. Nothing is deleted; a save overwrites.
  */
 const { TableClient } = require("@azure/data-tables");
 
@@ -78,4 +86,33 @@ async function setSupervisorScope(orgId, features, by) {
   return { features: list, setAt };
 }
 
-module.exports = { getSupervisorScope, setSupervisorScope, TABLE_NAME };
+const RULES_PREFIX = "dataTableRules|";
+
+/** The rules for one table, or null when none are set. Raw JSON; the caller normalizes. */
+async function getDataTableRules(orgId, tableId) {
+  await ensureTable();
+  try {
+    const e = await getClient().getEntity(safeKey(orgId), RULES_PREFIX + safeKey(tableId));
+    return { rules: JSON.parse(e.rules || "{}"), setBy: e.setBy || "", setByEmail: e.setByEmail || "", setAt: e.setAt || null };
+  } catch (err) {
+    if (err.statusCode === 404) return null;
+    throw err;
+  }
+}
+
+/** Overwrite one table's rules. The caller has normalized them. */
+async function setDataTableRules(orgId, tableId, rules, by) {
+  await ensureTable();
+  const setAt = new Date().toISOString();
+  await getClient().upsertEntity({
+    partitionKey: safeKey(orgId),
+    rowKey:       RULES_PREFIX + safeKey(tableId),
+    rules:        JSON.stringify(rules || {}),
+    setBy:        (by && by.id) || "",
+    setByEmail:   (by && by.email) || "",
+    setAt,
+  }, "Replace");
+  return { rules, setAt };
+}
+
+module.exports = { getSupervisorScope, setSupervisorScope, getDataTableRules, setDataTableRules, TABLE_NAME };

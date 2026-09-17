@@ -8,6 +8,48 @@ const {
 const { checkCustomerRequest, checkFeatureRequest } = require("../lib/entitlementAllowlist");
 const { checkLicense } = require("../lib/licenseGate");
 const { checkProxyPermission } = require("../lib/proxyPermissions");
+const { parseRowWrite, checkRowWrite, normalizeRules, EMPTY_RULES } = require("../lib/dataTableRules");
+const orgSettings = require("../lib/orgSettingsStore");
+
+// ── Data table rules, for Supervisors ─────────────────────────────────────
+// A Supervisor's row write into a data table is checked against the table's
+// rules (docs/data-table-rules-design.md §7): may they add/delete, is a
+// protected column unchanged, a mandatory one filled, a lookup value one
+// that exists. The reads the check needs run with the same credentials the
+// write would. Rules are cached per org+table for the licence window.
+const RULES_TTL_MS = 5 * 60 * 1000;
+const rulesCache = new Map();
+async function rulesFor(orgId, tableId) {
+  const key = `${orgId}|${tableId}`;
+  const hit = rulesCache.get(key);
+  if (hit && Date.now() < hit.expiresAt) return hit.rules;
+  const row = await orgSettings.getDataTableRules(orgId, tableId);
+  const rules = row ? normalizeRules(row.rules) : EMPTY_RULES;
+  rulesCache.set(key, { rules, expiresAt: Date.now() + RULES_TTL_MS });
+  return rules;
+}
+
+/**
+ * Refuse a Supervisor's data table row write that breaks the table's rules.
+ * @returns {Promise<object|null>} a response to send, or null to proceed.
+ */
+async function guardDataTableWrite(context, { orgId, features, method, path, body, region, token }) {
+  if (!Array.isArray(features)) return null;                  // not a Supervisor
+  const write = parseRowWrite(method, path);
+  if (!write) return null;
+  let rules;
+  try {
+    rules = await rulesFor(orgId, write.tableId);
+  } catch (err) {
+    context.log.error(`[datatable-rules] rules read failed for ${orgId}/${write.tableId}: ${err.message || err}`);
+    return { status: 403, headers: { "Content-Type": "application/json" }, body: { error: "datatable_rule", detail: "The table's rules could not be read, so the change was not made. Try again." } };
+  }
+  const read = (m, p, opts = {}) => callGenesys({ region, token, method: m, path: p, query: opts.query, body: opts.body });
+  const verdict = await checkRowWrite({ ...write, body }, rules, read, write.tableId);
+  if (verdict.ok) return null;
+  context.log.warn(`[datatable-rules] refused ${method} ${path} for ${orgId}: ${verdict.detail}`);
+  return { status: 403, headers: { "Content-Type": "application/json" }, body: { error: verdict.error, detail: verdict.detail, column: verdict.column || "" } };
+}
 
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim();
 const ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -199,6 +241,12 @@ module.exports = async function (context, req) {
         return;
       }
 
+      // A Supervisor's data table row writes meet the table's rules.
+      const refused = await guardDataTableWrite(context, {
+        orgId: cust.id, features: licence.features, method, path, body, region: cust.region, token: userToken,
+      });
+      if (refused) { context.res = refused; return; }
+
       // Forward the user's OWN token to their OWN region (no elevation).
       const result = await callGenesys({
         region: cust.region,
@@ -259,6 +307,7 @@ module.exports = async function (context, req) {
     // unnamed colleague now gets no Genesys call through here. Superusers
     // pass; while INTERNAL_NAMED_USERS_ENFORCED is not "true" an unnamed
     // colleague passes and is logged.
+    let internalFeatures = null;   // an internal Supervisor's pages; null otherwise
     if (classification.mode === "internal") {
       const licence = await checkLicense(context, userToken, classification);
       if (!licence.licensed) {
@@ -286,6 +335,8 @@ module.exports = async function (context, req) {
         };
         return;
       }
+
+      internalFeatures = Array.isArray(licence.features) ? licence.features : null;
 
       // An internal Supervisor's pages, through the same coarse allowlist a
       // customer's are, under the same flag (docs/internal-roles-design.md
@@ -344,6 +395,12 @@ module.exports = async function (context, req) {
       clientId,
       clientSecret
     );
+
+    // An internal Supervisor's data table row writes meet the table's rules.
+    const refused = await guardDataTableWrite(context, {
+      orgId: customerId, features: internalFeatures, method, path, body, region: customer.region, token,
+    });
+    if (refused) { context.res = refused; return; }
 
     const result = await callGenesys({
       region: customer.region,

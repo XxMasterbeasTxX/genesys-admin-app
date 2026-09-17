@@ -37,6 +37,7 @@ export const FEATURE_WRITE_PERMISSIONS = Object.freeze({
   // ── Data Tables ──────────────────────────────────────
   "data-tables.create":           { create: ["architect:datatable:add"] },
   "data-tables.edit":             { schemaEdit: ["architect:datatable:edit"], rowsAdd: ["architect:datatableRow:add"], rowsEdit: ["architect:datatableRow:edit"], rowsDelete: ["architect:datatableRow:delete"], delete: ["architect:datatable:delete"] },
+  "data-tables.supervisor":       { rowsEdit: ["architect:datatableRow:edit"], rowsAdd: ["architect:datatableRow:add"], rowsDelete: ["architect:datatableRow:delete"] },
   "data-tables.copy.singleOrg":   { create: ["architect:datatable:add"] },
   "data-tables.copy.betweenOrgs": { create: ["architect:datatable:add"] },
 

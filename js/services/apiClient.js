@@ -79,8 +79,10 @@ export function createApiClient(getToken) {
     if (resp.status === 204) return null;
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      // Extract the cleanest error message from the Genesys response
-      const detail = json.message || json.error || json.messageWithParams || "";
+      // Extract the cleanest error message from the Genesys response. A
+      // refusal by the app's own rules (a Supervisor's data table write)
+      // carries its sentence in `detail`; Genesys's own errors in `message`.
+      const detail = json.message || json.detail || json.error || json.messageWithParams || "";
       const err = new Error(detail || `Proxy ${method} ${path} → ${resp.status}`);
       err.status = resp.status;
       err.body = json;

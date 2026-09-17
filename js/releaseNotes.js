@@ -21,6 +21,34 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "6.1",
+    date: "2026-09-17",
+    title: "Data Tables: rules for Supervisors, and a Supervisor page",
+    changes: [
+      "An Administrator can now set rules on a data table so that a Supervisor editing its rows cannot make a "
+        + "mistake. On Data Tables › Edit, in Schema mode, each column has four new controls beside its "
+        + "default: a Lookup (Data Table, Queue, Skill, Schedule Group, Schedule or Group), and Protected, "
+        + "Mandatory and Hidden ticks. A Lookup means the value must be one that exists — the name of a queue in "
+        + "the org, say, or a key of another data table (choose which); Protected means the value cannot be "
+        + "changed; Mandatory means it cannot be left empty; Hidden means the column is not shown at all. "
+        + "Above the columns, two switches say whether Supervisors may add rows and delete rows — both off "
+        + "unless you turn them on. The rules are saved with Save Schema.",
+      "A new page, Data Tables › Supervisor, is where a Supervisor edits rows. Pick a table and the rules "
+        + "apply: a lookup column is a dropdown of the allowed values instead of a text box — no typing, so no "
+        + "misspelling and no stray space — a protected column is plain text, a mandatory one blocks saving "
+        + "the row until it is filled, a hidden one is absent. A value that is already outside the list (a "
+        + "queue since renamed, a value typed before the rule) is shown as such and can be left alone; the "
+        + "moment it is changed, only listed values remain. The page is one in the Supervisor scope: tick it "
+        + "for the Supervisors who should have it.",
+      "The rules bind Supervisors, not Administrators: Data Tables › Edit still edits freely and shows the "
+        + "rules only as hints under the column headers. And they hold on the server, not just on the page — "
+        + "a Supervisor's row write is checked against the table's rules before it reaches Genesys, with the "
+        + "refusal naming the column, so a rule cannot be worked around with a direct call.",
+      "Who sets rules: an Administrator of the organisation; for Netdesign staff, anyone with the Data Tables "
+        + "› Edit page. Every change is in the Activity Log with the rules before and after.",
+    ],
+  },
+  {
     version: "6.0",
     date: "2026-09-16",
     title: "Who may use the app: named colleagues, and customer Administrators and Supervisors (internal)",
