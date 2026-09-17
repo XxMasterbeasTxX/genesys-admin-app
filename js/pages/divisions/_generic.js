@@ -31,30 +31,7 @@ import { escapeHtml, sleep, makeStatus } from "../../utils.js";
 import { logAction } from "../../services/activityLogService.js";
 import { getRouteAccessMap } from "../../navConfig.js";
 import { getRequiredPermissions } from "../../featurePermissionMap.js";
-
-/**
- * Genesys refuses a move into a division the caller's role does not cover
- * with a sentence built for its own UI — "You must have at least one of the
- * following permissions assigned: [] in at least one of the following
- * division(s): [<id>]" — the permission list often empty, the division an
- * id. A role in Genesys is granted per division, so holding the permission
- * in the source division is not holding it in the target. Say that, name
- * the division, and name the permission the page maps for this object.
- *
- * @returns {string|null} the plain-language detail, or null if the message
- *   is not that refusal.
- */
-function explainDivisionRefusal(message, { divisionById, targetId, targetName, permissions }) {
-  const m = /in at least one of the following division\(s\):\s*\[([^\]]*)\]/i.exec(String(message || ""));
-  if (!m) return null;
-  const ids = m[1].split(",").map((x) => x.trim()).filter(Boolean);
-  const names = ids.map((id) => divisionById.get(id)?.name || (id === targetId ? targetName : null) || id);
-  const where = names.length ? names.join(", ") : targetName;
-  const perm  = permissions.length ? ` (${permissions.join(" or ")})` : "";
-  return `Your role does not cover the ${where} division. Moving into a division needs the permission${perm} `
-    + `granted in that division, and in Genesys a role is granted per division — having it in the source division is not enough. `
-    + `Ask your administrator to add ${where} to the divisions of your role.`;
-}
+import { explainDivisionRefusal } from "../../lib/genesysErrors.js";
 
 export default function renderDivisionPage(ctx, cfg) {
   const { api, orgContext, me, route } = ctx;
@@ -414,8 +391,14 @@ export default function renderDivisionPage(ctx, cfg) {
         results.push({ item, ok: true, detail: `→ ${targetName}` });
         ok++;
       } catch (err) {
-        const explained = explainDivisionRefusal(err.message, { divisionById, targetId, targetName, permissions: movePermissions });
-        results.push({ item, ok: false, detail: explained || err.message, raw: explained ? err.message : "" });
+        // The API client already says this in plain words; the page knows two
+        // things more — every division's name, and the permission it maps —
+        // so it says it again with those.
+        const raw = err.genesysMessage || err.message;
+        const names = Object.fromEntries([...divisionById].map(([id, d]) => [id, d.name]));
+        if (targetId && !names[targetId]) names[targetId] = targetName;
+        const explained = explainDivisionRefusal(raw, { divisionNames: names, permissions: movePermissions });
+        results.push({ item, ok: false, detail: explained || err.message, raw: explained ? raw : "" });
         fail++;
       }
 

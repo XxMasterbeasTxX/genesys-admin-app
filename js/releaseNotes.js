@@ -21,19 +21,6 @@
  */
 export const RELEASE_NOTES = [
   {
-    version: "6.1",
-    date: "2026-09-17",
-    title: "Divisions: a refusal by division, in plain words",
-    changes: [
-      "When a move into a division fails because your role does not cover that division, the Detail column "
-        + "now says so — naming the division and the permission needed — instead of Genesys's own sentence, "
-        + "which reads “at least one of the following permissions: [] in at least one of the following "
-        + "division(s): [an id]”. In Genesys a role is granted per division, so holding the permission in the "
-        + "source division is not holding it in the target; the fix is to add the target division to your "
-        + "role. Genesys's original wording is kept in the cell's tooltip.",
-    ],
-  },
-  {
     version: "6.0",
     date: "2026-09-16",
     title: "Who may use the app: named colleagues, and customer Administrators and Supervisors (internal)",

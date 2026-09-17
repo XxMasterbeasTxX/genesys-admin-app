@@ -1,4 +1,5 @@
 import { CONFIG } from "../config.js";
+import { parseDivisionRefusal, explainDivisionRefusal } from "../lib/genesysErrors.js";
 
 /**
  * Minimal API client for the Genesys Admin Tool.
@@ -83,9 +84,37 @@ export function createApiClient(getToken) {
       const err = new Error(detail || `Proxy ${method} ${path} → ${resp.status}`);
       err.status = resp.status;
       err.body = json;
+      // The division refusal, said in plain words with the division named —
+      // once, here, for every page (js/lib/genesysErrors.js). The original
+      // sentence stays on the error for anyone who needs to quote it.
+      const parsed = parseDivisionRefusal(detail);
+      if (parsed) {
+        err.genesysMessage = detail;
+        err.message = explainDivisionRefusal(detail, { divisionNames: await divisionNames(customerId, parsed.divisionIds) });
+      }
       throw err;
     }
     return json;
+  }
+
+  // Division names for the refusal above: one read per id, remembered for
+  // the session. Best effort — an id that cannot be read stays an id.
+  const divisionNameCache = new Map();
+  async function divisionNames(customerId, ids) {
+    const out = {};
+    for (const id of ids) {
+      const key = `${customerId}|${id}`;
+      if (!divisionNameCache.has(key)) {
+        let name = "";
+        try {
+          const d = await proxyGenesys(customerId, "GET", `/api/v2/authorization/divisions/${encodeURIComponent(id)}`);
+          name = (d && d.name) || "";
+        } catch { /* leave it an id */ }
+        divisionNameCache.set(key, name);
+      }
+      if (divisionNameCache.get(key)) out[id] = divisionNameCache.get(key);
+    }
+    return out;
   }
 
   return {
