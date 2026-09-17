@@ -287,8 +287,8 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
             <label class="dt-label" for="dteKey">Key</label>
             <input class="dt-input" id="dteKey" type="text" readonly style="opacity:0.6;cursor:not-allowed" />
             <span class="dt-field-hint">Primary key column — cannot be changed on an existing table.</span>
-            <div class="dte-key-rule">
-              <span class="dt-field-hint" style="margin:0">Supervisor lookup for new rows' keys:</span>
+            <div class="dte-key-rule" id="dteKeyRule">
+              <span class="dt-field-hint" style="margin:0" title="Only matters when Supervisors may add rows: the key of a new row must then be chosen from this lookup.">Supervisor lookup for new rows' keys:</span>
               <select class="dt-select dtc-rule-lookup" id="dteKeyLookup">${LOOKUP_OPTIONS_HTML}</select>
               <select class="dt-select dtc-rule-table" id="dteKeyLookupTable" hidden></select>
             </div>
@@ -482,6 +482,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     _rules = rules || EMPTY_RULES;
     $mayAddRows.checked = !!_rules.mayAddRows;
     $mayDeleteRows.checked = !!_rules.mayDeleteRows;
+    syncKeyRule();
     const keyRule = _rules.columns.key || null;
     $keyLookupTable.innerHTML = lookupTableOptions(_currentTableId);
     $keyLookup.value = keyRule ? keyRule.lookup : "";
@@ -506,6 +507,18 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   }
 
   wireLookupPair($keyLookup, $keyLookupTable, null);
+
+  // The key lookup only matters when Supervisors may add rows (an existing
+  // row's key is always protected); it is greyed until they may.
+  function syncKeyRule() {
+    const on = $mayAddRows.checked;
+    $keyLookup.disabled = !on;
+    $keyLookupTable.disabled = !on;
+    el.querySelector("#dteKeyRule").style.opacity = on ? "" : "0.5";
+    el.querySelector("#dteKeyRule").title = on ? "" : "Tick \"may add rows\" to use this: an existing row's key is always protected.";
+  }
+  $mayAddRows.addEventListener("change", syncKeyRule);
+  syncKeyRule();
   const $addSchemaRowBtn = el.querySelector("#dteAddSchemaRow");
 
   const $rowsSearch = el.querySelector("#dteRowsSearch");

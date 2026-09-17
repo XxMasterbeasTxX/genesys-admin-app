@@ -38,16 +38,35 @@ const names = (list) => [...new Set((list || []).map((e) => e && e.name).filter(
  */
 async function fetchTableKeys(api, orgId, tableId) {
   const path = `/api/v2/flows/datatables/${encodeURIComponent(tableId)}/rows`;
-  const first = await api.proxyGenesys(orgId, "GET", path, { query: { pageSize: String(PAGE), pageNumber: "1" } });
-  const keys = (first.entities || []).map((r) => r && r.key).filter((k) => k != null).map(String);
+  // A brief row is meant to be `{ key }`; if it ever arrives as a single
+  // field under another name, that field is the key. If a page carries rows
+  // but no key can be read from them, fall back to full rows — heavier, but
+  // the Edit page proves those carry `key`.
+  const keyOf = (r) => {
+    if (!r || typeof r !== "object") return null;
+    if (r.key != null) return String(r.key);
+    const vals = Object.values(r);
+    return vals.length === 1 && vals[0] != null && typeof vals[0] !== "object" ? String(vals[0]) : null;
+  };
+  const fetchPage = (n, brief) => api.proxyGenesys(orgId, "GET", path, {
+    query: { pageSize: String(PAGE), pageNumber: String(n), ...(brief ? {} : { showbrief: "false" }) },
+  });
+  let brief = true;
+  let first = await fetchPage(1, true);
+  let firstKeys = (first.entities || []).map(keyOf).filter((k) => k != null);
+  if ((first.entities || []).length && !firstKeys.length) {
+    console.warn("[dataTableLookups] brief rows carried no readable key; falling back to full rows", first.entities[0]);
+    brief = false;
+    first = await fetchPage(1, false);
+    firstKeys = (first.entities || []).map(keyOf).filter((k) => k != null);
+  }
+  const keys = firstKeys;
   const pageCount = Number(first.pageCount) || 1;
   for (let p = 2; p <= pageCount; p += PARALLEL) {
     const batch = [];
-    for (let q = p; q < p + PARALLEL && q <= pageCount; q++) {
-      batch.push(api.proxyGenesys(orgId, "GET", path, { query: { pageSize: String(PAGE), pageNumber: String(q) } }));
-    }
+    for (let q = p; q < p + PARALLEL && q <= pageCount; q++) batch.push(fetchPage(q, brief));
     for (const resp of await Promise.all(batch)) {
-      for (const r of resp.entities || []) if (r && r.key != null) keys.push(String(r.key));
+      for (const r of resp.entities || []) { const k = keyOf(r); if (k != null) keys.push(k); }
     }
   }
   return [...new Set(keys)].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
