@@ -1105,6 +1105,9 @@ export default function renderConfigureUsers({ route, me, api, orgContext, acces
               ? r.divisions.map((d) => `<span class="cu-div-tag">${escapeHtml(d.divisionName)}</span>`).join("")
               : `<span class="muted" style="font-size:12px">No divisions selected</span>`;
           }
+          // A role without divisions holds the Apply button; choosing them is
+          // what releases it, so this is the change that has to re-evaluate.
+          updateApplyButton();
         },
       });
       divSelect.setItems(allDivisions.map((d) => ({ id: d.id, label: d.name })));
