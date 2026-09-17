@@ -63,6 +63,16 @@ export const RELEASE_NOTES = [
         + "SUPERUSER_IDS app setting) can add to it or remove from it. Nobody was seeded: everyone, including "
         + "the people who built the app, has to be added by a superuser. Superusers themselves need no row and "
         + "can never be locked out by anything editable in the app.",
+      "In the internal organisation a colleague now sees and changes only the divisions their own role is "
+        + "granted in, as they would in Genesys itself. A Genesys grant is a role in a division: holding queue "
+        + "edit in division Y has always meant Y only, but the app's internal calls run on its own OAuth "
+        + "client, which holds it everywhere, so the app checked the permission and not the division. Now "
+        + "every list is filtered to the colleague's divisions for the permission the page needs, the "
+        + "divisions dropdowns show only theirs, and a change to an object outside them is refused before it "
+        + "reaches Genesys, with the division named. A role granted in “all divisions” is unaffected. "
+        + "Customer sessions never needed this — their calls carry the user's own token — and an internal "
+        + "colleague working on a customer organisation still acts through that organisation's OAuth client, "
+        + "as before.",
       "Internal colleagues carry the same two roles as customer users, chosen when they are added: "
         + "Administrator — every page except Onboarding, as everyone had until now — or Supervisor — only the "
         + "pages ticked for them from the internal organisation's own Supervisor scope, which a superuser "

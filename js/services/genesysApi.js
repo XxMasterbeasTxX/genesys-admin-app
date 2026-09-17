@@ -58,8 +58,11 @@ export async function fetchAllPages(api, orgId, path, opts = {}) {
     if (total === null) total = resp.total ?? null;
     if (onProgress) onProgress(all.length, total);
 
-    // No more pages?
-    if (items.length < pageSize || page >= (resp.pageCount ?? page)) break;
+    // No more pages? Trust pageCount when Genesys sends one: a page can be
+    // short of pageSize and not the last — the proxy filters an internal
+    // user's list to their divisions (docs/division-scope-design.md §4).
+    const last = resp.pageCount != null ? page >= resp.pageCount : items.length < pageSize;
+    if (last) break;
 
     // Cancelled between pages. Callers that hand in `shouldStop` get a real
     // stop rather than a cosmetic one: previously Cancel only set a flag that

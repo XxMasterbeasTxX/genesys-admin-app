@@ -9,6 +9,9 @@ const { checkCustomerRequest, checkFeatureRequest } = require("../lib/entitlemen
 const { checkLicense } = require("../lib/licenseGate");
 const { checkProxyPermission } = require("../lib/proxyPermissions");
 const { parseRowWrite, checkRowWrite, normalizeRules, EMPTY_RULES } = require("../lib/dataTableRules");
+const { requiredFor } = require("../lib/proxyPermissions");
+const divisionScope = require("../lib/divisionScope");
+const { INTERNAL_ORG_SLUG } = require("../lib/licenseGate");
 const orgSettings = require("../lib/orgSettingsStore");
 
 // ── Data table rules, for Supervisors ─────────────────────────────────────
@@ -308,6 +311,7 @@ module.exports = async function (context, req) {
     // pass; while INTERNAL_NAMED_USERS_ENFORCED is not "true" an unnamed
     // colleague passes and is logged.
     let internalFeatures = null;   // an internal Supervisor's pages; null otherwise
+    let divisionGrants = null;     // the person's grants by division, for the internal org (docs/division-scope-design.md)
     if (classification.mode === "internal") {
       const licence = await checkLicense(context, userToken, classification);
       if (!licence.licensed) {
@@ -337,6 +341,16 @@ module.exports = async function (context, req) {
       }
 
       internalFeatures = Array.isArray(licence.features) ? licence.features : null;
+
+      // In the internal org, the person's own divisions bound what they see
+      // and change. Superusers bypass; an unreadable grant set refuses.
+      if (!licence.superuser && customerId === INTERNAL_ORG_SLUG) {
+        divisionGrants = await divisionScope.grantsFor(userToken, classification.org && classification.org.region);
+        if (!divisionGrants) {
+          context.res = { status: 403, headers: { "Content-Type": "application/json" }, body: { error: "divisions_unverified" } };
+          return;
+        }
+      }
 
       // An internal Supervisor's pages, through the same coarse allowlist a
       // customer's are, under the same flag (docs/internal-roles-design.md
@@ -402,6 +416,33 @@ module.exports = async function (context, req) {
     });
     if (refused) { context.res = refused; return; }
 
+    // The person's divisions, in the internal org: a write outside them is
+    // refused before it goes; a read is filtered after it returns.
+    const divRequired = divisionGrants ? requiredFor(method, path) : null;
+    const divRead = (p) => callGenesys({ region: customer.region, token, method: "GET", path: p });
+    const divisionRefusal = (divisionId, required) => {
+      const name = divisionGrants.divisionNames.get(divisionId) || divisionId || "that";
+      const perms = [].concat(required || []).filter(Boolean);
+      return {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+        body: {
+          error: "division_required", division: name, required: perms,
+          detail: `Your role does not cover the ${name} division. This action needs the permission${perms.length ? ` (${perms.join(" or ")})` : ""} granted in that division, `
+            + `and in Genesys a role is granted per division — having it in another division is not enough. Ask your administrator to add ${name} to the divisions of your role.`,
+        },
+      };
+    };
+    if (divisionGrants && divRequired) {
+      const home = await divisionScope.homeDivisionFor(divRead, customerId);
+      const verdict = await divisionScope.checkWrite({ method, path, body, grants: divisionGrants, required: [].concat(divRequired), read: divRead, homeDivisionId: home });
+      if (!verdict.ok) {
+        context.log.warn(`[division-scope] refused ${method} ${path} — division ${verdict.divisionId}`);
+        context.res = divisionRefusal(verdict.divisionId, divRequired);
+        return;
+      }
+    }
+
     const result = await callGenesys({
       region: customer.region,
       token,
@@ -411,6 +452,12 @@ module.exports = async function (context, req) {
       query,
       raw,
     });
+    const isRead = String(method).toUpperCase() === "GET" || /\/(search|query)$/i.test(String(path).split("?")[0]);
+    if (divisionGrants && !raw && isRead && result && result.status === 200) {
+      const f = divisionScope.filterResponse({ path, body: result.body, grants: divisionGrants, required: divRequired ? [].concat(divRequired) : [] });
+      if (f.refused) { context.res = divisionRefusal(f.divisionId, divRequired); return; }
+      result.body = f.body;
+    }
     context.res = result;
   } catch (err) {
     context.log.error("Proxy error:", err);
