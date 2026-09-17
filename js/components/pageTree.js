@@ -5,7 +5,8 @@
  *
  * Used twice (docs/customer-roles-design.md §8): on Supervisor Access for the
  * org's scope, and on Customers › Access for a Supervisor's own pages, where
- * it is given the scope's pages only.
+ * it is given the scope's pages only — and, under Data Tables › Supervisor,
+ * their data tables (`extras`).
  *
  * Usage:
  *   const tree = createPageTree({ tree: customerPageTree(), onChange });
@@ -21,8 +22,13 @@ import { leavesOf } from "../services/customerPageTree.js";
  * @param {Array}    opts.tree        From customerPageTree() or pruneTree().
  * @param {Function} [opts.onChange]  Called with string[] after every change.
  * @param {boolean}  [opts.open]      Start with every group expanded (default true).
+ * @param {Object<string, HTMLElement>} [opts.extras]
+ *        An element to draw under a page, indented, shown only while that
+ *        page is ticked — the data tables under Data Tables › Supervisor.
+ *        Whatever the element contains is the caller's; the tree only shows
+ *        and hides it.
  */
-export function createPageTree({ tree, onChange, open = true }) {
+export function createPageTree({ tree, onChange, open = true, extras = {} }) {
   const el = document.createElement("div");
   el.className = "pt-tree";
 
@@ -30,6 +36,8 @@ export function createPageTree({ tree, onChange, open = true }) {
   const leafBoxes = new Map();
   /** @type {Array<{ box: HTMLInputElement, keys: string[] }>} */
   const groupBoxes = [];
+  /** @type {Array<{ key: string, el: HTMLElement, li: HTMLElement }>} */
+  const extraBoxes = [];
   const order = tree.flatMap(leavesOf).map((l) => l.key);
   let enabled = true;
 
@@ -66,6 +74,13 @@ export function createPageTree({ tree, onChange, open = true }) {
         box.addEventListener("change", changed);
         label.append(box, document.createTextNode(` ${n.label}`));
         li.append(label);
+        if (extras[n.key]) {
+          const extra = document.createElement("div");
+          extra.className = "pt-extra";
+          extra.append(extras[n.key]);
+          li.append(extra);
+          extraBoxes.push({ key: n.key, el: extra, li });
+        }
       }
       ul.append(li);
     }
@@ -73,6 +88,7 @@ export function createPageTree({ tree, onChange, open = true }) {
   }
 
   function syncGroups() {
+    for (const x of extraBoxes) x.el.hidden = !leafBoxes.get(x.key).checked;
     for (const g of groupBoxes) {
       const on = g.keys.filter((k) => leafBoxes.get(k).checked).length;
       g.box.checked = on === g.keys.length && g.keys.length > 0;
@@ -111,7 +127,14 @@ export function createPageTree({ tree, onChange, open = true }) {
   el.append(build(tree));
   syncGroups();
 
-  return { el, getSelected, setSelected, setEnabled, selectAll, size: order.length };
+  /** Open every group on the way to a page, so what is under it can be seen. */
+  function reveal(key) {
+    const box = leafBoxes.get(key);
+    if (!box) return;
+    for (let li = box.closest("li"); li; li = li.parentElement && li.parentElement.closest("li")) li.classList.add("open");
+  }
+
+  return { el, getSelected, setSelected, setEnabled, selectAll, reveal, has: (key) => leafBoxes.has(key), size: order.length };
 }
 
 /** The section › page names for a list of keys, for a confirm step. */
@@ -145,6 +168,7 @@ export function ensurePageTreeStyles() {
     .pt-count { color: var(--muted); font-weight: 400; font-size: 12px; }
     .pt-toggle { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; display: inline-block; transition: transform .15s ease; }
     .pt-group.open > .pt-toggle { transform: rotate(90deg); }
+    .pt-extra { margin: 2px 0 6px 32px; }
     .pt-tree.is-disabled .pt-label { color: var(--muted); cursor: default; }
     .pt-tree.is-disabled .pt-label:hover { background: transparent; }
   `;

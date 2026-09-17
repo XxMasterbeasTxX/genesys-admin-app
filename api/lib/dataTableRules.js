@@ -162,4 +162,42 @@ async function checkRowWrite(write, rules, read, tableId) {
   return { ok: true };
 }
 
-module.exports = { LOOKUPS, normalizeRules, EMPTY_RULES, parseRowWrite, checkRowWrite, lookupExists };
+// ── A Supervisor's own tables ─────────────────────────────────────────────
+// A Supervisor with the Supervisor page carries a list of data tables
+// (docs/data-table-rules-design.md §11). A call on one table — its schema,
+// its rows — is theirs to make only for a table in the list, with one
+// exception: reading a table one of THEIR tables looks keys up in, since
+// the dropdown values come from there. The list itself (`GET
+// /flows/datatables`) is not touched: it is what other pages use, and the
+// Supervisor page narrows it to the list on its own.
+
+const TABLE_PATH = /^\/api\/v2\/flows\/datatables\/([^/?]+)(?:\/.*)?$/i;
+
+/**
+ * May this Supervisor make this call?
+ * @param {{ method: string, path: string, dataTables: string[]|null, rulesOf: (tableId: string) => Promise<object> }} args
+ *        `rulesOf` reads a table's normalized rules (the proxy's cached read).
+ * @returns {Promise<{ ok: true } | { ok: false, error: string, detail: string }>}
+ */
+async function checkTableAccess({ method, path, dataTables, rulesOf }) {
+  if (!Array.isArray(dataTables)) return { ok: true };        // not a Supervisor with a list
+  const m = TABLE_PATH.exec(String(path || ""));
+  if (!m) return { ok: true };                                // not one table
+  let tableId = m[1];
+  try { tableId = decodeURIComponent(tableId); } catch { /* as sent */ }
+  if (dataTables.includes(tableId)) return { ok: true };
+  if (String(method || "").toUpperCase() === "GET") {
+    // A lookup target of one of their tables: readable, never writable.
+    for (const own of dataTables) {
+      const rules = await rulesOf(own);
+      const targets = Object.values((rules && rules.columns) || {}).filter((r) => r.lookup === "dataTable").map((r) => r.tableId);
+      if (targets.includes(tableId)) return { ok: true };
+    }
+  }
+  return {
+    ok: false, error: "table_not_assigned",
+    detail: "This data table is not one of yours. An Administrator chooses which data tables a Supervisor may open, on the users list.",
+  };
+}
+
+module.exports = { LOOKUPS, normalizeRules, EMPTY_RULES, parseRowWrite, checkRowWrite, lookupExists, checkTableAccess };

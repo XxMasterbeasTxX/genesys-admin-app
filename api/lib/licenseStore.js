@@ -16,6 +16,10 @@
  *   role          "administrator" or "supervisor", required on add for both
  *                 kinds of org (docs/customer-roles-design.md §4,
  *                 docs/internal-roles-design.md §3).
+ *   dataTables    JSON array of data table ids — a supervisor's own tables,
+ *                 chosen with the Data Tables › Supervisor page; a subset of
+ *                 the tables the org has made visible to Supervisors
+ *                 (docs/data-table-rules-design.md §11). Absent = none.
  *   features      JSON array of page access keys — a supervisor's own pages,
  *                 a subset of the org's Supervisor scope. [] otherwise.
  *   managesCustomers
@@ -91,6 +95,7 @@ function entityToRow(e) {
     revokedAt:  e.revokedAt || null,
     role:       legacyManager ? "administrator" : (e.role || ""),
     features:   parseFeatures(e.features),
+    dataTables: parseFeatures(e.dataTables),
     managesCustomers: legacyManager || e.managesCustomers === "true",
     // The last change to the row after the add — a role or pages edit, or
     // the customer-manager tick on an internal row. Null until there is one.
@@ -147,7 +152,7 @@ async function activeRow(customerId, userId) {
  * @param {{ id: string, email?: string, name?: string }} by   the caller's VERIFIED identity
  * @returns {Promise<{ row: object, created: boolean }>}
  */
-async function assign(customerId, user, by, { role = "", features = [], managesCustomers = false } = {}) {
+async function assign(customerId, user, by, { role = "", features = [], dataTables = [], managesCustomers = false } = {}) {
   const rows = await listRows(customerId);
   const existing = rows.find((r) => r.userId === user.id && !r.revokedAt);
   if (existing) return { row: existing, created: false };
@@ -165,6 +170,7 @@ async function assign(customerId, user, by, { role = "", features = [], managesC
     assignedAt,
     role:         role || "",
     features:     JSON.stringify(Array.isArray(features) ? features : []),
+    dataTables:   JSON.stringify(Array.isArray(dataTables) ? dataTables : []),
     managesCustomers: managesCustomers ? "true" : "",
   };
   await getClient().createEntity(entity);
@@ -181,13 +187,15 @@ async function assign(customerId, user, by, { role = "", features = [], managesC
  *
  * @returns {Promise<{ row: object|null, changed: boolean }>}
  */
-async function setRole(customerId, userId, role, by, features = null) {
+async function setRole(customerId, userId, role, by, features = null, dataTables = null) {
   const active = await activeRow(customerId, userId);
   if (!active) return { row: null, changed: false };
   const nextFeatures = Array.isArray(features) ? [...features].sort() : [];
+  const nextTables = Array.isArray(dataTables) ? [...dataTables].sort() : [];
   const sameRole = (active.role || "") === (role || "");
   const sameFeatures = JSON.stringify([...(active.features || [])].sort()) === JSON.stringify(nextFeatures);
-  if (sameRole && sameFeatures) return { row: active, changed: false };
+  const sameTables = JSON.stringify([...(active.dataTables || [])].sort()) === JSON.stringify(nextTables);
+  if (sameRole && sameFeatures && sameTables) return { row: active, changed: false };
   const roleSetAt = new Date().toISOString();
   await getClient().updateEntity(
     {
@@ -195,6 +203,7 @@ async function setRole(customerId, userId, role, by, features = null) {
       rowKey:       `${safeKey(userId)}|${active.assignedAt}`,
       role:         role || "",
       features:     JSON.stringify(nextFeatures),
+      dataTables:   JSON.stringify(nextTables),
       managesCustomers: active.managesCustomers ? "true" : "",
       roleSetBy:    by.id || "",
       roleSetByEmail: by.email || "",
@@ -206,7 +215,7 @@ async function setRole(customerId, userId, role, by, features = null) {
   );
   return {
     row: {
-      ...active, role: role || "", features: nextFeatures,
+      ...active, role: role || "", features: nextFeatures, dataTables: nextTables,
       modifiedBy: by.id || "", modifiedByEmail: by.email || "", modifiedByName: by.name || "",
       modifiedByOrg: by.org || "internal", modifiedAt: roleSetAt,
     },

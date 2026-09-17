@@ -394,6 +394,7 @@ async function resolveOrgConfig(context, req) {
         // A supervisor's effective pages; null for an administrator or a
         // superuser (docs/internal-roles-design.md §5).
         features: licence.features || null,
+        dataTables: licence.dataTables || null,
         managesCustomers: !!licence.superuser || !!licence.managesCustomers,
         internalOrgSlug: INTERNAL_ORG_SLUG,
         org: classification.org,
@@ -439,6 +440,9 @@ async function resolveOrgConfig(context, req) {
         // org's entitlements; the role opens the Administrator section.
         entitlements: licence.features || classification.entitlements,
         role: licence.role || "",
+        // A supervisor's data tables (null for an administrator): the
+        // Supervisor page offers only these.
+        dataTables: licence.dataTables || null,
       },
     };
   }

@@ -8,7 +8,7 @@ const {
 const { checkCustomerRequest, checkFeatureRequest } = require("../lib/entitlementAllowlist");
 const { checkLicense } = require("../lib/licenseGate");
 const { checkProxyPermission } = require("../lib/proxyPermissions");
-const { parseRowWrite, checkRowWrite, normalizeRules, EMPTY_RULES } = require("../lib/dataTableRules");
+const { parseRowWrite, checkRowWrite, checkTableAccess, normalizeRules, EMPTY_RULES } = require("../lib/dataTableRules");
 const { requiredFor } = require("../lib/proxyPermissions");
 const divisionScope = require("../lib/divisionScope");
 const { INTERNAL_ORG_SLUG } = require("../lib/licenseGate");
@@ -33,11 +33,19 @@ async function rulesFor(orgId, tableId) {
 }
 
 /**
- * Refuse a Supervisor's data table row write that breaks the table's rules.
+ * Refuse a Supervisor's call on a data table that is not one of theirs
+ * (docs/data-table-rules-design.md §11), and a row write that breaks the
+ * table's rules.
  * @returns {Promise<object|null>} a response to send, or null to proceed.
  */
-async function guardDataTableWrite(context, { orgId, features, method, path, body, region, token }) {
+async function guardDataTableWrite(context, { orgId, features, dataTables, method, path, body, region, token }) {
   if (!Array.isArray(features)) return null;                  // not a Supervisor
+  const access = await checkTableAccess({ method, path, dataTables, rulesOf: (id) => rulesFor(orgId, id) })
+    .catch((err) => ({ ok: false, error: "datatable_rule", detail: `The table's rules could not be read, so the call was not made. Try again. (${err.message || err})` }));
+  if (!access.ok) {
+    context.log.warn(`[datatable-rules] refused ${method} ${path} for ${orgId}: ${access.detail}`);
+    return { status: 403, headers: { "Content-Type": "application/json" }, body: { error: access.error, detail: access.detail } };
+  }
   const write = parseRowWrite(method, path);
   if (!write) return null;
   let rules;
@@ -246,7 +254,7 @@ module.exports = async function (context, req) {
 
       // A Supervisor's data table row writes meet the table's rules.
       const refused = await guardDataTableWrite(context, {
-        orgId: cust.id, features: licence.features, method, path, body, region: cust.region, token: userToken,
+        orgId: cust.id, features: licence.features, dataTables: licence.dataTables, method, path, body, region: cust.region, token: userToken,
       });
       if (refused) { context.res = refused; return; }
 
@@ -311,6 +319,7 @@ module.exports = async function (context, req) {
     // pass; while INTERNAL_NAMED_USERS_ENFORCED is not "true" an unnamed
     // colleague passes and is logged.
     let internalFeatures = null;   // an internal Supervisor's pages; null otherwise
+    let internalTables   = null;   // …and their data tables; null otherwise
     let divisionGrants = null;     // the person's grants by division, for the internal org (docs/division-scope-design.md)
     if (classification.mode === "internal") {
       const licence = await checkLicense(context, userToken, classification);
@@ -341,6 +350,7 @@ module.exports = async function (context, req) {
       }
 
       internalFeatures = Array.isArray(licence.features) ? licence.features : null;
+      internalTables   = Array.isArray(licence.dataTables) ? licence.dataTables : null;
 
       // In the internal org, the person's own divisions bound what they see
       // and change. Superusers bypass; an unreadable grant set refuses.
@@ -412,7 +422,7 @@ module.exports = async function (context, req) {
 
     // An internal Supervisor's data table row writes meet the table's rules.
     const refused = await guardDataTableWrite(context, {
-      orgId: customerId, features: internalFeatures, method, path, body, region: customer.region, token,
+      orgId: customerId, features: internalFeatures, dataTables: internalTables, method, path, body, region: customer.region, token,
     });
     if (refused) { context.res = refused; return; }
 

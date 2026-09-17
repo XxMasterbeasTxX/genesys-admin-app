@@ -39,6 +39,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map();
 
 const INTERNAL_ORG_SLUG = String(process.env.INTERNAL_ORG_SLUG || "demo").trim();
+const SUPERVISOR_TABLES_PAGE = "data-tables.supervisor";
 
 function internalEnforced() {
   return String(process.env.INTERNAL_NAMED_USERS_ENFORCED || "").trim().toLowerCase() === "true";
@@ -58,7 +59,9 @@ function tokenKey(token) {
  *
  * `role` is the row's role, "administrator" or "supervisor", for both kinds
  * of org; "superuser" for a superuser, who has no row. `features` is null
- * (an administrator — everything) or the supervisor's effective page keys.
+ * (an administrator — everything) or the supervisor's effective page keys;
+ * `dataTables` is the supervisor's effective data table ids when their pages
+ * include Data Tables › Supervisor, else null — no list, nothing bounded.
  * `managesCustomers` (internal only) is the row's capability to name users
  * for customer orgs; always true for a superuser. `unenforced` marks an
  * internal caller admitted only because INTERNAL_NAMED_USERS_ENFORCED is not
@@ -115,7 +118,7 @@ async function checkLicense(context, token, classification) {
       context?.log?.warn?.(`[license] row without a role treated as administrator: ${orgId} ${user.id}`);
       role = "administrator";
     }
-    let features = null;
+    let features = null, dataTables = null;
     if (role === "supervisor") {
       let scope;
       try {
@@ -126,8 +129,24 @@ async function checkLicense(context, token, classification) {
       }
       const own = new Set(Array.isArray(row.features) ? row.features : []);
       features = scope.filter((k) => own.has(k));
+      // Their data tables, the same way: the row's list ∩ the tables the org
+      // has made visible to Supervisors now, so an Administrator closing a
+      // table takes it from every Supervisor without touching their rows.
+      // Only when they hold the Supervisor page — the list means nothing
+      // otherwise (docs/data-table-rules-design.md §11).
+      if (features.includes(SUPERVISOR_TABLES_PAGE)) {
+        let allRules;
+        try {
+          allRules = await orgSettings.listDataTableRules(orgId);
+        } catch (err) {
+          context?.log?.error?.(`[license] data table rules read failed for ${orgId}: ${err.message || err}`);
+          return { licensed: false, reason: "license_check_failed", userId: user.id };
+        }
+        const ownTables = Array.isArray(row.dataTables) ? row.dataTables : [];
+        dataTables = ownTables.filter((id) => allRules[id] && allRules[id].visibleToSupervisors === true);
+      }
     }
-    value = { licensed: true, userId: user.id, role, features, superuser: false };
+    value = { licensed: true, userId: user.id, role, features, dataTables, superuser: false };
     if (internal) value.managesCustomers = !!row.managesCustomers;
   } else if (internal && !internalEnforced()) {
     // Reporting mode: admitted as an administrator, and said so, so the log

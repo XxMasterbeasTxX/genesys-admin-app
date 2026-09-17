@@ -34,6 +34,12 @@ export const RELEASE_NOTES = [
         + "Above the columns, two switches: whether the table is visible to Supervisors at all — no table is "
         + "until you tick it — and whether they may add rows; Supervisors never delete rows. The rules are "
         + "saved with Save Schema.",
+      "Which of those tables each Supervisor may open is chosen per user: on the users list, ticking the "
+        + "Data Tables › Supervisor page for a Supervisor shows the tables visible to Supervisors beneath it, "
+        + "one tick each — so one Supervisor can be given two tables and another five. At least one must be "
+        + "ticked with the page. A table an Administrator later closes to Supervisors leaves every "
+        + "Supervisor's list within five minutes. The Supervisor page offers only the tables the user was "
+        + "given, and the server refuses anything else.",
       "A new page, Data Tables › Supervisor, is where a Supervisor edits rows. Pick a table and the rules "
         + "apply: a lookup column is a dropdown of the allowed values instead of a text box — no typing, so no "
         + "misspelling and no stray space — a protected column is plain text, a mandatory one blocks saving "

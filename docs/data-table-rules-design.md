@@ -1,8 +1,8 @@
 # Data Table Rules — guided editing for Supervisors — Design
 
-Status: **Built** — agreed and built 2026-09-17. Test pass: [`docs/testing/data-table-rules-tests.md`](testing/data-table-rules-tests.md)
+Status: **Built** — agreed and built 2026-09-17; per-Supervisor tables (§11) added 2026-09-18. Test pass: [`docs/testing/data-table-rules-tests.md`](testing/data-table-rules-tests.md)
 Author: Genesys Admin App
-Last updated: 2026-09-17
+Last updated: 2026-09-18
 
 ## 0. The requirement
 
@@ -262,6 +262,75 @@ Answered by the recommendation unless the user says otherwise.
 - Lookups from other sources (users, divisions, wrap-up codes, flows) —
   the six named. Adding one later is a row in the table in §2 and one
   fetcher; the shape does not change.
-- Per-Supervisor rules. One set per table.
+- Per-Supervisor rules. One set per table. (Which tables a Supervisor may
+  open *is* per Supervisor — §11.)
 - Validating existing rows against new rules when they are saved
   ("3 rows currently violate this") — useful, later.
+
+## 11. Which tables each Supervisor may open (added 2026-09-18)
+
+In the user's words: "When providing pages to a supervisor (the individual
+user) and when ticking the page Data Tables › Supervisor, the available
+data tables should be there to be selected as well. In that way I can
+provide supervisor x access to 2 data tables and supervisor y access to 5
+data tables."
+
+The same shape as pages. The org's Supervisor scope says which pages a
+Supervisor *may* have and each row says which they *do* have; the two are
+intersected at sign-in. For tables:
+
+- **The org's table scope** is the "Visible to Supervisors" switch on Data
+  Tables › Edit (§2). Nothing new.
+- **Each Supervisor's row** carries `dataTables`: the ids of the tables
+  they were given, a column beside `features` in the licence table. Set
+  through the same `/api/licenses/role` and `/assign` calls, so it is
+  stamped as a role change and shows in Modified by / on, and logged with
+  the pages.
+- **Effective tables** at sign-in = the row's list ∩ the tables visible
+  to Supervisors *now* (`licenseGate.js`), only when their effective pages
+  include Data Tables › Supervisor. An Administrator closing a table takes
+  it from every Supervisor within five minutes, as unticking a page in the
+  scope does. Without the page there is no list (`null`): nothing bounded.
+
+**The control.** In the per-user page tree (add box and Edit), directly
+under the *Data Tables › Supervisor* leaf, indented behind a rule: the
+tables currently visible to Supervisors, one box each, sorted by name,
+with Tick all / Untick all and a count. Shown only while that page is
+ticked (`createPageTree`'s `extras`). On Edit, where the tree starts
+collapsed, the Data Tables section is opened when the row already has the
+page, so the tables are in view. The role cell reads "Supervisor · 5 pages
+· 2 data tables" with the names on hover; the add-confirmation names them.
+Customer Administrators get the same control on their own users; the
+internal org too.
+
+**Rules, as agreed.**
+
+1. Page ticked ⇒ at least one table ticked. The server refuses a
+   Supervisor with the page and no table (`tables_required`), as it
+   refuses one with no pages. If no table is visible to Supervisors yet,
+   the box says so and the page cannot be kept ticked.
+2. The server keeps only ids of tables *currently* visible to
+   Supervisors, read from the org's rules — never from the page — and the
+   reply says how many were dropped (`droppedTables`), as unknown pages
+   are dropped from a scope.
+3. **Server-side, for a Supervisor with a list** (`checkTableAccess` in
+   `dataTableRules.js`, run by the proxy's `guardDataTableWrite` on both
+   paths): a call on one table — `…/flows/datatables/{id}` or its rows —
+   is refused 403 `table_not_assigned` for a table outside the list, reads
+   and writes alike, with one exception: a `GET` on a table that is a
+   *Data Table lookup target* of one of their tables, since the dropdown
+   values are read from there. Reading only. Administrators and superusers
+   are untouched.
+4. **The list bounds only what the Supervisor page uses.** The table
+   listing itself (`GET /flows/datatables`) is not filtered on the server —
+   other pages a Supervisor may hold (Divisions › Data Tables, an export)
+   use it and give what they give; the Supervisor page narrows it
+   client-side to the list. "Why can't everything else be as normal?" — it
+   can, and is. A Supervisor without the Supervisor page is unchanged
+   entirely.
+5. No migration. A row with the page ticked and no list (dev only, from
+   the first day's testing) counts as no tables until edited; the users
+   list says "0 data tables" with "edit to choose" on hover.
+6. Folded into release note 6.1.
+
+**Test pass:** `docs/testing/data-table-rules-tests.md` §D.

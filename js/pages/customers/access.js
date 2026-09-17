@@ -45,8 +45,12 @@ import {
 } from "../../services/licenseService.js";
 import { pageTreeFor, pruneTree } from "../../services/customerPageTree.js";
 import { createPageTree, describePages, ensurePageTreeStyles } from "../../components/pageTree.js";
+import { listDataTableRules } from "../../services/dataTableRulesService.js";
+import * as gc from "../../services/genesysApi.js";
 
 const SEARCH_DEBOUNCE_MS = 250;
+/** The page whose tick brings a Supervisor's data tables with it. */
+const SUPERVISOR_TABLES_PAGE = "data-tables.supervisor";
 
 export default function renderCustomerAccess({ api, orgContext, access }) {
   ensurePageTreeStyles();
@@ -101,6 +105,15 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       .ca-role-pages { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
       .ca-role-pages-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; color:var(--muted); font-size:12px; }
       .ca-role-pages-head .ca-spacer { flex:1; }
+      /* A Supervisor's data tables, under the Data Tables › Supervisor page. */
+      .ca-tables { border-left:2px solid var(--border); padding:4px 0 4px 10px; font-size:13px; }
+      .ca-tables-head { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; margin-bottom:4px; flex-wrap:wrap; }
+      .ca-tables-head .ca-spacer { flex:1; }
+      .ca-tables-list { display:flex; flex-direction:column; gap:2px; max-height:220px; overflow:auto; }
+      .ca-tables-list label { display:inline-flex; align-items:center; gap:6px; padding:3px 6px; border-radius:6px; cursor:pointer; color:var(--text); }
+      .ca-tables-list label:hover { background: color-mix(in srgb, var(--accent-strong) 12%, transparent); }
+      .ca-tables-list input { margin:0; }
+      .ca-tables-note { color:var(--muted); font-size:12px; }
       .ca-edit-row td { background:color-mix(in srgb, var(--lift) 3%, transparent); }
       .ca-edit-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:10px; }
     </style>
@@ -154,6 +167,8 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
   let currentOrg = null;
   let licensed   = [];          // active rows for currentOrg
   let scope      = null;        // the org's Supervisor scope (customer orgs); null = not loaded
+  let tables     = null;        // [{ id, name }] the org has made visible to Supervisors; null = not loaded
+  let tablesError = "";         // why they could not be loaded, or ""
   let searchTimer = null;
   let searchSeq   = 0;          // drop stale responses
   let loadSeq     = 0;
@@ -211,12 +226,17 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     const $pages = box.querySelector(".ca-role-pages");
     const $pagesCount = box.querySelector(".ca-role-pages-count");
     const radios = [...box.querySelectorAll("input[type=radio]")];
-    const tree = createPageTree({ tree: pruneTree(fullTree, scope || []), onChange: () => refresh(), open });
+    const tablesCtl = createTablesControl(initial.dataTables || [], () => refresh());
+    const tree = createPageTree({
+      tree: pruneTree(fullTree, scope || []), onChange: () => refresh(), open,
+      extras: { [SUPERVISOR_TABLES_PAGE]: tablesCtl.el },
+    });
     box.querySelector(".ca-role-tree").append(tree.el);
     box.querySelector("[data-all]").addEventListener("click", () => tree.selectAll(true));
     box.querySelector("[data-none]").addEventListener("click", () => tree.selectAll(false));
 
     function role() { const r = radios.find((x) => x.checked); return r ? r.value : ""; }
+    function tablesPageTicked() { return tree.getSelected().includes(SUPERVISOR_TABLES_PAGE); }
 
     function refresh() {
       const r = role();
@@ -240,21 +260,89 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       radios.find((x) => x.value === initial.role).checked = true;
     }
     tree.setSelected(initial.features || []);
+    // A collapsed tree hides the tables under their page; when the row
+    // already has the page, open the way to them.
+    if (!open && tablesPageTicked()) tree.reveal(SUPERVISOR_TABLES_PAGE);
     refresh();
 
     return {
       el: box,
-      value() { const r = role(); return { role: r, features: r === "supervisor" ? tree.getSelected() : [] }; },
-      valid() { const r = role(); return r === "administrator" || (r === "supervisor" && tree.getSelected().length > 0); },
-      setEnabled(on) { radios.forEach((r) => { r.disabled = !on || (r.value === "supervisor" && scopeEmpty); }); tree.setEnabled(on); },
+      value() {
+        const r = role();
+        const features = r === "supervisor" ? tree.getSelected() : [];
+        return { role: r, features, dataTables: features.includes(SUPERVISOR_TABLES_PAGE) ? tablesCtl.getSelected() : [] };
+      },
+      valid() {
+        const r = role();
+        if (r === "administrator") return true;
+        if (r !== "supervisor" || !tree.getSelected().length) return false;
+        return !tablesPageTicked() || tablesCtl.getSelected().length > 0;
+      },
+      setEnabled(on) { radios.forEach((r) => { r.disabled = !on || (r.value === "supervisor" && scopeEmpty); }); tree.setEnabled(on); tablesCtl.setEnabled(on); },
     };
   }
 
+  /**
+   * The data tables a Supervisor may open, drawn under the Data Tables ›
+   * Supervisor page: one box per table the org has made visible to
+   * Supervisors (the "Visible to Supervisors" switch on Data Tables › Edit).
+   * At least one must be ticked while the page is; the server checks the
+   * same (docs/data-table-rules-design.md §11).
+   */
+  function createTablesControl(initialIds, onChange) {
+    const wrap = document.createElement("div");
+    wrap.className = "ca-tables";
+    const list = tables || [];
+    const uid = `cat${Math.random().toString(36).slice(2, 8)}`;
+    if (!list.length) {
+      wrap.innerHTML = `<div class="ca-tables-note">${tablesError
+        ? `The data tables could not be loaded: ${escapeHtml(tablesError)}`
+        : `No data table has been made visible to Supervisors yet, so this page cannot be given. An Administrator opens a table with "Visible to Supervisors" on Data Tables › Edit.`}</div>`;
+      return { el: wrap, getSelected: () => [], setEnabled() {} };
+    }
+    wrap.innerHTML = `
+      <div class="ca-tables-head">
+        <span class="ca-tables-count"></span>
+        <span class="ca-spacer"></span>
+        <button type="button" class="btn btn-secondary btn-sm" data-all>Tick all</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-none>Untick all</button>
+      </div>
+      <div class="ca-tables-list">
+        ${list.map((t, i) => `<label for="${uid}-${i}"><input id="${uid}-${i}" type="checkbox" value="${escapeHtml(t.id)}"> ${escapeHtml(t.name)}</label>`).join("")}
+      </div>`;
+    const boxes = [...wrap.querySelectorAll("input[type=checkbox]")];
+    const $count = wrap.querySelector(".ca-tables-count");
+    const initial = new Set(initialIds || []);
+    for (const b of boxes) b.checked = initial.has(b.value);
+    const getSelected = () => boxes.filter((b) => b.checked).map((b) => b.value);
+    function count() {
+      const n = getSelected().length;
+      $count.textContent = `${n} of ${boxes.length} data table${boxes.length === 1 ? "" : "s"} ticked${n ? "" : " — tick at least one"}`;
+    }
+    function changed() { count(); onChange(); }
+    boxes.forEach((b) => b.addEventListener("change", changed));
+    wrap.querySelector("[data-all]").addEventListener("click", () => { boxes.forEach((b) => { b.checked = true; }); changed(); });
+    wrap.querySelector("[data-none]").addEventListener("click", () => { boxes.forEach((b) => { b.checked = false; }); changed(); });
+    count();
+    return {
+      el: wrap, getSelected,
+      setEnabled(on) { boxes.forEach((b) => { b.disabled = !on; }); wrap.querySelectorAll("button").forEach((b) => { b.disabled = !on; }); },
+    };
+  }
+
+  /** The names of a Supervisor's tables, for the list and the confirm step. */
+  function tableNames(ids) {
+    const byId = new Map((tables || []).map((t) => [t.id, t.name]));
+    return (ids || []).map((id) => byId.get(id) || "a table no longer visible to Supervisors");
+  }
+
   /** The sentence for a confirm step: the role, and a Supervisor's pages. */
-  function describeRole({ role, features }) {
+  function describeRole({ role, features, dataTables }) {
     if (role === "administrator") return isInternal() ? "as Administrator (every page except Onboarding)" : "as Administrator (everything the app offers customers)";
     const lines = describePages(fullTree, features);
-    return `as Supervisor with ${lines.length} page${lines.length === 1 ? "" : "s"}:\n${lines.map((l) => `    – ${l}`).join("\n")}`;
+    const names = tableNames(dataTables);
+    return `as Supervisor with ${lines.length} page${lines.length === 1 ? "" : "s"}:\n${lines.map((l) => `    – ${l}`).join("\n")}`
+      + (names.length ? `\n  and ${names.length} data table${names.length === 1 ? "" : "s"}:\n${names.map((n) => `    – ${n}`).join("\n")}` : "");
   }
 
   // ── The list ─────────────────────────────────────────────────────────
@@ -263,7 +351,12 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     if (u.role === "administrator") return "Administrator";
     if (u.role === "supervisor") {
       const n = Array.isArray(u.features) ? u.features.length : 0;
-      return `Supervisor · ${n} page${n === 1 ? "" : "s"}`;
+      let out = `Supervisor · ${n} page${n === 1 ? "" : "s"}`;
+      if (Array.isArray(u.features) && u.features.includes(SUPERVISOR_TABLES_PAGE)) {
+        const t = Array.isArray(u.dataTables) ? u.dataTables.length : 0;
+        out += ` · <span title="${escapeHtml(tableNames(u.dataTables).join(", ") || "No data table — edit to choose")}">${t} data table${t === 1 ? "" : "s"}</span>`;
+      }
+      return out;
     }
     return `<span class="ca-muted" title="A row from before roles existed; treated as Administrator until edited">Administrator (unset)</span>`;
   }
@@ -360,7 +453,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     const td = document.createElement("td");
     td.colSpan = anchor.children.length;
     let $save = null;      // assigned below; the control fires onChange while it is built
-    const control = createRoleControl({ role: row.role, features: row.features }, () => {
+    const control = createRoleControl({ role: row.role, features: row.features, dataTables: row.dataTables }, () => {
       if ($save) $save.disabled = !control.valid();
     }, { open: false });
     const actions = document.createElement("div");
@@ -382,12 +475,15 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     setStatus(`Saving ${label}'s role…`);
     control.setEnabled(false);
     try {
-      const r = await withBusy($save, () => setLicenseRole(currentOrg.id, row.userId, value.role, value.features));
-      if (r.user) Object.assign(row, r.user);   // role, pages and the modified stamp
+      const r = await withBusy($save, () => setLicenseRole(currentOrg.id, row.userId, value.role, value.features, value.dataTables));
+      if (r.user) Object.assign(row, r.user);   // role, pages, tables and the modified stamp
       renderList();
       const n = value.features.length;
-      const what = value.role === "administrator" ? "an Administrator" : `a Supervisor with ${n} page${n === 1 ? "" : "s"}`;
-      setStatus(r.changed ? `${label} is now ${what}. Takes effect within five minutes.` : `${label}'s role is unchanged.`, "success");
+      const t = (r.user && Array.isArray(r.user.dataTables) ? r.user.dataTables : value.dataTables).length;
+      const what = value.role === "administrator" ? "an Administrator"
+        : `a Supervisor with ${n} page${n === 1 ? "" : "s"}${value.features.includes(SUPERVISOR_TABLES_PAGE) ? ` and ${t} data table${t === 1 ? "" : "s"}` : ""}`;
+      const dropped = r.droppedTables ? ` ${r.droppedTables} table${r.droppedTables === 1 ? " was" : "s were"} left out: no longer visible to Supervisors.` : "";
+      setStatus(r.changed ? `${label} is now ${what}. Takes effect within five minutes.${dropped}` : `${label}'s role is unchanged.${dropped}`, "success");
     } catch (err) {
       control.setEnabled(true);
       setStatus(err.message || String(err), "error");
@@ -421,13 +517,28 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       if (seq !== loadSeq) return;
       licensed = rows;
       scope = scopeKeys;
+      // The tables a Supervisor may be given — only reachable when the page
+      // is in the scope. A failed read is said under the page, not fatal.
+      tables = []; tablesError = "";
+      if (scope.includes(SUPERVISOR_TABLES_PAGE)) {
+        try {
+          const [all, allRules] = await Promise.all([gc.fetchAllDataTables(api, currentOrg.id), listDataTableRules(currentOrg.id)]);
+          if (seq !== loadSeq) return;
+          tables = (all || []).filter((t) => allRules[t.id] && allRules[t.id].visibleToSupervisors)
+            .map((t) => ({ id: t.id, name: t.name }))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+        } catch (err) {
+          if (seq !== loadSeq) return;
+          tables = null; tablesError = err.message || String(err);
+        }
+      }
       renderList();
       renderAddRole();
       setStatus("");
     } catch (err) {
       if (seq !== loadSeq) return;
       licensed = [];
-      scope = null;
+      scope = null; tables = null; tablesError = "";
       renderList();
       renderAddRole();
       setStatus(err.message || String(err), "error");
@@ -535,7 +646,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     if (!currentOrg || selected.size === 0) return;
     if (addRole && !addRole.valid()) return;
     const users = [...selected.values()];
-    const rolePages = addRole ? addRole.value() : { role: "", features: [] };
+    const rolePages = addRole ? addRole.value() : { role: "", features: [], dataTables: [] };
     const lines = users.map((u) => `  • ${u.name || u.id}${u.email ? ` (${u.email})` : ""}`).join("\n");
     const ok = window.confirm(
       `Give access to the Admin Tool for ${currentOrg.name} to:\n\n${lines}\n\n` +
@@ -658,7 +769,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     $search.value = "";
     selected.clear();
     licensed = [];
-    scope = null;
+    scope = null; tables = null; tablesError = "";
     renderAddRole();
     if (!currentOrg) {
       $orgName.textContent = "Select a customer org in the header.";

@@ -10,7 +10,7 @@ Supervisor page as plain row editing with add and delete off.
 ## A. Automated
 
 **Server** — `api/lib/dataTableRules.js`, `api/datatable-rules/index.js`.
-49 checks with the store, identity and Genesys reads stubbed:
+66 checks with the store, identity and Genesys reads stubbed (49 from the first build, 13 for §D below, and 4 who-may cases):
 
 - `normalizeRules`: junk dropped, a Data Table lookup without a table id
   becomes no lookup, flags coerced to booleans, `hidden` kept.
@@ -89,3 +89,47 @@ Tables › Supervisor.
 | 14 | Internal Supervisor with Edit | As an internal Supervisor whose pages include Data Tables › Edit | May set rules; one with only the Supervisor page may not | |
 | 15 | Orphaned rule | Rename a ruled column in the schema; Save; reload | The rule is listed as orphaned under the grid with "remove" | |
 | 16 | Refresh | On the Supervisor page, rename a queue in Genesys; Refresh | The dropdown shows the new name | |
+
+## D. Which tables each Supervisor may open (design §11, added 2026-09-18)
+
+**Automated** — in the same harnesses.
+
+- `checkTableAccess` (13, in the rules harness): no list → untouched;
+  the table listing is not table-scoped; an own table's schema, rows and
+  row write pass; another table's read and write are refused
+  `table_not_assigned`; a Data Table lookup target of an own table is
+  readable (`…/rows`, `…/rows/{key}`) and never writable; a Supervisor
+  with the page and no table sees nothing; an encoded id is decoded; the
+  refusal names the users list.
+- `/api/licenses` and the gate (18, in the roles harness): the page
+  without a table → `tables_required`, with only a closed table too;
+  assign keeps open tables, drops the rest and reports `droppedTables`,
+  and logs the tables; without the page the list is stored empty; role
+  sets two tables, the same again is unchanged, dropping the page empties
+  the list, an Administrator has none; a customer Administrator sets
+  tables on their own users but not the page without a table; the gate
+  gives own ∩ visible-now, `null` without the page or with the page out
+  of the scope, and fails closed when the rules cannot be read. Every
+  earlier verdict now carries `dataTables: null`.
+- Browser (16 DOM checks on the access page with `fetch` stubbed): the
+  role cell reads "Supervisor · 2 pages · 1 data table"; the extras box
+  sits inside the page's `li`, shown while the page is ticked and hidden
+  when not, the Data Tables group opened on Edit; only visible tables are
+  offered, sorted; the row's table is pre-ticked; Save is disabled with
+  none ticked and the count says "tick at least one"; Tick all; the save
+  call carries `dataTables` with the pages; the status names both counts;
+  the add box's fresh control behaves the same.
+
+**By hand** — in dev, then prod. Needs a table visible to Supervisors (T1)
+and one not (T3), and a Supervisor with the Supervisor page.
+
+| # | Case | Steps | Expect | Result |
+|---|---|---|---|---|
+| 17 | The control | Customers › Access, Edit a Supervisor, tick Data Tables › Supervisor | The tables visible to Supervisors appear under the page, T3 absent; Save greyed until one is ticked | |
+| 18 | Two vs five | Give Supervisor X two tables and Supervisor Y five | Each sees only their own tables on Data Tables › Supervisor | |
+| 19 | Direct call | As X, `GET /api/v2/flows/datatables/{one of Y's}/rows` via the proxy | 403 `table_not_assigned` | |
+| 20 | Lookup target | Give X a table whose column looks keys up in table L, without giving L | The dropdown is filled; `PUT …/datatables/L/rows/{k}` as X is refused | |
+| 21 | Closed since | Untick "Visible to Supervisors" on one of Y's tables | Within five minutes it is gone from Y's picker; Y's row still lists it until edited, where it is dropped and said | |
+| 22 | Other pages | Give X Divisions › Data Tables too | That page lists every table, as before | |
+| 23 | Customer Administrator | On the customer side, Administrator › Users, Edit a Supervisor | The same control; a table not visible to Supervisors cannot be chosen | |
+| 24 | Internal org | Customers › Access with Demo selected (superuser) | The same control for internal Supervisors | |

@@ -262,6 +262,9 @@ export async function resolveAccess(accessToken, who = {}) {
     canManageCustomers,
     isSuperuser: isSuper,
     role: who.role || "",
+    // A Supervisor's data tables (null for anyone else): the Supervisor page
+    // offers only these (docs/data-table-rules-design.md §11).
+    dataTables: Array.isArray(who.dataTables) ? [...who.dataTables] : null,
     // True when the permission read failed, so nothing beyond "you are named"
     // could be verified. The refinement already fails closed on every gated
     // page; this lets the shell say "could not verify" instead of showing a
@@ -326,6 +329,7 @@ export async function resolveCustomerAccess(entitlements, accessToken, apiBase, 
     hasAnyAccess() { return keys.size > 0 || isAdministrator; },
     ...refined,
     role: who.role || "",
+    dataTables: Array.isArray(who.dataTables) ? [...who.dataTables] : null,
     isCustomerAdministrator: isAdministrator,
     verificationFailed: false,
   };

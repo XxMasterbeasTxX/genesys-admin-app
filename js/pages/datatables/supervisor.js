@@ -13,7 +13,10 @@
  *   - a Mandatory column cannot be left empty; the row's status says which;
  *   - the key column is always protected on an existing row;
  *   - Add row appears only when the table's rules allow it; rows are never
- *     deleted here.
+ *     deleted here;
+ *   - a Supervisor sees only the tables on their own row, chosen with the
+ *     page on the users list (§11); an Administrator every table opened to
+ *     Supervisors.
  *
  * A current value that is not in the list (a queue since deleted, a value
  * typed before the rule existed) is shown as an extra option marked so, and
@@ -149,12 +152,17 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
     tableSelect.setEnabled(false);
     setStatus("Loading data tables…");
     try {
-      // Only the tables an Administrator has opened to Supervisors.
+      // Only the tables an Administrator has opened to Supervisors — and,
+      // for a Supervisor, only the ones on their own row (§11). The server
+      // refuses the rest anyway; this keeps the picker honest.
       const [tables, allRules] = await Promise.all([gc.fetchAllDataTables(api, orgId), listDataTableRules(orgId)]);
-      const open = (tables || []).filter((t) => allRules[t.id] && allRules[t.id].visibleToSupervisors);
+      const own = access && Array.isArray(access.dataTables) ? new Set(access.dataTables) : null;
+      const open = (tables || []).filter((t) => allRules[t.id] && allRules[t.id].visibleToSupervisors && (!own || own.has(t.id)));
       const sorted = open.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       tableSelect.setItems(sorted.map((t) => ({ id: t.id, label: t.name })));
-      setStatus(sorted.length ? "" : "No data table has been made visible to Supervisors in this org. An Administrator opens one on Data Tables › Edit.");
+      setStatus(sorted.length ? "" : (own
+        ? "No data table has been given to you. An Administrator chooses which data tables a Supervisor may open, on the users list."
+        : "No data table has been made visible to Supervisors in this org. An Administrator opens one on Data Tables › Edit."));
     } catch (err) {
       setStatus(`Failed to load data tables: ${err.message}`, "error");
       tableSelect.setItems([]);

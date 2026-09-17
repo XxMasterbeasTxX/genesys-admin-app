@@ -60,6 +60,7 @@ function getRequestHint(req) {
  *   superuser: boolean,        // on the SUPERUSER_IDS app setting (internal only)
  *   role: string,              // the caller's row role: "administrator" | "supervisor"; "superuser" for a superuser
  *   features: string[]|null,   // a supervisor's effective page keys; null = everything
+ *   dataTables: string[]|null, // a supervisor's effective data table ids; null = every table
  *   managesCustomers: boolean, // internal only: may name users for customer orgs (superusers always)
  *   userId: string|null,       // VERIFIED Genesys user id, from the token
  *   userEmail: string,         // verified; "" when identity is unavailable
@@ -134,6 +135,7 @@ async function getCallerContext(context, req, { hintId = null, identify = true }
         superuser: !!licence.superuser,
         role: licence.role || "",
         features: licence.features || null,
+        dataTables: licence.dataTables || null,
         managesCustomers: !!licence.superuser || !!licence.managesCustomers,
       });
     }
@@ -154,6 +156,7 @@ async function getCallerContext(context, req, { hintId = null, identify = true }
         superuser: false,
         role: licence.role || "",              // "administrator" | "supervisor"
         features: licence.features || null,    // null = everything
+        dataTables: licence.dataTables || null,
       });
     }
     case "verify_failed":

@@ -42,6 +42,7 @@ function licenseMessage(code, json, status) {
     case "role_required":             return "Choose Administrator or Supervisor.";
     case "scope_empty":               return "Nothing is in the Supervisor scope for this organisation yet. Set it on Supervisor Access first.";
     case "pages_required":            return "Tick at least one page from the Supervisor scope.";
+    case "tables_required":           return "With Data Tables › Supervisor ticked, tick at least one data table. Only tables an Administrator has made visible to Supervisors (Data Tables › Edit) can be chosen.";
     case "customerId_required":       return "Select a customer organisation first.";
     case "not_a_customer":   return "This organisation is not set up as a customer yet — it has no registry entry, so nobody can sign in to it as a customer.";
     default:                 return `The request failed (${code || status}).`;
@@ -58,20 +59,21 @@ export async function listLicensedUsers(customerId) {
  * Name a user. Returns { user, created } — created is false if they already
  * had access. `role` ("administrator" | "supervisor") is required for both
  * kinds of org, and a supervisor's `features` (page keys inside the org's
- * scope) must be non-empty.
+ * scope) must be non-empty; with the Data Tables › Supervisor page, so must
+ * their `dataTables` (ids of tables the org has opened to Supervisors).
  */
-export function assignLicense(customerId, { id, email, name }, { role = "", features = [] } = {}) {
-  return call("POST", "/api/licenses/assign", { customerId, userId: id, email, name, role, features });
+export function assignLicense(customerId, { id, email, name }, { role = "", features = [], dataTables = [] } = {}) {
+  return call("POST", "/api/licenses/assign", { customerId, userId: id, email, name, role, features, dataTables });
 }
 
 /**
- * Set the role and pages on a row: "administrator" | "supervisor", with a
- * supervisor's `features`. By whoever may manage that org's list — the
+ * Set the role, pages and data tables on a row: "administrator" |
+ * "supervisor", with a supervisor's `features` and `dataTables`. By whoever may manage that org's list — the
  * internal org's by superusers only — and by a customer org's own
  * Administrators. Server-checked. Returns { user, changed }.
  */
-export function setLicenseRole(customerId, userId, role, features = []) {
-  return call("POST", "/api/licenses/role", { customerId, userId, role, features });
+export function setLicenseRole(customerId, userId, role, features = [], dataTables = []) {
+  return call("POST", "/api/licenses/role", { customerId, userId, role, features, dataTables });
 }
 
 /**
