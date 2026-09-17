@@ -40,10 +40,18 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     <style>
       /* The Edit page's schema grid carries four rule controls after Default. */
       #dteSchemaMode .dtc-schema-cols-header,
-      #dteSchemaMode .dtc-schema-row {
-        grid-template-columns: 24px minmax(140px, 1fr) 110px 120px 130px 150px 76px 78px 60px 32px;
-        max-width: 1160px;
+      #dteSchemaMode .dtc-schema-row,
+      #dteSchemaMode .dte-group-header {
+        grid-template-columns: 24px minmax(160px, 1fr) 110px 120px 28px 130px var(--dte-table-col, 150px) 76px 78px 60px 32px;
+        max-width: none;
       }
+      /* The line between the data table's own columns and the Supervisor rules. */
+      .dte-rule-divider { justify-self: center; width: 1px; height: 100%; min-height: 28px; background: var(--border); }
+      .dte-group-header { display: grid; gap: 8px; align-items: end; margin-bottom: 2px; }
+      .dte-group-header .dte-group-label { font-size: 11px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: .06em; padding: 0 2px 4px; border-bottom: 2px solid var(--border); }
+      /* The table dropdown sizes to its longest name; every row shares the option
+         list, so one measured width (--dte-table-col) keeps the three grids aligned. */
+      #dteSchemaMode .dtc-schema-row .dtc-rule-table { width: max-content; max-width: none; justify-self: start; }
       /* Keep the hidden table dropdown's grid cell, so the ticks stay under their headers. */
       #dteSchemaMode .dtc-schema-row .dtc-rule-table[hidden] { display: block; visibility: hidden; }
       .dte-rule-tick { display: flex; align-items: center; justify-content: center; }
@@ -293,14 +301,22 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
             <span class="dt-label">Schema Columns</span>
           </div>
           <div class="dte-table-rules">
+            <label><input type="checkbox" id="dteVisibleToSupervisors"> Visible to Supervisors</label>
             <label><input type="checkbox" id="dteMayAddRows"> Supervisors may add rows</label>
-            <span class="dt-field-hint" style="margin:0">— Supervisors never delete rows. The rule columns (Lookup, Protected, Mandatory, Hidden) guide them on Data Tables › Supervisor; this page is not bound by them.</span>
+          </div>
+          <div class="dte-group-header">
+            <span></span>
+            <span class="dte-group-label" style="grid-column: 2 / 5">Data table columns</span>
+            <span></span>
+            <span class="dte-group-label" style="grid-column: 6 / 11">Supervisor rules</span>
+            <span></span>
           </div>
           <div class="dtc-schema-cols-header">
             <span></span>
             <span class="dtc-col-label">Column Name</span>
             <span class="dtc-col-label">Type</span>
             <span class="dtc-col-label">Default</span>
+            <span class="dte-rule-divider"></span>
             <span class="dtc-col-label">Lookup</span>
             <span class="dtc-col-label">Lookup table</span>
             <span class="dtc-col-label">Protected</span>
@@ -386,12 +402,24 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   const $key = el.querySelector("#dteKey");
   const $schemaRowsContainer = el.querySelector("#dteSchemaRows");
   const $mayAddRows     = el.querySelector("#dteMayAddRows");
+  const $visibleToSup   = el.querySelector("#dteVisibleToSupervisors");
   const $orphanRules    = el.querySelector("#dteOrphanRules");
 
   // ── Supervisor rules (docs/data-table-rules-design.md §5) ─────────────
   let _rules = EMPTY_RULES;      // as loaded for the current table
   let _rulesLoadFailed = false;  // a save must not overwrite rules it never saw
   let _tablesForLookup = [];     // the org's tables, for the "Lookup table" dropdown
+
+  /** Measure the table dropdown once its options are in, so the header grids match the rows. */
+  function sizeTableColumn() {
+    const probe = $schemaRowsContainer.querySelector(".dtc-rule-table");
+    if (!probe) return;
+    const wasHidden = probe.hidden;
+    probe.hidden = false;                       // visibility:hidden keeps layout; [hidden] would not
+    const w = Math.ceil(probe.getBoundingClientRect().width);
+    probe.hidden = wasHidden;
+    if (w > 0) $schemaMode.style.setProperty("--dte-table-col", `${Math.max(150, w)}px`);
+  }
 
   function lookupTableOptions(excludeId) {
     return `<option value="">— which table —</option>` + _tablesForLookup
@@ -444,7 +472,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     for (const [name, rule] of Object.entries(_rules.columns || {})) {
       if (!(name in columns) && _orphaned.has(name)) columns[name] = rule;
     }
-    return { columns, mayAddRows: $mayAddRows.checked };
+    return { columns, visibleToSupervisors: $visibleToSup.checked, mayAddRows: $mayAddRows.checked };
   }
 
   let _orphaned = new Set();
@@ -464,6 +492,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   function applyRulesToControls(rules) {
     _rules = rules || EMPTY_RULES;
     $mayAddRows.checked = !!_rules.mayAddRows;
+    $visibleToSup.checked = !!_rules.visibleToSupervisors;
     const present = new Set(["key"]);
     $schemaRowsContainer.querySelectorAll(".dtc-schema-row").forEach((row) => {
       const propKey = row.dataset.originalKey || row.querySelector(".dtc-col-name").value.trim();
@@ -480,6 +509,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     });
     _orphaned = new Set(Object.keys(_rules.columns).filter((n) => !present.has(n)));
     renderOrphans();
+    sizeTableColumn();
   }
 
   const $addSchemaRowBtn = el.querySelector("#dteAddSchemaRow");
@@ -612,6 +642,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       <input class="dt-input dtc-col-name" type="text" placeholder="columnName" autocomplete="off" />
       <select class="dt-select dtc-col-type">${TYPE_OPTIONS_HTML}</select>
       <div class="dtc-col-default-wrap">${makeDefaultInput(initialType)}</div>
+      <span class="dte-rule-divider"></span>
       <select class="dt-select dtc-rule-lookup" title="Supervisors may only choose from these values">${LOOKUP_OPTIONS_HTML}</select>
       <select class="dt-select dtc-rule-table" hidden>${lookupTableOptions(_currentTableId)}</select>
       <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-protected" title="Supervisors cannot change this column"></span>
@@ -1178,6 +1209,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
 
       $form.hidden = false;
       $actions.hidden = false;
+      sizeTableColumn();                 // measurable only once the form is shown
       $rowsRefreshBtn.disabled = false;
 
       if (_mode === "rows") {
@@ -1544,7 +1576,8 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
           const r = await setDataTableRules(orgId, _currentTableId, rules, name);
           applyRulesToControls(r.rules || rules);
           const n = Object.keys((r.rules || rules).columns).length;
-          rulesNote = ` Supervisor rules saved: ${n} column${n === 1 ? "" : "s"}${(r.rules || rules).mayAddRows ? ", may add rows" : ""}.`;
+          const saved = r.rules || rules;
+          rulesNote = ` Supervisor rules saved: ${saved.visibleToSupervisors ? "visible to Supervisors" : "not visible to Supervisors"}, ${n} column rule${n === 1 ? "" : "s"}${saved.mayAddRows ? ", may add rows" : ""}.`;
         } catch (err) {
           rulesNote = ` Schema saved, but the Supervisor rules were not: ${err.message}`;
         }

@@ -100,6 +100,25 @@ async function getDataTableRules(orgId, tableId) {
   }
 }
 
+/** Every table's rules row for an org: { tableId → { rules, setAt } }. Raw JSON; the caller normalizes. */
+async function listDataTableRules(orgId) {
+  await ensureTable();
+  const out = {};
+  const pk = safeKey(orgId).replace(/'/g, "''");
+  // Row keys "dataTableRules|<id>": '}' is the character after '|'.
+  const iter = getClient().listEntities({
+    queryOptions: { filter: `PartitionKey eq '${pk}' and RowKey ge '${RULES_PREFIX}' and RowKey lt 'dataTableRules}'` },
+  });
+  for await (const e of iter) {
+    const tableId = String(e.rowKey || "").slice(RULES_PREFIX.length);
+    if (!tableId) continue;
+    let rules = {};
+    try { rules = JSON.parse(e.rules || "{}"); } catch { /* unreadable → no rules */ }
+    out[tableId] = { rules, setAt: e.setAt || null };
+  }
+  return out;
+}
+
 /** Overwrite one table's rules. The caller has normalized them. */
 async function setDataTableRules(orgId, tableId, rules, by) {
   await ensureTable();
@@ -115,4 +134,4 @@ async function setDataTableRules(orgId, tableId, rules, by) {
   return { rules, setAt };
 }
 
-module.exports = { getSupervisorScope, setSupervisorScope, getDataTableRules, setDataTableRules, TABLE_NAME };
+module.exports = { getSupervisorScope, setSupervisorScope, getDataTableRules, setDataTableRules, listDataTableRules, TABLE_NAME };

@@ -44,8 +44,10 @@ hidden      true → a Supervisor does not see the column at all (added during t
             save, and a new row takes the table's default for it
 ```
 
-Per table, one switch for what a Supervisor may do beyond editing values:
-**may add rows**, off by default — "edit the values" is the use case, and
+Per table, **visible to Supervisors** — no table is until an Administrator
+ticks it; the Supervisor page lists only ticked tables and the server
+refuses any write to an unticked one — and one switch for what a
+Supervisor may do beyond editing values: **may add rows**, off by default — "edit the values" is the use case, and
 adding a row means inventing a key. **Supervisors never delete rows**
 (the user, after seeing the first build: "He should never be allowed to
 delete"). A new row's key is typed; the key column carries no lookup — a
@@ -201,6 +203,7 @@ refuses with a named reason:
 
 | Rule | Check | Cost |
 |---|---|---|
+| visible to Supervisors | any write to a table not ticked is refused | none |
 | may add rows / never delete | POST against the table's switch; DELETE always refused | none |
 | Protected | the current row is read (`GET …/rows/{key}?showbrief=false`) and each protected column compared | one read per write |
 | Mandatory | the written value is non-empty | none |

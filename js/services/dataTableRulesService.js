@@ -22,7 +22,7 @@ export const LOOKUP_TYPES = Object.freeze([
 
 export const lookupLabel = (id) => (LOOKUP_TYPES.find((t) => t.id === id) || LOOKUP_TYPES[0]).label;
 
-export const EMPTY_RULES = Object.freeze({ columns: {}, mayAddRows: false });
+export const EMPTY_RULES = Object.freeze({ columns: {}, visibleToSupervisors: false, mayAddRows: false });
 
 async function call(method, path, body) {
   const resp = await fetch(path, {
@@ -57,6 +57,12 @@ function message(code, status) {
 export async function getDataTableRules(customerId, tableId) {
   const r = await call("GET", `/api/datatable-rules?customerId=${encodeURIComponent(customerId)}&tableId=${encodeURIComponent(tableId)}`);
   return r.rules || EMPTY_RULES;
+}
+
+/** Every table's rules for an org, by table id (tables with no rules row are absent). */
+export async function listDataTableRules(customerId) {
+  const r = await call("GET", `/api/datatable-rules?customerId=${encodeURIComponent(customerId)}`);
+  return r.tables || {};
 }
 
 /** Overwrite one table's rules. `tableName` is for the log line only. */

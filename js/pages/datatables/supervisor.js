@@ -27,7 +27,7 @@ import { escapeHtml, makeStatus, withBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
-import { getDataTableRules, EMPTY_RULES, lookupLabel } from "../../services/dataTableRulesService.js";
+import { getDataTableRules, listDataTableRules, EMPTY_RULES, lookupLabel } from "../../services/dataTableRulesService.js";
 import { fetchAllLookupValues, clearLookupCache } from "../../lib/dataTableLookups.js";
 
 const NOT_LISTED = "__not_listed__";   // the marker option's value: never a real value
@@ -149,10 +149,12 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
     tableSelect.setEnabled(false);
     setStatus("Loading data tables…");
     try {
-      const tables = await gc.fetchAllDataTables(api, orgId);
-      const sorted = (tables || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      // Only the tables an Administrator has opened to Supervisors.
+      const [tables, allRules] = await Promise.all([gc.fetchAllDataTables(api, orgId), listDataTableRules(orgId)]);
+      const open = (tables || []).filter((t) => allRules[t.id] && allRules[t.id].visibleToSupervisors);
+      const sorted = open.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       tableSelect.setItems(sorted.map((t) => ({ id: t.id, label: t.name })));
-      setStatus(sorted.length ? "" : "No data tables found in this org.");
+      setStatus(sorted.length ? "" : "No data table has been made visible to Supervisors in this org. An Administrator opens one on Data Tables › Edit.");
     } catch (err) {
       setStatus(`Failed to load data tables: ${err.message}`, "error");
       tableSelect.setItems([]);

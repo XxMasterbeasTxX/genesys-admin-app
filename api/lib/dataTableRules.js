@@ -5,7 +5,9 @@
  * of a queue, skill, schedule group, schedule or group in the org, or a key
  * of another data table), Protected (cannot change), Mandatory (cannot
  * be empty) and Hidden (not shown — and so not changeable either); per
- * table, whether Supervisors may add rows. Supervisors never delete rows.
+ * table, whether it is open to Supervisors at all, and whether they may add
+ * rows. Supervisors never delete rows. A table nobody has opened is closed:
+ * the Supervisor page does not list it, and a write to it is refused.
  * (docs/data-table-rules-design.md §2). The browser guides; this holds the
  * line for a Supervisor who calls the proxy directly (§7).
  *
@@ -39,6 +41,7 @@ function normalizeRules(input) {
   }
   return {
     columns,
+    visibleToSupervisors: src.visibleToSupervisors === true,
     mayAddRows: src.mayAddRows === true,
   };
 }
@@ -114,6 +117,9 @@ async function checkRowWrite(write, rules, read, tableId) {
 
   if (verb === "DELETE") {
     return refuse("Supervisors cannot delete rows.");
+  }
+  if (!rules.visibleToSupervisors) {
+    return refuse("This table is not open to Supervisors.");
   }
   if (verb === "POST" && !rules.mayAddRows) {
     return refuse("Supervisors may not add rows to this table.");

@@ -2,6 +2,9 @@
  * Data table rules — what a Supervisor may write into a data table.
  *
  *   GET /api/datatable-rules?customerId=&tableId=   → { customerId, tableId, rules, setAt }
+ *   GET /api/datatable-rules?customerId=            → { customerId, tables: { tableId: rules } }
+ *                                                     every table with a rules row — the
+ *                                                     Supervisor page lists the open ones
  *   PUT /api/datatable-rules   { customerId, tableId, rules }
  *                                                   → { customerId, tableId, rules, setAt }
  *
@@ -74,8 +77,16 @@ module.exports = async function (context, req) {
     if (org.error) return json(context, org.status, { error: org.error });
     const { customerId } = org;
     const tableId = String((method === "GET" ? q.tableId : body.tableId) || "").trim();
-    if (!tableId) return json(context, 400, { error: "tableId_required" });
     const may = rights(caller);
+
+    if (method === "GET" && !tableId) {
+      if (!may.read) return json(context, 403, { error: "page_required" });
+      const all = await store.listDataTableRules(customerId);
+      const tables = {};
+      for (const [id, row] of Object.entries(all)) tables[id] = normalizeRules(row.rules);
+      return json(context, 200, { customerId, tables });
+    }
+    if (!tableId) return json(context, 400, { error: "tableId_required" });
 
     if (method === "GET") {
       if (!may.read) return json(context, 403, { error: "page_required" });
@@ -102,7 +113,7 @@ module.exports = async function (context, req) {
             ownerOrgId: caller.mode === "customer" ? customerId : "internal",
             action: "dataTableRules.set",
             description: `Set the Supervisor rules for data table ${String(body.tableName || tableId)} in ${customerName(customerId)}: ${n} column rule${n === 1 ? "" : "s"}`
-              + `${rules.mayAddRows ? ", may add rows" : ""}`,
+              + `${rules.visibleToSupervisors ? ", open to Supervisors" : ", closed to Supervisors"}${rules.mayAddRows ? ", may add rows" : ""}`,
             details: { customerId, tableId, tableName: body.tableName || "", before: beforeRules, after: rules },
           });
         } catch (err) {

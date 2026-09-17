@@ -72,7 +72,8 @@ Tables › Supervisor.
 
 | # | Case | Steps | Expect | Result |
 |---|---|---|---|---|
-| 1 | Set rules | Data Tables › Edit, Schema mode: Queue → Lookup Queue + Mandatory; Priority → Protected; a string column → Lookup Data Table → pick the other table; another → Hidden; tick "Supervisors may add rows"; Save Schema | Status: schema saved, "Supervisor rules saved: 4 columns, may add rows". Activity Log `dataTableRules.set` | |
+| 1 | Set rules | Data Tables › Edit, Schema mode: tick "Visible to Supervisors"; Queue → Lookup Queue + Mandatory; Priority → Protected; a string column → Lookup Data Table → pick the other table; another → Hidden; tick "Supervisors may add rows"; Save Schema | Status: schema saved, "Supervisor rules saved: visible to Supervisors, 4 column rules, may add rows". Activity Log `dataTableRules.set` | |
+| 1b | Not visible | On the Supervisor page before #1 (or with the tick off) | The table is not in the picker; with none ticked the page says so | |
 | 2 | Lookup on a number | Try Lookup on an Integer column | The dropdown is disabled with a tooltip | |
 | 3 | Hints | Switch to Rows mode | Hints under the headers; every cell still a free input | |
 | 4 | Supervisor page | As the Supervisor: Data Tables › Supervisor, pick the table | Legend with the rules; Queue a dropdown of the org's queues; the key and Priority plain text; the hidden column absent; Add Row present (ticked in #1); no Delete anywhere | |
