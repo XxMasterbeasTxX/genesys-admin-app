@@ -7,6 +7,9 @@ export default function render(ctx) {
   return renderDivisionPage(ctx, {
     objectType : "SCRIPT",
     label      : "Scripts",
+    // The Genesys UI lets these belong to every division ("All divisions",
+    // the "*" division); so does this page.
+    allowAllDivisions: true,
     fetchFn    : (api, orgId, opts) => gc.fetchAllScripts(api, orgId, opts),
     columns    : [
       { header: "Name",   get: i => i.name          || "—" },

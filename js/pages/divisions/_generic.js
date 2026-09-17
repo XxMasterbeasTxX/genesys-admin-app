@@ -24,6 +24,11 @@
  *   onItemsLoaded?     : (items: Object[]) => void,  called after allItems is populated
  *   getDivision?       : (item: Object) => {id?: string, name?: string} | null,
  *   setDivision?       : (item: Object, d: {id: string, name: string}) => void,
+ *   allowAllDivisions? : boolean,  Offer "All divisions" as a target. Genesys
+ *                        models it as the division with id "*" — the object
+ *                        then belongs to every division, which is how the
+ *                        Genesys UI offers it for wrap-up codes and scripts.
+ *                        Only for object types whose write accepts "*".
  * }} cfg
  */
 import * as gc from "../../services/genesysApi.js";
@@ -33,13 +38,18 @@ import { getRouteAccessMap } from "../../navConfig.js";
 import { getRequiredPermissions } from "../../featurePermissionMap.js";
 import { explainDivisionRefusal } from "../../lib/genesysErrors.js";
 
+/** Genesys's "every division" division: the id and name it carries. */
+const ALL_DIVISIONS_ID = "*";
+const ALL_DIVISIONS_LABEL = "All divisions";
+const isAllDivisions = (d) => !!d && (d.id === ALL_DIVISIONS_ID || d.name === ALL_DIVISIONS_ID);
+
 export default function renderDivisionPage(ctx, cfg) {
   const { api, orgContext, me, route } = ctx;
   // The permission this page maps for its object, to name it in a refusal.
   const accessKey = route ? getRouteAccessMap()[route] : null;
   const movePermissions = accessKey ? getRequiredPermissions(accessKey) : [];
   const { objectType, label, fetchFn, columns, searchFn, extraFilters, onExtraFilterSetup,
-          extraFilterFn, onItemsLoaded, moveFn: _moveFn,
+          extraFilterFn, onItemsLoaded, moveFn: _moveFn, allowAllDivisions = false,
           getDivision: _getDivision, setDivision: _setDivision } = cfg;
   const moveFn = _moveFn
     || ((a, orgId, divisionId, item) => gc.moveToDivision(a, orgId, divisionId, objectType, [item.id]));
@@ -198,6 +208,7 @@ export default function renderDivisionPage(ctx, cfg) {
   function divName(item) {
     const d = getDivision(item);
     if (!d) return "—";
+    if (isAllDivisions(d)) return ALL_DIVISIONS_LABEL;
     return d.name || divisionById.get(d.id)?.name || "—";
   }
 
@@ -285,7 +296,12 @@ export default function renderDivisionPage(ctx, cfg) {
       .map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`)
       .join("");
     $srcDiv.innerHTML    = `<option value="">(All)</option>` + opts;
-    $targetDiv.innerHTML = `<option value="">— select target —</option>` + opts;
+    // "All divisions" first, set apart: it is not one of the org's divisions
+    // but the absence of a restriction.
+    const allOpt = allowAllDivisions
+      ? `<option value="${ALL_DIVISIONS_ID}">${ALL_DIVISIONS_LABEL}</option><option disabled>──────</option>`
+      : "";
+    $targetDiv.innerHTML = `<option value="">— select target —</option>` + allOpt + opts;
   }
 
   // ── Extra filter setup hook ─────────────────────────
@@ -335,7 +351,7 @@ export default function renderDivisionPage(ctx, cfg) {
       for (const item of allItems) {
         const d = getDivision(item);
         if (d?.id) {
-          divMap.set(d.id, d.name || divisionById.get(d.id)?.name || d.id);
+          divMap.set(d.id, isAllDivisions(d) ? ALL_DIVISIONS_LABEL : (d.name || divisionById.get(d.id)?.name || d.id));
         }
       }
       const previousSrc = $srcDiv.value;
