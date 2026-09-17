@@ -87,7 +87,7 @@ export default function renderExportReader({ me, orgContext }) {
     <div class="gdpr-expect">
       <p class="gdpr-expect-title">What you get</p>
       <ul class="gdpr-expect-list">
-        <li><strong>One workbook, one sheet per kind of data</strong>: the subject record, emails,
+        <li><strong>One Excel workbook, one sheet per kind of data</strong>: the subject record, emails,
             messages, calls, conversation outlines, journey sessions, attachments, surveys, billing references
             and &mdash; for a Genesys user &mdash; performance points and workforce-management records.
             A sheet with nothing in it is left out and the Summary says so.</li>
@@ -104,7 +104,7 @@ export default function renderExportReader({ me, orgContext }) {
             folder, attachments in a folder per conversation &mdash; or one at a time from the list below.</li>
         <li><strong>Other people's phone numbers are withheld</strong> from the message and email
             rows; their names and email addresses are kept, because they are the correspondence.</li>
-        <li>The workbook is a rendering of what Genesys exported, not a certified copy.</li>
+        <li>The Excel workbook is a rendering of what Genesys exported, not a certified copy.</li>
       </ul>
     </div>
 
@@ -214,7 +214,7 @@ export default function renderExportReader({ me, orgContext }) {
         ${m.unknown.size ? `<p class="gdpr-reader-absent gdpr-reader-unknown">Not recognised (listed on the Summary sheet): ${[...m.unknown.keys()].map(escapeHtml).join(", ")}.</p>` : ""}
       </div>
       <div class="te-actions">
-        <button class="btn te-btn-export" id="gdprReaderSave">Save workbook</button>
+        <button class="btn te-btn-export" id="gdprReaderSave">Save Excel workbook</button>
         ${files.length ? `<button class="btn te-btn-export" id="gdprReaderSaveAll">Save all audio &amp; attachments (.zip, ${fmtSize(files.reduce((a, f) => a + f.size, 0))})</button>` : ""}
       </div>
       ${files.length ? `
@@ -554,7 +554,7 @@ async function parseArchive(file, progress) {
 
   for (const list of ["conversationRows", "emails", "messages", "calls", "outlines", "journeys", "attachments", "points", "wem", "surveys", "billing"]) {
     if (m[list].length > ROW_CAP) {
-      m.notes.push(`${list}: ${m[list].length.toLocaleString()} rows, only the first ${ROW_CAP.toLocaleString()} are in the workbook.`);
+      m.notes.push(`${list}: ${m[list].length.toLocaleString()} rows, only the first ${ROW_CAP.toLocaleString()} are in the Excel workbook.`);
       m[list].length = ROW_CAP;
     }
   }
@@ -761,7 +761,7 @@ function buildWorkbook(m) {
   for (const [prefix, u] of m.unknown) s.push([`Not recognised: ${prefix}!`, `${u.count} file(s); keys: ${u.keys}`]);
   for (const n of m.notes) s.push(["Note", n]);
   s.push(["", ""]);
-  s.push(["About this workbook", "A rendering of the Genesys GDPR Access export, produced in the browser from the archive above. It is not a certified copy."]);
+  s.push(["About this Excel workbook", "A rendering of the Genesys GDPR Access export, produced in the browser from the archive above. It is not a certified copy."]);
   s.push(["Calls", "Genesys exports call audio and, where it transcribed the call, an acknowledgement that it did. The transcript text is not in the archive and nothing here is transcribed. Conversation outlines are Genesys's own AI summary of a conversation (Speech & Text Analytics), for calls and messaging alike."]);
   s.push(["Receipts", "The analytics! files are acknowledgements that each analytics topic processed the request. They carry ids and timestamps, no content."]);
   s.push(["Conversations", "Built from those receipts: every conversation id they name, with the time of its first and last event and which Genesys services touched it. Genesys exports no participant, queue or wrap-up detail for a conversation; this index and the transcript, call and journey sheets are all the archive holds about one."]);

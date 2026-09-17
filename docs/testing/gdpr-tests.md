@@ -424,7 +424,7 @@ history (`0543e76b…`, `f8e044e2…`) exercise the most.
 - [ ] **12.6** — Drop the 37,000-file export (`0543e76b…`)
   - Expect: finishes in well under a minute (measured 12 s), the counter visibly advances, the page stays responsive
   - Answer — how long did it take? `______________________`
-- [ ] **12.7** — Press **Save workbook**
+- [ ] **12.7** — Press **Save Excel workbook**
   - Expect: `download.html` opens with a native **Save As** — this is the existing Excel path, so it works with or without `allow-downloads`. Filename `GDPR_Access_<name>_<request>.xlsx`
   - Notes: `______________________`
 - [ ] **12.8** — Open the workbook: **Summary** sheet
@@ -452,7 +452,7 @@ history (`0543e76b…`, `f8e044e2…`) exercise the most.
   - Expect: the button shows the total size (30.1 MB); `download.html` opens at once reading "Preparing … Packing NN%", then offers Save As for `GDPR_Access_<name>_<request>_files.zip`. Inside: `audio/` with 221 `.opus` (the 4 empty ones are left out) and `attachments/<conversation id>/` folders with the images
   - Answer — how long from click to the Save button? `______________________`
 - [ ] **12.14b** — On an export with no audio and no attachments (`27c7defa…`)
-  - Expect: no Save-all button and no file list — only Save workbook
+  - Expect: no Save-all button and no file list — only Save Excel workbook
   - Notes: `______________________`
 - [ ] **12.15** — Press **Save** on a file, then cancel the Save As dialog
   - Expect: nothing breaks; the button re-enables; pressing again works
