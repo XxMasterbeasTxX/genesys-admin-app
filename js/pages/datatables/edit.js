@@ -42,7 +42,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       #dteSchemaMode .dtc-schema-cols-header,
       #dteSchemaMode .dtc-schema-row,
       #dteSchemaMode .dte-group-header {
-        grid-template-columns: 24px minmax(160px, 1fr) 110px 120px 28px 130px var(--dte-table-col, 150px) 76px 78px 60px 32px;
+        grid-template-columns: 24px var(--dte-name-col, 220px) 110px 120px 28px var(--dte-lookup-col, 130px) var(--dte-table-col, 150px) 76px 78px 60px 32px;
         max-width: none;
       }
       /* The line between the data table's own columns and the Supervisor rules. */
@@ -51,7 +51,8 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       .dte-group-header .dte-group-label { font-size: 11px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: .06em; padding: 0 2px 4px; border-bottom: 2px solid var(--border); }
       /* The table dropdown sizes to its longest name; every row shares the option
          list, so one measured width (--dte-table-col) keeps the three grids aligned. */
-      #dteSchemaMode .dtc-schema-row .dtc-rule-table { width: max-content; max-width: none; justify-self: start; }
+      #dteSchemaMode .dtc-schema-row .dtc-rule-table,
+      #dteSchemaMode .dtc-schema-row .dtc-rule-lookup { width: max-content; max-width: none; justify-self: start; }
       /* Keep the hidden table dropdown's grid cell, so the ticks stay under their headers. */
       #dteSchemaMode .dtc-schema-row .dtc-rule-table[hidden] { display: block; visibility: hidden; }
       .dte-rule-tick { display: flex; align-items: center; justify-content: center; }
@@ -410,15 +411,36 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   let _rulesLoadFailed = false;  // a save must not overwrite rules it never saw
   let _tablesForLookup = [];     // the org's tables, for the "Lookup table" dropdown
 
-  /** Measure the table dropdown once its options are in, so the header grids match the rows. */
+  /**
+   * Size the three content-driven columns to their content — the column
+   * name to the longest name, the two dropdowns to their longest option —
+   * as one measured width each, shared by the header grids and the rows
+   * (three separate grids, so max-content alone would not line up).
+   */
   function sizeTableColumn() {
-    const probe = $schemaRowsContainer.querySelector(".dtc-rule-table");
-    if (!probe) return;
-    const wasHidden = probe.hidden;
-    probe.hidden = false;                       // visibility:hidden keeps layout; [hidden] would not
-    const w = Math.ceil(probe.getBoundingClientRect().width);
-    probe.hidden = wasHidden;
-    if (w > 0) $schemaMode.style.setProperty("--dte-table-col", `${Math.max(150, w)}px`);
+    const set = (name, px) => $schemaMode.style.setProperty(name, `${Math.ceil(px)}px`);
+    const table = $schemaRowsContainer.querySelector(".dtc-rule-table");
+    if (table) {
+      const wasHidden = table.hidden;
+      table.hidden = false;                     // visibility:hidden keeps layout; [hidden] would not
+      const w = table.getBoundingClientRect().width;
+      table.hidden = wasHidden;
+      if (w > 0) set("--dte-table-col", Math.max(150, w));
+    }
+    const lookup = $schemaRowsContainer.querySelector(".dtc-rule-lookup");
+    if (lookup) {
+      const w = lookup.getBoundingClientRect().width;
+      if (w > 0) set("--dte-lookup-col", Math.max(110, w));
+    }
+    const nameInput = $schemaRowsContainer.querySelector(".dtc-col-name");
+    if (nameInput) {
+      const font = getComputedStyle(nameInput).font;
+      const ctx = document.createElement("canvas").getContext("2d");
+      ctx.font = font;
+      let longest = 0;
+      $schemaRowsContainer.querySelectorAll(".dtc-col-name").forEach((i) => { longest = Math.max(longest, ctx.measureText(i.value || i.placeholder || "").width); });
+      set("--dte-name-col", Math.min(440, Math.max(200, longest + 36)));   // padding + room to type
+    }
   }
 
   function lookupTableOptions(excludeId) {
