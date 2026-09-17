@@ -10,10 +10,12 @@
 //   light   always light
 //
 // A choice is remembered per browser in localStorage.theme; "system" is the
-// absence of a choice. The header button (#themeBtn, index.html) cycles
-// dark → light → system and shows the icon of the mode that is on, so the
-// state is readable at a glance and every click has a visible effect — a
-// different theme, or a different icon.
+// absence of a choice — what a new browser starts with. The header button
+// (#themeBtn, index.html) toggles between dark and light and shows the icon
+// of the theme that is on; "system" is not a stop on the button, because a
+// third click to get back where you were is two clicks too many. The first
+// click therefore turns following-the-OS off; nothing turns it back on but
+// clearing the stored value.
 (function () {
   var KEY = "theme";
   var mq = matchMedia("(prefers-color-scheme: light)");
@@ -39,27 +41,26 @@
   var ICON = {
     dark:   '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 9.8A6 6 0 0 1 6.2 2.5a6 6 0 1 0 7.3 7.3z"/></svg>',
     light:  '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg>',
-    system: '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="8.5" rx="1.5"/><path d="M5.5 14h5M8 11v3"/></svg>',
   };
-  var LABEL = { dark: "Dark", light: "Light", system: "System" };
-  var NEXT  = { dark: "light", light: "system", system: "dark" };
+  var LABEL = { dark: "Dark", light: "Light" };
+  var OTHER = { dark: "light", light: "dark" };
 
   function render() {
     var btn = document.getElementById("themeBtn");
     if (!btn) return;
-    var m = mode();
-    var now = LABEL[m] + (m === "system" ? " (following your OS — currently " + effective() + ")" : "");
-    btn.innerHTML = ICON[m];
-    btn.setAttribute("aria-label", "Theme: " + LABEL[m] + ". Switch to " + LABEL[NEXT[m]]);
-    btn.title = "Theme: " + now + ". Click for " + LABEL[NEXT[m]] + ".";
-    btn.dataset.mode = m;
+    var on = effective();
+    var now = LABEL[on] + (mode() === "system" ? " (following your OS)" : "");
+    btn.innerHTML = ICON[on];
+    btn.setAttribute("aria-label", "Theme: " + LABEL[on] + ". Switch to " + LABEL[OTHER[on]]);
+    btn.title = "Theme: " + now + ". Click for " + LABEL[OTHER[on]] + ".";
+    btn.dataset.mode = mode();
   }
 
   apply();
   mq.addEventListener("change", function () { if (mode() === "system") apply(); });
   document.addEventListener("DOMContentLoaded", function () {
     var btn = document.getElementById("themeBtn");
-    if (btn) btn.addEventListener("click", function () { setTheme(NEXT[mode()]); });
+    if (btn) btn.addEventListener("click", function () { setTheme(OTHER[effective()]); });
     render();
   });
 

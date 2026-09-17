@@ -84,10 +84,10 @@ export const RELEASE_NOTES = [
     date: "2026-09-16",
     title: "Choose your theme, and light mode everywhere",
     changes: [
-      "A theme switch in the header, next to Refresh Token. One button, cycling Dark → Light → System, showing "
-        + "the icon of whichever is on — a moon, a sun, or a monitor for “follow what the operating system says”. "
-        + "System is what the app has always done and still does until you choose; pick Dark or Light and it "
-        + "stays that way in this browser, whatever the OS is set to, until you pick System again.",
+      "A theme switch in the header, next to Refresh Token. One button, a moon or a sun for whichever is on; "
+        + "click it and the app switches to the other. Until you click, the app follows what the operating "
+        + "system says, as it always has; after the first click it stays with your choice in this browser, "
+        + "whatever the OS is set to.",
       "Light mode now reaches every page. Twelve pages — Roles Create, Compare and Search, Flow Overview's side "
         + "panel, Journey Flow, the wrap-up mapping editor and others — had only ever been designed dark and "
         + "rendered their dark colours on a light desktop, and a good many error and warning messages were pale "
