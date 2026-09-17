@@ -155,8 +155,11 @@ export default function renderSupervisorAccess({ orgContext, access }) {
   /** Why this org's scope cannot be edited here, or null. */
   function notScopable(org) {
     if (!org) return null;
-    if (!customerMode && orgContext.isInternalOrg(org.id) && !isSuperuser) {
-      return `${org.name} is the internal organisation. Only a superuser can set what its Supervisors may see.`;
+    if (!customerMode && orgContext.isInternalOrg(org.id)) {
+      // The internal org has no registry entry and needs none: its scope is
+      // its own, superusers only.
+      return isSuperuser ? null
+        : `${org.name} is the internal organisation. Only a superuser can set what its Supervisors may see.`;
     }
     if (org.registered === false) {
       return `${org.name} is not set up as a customer yet: it has no registry entry. Add the registry entry first (see the onboarding runbook), then set its Supervisor scope here.`;
