@@ -79,7 +79,7 @@ const CANON_PHASES = [
 // the runner records for a phase with no items; unknown statuses read as errors.
 // `planned` is a preview row: what WOULD happen, nothing written yet.
 const ITEM_ICON  = { ok: "✓", skipped: "↷", error: "✗", none: "–", planned: "+" };
-const ITEM_COLOR = { ok: "#4ade80", skipped: "#fbbf24", error: "#f87171", none: "var(--muted)", planned: "var(--accent,#60a5fa)" };
+const ITEM_COLOR = { ok: "var(--ok)", skipped: "var(--warn)", error: "var(--danger)", none: "var(--muted)", planned: "var(--accent)" };
 
 // Derive a phase's display state from the polled job.
 function stepStateFor(job, name) {
@@ -552,7 +552,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
       if (left <= 0) {
         clearInterval(countdownTimer);
         $c.textContent = "Expired";
-        $c.style.color = "#f87171";
+        $c.style.color = "var(--danger)";
         const btn = $approval.querySelector("#obApproveBtn");
         if (btn) btn.disabled = true;
         setStatus("This preview expired without being approved. Nothing was deployed — start again to retry.", "error");
@@ -679,13 +679,13 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   // ── Phase progress stepper ────────────────────────────
   function renderSteps(job) {
     const glyph = { done: "✓", pending: "○", error: "✗", skipped: "–", empty: "–", planned: "+" };
-    const color = { done: "#4ade80", running: "var(--accent,#60a5fa)", pending: "var(--muted)", error: "#f87171", skipped: "var(--muted)", empty: "var(--muted)", planned: "var(--accent,#60a5fa)" };
+    const color = { done: "var(--ok)", running: "var(--accent)", pending: "var(--muted)", error: "var(--danger)", skipped: "var(--muted)", empty: "var(--muted)", planned: "var(--accent)" };
     $steps.innerHTML = CANON_PHASES.map(ph => {
       const st = stepStateFor(job, ph.name);
       const dim = (st === "skipped" || st === "pending") ? "opacity:.5;" : "";
-      const bd = st === "running" ? "border-color:var(--accent,#60a5fa);" : "";
+      const bd = st === "running" ? "border-color:var(--accent);" : "";
       const icon = st === "running"
-        ? `<span class="spin" style="--spin-size:11px;--spin-color:var(--accent,#60a5fa)"></span>`
+        ? `<span class="spin" style="--spin-size:11px;--spin-color:var(--accent)"></span>`
         : `<span style="color:${color[st]};font-weight:700">${glyph[st]}</span>`;
       return `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border:1px solid var(--border);border-radius:999px;font-size:.8rem;${bd}${dim}">${icon}<span>${escapeHtml(ph.short)}</span></span>`;
     }).join("");
@@ -696,7 +696,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     $results.innerHTML = "";
     for (const phase of job.phases) {
       const head = document.createElement("li");
-      head.style.cssText = "padding:6px 0 2px;font-weight:600;color:var(--accent,#60a5fa)";
+      head.style.cssText = "padding:6px 0 2px;font-weight:600;color:var(--accent)";
       head.textContent = phase.phase;
       $results.appendChild(head);
       for (const item of phase.items || []) {
@@ -713,7 +713,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     }
     for (const w of job.warnings || []) {
       const li = document.createElement("li");
-      li.style.cssText = "padding:6px 0;color:#fbbf24;font-size:.85rem";
+      li.style.cssText = "padding:6px 0;color:var(--warn);font-size:.85rem";
       li.textContent = "⚠ " + w;
       $results.appendChild(li);
     }
@@ -722,7 +722,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
   function renderPlanPreview(plan) {
     $results.innerHTML = "";
     const head = document.createElement("li");
-    head.style.cssText = "padding:6px 0;font-weight:600;color:var(--accent,#60a5fa)";
+    head.style.cssText = "padding:6px 0;font-weight:600;color:var(--accent)";
     head.textContent = `Planned deploy → ${orgName(plan.targetOrgId)} · division ${plan.divisionName}`;
     $results.appendChild(head);
     for (const f of plan.flows) {
@@ -739,7 +739,7 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
 
   function showConfirm(plan) {
     const overlay = document.createElement("div");
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 60%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
     overlay.innerHTML = `
       <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:360px;max-width:640px;width:90%">
         <h3 style="margin:0 0 16px;font-size:1.1rem">${plan.stopForPreview ? "Preview Onboarding Deploy" : "Confirm Onboarding Deploy"}</h3>
@@ -777,13 +777,13 @@ export default function renderOnboarding({ route, me, api, orgContext }) {
     const targetId = $destOrg.value;
     if (!targetId) return;
     const overlay = document.createElement("div");
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 60%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
     overlay.innerHTML = `
       <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:340px;max-width:460px;width:90%">
         <h3 style="margin:0 0 14px;font-size:1.1rem">Create Division in ${escapeHtml(orgName(targetId))}</h3>
         <label class="dt-label" for="obNewDivName">Division name</label>
         <input class="dt-input" id="obNewDivName" type="text" placeholder="New division name" style="width:100%;margin-top:4px" />
-        <div id="obNewDivErr" style="color:#f87171;font-size:.85rem;margin-top:8px;min-height:1em"></div>
+        <div id="obNewDivErr" style="color:var(--danger);font-size:.85rem;margin-top:8px;min-height:1em"></div>
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
           <button id="obNewDivCancel" class="btn btn--secondary">Cancel</button>
           <button id="obNewDivCreate" class="btn">Create</button>

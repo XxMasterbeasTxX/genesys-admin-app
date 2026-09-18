@@ -366,10 +366,37 @@ async function resolveOrgConfig(context, req) {
   }
 
   if (classification.mode === "internal") {
+    // The named-user gate, for the internal org (licenseGate.js). Unnamed →
+    // the client renders one screen instead of the shell, exactly as for a
+    // customer. Superusers pass; while INTERNAL_NAMED_USERS_ENFORCED is not
+    // "true" an unnamed colleague passes and is logged.
+    const { checkLicense, INTERNAL_ORG_SLUG } = require("./licenseGate");
+    const licence = await checkLicense(context, accessToken, classification);
+    if (!licence.licensed) {
+      return {
+        status: 200,
+        body: {
+          mode: "internal",
+          licensed: false,
+          reason: licence.reason,
+          org: classification.org,
+          orgHint,
+        },
+      };
+    }
     return {
       status: 200,
       body: {
         mode: "internal",
+        licensed: true,
+        superuser: !!licence.superuser,
+        role: licence.role || "",
+        // A supervisor's effective pages; null for an administrator or a
+        // superuser (docs/internal-roles-design.md §5).
+        features: licence.features || null,
+        dataTables: licence.dataTables || null,
+        managesCustomers: !!licence.superuser || !!licence.managesCustomers,
+        internalOrgSlug: INTERNAL_ORG_SLUG,
         org: classification.org,
         customers: safeCustomers,
         orgHint,
@@ -407,7 +434,15 @@ async function resolveOrgConfig(context, req) {
         licensed: true,
         org: classification.org,
         customer: classification.customer,
-        entitlements: classification.entitlements,
+        // A supervisor's entitlements ARE their effective pages — the sidebar
+        // hides everything else, exactly as it hides internal-only pages
+        // (docs/customer-roles-design.md §7). An administrator keeps the
+        // org's entitlements; the role opens the Administrator section.
+        entitlements: licence.features || classification.entitlements,
+        role: licence.role || "",
+        // A supervisor's data tables (null for an administrator): the
+        // Supervisor page offers only these.
+        dataTables: licence.dataTables || null,
       },
     };
   }

@@ -327,40 +327,40 @@ export function renderAddonContent(container, { me, api, orgContext }, cfg) {
       .addon-pill { padding:6px 18px; border-radius:20px; border:1px solid var(--border); background:transparent;
                   color:var(--muted); cursor:pointer; font:inherit; font-size:13px; font-weight:600;
                   transition:background .12s, color .12s, border-color .12s; user-select:none; }
-      .addon-pill:hover:not(.active) { border-color:#6b7280; color:var(--text); }
-      .addon-pill.active { background:rgba(59,130,246,.22); border-color:#3b82f6; color:#60a5fa; }
+      .addon-pill:hover:not(.active) { border-color:var(--muted); color:var(--text); }
+      .addon-pill.active { background:color-mix(in srgb, var(--accent-strong) 22%, transparent); border-color:var(--accent-strong); color:var(--accent); }
       .addon-pill .addon-pill-count { margin-left:6px; font-size:11px; opacity:.7; }
       /* ── License picker ── */
       /* ── Scope line ── */
       .addon-scope { font-size:13px; color:var(--muted); margin-bottom:16px; max-width:760px; line-height:1.6; }
-      .addon-scope strong { color:#93c5fd; font-weight:600; }
+      .addon-scope strong { color:var(--accent-quiet); font-weight:600; }
       /* ── Permission badge ── */
       .addon-badge--perm { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;
-                         white-space:nowrap; background:rgba(239,68,68,.15); color:#fca5a5; border:1px solid #ef4444; margin:1px 2px; }
+                         white-space:nowrap; background:color-mix(in srgb, var(--danger-strong) 15%, transparent); color:var(--danger-quiet); border:1px solid var(--danger-strong); margin:1px 2px; }
       .addon-badge--none { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;
-                         white-space:nowrap; background:rgba(107,114,128,.15); color:var(--muted); border:1px solid var(--border); }
+                         white-space:nowrap; background:color-mix(in srgb, var(--muted) 15%, transparent); color:var(--muted); border:1px solid var(--border); }
       .addon-badge--yes { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;
-                        background:rgba(22,163,74,.12); color:#86efac; border:1px solid #16a34a; }
+                        background:color-mix(in srgb, var(--ok-strong) 12%, transparent); color:var(--ok-quiet); border:1px solid var(--ok-strong); }
       .addon-badge--no { display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;
-                       background:rgba(239,68,68,.15); color:#fca5a5; border:1px solid #ef4444; }
+                       background:color-mix(in srgb, var(--danger-strong) 15%, transparent); color:var(--danger-quiet); border:1px solid var(--danger-strong); }
       /* ── Category colour ── */
       .addon-pill--roles { margin-left:6px; border-left-width:1px; }
       .addon-num { text-align:right; font-variant-numeric:tabular-nums; width:1%; white-space:nowrap; }
-      .addon-cat-gap    { color:#fca5a5; font-weight:600; }
-      .addon-cat-ok     { color:#86efac; font-weight:600; }
+      .addon-cat-gap    { color:var(--danger-quiet); font-weight:600; }
+      .addon-cat-ok     { color:var(--ok-quiet); font-weight:600; }
       /* Cost caveat — the page cannot know the org's licensing model. */
       .addon-note--model { font-size:12px; color:var(--muted); margin:12px 0 0; max-width:760px; line-height:1.5; }
       /* ── Fallback note ── */
-      .addon-note { font-size:12px; color:#fbbf24; margin-bottom:12px; max-width:760px; line-height:1.5; }
+      .addon-note { font-size:12px; color:var(--warn); margin-bottom:12px; max-width:760px; line-height:1.5; }
     </style>
 
     <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
       Find every user whose roles carry a permission that triggers a
       <strong>${escapeHtml(cfg.longName)}</strong> add-on license, and whether a ${escapeHtml(cfg.name)} license is
       also assigned to them:
-      <span style="color:#fca5a5;font-weight:600">Unlicensed trigger</span> (holds a triggering
+      <span style="color:var(--danger-quiet);font-weight:600">Unlicensed trigger</span> (holds a triggering
       permission, no ${escapeHtml(cfg.name)} license assigned) or
-      <span style="color:#86efac;font-weight:600">Licensed</span> (both).
+      <span style="color:var(--ok-quiet);font-weight:600">Licensed</span> (both).
     </p>
 
     <p class="addon-scope" id="${P}Scope">Loading license definitions…</p>
@@ -469,7 +469,7 @@ export function renderAddonContent(container, { me, api, orgContext }, cfg) {
         </p>
       </div>`;
     } catch (err) {
-      $scope.innerHTML = `<span style="color:#f87171">Could not load license definitions: ${escapeHtml(err.message)}</span>`;
+      $scope.innerHTML = `<span style="color:var(--danger)">Could not load license definitions: ${escapeHtml(err.message)}</span>`;
     }
   })();
 

@@ -1149,7 +1149,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
             results.innerHTML = `<div class="dr-backup-search-item" style="color:var(--muted)">No results</div>`;
           }
         } catch {
-          results.innerHTML = `<div class="dr-backup-search-item" style="color:#f87171">Search failed</div>`;
+          results.innerHTML = `<div class="dr-backup-search-item" style="color:var(--danger)">Search failed</div>`;
         }
       }, 300);
     });
@@ -1697,7 +1697,7 @@ export default function renderAddUsers({ route, me, api, orgContext, access }) {
 
       $summary.innerHTML = escapeHtml(summaryText);
       if (errors.length) {
-        $summary.innerHTML += `<br><small style="color:#f87171">${errors.map(e => escapeHtml(e)).join("<br>")}</small>`;
+        $summary.innerHTML += `<br><small style="color:var(--danger)">${errors.map(e => escapeHtml(e)).join("<br>")}</small>`;
       }
       $summary.style.display = "";
 

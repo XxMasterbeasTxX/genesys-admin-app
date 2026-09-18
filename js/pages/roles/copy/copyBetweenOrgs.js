@@ -142,24 +142,24 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
       .rcb-section { margin-bottom: 24px; }
       .rcb-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; display: block; }
       .rcb-input { width: 100%; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg, var(--panel)); color: var(--text); font: inherit; font-size: 13px; outline: none; box-sizing: border-box; }
-      .rcb-input:focus { border-color: #3b82f6; }
+      .rcb-input:focus { border-color: var(--accent-strong); }
       .rcb-input:disabled { opacity: .5; }
       textarea.rcb-input { resize: vertical; min-height: 60px; }
       .rcb-org-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
       .rcb-org-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 200px; }
       .rcb-org-select { width: 100%; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg, var(--panel)); color: var(--text); font: inherit; font-size: 13px; outline: none; }
-      .rcb-org-select:focus { border-color: #3b82f6; }
+      .rcb-org-select:focus { border-color: var(--accent-strong); }
       .rcb-combo { position: relative; }
       .rcb-combo-input { width: 100%; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg, var(--panel)); color: var(--text); font: inherit; font-size: 13px; outline: none; box-sizing: border-box; }
-      .rcb-combo-input:focus { border-color: #3b82f6; }
+      .rcb-combo-input:focus { border-color: var(--accent-strong); }
       .rcb-combo-input:disabled { opacity: .5; cursor: not-allowed; }
-      .rcb-combo-list { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 400; max-height: 240px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+      .rcb-combo-list { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 400; max-height: 240px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px color-mix(in srgb, var(--backdrop) 40%, transparent); }
       .rcb-combo-list.open { display: block; }
-      .rcb-combo-option { padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,.04); }
+      .rcb-combo-option { padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid color-mix(in srgb, var(--lift) 4%, transparent); }
       .rcb-combo-option:last-child { border-bottom: none; }
-      .rcb-combo-option:hover { background: rgba(59,130,246,.15); color: #93c5fd; }
+      .rcb-combo-option:hover { background: color-mix(in srgb, var(--accent-strong) 15%, transparent); color: var(--accent-quiet); }
       .rcb-combo-noresult { padding: 10px 12px; font-size: 12px; color: var(--muted); text-align: center; }
-      .rcb-picker { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 14px; background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; }
+      .rcb-picker { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 14px; background: color-mix(in srgb, var(--lift) 3%, transparent); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; }
       .rcb-picker-group { display: flex; flex-direction: column; gap: 4px; }
       .rcb-picker-group--domain { min-width: 180px; }
       .rcb-picker-group--entity { min-width: 200px; }
@@ -167,43 +167,43 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
       .rcb-actions-wrap { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 2px; }
       .rcb-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 20px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; transition: background .1s, color .1s, border-color .1s; }
       .rcb-chip input { display: none; }
-      .rcb-chip.checked { background: rgba(59,130,246,.18); border-color: #3b82f6; color: #93c5fd; }
-      .rcb-chip:hover { border-color: #6b7280; color: var(--text); }
-      .rcb-add-btn { padding: 7px 20px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s; height: 34px; }
-      .rcb-add-btn:hover:not(:disabled) { background: #2563eb; }
+      .rcb-chip.checked { background: color-mix(in srgb, var(--accent-strong) 18%, transparent); border-color: var(--accent-strong); color: var(--accent-quiet); }
+      .rcb-chip:hover { border-color: var(--muted); color: var(--text); }
+      .rcb-add-btn { padding: 7px 20px; background: var(--accent-strong); color: var(--text-inverse); border: none; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s; height: 34px; }
+      .rcb-add-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-strong), var(--backdrop) 15%); }
       .rcb-add-btn:disabled { opacity: .45; cursor: not-allowed; }
-      .rcb-add-all-btn { padding: 7px 16px; background: #1e3a5f; color: #93c5fd; border: 1px solid #3b82f6; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s; height: 34px; }
-      .rcb-add-all-btn:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+      .rcb-add-all-btn { padding: 7px 16px; background: color-mix(in srgb, var(--accent-strong) 30%, var(--panel)); color: var(--accent-quiet); border: 1px solid var(--accent-strong); border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s; height: 34px; }
+      .rcb-add-all-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-strong), var(--backdrop) 25%); color: var(--text-inverse); }
       .rcb-add-all-btn:disabled { opacity: .45; cursor: not-allowed; }
       .rcb-policies-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
       .rcb-policies-title { font-size: 13px; font-weight: 600; color: var(--text); }
       .rcb-policies-count { font-size: 12px; color: var(--muted); }
       .rcb-policy-list { display: flex; flex-direction: column; gap: 6px; }
-      .rcb-policy-row { background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+      .rcb-policy-row { background: color-mix(in srgb, var(--lift) 3%, transparent); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
       .rcb-policy-main { display: flex; align-items: center; gap: 10px; padding: 10px 14px; flex-wrap: wrap; }
-      .rcb-policy-entity { font-size: 13px; font-weight: 600; color: #93c5fd; flex: 1; }
+      .rcb-policy-entity { font-size: 13px; font-weight: 600; color: var(--accent-quiet); flex: 1; }
       .rcb-policy-actions { display: flex; gap: 5px; flex-wrap: wrap; }
-      .rcb-action-tag { padding: 2px 8px; background: rgba(59,130,246,.15); border: 1px solid #3b82f6; border-radius: 12px; font-size: 11px; color: #93c5fd; font-weight: 600; }
+      .rcb-action-tag { padding: 2px 8px; background: color-mix(in srgb, var(--accent-strong) 15%, transparent); border: 1px solid var(--accent-strong); border-radius: 12px; font-size: 11px; color: var(--accent-quiet); font-weight: 600; }
       .rcb-policy-btns { display: flex; gap: 6px; margin-left: auto; }
       .rcb-cond-toggle { padding: 3px 10px; background: transparent; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: 11px; color: var(--muted); cursor: pointer; white-space: nowrap; transition: border-color .12s, color .12s; }
-      .rcb-cond-toggle:hover { border-color: #6b7280; color: var(--text); }
-      .rcb-cond-toggle.active { border-color: #f59e0b; color: #fbbf24; }
+      .rcb-cond-toggle:hover { border-color: var(--muted); color: var(--text); }
+      .rcb-cond-toggle.active { border-color: var(--warn-strong); color: var(--warn); }
       .rcb-remove-btn { padding: 3px 9px; background: transparent; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; transition: border-color .12s, color .12s; }
-      .rcb-remove-btn:hover { border-color: #ef4444; color: #f87171; }
+      .rcb-remove-btn:hover { border-color: var(--danger-strong); color: var(--danger); }
       .rcb-edit-btn { padding: 3px 9px; background: transparent; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; transition: border-color .12s, color .12s; }
-      .rcb-edit-btn:hover { border-color: #6b7280; color: var(--text); }
-      .rcb-edit-btn.active { border-color: #3b82f6; color: #93c5fd; }
-      .rcb-incompat { font-size: 10px; color: #fbbf24; margin-left: 6px; }
+      .rcb-edit-btn:hover { border-color: var(--muted); color: var(--text); }
+      .rcb-edit-btn.active { border-color: var(--accent-strong); color: var(--accent-quiet); }
+      .rcb-incompat { font-size: 10px; color: var(--warn); margin-left: 6px; }
       .rcb-domain { margin-bottom: 3px; }
-      .rcb-domain-hdr { display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; user-select: none; }
-      .rcb-domain-hdr:hover { background: rgba(255,255,255,.05); }
+      .rcb-domain-hdr { display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: color-mix(in srgb, var(--lift) 3%, transparent); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; user-select: none; }
+      .rcb-domain-hdr:hover { background: color-mix(in srgb, var(--lift) 5%, transparent); }
       .rcb-chevron { font-size: 10px; color: var(--muted); transition: transform .15s; width: 12px; display: inline-block; }
       .rcb-domain.open .rcb-chevron { transform: rotate(90deg); }
-      .rcb-domain-name { font-weight: 600; font-size: 13px; color: #fbbf24; flex: 1; }
+      .rcb-domain-name { font-weight: 600; font-size: 13px; color: var(--warn); flex: 1; }
       .rcb-domain-stats { font-size: 12px; color: var(--muted); }
       .rcb-domain-body { display: none; padding: 4px 0 2px; }
       .rcb-domain.open .rcb-domain-body { display: block; }
-      .rcb-cond-panel { border-top: 1px solid var(--border); padding: 12px 14px; background: rgba(0,0,0,.18); display: none; }
+      .rcb-cond-panel { border-top: 1px solid var(--border); padding: 12px 14px; background: color-mix(in srgb, var(--backdrop) 18%, transparent); display: none; }
       .rcb-cond-panel.open { display: block; }
       .rcb-cond-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
       .rcb-cond-group { display: flex; flex-direction: column; gap: 4px; }
@@ -211,28 +211,28 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
       .rcb-cond-group--op { min-width: 130px; }
       .rcb-cond-group--vals { flex: 1; min-width: 240px; }
       .rcb-cond-select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg, var(--panel)); color: var(--text); font: inherit; font-size: 13px; outline: none; }
-      .rcb-cond-select:focus { border-color: #3b82f6; }
+      .rcb-cond-select:focus { border-color: var(--accent-strong); }
       .rcb-ms-wrap { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 34px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg, var(--panel)); cursor: text; }
-      .rcb-ms-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: rgba(59,130,246,.18); border: 1px solid #3b82f6; border-radius: 12px; font-size: 11px; color: #93c5fd; white-space: nowrap; }
+      .rcb-ms-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: color-mix(in srgb, var(--accent-strong) 18%, transparent); border: 1px solid var(--accent-strong); border-radius: 12px; font-size: 11px; color: var(--accent-quiet); white-space: nowrap; }
       .rcb-ms-chip-remove { cursor: pointer; opacity: .7; font-size: 13px; line-height: 1; }
-      .rcb-ms-chip-remove:hover { opacity: 1; color: #f87171; }
+      .rcb-ms-chip-remove:hover { opacity: 1; color: var(--danger); }
       .rcb-ms-input { border: none; background: transparent; color: var(--text); font: inherit; font-size: 12px; outline: none; min-width: 80px; flex: 1; }
-      .rcb-ms-dropdown { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 500; max-height: 200px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+      .rcb-ms-dropdown { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 500; max-height: 200px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px color-mix(in srgb, var(--backdrop) 40%, transparent); }
       .rcb-ms-dropdown.open { display: block; }
-      .rcb-ms-option { padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,.04); }
+      .rcb-ms-option { padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid color-mix(in srgb, var(--lift) 4%, transparent); }
       .rcb-ms-option:last-child { border-bottom: none; }
-      .rcb-ms-option:hover { background: rgba(59,130,246,.15); color: #93c5fd; }
+      .rcb-ms-option:hover { background: color-mix(in srgb, var(--accent-strong) 15%, transparent); color: var(--accent-quiet); }
       .rcb-media-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
-      .rcb-edit-panel { border-top: 1px solid var(--border); padding: 10px 14px; background: rgba(0,0,0,.12); display: none; }
+      .rcb-edit-panel { border-top: 1px solid var(--border); padding: 10px 14px; background: color-mix(in srgb, var(--backdrop) 12%, transparent); display: none; }
       .rcb-edit-panel.open { display: block; }
       .rcb-status { font-size: 13px; color: var(--muted); min-height: 20px; margin-bottom: 10px; }
-      .rcb-status--error   { color: #f87171; }
-      .rcb-status--success { color: #34d399; }
+      .rcb-status--error   { color: var(--danger); }
+      .rcb-status--success { color: var(--ok); }
       .rcb-footer { display: flex; justify-content: flex-end; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border); margin-top: 24px; }
       .rcb-cancel-btn { padding: 8px 22px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; }
-      .rcb-cancel-btn:hover { border-color: #6b7280; color: var(--text); }
-      .rcb-save-btn { padding: 8px 28px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-      .rcb-save-btn:hover:not(:disabled) { background: #2563eb; }
+      .rcb-cancel-btn:hover { border-color: var(--muted); color: var(--text); }
+      .rcb-save-btn { padding: 8px 28px; background: var(--accent-strong); color: var(--text-inverse); border: none; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+      .rcb-save-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-strong), var(--backdrop) 15%); }
       .rcb-save-btn:disabled { opacity: .45; cursor: not-allowed; }
       .rcb-no-policies { text-align: center; padding: 32px 16px; color: var(--muted); font-size: 13px; border: 1px dashed var(--border); border-radius: 10px; }
     </style>
@@ -320,7 +320,7 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
           <div class="rcb-policies-header">
             <span class="rcb-policies-title">Permissions</span>
             <span class="rcb-policies-count" id="rcbPoliciesCount"></span>
-            <span id="rcbIncompatWarn" style="display:none;font-size:12px;color:#fbbf24">⚠ Some permissions may not exist in the target org</span>
+            <span id="rcbIncompatWarn" style="display:none;font-size:12px;color:var(--warn)">⚠ Some permissions may not exist in the target org</span>
             <div style="display:flex;gap:6px;margin-left:auto">
               <button class="rcb-cond-toggle" id="rcbExpandAll">Expand All</button>
               <button class="rcb-cond-toggle" id="rcbCollapseAll">Collapse All</button>
@@ -603,7 +603,7 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
         <div class="rcb-domain-hdr">
           <span class="rcb-chevron">&#9654;</span>
           <span class="rcb-domain-name">${escapeHtml(domain)}</span>
-          ${domIncompat ? `<span style="color:#fbbf24;font-size:11px">⚠</span>` : ""}
+          ${domIncompat ? `<span style="color:var(--warn);font-size:11px">⚠</span>` : ""}
           <span class="rcb-domain-stats">${domPolicies.length} entit${domPolicies.length !== 1 ? "ies" : "y"}</span>
         </div>
         <div class="rcb-domain-body"></div>
@@ -824,7 +824,7 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
         allItems = divisionsCache;
       }
     } catch {
-      $container.innerHTML = `<span style="font-size:12px;color:#f87171">Failed to load options.</span>`;
+      $container.innerHTML = `<span style="font-size:12px;color:var(--danger)">Failed to load options.</span>`;
       return;
     }
     buildMultiSelect($container, allItems, pol, variable);
@@ -1003,7 +1003,7 @@ export default function renderRolesCopyBetweenOrgs({ me, api, orgContext }) {
   function renderHourlySummary(roleName, orgName, totalCount, removed) {
     const removedHtml = removed.map(p => `<div style="font-size:12px;color:var(--muted);padding:2px 0 2px 12px">${escapeHtml(p)}</div>`).join("");
     $status.innerHTML = `
-      <div style="color:#34d399;margin-bottom:8px">✅ Role "${escapeHtml(roleName)}" created in ${escapeHtml(orgName)} with ${totalCount} permission${totalCount !== 1 ? "s" : ""}.</div>
+      <div style="color:var(--ok);margin-bottom:8px">✅ Role "${escapeHtml(roleName)}" created in ${escapeHtml(orgName)} with ${totalCount} permission${totalCount !== 1 ? "s" : ""}.</div>
       <details style="margin-bottom:4px">
         <summary style="cursor:pointer;font-size:13px;color:var(--text)">${removed.length} disqualifying permission${removed.length !== 1 ? "s" : ""} removed</summary>
         ${removedHtml}

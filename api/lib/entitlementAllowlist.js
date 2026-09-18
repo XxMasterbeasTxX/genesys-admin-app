@@ -153,8 +153,24 @@ function checkCustomerRequest(path, entitlements) {
   return ok ? { allowed: true } : { allowed: false, reason: "endpoint_not_entitled" };
 }
 
+/**
+ * The positive allowlist alone, for an internal Supervisor's pages: no
+ * customer deny list (an internal session may read billing and trustee
+ * endpoints), and only when the flag is on. Same coarseness, same
+ * fail-closed rule for an unmapped path.
+ */
+function checkFeatureRequest(path, features) {
+  if (!ENFORCE_ENTITLEMENT_ALLOWLIST) return { allowed: true };
+  const moduleKeys = pathToModules(path);
+  if (!moduleKeys.length) return { allowed: false, reason: "endpoint_not_in_pages" };
+  const list = Array.isArray(features) ? features : [];
+  const ok = list.some((f) => moduleKeys.some((key) => entitlementGrants(f, key)));
+  return ok ? { allowed: true } : { allowed: false, reason: "endpoint_not_in_pages" };
+}
+
 module.exports = {
   ENFORCE_ENTITLEMENT_ALLOWLIST,
+  checkFeatureRequest,
   isDeniedForCustomer,
   pathToModule,
   pathToModules,

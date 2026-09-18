@@ -165,15 +165,15 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       /* ── Templates ── */
       .rc-tpl-note { margin-top: 8px; font-size: 13px; line-height: 1.55; color: var(--muted);
                      border-left: 3px solid var(--border); padding: 8px 12px; border-radius: 0 6px 6px 0; }
-      .rc-tpl-note strong { color: #93c5fd; font-weight: 600; }
-      .rc-tpl-note--warn { border-left-color: #f59e0b; background: rgba(245,158,11,.07); }
-      .rc-tpl-note--block { border-left-color: #ef4444; background: rgba(239,68,68,.07); }
-      .rc-tpl-note--ok { border-left-color: #16a34a; background: rgba(22,163,74,.07); }
+      .rc-tpl-note strong { color: var(--accent-quiet); font-weight: 600; }
+      .rc-tpl-note--warn { border-left-color: var(--warn-strong); background: color-mix(in srgb, var(--warn-strong) 7%, transparent); }
+      .rc-tpl-note--block { border-left-color: var(--danger-strong); background: color-mix(in srgb, var(--danger-strong) 7%, transparent); }
+      .rc-tpl-note--ok { border-left-color: var(--ok-strong); background: color-mix(in srgb, var(--ok-strong) 7%, transparent); }
       .rc-tpl-count { font-variant-numeric: tabular-nums; }
       .rc-section { margin-bottom: 24px; }
       .rc-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; display: block; }
       .rc-input { width: 100%; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg, var(--panel)); color: var(--text); font: inherit; font-size: 13px; outline: none; box-sizing: border-box; }
-      .rc-input:focus { border-color: #3b82f6; }
+      .rc-input:focus { border-color: var(--accent-strong); }
       .rc-input:disabled { opacity: .5; }
       textarea.rc-input { resize: vertical; min-height: 60px; }
 
@@ -184,17 +184,17 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       /* ── Combobox ── */
       .rc-combo { position: relative; }
       .rc-combo-input { width: 100%; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg, var(--panel)); color: var(--text); font: inherit; font-size: 13px; outline: none; box-sizing: border-box; }
-      .rc-combo-input:focus { border-color: #3b82f6; }
+      .rc-combo-input:focus { border-color: var(--accent-strong); }
       .rc-combo-input:disabled { opacity: .5; cursor: not-allowed; }
-      .rc-combo-list { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 400; max-height: 240px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+      .rc-combo-list { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 400; max-height: 240px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px color-mix(in srgb, var(--backdrop) 40%, transparent); }
       .rc-combo-list.open { display: block; }
-      .rc-combo-option { padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,.04); }
+      .rc-combo-option { padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid color-mix(in srgb, var(--lift) 4%, transparent); }
       .rc-combo-option:last-child { border-bottom: none; }
-      .rc-combo-option:hover { background: rgba(59,130,246,.15); color: #93c5fd; }
+      .rc-combo-option:hover { background: color-mix(in srgb, var(--accent-strong) 15%, transparent); color: var(--accent-quiet); }
       .rc-combo-noresult { padding: 10px 12px; font-size: 12px; color: var(--muted); text-align: center; }
 
       /* ── Permission picker row ── */
-      .rc-picker { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 14px; background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; }
+      .rc-picker { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 14px; background: color-mix(in srgb, var(--lift) 3%, transparent); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; }
       .rc-picker-group { display: flex; flex-direction: column; gap: 4px; }
       .rc-picker-group--domain { min-width: 180px; }
       .rc-picker-group--entity { min-width: 200px; }
@@ -202,10 +202,10 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       .rc-actions-wrap { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 2px; }
       .rc-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 20px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; transition: background .1s, color .1s, border-color .1s; }
       .rc-chip input { display: none; }
-      .rc-chip.checked { background: rgba(59,130,246,.18); border-color: #3b82f6; color: #93c5fd; }
-      .rc-chip:hover { border-color: #6b7280; color: var(--text); }
-      .rc-add-btn { padding: 7px 20px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s; height: 34px; }
-      .rc-add-btn:hover:not(:disabled) { background: #2563eb; }
+      .rc-chip.checked { background: color-mix(in srgb, var(--accent-strong) 18%, transparent); border-color: var(--accent-strong); color: var(--accent-quiet); }
+      .rc-chip:hover { border-color: var(--muted); color: var(--text); }
+      .rc-add-btn { padding: 7px 20px; background: var(--accent-strong); color: var(--text-inverse); border: none; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s; height: 34px; }
+      .rc-add-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-strong), var(--backdrop) 15%); }
       .rc-add-btn:disabled { opacity: .45; cursor: not-allowed; }
 
       /* ── Policy list ── */
@@ -213,32 +213,32 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       .rc-policies-title { font-size: 13px; font-weight: 600; color: var(--text); }
       .rc-policies-count { font-size: 12px; color: var(--muted); }
       .rc-policy-list { display: flex; flex-direction: column; gap: 6px; }
-      .rc-policy-row { background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+      .rc-policy-row { background: color-mix(in srgb, var(--lift) 3%, transparent); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
       .rc-policy-main { display: flex; align-items: center; gap: 10px; padding: 10px 14px; flex-wrap: wrap; }
       .rc-policy-domain { font-size: 12px; color: var(--muted); min-width: 130px; }
-      .rc-policy-entity { font-size: 13px; font-weight: 600; color: #93c5fd; flex: 1; }
+      .rc-policy-entity { font-size: 13px; font-weight: 600; color: var(--accent-quiet); flex: 1; }
       .rc-policy-actions { display: flex; gap: 5px; flex-wrap: wrap; }
-      .rc-action-tag { padding: 2px 8px; background: rgba(59,130,246,.15); border: 1px solid #3b82f6; border-radius: 12px; font-size: 11px; color: #93c5fd; font-weight: 600; }
+      .rc-action-tag { padding: 2px 8px; background: color-mix(in srgb, var(--accent-strong) 15%, transparent); border: 1px solid var(--accent-strong); border-radius: 12px; font-size: 11px; color: var(--accent-quiet); font-weight: 600; }
       .rc-policy-btns { display: flex; gap: 6px; margin-left: auto; }
       .rc-cond-toggle { padding: 3px 10px; background: transparent; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: 11px; color: var(--muted); cursor: pointer; white-space: nowrap; transition: border-color .12s, color .12s; }
-      .rc-cond-toggle:hover { border-color: #6b7280; color: var(--text); }
-      .rc-cond-toggle.active { border-color: #f59e0b; color: #fbbf24; }
+      .rc-cond-toggle:hover { border-color: var(--muted); color: var(--text); }
+      .rc-cond-toggle.active { border-color: var(--warn-strong); color: var(--warn); }
       .rc-remove-btn { padding: 3px 9px; background: transparent; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; transition: border-color .12s, color .12s; }
-      .rc-remove-btn:hover { border-color: #ef4444; color: #f87171; }
+      .rc-remove-btn:hover { border-color: var(--danger-strong); color: var(--danger); }
 
       /* ── Domain accordion ── */
       .rc-domain { margin-bottom: 3px; }
-      .rc-domain-hdr { display:flex; align-items:center; gap:10px; padding:7px 12px; background:rgba(255,255,255,.03); border:1px solid var(--border); border-radius:8px; cursor:pointer; user-select:none; }
-      .rc-domain-hdr:hover { background:rgba(255,255,255,.05); }
+      .rc-domain-hdr { display:flex; align-items:center; gap:10px; padding:7px 12px; background:color-mix(in srgb, var(--lift) 3%, transparent); border:1px solid var(--border); border-radius:8px; cursor:pointer; user-select:none; }
+      .rc-domain-hdr:hover { background:color-mix(in srgb, var(--lift) 5%, transparent); }
       .rc-chevron { font-size:10px; color:var(--muted); transition:transform .15s; width:12px; display:inline-block; }
       .rc-domain.open .rc-chevron { transform:rotate(90deg); }
-      .rc-domain-name { font-weight:600; font-size:13px; color:#fbbf24; flex:1; }
+      .rc-domain-name { font-weight:600; font-size:13px; color:var(--warn); flex:1; }
       .rc-domain-stats { font-size:12px; color:var(--muted); }
       .rc-domain-body { display:none; padding:4px 0 2px; }
       .rc-domain.open .rc-domain-body { display:block; }
 
       /* ── Conditions panel ── */
-      .rc-cond-panel { border-top: 1px solid var(--border); padding: 12px 14px; background: rgba(0,0,0,.18); display: none; }
+      .rc-cond-panel { border-top: 1px solid var(--border); padding: 12px 14px; background: color-mix(in srgb, var(--backdrop) 18%, transparent); display: none; }
       .rc-cond-panel.open { display: block; }
       .rc-cond-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
       .rc-cond-group { display: flex; flex-direction: column; gap: 4px; }
@@ -246,27 +246,27 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
       .rc-cond-group--op { min-width: 130px; }
       .rc-cond-group--vals { flex: 1; min-width: 240px; }
       .rc-cond-select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg, var(--panel)); color: var(--text); font: inherit; font-size: 13px; outline: none; }
-      .rc-cond-select:focus { border-color: #3b82f6; }
+      .rc-cond-select:focus { border-color: var(--accent-strong); }
 
       /* ── Multi-select chips for conditions ── */
       .rc-ms-wrap { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 34px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg, var(--panel)); cursor: text; }
-      .rc-ms-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: rgba(59,130,246,.18); border: 1px solid #3b82f6; border-radius: 12px; font-size: 11px; color: #93c5fd; white-space: nowrap; }
+      .rc-ms-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: color-mix(in srgb, var(--accent-strong) 18%, transparent); border: 1px solid var(--accent-strong); border-radius: 12px; font-size: 11px; color: var(--accent-quiet); white-space: nowrap; }
       .rc-ms-chip-remove { cursor: pointer; opacity: .7; font-size: 13px; line-height: 1; }
-      .rc-ms-chip-remove:hover { opacity: 1; color: #f87171; }
+      .rc-ms-chip-remove:hover { opacity: 1; color: var(--danger); }
       .rc-ms-input { border: none; background: transparent; color: var(--text); font: inherit; font-size: 12px; outline: none; min-width: 80px; flex: 1; }
-      .rc-ms-dropdown { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 500; max-height: 200px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+      .rc-ms-dropdown { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 500; max-height: 200px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px color-mix(in srgb, var(--backdrop) 40%, transparent); }
       .rc-ms-dropdown.open { display: block; }
-      .rc-ms-option { padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,.04); }
+      .rc-ms-option { padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid color-mix(in srgb, var(--lift) 4%, transparent); }
       .rc-ms-option:last-child { border-bottom: none; }
-      .rc-ms-option:hover { background: rgba(59,130,246,.15); color: #93c5fd; }
-      .rc-ms-option.selected { color: #93c5fd; }
+      .rc-ms-option:hover { background: color-mix(in srgb, var(--accent-strong) 15%, transparent); color: var(--accent-quiet); }
+      .rc-ms-option.selected { color: var(--accent-quiet); }
       .rc-ms-noresult { padding: 10px 12px; font-size: 12px; color: var(--muted); text-align: center; }
       .rc-media-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
 
       /* ── Status ── */
       .rc-status { font-size: 13px; color: var(--muted); min-height: 20px; margin-bottom: 10px; }
-      .rc-status--error   { color: #f87171; }
-      .rc-status--success { color: #34d399; }
+      .rc-status--error   { color: var(--danger); }
+      .rc-status--success { color: var(--ok); }
 
       /* ── Footer ── */
       /* Above the permission list, not below it: a template loads well over a
@@ -274,24 +274,24 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
          fields they act on. */
       .rc-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); margin: 24px 0 16px; }
       .rc-cancel-btn { padding: 8px 22px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; transition: color .12s, border-color .12s; }
-      .rc-cancel-btn:hover { border-color: #6b7280; color: var(--text); }
-      .rc-save-btn { padding: 8px 28px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; }
-      .rc-save-btn:hover:not(:disabled) { background: #2563eb; }
+      .rc-cancel-btn:hover { border-color: var(--muted); color: var(--text); }
+      .rc-save-btn { padding: 8px 28px; background: var(--accent-strong); color: var(--text-inverse); border: none; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; }
+      .rc-save-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-strong), var(--backdrop) 15%); }
       .rc-save-btn:disabled { opacity: .45; cursor: not-allowed; }
 
       /* ── Empty policy list ── */
       .rc-no-policies { text-align: center; padding: 32px 16px; color: var(--muted); font-size: 13px; border: 1px dashed var(--border); border-radius: 10px; }
 
       /* ── Add All Entities button ── */
-      .rc-add-all-btn { padding: 7px 16px; background: #1e3a5f; color: #93c5fd; border: 1px solid #3b82f6; border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s; height: 34px; }
-      .rc-add-all-btn:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+      .rc-add-all-btn { padding: 7px 16px; background: color-mix(in srgb, var(--accent-strong) 30%, var(--panel)); color: var(--accent-quiet); border: 1px solid var(--accent-strong); border-radius: 8px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s; height: 34px; }
+      .rc-add-all-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-strong), var(--backdrop) 25%); color: var(--text-inverse); }
       .rc-add-all-btn:disabled { opacity: .45; cursor: not-allowed; }
 
       /* ── Inline action editor ── */
       .rc-edit-btn { padding: 3px 9px; background: transparent; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; transition: border-color .12s, color .12s; }
-      .rc-edit-btn:hover { border-color: #6b7280; color: var(--text); }
-      .rc-edit-btn.active { border-color: #3b82f6; color: #93c5fd; }
-      .rc-edit-panel { border-top: 1px solid var(--border); padding: 10px 14px; background: rgba(0,0,0,.12); display: none; }
+      .rc-edit-btn:hover { border-color: var(--muted); color: var(--text); }
+      .rc-edit-btn.active { border-color: var(--accent-strong); color: var(--accent-quiet); }
+      .rc-edit-panel { border-top: 1px solid var(--border); padding: 10px 14px; background: color-mix(in srgb, var(--backdrop) 12%, transparent); display: none; }
       .rc-edit-panel.open { display: block; }
     </style>
 
@@ -663,7 +663,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
     $panel.dataset.built = "1";
     const entityData = catalog?.[pol.domain]?.[pol.entity];
     if (!entityData) {
-      $panel.innerHTML = `<span style="font-size:12px;color:#f87171">No catalog data for this entity.</span>`;
+      $panel.innerHTML = `<span style="font-size:12px;color:var(--danger)">No catalog data for this entity.</span>`;
       return;
     }
     const { actions } = entityData;
@@ -823,7 +823,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
         allItems = divisionsCache;
       }
     } catch {
-      $container.innerHTML = `<span style="font-size:12px;color:#f87171">Failed to load options.</span>`;
+      $container.innerHTML = `<span style="font-size:12px;color:var(--danger)">Failed to load options.</span>`;
       return;
     }
 
@@ -1027,7 +1027,7 @@ export default function renderRolesCreate({ me, api, orgContext, mode = "create"
   function renderHourlySummary(roleName, totalCount, removed) {
     const removedHtml = removed.map(p => `<div style="font-size:12px;color:var(--muted);padding:2px 0 2px 12px">${escapeHtml(p)}</div>`).join("");
     $status.innerHTML = `
-      <div style="color:#34d399;margin-bottom:8px">✅ Role "${escapeHtml(roleName)}" created with ${totalCount} permission${totalCount !== 1 ? "s" : ""}.</div>
+      <div style="color:var(--ok);margin-bottom:8px">✅ Role "${escapeHtml(roleName)}" created with ${totalCount} permission${totalCount !== 1 ? "s" : ""}.</div>
       <details style="margin-bottom:4px">
         <summary style="cursor:pointer;font-size:13px;color:var(--text)">${removed.length} disqualifying permission${removed.length !== 1 ? "s" : ""} removed</summary>
         ${removedHtml}

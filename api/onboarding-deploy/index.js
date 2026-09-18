@@ -14,7 +14,8 @@
 const customers = require("../lib/customers.json");
 const { createJob, getJob, updateJob } = require("../lib/onboardingStore");
 const activityLog = require("../lib/activityLogStore");
-const { classifyCaller, getBearerToken } = require("../lib/orgConfigResolver");
+const { classifyCaller, getBearerToken, identifyCaller } = require("../lib/orgConfigResolver");
+const { isSuperuser } = require("../lib/superusers");
 
 const ROOT_FLOW_TYPES = new Set([
   // Inbound
@@ -30,7 +31,13 @@ function json(context, status, body) {
   context.res = { status, headers: { "Content-Type": "application/json" }, body };
 }
 
-/** True if the caller is a verified internal user (or legacy fallback). */
+/**
+ * True if the caller is a verified SUPERUSER in the internal org (or the
+ * legacy fallback). Onboarding writes flows, tables, actions and prompts into
+ * a customer org; it has always been superuser-only in the sidebar, and the
+ * sidebar was the only place that said so. The SUPERUSER_IDS app setting is
+ * the authority here (docs/internal-user-access-design.md §6).
+ */
 async function requireInternal(context, req) {
   const token = getBearerToken(req);
   if (!token) return { ok: false, status: 401, error: "missing_token" };
@@ -41,10 +48,13 @@ async function requireInternal(context, req) {
     context.log.error("[onboarding-deploy] classify failed:", err.message || err);
     return { ok: false, status: 401, error: "identity_verification_failed" };
   }
-  if (classification.mode === "internal" || classification.mode === "fallback") {
-    return { ok: true };
-  }
-  return { ok: false, status: 403, error: "internal_only" };
+  if (classification.mode === "fallback") return { ok: true };
+  if (classification.mode !== "internal") return { ok: false, status: 403, error: "internal_only" };
+
+  const user = await identifyCaller(context, token, classification.org && classification.org.region);
+  if (!user || !user.id) return { ok: false, status: 403, error: "identity_unavailable" };
+  if (!isSuperuser({ userId: user.id })) return { ok: false, status: 403, error: "superuser_required" };
+  return { ok: true };
 }
 
 function validatePlan(body) {

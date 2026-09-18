@@ -183,7 +183,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext, acces
   function showConfirmModal({ title, bodyHTML, confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false }) {
     return new Promise((resolve) => {
       const overlay = document.createElement("div");
-      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center";
+      overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 45%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
       const confirmClass = danger ? "btn btn--danger" : "btn";
       overlay.innerHTML = `
         <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:340px;max-width:640px;width:90%;box-shadow:var(--shadow);color:var(--text)">
@@ -1105,6 +1105,9 @@ export default function renderConfigureUsers({ route, me, api, orgContext, acces
               ? r.divisions.map((d) => `<span class="cu-div-tag">${escapeHtml(d.divisionName)}</span>`).join("")
               : `<span class="muted" style="font-size:12px">No divisions selected</span>`;
           }
+          // A role without divisions holds the Apply button; choosing them is
+          // what releases it, so this is the change that has to re-evaluate.
+          updateApplyButton();
         },
       });
       divSelect.setItems(allDivisions.map((d) => ({ id: d.id, label: d.name })));
@@ -1522,7 +1525,7 @@ export default function renderConfigureUsers({ route, me, api, orgContext, acces
         const names = [...allRemoveQueueIds].map((id) => { const q = allQueues.find((q) => q.id === id); return q ? escapeHtml(q.name) : id; }).join(", ");
         removeRows.push(`<tr><td style="padding:3px 10px 3px 0;color:var(--muted)">Queues</td><td style="padding:3px 0">${names}</td></tr>`);
       }
-      const bodyHTML = `<p style="color:#f59e0b;font-weight:600">⚠ Removing templates will also remove all associated properties.</p>
+      const bodyHTML = `<p style="color:var(--warn-strong);font-weight:600">⚠ Removing templates will also remove all associated properties.</p>
         <table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-top:10px">${removeRows.join("")}</table>`;
       const confirmed = await showConfirmModal({ title: "Confirm Remove", bodyHTML, confirmLabel: "Remove", danger: true });
       if (!confirmed) return;

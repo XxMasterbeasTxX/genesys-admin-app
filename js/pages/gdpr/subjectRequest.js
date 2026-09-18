@@ -16,6 +16,7 @@
 import * as gc from "../../services/genesysApi.js";
 import { escapeHtml, makeStatus } from "../../utils.js";
 import { logAction } from "../../services/activityLogService.js";
+import { registerGdprWatch, EMAIL_RE } from "../../services/gdprWatchService.js";
 
 // ── Request type definitions ──────────────────────────────────────────
 //
@@ -635,9 +636,6 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
     const t     = REQUEST_TYPES[requestType];
     const count = selectedKeys.size;
     $submitBtn.textContent = t.submitLabel;
-    // Erasure waits on the confirm tick; rectification waits on at least one
-    // replacement value. Neither offers a button that only fails on click.
-    $submitBtn.disabled = t.confirmRequired || t.needsReplacement;
     $submitStatus.textContent = "";
     $submitStatus.className = "te-status";
 
@@ -708,21 +706,59 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       `;
     }
 
+    // "Email me when Genesys completes this." Genesys takes one to two
+    // business days; the alternative is coming back to Request Status and
+    // pressing Load. The address is not prefilled: the Genesys login address
+    // is often not the one a person reads notifications on.
+    // See docs/gdpr-completion-notify-design.md.
+    html += `
+      <div class="gdpr-notify">
+        <label class="gdpr-notify-label">
+          <input type="checkbox" id="gdprNotifyChk" />
+          <span>Email me when Genesys completes this</span>
+        </label>
+        <div class="gdpr-notify-field" id="gdprNotifyField" hidden>
+          <input type="email" id="gdprNotifyEmail" class="gdpr-notify-email"
+                 placeholder="name@example.com" autocomplete="email" spellcheck="false" />
+          <p class="gdpr-notify-help">One email per request, when it completes, fails, or has run for 30 days.
+            The email names the request id and the org, never the data subject.</p>
+        </div>
+      </div>
+    `;
+
     $confirmContent.innerHTML = html;
 
-    if (t.confirmRequired) {
-      $confirmContent.querySelector("#gdprConfirmChk").addEventListener("change", e => {
-        $submitBtn.disabled = !e.target.checked;
-      });
-    }
+    const $notifyChk   = $confirmContent.querySelector("#gdprNotifyChk");
+    const $notifyField = $confirmContent.querySelector("#gdprNotifyField");
+    const $notifyEmail = $confirmContent.querySelector("#gdprNotifyEmail");
 
-    if (t.needsReplacement) {
-      $confirmContent.querySelectorAll(".gdpr-replacement-input").forEach(input => {
-        input.addEventListener("input", () => {
-          $submitBtn.disabled = collectReplacementTerms().length === 0;
-        });
-      });
-    }
+    // Erasure waits on the confirm tick; rectification waits on at least one
+    // replacement value; a ticked notify box waits on a valid address. Neither
+    // offers a button that only fails on click.
+    const gate = () => {
+      const confirmed = !t.confirmRequired || $confirmContent.querySelector("#gdprConfirmChk")?.checked;
+      const replaced  = !t.needsReplacement || collectReplacementTerms().length > 0;
+      const notifyOk  = !$notifyChk.checked || EMAIL_RE.test($notifyEmail.value.trim());
+      $submitBtn.disabled = !(confirmed && replaced && notifyOk);
+    };
+    gate();
+
+    $confirmContent.querySelector("#gdprConfirmChk")?.addEventListener("change", gate);
+    $confirmContent.querySelectorAll(".gdpr-replacement-input").forEach(input => input.addEventListener("input", gate));
+    $notifyChk.addEventListener("change", () => {
+      $notifyField.hidden = !$notifyChk.checked;
+      if ($notifyChk.checked) $notifyEmail.focus();
+      gate();
+    });
+    $notifyEmail.addEventListener("input", gate);
+  }
+
+  /** The notification address, or "" when the box is not ticked. */
+  function notifyEmail() {
+    const chk = $confirmContent.querySelector("#gdprNotifyChk");
+    if (!chk?.checked) return "";
+    const v = $confirmContent.querySelector("#gdprNotifyEmail")?.value.trim() || "";
+    return EMAIL_RE.test(v) ? v : "";
   }
 
   // ── Submit ─────────────────────────────────────────────────────────
@@ -804,9 +840,11 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
             Genesys is processing them asynchronously.
           </div>
           ${idRows}
+          <div class="gdpr-notify-result" id="gdprNotifyResult"></div>
           <a href="#/gdpr/request-status" class="gdpr-status-page-link">→ View Request Status</a>
         `;
         $submitStatus.className = "te-status te-status--success";
+        await watchSubmitted(org, submittedIds, $submitStatus.querySelector("#gdprNotifyResult"));
         logAction({ me, orgId: org?.id || "", orgName: org?.name || "",
           action: "gdpr_request",
           description: `Submitted ${succeeded} GDPR ${REQUEST_TYPES[requestType]?.label || requestType} request${succeeded !== 1 ? "s" : ""}`,
@@ -842,6 +880,12 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
           `${succeeded} submitted, ${failed.length} failed: ${failed[0].reason?.message ?? "Unknown error"}`;
         $submitStatus.className = "te-status te-status--error";
         $submitBtn.disabled = false;
+        if (submittedIds.length) {
+          const $r = document.createElement("div");
+          $r.className = "gdpr-notify-result";
+          $submitStatus.appendChild($r);
+          await watchSubmitted(org, submittedIds, $r);
+        }
         // A part-succeeded erasure is the case most worth a record, and it used
         // to be the one case that logged nothing.
         logAction({ me, orgId: org?.id || "", orgName: org?.name || "",
@@ -868,6 +912,24 @@ export default function renderSubjectRequest({ route, me, api, orgContext }) {
       updateSearchBtn();
     }
   });
+
+  /**
+   * Register the completion watch for the ids that landed, and say what
+   * happened where the ids are shown. A failed registration is a warning,
+   * not a failed submission — Genesys already has the requests — but it must
+   * be visible: a person who ticked the box and hears nothing would assume
+   * the request is still running.
+   */
+  async function watchSubmitted(org, submittedIds, $out) {
+    const email = notifyEmail();
+    if (!email || !submittedIds.length || !$out) return;
+    try {
+      await registerGdprWatch({ orgId: org.id, orgName: org.name || "", requestType, requestIds: submittedIds, email });
+      $out.innerHTML = `<span class="gdpr-notify-ok">\u2709 ${escapeHtml(email)} will be emailed when each request completes \u2014 checked hourly.</span>`;
+    } catch (err) {
+      $out.innerHTML = `<span class="gdpr-notify-warn">\u26a0 Could not register the email notification: ${escapeHtml(err.message)}. The requests were submitted; check Request Status instead.</span>`;
+    }
+  }
 
   // ── Request history has moved to the dedicated Request Status page ──
 

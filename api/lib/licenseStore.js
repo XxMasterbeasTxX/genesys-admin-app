@@ -13,6 +13,35 @@
  *   rowKey        `<userId>|<assignedAt>` — a user removed and re-added has
  *                 two rows, both true
  *   userId, email, name, assignedBy, assignedAt, revokedBy, revokedAt
+ *   role          "administrator" or "supervisor", required on add for both
+ *                 kinds of org (docs/customer-roles-design.md §4,
+ *                 docs/internal-roles-design.md §3).
+ *   dataTables    JSON array of data table ids — a supervisor's own tables,
+ *                 chosen with the Data Tables › Supervisor page; a subset of
+ *                 the tables the org has made visible to Supervisors
+ *                 (docs/data-table-rules-design.md §11). Absent = none.
+ *   templateId    the Supervisor template the row is on, or "" — its pages
+ *                 and tables come first, the row's own are extras
+ *                 (docs/supervisor-templates-design.md)
+ *   features      JSON array of page access keys — a supervisor's own pages,
+ *                 a subset of the org's Supervisor scope. [] otherwise.
+ *   managesCustomers
+ *                 "true" on an INTERNAL row lets that colleague name users
+ *                 for customer orgs (docs/internal-user-access-design.md §5).
+ *                 Independent of the role. Before internal roles existed this
+ *                 lived in `role` as "customer-manager"; such a row is read
+ *                 as administrator + managesCustomers and rewritten in the
+ *                 new shape on its next edit.
+ *   assignedBy, assignedByEmail, assignedByName
+ *                 who named them — always an internal person.
+ *   roleSetBy, roleSetByEmail, roleSetByName, roleSetByOrg, roleSetAt
+ *                 the last role/pages change. roleSetByOrg is "internal" or
+ *                 the customer slug, so the endpoint can decide what a
+ *                 customer session may see of who did it.
+ *
+ * The internal org has rows too, under its own slug: an internal colleague is
+ * named exactly as a customer user is. Its rows carry no billing meaning —
+ * the internal org is a trustee org and is never billed.
  *
  * Timestamps are UTC ISO-8601. Genesys billing periods arrive the same way,
  * so the peak sweep compares like with like.
@@ -54,6 +83,8 @@ function safeKey(s) {
 }
 
 function entityToRow(e) {
+  // The capability used to be a role value; read the old shape as the new one.
+  const legacyManager = e.role === "customer-manager";
   return {
     customerId: e.partitionKey,
     userId:     e.userId,
@@ -61,10 +92,30 @@ function entityToRow(e) {
     name:       e.name || "",
     assignedBy: e.assignedBy || "",
     assignedByEmail: e.assignedByEmail || "",
+    assignedByName:  e.assignedByName || "",
     assignedAt: e.assignedAt,
     revokedBy:  e.revokedBy || null,
     revokedAt:  e.revokedAt || null,
+    role:       legacyManager ? "administrator" : (e.role || ""),
+    features:   parseFeatures(e.features),
+    dataTables: parseFeatures(e.dataTables),
+    templateId: e.templateId || "",
+    managesCustomers: legacyManager || e.managesCustomers === "true",
+    // The last change to the row after the add — a role or pages edit, or
+    // the customer-manager tick on an internal row. Null until there is one.
+    modifiedBy:      e.roleSetBy || "",
+    modifiedByEmail: e.roleSetByEmail || "",
+    modifiedByName:  e.roleSetByName || "",
+    // Rows stamped before the org was recorded were all edited internally.
+    modifiedByOrg:   e.roleSetAt ? (e.roleSetByOrg || "internal") : "",
+    modifiedAt:      e.roleSetAt || null,
   };
+}
+
+function parseFeatures(raw) {
+  if (!raw) return [];
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v.map(String) : []; }
+  catch { return []; }
 }
 
 async function listRows(customerId) {
@@ -87,8 +138,13 @@ async function listActive(customerId) {
 
 /** The gate's question: is this user named right now? */
 async function isActive(customerId, userId) {
+  return !!(await activeRow(customerId, userId));
+}
+
+/** The active row for a user, or null — the gate reads the role off it. */
+async function activeRow(customerId, userId) {
   const rows = await listRows(customerId);
-  return rows.some((r) => r.userId === userId && !r.revokedAt);
+  return rows.find((r) => r.userId === userId && !r.revokedAt) || null;
 }
 
 /**
@@ -97,10 +153,10 @@ async function isActive(customerId, userId) {
  *
  * @param {string} customerId
  * @param {{ id: string, email?: string, name?: string }} user
- * @param {{ id: string, email?: string }} by   the caller's VERIFIED identity
+ * @param {{ id: string, email?: string, name?: string }} by   the caller's VERIFIED identity
  * @returns {Promise<{ row: object, created: boolean }>}
  */
-async function assign(customerId, user, by) {
+async function assign(customerId, user, by, { role = "", features = [], dataTables = [], templateId = "", managesCustomers = false } = {}) {
   const rows = await listRows(customerId);
   const existing = rows.find((r) => r.userId === user.id && !r.revokedAt);
   if (existing) return { row: existing, created: false };
@@ -114,10 +170,101 @@ async function assign(customerId, user, by) {
     name:         user.name || "",
     assignedBy:   by.id || "",
     assignedByEmail: by.email || "",
+    assignedByName:  by.name || "",
     assignedAt,
+    role:         role || "",
+    features:     JSON.stringify(Array.isArray(features) ? features : []),
+    dataTables:   JSON.stringify(Array.isArray(dataTables) ? dataTables : []),
+    templateId:   templateId || "",
+    managesCustomers: managesCustomers ? "true" : "",
   };
   await getClient().createEntity(entity);
   return { row: entityToRow(entity), created: true };
+}
+
+/**
+ * Set the role and pages on a user's active row. The endpoint decides who
+ * may call this and has validated the values. Stamped with who and when, so
+ * a change is as traceable as an assignment. The capability column is
+ * carried across untouched — and a legacy "customer-manager" row is
+ * rewritten in the new shape here, since Merge would otherwise leave the
+ * old value nowhere.
+ *
+ * @returns {Promise<{ row: object|null, changed: boolean }>}
+ */
+async function setRole(customerId, userId, role, by, features = null, dataTables = null, templateId = "") {
+  const active = await activeRow(customerId, userId);
+  if (!active) return { row: null, changed: false };
+  const nextFeatures = Array.isArray(features) ? [...features].sort() : [];
+  const nextTables = Array.isArray(dataTables) ? [...dataTables].sort() : [];
+  const nextTemplate = templateId || "";
+  const sameRole = (active.role || "") === (role || "");
+  const sameFeatures = JSON.stringify([...(active.features || [])].sort()) === JSON.stringify(nextFeatures);
+  const sameTables = JSON.stringify([...(active.dataTables || [])].sort()) === JSON.stringify(nextTables);
+  const sameTemplate = (active.templateId || "") === nextTemplate;
+  if (sameRole && sameFeatures && sameTables && sameTemplate) return { row: active, changed: false };
+  const roleSetAt = new Date().toISOString();
+  await getClient().updateEntity(
+    {
+      partitionKey: safeKey(customerId),
+      rowKey:       `${safeKey(userId)}|${active.assignedAt}`,
+      role:         role || "",
+      features:     JSON.stringify(nextFeatures),
+      dataTables:   JSON.stringify(nextTables),
+      templateId:   nextTemplate,
+      managesCustomers: active.managesCustomers ? "true" : "",
+      roleSetBy:    by.id || "",
+      roleSetByEmail: by.email || "",
+      roleSetByName:  by.name || "",
+      roleSetByOrg:   by.org || "internal",
+      roleSetAt,
+    },
+    "Merge",
+  );
+  return {
+    row: {
+      ...active, role: role || "", features: nextFeatures, dataTables: nextTables, templateId: nextTemplate,
+      modifiedBy: by.id || "", modifiedByEmail: by.email || "", modifiedByName: by.name || "",
+      modifiedByOrg: by.org || "internal", modifiedAt: roleSetAt,
+    },
+    changed: true,
+  };
+}
+
+/**
+ * Grant or withdraw "Manages customer access" on an internal row. The role
+ * is carried across untouched — a legacy "customer-manager" row becomes an
+ * explicit administrator here. Stamped like a role change: it is one.
+ *
+ * @returns {Promise<{ row: object|null, changed: boolean }>}
+ */
+async function setManagesCustomers(customerId, userId, on, by) {
+  const active = await activeRow(customerId, userId);
+  if (!active) return { row: null, changed: false };
+  if (!!active.managesCustomers === !!on) return { row: active, changed: false };
+  const roleSetAt = new Date().toISOString();
+  await getClient().updateEntity(
+    {
+      partitionKey: safeKey(customerId),
+      rowKey:       `${safeKey(userId)}|${active.assignedAt}`,
+      role:         active.role || "",
+      managesCustomers: on ? "true" : "",
+      roleSetBy:    by.id || "",
+      roleSetByEmail: by.email || "",
+      roleSetByName:  by.name || "",
+      roleSetByOrg:   by.org || "internal",
+      roleSetAt,
+    },
+    "Merge",
+  );
+  return {
+    row: {
+      ...active, managesCustomers: !!on,
+      modifiedBy: by.id || "", modifiedByEmail: by.email || "", modifiedByName: by.name || "",
+      modifiedByOrg: by.org || "internal", modifiedAt: roleSetAt,
+    },
+    changed: true,
+  };
 }
 
 /**
@@ -193,4 +340,4 @@ function peakOfRows(rows, start, end) {
   return peak;
 }
 
-module.exports = { listActive, isActive, assign, revoke, peakAssigned, peakOfRows, TABLE_NAME };
+module.exports = { listActive, isActive, activeRow, assign, setRole, setManagesCustomers, revoke, peakAssigned, peakOfRows, TABLE_NAME };

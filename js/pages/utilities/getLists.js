@@ -324,7 +324,7 @@ const PAGE_STYLES = `
 .gl-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .gl-picker { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px; align-items: flex-end; }
 .gl-status { font-size: 13px; color: var(--muted); margin: 12px 0; }
-.gl-status--error { color: #f87171; }
+.gl-status--error { color: var(--danger); }
 .gl-desc { font-size: 13px; color: var(--muted); margin: 8px 0 12px; }
 .gl-actions-row { display: flex; gap: 8px; margin: 8px 0 12px; flex-wrap: wrap; align-items: center; }
 .gl-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
@@ -369,7 +369,7 @@ const PAGE_STYLES = `
   cursor: pointer; padding: 1px 4px; border-radius: 3px; opacity: 0.45;
 }
 .gl-item:hover .gl-only { opacity: 1; }
-.gl-only:hover { color: #60a5fa; background: rgba(59,130,246,0.12); }
+.gl-only:hover { color: var(--accent); background: color-mix(in srgb, var(--accent-strong) 12%, transparent); }
 .gl-filter-empty { padding: 8px 4px; font-size: 12px; color: var(--muted); }
 
 /* Fixed, and parented to the body rather than the cell: the table scrolls

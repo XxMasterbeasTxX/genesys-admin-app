@@ -4,6 +4,9 @@ import * as gc from "../../services/genesysApi.js";
 export default function render(ctx) {
   return renderDivisionPage(ctx, {
     label      : "Wrap-up Codes",
+    // The Genesys UI lets these belong to every division ("All divisions",
+    // the "*" division); so does this page.
+    allowAllDivisions: true,
     fetchFn    : (api, orgId, opts) => gc.fetchAllWrapupCodes(api, orgId, opts),
     columns    : [
       { header: "Name",        get: i => i.name        || "—" },

@@ -2,13 +2,24 @@
  * Data Tables › Edit
  *
  * Two modes:
- *  - Schema: edit table metadata and schema columns
- *  - Rows: edit multiple row values in a paged grid with full-table search
+ *  - Schema: edit table metadata and schema columns — and, per column, the
+ *    Supervisor rules: a lookup, Protected, Mandatory; per table, whether
+ *    Supervisors may add or delete rows (docs/data-table-rules-design.md
+ *    §5). The rules are the app's, saved with Save Schema, enforced on
+ *    Data Tables › Supervisor and by the server — never here.
+ *  - Rows: edit multiple row values in a paged grid with full-table search.
+ *    The rules show as hints under the column headers; this page is not
+ *    bound by them.
  */
 import { escapeHtml, makeStatus, makeControlBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
+import { getDataTableRules, setDataTableRules, LOOKUP_TYPES, lookupLabel, EMPTY_RULES } from "../../services/dataTableRulesService.js";
+
+const LOOKUP_OPTIONS_HTML = LOOKUP_TYPES
+  .map(t => `<option value="${t.id}">${t.label}</option>`)
+  .join("");
 
 const COLUMN_TYPES = [
   { label: "Boolean", type: "boolean" },
@@ -27,6 +38,41 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
 
   el.innerHTML = `
     <style>
+      /* The Edit page's schema grid carries four rule controls after Default. */
+      #dteSchemaMode .dtc-schema-cols-header,
+      #dteSchemaMode .dtc-schema-row,
+      #dteSchemaMode .dte-group-header {
+        grid-template-columns: 24px var(--dte-name-col, 220px) 110px 120px 28px var(--dte-lookup-col, 130px) var(--dte-table-col, 150px) 76px 78px 60px 32px;
+        max-width: none;
+      }
+      /* The line between the data table's own columns and the Supervisor rules. */
+      .dte-rule-divider { justify-self: center; width: 1px; height: 100%; min-height: 28px; background: var(--border); }
+      .dte-group-header { display: grid; gap: 8px; align-items: end; margin-bottom: 2px; }
+      .dte-group-header .dte-group-label { font-size: 11px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: .06em; padding: 0 2px 4px; border-bottom: 2px solid var(--border); }
+      /* The table dropdown sizes to its longest name; every row shares the option
+         list, so one measured width (--dte-table-col) keeps the three grids aligned. */
+      #dteSchemaMode .dtc-schema-row .dtc-rule-src,
+      #dteSchemaMode .dtc-schema-row .dtc-rule-table,
+      #dteSchemaMode .dtc-schema-row .dtc-rule-lookup { width: max-content; max-width: none; justify-self: start; }
+      /* The source cell: a Data Table lookup's table dropdown, or a List's
+         "Edit list" button; the cell itself stays, so the ticks keep their headers. */
+      #dteSchemaMode .dtc-schema-row .dtc-rule-src { min-height: 1px; }
+      .dtc-rule-list-btn.is-empty { color: var(--warn); border-color: var(--warn); }
+      /* The list editor sits under its row, on the rules side. */
+      .dtc-rule-list-editor { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 0 0 10px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+      .dtc-rule-list-editor .dtc-rule-list-head { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+      .dtc-rule-list-editor .dtc-rule-list-head strong { color: var(--text); }
+      .dtc-rule-list-editor .dtc-rule-list-head .dtc-spacer { flex: 1; }
+      .dtc-rule-list-editor textarea { width: 100%; max-width: 520px; min-height: 120px; box-sizing: border-box; font: inherit; resize: vertical; }
+      .dte-rule-tick { display: flex; align-items: center; justify-content: center; }
+      .dte-rule-tick input { width: 16px; height: 16px; accent-color: var(--accent-strong); cursor: pointer; margin: 0; }
+      .dte-rule-tick input:disabled { cursor: not-allowed; opacity: .4; }
+      .dte-table-rules { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin: 4px 0 10px; font-size: 13px; }
+      .dte-table-rules label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+      .dte-table-rules input { margin: 0; accent-color: var(--accent-strong); }
+      .dte-orphans { margin-top: 10px; font-size: 12px; color: var(--warn); }
+      .dte-orphans button { margin-left: 6px; }
+      .dte-col-hint { display: block; font-size: 10px; font-weight: 500; color: var(--muted); letter-spacing: 0; text-transform: none; margin-top: 2px; }
       .dte-mode-toggle {
         display: flex;
         border: 1px solid var(--border);
@@ -46,11 +92,11 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         transition: background .12s, color .12s;
       }
       .dte-mode-btn.active {
-        background: rgba(59,130,246,.22);
-        color: #60a5fa;
+        background: color-mix(in srgb, var(--accent-strong) 22%, transparent);
+        color: var(--accent);
       }
       .dte-mode-btn:not(.active):hover {
-        background: rgba(255,255,255,.05);
+        background: color-mix(in srgb, var(--lift) 5%, transparent);
         color: var(--text);
       }
 
@@ -108,7 +154,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         box-sizing: border-box;
       }
       .dte-row-grid tr.dte-row-dirty {
-        background: rgba(59,130,246,.08);
+        background: color-mix(in srgb, var(--accent-strong) 8%, transparent);
       }
       .dte-row-status {
         font-size: 11px;
@@ -240,11 +286,11 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       <div id="dteSchemaMode">
         <div class="dt-controls">
           <div class="dt-control-group">
-            <label class="dt-label" for="dteName">Name <span style="color:#f87171">*</span></label>
+            <label class="dt-label" for="dteName">Name <span style="color:var(--danger)">*</span></label>
             <input class="dt-input" id="dteName" type="text" placeholder="e.g. AgentSkillMatrix" autocomplete="off" />
           </div>
           <div class="dt-control-group">
-            <label class="dt-label" for="dteDivision" id="dteDivisionLabel">Division <span style="color:#f87171">*</span></label>
+            <label class="dt-label" for="dteDivision" id="dteDivisionLabel">Division <span style="color:var(--danger)">*</span></label>
             <select class="dt-select" id="dteDivision">
               <option value="">Loading divisions…</option>
             </select>
@@ -264,15 +310,33 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
           <div class="dtc-schema-header">
             <span class="dt-label">Schema Columns</span>
           </div>
+          <div class="dte-table-rules">
+            <label><input type="checkbox" id="dteVisibleToSupervisors"> Visible to Supervisors</label>
+            <label><input type="checkbox" id="dteMayAddRows"> Supervisors may add rows</label>
+          </div>
+          <div class="dte-group-header">
+            <span></span>
+            <span class="dte-group-label" style="grid-column: 2 / 5">Data table columns</span>
+            <span></span>
+            <span class="dte-group-label" style="grid-column: 6 / 11">Supervisor rules</span>
+            <span></span>
+          </div>
           <div class="dtc-schema-cols-header">
             <span></span>
             <span class="dtc-col-label">Column Name</span>
             <span class="dtc-col-label">Type</span>
             <span class="dtc-col-label">Default</span>
+            <span class="dte-rule-divider"></span>
+            <span class="dtc-col-label">Lookup</span>
+            <span class="dtc-col-label">Lookup table</span>
+            <span class="dtc-col-label">Protected</span>
+            <span class="dtc-col-label">Mandatory</span>
+            <span class="dtc-col-label">Hidden</span>
             <span></span>
           </div>
           <div id="dteSchemaRows"></div>
           <button class="btn btn-sm dtc-add-btn" id="dteAddSchemaRow" style="margin-top:8px">+ Add column</button>
+          <div id="dteOrphanRules" class="dte-orphans" hidden></div>
         </div>
       </div>
 
@@ -347,6 +411,206 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   const $description = el.querySelector("#dteDescription");
   const $key = el.querySelector("#dteKey");
   const $schemaRowsContainer = el.querySelector("#dteSchemaRows");
+  const $mayAddRows     = el.querySelector("#dteMayAddRows");
+  const $visibleToSup   = el.querySelector("#dteVisibleToSupervisors");
+  const $orphanRules    = el.querySelector("#dteOrphanRules");
+
+  // ── Supervisor rules (docs/data-table-rules-design.md §5) ─────────────
+  let _rules = EMPTY_RULES;      // as loaded for the current table
+  let _rulesLoadFailed = false;  // a save must not overwrite rules it never saw
+  let _tablesForLookup = [];     // the org's tables, for the "Lookup table" dropdown
+
+  /**
+   * Size the three content-driven columns to their content — the column
+   * name to the longest name, the two dropdowns to their longest option —
+   * as one measured width each, shared by the header grids and the rows
+   * (three separate grids, so max-content alone would not line up).
+   */
+  function sizeTableColumn() {
+    const set = (name, px) => $schemaMode.style.setProperty(name, `${Math.ceil(px)}px`);
+    const table = $schemaRowsContainer.querySelector(".dtc-rule-table");
+    if (table) {
+      const wasHidden = table.hidden;
+      table.hidden = false;
+      const w = table.getBoundingClientRect().width;
+      table.hidden = wasHidden;
+      if (w > 0) set("--dte-table-col", Math.max(150, w));
+    }
+    const lookup = $schemaRowsContainer.querySelector(".dtc-rule-lookup");
+    if (lookup) {
+      const w = lookup.getBoundingClientRect().width;
+      if (w > 0) set("--dte-lookup-col", Math.max(110, w));
+    }
+    const nameInput = $schemaRowsContainer.querySelector(".dtc-col-name");
+    if (nameInput) {
+      const font = getComputedStyle(nameInput).font;
+      const ctx = document.createElement("canvas").getContext("2d");
+      ctx.font = font;
+      let longest = 0;
+      $schemaRowsContainer.querySelectorAll(".dtc-col-name").forEach((i) => { longest = Math.max(longest, ctx.measureText(i.value || i.placeholder || "").width); });
+      set("--dte-name-col", Math.min(440, Math.max(200, longest + 36)));   // padding + room to type
+    }
+  }
+
+  function lookupTableOptions(excludeId) {
+    return `<option value="">— which table —</option>` + _tablesForLookup
+      .filter(t => t.id !== excludeId)
+      .map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("");
+  }
+
+  /**
+   * Wire a lookup dropdown to its source cell: the table dropdown for a
+   * Data Table lookup, the "Edit list" button for a List. The list's values
+   * live on the row (`row.__listValues`) until Save Schema stores them.
+   */
+  function wireLookupPair($lookup, $table, getType, $listBtn) {
+    const sync = () => {
+      const type = getType ? getType() : "string";
+      const stringy = type === "string";
+      if (!stringy && $lookup.value) $lookup.value = "";
+      $lookup.disabled = !stringy;
+      $lookup.title = stringy ? "" : "Lookups apply to string columns only";
+      $table.hidden = $lookup.value !== "dataTable";
+      if ($table.hidden) $table.value = "";
+      if ($listBtn) {
+        $listBtn.hidden = $lookup.value !== "list";
+        if ($listBtn.hidden) closeListEditor($listBtn.closest(".dtc-schema-row"));
+        refreshListButton($listBtn);
+      }
+    };
+    $lookup.addEventListener("change", sync);
+    sync();
+    return sync;
+  }
+
+  /** The button says how many values the list holds; none is a warning. */
+  function refreshListButton($btn) {
+    const row = $btn.closest(".dtc-schema-row");
+    const n = (row && row.__listValues || []).length;
+    $btn.textContent = `Edit list (${n} value${n === 1 ? "" : "s"})`;
+    $btn.classList.toggle("is-empty", n === 0);
+    $btn.title = n ? "The values Supervisors may choose from" : "No values yet — the list is not a rule until it has some";
+  }
+
+  /** Parse a textarea: one value per line, trimmed, blanks and repeats dropped, order kept. */
+  function parseListText(text) {
+    const out = [];
+    for (const line of String(text || "").split(/\r?\n/)) {
+      const v = line.trim();
+      if (v && !out.includes(v)) out.push(v);
+    }
+    return out;
+  }
+
+  function closeListEditor(row) {
+    const ed = row && row.nextElementSibling;
+    if (ed && ed.classList.contains("dtc-rule-list-editor") && ed.__row === row) ed.remove();
+  }
+
+  /** One editor open at a time, under its row. Every keystroke is kept on the row. */
+  function toggleListEditor(row) {
+    const open = row.nextElementSibling && row.nextElementSibling.classList.contains("dtc-rule-list-editor");
+    $schemaRowsContainer.querySelectorAll(".dtc-rule-list-editor").forEach((e) => e.remove());
+    if (open) return;
+    const name = row.querySelector(".dtc-col-name").value.trim() || "this column";
+    const ed = document.createElement("div");
+    ed.className = "dtc-rule-list-editor";
+    ed.__row = row;
+    ed.innerHTML = `
+      <div class="dtc-rule-list-head">
+        <span>The values Supervisors may choose for <strong>${escapeHtml(name)}</strong> — one per line, in the order the dropdown shows them. Matched exactly.</span>
+        <span class="dtc-spacer"></span>
+        <span class="dtc-rule-list-count"></span>
+        <button type="button" class="btn btn-secondary btn-sm" data-close>Done</button>
+      </div>
+      <textarea class="dt-input" spellcheck="false" placeholder="One value per line"></textarea>`;
+    const $ta = ed.querySelector("textarea"), $n = ed.querySelector(".dtc-rule-list-count");
+    $ta.value = (row.__listValues || []).join("\n");
+    const keep = () => {
+      row.__listValues = parseListText($ta.value);
+      $n.textContent = `${row.__listValues.length} value${row.__listValues.length === 1 ? "" : "s"}`;
+      refreshListButton(row.querySelector(".dtc-rule-list-btn"));
+    };
+    $ta.addEventListener("input", keep);
+    ed.querySelector("[data-close]").addEventListener("click", () => ed.remove());
+    keep();
+    row.after(ed);
+    $ta.focus();
+  }
+
+  function readRule(row) {
+    const type = row.querySelector(".dtc-col-type").value;
+    const lookup = type === "string" ? row.querySelector(".dtc-rule-lookup").value : "";
+    return {
+      lookup,
+      tableId: lookup === "dataTable" ? row.querySelector(".dtc-rule-table").value : "",
+      values: lookup === "list" ? [...(row.__listValues || [])] : [],
+      protected: row.querySelector(".dtc-rule-protected").checked,
+      mandatory: row.querySelector(".dtc-rule-mandatory").checked,
+      hidden:    row.querySelector(".dtc-rule-hidden").checked,
+    };
+  }
+
+  /** The rules as the controls hold them. Keyed by property key, as rows are. */
+  function collectRules() {
+    const columns = {};
+    $schemaRowsContainer.querySelectorAll(".dtc-schema-row").forEach((row) => {
+      const name = row.querySelector(".dtc-col-name").value.trim();
+      if (!name) return;
+      const propKey = row.dataset.originalKey || name;
+      const r = readRule(row);
+      if (r.lookup === "dataTable" && !r.tableId) r.lookup = "";
+      if (r.lookup === "list" && !r.values.length) r.lookup = "";
+      if (r.lookup || r.protected || r.mandatory || r.hidden) {
+        columns[propKey] = { lookup: r.lookup, ...(r.tableId ? { tableId: r.tableId } : {}), ...(r.lookup === "list" ? { values: r.values } : {}), protected: r.protected, mandatory: r.mandatory, hidden: r.hidden };
+      }
+    });
+    // Orphaned rules (columns no longer in the schema) are kept until removed.
+    for (const [name, rule] of Object.entries(_rules.columns || {})) {
+      if (!(name in columns) && _orphaned.has(name)) columns[name] = rule;
+    }
+    return { columns, visibleToSupervisors: $visibleToSup.checked, mayAddRows: $mayAddRows.checked };
+  }
+
+  let _orphaned = new Set();
+  function renderOrphans() {
+    if (!_orphaned.size) { $orphanRules.hidden = true; $orphanRules.innerHTML = ""; return; }
+    $orphanRules.hidden = false;
+    $orphanRules.innerHTML = `Rules for columns that are no longer in the schema: ` + [..._orphaned].map((n) =>
+      `<span>"${escapeHtml(n)}" (${escapeHtml(lookupLabel(_rules.columns[n].lookup))}${_rules.columns[n].lookup === "list" ? ` of ${(_rules.columns[n].values || []).length}` : ""}${_rules.columns[n].protected ? ", protected" : ""}${_rules.columns[n].mandatory ? ", mandatory" : ""}${_rules.columns[n].hidden ? ", hidden" : ""})` +
+      `<button type="button" class="btn btn-sm btn-secondary" data-drop-rule="${escapeHtml(n)}">remove</button></span>`).join(" ");
+    $orphanRules.querySelectorAll("[data-drop-rule]").forEach((b) => b.addEventListener("click", () => {
+      _orphaned.delete(b.getAttribute("data-drop-rule"));
+      renderOrphans();
+    }));
+  }
+
+  /** Put loaded rules into the controls; note the orphans. */
+  function applyRulesToControls(rules) {
+    _rules = rules || EMPTY_RULES;
+    $mayAddRows.checked = !!_rules.mayAddRows;
+    $visibleToSup.checked = !!_rules.visibleToSupervisors;
+    const present = new Set(["key"]);
+    $schemaRowsContainer.querySelectorAll(".dtc-schema-row").forEach((row) => {
+      const propKey = row.dataset.originalKey || row.querySelector(".dtc-col-name").value.trim();
+      present.add(propKey);
+      const rule = _rules.columns[propKey];
+      const $lookup = row.querySelector(".dtc-rule-lookup"), $table = row.querySelector(".dtc-rule-table");
+      $table.innerHTML = lookupTableOptions(_currentTableId);
+      row.__listValues = rule && rule.lookup === "list" && Array.isArray(rule.values) ? [...rule.values] : [];
+      closeListEditor(row);
+      $lookup.value = rule ? rule.lookup : "";
+      $lookup.dispatchEvent(new Event("change"));
+      if (rule && rule.lookup === "dataTable") $table.value = rule.tableId || "";
+      row.querySelector(".dtc-rule-protected").checked = !!(rule && rule.protected);
+      row.querySelector(".dtc-rule-mandatory").checked = !!(rule && rule.mandatory);
+      row.querySelector(".dtc-rule-hidden").checked = !!(rule && rule.hidden);
+    });
+    _orphaned = new Set(Object.keys(_rules.columns).filter((n) => !present.has(n)));
+    renderOrphans();
+    sizeTableColumn();
+  }
+
   const $addSchemaRowBtn = el.querySelector("#dteAddSchemaRow");
 
   const $rowsSearch = el.querySelector("#dteRowsSearch");
@@ -477,6 +741,15 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       <input class="dt-input dtc-col-name" type="text" placeholder="columnName" autocomplete="off" />
       <select class="dt-select dtc-col-type">${TYPE_OPTIONS_HTML}</select>
       <div class="dtc-col-default-wrap">${makeDefaultInput(initialType)}</div>
+      <span class="dte-rule-divider"></span>
+      <select class="dt-select dtc-rule-lookup" title="Supervisors may only choose from these values">${LOOKUP_OPTIONS_HTML}</select>
+      <span class="dtc-rule-src">
+        <select class="dt-select dtc-rule-table" hidden>${lookupTableOptions(_currentTableId)}</select>
+        <button type="button" class="btn btn-secondary btn-sm dtc-rule-list-btn" hidden>Edit list</button>
+      </span>
+      <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-protected" title="Supervisors cannot change this column"></span>
+      <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-mandatory" title="Supervisors cannot leave this column empty"></span>
+      <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-hidden" title="Supervisors do not see this column"></span>
       <button class="btn btn-sm dtc-del-btn" title="Remove column">×</button>
     `;
 
@@ -486,7 +759,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     if (prefillName) row.querySelector(".dtc-col-name").value = prefillName;
     if (prefillType) row.querySelector(".dtc-col-type").value = prefillType;
 
-    row.querySelector(".dtc-del-btn").addEventListener("click", () => row.remove());
+    row.querySelector(".dtc-del-btn").addEventListener("click", () => { closeListEditor(row); row.remove(); });
 
     wireDefaultHandlers(row);
     if (prefillDefault !== undefined) {
@@ -500,9 +773,15 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       }
     }
 
+    row.__listValues = [];
+    const $listBtn = row.querySelector(".dtc-rule-list-btn");
+    $listBtn.addEventListener("click", () => toggleListEditor(row));
+    row.querySelector(".dtc-drag-handle").addEventListener("mousedown", () => closeListEditor(row));
+    const syncRule = wireLookupPair(row.querySelector(".dtc-rule-lookup"), row.querySelector(".dtc-rule-table"), () => row.querySelector(".dtc-col-type").value, $listBtn);
     row.querySelector(".dtc-col-type").addEventListener("change", (e) => {
       row.querySelector(".dtc-col-default-wrap").innerHTML = makeDefaultInput(e.target.value);
       wireDefaultHandlers(row);
+      syncRule();
     });
 
     $schemaRowsContainer.appendChild(row);
@@ -704,8 +983,18 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       return;
     }
 
+    const ruleHint = (col) => {
+      const r = _rules.columns[col.name];
+      if (!r) return "";
+      const bits = [];
+      if (r.lookup) bits.push(lookupLabel(r.lookup) + (r.lookup === "dataTable" ? ` (${escapeHtml((_tablesForLookup.find(t => t.id === r.tableId) || {}).name || "?")})` : ""));
+      if (r.protected) bits.push("Protected");
+      if (r.mandatory) bits.push("Mandatory");
+      if (r.hidden) bits.push("Hidden");
+      return bits.length ? `<span class="dte-col-hint" title="Supervisor rule — not enforced on this page">${bits.join(" · ")}</span>` : "";
+    };
     const header = _rowsColumns
-      .map(col => `<th class="dte-col${col.name === "key" ? " dte-col-key" : ""}">${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}</th>`)
+      .map(col => `<th class="dte-col${col.name === "key" ? " dte-col-key" : ""}">${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}${ruleHint(col)}</th>`)
       .join("");
 
     const allSelectedOnPage = pageRows.length > 0 && pageRows.every(m => _selectedRowIds.has(m.id));
@@ -924,6 +1213,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       const sorted = (tables || []).sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       tableSelect.setItems(sorted.map(t => ({ id: t.id, label: t.name })));
+      _tablesForLookup = sorted.map(t => ({ id: t.id, name: t.name }));
       tableSelect.setEnabled(true);
       setStatus(sorted.length ? "" : "No data tables found in this org.");
     } catch (err) {
@@ -997,8 +1287,9 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     setStatus("Loading data table…");
 
     try {
-      const [table] = await Promise.all([
+      const [table, rules] = await Promise.all([
         gc.getDataTable(api, orgId, tableId),
+        getDataTableRules(orgId, tableId).catch((err) => { setStatus(`Rules could not be loaded: ${err.message}`, "error"); return null; }),
         divisionsLoaded ? true : loadDivisions(),
       ]);
 
@@ -1019,9 +1310,12 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         .map(([k, v]) => ({ key: k, name: v.title || k, type: v.type, default: v.default, order: v.displayOrder ?? 9999 }))
         .sort((a, b) => a.order - b.order);
       schemaColumns.forEach(col => addSchemaRow(col.name, col.type, col.default, col.key));
+      applyRulesToControls(rules || EMPTY_RULES);
+      _rulesLoadFailed = !rules;
 
       $form.hidden = false;
       $actions.hidden = false;
+      sizeTableColumn();                 // measurable only once the form is shown
       $rowsRefreshBtn.disabled = false;
 
       if (_mode === "rows") {
@@ -1146,7 +1440,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     );
 
     const overlay = document.createElement("div");
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 60%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
     overlay.innerHTML = `
       <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:320px;max-width:440px;width:90%">
         <h3 style="margin:0 0 8px;font-size:1.1rem">Copy Row</h3>
@@ -1372,9 +1666,29 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       };
 
       await gc.putDataTable(api, orgId, _currentTableId, body);
+      _currentTable = { ..._currentTable, name, description, division: { id: divisionId }, schema };
 
       const divName = $division.options[$division.selectedIndex]?.text || divisionId;
-      setStatus(`✓ Data table "${escapeHtml(name)}" saved successfully.`, "success");
+
+      // Then the Supervisor rules — a different store, so a second call; the
+      // rarer failure goes last, and says so without pretending the schema
+      // did not save.
+      let rulesNote = "";
+      if (_rulesLoadFailed) {
+        rulesNote = " Supervisor rules were NOT saved: they could not be loaded, and saving would have overwritten them blind. Reload the table and save again.";
+      } else {
+        try {
+          const rules = collectRules();
+          const r = await setDataTableRules(orgId, _currentTableId, rules, name);
+          applyRulesToControls(r.rules || rules);
+          const n = Object.keys((r.rules || rules).columns).length;
+          const saved = r.rules || rules;
+          rulesNote = ` Supervisor rules saved: ${saved.visibleToSupervisors ? "visible to Supervisors" : "not visible to Supervisors"}, ${n} column rule${n === 1 ? "" : "s"}${saved.mayAddRows ? ", may add rows" : ""}.`;
+        } catch (err) {
+          rulesNote = ` Schema saved, but the Supervisor rules were not: ${err.message}`;
+        }
+      }
+      setStatus(`✓ Data table "${escapeHtml(name)}" saved successfully.${rulesNote}`, rulesNote.includes("NOT") || rulesNote.includes("were not") ? "error" : "success");
       logAction({
         me,
         orgId,

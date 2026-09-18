@@ -5,8 +5,62 @@ const {
   getBearerToken,
   parseRegistry,
 } = require("../lib/orgConfigResolver");
-const { checkCustomerRequest } = require("../lib/entitlementAllowlist");
+const { checkCustomerRequest, checkFeatureRequest } = require("../lib/entitlementAllowlist");
 const { checkLicense } = require("../lib/licenseGate");
+const { checkProxyPermission } = require("../lib/proxyPermissions");
+const { parseRowWrite, checkRowWrite, checkTableAccess, normalizeRules, EMPTY_RULES } = require("../lib/dataTableRules");
+const { requiredFor } = require("../lib/proxyPermissions");
+const divisionScope = require("../lib/divisionScope");
+const { INTERNAL_ORG_SLUG } = require("../lib/licenseGate");
+const orgSettings = require("../lib/orgSettingsStore");
+
+// ── Data table rules, for Supervisors ─────────────────────────────────────
+// A Supervisor's row write into a data table is checked against the table's
+// rules (docs/data-table-rules-design.md §7): may they add/delete, is a
+// protected column unchanged, a mandatory one filled, a lookup value one
+// that exists. The reads the check needs run with the same credentials the
+// write would. Rules are cached per org+table for the licence window.
+const RULES_TTL_MS = 5 * 60 * 1000;
+const rulesCache = new Map();
+async function rulesFor(orgId, tableId) {
+  const key = `${orgId}|${tableId}`;
+  const hit = rulesCache.get(key);
+  if (hit && Date.now() < hit.expiresAt) return hit.rules;
+  const row = await orgSettings.getDataTableRules(orgId, tableId);
+  const rules = row ? normalizeRules(row.rules) : EMPTY_RULES;
+  rulesCache.set(key, { rules, expiresAt: Date.now() + RULES_TTL_MS });
+  return rules;
+}
+
+/**
+ * Refuse a Supervisor's call on a data table that is not one of theirs
+ * (docs/data-table-rules-design.md §11), and a row write that breaks the
+ * table's rules.
+ * @returns {Promise<object|null>} a response to send, or null to proceed.
+ */
+async function guardDataTableWrite(context, { orgId, features, dataTables, method, path, body, region, token }) {
+  if (!Array.isArray(features)) return null;                  // not a Supervisor
+  const access = await checkTableAccess({ method, path, dataTables, rulesOf: (id) => rulesFor(orgId, id) })
+    .catch((err) => ({ ok: false, error: "datatable_rule", detail: `The table's rules could not be read, so the call was not made. Try again. (${err.message || err})` }));
+  if (!access.ok) {
+    context.log.warn(`[datatable-rules] refused ${method} ${path} for ${orgId}: ${access.detail}`);
+    return { status: 403, headers: { "Content-Type": "application/json" }, body: { error: access.error, detail: access.detail } };
+  }
+  const write = parseRowWrite(method, path);
+  if (!write) return null;
+  let rules;
+  try {
+    rules = await rulesFor(orgId, write.tableId);
+  } catch (err) {
+    context.log.error(`[datatable-rules] rules read failed for ${orgId}/${write.tableId}: ${err.message || err}`);
+    return { status: 403, headers: { "Content-Type": "application/json" }, body: { error: "datatable_rule", detail: "The table's rules could not be read, so the change was not made. Try again." } };
+  }
+  const read = (m, p, opts = {}) => callGenesys({ region, token, method: m, path: p, query: opts.query, body: opts.body });
+  const verdict = await checkRowWrite({ ...write, body }, rules, read, write.tableId);
+  if (verdict.ok) return null;
+  context.log.warn(`[datatable-rules] refused ${method} ${path} for ${orgId}: ${verdict.detail}`);
+  return { status: 403, headers: { "Content-Type": "application/json" }, body: { error: verdict.error, detail: verdict.detail, column: verdict.column || "" } };
+}
 
 const INTERNAL_COMPANY_ORG_ID = (process.env.INTERNAL_COMPANY_ORG_ID || "").trim();
 const ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -186,7 +240,9 @@ module.exports = async function (context, req) {
         return;
       }
 
-      const guard = checkCustomerRequest(path, classification.entitlements);
+      // A supervisor's effective pages stand in for the org's entitlements, so a
+      // call outside their pages is refused as one outside the entitlements is.
+      const guard = checkCustomerRequest(path, licence.features || classification.entitlements);
       if (!guard.allowed) {
         context.res = {
           status: 403,
@@ -195,6 +251,12 @@ module.exports = async function (context, req) {
         };
         return;
       }
+
+      // A Supervisor's data table row writes meet the table's rules.
+      const refused = await guardDataTableWrite(context, {
+        orgId: cust.id, features: licence.features, dataTables: licence.dataTables, method, path, body, region: cust.region, token: userToken,
+      });
+      if (refused) { context.res = refused; return; }
 
       // Forward the user's OWN token to their OWN region (no elevation).
       const result = await callGenesys({
@@ -248,6 +310,75 @@ module.exports = async function (context, req) {
     }
 
     // --- INTERNAL / FALLBACK MODE: client-credentials (existing behavior) ---
+
+    // The named-user gate, for internal sessions (licenseGate.js). Until this
+    // check the proxy asked an internal caller nothing beyond "is your token
+    // from our org" and elevated them to client credentials for any customer
+    // org; the app's whole internal access model lived in the browser. An
+    // unnamed colleague now gets no Genesys call through here. Superusers
+    // pass; while INTERNAL_NAMED_USERS_ENFORCED is not "true" an unnamed
+    // colleague passes and is logged.
+    let internalFeatures = null;   // an internal Supervisor's pages; null otherwise
+    let internalTables   = null;   // …and their data tables; null otherwise
+    let divisionGrants = null;     // the person's grants by division, for the internal org (docs/division-scope-design.md)
+    if (classification.mode === "internal") {
+      const licence = await checkLicense(context, userToken, classification);
+      if (!licence.licensed) {
+        context.res = {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+          body: { error: "user_not_licensed", reason: licence.reason },
+        };
+        return;
+      }
+
+      // And the person's OWN permissions, for this call (proxyPermissions.js).
+      // The call below runs as the client, so Genesys checks the client's
+      // permissions, not the person's — this is the only place theirs are
+      // asked. Reports until PROXY_PERMISSION_CHECK is "enforce".
+      const perm = await checkProxyPermission(context, {
+        token: userToken, region: classification.org && classification.org.region,
+        method, path, superuser: !!licence.superuser, userId: licence.userId,
+      });
+      if (!perm.allowed) {
+        context.res = {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+          body: { error: perm.error, required: perm.required || [] },
+        };
+        return;
+      }
+
+      internalFeatures = Array.isArray(licence.features) ? licence.features : null;
+      internalTables   = Array.isArray(licence.dataTables) ? licence.dataTables : null;
+
+      // In the internal org, the person's own divisions bound what they see
+      // and change. Superusers bypass; an unreadable grant set refuses.
+      if (!licence.superuser && customerId === INTERNAL_ORG_SLUG) {
+        divisionGrants = await divisionScope.grantsFor(userToken, classification.org && classification.org.region);
+        if (!divisionGrants) {
+          context.res = { status: 403, headers: { "Content-Type": "application/json" }, body: { error: "divisions_unverified" } };
+          return;
+        }
+      }
+
+      // An internal Supervisor's pages, through the same coarse allowlist a
+      // customer's are, under the same flag (docs/internal-roles-design.md
+      // §5). The permission check above is the security layer; this is the
+      // menu, held to server-side when the allowlist is on.
+      if (Array.isArray(licence.features)) {
+        const guard = checkFeatureRequest(path, licence.features);
+        if (!guard.allowed) {
+          context.res = {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+            body: { error: guard.reason },
+          };
+          return;
+        }
+      }
+    }
+
     if (!customerId) {
       context.res = {
         status: 400,
@@ -289,6 +420,39 @@ module.exports = async function (context, req) {
       clientSecret
     );
 
+    // An internal Supervisor's data table row writes meet the table's rules.
+    const refused = await guardDataTableWrite(context, {
+      orgId: customerId, features: internalFeatures, dataTables: internalTables, method, path, body, region: customer.region, token,
+    });
+    if (refused) { context.res = refused; return; }
+
+    // The person's divisions, in the internal org: a write outside them is
+    // refused before it goes; a read is filtered after it returns.
+    const divRequired = divisionGrants ? requiredFor(method, path) : null;
+    const divRead = (p) => callGenesys({ region: customer.region, token, method: "GET", path: p });
+    const divisionRefusal = (divisionId, required) => {
+      const name = divisionGrants.divisionNames.get(divisionId) || divisionId || "that";
+      const perms = [].concat(required || []).filter(Boolean);
+      return {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+        body: {
+          error: "division_required", division: name, required: perms,
+          detail: `Your role does not cover the ${name} division. This action needs the permission${perms.length ? ` (${perms.join(" or ")})` : ""} granted in that division, `
+            + `and in Genesys a role is granted per division — having it in another division is not enough. Ask your administrator to add ${name} to the divisions of your role.`,
+        },
+      };
+    };
+    if (divisionGrants && divRequired) {
+      const home = await divisionScope.homeDivisionFor(divRead, customerId);
+      const verdict = await divisionScope.checkWrite({ method, path, body, grants: divisionGrants, required: [].concat(divRequired), read: divRead, homeDivisionId: home });
+      if (!verdict.ok) {
+        context.log.warn(`[division-scope] refused ${method} ${path} — division ${verdict.divisionId}`);
+        context.res = divisionRefusal(verdict.divisionId, divRequired);
+        return;
+      }
+    }
+
     const result = await callGenesys({
       region: customer.region,
       token,
@@ -298,6 +462,12 @@ module.exports = async function (context, req) {
       query,
       raw,
     });
+    const isRead = String(method).toUpperCase() === "GET" || /\/(search|query)$/i.test(String(path).split("?")[0]);
+    if (divisionGrants && !raw && isRead && result && result.status === 200) {
+      const f = divisionScope.filterResponse({ path, body: result.body, grants: divisionGrants, required: divRequired ? [].concat(divRequired) : [] });
+      if (f.refused) { context.res = divisionRefusal(f.divisionId, divRequired); return; }
+      result.body = f.body;
+    }
     context.res = result;
   } catch (err) {
     context.log.error("Proxy error:", err);

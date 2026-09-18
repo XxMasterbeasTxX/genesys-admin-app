@@ -5,7 +5,7 @@
  * (using the PKCE access token) and resolves which app features they can access.
  */
 import { CONFIG } from "../config.js";
-import { SUPERUSER_IDS } from "../accessConfig.js";
+import { SUPERUSER_ONLY_KEYS, CUSTOMER_MANAGER_KEYS, CUSTOMER_EXCLUDED_KEYS, CUSTOMER_ADMIN_KEYS } from "../accessConfig.js";
 import {
   isWriteGated, getRequiredPermissions, getActionPermissions,
   isReadGated, getReadPermissions,
@@ -16,51 +16,8 @@ import {
 // docs/customer-facing-plan.md §6), customers in theirs
 // (docs/customer-permission-refinement-design.md). Read-only features are never
 // affected; superusers always bypass. Set to false to disable the permission
-// refinement entirely on both sides (group / entitlement access only).
+// refinement entirely on both sides (named-user / entitlement access only).
 const ENFORCE_PERMISSION_REFINEMENT = true;
-
-/** Fetch the names of all groups the authenticated user belongs to. */
-async function fetchUserGroupNames(accessToken) {
-  const headers = { Authorization: `Bearer ${accessToken}` };
-
-  // Step 1: get group IDs via expand (CORS-safe endpoint)
-  let groupIds;
-  try {
-    const resp = await fetch(`${CONFIG.apiBase}/api/v2/users/me?expand=groups`, { headers });
-    const json = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      console.error("[accessService] users/me API error:", resp.status, json);
-      return null;
-    }
-    groupIds = (json.groups || []).map((g) => g.id).filter(Boolean);
-  } catch (err) {
-    console.error("[accessService] users/me fetch failed:", err);
-    return null;
-  }
-
-  if (groupIds.length === 0) {
-    console.info("[accessService] user belongs to no groups");
-    return [];
-  }
-
-  // Step 2: resolve names in parallel by fetching each group by ID
-  try {
-    const results = await Promise.all(
-      groupIds.map((id) =>
-        fetch(`${CONFIG.apiBase}/api/v2/groups/${id}`, { headers })
-          .then((r) => r.json())
-          .then((g) => g.name || null)
-          .catch(() => null),
-      ),
-    );
-    const names = results.filter(Boolean);
-    console.info("[accessService] user groups:", names);
-    return names;
-  } catch (err) {
-    console.error("[accessService] group name lookup failed:", err);
-    return null;
-  }
-}
 
 /**
  * Fetch the authenticated user's effective Genesys permissions.
@@ -162,7 +119,6 @@ function buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode = "inter
   const permsAvailable = Array.isArray(permList);
   const hasPermission = (perm) => permsAvailable && permList.some((g) => permGrants(g, perm));
 
-
   /**
    * Refined state for a page key:
    *   "hidden"                — no group access (never show)
@@ -251,77 +207,82 @@ function buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode = "inter
 }
 
 /**
- * Resolve the user's access from their group memberships, refined by their own
- * Genesys permissions for WRITE actions (see docs/customer-facing-plan.md §6).
+ * Resolve an internal user's access: their role decides the pages, their own
+ * Genesys permissions refine the actions (see docs/customer-facing-plan.md §6,
+ * docs/internal-roles-design.md §5).
  *
  * @param {string} accessToken   PKCE access token (your own Genesys org).
- * @param {Object} groupAccessMap  GROUP_ACCESS from accessConfig.js.
- * @param {string} [userId]        The authenticated user's Genesys user ID.
+ * @param {{ superuser?: boolean, role?: string, features?: string[]|null, managesCustomers?: boolean }} who
+ *        What org-config said about this caller, decided server-side by the
+ *        named-user gate: whether they are a superuser (the SUPERUSER_IDS app
+ *        setting), the role on their own row, a Supervisor's effective pages
+ *        (null for an Administrator — everything), and whether their row lets
+ *        them manage customer access.
  * @returns {Promise<{ hasAccess, hasAnyAccess, accessState, getMissingPermissions }>}
  */
-export async function resolveAccess(accessToken, groupAccessMap, userId) {
-  const isSuper = !!(userId && SUPERUSER_IDS.includes(userId));
+export async function resolveAccess(accessToken, who = {}) {
+  const isSuper = !!who.superuser;
+  const canManageCustomers = isSuper || !!who.managesCustomers;
+  // A Supervisor's pages; null means an Administrator (or a superuser).
+  const pages = Array.isArray(who.features) ? new Set(who.features) : null;
 
-  // Fetch groups and permissions in parallel.
-  const [groupNames, permList] = await Promise.all([
-    isSuper ? Promise.resolve([]) : fetchUserGroupNames(accessToken),
-    isSuper ? Promise.resolve(null) : fetchUserPermissions(accessToken),
-  ]);
-
-  // Fail CLOSED. This used to grant every group's access when the lookup
-  // failed, which handed full read access to anyone whose token could not read
-  // its own groups — while the permission gate twelve lines below was already
-  // explicitly fail-closed. Two halves of one function cannot disagree about
-  // which way to fail. The failure is surfaced (see `verificationFailed`) so it
-  // reads as "we could not check" rather than as an empty menu.
-  const groupsFailed = groupNames === null;
-  if (groupsFailed) {
-    console.error("[accessService] Could not fetch groups — denying access until verified.");
-  }
-
-  const keys = new Set();
-  for (const name of (groupNames || [])) {
-    const granted = groupAccessMap[name];
-    if (Array.isArray(granted)) granted.forEach((k) => keys.add(k));
-  }
+  // A named user's permissions are the whole of what they may do. There is no
+  // group lookup any more: being named is decided by the server before this
+  // runs, and what Genesys lets them do is read here, exactly as before.
+  const permList = isSuper ? null : await fetchUserPermissions(accessToken);
 
   /**
-   * Group-level access check (unchanged semantics).
-   * Checks (in order): *, section.*, section.group.*, exact key.
+   * Page-level access. An Administrator may see every page except the two
+   * kinds a permission cannot express (accessConfig.js); a Supervisor only
+   * the pages in their set — absent, not greyed. The permission refinement
+   * below then greys what their Genesys permissions do not cover.
    * Falsy pageKey (unprotected page) → true.
    */
   function hasAccess(pageKey) {
     if (!pageKey) return true;
+    // The customer Administrator's section: internal sessions have the same
+    // pages under Customers, with an org selector.
+    if (CUSTOMER_ADMIN_KEYS.includes(pageKey)) return false;
     if (isSuper) return true;
-    if (groupsFailed) return false;
-    if (keys.has("*")) return true;
-    const parts = pageKey.split(".");
-    for (let i = parts.length - 1; i > 0; i--) {
-      if (keys.has(parts.slice(0, i).join(".") + ".*")) return true;
-    }
-    return keys.has(pageKey);
+    if (SUPERUSER_ONLY_KEYS.includes(pageKey)) return false;
+    // The two Customers pages come from the capability, never from a scope.
+    if (CUSTOMER_MANAGER_KEYS.includes(pageKey)) return canManageCustomers;
+    if (pages) return pages.has(pageKey);
+    return true;
   }
 
   const refined = buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode: "internal" });
 
   return {
     hasAccess,
-    hasAnyAccess() { return isSuper || keys.size > 0; },
+    // Named, or a superuser — the server said so. A Supervisor with no pages
+    // and no capability has nothing to see, and the shell says so.
+    hasAnyAccess() { return !pages || pages.size > 0 || canManageCustomers; },
     ...refined,
-    // True when the group lookup failed, so nothing could be verified. Lets the
-    // shell say "could not verify your access" instead of showing an empty menu
-    // that looks like a permissions decision.
-    verificationFailed: groupsFailed,
+    canManageCustomers,
+    isSuperuser: isSuper,
+    role: who.role || "",
+    // A Supervisor's data tables (null for anyone else): the Supervisor page
+    // offers only these (docs/data-table-rules-design.md §11).
+    dataTables: Array.isArray(who.dataTables) ? [...who.dataTables] : null,
+    // True when the permission read failed, so nothing beyond "you are named"
+    // could be verified. The refinement already fails closed on every gated
+    // page; this lets the shell say "could not verify" instead of showing a
+    // menu of greyed pages that looks like a permissions decision.
+    verificationFailed: !isSuper && permList === null,
   };
 }
 
 /**
- * Resolve access for a CUSTOMER session: entitlements shape the menu, the
+ * Resolve access for a CUSTOMER session: the key set shapes the menu, the
  * user's own permissions refine the actions.
  *
- * Entitlements (e.g. "interactions.*", "export.users.*") decide what the org
- * has bought and therefore what is SHOWN, through the same wildcard key
- * machinery as internal group access. What this user may DO within that is
+ * The key set is what the server said this session may see: for an
+ * Administrator the org's entitlements (everything — customers pay per user,
+ * not for content); for a Supervisor their effective pages, ticks ∩ the org's
+ * Supervisor scope, as leaf keys (docs/customer-roles-design.md §7). A page
+ * outside the set is `hidden` — absent from the sidebar, exactly as an
+ * internal-only page is — never greyed. What this user may DO within that is
  * refined from their own Genesys permissions by the shared builder, exactly as
  * for internal users — so a control they cannot use is greyed with the missing
  * permission named, instead of erroring after the click. Genesys still enforces
@@ -330,18 +291,24 @@ export async function resolveAccess(accessToken, groupAccessMap, userId) {
  * Exposes the same interface as resolveAccess() so nav, routing, and pages are
  * unchanged.
  *
- * @param {string[]} entitlements  Module access-key prefixes for the customer.
+ * @param {string[]} entitlements  Access keys or prefixes the session may see.
  * @param {string}   [accessToken] The session token. Omitted (the org-config
  *                                 fallback path) → no fetch, permissions
  *                                 unavailable, every gated action fails closed.
  * @param {string}   [apiBase]     The session's region base. A customer's token
  *                                 answers only on its own region.
+ * @param {{ role?: string }} [who] The role on the caller's own row, decided
+ *                                 server-side: "administrator" sees the
+ *                                 Administrator section; anything else does not.
  */
-export async function resolveCustomerAccess(entitlements, accessToken, apiBase) {
+export async function resolveCustomerAccess(entitlements, accessToken, apiBase, who = {}) {
   const keys = new Set((entitlements || []).filter((k) => typeof k === "string" && k.trim()));
+  const isAdministrator = who.role === "administrator";
 
   function hasAccess(pageKey) {
     if (!pageKey) return true;
+    // The Administrator's own pages are decided by the role, not the key set.
+    if (CUSTOMER_ADMIN_KEYS.includes(pageKey)) return isAdministrator;
     // Internal-only features are never available in customer mode, even if an
     // entitlement prefix would otherwise grant them (belt-and-suspenders on top
     // of the server-side proxy denylist + org-lock). See docs/customer-facing-plan.md §5.
@@ -359,8 +326,11 @@ export async function resolveCustomerAccess(entitlements, accessToken, apiBase) 
 
   return {
     hasAccess,
-    hasAnyAccess() { return keys.size > 0; },
+    hasAnyAccess() { return keys.size > 0 || isAdministrator; },
     ...refined,
+    role: who.role || "",
+    dataTables: Array.isArray(who.dataTables) ? [...who.dataTables] : null,
+    isCustomerAdministrator: isAdministrator,
     verificationFailed: false,
   };
 }
@@ -378,39 +348,6 @@ export async function resolveCustomerAccess(entitlements, accessToken, apiBase) 
  * carries it implicitly, so a package meant to exclude bulk phone deletion has
  * to name the phone pages it does grant rather than use the wildcard.
  */
-const CUSTOMER_EXCLUDED_KEYS = [
-  "data-actions.copy.betweenOrgs",
-  "data-tables.copy.betweenOrgs",
-  "roles.copy.betweenOrgs",
-  "export.users.trustee",
-  "export.roles.allOrgs",
-  // Billing: the four multi-org / arbitrary-range reports stay internal. Billing
-  // Period and Period Comparison are customer-visible — a customer's own
-  // overage, read for them by the server as their trustee
-  // (docs/customer-billing-design.md). Named individually rather than as the
-  // `export.billing` prefix, because the prefix would hide those two.
-  "export.billing.allOrgsLatest",
-  "export.billing.calendarYear",
-  "export.billing.dateRange",
-  "export.billing.customOrgs",
-  "utilities",
-  "deployment",
-  // Who may use the app is Netdesign's list about the customer, never the
-  // customer's page (docs/customer-user-licensing-design.md §6).
-  "customers",
-  // Flows is otherwise a customer-suitable module, so a `flows.*` entitlement
-  // would hand a customer the ability to permanently delete a callflow and its
-  // dependencies — irreversibly, with no rollback. Listed explicitly because the
-  // wildcard would grant it silently.
-  "flows.delete",
-  // Recording export jobs pull the org's actual call recordings out in bulk.
-  // That is customer data egress, not an interaction operation, and it arrived
-  // bundled with Disconnect and Move because `interaction-ops` is the whole
-  // `interactions.*` namespace — so both the package wildcard and `demo` granted
-  // it silently. Same shape as `flows.delete` above: the module is otherwise
-  // customer-suitable, and only the named leaf is held back.
-  "interactions.recordings",
-];
 
 /** True if a page key is an internal-only feature excluded from customer mode. */
 function isCustomerExcluded(pageKey) {

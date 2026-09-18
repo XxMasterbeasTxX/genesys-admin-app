@@ -264,12 +264,12 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
                  overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:8px;display:none; }
       .df-menu.open { display:block; }
       .df-item { padding:6px 10px;font-size:13px;cursor:pointer;white-space:nowrap; }
-      .df-item:hover, .df-item.is-active { background:rgba(96,165,250,.15); }
+      .df-item:hover, .df-item.is-active { background:color-mix(in srgb, var(--accent) 15%, transparent); }
       .df-item .df-meta { color:var(--muted);font-size:11px; }
       .df-sect { border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden; }
       .df-sect-head { padding:9px 12px;background:var(--panel);border-bottom:1px solid var(--border); }
       .df-sect-head h3 { margin:0;font-size:.95rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
-      .df-sect--b .df-sect-head { background:rgba(251,191,36,.07); }
+      .df-sect--b .df-sect-head { background:color-mix(in srgb, var(--warn) 7%, transparent); }
       .df-row { display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border); }
       .df-row:last-child { border-bottom:none; }
       .df-row--locked { opacity:.72; }
@@ -278,15 +278,15 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       .df-sub { color:var(--muted);font-size:.79rem;margin-top:2px;line-height:1.45; }
       .df-badge { display:inline-block;font-size:.72rem;padding:1px 7px;border-radius:999px;
                   border:1px solid var(--border);color:var(--muted); }
-      .df-lock { color:#fbbf24; }
-      .df-block { color:#f87171; }
-      .df-note { background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.35);
+      .df-lock { color:var(--warn); }
+      .df-block { color:var(--danger); }
+      .df-note { background:color-mix(in srgb, var(--danger) 8%, transparent);border:1px solid color-mix(in srgb, var(--danger) 35%, transparent);
                  border-radius:8px;padding:11px 13px;margin:12px 0; }
-      .df-caveat { background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);
+      .df-caveat { background:color-mix(in srgb, var(--warn) 8%, transparent);border:1px solid color-mix(in srgb, var(--warn) 30%, transparent);
                    border-radius:6px;padding:8px 11px;margin:0;font-size:.82rem; }
       /* Destructive action — deliberately not the same colour as Analyse. */
-      .df-danger { background:#b91c1c; border-color:#b91c1c; }
-      .df-danger:hover:not(:disabled) { background:#dc2626; border-color:#dc2626; }
+      .df-danger { background:color-mix(in srgb, var(--danger-strong), var(--backdrop) 25%); border-color:color-mix(in srgb, var(--danger-strong), var(--backdrop) 25%); }
+      .df-danger:hover:not(:disabled) { background:var(--danger-strong); border-color:var(--danger-strong); }
     </style>
 
     <h2>Flows — Delete Flow</h2>
@@ -1184,7 +1184,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
     const host = $("#dfResults");
     if (!host) return;
     const icon = { ok: "✓", skipped: "↷", error: "✗" };
-    const colour = { ok: "#4ade80", skipped: "#fbbf24", error: "#f87171" };
+    const colour = { ok: "var(--ok)", skipped: "var(--warn)", error: "var(--danger)" };
     host.innerHTML = `
       <div class="df-sect">
         <div class="df-sect-head"><h3>Deletion — ${results.length} of ${total}</h3></div>
@@ -1215,7 +1215,7 @@ export default function renderDeleteFlow({ route, me, api, orgContext }) {
       .map((n) => `${n.name} (${n.rowCount} row${n.rowCount === 1 ? "" : "s"})`);
 
     const overlay = document.createElement("div");
-    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center";
+    overlay.style.cssText = "position:fixed;inset:0;background:color-mix(in srgb, var(--backdrop) 60%, transparent);z-index:1000;display:flex;align-items:center;justify-content:center";
     overlay.innerHTML = `
       <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:22px;min-width:420px;max-width:640px;width:92%">
         <h3 style="margin:0 0 12px;font-size:1.05rem">Delete “${escapeHtml(root.name)}” and ${nodes.length - 1} dependencies?</h3>

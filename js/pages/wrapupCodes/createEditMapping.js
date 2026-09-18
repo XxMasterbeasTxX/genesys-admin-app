@@ -64,15 +64,15 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
         width:min(560px, 100%);
         border:1px solid var(--border);
         border-radius:12px;
-        background:rgba(255,255,255,.02);
+        background:color-mix(in srgb, var(--lift) 2%, transparent);
         padding:10px;
       }
       .wcm-default-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; }
       .wcm-default-title { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; }
       .wcm-default-sub { color:var(--muted); font-size:12px; margin-bottom:8px; }
       .wcm-default-msg { min-height:18px; font-size:12px; margin-bottom:6px; }
-      .wcm-default-msg.error { color:#f87171; }
-      .wcm-default-msg.success { color:#34d399; }
+      .wcm-default-msg.error { color:var(--danger); }
+      .wcm-default-msg.success { color:var(--ok); }
       .wcm-default-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:8px; }
 
       .wcm-toolbar { display:flex; gap:10px; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; margin-bottom:12px; }
@@ -81,32 +81,32 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       .wcm-search-group { min-width:260px; max-width:460px; flex:1; }
 
       .wcm-status { margin:8px 0 12px; font-size:13px; min-height:18px; color:var(--muted); }
-      .wcm-status--error { color:#f87171; }
-      .wcm-status--success { color:#34d399; }
+      .wcm-status--error { color:var(--danger); }
+      .wcm-status--success { color:var(--ok); }
 
       .wcm-table-wrap { overflow:auto; border:1px solid var(--border); border-radius:10px; }
       .wcm-table { width:100%; border-collapse:collapse; min-width:980px; }
       .wcm-table th, .wcm-table td { border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
       .wcm-table th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-      .wcm-table tbody tr:hover { background:rgba(255,255,255,.02); }
+      .wcm-table tbody tr:hover { background:color-mix(in srgb, var(--lift) 2%, transparent); }
       .wcm-data-row { cursor:pointer; }
-      .wcm-data-row:hover { background:rgba(59,130,246,.05); }
+      .wcm-data-row:hover { background:color-mix(in srgb, var(--accent-strong) 5%, transparent); }
       .wcm-empty { text-align:center; color:var(--muted); padding:16px 8px; }
       .wcm-row-expand { width:34px; text-align:center; }
       .wcm-row-icon { display:inline-block; width:18px; text-align:center; color:var(--muted); font-size:12px; }
 
       .wcm-chip-wrap { display:flex; flex-wrap:wrap; gap:4px; }
       .wcm-chip { border:1px solid var(--border); border-radius:999px; padding:2px 8px; font-size:11px; color:var(--muted); }
-      .wcm-chip--default { color:#fbbf24; border-color:#f59e0b; }
+      .wcm-chip--default { color:var(--warn); border-color:var(--warn-strong); }
 
-      .wcm-editor-row td { background:rgba(255,255,255,.02); }
-      .wcm-editor { border:1px solid var(--border); border-radius:10px; padding:12px; background:rgba(0,0,0,.14); }
+      .wcm-editor-row td { background:color-mix(in srgb, var(--lift) 2%, transparent); }
+      .wcm-editor { border:1px solid var(--border); border-radius:10px; padding:12px; background:color-mix(in srgb, var(--backdrop) 14%, transparent); }
       .wcm-editor-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; margin-bottom:10px; }
       .wcm-toggle { display:flex; align-items:center; justify-content:space-between; gap:8px; border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
       .wcm-switch {
         border:none;
-        background:#9fb4cc;
-        color:#1f2937;
+        background:var(--muted);
+        color:var(--backdrop);
         border-radius:999px;
         width:104px;
         height:40px;
@@ -118,15 +118,15 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
         transition:background .15s;
       }
       .wcm-switch.on {
-        background:#2f63c7;
-        color:#ffffff;
+        background:var(--accent-strong);
+        color:var(--text-inverse);
       }
       .wcm-switch-knob {
         width:32px;
         height:32px;
         border-radius:50%;
-        background:#e5e7eb;
-        box-shadow:0 0 0 1px rgba(0,0,0,.1);
+        background:var(--text-inverse);
+        box-shadow:0 0 0 1px color-mix(in srgb, var(--backdrop) 10%, transparent);
         transition:transform .15s;
         flex:0 0 auto;
       }
@@ -161,13 +161,13 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
       .wcm-seg { display:flex; border:1px solid var(--border); border-radius:9px; overflow:hidden; width:fit-content; }
       .wcm-seg button { border:none; border-right:1px solid var(--border); padding:7px 12px; background:transparent; color:var(--muted); cursor:pointer; }
       .wcm-seg button:last-child { border-right:none; }
-      .wcm-seg button.active { background:rgba(59,130,246,.2); color:#93c5fd; }
+      .wcm-seg button.active { background:color-mix(in srgb, var(--accent-strong) 20%, transparent); color:var(--accent-quiet); }
       .wcm-editor-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
       .wcm-editor-msg { min-height:18px; font-size:12px; margin:4px 0 8px; }
-      .wcm-editor-msg.error { color:#f87171; }
-      .wcm-editor-msg.success { color:#34d399; }
+      .wcm-editor-msg.error { color:var(--danger); }
+      .wcm-editor-msg.success { color:var(--ok); }
 
-      .wcm-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:5000; display:none; align-items:center; justify-content:center; }
+      .wcm-modal-backdrop { position:fixed; inset:0; background:color-mix(in srgb, var(--backdrop) 45%, transparent); z-index:5000; display:none; align-items:center; justify-content:center; }
       .wcm-modal-backdrop.open { display:flex; }
       .wcm-modal { width:min(640px, calc(100vw - 24px)); background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:14px; }
       .wcm-modal h3 { margin:0 0 10px; }
@@ -248,7 +248,7 @@ export default function renderWrapupCodesCreateEditMapping({ me, api, orgContext
         <h3 id="wcmModalTitle">Create Wrapup Code</h3>
         <div class="wcm-form-grid">
           <div class="dt-control-group full">
-            <label class="dt-label" for="wcmName">Name <span style="color:#f87171">*</span></label>
+            <label class="dt-label" for="wcmName">Name <span style="color:var(--danger)">*</span></label>
             <input class="dt-input" id="wcmName" type="text" autocomplete="off">
           </div>
           <div class="dt-control-group full">

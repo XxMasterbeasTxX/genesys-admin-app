@@ -39,6 +39,19 @@ In the **customer's** Genesys Cloud org (Admin → Integrations → OAuth → Ad
    bounded by the **user's Genesys role**; our server-side org-lock + entitlement guard do the isolation.
 4. **Save** and copy the **Client ID** (public — safe to store in the registry). No secret is used.
 
+### If the customer wants anything that runs unattended
+
+Scheduled exports, overage alerts and **GDPR completion emails** run from a timer with nobody signed
+in, so they cannot use the PKCE client above. They need a second OAuth client in the customer's org
+with grant type **Client Credentials**, and its id and secret in the SWA application settings as
+`GENESYS_<SLUG>_CLIENT_ID` / `GENESYS_<SLUG>_CLIENT_SECRET` (slug upper-cased, dashes to
+underscores — `test-ie` → `GENESYS_TEST_IE_CLIENT_ID`).
+
+For GDPR completion emails the role assigned to that client must hold **`gdpr:request:view`**.
+Without the client, or without the permission, a person who ticked *Email me when Genesys completes
+this* gets one mail within the hour saying the app could not check, naming this setting — never
+silence.
+
 ---
 
 ## Step 2 — Gather the customer's org details

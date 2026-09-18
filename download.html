@@ -3,16 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <title>Export Download</title>
+  <script src="js/theme.js"></script>
+  <link rel="stylesheet" href="css/tokens.css" />
   <style>
-    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0;
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text);
            display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
     .box { text-align: center; max-width: 500px; }
     .box p { font-size: 1.1rem; margin-bottom: 1.5rem; }
-    .box .sub { color: #888; font-size: 0.85rem; margin-top: 1rem; }
+    .box .sub { color: var(--muted); font-size: 0.85rem; margin-top: 1rem; }
     .dl-btn { display: inline-block; padding: 14px 32px; font-size: 1.1rem; font-weight: 600;
-              color: #fff; background: #22c55e; border: none; border-radius: 8px;
+              color: var(--text-inverse); background: var(--ok-strong); border: none; border-radius: 8px;
               cursor: pointer; text-decoration: none; transition: background 0.2s; }
-    .dl-btn:hover { background: #16a34a; }
+    .dl-btn:hover { background: color-mix(in srgb, var(--ok-strong), var(--backdrop) 15%); }
   </style>
 </head>
 <body>

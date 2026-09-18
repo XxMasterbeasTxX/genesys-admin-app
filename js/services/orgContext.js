@@ -65,6 +65,10 @@ export const orgContext = {
   },
 
   /** True when the session is a customer's. */
+  /** The internal org's registry slug, from org-config; "" until known. */
+  setInternalOrgSlug(slug) { this._internalOrgSlug = String(slug || ""); },
+  isInternalOrg(orgId) { return !!orgId && orgId === this._internalOrgSlug; },
+
   isCustomer() {
     return sessionMode === "customer";
   },

@@ -1,0 +1,170 @@
+@charset "UTF-8";
+/* ══════════════════════════════════════════════════════════════════════
+   Genesys Admin Tool — Colour tokens
+
+   Every colour in the app comes from this file. Nothing else in the app
+   holds a colour literal: not styles.css, not a page's <style> block, not an
+   inline style. scripts/check-colours.mjs enforces that.
+
+   Two blocks: dark (the default) and light. Which one applies is decided by
+   the data-theme attribute on <html>, set by the inline script in
+   index.html from the OS preference — never by a media query in CSS. A
+   manual theme switch later only has to set that attribute.
+
+   To recolour a mode: edit its block. See docs/colour-tokens-design.md.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Dark — the default ────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+
+  /* neutrals */
+  --bg:              #0b0f14;
+  --panel:           #111824;
+  --panel-2:         #0f1621;
+  --text:            #e7eef7;
+  --muted:           #93a4b8;
+  --text-inverse:    #ffffff;                 /* text on a filled accent */
+  --border:          rgba(255,255,255,0.08);
+  --lift:            #ffffff;                 /* base for "slightly lighter than the panel" surfaces — always through color-mix */
+  --backdrop:        #000000;                 /* base for scrims and insets — always through color-mix */
+  --shadow:          0 10px 30px rgba(0,0,0,0.35);
+
+  /* accent (blue) — tints and borders derive from these via color-mix */
+  --accent:          #60a5fa;                 /* interactive text, icons, links */
+  --accent-strong:   #3b82f6;                 /* filled buttons, bars, active state */
+  --accent-quiet:    #93c5fd;                 /* secondary accent text */
+
+  /* ok (green) */
+  --ok:              #34d399;
+  --ok-strong:       #22c55e;
+  --ok-quiet:        #86efac;
+
+  /* warn (amber) */
+  --warn:            #fbbf24;
+  --warn-strong:     #f59e0b;
+  --warn-quiet:      #ffd28a;
+
+  /* danger (red) */
+  --danger:          #f87171;
+  --danger-strong:   #ef4444;
+  --danger-quiet:    #fca5a5;
+
+  /* named accents for badges and kind markers — "a distinct category" */
+  --tag-purple:      #c084fc;
+  --tag-teal:        #2dd4bf;
+}
+
+/* ── Light ─────────────────────────────────────────────────────────── */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:              #f8fafc;
+  --panel:           #ffffff;
+  --panel-2:         #f1f5f9;
+  --text:            #0f172a;
+  --muted:           #64748b;
+  --text-inverse:    #ffffff;
+  --border:          rgba(0,0,0,0.10);
+  --lift:            #000000;                 /* on a light page a lifted surface is a whisper darker */
+  --backdrop:        #000000;
+  --shadow:          0 10px 30px rgba(0,0,0,0.08);
+
+  --accent:          #2563eb;
+  --accent-strong:   #1d4ed8;
+  --accent-quiet:    #3b82f6;      /* placeholder — no light source existed; tune in Phase 2 */
+
+  --ok:              #16a34a;
+  --ok-strong:       #15803d;
+  --ok-quiet:        #22c55e;      /* placeholder */
+
+  --warn:            #b45309;
+  --warn-strong:     #92400e;
+  --warn-quiet:      #d97706;      /* placeholder */
+
+  --danger:          #dc2626;
+  --danger-strong:   #b91c1c;
+  --danger-quiet:    #ef4444;      /* placeholder */
+
+  --tag-purple:      #7c3aed;
+  --tag-teal:        #0f766e;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Diagram palettes
+
+   Flow Overview draws its diagram to SVG and, for a PDF, through a <canvas>.
+   Neither can read var(), so these are resolved to literal strings at draw
+   time by resolveTokens() in js/utils.js. The canvas is independent of the
+   app theme on purpose: a flow is easiest to read dark, and the Background
+   selector on the page switches it to light or white before an export.
+   ══════════════════════════════════════════════════════════════════════ */
+
+.fo-layout[data-canvas="dark"] {
+  --fo-bg:               #0d1117;
+  --fo-node:             #161b22;
+  --fo-node-stroke:      #30363d;
+  --fo-text:             #c9d1d9;
+  --fo-subtext:          #8b949e;
+  --fo-container-stroke: #3d444d;
+  --fo-container-header: #21262d;
+  --fo-edge:             #6e7681;
+  --fo-edge-label:       #8b949e;
+}
+.fo-layout[data-canvas="light"] {
+  --fo-bg:               #f6f8fa;
+  --fo-node:             #ffffff;
+  --fo-node-stroke:      #d0d7de;
+  --fo-text:             #1f2328;
+  --fo-subtext:          #57606a;
+  --fo-container-stroke: #aeb6bf;
+  --fo-container-header: #eaeef2;
+  --fo-edge:             #6e7681;
+  --fo-edge-label:       #57606a;
+}
+.fo-layout[data-canvas="white"] {
+  --fo-bg:               #ffffff;
+  --fo-node:             #ffffff;
+  --fo-node-stroke:      #c2c9d1;
+  --fo-text:             #1f2328;
+  --fo-subtext:          #57606a;
+  --fo-container-stroke: #c2c9d1;
+  --fo-container-header: #eef1f4;
+  --fo-edge:             #5a636d;
+  --fo-edge-label:       #57606a;
+}
+
+/* Accents that read on any of the three backgrounds, the per-action-kind
+   colours named by flowModel.js ACTION_KINDS, and Journey Flow's node fills
+   (its strokes derive as the fill mixed 25% toward --backdrop). The same in
+   both app themes, so defined once. */
+:root {
+  --fo-jump:             #8957e5;
+  --fo-dep:              #2c8a9a;
+  --fo-select:           #f0b429;
+  --fo-start:            #2ea043;
+  --fo-badge-text:       #ffffff;
+
+  --kind-task:           #6e7681;
+  --kind-start:          #0e7c7b;   /* also Journey Flow's Root */
+  --kind-end:            #8a4b2f;
+  --kind-decision:       #b8860b;
+  --kind-switch:         #a9760b;
+  --kind-menu:           #6a4ba8;   /* Menu, Collect Input */
+  --kind-transfer:       #1a6b8a;   /* also Journey Flow's Disconnect */
+  --kind-common-module:  #2c7a4b;
+  --kind-data:           #2c6a7a;   /* Data Table Lookup, Call Data Action */
+  --kind-jump:           #7a5a2c;
+  --kind-bot:            #7a2c6a;
+  --kind-intent:         #8a5a2c;
+  --kind-loop:           #5a6b2c;
+  --kind-default:        #4a6fa5;   /* Set Data, Play Audio, Action, and anything unnamed */
+
+  --jf-acd:              #1a7f8a;
+  --jf-milestone:        #207d7d;
+  --jf-success:          #1d7d6a;
+  --jf-failure:          #7d4a1d;
+  --jf-edge:             #2dbeb4;
+  --jf-label:            #cdd6f4;
+  --jf-tooltip:          #0f1423;
+}

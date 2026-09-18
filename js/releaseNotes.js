@@ -21,6 +21,188 @@
  */
 export const RELEASE_NOTES = [
   {
+    version: "6.1",
+    date: "2026-09-17",
+    title: "Data Tables: rules for Supervisors, and a Supervisor page",
+    changes: [
+      "An Administrator can now set rules on a data table so that a Supervisor editing its rows cannot make a "
+        + "mistake. On Data Tables › Edit, in Schema mode, each column has four new controls beside its "
+        + "default: a Lookup (Data Table, Queue, Skill, Schedule Group, Schedule, Group or List), and Protected, "
+        + "Mandatory and Hidden ticks. A Lookup means the value must be one that exists — the name of a queue in "
+        + "the org, say, a key of another data table (choose which), or one of a List you type yourself, one "
+        + "value per line, for a column like Brand that would otherwise be free text; Protected means the value cannot be "
+        + "changed; Mandatory means it cannot be left empty; Hidden means the column is not shown at all. "
+        + "Above the columns, two switches: whether the table is visible to Supervisors at all — no table is "
+        + "until you tick it — and whether they may add rows; Supervisors never delete rows. The rules are "
+        + "saved with Save Schema.",
+      "Which of those tables each Supervisor may open is chosen per user: on the users list, ticking the "
+        + "Data Tables › Supervisor page for a Supervisor shows the tables visible to Supervisors beneath it, "
+        + "one tick each — so one Supervisor can be given two tables and another five. At least one must be "
+        + "ticked with the page. A table an Administrator later closes to Supervisors leaves every "
+        + "Supervisor's list within five minutes. The Supervisor page offers only the tables the user was "
+        + "given, and the server refuses anything else.",
+      "A new page, Data Tables › Supervisor, is where a Supervisor edits rows. Pick a table and the rules "
+        + "apply: a lookup column is a dropdown of the allowed values instead of a text box — no typing, so no "
+        + "misspelling and no stray space — a protected column is plain text, a mandatory one blocks saving "
+        + "the row until it is filled, a hidden one is absent. Only tables made visible to Supervisors are "
+        + "offered. A value that is already outside the list (a "
+        + "queue since renamed, a value typed before the rule) is shown as such and can be left alone; the "
+        + "moment it is changed, only listed values remain. The page is one in the Supervisor scope: tick it "
+        + "for the Supervisors who should have it.",
+      "The rules bind Supervisors, not Administrators: Data Tables › Edit still edits freely and shows the "
+        + "rules only as hints under the column headers. And they hold on the server, not just on the page — "
+        + "a Supervisor's row write is checked against the table's rules before it reaches Genesys, with the "
+        + "refusal naming the column, so a rule cannot be worked around with a direct call.",
+      "Who sets rules: an Administrator of the organisation; for Netdesign staff, anyone with the Data Tables "
+        + "› Edit page. Every change is in the Activity Log with the rules before and after.",
+    ],
+  },
+  {
+    version: "6.0",
+    date: "2026-09-16",
+    title: "Who may use the app: named colleagues, and customer Administrators and Supervisors (internal)",
+    internalOnly: true,
+    changes: [
+      "Internal colleagues must now be named in the app before they can use it, exactly as customer users "
+        + "already had to be. Being in the Genesys group the OAuth integration is restricted to still gets a "
+        + "person through the sign-in door; being on the list is what gets them past it. The list is the "
+        + "internal organisation's own row on Customers › Access to Admin Tool, and only a superuser (the "
+        + "SUPERUSER_IDS app setting) can add to it or remove from it. Nobody was seeded: everyone, including "
+        + "the people who built the app, has to be added by a superuser. Superusers themselves need no row and "
+        + "can never be locked out by anything editable in the app.",
+      "In the internal organisation a colleague now sees and changes only the divisions their own role is "
+        + "granted in, as they would in Genesys itself. A Genesys grant is a role in a division: holding queue "
+        + "edit in division Y has always meant Y only, but the app's internal calls run on its own OAuth "
+        + "client, which holds it everywhere, so the app checked the permission and not the division. Now "
+        + "every list is filtered to the colleague's divisions for the permission the page needs, the "
+        + "divisions dropdowns show only theirs, and a change to an object outside them is refused before it "
+        + "reaches Genesys, with the division named. A role granted in “all divisions” is unaffected. "
+        + "Customer sessions never needed this — their calls carry the user's own token — and an internal "
+        + "colleague working on a customer organisation still acts through that organisation's OAuth client, "
+        + "as before.",
+      "Internal colleagues carry the same two roles as customer users, chosen when they are added: "
+        + "Administrator — every page except Onboarding, as everyone had until now — or Supervisor — only the "
+        + "pages ticked for them from the internal organisation's own Supervisor scope, which a superuser "
+        + "sets on Customers › Supervisor Access with the internal org selected. A colleague who should only "
+        + "see Export sees only Export: the rest of the menu is absent, not greyed. What they may do on a "
+        + "page is still their own Genesys permissions. Only superusers set the internal scope and the "
+        + "roles; an internal Administrator is a page role, not an administrator of access.",
+      "Separate from the role, and independent of it: “Manages customer access”, a tick per row on the "
+        + "internal list that only a superuser can set, lets that colleague add and remove users for customer "
+        + "organisations — start charges — and set customer scopes and roles, without being able to touch "
+        + "the internal list or grant the same right to anyone else. A Supervisor can hold it; they then "
+        + "see the two Customers pages beside their own. The Master Admin group that used to gate customer "
+        + "access gates nothing now.",
+      "The server enforces all of it. Every Genesys call the app makes for an internal session runs on the "
+        + "app's own client credentials, which meant the server had never checked whether the person asking "
+        + "was allowed to — any internal token was elevated wholesale. Now the named-user gate runs at sign-in, "
+        + "on every store endpoint and on every proxied call, and a table of 208 method-and-path rules maps "
+        + "each Genesys endpoint to the permission the caller must hold themselves. The proxy check has two "
+        + "modes, report and enforce (PROXY_PERMISSION_CHECK); it reports on dev until its log has been read.",
+      "Customer users now carry a role, chosen when they are added: Administrator, who sees everything the "
+        + "app offers customers, or Supervisor, who sees a chosen subset. Every customer gets everything — "
+        + "they pay per user, not for content — so there is no package to check against, only the role. "
+        + "A customer row cannot be added without one.",
+      "What a Supervisor may have at all is the organisation's Supervisor scope: every customer page as a "
+        + "tree of checkboxes, sections and pages, on the new Supervisor Access page. Internal superusers and "
+        + "customer-managers set it for any org under Customers › Supervisor Access, so it can be set on the "
+        + "day a customer is onboarded; a customer's own Administrators set it for their org under "
+        + "Administrator › Supervisor Access. A Supervisor's own pages are ticked from the scope when they are "
+        + "added or edited, and what they actually see is the two intersected at sign-in — untick a page from "
+        + "the scope and every Supervisor who had it loses it within five minutes, with nobody editing rows. "
+        + "Pages outside a Supervisor's set are absent from their menu, not greyed. An empty scope refuses a "
+        + "Supervisor add and says where to set it.",
+      "Supervisor templates: on Supervisor Access, an Editing dropdown above the tree offers the scope "
+        + "(“Default”) and any number of named templates — a set of pages and data tables from the scope "
+        + "that a Supervisor can be put on. When a Supervisor is added or edited, a Template dropdown above "
+        + "their pages ticks the template's pages and tables and greys them; more can be ticked for that "
+        + "person, not fewer. Change the template and every Supervisor on it follows within five minutes, "
+        + "their own extra pages untouched; the users list gains a Template column (“Sales + 2”) and a "
+        + "Reset to template button, enabled only when the person has a template and extras, that takes "
+        + "the extras away. A template in use cannot be deleted; the refusal names who is on it.",
+      "A customer Administrator has a second page, Administrator › Users: their organisation's list, with "
+        + "an Edit per row to promote a Supervisor, demote an Administrator or re-tick a Supervisor's pages. "
+        + "They can never add or remove a name — naming starts a charge and stays Netdesign's — and the "
+        + "server refuses add and remove from any customer session regardless of what the page shows. "
+        + "Every scope change and every role change is written to the Activity Log under the verified "
+        + "identity of whoever made it, and appears in the customer's own log when a customer made it.",
+      "The list on Customers › Access shows, per row, who added the user and who last changed their role or "
+        + "pages, by name and with the time in your own time zone. A customer's own view of their list "
+        + "(Administrator › Users) reads “TDC Erhverv” for every internal person and names only their own "
+        + "Administrator's edits; no id or e-mail crosses. Design and the reasoning behind each decision: "
+        + "docs/internal-user-access-design.md, docs/customer-roles-design.md and "
+        + "docs/internal-roles-design.md.",
+    ],
+  },
+  {
+    version: "5.9",
+    date: "2026-09-16",
+    title: "Choose your theme, and light mode everywhere",
+    changes: [
+      "A theme switch in the header, next to Refresh Token. One button, a moon or a sun for whichever is on; "
+        + "click it and the app switches to the other. Until you click, the app follows what the operating "
+        + "system says, as it always has; after the first click it stays with your choice in this browser, "
+        + "whatever the OS is set to.",
+      "Light mode now reaches every page. Twelve pages — Roles Create, Compare and Search, Flow Overview's side "
+        + "panel, Journey Flow, the wrap-up mapping editor and others — had only ever been designed dark and "
+        + "rendered their dark colours on a light desktop, and a good many error and warning messages were pale "
+        + "pink or amber on white across the app. All of it now switches, and reads, in both.",
+      "The export download window follows the theme too. It was always dark.",
+      "Flow Overview's diagram keeps its own Background selector — dark, light or white — and still starts dark "
+        + "regardless of the app theme, because a flow is easiest to read that way; switch it to light before "
+        + "exporting a PDF as before. What is new is fullscreen: the side panel and tabs now follow the diagram's "
+        + "background rather than the app's, so a dark diagram in fullscreen on a light desktop is readable.",
+      "Underneath, every colour in the app now comes from one place, which is what makes a theme switch honest "
+        + "rather than a switch that most pages ignore — and what makes the next recolour an edit to one file.",
+    ],
+  },
+  {
+    version: "5.8",
+    date: "2026-09-16",
+    title: "Audit Search: everything about one object, and names instead of ids",
+    changes: [
+      "Search for one object: pick what it is (Queue, User, Flow, Role, Data table, …) and then "
+        + "which one from a list, and the results are every audit in the range that mentions it — "
+        + "as the thing changed, as a member added to a role or a queue, or as a value inside another "
+        + "object's change. An id can still be pasted for something that no longer exists; its own "
+        + "audits then name it. “History of this object” in an expanded row runs the same "
+        + "search for that row's entity.",
+      "Ids are resolved to names wherever Genesys can name them: who made the change (including the "
+        + "app's own OAuth client and users from a partner org), the object changed, deleted users and "
+        + "deleted objects, role grants (role → member → division), evaluations and recordings "
+        + "through their conversation, and the GUIDs inside old/new values once a row is expanded or "
+        + "exported.",
+      "Every page of results is read — previously each realtime query stopped after its first 25 "
+        + "rows and each standard-query interval after 500. The last 14 days are queried live; older "
+        + "ranges use the standard query across all services and no longer require a service. Rate "
+        + "limits are retried and anything still missing is listed, so “Done” means done. "
+        + "Long searches can be cancelled and show what had arrived.",
+      "Each row now shows the audit's status (a FAILURE or WARNING badge), Genesys's own message, the "
+        + "client and application, entity changes such as queue membership, and “Show related "
+        + "audits” for the other audits the same action wrote. Presets gain Yesterday; Last month "
+        + "is now Last 30 days; times are local. The filters under the results are labelled as such.",
+    ],
+  },
+  {
+    version: "5.7",
+    date: "2026-09-15",
+    title: "GDPR: an email when the request completes",
+    changes: [
+      "Tick \u201cEmail me when Genesys completes this\u201d on the confirmation step and enter an "
+        + "address \u2014 it is not prefilled, because the Genesys login address is often not the one "
+        + "you read notifications on. Genesys takes one to two business days; the app checks every "
+        + "hour and sends one plain-text email per request when it completes, fails, or has run for "
+        + "30 days without finishing.",
+      "The email names the request id, the org, who raised it and the status seen, and says the "
+        + "request can be viewed under GDPR \u203a Request Status in the Genesys Admin Tool. It carries "
+        + "no link and nothing about the data subject. The Activity Log records that it was sent, to "
+        + "which domain.",
+      "Notifications run unattended, so they need the org's Client Credentials OAuth client in the "
+        + "app's settings with gdpr:request:view. Where that is missing you still get one email \u2014 "
+        + "saying the app could not check and what to ask your administrator for \u2014 never silence.",
+    ],
+  },
+  {
     version: "5.6",
     date: "2026-09-14",
     title: "GDPR: read an Article 15 export",

@@ -63,6 +63,7 @@ These are the Azure Functions endpoints exposed by the app itself.
 | POST | `/api/scheduled-runner` | Trigger the scheduled export runner (called every 5 min by Azure Timer Trigger) |
 | GET | `/api/activity-log` | Fetch internal activity log entries |
 | POST | `/api/activity-log` | Write a new internal activity log entry |
+| POST | `/api/gdpr-watches` | Register "email me when Genesys completes this" for the request ids a submission created; the hourly sweep inside `scheduled-runner` mails once per request |
 | GET | `/api/feature-requests?board=mine` | The caller's own organisation's feature requests, in full. Scoped by `ownerOrgId`. |
 | GET | `/api/feature-requests?board=shared` | Requests promoted to the shared board, as a **server-side redacted projection** — curated title/description, status, vote count, and the submitter as `Thomas V.` or `A customer`. The submitter's own wording, identity, org and page context are never sent. Any authenticated caller. |
 | GET | `/api/feature-requests?board=all` | Every organisation's requests, unredacted — **superuser only** (`SUPERUSER_IDS` app setting, matched against the caller's token-derived user id). The triage queue; also triggers the 12-month retention purge. |
@@ -152,10 +153,14 @@ Used by: Audit — Search (including Export to Excel of filtered results)
 | --- | --- | --- |
 | GET | `/api/v2/audits/query/servicemapping` | Load service map for async audit queries |
 | GET | `/api/v2/audits/query/realtime/servicemapping` | Load service map for realtime audit queries |
-| POST | `/api/v2/audits/query/realtime` | Synchronous audit query (date ranges ≤ 14 days) |
-| POST | `/api/v2/audits/query` | Submit async audit query (date ranges > 14 days) |
-| GET | `/api/v2/audits/query/{transactionId}` | Poll async audit job status |
-| GET | `/api/v2/audits/query/{transactionId}/results` | Fetch async audit results (cursor-paginated) |
+| POST | `/api/v2/audits/query/realtime?expand=user` | Synchronous audit query — holds the **last 14 days** only. `pageSize`/`pageNumber` go in the **body**; the response carries `pageNumber`/`pageCount`/`total` (no cursor). Optional `filters` (`EntityId`, `UserId`, `ClientId`, `Action`, `EntityType`) |
+| POST | `/api/v2/audits/query/realtime/related` | All audits written by the same action as a given `auditId` ("Show related audits" in a row's details) |
+| POST | `/api/v2/audits/query` | Submit async audit query (any range). `serviceName` is optional — confirmed 2026-09-16: without it the query covers all services. Same `filters` as realtime |
+| GET | `/api/v2/audits/query/{transactionId}` | Poll async job status: `Queued`, `Running`, `Succeeded`, `Failed`, `Cancelled` |
+| GET | `/api/v2/audits/query/{transactionId}/results?pageSize=500&expand=user` | Fetch async audit results. Response is `{ id, pageSize, cursor, entities }` — pass `cursor` back until it is absent |
+| GET | `/api/v2/users/{id}` | Actors `expand=user` did not name — the app's own OAuth client id arrives in `user.id`, so a 404 here is followed by `/oauth/clients/{id}`. `?state=deleted` names a deleted user |
+| GET | list endpoints (`/routing/queues`, `/users`, `/flows?deleted=true`, `/authorization/roles`, …) | The **Object** picker — one list per kind, loaded on demand and cached per org. `EntityId` is deliberately not sent: Genesys demands `EntityType` with it and one object is audited under several types, so the match is done client-side on the pulled range |
+| GET | `/api/v2/oauth/clients/{id}` | Name of the OAuth client an audit came through (`client.id`, separate from `user`) |
 
 ---
 
@@ -437,13 +442,13 @@ Used by: Documentation Export, Audit — Search (entity name resolution)
 
 ## 14. GDPR
 
-Used by: GDPR — Subject Request, GDPR — Request Status
+Used by: GDPR — Subject Request, GDPR — Request Status, the completion sweep in `api/scheduled-runner` (GDPR › Article 15 - Export Reader calls no endpoint — it reads a file)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v2/gdpr/subjects` | Search for GDPR data subjects by identifier |
 | POST | `/api/v2/gdpr/requests` | Submit a GDPR data subject request (Articles 15, 16, 17) |
-| GET | `/api/v2/gdpr/requests` | List all previously submitted GDPR requests |
+| GET | `/api/v2/gdpr/requests` | List all previously submitted GDPR requests. Also called hourly by the completion sweep in `scheduled-runner`, on the org's **client credentials**, which therefore need `gdpr:request:view` |
 | GET | `/api/v2/gdpr/requests/{requestId}` | Get a single GDPR request by ID — returns `resultsUrl` (string) and/or `resultsUrls` (array) for fulfilled Access exports; used by Request Status to retrieve download URLs |
 
 ---

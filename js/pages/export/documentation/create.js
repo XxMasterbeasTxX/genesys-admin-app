@@ -48,7 +48,7 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
       clients and more. 
       A second workbook with DataTable contents is included as a ZIP when present.
     </p>
-    <p class="page-desc" style="color:#f59e0b;margin-top:4px">
+    <p class="page-desc" style="color:var(--warn-strong);margin-top:4px">
       ⏱ This export may take a while for large organisations.
       Please keep this tab open while it runs.
     </p>
@@ -69,7 +69,7 @@ export default function renderDocumentationCreate({ route, me, api, orgContext }
       <div class="te-progress-wrap">
         <div class="te-progress-bar" id="docProgressBar"></div>
       </div>
-      <p style="font-size:0.85rem;color:#888;margin-top:6px">
+      <p style="font-size:0.85rem;color:var(--muted);margin-top:6px">
         Fetching configuration data from Genesys in parallel — please wait…
       </p>
     </div>

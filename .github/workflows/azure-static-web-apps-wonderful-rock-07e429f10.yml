@@ -24,6 +24,18 @@ jobs:
         with:
           submodules: true
           lfs: false
+      # Every colour in the app must come from css/tokens.css. A literal
+      # anywhere else fails the build before it can deploy — that is the only
+      # thing that keeps "one place" true past the next feature.
+      # See docs/colour-tokens-design.md §9.
+      - name: Check colours derive from tokens.css
+        run: node scripts/check-colours.mjs --strict
+      # The server's list of pages a customer may hold is generated from the
+      # nav (api/lib/pages.json). A page added without regenerating it
+      # would be one no Supervisor could ever be given, so a stale list fails
+      # the build. See docs/customer-roles-design.md §6.
+      - name: Check the pages list is current
+        run: node scripts/build-pages.mjs --check
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
