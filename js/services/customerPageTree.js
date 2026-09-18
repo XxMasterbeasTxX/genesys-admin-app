@@ -56,7 +56,9 @@ function buildTree(excluded) {
       if (!n.access || excluded(n.access)) continue;
       out.push({ label: n.label, key: n.access });
     }
-    return out;
+    // Alphabetical at every level: fourteen sections in nav order are a
+    // hunt; a sorted list is not. (The sidebar keeps its own order.)
+    return out.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
   }
   return walk(NAV_TREE);
 }
@@ -76,7 +78,7 @@ export function pageTreeFor(internal) {
   return internal ? internalPageTree() : customerPageTree();
 }
 
-/** Every leaf under a node, in nav order. */
+/** Every leaf under a node, in the tree's (alphabetical) order. */
 export function leavesOf(node) {
   if (!node.children) return [node];
   return node.children.flatMap(leavesOf);
