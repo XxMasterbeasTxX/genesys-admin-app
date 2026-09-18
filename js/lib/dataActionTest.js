@@ -158,6 +158,28 @@ function outputRows(key, def, value, compare) {
     return head + items;
   }
 
+  // An object with declared sub-fields expands one level with dotted names —
+  // `Account.Name`, `Owner.Id` — which is how Genesys's flattened view shows it
+  // and far more readable than one JSON blob per object.
+  const sub = def.properties;
+  if (value && typeof value === "object" && sub && Object.keys(sub).length) {
+    // No mark on the parent row — its value cell is empty, so a ≠ there points
+    // at nothing. The leaves below each carry their own.
+    const head = `<tr><td>${label}</td><td>${type}</td><td></td></tr>`;
+    const items = Object.entries(sub).map(([k, d]) => {
+      const v = value[k];
+      const c = compare && typeof compare === "object" ? compare[k] : undefined;
+      const leafDiff = c !== undefined && JSON.stringify(c) !== JSON.stringify(v);
+      return `<tr class="ed-out-item">`
+        + `<td>${label}.${escapeHtml(d.title || k)}</td>`
+        + `<td>${escapeHtml(d.type || "string")}</td>`
+        + `<td>${escapeHtml(formatValue(v))}`
+        + (leafDiff ? ` <span class="ed-diff" title="Differs from the other target">≠</span>` : "")
+        + `</td></tr>`;
+    }).join("");
+    return head + items;
+  }
+
   return `<tr><td>${label}</td><td>${type}</td>`
     + `<td>${escapeHtml(formatValue(value))}${mark}</td></tr>`;
 }
@@ -177,11 +199,34 @@ function outputRows(key, def, value, compare) {
  */
 export function outputsTableHtml(contract, finalResult, { compareTo } = {}) {
   const props = extractSchemaProps(contract?.output?.successSchema);
-  if (!props || !finalResult || typeof finalResult !== "object") return null;
+  if (!props || finalResult == null || typeof finalResult !== "object") return null;
 
-  const rows = Object.entries(props).map(([key, def]) =>
-    outputRows(key, def, finalResult[key], compareTo ? compareTo[key] : undefined)
-  ).join("");
+  // Whether the result is a list of records is decided from the RESULT, not
+  // the schema. A first version inferred it from the contract's shape and was
+  // wrong on a Salesforce action whose result is a one-element list under a
+  // contract that does not declare one — every lookup landed on the array and
+  // came back undefined. The data cannot be wrong about its own shape.
+  const asList = (v) => (Array.isArray(v) ? v : v == null ? [] : [v]);
+  const records  = asList(finalResult);
+  const compares = asList(compareTo);
+
+  if (!records.length) {
+    return `
+      <table class="dt-schema-table">
+        <thead><tr><th>Output</th><th>Type</th><th>Value</th></tr></thead>
+        <tbody><tr><td colspan="3"><em>No records returned.</em></td></tr></tbody>
+      </table>`;
+  }
+
+  const rows = records.map((rec, i) => {
+    // One record is the common case and needs no heading; several get one each.
+    const head = records.length > 1
+      ? `<tr class="ed-out-record"><td colspan="3">Record ${i}</td></tr>` : "";
+    const body = Object.entries(props).map(([key, def]) =>
+      outputRows(key, def, rec?.[key], compares[i] ? compares[i][key] : undefined)
+    ).join("");
+    return head + body;
+  }).join("");
 
   return `
     <table class="dt-schema-table">
