@@ -42,7 +42,9 @@
 import { escapeHtml, makeStatus, withBusy } from "../../utils.js";
 import {
   listLicensedUsers, assignLicense, revokeLicense, setLicenseRole, setManagesCustomers, getSupervisorScope,
+  listSupervisorTemplates,
 } from "../../services/licenseService.js";
+import { createTablesPicker } from "../../components/tablesPicker.js";
 import { pageTreeFor, pruneTree } from "../../services/customerPageTree.js";
 import { createPageTree, describePages, ensurePageTreeStyles } from "../../components/pageTree.js";
 import { listDataTableRules } from "../../services/dataTableRulesService.js";
@@ -105,15 +107,10 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       .ca-role-pages { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
       .ca-role-pages-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; color:var(--muted); font-size:12px; }
       .ca-role-pages-head .ca-spacer { flex:1; }
-      /* A Supervisor's data tables, under the Data Tables › Supervisor page. */
-      .ca-tables { border-left:2px solid var(--border); padding:4px 0 4px 10px; font-size:13px; }
-      .ca-tables-head { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; margin-bottom:4px; flex-wrap:wrap; }
-      .ca-tables-head .ca-spacer { flex:1; }
-      .ca-tables-list { display:flex; flex-direction:column; gap:2px; max-height:220px; overflow:auto; }
-      .ca-tables-list label { display:inline-flex; align-items:center; gap:6px; padding:3px 6px; border-radius:6px; cursor:pointer; color:var(--text); }
-      .ca-tables-list label:hover { background: color-mix(in srgb, var(--accent-strong) 12%, transparent); }
-      .ca-tables-list input { margin:0; }
-      .ca-tables-note { color:var(--muted); font-size:12px; }
+      /* The template a Supervisor is on, above their pages. */
+      .ca-role-template { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; font-size:13px; }
+      .ca-role-template select { min-width:220px; }
+      .ca-role-template-hint { color:var(--muted); font-size:12px; flex-basis:100%; }
       .ca-edit-row td { background:color-mix(in srgb, var(--lift) 3%, transparent); }
       .ca-edit-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:10px; }
     </style>
@@ -169,6 +166,8 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
   let scope      = null;        // the org's Supervisor scope (customer orgs); null = not loaded
   let tables     = null;        // [{ id, name }] the org has made visible to Supervisors; null = not loaded
   let tablesError = "";         // why they could not be loaded, or ""
+  let templates  = [];          // the org's Supervisor templates, by name
+  const templateById = (id) => templates.find((t) => t.id === id) || null;
   let searchTimer = null;
   let searchSeq   = 0;          // drop stale responses
   let loadSeq     = 0;
@@ -195,7 +194,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
    * pages, drawn as the sidebar draws them. One builder for the add box and
    * the per-row edit, so the two cannot drift.
    *
-   * @param {{ role?: string, features?: string[] }} initial
+   * @param {{ role?: string, features?: string[], dataTables?: string[], templateId?: string }} initial
    * @param {Function} onChange  Called after every change.
    * @param {{ open?: boolean }} [opts]  Whether the page tree starts expanded.
    *        Expanded on add (the pages are the decision being made), collapsed
@@ -214,6 +213,14 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       </div>
       <div class="ca-role-desc"></div>
       <div class="ca-role-pages" hidden>
+        <div class="ca-role-template">
+          <span class="em-label" style="margin:0">Template:</span>
+          <select class="dt-select" data-template>
+            <option value="">(none)</option>
+            ${templates.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("")}
+          </select>
+          <span class="ca-role-template-hint"></span>
+        </div>
         <div class="ca-role-pages-head">
           <span class="ca-role-pages-count"></span>
           <span class="ca-spacer"></span>
@@ -226,7 +233,9 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     const $pages = box.querySelector(".ca-role-pages");
     const $pagesCount = box.querySelector(".ca-role-pages-count");
     const radios = [...box.querySelectorAll("input[type=radio]")];
-    const tablesCtl = createTablesControl(initial.dataTables || [], () => refresh());
+    const $template = box.querySelector("[data-template]");
+    const $templateHint = box.querySelector(".ca-role-template-hint");
+    const tablesCtl = createTablesPicker({ tables, error: tablesError, initial: initial.dataTables || [], onChange: () => refresh() });
     const tree = createPageTree({
       tree: pruneTree(fullTree, scope || []), onChange: () => refresh(), open,
       extras: { [SUPERVISOR_TABLES_PAGE]: tablesCtl.el },
@@ -237,6 +246,19 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
 
     function role() { const r = radios.find((x) => x.checked); return r ? r.value : ""; }
     function tablesPageTicked() { return tree.getSelected().includes(SUPERVISOR_TABLES_PAGE); }
+    function template() { return templateById($template.value); }
+
+    /** The template's pages and tables are ticked and locked; the rest are the user's extras. */
+    function applyTemplate() {
+      const t = template();
+      tree.setLocked(t ? t.features : []);
+      tablesCtl.setLocked(t ? t.dataTables : []);
+      if (t && t.features.includes(SUPERVISOR_TABLES_PAGE)) tree.reveal(SUPERVISOR_TABLES_PAGE);
+      $templateHint.textContent = t
+        ? `"${t.name}" gives ${t.features.length} page${t.features.length === 1 ? "" : "s"}${t.dataTables.length ? ` and ${t.dataTables.length} data table${t.dataTables.length === 1 ? "" : "s"}` : ""} (greyed below). Tick more for this user; to have fewer, choose another template or none. Changing the template later changes them for this user too.`
+        : (templates.length ? "No template: only the pages ticked below." : "No templates yet — they are made on Supervisor Access.");
+    }
+    $template.addEventListener("change", () => { applyTemplate(); refresh(); });
 
     function refresh() {
       const r = role();
@@ -245,8 +267,10 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
         $desc.textContent = everythingText();
       } else if (r === "supervisor") {
         const n = tree.getSelected().length;
+        const t = template();
+        const extra = t ? n - tree.getSelected().filter((k) => t.features.includes(k)).length : 0;
         $desc.textContent = "Only the pages ticked below, narrowed by their own Genesys permissions. Nothing else appears in their menu.";
-        $pagesCount.textContent = `${n} of ${tree.size} pages in the Supervisor scope ticked`;
+        $pagesCount.textContent = `${n} of ${tree.size} pages in the Supervisor scope ticked${t ? ` (${extra} beyond the template)` : ""}`;
       } else {
         $desc.innerHTML = scopeEmpty
           ? `Nothing is in the Supervisor scope for this organisation yet, so only an Administrator can be added. <a href="${scopeRoute}">Set the Supervisor scope first</a> to add Supervisors.`
@@ -259,6 +283,9 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     if (initial.role === "administrator" || (initial.role === "supervisor" && !scopeEmpty)) {
       radios.find((x) => x.value === initial.role).checked = true;
     }
+    // A row on a template since deleted shows "(none)"; saving stores that.
+    $template.value = initial.templateId && templateById(initial.templateId) ? initial.templateId : "";
+    applyTemplate();
     tree.setSelected(initial.features || []);
     // A collapsed tree hides the tables under their page; when the row
     // already has the page, open the way to them.
@@ -267,10 +294,14 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
 
     return {
       el: box,
+      /** The row as sent: the template, and the extras beyond it (the server strips overlaps too). */
       value() {
         const r = role();
-        const features = r === "supervisor" ? tree.getSelected() : [];
-        return { role: r, features, dataTables: features.includes(SUPERVISOR_TABLES_PAGE) ? tablesCtl.getSelected() : [] };
+        const t = r === "supervisor" ? template() : null;
+        const features = r === "supervisor" ? tree.getSelected().filter((k) => !t || !t.features.includes(k)) : [];
+        const pageOn = r === "supervisor" && tablesPageTicked();
+        const dataTables = pageOn ? tablesCtl.getSelected().filter((id) => !t || !t.dataTables.includes(id)) : [];
+        return { role: r, features, dataTables, templateId: t ? t.id : "" };
       },
       valid() {
         const r = role();
@@ -278,57 +309,20 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
         if (r !== "supervisor" || !tree.getSelected().length) return false;
         return !tablesPageTicked() || tablesCtl.getSelected().length > 0;
       },
-      setEnabled(on) { radios.forEach((r) => { r.disabled = !on || (r.value === "supervisor" && scopeEmpty); }); tree.setEnabled(on); tablesCtl.setEnabled(on); },
+      setEnabled(on) { radios.forEach((r) => { r.disabled = !on || (r.value === "supervisor" && scopeEmpty); }); $template.disabled = !on; tree.setEnabled(on); tablesCtl.setEnabled(on); },
     };
   }
 
-  /**
-   * The data tables a Supervisor may open, drawn under the Data Tables ›
-   * Supervisor page: one box per table the org has made visible to
-   * Supervisors (the "Visible to Supervisors" switch on Data Tables › Edit).
-   * At least one must be ticked while the page is; the server checks the
-   * same (docs/data-table-rules-design.md §11).
-   */
-  function createTablesControl(initialIds, onChange) {
-    const wrap = document.createElement("div");
-    wrap.className = "ca-tables";
-    const list = tables || [];
-    const uid = `cat${Math.random().toString(36).slice(2, 8)}`;
-    if (!list.length) {
-      wrap.innerHTML = `<div class="ca-tables-note">${tablesError
-        ? `The data tables could not be loaded: ${escapeHtml(tablesError)}`
-        : `No data table has been made visible to Supervisors yet, so this page cannot be given. An Administrator opens a table with "Visible to Supervisors" on Data Tables › Edit.`}</div>`;
-      return { el: wrap, getSelected: () => [], setEnabled() {} };
-    }
-    wrap.innerHTML = `
-      <div class="ca-tables-head">
-        <span class="ca-tables-count"></span>
-        <span class="ca-spacer"></span>
-        <button type="button" class="btn btn-secondary btn-sm" data-all>Tick all</button>
-        <button type="button" class="btn btn-secondary btn-sm" data-none>Untick all</button>
-      </div>
-      <div class="ca-tables-list">
-        ${list.map((t, i) => `<label for="${uid}-${i}"><input id="${uid}-${i}" type="checkbox" value="${escapeHtml(t.id)}"> ${escapeHtml(t.name)}</label>`).join("")}
-      </div>`;
-    const boxes = [...wrap.querySelectorAll("input[type=checkbox]")];
-    const $count = wrap.querySelector(".ca-tables-count");
-    const initial = new Set(initialIds || []);
-    for (const b of boxes) b.checked = initial.has(b.value);
-    const getSelected = () => boxes.filter((b) => b.checked).map((b) => b.value);
-    function count() {
-      const n = getSelected().length;
-      $count.textContent = `${n} of ${boxes.length} data table${boxes.length === 1 ? "" : "s"} ticked${n ? "" : " — tick at least one"}`;
-    }
-    function changed() { count(); onChange(); }
-    boxes.forEach((b) => b.addEventListener("change", changed));
-    wrap.querySelector("[data-all]").addEventListener("click", () => { boxes.forEach((b) => { b.checked = true; }); changed(); });
-    wrap.querySelector("[data-none]").addEventListener("click", () => { boxes.forEach((b) => { b.checked = false; }); changed(); });
-    count();
-    return {
-      el: wrap, getSelected,
-      setEnabled(on) { boxes.forEach((b) => { b.disabled = !on; }); wrap.querySelectorAll("button").forEach((b) => { b.disabled = !on; }); },
-    };
+  /** The Template column: the name, and how much the row adds beyond it. */
+  function templateCell(u) {
+    if (u.role !== "supervisor") return "";
+    if (!u.templateId) return `<span class="ca-muted">—</span>`;
+    const t = templateById(u.templateId);
+    if (!t) return `<span class="ca-muted" title="The template no longer exists; the row keeps its own pages">(deleted)</span>`;
+    const extras = (Array.isArray(u.features) ? u.features.length : 0) + (Array.isArray(u.dataTables) ? u.dataTables.length : 0);
+    return `${escapeHtml(t.name)}${extras ? ` <span class="ca-muted" title="Pages and data tables ticked beyond the template">+ ${extras}</span>` : ""}`;
   }
+  const hasExtras = (u) => !!u.templateId && !!templateById(u.templateId) && ((u.features || []).length > 0 || (u.dataTables || []).length > 0);
 
   /** The names of a Supervisor's tables, for the list and the confirm step. */
   function tableNames(ids) {
@@ -336,12 +330,23 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     return (ids || []).map((id) => byId.get(id) || "a table no longer visible to Supervisors");
   }
 
+  /** A row's pages and tables as they take effect: the template's, then the row's own. */
+  function effective(u) {
+    const t = u.templateId ? templateById(u.templateId) : null;
+    return {
+      template: t,
+      features: [...new Set([...(t ? t.features : []), ...(Array.isArray(u.features) ? u.features : [])])],
+      dataTables: [...new Set([...(t ? t.dataTables : []), ...(Array.isArray(u.dataTables) ? u.dataTables : [])])],
+    };
+  }
+
   /** The sentence for a confirm step: the role, and a Supervisor's pages. */
-  function describeRole({ role, features, dataTables }) {
+  function describeRole({ role, features, dataTables, templateId }) {
     if (role === "administrator") return isInternal() ? "as Administrator (every page except Onboarding)" : "as Administrator (everything the app offers customers)";
-    const lines = describePages(fullTree, features);
-    const names = tableNames(dataTables);
-    return `as Supervisor with ${lines.length} page${lines.length === 1 ? "" : "s"}:\n${lines.map((l) => `    – ${l}`).join("\n")}`
+    const eff = effective({ features, dataTables, templateId });
+    const lines = describePages(fullTree, eff.features);
+    const names = tableNames(eff.dataTables);
+    return `as Supervisor${eff.template ? ` on the template "${eff.template.name}"` : ""} with ${lines.length} page${lines.length === 1 ? "" : "s"}:\n${lines.map((l) => `    – ${l}`).join("\n")}`
       + (names.length ? `\n  and ${names.length} data table${names.length === 1 ? "" : "s"}:\n${names.map((n) => `    – ${n}`).join("\n")}` : "");
   }
 
@@ -350,11 +355,12 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
   function roleCell(u) {
     if (u.role === "administrator") return "Administrator";
     if (u.role === "supervisor") {
-      const n = Array.isArray(u.features) ? u.features.length : 0;
+      const eff = effective(u);
+      const n = eff.features.length;
       let out = `Supervisor · ${n} page${n === 1 ? "" : "s"}`;
-      if (Array.isArray(u.features) && u.features.includes(SUPERVISOR_TABLES_PAGE)) {
-        const t = Array.isArray(u.dataTables) ? u.dataTables.length : 0;
-        out += ` · <span title="${escapeHtml(tableNames(u.dataTables).join(", ") || "No data table — edit to choose")}">${t} data table${t === 1 ? "" : "s"}</span>`;
+      if (eff.features.includes(SUPERVISOR_TABLES_PAGE)) {
+        const t = eff.dataTables.length;
+        out += ` · <span title="${escapeHtml(tableNames(eff.dataTables).join(", ") || "No data table — edit to choose")}">${t} data table${t === 1 ? "" : "s"}</span>`;
       }
       return out;
     }
@@ -379,20 +385,21 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     const roleCol   = true;
     $list.innerHTML = `
       <table class="data-table ca-table">
-        <thead><tr><th>Name</th><th>E-mail</th>${roleCol ? "<th>Role</th>" : ""}<th>Added by</th><th>Added on</th><th>Modified by</th><th>Modified on</th>${manageCol ? "<th>Manages customer access</th>" : ""}<th></th></tr></thead>
+        <thead><tr><th>Name</th><th>E-mail</th>${roleCol ? "<th>Role</th><th>Template</th>" : ""}<th>Added by</th><th>Added on</th><th>Modified by</th><th>Modified on</th>${manageCol ? "<th>Manages customer access</th>" : ""}<th></th></tr></thead>
         <tbody>
           ${licensed.map((u) => `
             <tr data-user="${escapeHtml(u.userId)}">
               <td>${escapeHtml(u.name || u.userId)}</td>
               <td class="ca-muted">${escapeHtml(u.email || "")}</td>
-              ${roleCol ? `<td data-role-cell>${roleCell(u)}</td>` : ""}
+              ${roleCol ? `<td data-role-cell>${roleCell(u)}</td><td data-template-cell>${templateCell(u)}</td>` : ""}
               <td class="ca-muted">${escapeHtml(u.assignedByName || u.assignedByEmail || "")}</td>
               <td class="ca-muted">${escapeHtml(fmtDate(u.assignedAt))}</td>
               <td class="ca-muted">${escapeHtml(u.modifiedByName || u.modifiedByEmail || "")}</td>
               <td class="ca-muted" title="${escapeHtml(u.modifiedAt || "")}">${escapeHtml(fmtDateTime(u.modifiedAt))}</td>
               ${manageCol ? `<td><input type="checkbox" data-manage="${escapeHtml(u.userId)}" ${u.managesCustomers ? "checked" : ""} title="May add and remove users for customer organisations"></td>` : ""}
               <td class="ca-actions">
-                ${roleCol ? `<button type="button" class="btn btn-secondary btn-sm" data-edit="${escapeHtml(u.userId)}">Edit</button>` : ""}
+                ${roleCol ? `<button type="button" class="btn btn-secondary btn-sm" data-reset="${escapeHtml(u.userId)}" ${hasExtras(u) ? "" : "disabled"} title="${hasExtras(u) ? "Take away the pages and tables ticked beyond the template" : "Enabled when the user is on a template and has pages beyond it"}">Reset to template</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-edit="${escapeHtml(u.userId)}">Edit</button>` : ""}
                 ${customerMode ? "" : `<button type="button" class="btn btn-secondary btn-sm" data-remove="${escapeHtml(u.userId)}">Remove</button>`}
               </td>
             </tr>`).join("")}
@@ -408,6 +415,30 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     $list.querySelectorAll("[data-edit]").forEach((btn) => {
       btn.addEventListener("click", () => openEdit(btn.getAttribute("data-edit")));
     });
+    $list.querySelectorAll("[data-reset]").forEach((btn) => {
+      btn.addEventListener("click", () => resetToTemplate(btn.getAttribute("data-reset"), btn));
+    });
+  }
+
+  /** Back to exactly the template: the same role call with no extras. */
+  async function resetToTemplate(userId, btn) {
+    const row = licensed.find((l) => l.userId === userId);
+    if (!row || !hasExtras(row)) return;
+    const t = templateById(row.templateId);
+    const label = row.name || row.email || row.userId;
+    const p = (row.features || []).length, d = (row.dataTables || []).length;
+    const what = [p ? `${p} extra page${p === 1 ? "" : "s"}` : "", d ? `${d} extra data table${d === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ");
+    if (!window.confirm(`Take ${label} back to exactly the template "${t.name}"?\n\n${what} will go.`)) return;
+    closeEdit();
+    setStatus(`Resetting ${label} to "${t.name}"…`);
+    try {
+      const r = await withBusy(btn, () => setLicenseRole(currentOrg.id, row.userId, "supervisor", [], [], t.id));
+      if (r.user) Object.assign(row, r.user);
+      renderList();
+      setStatus(`${label} is back on exactly "${t.name}". Takes effect within five minutes.`, "success");
+    } catch (err) {
+      setStatus(err.message || String(err), "error");
+    }
   }
 
   /** Grant or withdraw the right to manage customer access. Superusers only; the server checks again. */
@@ -453,7 +484,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     const td = document.createElement("td");
     td.colSpan = anchor.children.length;
     let $save = null;      // assigned below; the control fires onChange while it is built
-    const control = createRoleControl({ role: row.role, features: row.features, dataTables: row.dataTables }, () => {
+    const control = createRoleControl({ role: row.role, features: row.features, dataTables: row.dataTables, templateId: row.templateId }, () => {
       if ($save) $save.disabled = !control.valid();
     }, { open: false });
     const actions = document.createElement("div");
@@ -475,13 +506,13 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     setStatus(`Saving ${label}'s role…`);
     control.setEnabled(false);
     try {
-      const r = await withBusy($save, () => setLicenseRole(currentOrg.id, row.userId, value.role, value.features, value.dataTables));
-      if (r.user) Object.assign(row, r.user);   // role, pages, tables and the modified stamp
+      const r = await withBusy($save, () => setLicenseRole(currentOrg.id, row.userId, value.role, value.features, value.dataTables, value.templateId));
+      if (r.user) Object.assign(row, r.user);   // role, pages, tables, template and the modified stamp
       renderList();
-      const n = value.features.length;
-      const t = (r.user && Array.isArray(r.user.dataTables) ? r.user.dataTables : value.dataTables).length;
+      const eff = effective(r.user || value);
+      const n = eff.features.length, t = eff.dataTables.length;
       const what = value.role === "administrator" ? "an Administrator"
-        : `a Supervisor with ${n} page${n === 1 ? "" : "s"}${value.features.includes(SUPERVISOR_TABLES_PAGE) ? ` and ${t} data table${t === 1 ? "" : "s"}` : ""}`;
+        : `a Supervisor${eff.template ? ` on "${eff.template.name}"` : ""} with ${n} page${n === 1 ? "" : "s"}${eff.features.includes(SUPERVISOR_TABLES_PAGE) ? ` and ${t} data table${t === 1 ? "" : "s"}` : ""}`;
       const dropped = r.droppedTables ? ` ${r.droppedTables} table${r.droppedTables === 1 ? " was" : "s were"} left out: no longer visible to Supervisors.` : "";
       setStatus(r.changed ? `${label} is now ${what}. Takes effect within five minutes.${dropped}` : `${label}'s role is unchanged.${dropped}`, "success");
     } catch (err) {
@@ -510,13 +541,15 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     const seq = ++loadSeq;
     setStatus(`Loading who has access for ${currentOrg.name}…`);
     try {
-      const [rows, scopeKeys] = await Promise.all([
+      const [rows, scopeKeys, tpls] = await Promise.all([
         listLicensedUsers(currentOrg.id),
         getSupervisorScope(currentOrg.id),
+        listSupervisorTemplates(currentOrg.id).catch(() => []),   // the list still works without them
       ]);
       if (seq !== loadSeq) return;
       licensed = rows;
       scope = scopeKeys;
+      templates = tpls;
       // The tables a Supervisor may be given — only reachable when the page
       // is in the scope. A failed read is said under the page, not fatal.
       tables = []; tablesError = "";
@@ -538,7 +571,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     } catch (err) {
       if (seq !== loadSeq) return;
       licensed = [];
-      scope = null; tables = null; tablesError = "";
+      scope = null; tables = null; tablesError = ""; templates = [];
       renderList();
       renderAddRole();
       setStatus(err.message || String(err), "error");
@@ -646,7 +679,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     if (!currentOrg || selected.size === 0) return;
     if (addRole && !addRole.valid()) return;
     const users = [...selected.values()];
-    const rolePages = addRole ? addRole.value() : { role: "", features: [], dataTables: [] };
+    const rolePages = addRole ? addRole.value() : { role: "", features: [], dataTables: [], templateId: "" };
     const lines = users.map((u) => `  • ${u.name || u.id}${u.email ? ` (${u.email})` : ""}`).join("\n");
     const ok = window.confirm(
       `Give access to the Admin Tool for ${currentOrg.name} to:\n\n${lines}\n\n` +
@@ -769,7 +802,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     $search.value = "";
     selected.clear();
     licensed = [];
-    scope = null; tables = null; tablesError = "";
+    scope = null; tables = null; tablesError = ""; templates = [];
     renderAddRole();
     if (!currentOrg) {
       $orgName.textContent = "Select a customer org in the header.";

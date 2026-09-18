@@ -112,6 +112,14 @@ export const RELEASE_NOTES = [
         + "the scope and every Supervisor who had it loses it within five minutes, with nobody editing rows. "
         + "Pages outside a Supervisor's set are absent from their menu, not greyed. An empty scope refuses a "
         + "Supervisor add and says where to set it.",
+      "Supervisor templates: on Supervisor Access, an Editing dropdown above the tree offers the scope "
+        + "(“Default”) and any number of named templates — a set of pages and data tables from the scope "
+        + "that a Supervisor can be put on. When a Supervisor is added or edited, a Template dropdown above "
+        + "their pages ticks the template's pages and tables and greys them; more can be ticked for that "
+        + "person, not fewer. Change the template and every Supervisor on it follows within five minutes, "
+        + "their own extra pages untouched; the users list gains a Template column (“Sales + 2”) and a "
+        + "Reset to template button, enabled only when the person has a template and extras, that takes "
+        + "the extras away. A template in use cannot be deleted; the refusal names who is on it.",
       "A customer Administrator has a second page, Administrator › Users: their organisation's list, with "
         + "an Edit per row to promote a Supervisor, demote an Administrator or re-tick a Supervisor's pages. "
         + "They can never add or remove a name — naming starts a charge and stays Netdesign's — and the "

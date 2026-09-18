@@ -20,6 +20,9 @@
  *                 chosen with the Data Tables › Supervisor page; a subset of
  *                 the tables the org has made visible to Supervisors
  *                 (docs/data-table-rules-design.md §11). Absent = none.
+ *   templateId    the Supervisor template the row is on, or "" — its pages
+ *                 and tables come first, the row's own are extras
+ *                 (docs/supervisor-templates-design.md)
  *   features      JSON array of page access keys — a supervisor's own pages,
  *                 a subset of the org's Supervisor scope. [] otherwise.
  *   managesCustomers
@@ -96,6 +99,7 @@ function entityToRow(e) {
     role:       legacyManager ? "administrator" : (e.role || ""),
     features:   parseFeatures(e.features),
     dataTables: parseFeatures(e.dataTables),
+    templateId: e.templateId || "",
     managesCustomers: legacyManager || e.managesCustomers === "true",
     // The last change to the row after the add — a role or pages edit, or
     // the customer-manager tick on an internal row. Null until there is one.
@@ -152,7 +156,7 @@ async function activeRow(customerId, userId) {
  * @param {{ id: string, email?: string, name?: string }} by   the caller's VERIFIED identity
  * @returns {Promise<{ row: object, created: boolean }>}
  */
-async function assign(customerId, user, by, { role = "", features = [], dataTables = [], managesCustomers = false } = {}) {
+async function assign(customerId, user, by, { role = "", features = [], dataTables = [], templateId = "", managesCustomers = false } = {}) {
   const rows = await listRows(customerId);
   const existing = rows.find((r) => r.userId === user.id && !r.revokedAt);
   if (existing) return { row: existing, created: false };
@@ -171,6 +175,7 @@ async function assign(customerId, user, by, { role = "", features = [], dataTabl
     role:         role || "",
     features:     JSON.stringify(Array.isArray(features) ? features : []),
     dataTables:   JSON.stringify(Array.isArray(dataTables) ? dataTables : []),
+    templateId:   templateId || "",
     managesCustomers: managesCustomers ? "true" : "",
   };
   await getClient().createEntity(entity);
@@ -187,15 +192,17 @@ async function assign(customerId, user, by, { role = "", features = [], dataTabl
  *
  * @returns {Promise<{ row: object|null, changed: boolean }>}
  */
-async function setRole(customerId, userId, role, by, features = null, dataTables = null) {
+async function setRole(customerId, userId, role, by, features = null, dataTables = null, templateId = "") {
   const active = await activeRow(customerId, userId);
   if (!active) return { row: null, changed: false };
   const nextFeatures = Array.isArray(features) ? [...features].sort() : [];
   const nextTables = Array.isArray(dataTables) ? [...dataTables].sort() : [];
+  const nextTemplate = templateId || "";
   const sameRole = (active.role || "") === (role || "");
   const sameFeatures = JSON.stringify([...(active.features || [])].sort()) === JSON.stringify(nextFeatures);
   const sameTables = JSON.stringify([...(active.dataTables || [])].sort()) === JSON.stringify(nextTables);
-  if (sameRole && sameFeatures && sameTables) return { row: active, changed: false };
+  const sameTemplate = (active.templateId || "") === nextTemplate;
+  if (sameRole && sameFeatures && sameTables && sameTemplate) return { row: active, changed: false };
   const roleSetAt = new Date().toISOString();
   await getClient().updateEntity(
     {
@@ -204,6 +211,7 @@ async function setRole(customerId, userId, role, by, features = null, dataTables
       role:         role || "",
       features:     JSON.stringify(nextFeatures),
       dataTables:   JSON.stringify(nextTables),
+      templateId:   nextTemplate,
       managesCustomers: active.managesCustomers ? "true" : "",
       roleSetBy:    by.id || "",
       roleSetByEmail: by.email || "",
@@ -215,7 +223,7 @@ async function setRole(customerId, userId, role, by, features = null, dataTables
   );
   return {
     row: {
-      ...active, role: role || "", features: nextFeatures, dataTables: nextTables,
+      ...active, role: role || "", features: nextFeatures, dataTables: nextTables, templateId: nextTemplate,
       modifiedBy: by.id || "", modifiedByEmail: by.email || "", modifiedByName: by.name || "",
       modifiedByOrg: by.org || "internal", modifiedAt: roleSetAt,
     },

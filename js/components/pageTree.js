@@ -40,6 +40,8 @@ export function createPageTree({ tree, onChange, open = true, extras = {} }) {
   const extraBoxes = [];
   const order = tree.flatMap(leavesOf).map((l) => l.key);
   let enabled = true;
+  /** Pages a template supplies: ticked and not the user's to untick. */
+  let locked = new Set();
 
   function build(nodes) {
     const ul = document.createElement("ul");
@@ -57,7 +59,7 @@ export function createPageTree({ tree, onChange, open = true, extras = {} }) {
         count.className = "pt-count";
         groupBoxes.push({ box, keys, count, total: keys.length });
         box.addEventListener("change", () => {
-          for (const k of keys) leafBoxes.get(k).checked = box.checked;
+          for (const k of keys) leafBoxes.get(k).checked = box.checked || locked.has(k);
           changed();
         });
         const toggle = document.createElement("button");
@@ -108,19 +110,34 @@ export function createPageTree({ tree, onChange, open = true, extras = {} }) {
 
   function setSelected(keys) {
     const set = new Set(keys || []);
-    for (const [k, box] of leafBoxes) box.checked = set.has(k);
+    for (const [k, box] of leafBoxes) box.checked = set.has(k) || locked.has(k);
     syncGroups();
   }
 
   function setEnabled(on) {
     enabled = !!on;
     el.classList.toggle("is-disabled", !enabled);
-    for (const box of leafBoxes.values()) box.disabled = !enabled;
+    for (const [k, box] of leafBoxes) box.disabled = !enabled || locked.has(k);
     for (const g of groupBoxes) g.box.disabled = !enabled;
   }
 
+  /**
+   * Lock pages on: ticked, greyed, kept through Untick all and a group's
+   * untick. What a template supplies; the rest stay the caller's to tick.
+   */
+  function setLocked(keys) {
+    locked = new Set(keys || []);
+    for (const [k, box] of leafBoxes) {
+      const on = locked.has(k);
+      if (on) box.checked = true;
+      box.disabled = !enabled || on;
+      box.closest(".pt-label").classList.toggle("is-locked", on);
+    }
+    syncGroups();
+  }
+
   function selectAll(on) {
-    for (const box of leafBoxes.values()) box.checked = !!on;
+    for (const [k, box] of leafBoxes) box.checked = !!on || locked.has(k);
     changed();
   }
 
@@ -134,7 +151,7 @@ export function createPageTree({ tree, onChange, open = true, extras = {} }) {
     for (let li = box.closest("li"); li; li = li.parentElement && li.parentElement.closest("li")) li.classList.add("open");
   }
 
-  return { el, getSelected, setSelected, setEnabled, selectAll, reveal, has: (key) => leafBoxes.has(key), size: order.length };
+  return { el, getSelected, setSelected, setEnabled, setLocked, selectAll, reveal, has: (key) => leafBoxes.has(key), size: order.length };
 }
 
 /** The section › page names for a list of keys, for a confirm step. */
@@ -169,6 +186,8 @@ export function ensurePageTreeStyles() {
     .pt-toggle { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; display: inline-block; transition: transform .15s ease; }
     .pt-group.open > .pt-toggle { transform: rotate(90deg); }
     .pt-extra { margin: 2px 0 6px 32px; }
+    .pt-label.is-locked { color: var(--muted); cursor: default; }
+    .pt-label.is-locked:hover { background: transparent; }
     .pt-tree.is-disabled .pt-label { color: var(--muted); cursor: default; }
     .pt-tree.is-disabled .pt-label:hover { background: transparent; }
   `;

@@ -2,9 +2,9 @@
  * Named users — Customers › Access to Admin Tool, and the internal org's own list.
  *
  *   GET    /api/licenses?customerId=      → { users: [active rows] }
- *   POST   /api/licenses/assign           { customerId, userId, email, name, role, features, dataTables }
+ *   POST   /api/licenses/assign           { customerId, userId, email, name, role, features, dataTables, templateId }
  *   DELETE /api/licenses/assign           { customerId, userId }
- *   POST   /api/licenses/role             { customerId, userId, role, features, dataTables }
+ *   POST   /api/licenses/role             { customerId, userId, role, features, dataTables, templateId }
  *   POST   /api/licenses/manages          { customerId, userId, manages }   internal org only
  *   GET    /api/licenses/peak?customerId=&start=&end=
  *                                         → { users: n }  the period's peak
@@ -119,27 +119,44 @@ function mayManage(caller, org) {
 async function roleAndPages(customerId, body, kind) {
   const role = String(body.role || "").trim();
   if (!ROLES.has(role)) return { ok: false, status: 400, error: "role_required" };
-  if (role === "administrator") return { ok: true, role, features: [], dataTables: [], droppedTables: 0 };
+  if (role === "administrator") return { ok: true, role, features: [], dataTables: [], templateId: "", droppedTables: 0 };
 
   const scope = await orgSettings.getSupervisorScope(customerId);
   if (!scope.length) return { ok: false, status: 400, error: "scope_empty" };
+
+  // On a template (docs/supervisor-templates-design.md): its pages and
+  // tables count first; what the row stores is the extras beyond it, so a
+  // template edit reaches the row and Reset has something to clear. The
+  // template must be the org's own.
+  const templateId = String(body.templateId || "").trim();
+  let template = null;
+  if (templateId) {
+    template = await orgSettings.getSupervisorTemplate(customerId, templateId);
+    if (!template) return { ok: false, status: 400, error: "template_unknown" };
+  }
+  const tplPages  = template ? template.features.filter((k) => scope.includes(k)) : [];
+  const tplTables = template ? template.dataTables : [];
+
   const { kept } = filterPages(body.features, kind);
-  const features = kept.filter((k) => scope.includes(k));
-  if (!features.length) return { ok: false, status: 400, error: "pages_required" };
+  const extras = kept.filter((k) => scope.includes(k) && !tplPages.includes(k));
+  const effective = [...new Set([...tplPages, ...extras])];
+  if (!effective.length) return { ok: false, status: 400, error: "pages_required" };
 
   // With the Supervisor page come their data tables: at least one, each a
   // table the org has made visible to Supervisors — read here, never taken
   // from the page (docs/data-table-rules-design.md §11). Without the page
   // the list is meaningless and stored empty.
   let dataTables = [], droppedTables = 0;
-  if (features.includes(SUPERVISOR_TABLES_PAGE)) {
+  if (effective.includes(SUPERVISOR_TABLES_PAGE)) {
     const wanted = [...new Set((Array.isArray(body.dataTables) ? body.dataTables : []).map((v) => String(v || "").trim()).filter(Boolean))];
     const allRules = await orgSettings.listDataTableRules(customerId);   // { [tableId]: { rules, setAt } }
-    dataTables = wanted.filter((id) => allRules[id] && normalizeRules(allRules[id].rules).visibleToSupervisors);
-    droppedTables = wanted.length - dataTables.length;
-    if (!dataTables.length) return { ok: false, status: 400, error: "tables_required" };
+    const open = (id) => allRules[id] && normalizeRules(allRules[id].rules).visibleToSupervisors;
+    const kept = wanted.filter(open);
+    droppedTables = wanted.length - kept.length;
+    dataTables = kept.filter((id) => !tplTables.includes(id));
+    if (!kept.length && !tplTables.some(open)) return { ok: false, status: 400, error: "tables_required" };
   }
-  return { ok: true, role, features, dataTables, droppedTables };
+  return { ok: true, role, features: extras, dataTables, templateId, droppedTables };
 }
 
 function json(context, status, body) {
@@ -248,7 +265,7 @@ module.exports = async function (context, req) {
           orgId: customerId, orgName: customerName(customerId), ownerOrgId: "internal",
           action: "licenses.assign",
           description: `Gave ${body.name || body.email || userId} access to the Admin Tool for ${customerName(customerId)} as ${rolePages.role}`,
-          details: { customerId, userId, email: body.email || "", name: body.name || "", role: rolePages.role, features: rolePages.features, dataTables: rolePages.dataTables },
+          details: { customerId, userId, email: body.email || "", name: body.name || "", role: rolePages.role, templateId: rolePages.templateId, features: rolePages.features, dataTables: rolePages.dataTables },
         });
       }
       return json(context, 200, { user: result.row, created: result.created, droppedTables: rolePages.droppedTables });
@@ -336,19 +353,20 @@ async function setRoleAndPages(context, customerId, userId, body, by, ownerOrgId
   const checked = await roleAndPages(customerId, body, kind);
   if (!checked.ok) return json(context, checked.status, { error: checked.error });
 
-  const result = await store.setRole(customerId, userId, checked.role, by, checked.features, checked.dataTables);
+  const result = await store.setRole(customerId, userId, checked.role, by, checked.features, checked.dataTables, checked.templateId);
   if (!result.row) return json(context, 404, { error: "user_not_named" });
   if (result.changed) {
     const who = result.row.name || result.row.email || userId;
     const tables = checked.dataTables.length ? ` and ${checked.dataTables.length} data table${checked.dataTables.length === 1 ? "" : "s"}` : "";
+    const onTpl = checked.templateId ? ` on a template (${checked.templateId})${checked.features.length || checked.dataTables.length ? " plus" : ""}` : "";
     await logQuietly(context, {
       userId: by.id, userEmail: by.email, userName: by.name,
       orgId: customerId, orgName: customerName(customerId), ownerOrgId,
       action: "licenses.role",
       description: checked.role === "administrator"
         ? `Made ${who} an Administrator of the Admin Tool for ${customerName(customerId)}`
-        : `Made ${who} a Supervisor of the Admin Tool for ${customerName(customerId)} with ${checked.features.length} page${checked.features.length === 1 ? "" : "s"}${tables}`,
-      details: { customerId, userId, email: result.row.email, name: result.row.name, role: checked.role, features: checked.features, dataTables: checked.dataTables },
+        : `Made ${who} a Supervisor of the Admin Tool for ${customerName(customerId)}${onTpl}${!checked.templateId || checked.features.length ? ` with ${checked.features.length} page${checked.features.length === 1 ? "" : "s"}` : ""}${tables}`,
+      details: { customerId, userId, email: result.row.email, name: result.row.name, role: checked.role, templateId: checked.templateId, features: checked.features, dataTables: checked.dataTables },
     });
   }
   return json(context, 200, { user: result.row, changed: result.changed, droppedTables: checked.droppedTables });

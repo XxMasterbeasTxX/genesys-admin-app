@@ -128,7 +128,20 @@ async function checkLicense(context, token, classification) {
         context?.log?.error?.(`[license] scope read failed for ${orgId}: ${err.message || err}`);
         return { licensed: false, reason: "license_check_failed", userId: user.id };
       }
-      const own = new Set(Array.isArray(row.features) ? row.features : []);
+      // On a template, its pages and tables come first and the row's own are
+      // extras; a template edit reaches every Supervisor on it here, their
+      // extras untouched (docs/supervisor-templates-design.md §2). A template
+      // since deleted contributes nothing.
+      let template = null;
+      if (row.templateId) {
+        try {
+          template = await orgSettings.getSupervisorTemplate(orgId, row.templateId);
+        } catch (err) {
+          context?.log?.error?.(`[license] template read failed for ${orgId}/${row.templateId}: ${err.message || err}`);
+          return { licensed: false, reason: "license_check_failed", userId: user.id };
+        }
+      }
+      const own = new Set([...(template ? template.features : []), ...(Array.isArray(row.features) ? row.features : [])]);
       features = scope.filter((k) => own.has(k));
       // Their data tables, the same way: the row's list ∩ the tables the org
       // has made visible to Supervisors now, so an Administrator closing a
@@ -143,7 +156,7 @@ async function checkLicense(context, token, classification) {
           context?.log?.error?.(`[license] data table rules read failed for ${orgId}: ${err.message || err}`);
           return { licensed: false, reason: "license_check_failed", userId: user.id };
         }
-        const ownTables = Array.isArray(row.dataTables) ? row.dataTables : [];
+        const ownTables = [...new Set([...(template ? template.dataTables : []), ...(Array.isArray(row.dataTables) ? row.dataTables : [])])];
         // { [tableId]: { rules, setAt } } — the rules as stored, normalized here
         dataTables = ownTables.filter((id) => allRules[id] && normalizeRules(allRules[id].rules).visibleToSupervisors);
       }

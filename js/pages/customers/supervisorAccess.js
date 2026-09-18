@@ -1,5 +1,5 @@
 /**
- * Supervisor Access — the org's Supervisor scope.
+ * Supervisor Access — the org's Supervisor scope, and its Supervisor templates.
  *
  * Two routes, one module (docs/customer-roles-design.md §8):
  *
@@ -11,23 +11,39 @@
  *   Administrator › Supervisor Access   a customer Administrator, for their
  *                                       own org; the server ignores any other
  *
- * The scope is what a Supervisor in the org may have AT ALL: every page the
- * org offers — a customer's pages, or every internal page bar the
- * superuser-only and Customers ones — drawn as the sidebar draws them, one
- * box per page and a box per section. A Supervisor's own pages are a subset of it, chosen when
- * they are added or edited on the users list; their effective pages are the
- * two intersected at sign-in, so a change here reaches every Supervisor
+ * The dropdown above the tree says what is being edited:
+ *
+ *   Default — the Supervisor scope      what a Supervisor in the org may have
+ *                                       AT ALL: every page the org offers,
+ *                                       drawn as the sidebar draws them
+ *   a template                          a named subset of the scope, plus the
+ *                                       data tables under Data Tables ›
+ *                                       Supervisor, that a Supervisor can be
+ *                                       put on (docs/supervisor-templates-design.md)
+ *
+ * A Supervisor's effective pages are the scope ∩ (their template ∪ their own
+ * ticks), computed at sign-in, so a change here reaches every Supervisor
  * within the gate's five-minute cache, with nobody editing rows.
  *
  * Save overwrites. The server validates every key against the pages a
- * customer may hold and says what it dropped; nothing here is trusted alone.
+ * customer may hold (and a template's against the scope) and says what it
+ * dropped; nothing here is trusted alone.
  */
-import { makeStatus, withBusy } from "../../utils.js";
-import { getSupervisorScope, setSupervisorScope } from "../../services/licenseService.js";
-import { pageTreeFor } from "../../services/customerPageTree.js";
+import { escapeHtml, makeStatus, withBusy } from "../../utils.js";
+import {
+  getSupervisorScope, setSupervisorScope,
+  listSupervisorTemplates, saveSupervisorTemplate, deleteSupervisorTemplate,
+} from "../../services/licenseService.js";
+import { listDataTableRules } from "../../services/dataTableRulesService.js";
+import * as gc from "../../services/genesysApi.js";
+import { pageTreeFor, pruneTree } from "../../services/customerPageTree.js";
 import { createPageTree, ensurePageTreeStyles } from "../../components/pageTree.js";
+import { createTablesPicker } from "../../components/tablesPicker.js";
 
-export default function renderSupervisorAccess({ orgContext, access }) {
+const SUPERVISOR_TABLES_PAGE = "data-tables.supervisor";
+const NEW_TEMPLATE = "__new__";
+
+export default function renderSupervisorAccess({ api, orgContext, access }) {
   ensurePageTreeStyles();
   const customerMode = !!(orgContext && orgContext.isCustomer && orgContext.isCustomer());
   const isSuperuser  = !!(access && access.isSuperuser);
@@ -43,6 +59,11 @@ export default function renderSupervisorAccess({ orgContext, access }) {
       .sa-tools .sa-spacer { flex:1; }
       .sa-panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:12px; }
       .sa-note { color:var(--muted); font-size:12px; margin-top:8px; }
+      /* What is being edited: the scope, or a template. */
+      .sa-editing { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin: 0 0 10px; }
+      .sa-editing .em-label { margin:0; }
+      .sa-editing select { min-width: 260px; }
+      .sa-editing-hint { color:var(--muted); font-size:12px; flex-basis:100%; }
     </style>
     <div class="sa-wrap">
       <h1 class="h1">${customerMode ? "Administrator — Supervisor Access" : "Customers — Supervisor Access"}</h1>
@@ -51,7 +72,9 @@ export default function renderSupervisorAccess({ orgContext, access }) {
         The pages a Supervisor in this organisation may be given. Tick a section to include every page
         under it. When a Supervisor is added or edited, only the pages ticked here can be chosen for
         them; unticking a page here takes it from every Supervisor who had it. Administrators always
-        see everything the organisation offers.
+        see everything the organisation offers. A <strong>template</strong> is a named set of pages and
+        data tables from the scope that a Supervisor can be put on: change the template and every
+        Supervisor on it follows, their own extra pages untouched.
       </p>
 
       <div class="sa-org" ${customerMode ? "hidden" : ""}>
@@ -60,6 +83,13 @@ export default function renderSupervisorAccess({ orgContext, access }) {
       </div>
 
       <div id="saBody" hidden>
+        <div class="sa-editing">
+          <span class="em-label">Editing:</span>
+          <select class="dt-select" id="saEditing"></select>
+          <button type="button" class="btn btn-secondary btn-sm" id="saRename" hidden>Rename</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="saDelete" hidden>Delete</button>
+          <span class="sa-editing-hint" id="saEditingHint"></span>
+        </div>
         <div class="sa-tools">
           <span id="saCount" class="sa-count"></span>
           <span class="sa-spacer"></span>
@@ -77,6 +107,10 @@ export default function renderSupervisorAccess({ orgContext, access }) {
 
   const $orgName = el.querySelector("#saOrgName");
   const $body    = el.querySelector("#saBody");
+  const $editing = el.querySelector("#saEditing");
+  const $rename  = el.querySelector("#saRename");
+  const $delete  = el.querySelector("#saDelete");
+  const $hint    = el.querySelector("#saEditingHint");
   const $count   = el.querySelector("#saCount");
   const $all     = el.querySelector("#saAll");
   const $none    = el.querySelector("#saNone");
@@ -86,40 +120,165 @@ export default function renderSupervisorAccess({ orgContext, access }) {
   const setStatus = makeStatus($status, "cs-status");
 
   let currentOrg = null;
-  let saved = [];           // what the server holds, sorted
+  let scope = [];            // the org's scope as the server holds it, sorted
+  let templates = [];        // the org's templates, by name
+  let tables = [];           // [{ id, name }] visible to Supervisors, for templates
+  let tablesError = "";
+  let current = null;        // null = the scope; else the template being edited
   let loadSeq = 0;
-  let tree = null;          // built per org: the internal org's pages differ from a customer's
-  let treeKind = null;
+  let tree = null;
+  let picker = null;         // the tables picker under the Supervisor page (templates only)
+  let treeMode = null;       // "scope:<kind>" or "template" — rebuilt when it changes
 
-  /** The tree for this org's kind — rebuilt only when the kind changes. */
-  function ensureTree(internal) {
-    const kind = internal ? "internal" : "customer";
-    if (tree && treeKind === kind) return;
-    treeKind = kind;
+  const internal = () => !customerMode && orgContext.isInternalOrg(currentOrg.id);
+
+  // ── The tree: the org's pages for the scope; the scope's pages for a template ──
+  function buildTree() {
+    const mode = current ? "template" : `scope:${internal() ? "internal" : "customer"}`;
+    // A template's tree is pruned to the scope, so it must be rebuilt when
+    // the scope changes; the scope's tree only when the org's kind does.
+    if (tree && treeMode === mode && mode !== "template") return;
+    treeMode = mode;
+    picker = null;
+    const extras = {};
+    if (current) {
+      picker = createTablesPicker({ tables, error: tablesError, onChange: onEdit, emptyNote: "No data table has been made visible to Supervisors yet: this page carries no tables until one is (Data Tables › Edit)." });
+      extras[SUPERVISOR_TABLES_PAGE] = picker.el;
+    }
     // Collapsed: ~80 pages under 13 sections is a wall; the section counts
     // say where the ticks are, and a section opens on its chevron.
-    tree = createPageTree({ tree: pageTreeFor(internal), onChange: onEdit, open: false });
+    tree = createPageTree({ tree: current ? pruneTree(pageTreeFor(internal()), scope) : pageTreeFor(internal()), onChange: onEdit, open: false, extras });
     $treeBox.replaceChildren(tree.el);
   }
 
-  function onEdit(keys) {
-    $count.textContent = `${keys.length} of ${tree.size} pages in the scope`;
-    const dirty = JSON.stringify([...keys].sort()) !== JSON.stringify(saved);
-    $save.disabled = !dirty;
+  /** What the controls hold now, and what the server holds, for dirtiness. */
+  function held() {
+    const features = tree.getSelected();
+    const dataTables = current && picker && features.includes(SUPERVISOR_TABLES_PAGE) ? picker.getSelected() : [];
+    return { features: [...features].sort(), dataTables: [...dataTables].sort() };
+  }
+  function saved() {
+    return current ? { features: [...current.features].sort(), dataTables: [...current.dataTables].sort() } : { features: scope, dataTables: [] };
   }
 
+  function onEdit() {
+    const h = held();
+    $count.textContent = current
+      ? `${h.features.length} of ${tree.size} pages in the template${h.features.includes(SUPERVISOR_TABLES_PAGE) ? `, ${h.dataTables.length} data table${h.dataTables.length === 1 ? "" : "s"}` : ""}`
+      : `${h.features.length} of ${tree.size} pages in the scope`;
+    $save.disabled = JSON.stringify(h) === JSON.stringify(saved());
+  }
+
+  // ── The dropdown ──────────────────────────────────────────────────────
+  function renderEditing() {
+    const opts = [`<option value="">Default — the Supervisor scope</option>`]
+      .concat(templates.map((t) => `<option value="${escapeHtml(t.id)}">Template: ${escapeHtml(t.name)}</option>`))
+      .concat([`<option value="${NEW_TEMPLATE}">+ New template…</option>`]);
+    $editing.innerHTML = opts.join("");
+    $editing.value = current ? current.id : "";
+    $rename.hidden = $delete.hidden = !current;
+    $hint.textContent = current
+      ? (scope.length
+        ? `The template's pages, chosen from the scope. A Supervisor on "${current.name}" has these plus any extra pages ticked for them; change the template and they all follow.`
+        : `The scope is empty, so a template has nothing to choose from yet. Save the scope first.`)
+      : (templates.length
+        ? `Every page a Supervisor may have at all. ${templates.length} template${templates.length === 1 ? "" : "s"} draw from it: unticking a page here takes it from them too.`
+        : "Every page a Supervisor may have at all.");
+  }
+
+  function show(what) {
+    current = what || null;
+    buildTree();
+    tree.setSelected(current ? current.features : scope);
+    if (picker) picker.setSelected(current.dataTables);
+    tree.setEnabled(true);
+    renderEditing();
+    onEdit();
+  }
+
+  $editing.addEventListener("change", async () => {
+    const v = $editing.value;
+    if (!$save.disabled && !window.confirm("Discard the unsaved changes here?")) { $editing.value = current ? current.id : ""; return; }
+    if (v === NEW_TEMPLATE) { $editing.value = current ? current.id : ""; await newTemplate(); return; }
+    show(v ? templates.find((t) => t.id === v) : null);
+  });
+
+  async function newTemplate() {
+    const name = (window.prompt("Name for the new template:") || "").trim();
+    if (!name) return;
+    setStatus(`Creating the template "${name}"…`);
+    try {
+      const r = await saveSupervisorTemplate(currentOrg.id, { name, features: [], dataTables: [] });
+      templates = [...templates, r.template].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      show(r.template);
+      setStatus(`Template "${r.template.name}" created. Tick its pages and save.`, "success");
+    } catch (err) {
+      setStatus(err.message || String(err), "error");
+    }
+  }
+
+  $rename.addEventListener("click", async () => {
+    if (!current) return;
+    const name = (window.prompt("New name for the template:", current.name) || "").trim();
+    if (!name || name === current.name) return;
+    setStatus(`Renaming "${current.name}"…`);
+    try {
+      // Renaming saves the template as it is held, ticks included.
+      const h = held();
+      const r = await saveSupervisorTemplate(currentOrg.id, { id: current.id, name, features: h.features, dataTables: h.dataTables });
+      templates = templates.map((t) => (t.id === r.template.id ? r.template : t)).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      show(r.template);
+      setStatus(`Renamed to "${r.template.name}" and saved.`, "success");
+    } catch (err) {
+      setStatus(err.message || String(err), "error");
+    }
+  });
+
+  $delete.addEventListener("click", async () => {
+    if (!current) return;
+    if (!window.confirm(`Delete the template "${current.name}"?\n\nOnly possible when no Supervisor is on it.`)) return;
+    setStatus(`Deleting "${current.name}"…`);
+    try {
+      await deleteSupervisorTemplate(currentOrg.id, current.id);
+      templates = templates.filter((t) => t.id !== current.id);
+      const name = current.name;
+      show(null);
+      setStatus(`Template "${name}" deleted.`, "success");
+    } catch (err) {
+      const who = Array.isArray(err.names) && err.names.length ? ` (${err.names.join(", ")})` : "";
+      setStatus(err.code === "template_in_use"
+        ? `"${current.name}" is used by ${err.users} Supervisor${err.users === 1 ? "" : "s"}${who}. Move them to another template first.`
+        : (err.message || String(err)), "error");
+    }
+  });
+
+  // ── Load and save ─────────────────────────────────────────────────────
   async function load() {
     const seq = ++loadSeq;
-    tree.setEnabled(false);
+    if (tree) tree.setEnabled(false);
     setStatus(`Loading the Supervisor scope for ${currentOrg.name}…`);
     try {
-      const features = await getSupervisorScope(currentOrg.id);
+      const [features, tpls] = await Promise.all([getSupervisorScope(currentOrg.id), listSupervisorTemplates(currentOrg.id)]);
       if (seq !== loadSeq) return;
-      saved = [...features].sort();
-      tree.setSelected(saved);
-      tree.setEnabled(true);
-      onEdit(tree.getSelected());
-      setStatus(saved.length ? "" : "Nothing is in the scope yet — no Supervisor can be added until something is.", saved.length ? "" : "warn");
+      scope = [...features].sort();
+      templates = tpls;
+      // The tables a template may carry: only worth reading when the page is in the scope.
+      tables = []; tablesError = "";
+      if (scope.includes(SUPERVISOR_TABLES_PAGE)) {
+        try {
+          const [all, allRules] = await Promise.all([gc.fetchAllDataTables(api, currentOrg.id), listDataTableRules(currentOrg.id)]);
+          if (seq !== loadSeq) return;
+          tables = (all || []).filter((t) => allRules[t.id] && allRules[t.id].visibleToSupervisors)
+            .map((t) => ({ id: t.id, name: t.name }))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+        } catch (err) {
+          if (seq !== loadSeq) return;
+          tables = null; tablesError = err.message || String(err);
+        }
+      }
+      treeMode = null;              // the scope may have changed: rebuild
+      show(null);
+      setStatus(scope.length ? "" : "Nothing is in the scope yet — no Supervisor can be added until something is.", scope.length ? "" : "warn");
     } catch (err) {
       if (seq !== loadSeq) return;
       setStatus(err.message || String(err), "error");
@@ -127,8 +286,9 @@ export default function renderSupervisorAccess({ orgContext, access }) {
   }
 
   async function save() {
-    const keys = tree.getSelected();
-    if (!keys.length) {
+    const h = held();
+    if (current) return saveTemplate(h);
+    if (!h.features.length) {
       const ok = window.confirm(
         `Save an empty Supervisor scope for ${currentOrg.name}?\n\n` +
         `Every Supervisor in the organisation will lose every page within five minutes, and no Supervisor can be added until something is ticked.`
@@ -137,12 +297,26 @@ export default function renderSupervisorAccess({ orgContext, access }) {
     }
     setStatus(`Saving the Supervisor scope for ${currentOrg.name}…`);
     try {
-      const r = await withBusy($save, () => setSupervisorScope(currentOrg.id, keys));
-      saved = [...(r.features || [])].sort();
-      tree.setSelected(saved);
-      onEdit(tree.getSelected());
+      const r = await withBusy($save, () => setSupervisorScope(currentOrg.id, h.features));
+      scope = [...(r.features || [])].sort();
+      show(null);
       const dropped = Array.isArray(r.dropped) && r.dropped.length ? ` ${r.dropped.length} unknown page${r.dropped.length === 1 ? " was" : "s were"} dropped.` : "";
-      setStatus(`Saved: ${saved.length} page${saved.length === 1 ? "" : "s"} in the scope. Supervisors see the change within five minutes.${dropped}`, "success");
+      setStatus(`Saved: ${scope.length} page${scope.length === 1 ? "" : "s"} in the scope. Supervisors see the change within five minutes.${dropped}`, "success");
+    } catch (err) {
+      setStatus(err.message || String(err), "error");
+    }
+  }
+
+  async function saveTemplate(h) {
+    setStatus(`Saving the template "${current.name}"…`);
+    try {
+      const r = await withBusy($save, () => saveSupervisorTemplate(currentOrg.id, { id: current.id, name: current.name, features: h.features, dataTables: h.dataTables }));
+      templates = templates.map((t) => (t.id === r.template.id ? r.template : t));
+      show(r.template);
+      const n = r.template.features.length, t = r.template.dataTables.length;
+      const dropped = (r.dropped ? ` ${r.dropped} page${r.dropped === 1 ? " was" : "s were"} outside the scope and dropped.` : "")
+        + (r.droppedTables ? ` ${r.droppedTables} table${r.droppedTables === 1 ? " was" : "s were"} not visible to Supervisors and dropped.` : "");
+      setStatus(`Saved "${r.template.name}": ${n} page${n === 1 ? "" : "s"}${t ? `, ${t} data table${t === 1 ? "" : "s"}` : ""}. Every Supervisor on it follows within five minutes.${dropped}`, "success");
     } catch (err) {
       setStatus(err.message || String(err), "error");
     }
@@ -170,6 +344,7 @@ export default function renderSupervisorAccess({ orgContext, access }) {
   function setOrg(org) {
     currentOrg = org || null;
     loadSeq++;
+    current = null;
     if (!currentOrg) {
       $orgName.textContent = "Select a customer org in the header.";
       $body.hidden = true;
@@ -183,7 +358,6 @@ export default function renderSupervisorAccess({ orgContext, access }) {
       setStatus(why, "warn");
       return;
     }
-    ensureTree(!customerMode && orgContext.isInternalOrg(currentOrg.id));
     $body.hidden = false;
     load();
   }

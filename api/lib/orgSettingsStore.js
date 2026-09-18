@@ -134,4 +134,80 @@ async function setDataTableRules(orgId, tableId, rules, by) {
   return { rules, setAt };
 }
 
-module.exports = { getSupervisorScope, setSupervisorScope, getDataTableRules, setDataTableRules, listDataTableRules, TABLE_NAME };
+// ── Supervisor templates ──────────────────────────────────────────────────
+// A named set of pages and data tables a Supervisor can be put on
+// (docs/supervisor-templates-design.md). Row key "supervisorTemplate|<id>";
+// the id is minted here. Pages and tables are stored as validated by the
+// endpoint — subsets of the scope and of the tables open to Supervisors.
+
+const TEMPLATE_PREFIX = "supervisorTemplate|";
+const crypto = require("crypto");
+
+function templateFromEntity(e) {
+  const parse = (raw) => { try { const v = JSON.parse(raw || "[]"); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } };
+  return {
+    id: String(e.rowKey || "").slice(TEMPLATE_PREFIX.length),
+    name: e.name || "",
+    features: parse(e.features).sort(),
+    dataTables: parse(e.dataTables).sort(),
+    setBy: e.setBy || "", setByEmail: e.setByEmail || "", setAt: e.setAt || null,
+  };
+}
+
+/** Every template of an org, by name. */
+async function listSupervisorTemplates(orgId) {
+  await ensureTable();
+  const out = [];
+  const pk = safeKey(orgId).replace(/'/g, "''");
+  const iter = getClient().listEntities({
+    queryOptions: { filter: `PartitionKey eq '${pk}' and RowKey ge '${TEMPLATE_PREFIX}' and RowKey lt 'supervisorTemplate}'` },
+  });
+  for await (const e of iter) out.push(templateFromEntity(e));
+  return out.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+}
+
+/** One template, or null. */
+async function getSupervisorTemplate(orgId, id) {
+  await ensureTable();
+  try {
+    return templateFromEntity(await getClient().getEntity(safeKey(orgId), TEMPLATE_PREFIX + safeKey(id)));
+  } catch (err) {
+    if (err.statusCode === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * Create (no id) or overwrite (id) a template. The endpoint has validated
+ * the name, pages and tables.
+ * @returns {Promise<object>} the template as stored
+ */
+async function setSupervisorTemplate(orgId, id, { name, features, dataTables }, by) {
+  await ensureTable();
+  const tid = id || crypto.randomUUID();
+  const setAt = new Date().toISOString();
+  const entity = {
+    partitionKey: safeKey(orgId),
+    rowKey:       TEMPLATE_PREFIX + safeKey(tid),
+    name:         String(name || ""),
+    features:     JSON.stringify([...new Set((features || []).map(String))].sort()),
+    dataTables:   JSON.stringify([...new Set((dataTables || []).map(String))].sort()),
+    setBy:        (by && by.id) || "",
+    setByEmail:   (by && by.email) || "",
+    setAt,
+  };
+  await getClient().upsertEntity(entity, "Replace");
+  return templateFromEntity(entity);
+}
+
+/** Remove a template. The endpoint has checked nobody is on it. */
+async function deleteSupervisorTemplate(orgId, id) {
+  await ensureTable();
+  try { await getClient().deleteEntity(safeKey(orgId), TEMPLATE_PREFIX + safeKey(id)); return true; }
+  catch (err) { if (err.statusCode === 404) return false; throw err; }
+}
+
+module.exports = {
+  getSupervisorScope, setSupervisorScope, getDataTableRules, setDataTableRules, listDataTableRules,
+  listSupervisorTemplates, getSupervisorTemplate, setSupervisorTemplate, deleteSupervisorTemplate, TABLE_NAME,
+};

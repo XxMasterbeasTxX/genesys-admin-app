@@ -5,15 +5,8 @@
  *   PUT /api/supervisor-scope               { customerId, features: [...] }
  *                                           → { customerId, features, dropped }
  *
- * Who may (docs/customer-roles-design.md §5, §6):
- *
- *   a customer session whose own row is "administrator"   their own org only —
- *                                                          the customerId they
- *                                                          send is ignored
- *   an internal session that is a superuser, or whose      any customer org
- *   own row manages customer access
- *   a superuser                                            the internal org
- *                                                          (docs/internal-roles-design.md §4)
+ * Who may: lib/scopeRights.js (docs/customer-roles-design.md §5, §6;
+ * docs/internal-roles-design.md §4) — shared with the Supervisor templates.
  *
  * Features are validated against the pages that kind of org may hold
  * (pages.js); the rest are dropped and named in the response. Every PUT is
@@ -26,8 +19,7 @@
  * (/api/licenses/role). Naming a user stays Netdesign's.
  */
 const { getCallerContext } = require("../lib/callerContext");
-const { parseRegistry } = require("../lib/orgConfigResolver");
-const { INTERNAL_ORG_SLUG } = require("../lib/licenseGate");
+const { resolveScopeOrg } = require("../lib/scopeRights");
 const { filterPages } = require("../lib/pages");
 const store = require("../lib/orgSettingsStore");
 const activityLog = require("../lib/activityLogStore");
@@ -42,26 +34,6 @@ function customerName(id) {
   return c ? c.name : id;
 }
 
-/** Which org this caller may act on, and of which kind, or a refusal. */
-function resolveOrg(context, caller, requested) {
-  if (caller.mode === "customer") {
-    if (caller.role !== "administrator") return { error: "administrator_required", status: 403 };
-    return { customerId: caller.customerId, kind: "customer" };   // never what they sent
-  }
-  if (caller.mode !== "internal") return { error: "internal_only", status: 403 };
-  const customerId = String(requested || "").trim();
-  if (!customerId) return { error: "customerId_required", status: 400 };
-  if (customerId === INTERNAL_ORG_SLUG) {
-    // The internal org's own scope: what its Supervisors may see. Superusers
-    // only, like everything else about the internal list.
-    if (!caller.superuser) return { error: "superuser_required", status: 403 };
-    return { customerId, kind: "internal" };
-  }
-  if (!caller.superuser && !caller.managesCustomers) return { error: "customer_manager_required", status: 403 };
-  if (!parseRegistry(context).some((e) => e.id === customerId)) return { error: "not_a_customer", status: 400 };
-  return { customerId, kind: "customer" };
-}
-
 module.exports = async function (context, req) {
   try {
     const caller = await getCallerContext(context, req);
@@ -70,7 +42,7 @@ module.exports = async function (context, req) {
 
     const method = String(req.method || "GET").toUpperCase();
     const body   = req.body && typeof req.body === "object" ? req.body : {};
-    const org    = resolveOrg(context, caller, method === "GET" ? (req.query && req.query.customerId) : body.customerId);
+    const org    = resolveScopeOrg(context, caller, method === "GET" ? (req.query && req.query.customerId) : body.customerId);
     if (org.error) return json(context, org.status, { error: org.error });
     const { customerId, kind } = org;
 

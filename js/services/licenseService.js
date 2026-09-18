@@ -23,6 +23,8 @@ async function call(method, path, body) {
     const err = new Error(licenseMessage(json.error, json, resp.status));
     err.code   = json.error || "request_failed";
     err.status = resp.status;
+    if (json.users != null) err.users = json.users;
+    if (Array.isArray(json.names)) err.names = json.names;
     throw err;
   }
   return json;
@@ -42,6 +44,11 @@ function licenseMessage(code, json, status) {
     case "role_required":             return "Choose Administrator or Supervisor.";
     case "scope_empty":               return "Nothing is in the Supervisor scope for this organisation yet. Set it on Supervisor Access first.";
     case "pages_required":            return "Tick at least one page from the Supervisor scope.";
+    case "template_unknown":          return "That template no longer exists. Reload the page and choose again.";
+    case "template_in_use":           return "This template is in use. Move its Supervisors to another template first.";
+    case "name_required":             return "Give the template a name.";
+    case "name_taken":                return "A template with that name already exists.";
+    case "id_required":               return "Choose a template first.";
     case "tables_required":           return "With Data Tables › Supervisor ticked, tick at least one data table. Only tables an Administrator has made visible to Supervisors (Data Tables › Edit) can be chosen.";
     case "customerId_required":       return "Select a customer organisation first.";
     case "not_a_customer":   return "This organisation is not set up as a customer yet — it has no registry entry, so nobody can sign in to it as a customer.";
@@ -62,8 +69,8 @@ export async function listLicensedUsers(customerId) {
  * scope) must be non-empty; with the Data Tables › Supervisor page, so must
  * their `dataTables` (ids of tables the org has opened to Supervisors).
  */
-export function assignLicense(customerId, { id, email, name }, { role = "", features = [], dataTables = [] } = {}) {
-  return call("POST", "/api/licenses/assign", { customerId, userId: id, email, name, role, features, dataTables });
+export function assignLicense(customerId, { id, email, name }, { role = "", features = [], dataTables = [], templateId = "" } = {}) {
+  return call("POST", "/api/licenses/assign", { customerId, userId: id, email, name, role, features, dataTables, templateId });
 }
 
 /**
@@ -72,8 +79,8 @@ export function assignLicense(customerId, { id, email, name }, { role = "", feat
  * internal org's by superusers only — and by a customer org's own
  * Administrators. Server-checked. Returns { user, changed }.
  */
-export function setLicenseRole(customerId, userId, role, features = [], dataTables = []) {
-  return call("POST", "/api/licenses/role", { customerId, userId, role, features, dataTables });
+export function setLicenseRole(customerId, userId, role, features = [], dataTables = [], templateId = "") {
+  return call("POST", "/api/licenses/role", { customerId, userId, role, features, dataTables, templateId });
 }
 
 /**
@@ -89,6 +96,22 @@ export function setManagesCustomers(customerId, userId, manages) {
 export async function getSupervisorScope(customerId) {
   const r = await call("GET", `/api/supervisor-scope?customerId=${encodeURIComponent(customerId)}`);
   return r.features || [];
+}
+
+/** The org's Supervisor templates, by name: [{ id, name, features, dataTables }]. */
+export async function listSupervisorTemplates(customerId) {
+  const r = await call("GET", `/api/supervisor-templates?customerId=${encodeURIComponent(customerId)}`);
+  return r.templates || [];
+}
+
+/** Create (no id) or overwrite (id) a template. Returns { template, dropped, droppedTables }. */
+export function saveSupervisorTemplate(customerId, { id = "", name, features = [], dataTables = [] }) {
+  return call("PUT", "/api/supervisor-templates", { customerId, id, name, features, dataTables });
+}
+
+/** Delete a template nobody is on. 409 template_in_use otherwise (err.users, err.names). */
+export async function deleteSupervisorTemplate(customerId, id) {
+  return call("DELETE", "/api/supervisor-templates", { customerId, id });
 }
 
 /** Overwrite the org's Supervisor scope. Returns { customerId, features, dropped }. */
