@@ -7,7 +7,7 @@ export default function render(ctx) {
     label      : "Extension Pools",
     fetchFn    : (api, orgId, opts) => gc.fetchAllExtensionPools(api, orgId, opts),
     columns    : [
-      { header: "Name",        get: i => i.name        || "—" },
+      { header: "Name",        get: i => i.name        || i.description || "—" },
       { header: "Start Number", get: i => i.startNumber || "—" },
       { header: "End Number",   get: i => i.endNumber   || "—" },
     ],

@@ -43,6 +43,14 @@ const ALL_DIVISIONS_ID = "*";
 const ALL_DIVISIONS_LABEL = "All divisions";
 const isAllDivisions = (d) => !!d && (d.id === ALL_DIVISIONS_ID || d.name === ALL_DIVISIONS_ID);
 
+/** What to call an object in a status line or a result: its name, else what it has (an extension pool is a number range). */
+function labelOf(item) {
+  if (!item) return "";
+  if (item.name) return item.name;
+  if (item.startNumber || item.endNumber) return `${item.startNumber || "?"} – ${item.endNumber || "?"}${item.description ? ` (${item.description})` : ""}`;
+  return item.description || item.id || "";
+}
+
 export default function renderDivisionPage(ctx, cfg) {
   const { api, orgContext, me, route } = ctx;
   // The permission this page maps for its object, to name it in a refusal.
@@ -398,7 +406,7 @@ export default function renderDivisionPage(ctx, cfg) {
     for (let i = 0; i < toMove.length; i++) {
       const item = toMove[i];
       showProgress(((i + 1) / toMove.length) * 100);
-      setStatus(`Moving ${i + 1} of ${toMove.length}: ${item.name || item.id}…`);
+      setStatus(`Moving ${i + 1} of ${toMove.length}: ${labelOf(item)}…`);
 
       try {
         await moveFn(api, org.id, targetId, item);
@@ -440,7 +448,7 @@ export default function renderDivisionPage(ctx, cfg) {
 
     $resultsTbody.innerHTML = results.map((r, idx) => `<tr>
       <td>${idx + 1}</td>
-      <td>${escapeHtml(r.item.name || r.item.id)}</td>
+      <td>${escapeHtml(labelOf(r.item))}</td>
       <td class="${r.ok ? "dv-ok" : "dv-fail"}">${r.ok ? "✓ Moved" : "✗ Failed"}</td>
       <td${r.raw ? ` title="${escapeHtml(r.raw)}"` : ""}>${escapeHtml(r.detail)}</td>
     </tr>`).join("");
