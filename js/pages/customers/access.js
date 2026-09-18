@@ -721,7 +721,9 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     }
     licensed.sort((a, b) => String(a.assignedAt).localeCompare(String(b.assignedAt)));
     renderList();
-    renderSelected();
+    // The add box starts over once everyone ticked is in: no role chosen, the
+    // pages folded away — a ninety-line tree left open after the add is noise.
+    if (!failed.length) renderAddRole(); else renderSelected();
 
     const name = (u) => u.name || u.email || u.id;
     const parts = [];
