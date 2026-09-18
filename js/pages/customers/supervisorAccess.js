@@ -16,12 +16,10 @@
  *   Default — the Supervisor scope      what a Supervisor in the org may have
  *                                       AT ALL: every page the org offers,
  *                                       drawn as the sidebar draws them, and
- *                                       under Data Tables › Supervisor every
- *                                       data table, ticked when open to
- *                                       Supervisors — the same switch as
- *                                       "Visible to Supervisors" on Data
- *                                       Tables › Edit, written to the table's
- *                                       rules on Save
+ *                                       under Data Tables › Supervisor the
+ *                                       tables open to Supervisors — a list,
+ *                                       read-only: the switch is "Visible to
+ *                                       Supervisors" on Data Tables › Edit
  *   a template                          a named subset of the scope, plus the
  *                                       data tables under Data Tables ›
  *                                       Supervisor, that a Supervisor can be
@@ -40,7 +38,7 @@ import {
   getSupervisorScope, setSupervisorScope,
   listSupervisorTemplates, saveSupervisorTemplate, deleteSupervisorTemplate,
 } from "../../services/licenseService.js";
-import { listDataTableRules, setDataTableRules, EMPTY_RULES } from "../../services/dataTableRulesService.js";
+import { listDataTableRules } from "../../services/dataTableRulesService.js";
 import * as gc from "../../services/genesysApi.js";
 import { pageTreeFor, pruneTree } from "../../services/customerPageTree.js";
 import { createPageTree, ensurePageTreeStyles } from "../../components/pageTree.js";
@@ -128,11 +126,8 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
   let currentOrg = null;
   let scope = [];            // the org's scope as the server holds it, sorted
   let templates = [];        // the org's templates, by name
-  let allTables = [];        // [{ id, name }] every data table of the org, by name
-  let rulesById = {};        // tableId → its rules as the server holds them
-  let tables = [];           // the ones visible to Supervisors, for templates
+  let tables = [];           // [{ id, name }] visible to Supervisors, by name
   let tablesError = "";
-  const visibleIds = () => allTables.filter((t) => rulesById[t.id] && rulesById[t.id].visibleToSupervisors).map((t) => t.id).sort();
   let current = null;        // null = the scope; else the template being edited
   let loadSeq = 0;
   let tree = null;
@@ -151,13 +146,14 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
     picker = null;
     const extras = {};
     if (current) {
-      picker = createTablesPicker({ tables, error: tablesError, onChange: onEdit, emptyNote: "No data table has been made visible to Supervisors yet: this page carries no tables until one is (tick them under Default)." });
+      picker = createTablesPicker({ tables, error: tablesError, onChange: onEdit, emptyNote: "No data table has been made visible to Supervisors yet: this page carries no tables until one is (Data Tables › Edit, \"Visible to Supervisors\")." });
     } else {
-      // The scope's tables: every table, ticked when open to Supervisors.
+      // Under the scope: the tables open to Supervisors, shown, not chosen —
+      // the switch is on Data Tables › Edit.
       picker = createTablesPicker({
-        tables: tablesError ? null : allTables, error: tablesError, onChange: onEdit,
-        emptyNote: "This organisation has no data tables.",
-        countText: (n, total) => `${n} of ${total} data table${total === 1 ? "" : "s"} visible to Supervisors — the same switch as on Data Tables › Edit`,
+        tables, error: tablesError, readOnly: true,
+        emptyNote: "No data table has been made visible to Supervisors yet. An Administrator opens one with \"Visible to Supervisors\" on Data Tables › Edit.",
+        countText: (n) => `${n} data table${n === 1 ? "" : "s"} visible to Supervisors — set with \"Visible to Supervisors\" on Data Tables › Edit`,
       });
     }
     extras[SUPERVISOR_TABLES_PAGE] = picker.el;
@@ -170,11 +166,11 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
   /** What the controls hold now, and what the server holds, for dirtiness. */
   function held() {
     const features = tree.getSelected();
-    const dataTables = picker && (!current || features.includes(SUPERVISOR_TABLES_PAGE)) ? picker.getSelected() : [];
+    const dataTables = current && picker && features.includes(SUPERVISOR_TABLES_PAGE) ? picker.getSelected() : [];
     return { features: [...features].sort(), dataTables: [...dataTables].sort() };
   }
   function saved() {
-    return current ? { features: [...current.features].sort(), dataTables: [...current.dataTables].sort() } : { features: scope, dataTables: visibleIds() };
+    return current ? { features: [...current.features].sort(), dataTables: [...current.dataTables].sort() } : { features: scope, dataTables: [] };
   }
 
   function onEdit() {
@@ -198,15 +194,15 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
         ? `The template's pages, chosen from the scope. A Supervisor on "${current.name}" has these plus any extra pages ticked for them; change the template and they all follow.`
         : `The scope is empty, so a template has nothing to choose from yet. Save the scope first.`)
       : (templates.length
-        ? `Every page a Supervisor may have at all, and under Data Tables › Supervisor the tables open to them. ${templates.length} template${templates.length === 1 ? "" : "s"} draw from it: unticking here takes it from them too.`
-        : "Every page a Supervisor may have at all, and under Data Tables › Supervisor the tables open to them.");
+        ? `Every page a Supervisor may have at all; under Data Tables › Supervisor, the tables open to them. ${templates.length} template${templates.length === 1 ? "" : "s"} draw from it: unticking a page here takes it from them too.`
+        : "Every page a Supervisor may have at all; under Data Tables › Supervisor, the tables open to them.");
   }
 
   function show(what) {
     current = what || null;
     buildTree();
     tree.setSelected(current ? current.features : scope);
-    if (picker) picker.setSelected(current ? current.dataTables : visibleIds());
+    if (picker && current) picker.setSelected(current.dataTables);
     tree.setEnabled(true);
     renderEditing();
     onEdit();
@@ -281,14 +277,13 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
       // The tables a template may carry. Read whether or not the Supervisor
       // page is in the scope yet: it can be ticked in and saved, and a
       // template made, in the same visit.
-      allTables = []; rulesById = {}; tables = []; tablesError = "";
+      tables = []; tablesError = "";
       try {
         const [all, allRules] = await Promise.all([gc.fetchAllDataTables(api, currentOrg.id), listDataTableRules(currentOrg.id)]);
         if (seq !== loadSeq) return;
-        allTables = (all || []).map((t) => ({ id: t.id, name: t.name }))
+        tables = (all || []).filter((t) => allRules[t.id] && allRules[t.id].visibleToSupervisors)
+          .map((t) => ({ id: t.id, name: t.name }))
           .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-        rulesById = allRules || {};
-        refreshVisible();
       } catch (err) {
         if (seq !== loadSeq) return;
         tables = null; tablesError = err.message || String(err);
@@ -300,39 +295,6 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
       if (seq !== loadSeq) return;
       setStatus(err.message || String(err), "error");
     }
-  }
-
-  /** The tables a template may carry: those open to Supervisors now. */
-  function refreshVisible() {
-    const open = new Set(visibleIds());
-    tables = allTables.filter((t) => open.has(t.id));
-  }
-
-  /**
-   * Open or close tables to Supervisors as ticked under Default: one rules
-   * write per table that changed, its column rules kept. Throws nothing —
-   * a failed table is named instead.
-   */
-  async function saveVisibility(wanted) {
-    const want = new Set(wanted);
-    const before = new Set(visibleIds());
-    const changed = allTables.filter((t) => want.has(t.id) !== before.has(t.id));
-    let opened = 0, closed = 0; const failed = [];
-    for (const t of changed) {
-      const on = want.has(t.id);
-      try {
-        const r = await setDataTableRules(currentOrg.id, t.id, { ...(rulesById[t.id] || EMPTY_RULES), visibleToSupervisors: on }, t.name);
-        rulesById[t.id] = r.rules || { ...(rulesById[t.id] || EMPTY_RULES), visibleToSupervisors: on };
-        if (on) opened++; else closed++;
-      } catch (err) {
-        failed.push(`${t.name} (${err.message || err})`);
-      }
-    }
-    refreshVisible();
-    const bits = [];
-    if (opened) bits.push(`${opened} data table${opened === 1 ? "" : "s"} opened to Supervisors`);
-    if (closed) bits.push(`${closed} closed`);
-    return { note: bits.length ? ` ${bits.join(", ")}.` : "", failed };
   }
 
   async function save() {
@@ -349,11 +311,9 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
     try {
       const r = await withBusy($save, () => setSupervisorScope(currentOrg.id, h.features));
       scope = [...(r.features || [])].sort();
-      const vis = tablesError ? { note: "", failed: [] } : await withBusy($save, () => saveVisibility(h.dataTables));
       show(null);
       const dropped = Array.isArray(r.dropped) && r.dropped.length ? ` ${r.dropped.length} unknown page${r.dropped.length === 1 ? " was" : "s were"} dropped.` : "";
-      const failed = vis.failed.length ? ` Not changed: ${vis.failed.join("; ")}.` : "";
-      setStatus(`Saved: ${scope.length} page${scope.length === 1 ? "" : "s"} in the scope.${vis.note} Supervisors see the change within five minutes.${dropped}${failed}`, vis.failed.length ? "error" : "success");
+      setStatus(`Saved: ${scope.length} page${scope.length === 1 ? "" : "s"} in the scope. Supervisors see the change within five minutes.${dropped}`, "success");
     } catch (err) {
       setStatus(err.message || String(err), "error");
     }
