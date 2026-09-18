@@ -25,6 +25,7 @@ import { escapeHtml, formatDateTime, buildInterval, todayStr, daysAgoStr, export
 import * as gc from "../../services/genesysApi.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
 import { attrValue, filterByPD } from "../../lib/participantData.js";
+import { extractSessionField, extractDisconnect, extractUsers, extractRemote } from "../../lib/analyticsConversation.js";
 
 // ── Column definitions ───────────────────────────────────────────────
 const COLUMNS = [
@@ -35,6 +36,8 @@ const COLUMNS = [
   { key: "mediaType",      label: "Media Type",      width: "100px" },
   { key: "ani",            label: "ANI",             width: "130px" },
   { key: "dnis",           label: "DNIS",            width: "130px" },
+  { key: "users",          label: "Users",           width: "160px" },
+  { key: "remote",         label: "Remote",          width: "160px" },
   { key: "disconnect",     label: "Disconnect Type", width: "120px" },
 ];
 
@@ -69,28 +72,6 @@ const STATUS = {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function extractSessionField(participants, field) {
-  if (!participants) return "";
-  for (const p of participants) {
-    for (const s of p.sessions || []) {
-      if (s[field]) return s[field];
-    }
-  }
-  return "";
-}
-
-function extractDisconnect(participants) {
-  if (!participants) return "";
-  for (const p of participants) {
-    for (const s of p.sessions || []) {
-      for (const seg of s.segments || []) {
-        if (seg.disconnectType) return seg.disconnectType;
-      }
-    }
-  }
-  return "";
-}
-
 /** Flatten a conversation analytics object to a table row. */
 function toRow(conv) {
   return {
@@ -101,6 +82,8 @@ function toRow(conv) {
     mediaType:      extractSessionField(conv.participants, "mediaType"),
     ani:            extractSessionField(conv.participants, "ani"),
     dnis:           extractSessionField(conv.participants, "dnis"),
+    users:          extractUsers(conv.participants),
+    remote:         extractRemote(conv.participants),
     disconnect:     extractDisconnect(conv.participants),
     _raw: conv,
   };
@@ -835,33 +818,6 @@ export default function renderRecentSearch({ route, me, api, orgContext }) {
 
       conversations = allConvs;
 
-      // ── [remote-probe] TEMPORARY — remove once the Remote column is built ──
-      //
-      // `remote` is "the remote party" from that session's point of view, so it
-      // may differ by leg: the customer on the agent's session, the queue or
-      // agent on the customer's. `extractSessionField` takes the first non-empty
-      // value in whatever order Genesys returns participants, which is fine for
-      // ani/dnis (same from every side) and may not be for this. Logged per
-      // participant so the right leg can be chosen from data, not guessed —
-      // every Genesys semantic assumed so far has turned out wrong.
-      console.log("[remote-probe]", JSON.stringify(
-        conversations.slice(0, 5).map((c) => ({
-          conversationId: c.conversationId,
-          participants: (c.participants || []).map((p) => ({
-            purpose: p.purpose,
-            participantName: p.participantName ?? null,
-            hasUserId: !!p.userId,
-            sessions: (p.sessions || []).map((s) => ({
-              mediaType: s.mediaType,
-              direction: s.direction,
-              remote: s.remote ?? null,
-              remoteNameDisplayable: s.remoteNameDisplayable ?? null,
-              ani: s.ani ?? null,
-              dnis: s.dnis ?? null,
-            })),
-          })),
-        })), null, 2));
-      // ── end [remote-probe] ──────────────────────────────────────────────
       resultsFilters = [];
 
       const filters = [...pdFilters];
