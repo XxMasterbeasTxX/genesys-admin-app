@@ -30,7 +30,7 @@ import { escapeHtml, makeStatus, withBusy } from "../../utils.js";
 import * as gc from "../../services/genesysApi.js";
 import { logAction } from "../../services/activityLogService.js";
 import { createSingleSelect } from "../../components/multiSelect.js";
-import { getDataTableRules, listDataTableRules, EMPTY_RULES, lookupLabel } from "../../services/dataTableRulesService.js";
+import { getDataTableRules, listDataTableRules, EMPTY_RULES } from "../../services/dataTableRulesService.js";
 import { fetchAllLookupValues, clearLookupCache } from "../../lib/dataTableLookups.js";
 
 const NOT_LISTED = "__not_listed__";   // the marker option's value: never a real value
@@ -52,7 +52,6 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
       .dts-row-status { font-size: 11px; color: var(--muted); }
       .dts-row-status--error { color: var(--danger); }
       .dts-protected { color: var(--text); font-size: 13px; padding: 6px 0; display: block; }
-      .dts-col-hint { display: block; font-size: 10px; font-weight: 500; color: var(--muted); letter-spacing: 0; text-transform: none; margin-top: 2px; }
       .dts-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
       .dts-toolbar-left, .dts-toolbar-right { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
       .dts-toolbar-left { flex: 1 1 520px; }
@@ -288,15 +287,8 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
 
     if (!rows.length) { $grid.innerHTML = `<div class="dt-status">No rows match your search.</div>`; validate(); return; }
 
-    const hint = (c) => {
-      const r = rule(c.name); const bits = [];
-      if (r && r.lookup) bits.push(lookupLabel(r.lookup));
-      if ((r && r.protected) || c.name === "key") bits.push("Protected");
-      if (r && r.mandatory) bits.push("Mandatory");
-      return bits.length ? `<span class="dts-col-hint">${bits.join(" · ")}</span>` : "";
-    };
     const shown = visibleColumns();
-    const head = shown.map((c) => `<th class="dts-col">${escapeHtml(c.title)}${(rule(c.name)?.mandatory || c.name === "key") ? " *" : ""}${hint(c)}</th>`).join("");
+    const head = shown.map((c) => `<th class="dts-col">${escapeHtml(c.title)}${(rule(c.name)?.mandatory || c.name === "key") ? " *" : ""}</th>`).join("");
     const body = rows.map((m) => {
       const reason = invalidReason(m);
       const status = reason || m.status || (m.isNew ? "New row" : (m.isDirty ? "Pending changes" : "Clean"));
