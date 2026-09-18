@@ -22,8 +22,9 @@ import { escapeHtml } from "../utils.js";
  * @param {string}   [opts.error]       Why the tables could not be loaded (with tables = null).
  * @param {string}   [opts.emptyNote]   What to say when no table is visible.
  * @param {Function} [opts.countText]   (n, total) → the count line; default asks for at least one.
+ * @param {boolean}  [opts.readOnly]    Show the tables ticked and greyed, no buttons — a list, not a choice.
  */
-export function createTablesPicker({ tables, initial = [], onChange, error = "", emptyNote = "", countText = null }) {
+export function createTablesPicker({ tables, initial = [], onChange, error = "", emptyNote = "", countText = null, readOnly = false }) {
   ensureTablesPickerStyles();
   const wrap = document.createElement("div");
   wrap.className = "tp-tables";
@@ -39,8 +40,8 @@ export function createTablesPicker({ tables, initial = [], onChange, error = "",
     <div class="tp-head">
       <span class="tp-count"></span>
       <span class="tp-spacer"></span>
-      <button type="button" class="btn btn-secondary btn-sm" data-all title="Tick every data table in this list">All tables</button>
-      <button type="button" class="btn btn-secondary btn-sm" data-none title="Untick every data table in this list">No tables</button>
+      ${readOnly ? "" : `<button type="button" class="btn btn-secondary btn-sm" data-all title="Tick every data table in this list">All tables</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-none title="Untick every data table in this list">No tables</button>`}
     </div>
     <div class="tp-list">
       ${list.map((t, i) => `<label for="${uid}-${i}"><input id="${uid}-${i}" type="checkbox" value="${escapeHtml(t.id)}"> ${escapeHtml(t.name)}</label>`).join("")}
@@ -59,10 +60,12 @@ export function createTablesPicker({ tables, initial = [], onChange, error = "",
   }
   function changed() { count(); if (onChange) onChange(); }
   boxes.forEach((b) => b.addEventListener("change", changed));
-  wrap.querySelector("[data-all]").addEventListener("click", () => { boxes.forEach((b) => { b.checked = true; }); changed(); });
-  wrap.querySelector("[data-none]").addEventListener("click", () => { boxes.forEach((b) => { b.checked = locked.has(b.value); }); changed(); });
+  if (!readOnly) {
+    wrap.querySelector("[data-all]").addEventListener("click", () => { boxes.forEach((b) => { b.checked = true; }); changed(); });
+    wrap.querySelector("[data-none]").addEventListener("click", () => { boxes.forEach((b) => { b.checked = locked.has(b.value); }); changed(); });
+  }
   count();
-  return {
+  const api = {
     el: wrap, getSelected, size: boxes.length,
     setSelected(ids) { const s = new Set(ids || []); boxes.forEach((b) => { b.checked = s.has(b.value) || locked.has(b.value); }); count(); },
     setLocked(ids) {
@@ -76,6 +79,8 @@ export function createTablesPicker({ tables, initial = [], onChange, error = "",
       wrap.querySelectorAll("button").forEach((b) => { b.disabled = !enabled; });
     },
   };
+  if (readOnly) api.setLocked(boxes.map((b) => b.value));
+  return api;
 }
 
 function ensureTablesPickerStyles() {
