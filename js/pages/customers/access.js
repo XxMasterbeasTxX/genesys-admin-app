@@ -104,6 +104,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       .ca-role-choice input { margin:0; }
       .ca-role-desc { color:var(--muted); font-size:12px; margin-top:4px; }
       .ca-role-desc a { color:var(--accent); }
+      .ca-role-why { color:var(--danger); font-size:12px; margin-top:8px; }
       .ca-role-pages { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
       .ca-role-pages-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; color:var(--muted); font-size:12px; }
       .ca-role-pages-head .ca-spacer { flex:1; }
@@ -228,8 +229,10 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
           <button type="button" class="btn btn-secondary btn-sm" data-none>Untick all</button>
         </div>
         <div class="ca-role-tree"></div>
+        <div class="ca-role-why" hidden></div>
       </div>`;
     const $desc  = box.querySelector(".ca-role-desc");
+    const $why   = box.querySelector(".ca-role-why");
     const $pages = box.querySelector(".ca-role-pages");
     const $pagesCount = box.querySelector(".ca-role-pages-count");
     const radios = [...box.querySelectorAll("input[type=radio]")];
@@ -247,6 +250,20 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     function role() { const r = radios.find((x) => x.checked); return r ? r.value : ""; }
     function tablesPageTicked() { return tree.getSelected().includes(SUPERVISOR_TABLES_PAGE); }
     function template() { return templateById($template.value); }
+
+    /** Why this cannot be saved yet, or "" — shown under the box, so a greyed button explains itself. */
+    function reason() {
+      const r = role();
+      if (r === "administrator") return "";
+      if (r !== "supervisor") return "Choose a role.";
+      if (!tree.getSelected().length) return "Tick at least one page.";
+      if (tablesPageTicked() && !tablesCtl.getSelected().length) {
+        return tablesCtl.size
+          ? "Data Tables › Super User is ticked: tick at least one data table under it, or untick the page."
+          : "Data Tables › Super User is ticked, but no data table is open to Super Users yet: untick the page, or open a table with \"Visible to Super Users\" on Data Tables › Edit first.";
+      }
+      return "";
+    }
 
     /** The template's pages and tables are ticked and locked; the rest are the user's extras. */
     function applyTemplate() {
@@ -276,6 +293,9 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
           ? `Nothing is in the Super User scope for this organisation yet, so only a Master Admin can be added. <a href="${scopeRoute}">Set the Super User scope first</a> to add Super Users.`
           : "Choose a role.";
       }
+      const why = r === "supervisor" ? reason() : "";
+      $why.hidden = !why;
+      $why.textContent = why;
       onChange();
     }
     radios.forEach((r) => r.addEventListener("change", refresh));
@@ -303,12 +323,8 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
         const dataTables = pageOn ? tablesCtl.getSelected().filter((id) => !t || !t.dataTables.includes(id)) : [];
         return { role: r, features, dataTables, templateId: t ? t.id : "" };
       },
-      valid() {
-        const r = role();
-        if (r === "administrator") return true;
-        if (r !== "supervisor" || !tree.getSelected().length) return false;
-        return !tablesPageTicked() || tablesCtl.getSelected().length > 0;
-      },
+      valid() { return !reason(); },
+      reason,
       setEnabled(on) { radios.forEach((r) => { r.disabled = !on || (r.value === "supervisor" && scopeEmpty); }); $template.disabled = !on; tree.setEnabled(on); tablesCtl.setEnabled(on); },
     };
   }
