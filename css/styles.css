@@ -1924,12 +1924,24 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* One element of an array output, indented under the row that names it. */
+/* One element of an array output, or one field of a nested object, indented
+   under the row that names its parent. */
 .ed-out-item td:first-child {
   padding-left: 22px;
   color: var(--muted);
   font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
   font-size: 11px;
+}
+
+/* Separator between records when an action returns a list of them. */
+.ed-out-record td {
+  padding-top: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom-color: var(--border);
 }
 
 /* `.dt-schema` caps itself at 200px and scrolls, which is right on pages that
