@@ -965,6 +965,34 @@ export default function renderInteractionSearch({ route, me, api, orgContext }) 
       }
 
       conversations = filtered;
+
+      // ── [remote-probe] TEMPORARY — remove once the Remote column is built ──
+      //
+      // `remote` is "the remote party" from that session's point of view, so it
+      // may differ by leg: the customer on the agent's session, the queue or
+      // agent on the customer's. `extractSessionField` takes the first non-empty
+      // value in whatever order Genesys returns participants, which is fine for
+      // ani/dnis (same from every side) and may not be for this. Logged per
+      // participant so the right leg can be chosen from data, not guessed —
+      // every Genesys semantic assumed so far has turned out wrong.
+      console.log("[remote-probe]", JSON.stringify(
+        conversations.slice(0, 5).map((c) => ({
+          conversationId: c.conversationId,
+          participants: (c.participants || []).map((p) => ({
+            purpose: p.purpose,
+            participantName: p.participantName ?? null,
+            hasUserId: !!p.userId,
+            sessions: (p.sessions || []).map((s) => ({
+              mediaType: s.mediaType,
+              direction: s.direction,
+              remote: s.remote ?? null,
+              remoteNameDisplayable: s.remoteNameDisplayable ?? null,
+              ani: s.ani ?? null,
+              dnis: s.dnis ?? null,
+            })),
+          })),
+        })), null, 2));
+      // ── end [remote-probe] ──────────────────────────────────────────────
       resultsFilters = currentFilters;
       resultsExclude = currentExclude;
       rows = conversations.map(toRow);
