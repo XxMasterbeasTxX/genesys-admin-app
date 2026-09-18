@@ -1,5 +1,5 @@
 /**
- * Supervisor templates — named sets of pages and data tables a Supervisor
+ * Super User templates — named sets of pages and data tables a Super User
  * can be put on (docs/supervisor-templates-design.md).
  *
  *   GET    /api/supervisor-templates?customerId=   → { customerId, templates: [...] }
@@ -9,9 +9,9 @@
  *                                                  → { customerId, deleted } | 409 template_in_use { users }
  *
  * Who may is who may set the scope (lib/scopeRights.js). A template's pages
- * are validated against the org's kind and its Supervisor scope, its tables
- * against the tables open to Supervisors; the rest are dropped and counted
- * in the response. A template that Supervisors are on cannot be deleted —
+ * are validated against the org's kind and its Super User scope, its tables
+ * against the tables open to Super Users; the rest are dropped and counted
+ * in the response. A template that Super Users are on cannot be deleted —
  * the reply says how many. Every change is written to the activity log
  * under the caller's verified identity.
  */
@@ -70,7 +70,7 @@ module.exports = async function (context, req) {
         return json(context, 400, { error: "name_taken" });
       }
 
-      // Pages: the org's kind, then the scope. Tables: open to Supervisors.
+      // Pages: the org's kind, then the scope. Tables: open to Super Users.
       const scope = await store.getSupervisorScope(customerId);
       const { kept, dropped: unknown } = filterPages(body.features, kind);
       const features = kept.filter((k) => scope.includes(k));
@@ -87,8 +87,8 @@ module.exports = async function (context, req) {
           ...who,
           action: before ? "supervisorTemplate.set" : "supervisorTemplate.create",
           description: before
-            ? `Changed the Supervisor template "${template.name}" for ${customerName(customerId)}: ${template.features.length} page${template.features.length === 1 ? "" : "s"}, ${template.dataTables.length} data table${template.dataTables.length === 1 ? "" : "s"}${before.name !== template.name ? ` (was "${before.name}")` : ""}`
-            : `Created the Supervisor template "${template.name}" for ${customerName(customerId)}: ${template.features.length} page${template.features.length === 1 ? "" : "s"}, ${template.dataTables.length} data table${template.dataTables.length === 1 ? "" : "s"}`,
+            ? `Changed the Super User template "${template.name}" for ${customerName(customerId)}: ${template.features.length} page${template.features.length === 1 ? "" : "s"}, ${template.dataTables.length} data table${template.dataTables.length === 1 ? "" : "s"}${before.name !== template.name ? ` (was "${before.name}")` : ""}`
+            : `Created the Super User template "${template.name}" for ${customerName(customerId)}: ${template.features.length} page${template.features.length === 1 ? "" : "s"}, ${template.dataTables.length} data table${template.dataTables.length === 1 ? "" : "s"}`,
           details: { customerId, templateId: template.id, before, after: template, dropped, droppedTables },
         });
       }
@@ -107,7 +107,7 @@ module.exports = async function (context, req) {
       if (deleted) {
         await logQuietly(context, {
           ...who, action: "supervisorTemplate.delete",
-          description: `Deleted the Supervisor template "${template.name}" for ${customerName(customerId)}`,
+          description: `Deleted the Super User template "${template.name}" for ${customerName(customerId)}`,
           details: { customerId, templateId: id, before: template },
         });
       }

@@ -2,8 +2,8 @@
  * Access rules that a Genesys permission cannot express.
  *
  * What an internal user may see is their role (docs/internal-roles-design.md):
- * an Administrator every page, a Supervisor the pages ticked for them from
- * the internal org's Supervisor scope. What they may DO on a page is their
+ * a Master Admin every page, a Super User the pages ticked for them from
+ * the internal org's Super User scope. What they may DO on a page is their
  * own Genesys permissions in the company org, through
  * featurePermissionMap.js. This file holds the exceptions: the features whose
  * gate is WHO you are in the app, not what Genesys lets you do, and which no
@@ -33,7 +33,7 @@ export const SUPERUSER_ONLY_KEYS = Object.freeze([
  * Superusers, and internal colleagues whose own row says they manage customer
  * access. Naming a customer user starts a charge; the right to do that is
  * granted in the app by a superuser, never derived from Genesys — and never
- * from a Supervisor scope: it is a capability, independent of the role.
+ * from a Super User scope: it is a capability, independent of the role.
  */
 export const CUSTOMER_MANAGER_KEYS = Object.freeze([
   "customers.access",
@@ -46,7 +46,7 @@ export const CUSTOMER_MANAGER_KEYS = Object.freeze([
  * everything under it. Read by accessService for the sidebar, and by
  * scripts/build-customer-pages.mjs to produce api/lib/customerPages.json —
  * the server's list of every page a customer may be given, which the
- * Supervisor scope and a Supervisor's pages are validated against.
+ * Super User scope and a Super User's pages are validated against.
  */
 export const CUSTOMER_EXCLUDED_KEYS = [
   "data-actions.copy.betweenOrgs",
@@ -83,9 +83,9 @@ export const CUSTOMER_EXCLUDED_KEYS = [
 ];
 
 /**
- * A customer Administrator's own pages: the Supervisor scope, and their
+ * A customer Master Admin's own pages: the Super User scope, and their
  * org's users (role and pages only — never who is named). Shown to a
- * customer session whose row is "administrator", hidden from Supervisors,
+ * customer session whose row is "administrator", hidden from Super Users,
  * and never shown to internal sessions, who have Customers › … instead.
  */
 export const CUSTOMER_ADMIN_KEYS = Object.freeze([

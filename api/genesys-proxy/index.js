@@ -14,8 +14,8 @@ const divisionScope = require("../lib/divisionScope");
 const { INTERNAL_ORG_SLUG } = require("../lib/licenseGate");
 const orgSettings = require("../lib/orgSettingsStore");
 
-// ── Data table rules, for Supervisors ─────────────────────────────────────
-// A Supervisor's row write into a data table is checked against the table's
+// ── Data table rules, for Super Users ─────────────────────────────────────
+// A Super User's row write into a data table is checked against the table's
 // rules (docs/data-table-rules-design.md §7): may they add/delete, is a
 // protected column unchanged, a mandatory one filled, a lookup value one
 // that exists. The reads the check needs run with the same credentials the
@@ -33,13 +33,13 @@ async function rulesFor(orgId, tableId) {
 }
 
 /**
- * Refuse a Supervisor's call on a data table that is not one of theirs
+ * Refuse a Super User's call on a data table that is not one of theirs
  * (docs/data-table-rules-design.md §11), and a row write that breaks the
  * table's rules.
  * @returns {Promise<object|null>} a response to send, or null to proceed.
  */
 async function guardDataTableWrite(context, { orgId, features, dataTables, method, path, body, region, token }) {
-  if (!Array.isArray(features)) return null;                  // not a Supervisor
+  if (!Array.isArray(features)) return null;                  // not a Super User
   const access = await checkTableAccess({ method, path, dataTables, rulesOf: (id) => rulesFor(orgId, id) })
     .catch((err) => ({ ok: false, error: "datatable_rule", detail: `The table's rules could not be read, so the call was not made. Try again. (${err.message || err})` }));
   if (!access.ok) {
@@ -252,7 +252,7 @@ module.exports = async function (context, req) {
         return;
       }
 
-      // A Supervisor's data table row writes meet the table's rules.
+      // A Super User's data table row writes meet the table's rules.
       const refused = await guardDataTableWrite(context, {
         orgId: cust.id, features: licence.features, dataTables: licence.dataTables, method, path, body, region: cust.region, token: userToken,
       });
@@ -318,7 +318,7 @@ module.exports = async function (context, req) {
     // unnamed colleague now gets no Genesys call through here. Superusers
     // pass; while INTERNAL_NAMED_USERS_ENFORCED is not "true" an unnamed
     // colleague passes and is logged.
-    let internalFeatures = null;   // an internal Supervisor's pages; null otherwise
+    let internalFeatures = null;   // an internal Super User's pages; null otherwise
     let internalTables   = null;   // …and their data tables; null otherwise
     let divisionGrants = null;     // the person's grants by division, for the internal org (docs/division-scope-design.md)
     if (classification.mode === "internal") {
@@ -362,7 +362,7 @@ module.exports = async function (context, req) {
         }
       }
 
-      // An internal Supervisor's pages, through the same coarse allowlist a
+      // An internal Super User's pages, through the same coarse allowlist a
       // customer's are, under the same flag (docs/internal-roles-design.md
       // §5). The permission check above is the security layer; this is the
       // menu, held to server-side when the allowlist is on.
@@ -420,7 +420,7 @@ module.exports = async function (context, req) {
       clientSecret
     );
 
-    // An internal Supervisor's data table row writes meet the table's rules.
+    // An internal Super User's data table row writes meet the table's rules.
     const refused = await guardDataTableWrite(context, {
       orgId: customerId, features: internalFeatures, dataTables: internalTables, method, path, body, region: customer.region, token,
     });

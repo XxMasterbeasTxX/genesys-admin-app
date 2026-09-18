@@ -1,9 +1,9 @@
 /**
  * Data table rules — the client side of /api/datatable-rules.
  *
- * What a Supervisor may write into a data table, per column and per table
- * (docs/data-table-rules-design.md). Set by Administrators on Data Tables ›
- * Edit; read by Data Tables › Supervisor. Who may set is decided by the
+ * What a Super User may write into a data table, per column and per table
+ * (docs/data-table-rules-design.md). Set by Master Admins on Data Tables ›
+ * Edit; read by Data Tables › Super User. Who may set is decided by the
  * server from the caller's own row; a customer's customerId is ignored in
  * favour of the verified one.
  */
@@ -18,7 +18,7 @@ export const LOOKUP_TYPES = Object.freeze([
   { id: "scheduleGroup", label: "Schedule Group" },
   { id: "schedule",      label: "Schedule" },
   { id: "group",         label: "Group" },
-  { id: "list",          label: "List" },        // values the Administrator types
+  { id: "list",          label: "List" },        // values the Master Admin types
 ]);
 
 export const lookupLabel = (id) => (LOOKUP_TYPES.find((t) => t.id === id) || LOOKUP_TYPES[0]).label;
@@ -43,7 +43,7 @@ async function call(method, path, body) {
 
 function message(code, status) {
   switch (code) {
-    case "administrator_required": return "Only an Administrator of your organisation can set rules.";
+    case "administrator_required": return "Only a Master Admin of your organisation can set rules.";
     case "edit_page_required":     return "Setting rules needs the Data Tables › Edit page.";
     case "page_required":          return "You do not have a data-table page.";
     case "tableId_required":       return "Choose a data table first.";

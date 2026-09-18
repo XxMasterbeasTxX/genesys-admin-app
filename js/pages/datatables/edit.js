@@ -3,10 +3,10 @@
  *
  * Two modes:
  *  - Schema: edit table metadata and schema columns — and, per column, the
- *    Supervisor rules: a lookup, Protected, Mandatory; per table, whether
- *    Supervisors may add or delete rows (docs/data-table-rules-design.md
+ *    Super User rules: a lookup, Protected, Mandatory; per table, whether
+ *    Super Users may add or delete rows (docs/data-table-rules-design.md
  *    §5). The rules are the app's, saved with Save Schema, enforced on
- *    Data Tables › Supervisor and by the server — never here.
+ *    Data Tables › Super User and by the server — never here.
  *  - Rows: edit multiple row values in a paged grid with full-table search.
  *    The rules show as hints under the column headers; this page is not
  *    bound by them.
@@ -45,7 +45,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
         grid-template-columns: 24px var(--dte-name-col, 220px) 110px 120px 28px var(--dte-lookup-col, 130px) var(--dte-table-col, 150px) 76px 78px 60px 32px;
         max-width: none;
       }
-      /* The line between the data table's own columns and the Supervisor rules. */
+      /* The line between the data table's own columns and the Super User rules. */
       .dte-rule-divider { justify-self: center; width: 1px; height: 100%; min-height: 28px; background: var(--border); }
       .dte-group-header { display: grid; gap: 8px; align-items: end; margin-bottom: 2px; }
       .dte-group-header .dte-group-label { font-size: 11px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: .06em; padding: 0 2px 4px; border-bottom: 2px solid var(--border); }
@@ -311,14 +311,14 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
             <span class="dt-label">Schema Columns</span>
           </div>
           <div class="dte-table-rules">
-            <label><input type="checkbox" id="dteVisibleToSupervisors"> Visible to Supervisors</label>
-            <label><input type="checkbox" id="dteMayAddRows"> Supervisors may add rows</label>
+            <label><input type="checkbox" id="dteVisibleToSupervisors"> Visible to Super Users</label>
+            <label><input type="checkbox" id="dteMayAddRows"> Super Users may add rows</label>
           </div>
           <div class="dte-group-header">
             <span></span>
             <span class="dte-group-label" style="grid-column: 2 / 5">Data table columns</span>
             <span></span>
-            <span class="dte-group-label" style="grid-column: 6 / 11">Supervisor rules</span>
+            <span class="dte-group-label" style="grid-column: 6 / 11">Super User rules</span>
             <span></span>
           </div>
           <div class="dtc-schema-cols-header">
@@ -415,7 +415,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
   const $visibleToSup   = el.querySelector("#dteVisibleToSupervisors");
   const $orphanRules    = el.querySelector("#dteOrphanRules");
 
-  // ── Supervisor rules (docs/data-table-rules-design.md §5) ─────────────
+  // ── Super User rules (docs/data-table-rules-design.md §5) ─────────────
   let _rules = EMPTY_RULES;      // as loaded for the current table
   let _rulesLoadFailed = false;  // a save must not overwrite rules it never saw
   let _tablesForLookup = [];     // the org's tables, for the "Lookup table" dropdown
@@ -489,7 +489,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     const n = (row && row.__listValues || []).length;
     $btn.textContent = `Edit list (${n} value${n === 1 ? "" : "s"})`;
     $btn.classList.toggle("is-empty", n === 0);
-    $btn.title = n ? "The values Supervisors may choose from" : "No values yet — the list is not a rule until it has some";
+    $btn.title = n ? "The values Super Users may choose from" : "No values yet — the list is not a rule until it has some";
   }
 
   /** Parse a textarea: one value per line, trimmed, blanks and repeats dropped, order kept. */
@@ -518,7 +518,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     ed.__row = row;
     ed.innerHTML = `
       <div class="dtc-rule-list-head">
-        <span>The values Supervisors may choose for <strong>${escapeHtml(name)}</strong> — one per line, in the order the dropdown shows them. Matched exactly.</span>
+        <span>The values Super Users may choose for <strong>${escapeHtml(name)}</strong> — one per line, in the order the dropdown shows them. Matched exactly.</span>
         <span class="dtc-spacer"></span>
         <span class="dtc-rule-list-count"></span>
         <button type="button" class="btn btn-secondary btn-sm" data-close>Done</button>
@@ -742,14 +742,14 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       <select class="dt-select dtc-col-type">${TYPE_OPTIONS_HTML}</select>
       <div class="dtc-col-default-wrap">${makeDefaultInput(initialType)}</div>
       <span class="dte-rule-divider"></span>
-      <select class="dt-select dtc-rule-lookup" title="Supervisors may only choose from these values">${LOOKUP_OPTIONS_HTML}</select>
+      <select class="dt-select dtc-rule-lookup" title="Super Users may only choose from these values">${LOOKUP_OPTIONS_HTML}</select>
       <span class="dtc-rule-src">
         <select class="dt-select dtc-rule-table" hidden>${lookupTableOptions(_currentTableId)}</select>
         <button type="button" class="btn btn-secondary btn-sm dtc-rule-list-btn" hidden>Edit list</button>
       </span>
-      <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-protected" title="Supervisors cannot change this column"></span>
-      <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-mandatory" title="Supervisors cannot leave this column empty"></span>
-      <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-hidden" title="Supervisors do not see this column"></span>
+      <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-protected" title="Super Users cannot change this column"></span>
+      <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-mandatory" title="Super Users cannot leave this column empty"></span>
+      <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-hidden" title="Super Users do not see this column"></span>
       <button class="btn btn-sm dtc-del-btn" title="Remove column">×</button>
     `;
 
@@ -991,7 +991,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       if (r.protected) bits.push("Protected");
       if (r.mandatory) bits.push("Mandatory");
       if (r.hidden) bits.push("Hidden");
-      return bits.length ? `<span class="dte-col-hint" title="Supervisor rule — not enforced on this page">${bits.join(" · ")}</span>` : "";
+      return bits.length ? `<span class="dte-col-hint" title="Super User rule — not enforced on this page">${bits.join(" · ")}</span>` : "";
     };
     const header = _rowsColumns
       .map(col => `<th class="dte-col${col.name === "key" ? " dte-col-key" : ""}">${escapeHtml(col.title)}${col.name === "key" ? " *" : ""}${ruleHint(col)}</th>`)
@@ -1670,12 +1670,12 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
 
       const divName = $division.options[$division.selectedIndex]?.text || divisionId;
 
-      // Then the Supervisor rules — a different store, so a second call; the
+      // Then the Super User rules — a different store, so a second call; the
       // rarer failure goes last, and says so without pretending the schema
       // did not save.
       let rulesNote = "";
       if (_rulesLoadFailed) {
-        rulesNote = " Supervisor rules were NOT saved: they could not be loaded, and saving would have overwritten them blind. Reload the table and save again.";
+        rulesNote = " Super User rules were NOT saved: they could not be loaded, and saving would have overwritten them blind. Reload the table and save again.";
       } else {
         try {
           const rules = collectRules();
@@ -1683,9 +1683,9 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
           applyRulesToControls(r.rules || rules);
           const n = Object.keys((r.rules || rules).columns).length;
           const saved = r.rules || rules;
-          rulesNote = ` Supervisor rules saved: ${saved.visibleToSupervisors ? "visible to Supervisors" : "not visible to Supervisors"}, ${n} column rule${n === 1 ? "" : "s"}${saved.mayAddRows ? ", may add rows" : ""}.`;
+          rulesNote = ` Super User rules saved: ${saved.visibleToSupervisors ? "visible to Super Users" : "not visible to Super Users"}, ${n} column rule${n === 1 ? "" : "s"}${saved.mayAddRows ? ", may add rows" : ""}.`;
         } catch (err) {
-          rulesNote = ` Schema saved, but the Supervisor rules were not: ${err.message}`;
+          rulesNote = ` Schema saved, but the Super User rules were not: ${err.message}`;
         }
       }
       setStatus(`✓ Data table "${escapeHtml(name)}" saved successfully.${rulesNote}`, rulesNote.includes("NOT") || rulesNote.includes("were not") ? "error" : "success");

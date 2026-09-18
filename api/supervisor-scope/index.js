@@ -1,12 +1,12 @@
 /**
- * The Supervisor scope — what a Supervisor in an org may have at all.
+ * The Super User scope — what a Super User in an org may have at all.
  *
  *   GET /api/supervisor-scope?customerId=   → { customerId, features: [...] }
  *   PUT /api/supervisor-scope               { customerId, features: [...] }
  *                                           → { customerId, features, dropped }
  *
  * Who may: lib/scopeRights.js (docs/customer-roles-design.md §5, §6;
- * docs/internal-roles-design.md §4) — shared with the Supervisor templates.
+ * docs/internal-roles-design.md §4) — shared with the Super User templates.
  *
  * Features are validated against the pages that kind of org may hold
  * (pages.js); the rest are dropped and named in the response. Every PUT is
@@ -14,7 +14,7 @@
  * caller's verified identity.
  *
  * This is the first thing a customer writes in the app. It is scoped to
- * their org server-side, and it is the whole of a customer Administrator's
+ * their org server-side, and it is the whole of a customer Master Admin's
  * power over access together with the role and pages of their org's users
  * (/api/licenses/role). Naming a user stays Netdesign's.
  */
@@ -62,7 +62,7 @@ module.exports = async function (context, req) {
             orgId: customerId, orgName: customerName(customerId),
             ownerOrgId: caller.mode === "customer" ? customerId : "internal",
             action: "supervisorScope.set",
-            description: `Set the Supervisor scope for ${customerName(customerId)} to ${result.features.length} page${result.features.length === 1 ? "" : "s"}`,
+            description: `Set the Super User scope for ${customerName(customerId)} to ${result.features.length} page${result.features.length === 1 ? "" : "s"}`,
             details: { customerId, before, after: result.features, dropped },
           });
         } catch (err) {

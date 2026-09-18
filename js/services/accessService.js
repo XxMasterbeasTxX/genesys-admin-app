@@ -215,15 +215,15 @@ function buildRefinedAccess({ hasAccess, permList, isSuper, sessionMode = "inter
  * @param {{ superuser?: boolean, role?: string, features?: string[]|null, managesCustomers?: boolean }} who
  *        What org-config said about this caller, decided server-side by the
  *        named-user gate: whether they are a superuser (the SUPERUSER_IDS app
- *        setting), the role on their own row, a Supervisor's effective pages
- *        (null for an Administrator — everything), and whether their row lets
+ *        setting), the role on their own row, a Super User's effective pages
+ *        (null for a Master Admin — everything), and whether their row lets
  *        them manage customer access.
  * @returns {Promise<{ hasAccess, hasAnyAccess, accessState, getMissingPermissions }>}
  */
 export async function resolveAccess(accessToken, who = {}) {
   const isSuper = !!who.superuser;
   const canManageCustomers = isSuper || !!who.managesCustomers;
-  // A Supervisor's pages; null means an Administrator (or a superuser).
+  // A Super User's pages; null means a Master Admin (or a superuser).
   const pages = Array.isArray(who.features) ? new Set(who.features) : null;
 
   // A named user's permissions are the whole of what they may do. There is no
@@ -232,15 +232,15 @@ export async function resolveAccess(accessToken, who = {}) {
   const permList = isSuper ? null : await fetchUserPermissions(accessToken);
 
   /**
-   * Page-level access. An Administrator may see every page except the two
-   * kinds a permission cannot express (accessConfig.js); a Supervisor only
+   * Page-level access. A Master Admin may see every page except the two
+   * kinds a permission cannot express (accessConfig.js); a Super User only
    * the pages in their set — absent, not greyed. The permission refinement
    * below then greys what their Genesys permissions do not cover.
    * Falsy pageKey (unprotected page) → true.
    */
   function hasAccess(pageKey) {
     if (!pageKey) return true;
-    // The customer Administrator's section: internal sessions have the same
+    // The customer Master Admin's section: internal sessions have the same
     // pages under Customers, with an org selector.
     if (CUSTOMER_ADMIN_KEYS.includes(pageKey)) return false;
     if (isSuper) return true;
@@ -255,14 +255,14 @@ export async function resolveAccess(accessToken, who = {}) {
 
   return {
     hasAccess,
-    // Named, or a superuser — the server said so. A Supervisor with no pages
+    // Named, or a superuser — the server said so. A Super User with no pages
     // and no capability has nothing to see, and the shell says so.
     hasAnyAccess() { return !pages || pages.size > 0 || canManageCustomers; },
     ...refined,
     canManageCustomers,
     isSuperuser: isSuper,
     role: who.role || "",
-    // A Supervisor's data tables (null for anyone else): the Supervisor page
+    // A Super User's data tables (null for anyone else): the Super User page
     // offers only these (docs/data-table-rules-design.md §11).
     dataTables: Array.isArray(who.dataTables) ? [...who.dataTables] : null,
     // True when the permission read failed, so nothing beyond "you are named"
@@ -278,9 +278,9 @@ export async function resolveAccess(accessToken, who = {}) {
  * user's own permissions refine the actions.
  *
  * The key set is what the server said this session may see: for an
- * Administrator the org's entitlements (everything — customers pay per user,
- * not for content); for a Supervisor their effective pages, ticks ∩ the org's
- * Supervisor scope, as leaf keys (docs/customer-roles-design.md §7). A page
+ * Master Admin the org's entitlements (everything — customers pay per user,
+ * not for content); for a Super User their effective pages, ticks ∩ the org's
+ * Super User scope, as leaf keys (docs/customer-roles-design.md §7). A page
  * outside the set is `hidden` — absent from the sidebar, exactly as an
  * internal-only page is — never greyed. What this user may DO within that is
  * refined from their own Genesys permissions by the shared builder, exactly as
@@ -299,7 +299,7 @@ export async function resolveAccess(accessToken, who = {}) {
  *                                 answers only on its own region.
  * @param {{ role?: string }} [who] The role on the caller's own row, decided
  *                                 server-side: "administrator" sees the
- *                                 Administrator section; anything else does not.
+ *                                 Master Admin section; anything else does not.
  */
 export async function resolveCustomerAccess(entitlements, accessToken, apiBase, who = {}) {
   const keys = new Set((entitlements || []).filter((k) => typeof k === "string" && k.trim()));
@@ -307,7 +307,7 @@ export async function resolveCustomerAccess(entitlements, accessToken, apiBase, 
 
   function hasAccess(pageKey) {
     if (!pageKey) return true;
-    // The Administrator's own pages are decided by the role, not the key set.
+    // The Master Admin's own pages are decided by the role, not the key set.
     if (CUSTOMER_ADMIN_KEYS.includes(pageKey)) return isAdministrator;
     // Internal-only features are never available in customer mode, even if an
     // entitlement prefix would otherwise grant them (belt-and-suspenders on top

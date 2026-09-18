@@ -19,7 +19,7 @@
  *   a customer's list          superusers, and internal colleagues whose own
  *                              row says they manage customer access
  *   "Manages customer access"  superusers only (/manages)
- *   a customer's own list      its Administrators may READ it and change any
+ *   a customer's own list      its Master Admins may READ it and change any
  *                              user's role and pages (/role) — never add or
  *                              remove a name. The customerId they send is
  *                              ignored and their verified org used.
@@ -34,9 +34,9 @@
  * Every row carries a role, "administrator" or "supervisor", required on
  * every add, for both kinds of org (customer-roles-design §4,
  * internal-roles-design §3). A supervisor also carries their own pages: a
- * non-empty subset of the org's Supervisor scope, and with the Data Tables ›
- * Supervisor page their own data tables: a non-empty subset of the tables
- * the org has made visible to Supervisors. An empty scope refuses the add
+ * non-empty subset of the org's Super User scope, and with the Data Tables ›
+ * Super User page their own data tables: a non-empty subset of the tables
+ * the org has made visible to Super Users. An empty scope refuses the add
  * with "scope_empty" — the scope must be set first; the page without a table
  * with "tables_required".
  *
@@ -64,8 +64,8 @@ const SUPERVISOR_TABLES_PAGE = "data-tables.supervisor";
 /**
  * What a customer session is told about WHO did something to a row. An
  * internal person is the company, not a name — a customer sees "TDC Erhverv"
- * where staff see the colleague; their own Administrator's edits keep the
- * Administrator's name, since that is their own colleague. Ids and e-mails
+ * where staff see the colleague; their own Master Admin's edits keep the
+ * Master Admin's name, since that is their own colleague. Ids and e-mails
  * never cross to a customer at all. Decided here, on the server, so the
  * browser is never sent what it must not show.
  */
@@ -109,10 +109,10 @@ function mayManage(caller, org) {
 
 /**
  * The role, pages and data tables a row is to carry, checked against the
- * org's Supervisor scope. An administrator has no pages of their own
+ * org's Super User scope. An administrator has no pages of their own
  * (everything); a supervisor must hold at least one page, all of them inside
- * the scope, and — with the Supervisor page — at least one data table the
- * org has opened to Supervisors. The pages an org may hold at all depend on
+ * the scope, and — with the Super User page — at least one data table the
+ * org has opened to Super Users. The pages an org may hold at all depend on
  * its kind (pages.js).
  * @returns {Promise<{ ok: true, role, features, dataTables, droppedTables } | { ok: false, error, status }>}
  */
@@ -142,8 +142,8 @@ async function roleAndPages(customerId, body, kind) {
   const effective = [...new Set([...tplPages, ...extras])];
   if (!effective.length) return { ok: false, status: 400, error: "pages_required" };
 
-  // With the Supervisor page come their data tables: at least one, each a
-  // table the org has made visible to Supervisors — read here, never taken
+  // With the Super User page come their data tables: at least one, each a
+  // table the org has made visible to Super Users — read here, never taken
   // from the page (docs/data-table-rules-design.md §11). Without the page
   // the list is meaningless and stored empty.
   let dataTables = [], droppedTables = 0;
@@ -205,7 +205,7 @@ module.exports = async function (context, req) {
       org: caller.mode === "customer" ? caller.customerId : "internal",
     };
 
-    // ── A customer session: an Administrator's view of their own org ──────
+    // ── A customer session: a Master Admin's view of their own org ──────
     // Read the list; change a user's role and pages. Never add or remove a
     // name — that stays Netdesign's (customer-roles-design §5). The org is
     // the verified one, whatever the body says.
@@ -364,8 +364,8 @@ async function setRoleAndPages(context, customerId, userId, body, by, ownerOrgId
       orgId: customerId, orgName: customerName(customerId), ownerOrgId,
       action: "licenses.role",
       description: checked.role === "administrator"
-        ? `Made ${who} an Administrator of the Admin Tool for ${customerName(customerId)}`
-        : `Made ${who} a Supervisor of the Admin Tool for ${customerName(customerId)}${onTpl}${!checked.templateId || checked.features.length ? ` with ${checked.features.length} page${checked.features.length === 1 ? "" : "s"}` : ""}${tables}`,
+        ? `Made ${who} a Master Admin of the Admin Tool for ${customerName(customerId)}`
+        : `Made ${who} a Super User of the Admin Tool for ${customerName(customerId)}${onTpl}${!checked.templateId || checked.features.length ? ` with ${checked.features.length} page${checked.features.length === 1 ? "" : "s"}` : ""}${tables}`,
       details: { customerId, userId, email: result.row.email, name: result.row.name, role: checked.role, templateId: checked.templateId, features: checked.features, dataTables: checked.dataTables },
     });
   }

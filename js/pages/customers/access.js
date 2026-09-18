@@ -1,6 +1,6 @@
 /**
  * Customers › Access to Admin Tool — the internal org's own list — and, for
- * a customer Administrator, Administrator › Users.
+ * a customer Master Admin, Master Admin › Users.
  *
  * Who, in the selected org, may use this app. For a customer the list IS the
  * contract — they pay per named user, and there is no seat count to keep in
@@ -12,11 +12,11 @@
  *     "Add users", confirm against the list of who. Three deliberate steps,
  *     because adding a customer name starts a charge — a single click on a
  *     search result is not enough of a decision.
- *   - Adding also decides the role, on both kinds of org: Administrator
- *     (everything the org offers) or Supervisor (a chosen subset of the
- *     org's Supervisor scope, ticked here). Both are required
+ *   - Adding also decides the role, on both kinds of org: Master Admin
+ *     (everything the org offers) or Super User (a chosen subset of the
+ *     org's Super User scope, ticked here). Both are required
  *     (docs/customer-roles-design.md §4, §8; docs/internal-roles-design.md
- *     §3). An empty scope refuses a Supervisor and says where to set it.
+ *     §3). An empty scope refuses a Super User and says where to set it.
  *   - Users with access: the current list, with Remove (also confirmed), the
  *     role per row and an Edit that changes it — promote, demote, re-tick —
  *     through /api/licenses/role.
@@ -26,7 +26,7 @@
  *     granted here, by a superuser, logged, never derived from a Genesys
  *     group.
  *
- * Administrator › Users is this page in customer mode: the org is the
+ * Master Admin › Users is this page in customer mode: the org is the
  * session's, the add box and Remove are absent — a customer never names
  * anyone — and Edit is the whole of it. The server refuses add and remove
  * from any customer session regardless; the page shows what is true.
@@ -34,7 +34,7 @@
  * Who may change which list is decided by the server, from the caller's own
  * row: the internal org's list by superusers only; a customer's by superusers
  * and colleagues who manage customer access; a customer's roles also by its
- * own Administrators. This page reads the same answer off `access` and does
+ * own Master Admins. This page reads the same answer off `access` and does
  * not offer what the server would refuse.
  *
  * Remove is a revocation, not a deletion: the row stays as history.
@@ -51,7 +51,7 @@ import { listDataTableRules } from "../../services/dataTableRulesService.js";
 import * as gc from "../../services/genesysApi.js";
 
 const SEARCH_DEBOUNCE_MS = 250;
-/** The page whose tick brings a Supervisor's data tables with it. */
+/** The page whose tick brings a Super User's data tables with it. */
 const SUPERVISOR_TABLES_PAGE = "data-tables.supervisor";
 
 export default function renderCustomerAccess({ api, orgContext, access }) {
@@ -107,7 +107,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       .ca-role-pages { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
       .ca-role-pages-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; color:var(--muted); font-size:12px; }
       .ca-role-pages-head .ca-spacer { flex:1; }
-      /* The template a Supervisor is on, above their pages. */
+      /* The template a Super User is on, above their pages. */
       .ca-role-template { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; font-size:13px; }
       .ca-role-template select { min-width:220px; }
       .ca-role-template-hint { color:var(--muted); font-size:12px; flex-basis:100%; }
@@ -115,7 +115,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       .ca-edit-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:10px; }
     </style>
     <div class="ca-wrap">
-      <h1 class="h1">${customerMode ? "Administrator — Users" : "Customers — Access to Admin Tool"}</h1>
+      <h1 class="h1">${customerMode ? "Master Admin — Users" : "Customers — Access to Admin Tool"}</h1>
       <hr class="hr">
       <p class="page-desc" id="caIntro">
         The users in the selected customer's organisation who may use this app. Only the people
@@ -163,10 +163,10 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
 
   let currentOrg = null;
   let licensed   = [];          // active rows for currentOrg
-  let scope      = null;        // the org's Supervisor scope (customer orgs); null = not loaded
-  let tables     = null;        // [{ id, name }] the org has made visible to Supervisors; null = not loaded
+  let scope      = null;        // the org's Super User scope (customer orgs); null = not loaded
+  let tables     = null;        // [{ id, name }] the org has made visible to Super Users; null = not loaded
   let tablesError = "";         // why they could not be loaded, or ""
-  let templates  = [];          // the org's Supervisor templates, by name
+  let templates  = [];          // the org's Super User templates, by name
   const templateById = (id) => templates.find((t) => t.id === id) || null;
   let searchTimer = null;
   let searchSeq   = 0;          // drop stale responses
@@ -184,13 +184,13 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
   function everythingText() {
     return isInternal()
       ? "Every page except Onboarding, narrowed by their own Genesys permissions."
-      : "Everything the app offers customers, narrowed by their own Genesys permissions. Administrators also set the Supervisor scope and edit users' roles here.";
+      : "Everything the app offers customers, narrowed by their own Genesys permissions. Master Admins also set the Super User scope and edit users' roles here.";
   }
 
   // ── The role control ─────────────────────────────────────────────────
 
   /**
-   * Administrator or Supervisor, and for a Supervisor the pages — the scope's
+   * Master Admin or Super User, and for a Super User the pages — the scope's
    * pages, drawn as the sidebar draws them. One builder for the add box and
    * the per-row edit, so the two cannot drift.
    *
@@ -208,8 +208,8 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     box.innerHTML = `
       <div class="ca-role-choice">
         <span class="em-label" style="margin:0">Role:</span>
-        <label><input type="radio" name="${uid}" value="administrator"> Administrator</label>
-        <label class="${scopeEmpty ? "is-disabled" : ""}"><input type="radio" name="${uid}" value="supervisor" ${scopeEmpty ? "disabled" : ""}> Supervisor</label>
+        <label><input type="radio" name="${uid}" value="administrator"> Master Admin</label>
+        <label class="${scopeEmpty ? "is-disabled" : ""}"><input type="radio" name="${uid}" value="supervisor" ${scopeEmpty ? "disabled" : ""}> Super User</label>
       </div>
       <div class="ca-role-desc"></div>
       <div class="ca-role-pages" hidden>
@@ -256,7 +256,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       if (t && t.features.includes(SUPERVISOR_TABLES_PAGE)) tree.reveal(SUPERVISOR_TABLES_PAGE);
       $templateHint.textContent = t
         ? `"${t.name}" gives ${t.features.length} page${t.features.length === 1 ? "" : "s"}${t.dataTables.length ? ` and ${t.dataTables.length} data table${t.dataTables.length === 1 ? "" : "s"}` : ""} (greyed below). Tick more for this user; to have fewer, choose another template or none. Changing the template later changes them for this user too.`
-        : (templates.length ? "No template: only the pages ticked below." : "No templates yet — they are made on Supervisor Access.");
+        : (templates.length ? "No template: only the pages ticked below." : "No templates yet — they are made on Super User Access.");
     }
     $template.addEventListener("change", () => { applyTemplate(); refresh(); });
 
@@ -270,10 +270,10 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
         const t = template();
         const extra = t ? n - tree.getSelected().filter((k) => t.features.includes(k)).length : 0;
         $desc.textContent = "Only the pages ticked below, narrowed by their own Genesys permissions. Nothing else appears in their menu.";
-        $pagesCount.textContent = `${n} of ${tree.size} pages in the Supervisor scope ticked${t ? ` (${extra} beyond the template)` : ""}`;
+        $pagesCount.textContent = `${n} of ${tree.size} pages in the Super User scope ticked${t ? ` (${extra} beyond the template)` : ""}`;
       } else {
         $desc.innerHTML = scopeEmpty
-          ? `Nothing is in the Supervisor scope for this organisation yet, so only an Administrator can be added. <a href="${scopeRoute}">Set the Supervisor scope first</a> to add Supervisors.`
+          ? `Nothing is in the Super User scope for this organisation yet, so only a Master Admin can be added. <a href="${scopeRoute}">Set the Super User scope first</a> to add Super Users.`
           : "Choose a role.";
       }
       onChange();
@@ -324,10 +324,10 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
   }
   const hasExtras = (u) => !!u.templateId && !!templateById(u.templateId) && ((u.features || []).length > 0 || (u.dataTables || []).length > 0);
 
-  /** The names of a Supervisor's tables, for the list and the confirm step. */
+  /** The names of a Super User's tables, for the list and the confirm step. */
   function tableNames(ids) {
     const byId = new Map((tables || []).map((t) => [t.id, t.name]));
-    return (ids || []).map((id) => byId.get(id) || "a table no longer visible to Supervisors");
+    return (ids || []).map((id) => byId.get(id) || "a table no longer visible to Super Users");
   }
 
   /** A row's pages and tables as they take effect: the template's, then the row's own. */
@@ -340,31 +340,31 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     };
   }
 
-  /** The sentence for a confirm step: the role, and a Supervisor's pages. */
+  /** The sentence for a confirm step: the role, and a Super User's pages. */
   function describeRole({ role, features, dataTables, templateId }) {
-    if (role === "administrator") return isInternal() ? "as Administrator (every page except Onboarding)" : "as Administrator (everything the app offers customers)";
+    if (role === "administrator") return isInternal() ? "as Master Admin (every page except Onboarding)" : "as Master Admin (everything the app offers customers)";
     const eff = effective({ features, dataTables, templateId });
     const lines = describePages(fullTree, eff.features);
     const names = tableNames(eff.dataTables);
-    return `as Supervisor${eff.template ? ` on the template "${eff.template.name}"` : ""} with ${lines.length} page${lines.length === 1 ? "" : "s"}:\n${lines.map((l) => `    – ${l}`).join("\n")}`
+    return `as Super User${eff.template ? ` on the template "${eff.template.name}"` : ""} with ${lines.length} page${lines.length === 1 ? "" : "s"}:\n${lines.map((l) => `    – ${l}`).join("\n")}`
       + (names.length ? `\n  and ${names.length} data table${names.length === 1 ? "" : "s"}:\n${names.map((n) => `    – ${n}`).join("\n")}` : "");
   }
 
   // ── The list ─────────────────────────────────────────────────────────
 
   function roleCell(u) {
-    if (u.role === "administrator") return "Administrator";
+    if (u.role === "administrator") return "Master Admin";
     if (u.role === "supervisor") {
       const eff = effective(u);
       const n = eff.features.length;
-      let out = `Supervisor · ${n} page${n === 1 ? "" : "s"}`;
+      let out = `Super User · ${n} page${n === 1 ? "" : "s"}`;
       if (eff.features.includes(SUPERVISOR_TABLES_PAGE)) {
         const t = eff.dataTables.length;
         out += ` · <span title="${escapeHtml(tableNames(eff.dataTables).join(", ") || "No data table — edit to choose")}">${t} data table${t === 1 ? "" : "s"}</span>`;
       }
       return out;
     }
-    return `<span class="ca-muted" title="A row from before roles existed; treated as Administrator until edited">Administrator (unset)</span>`;
+    return `<span class="ca-muted" title="A row from before roles existed; treated as Master Admin until edited">Master Admin (unset)</span>`;
   }
 
   function renderList() {
@@ -511,9 +511,9 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       renderList();
       const eff = effective(r.user || value);
       const n = eff.features.length, t = eff.dataTables.length;
-      const what = value.role === "administrator" ? "an Administrator"
-        : `a Supervisor${eff.template ? ` on "${eff.template.name}"` : ""} with ${n} page${n === 1 ? "" : "s"}${eff.features.includes(SUPERVISOR_TABLES_PAGE) ? ` and ${t} data table${t === 1 ? "" : "s"}` : ""}`;
-      const dropped = r.droppedTables ? ` ${r.droppedTables} table${r.droppedTables === 1 ? " was" : "s were"} left out: no longer visible to Supervisors.` : "";
+      const what = value.role === "administrator" ? "a Master Admin"
+        : `a Super User${eff.template ? ` on "${eff.template.name}"` : ""} with ${n} page${n === 1 ? "" : "s"}${eff.features.includes(SUPERVISOR_TABLES_PAGE) ? ` and ${t} data table${t === 1 ? "" : "s"}` : ""}`;
+      const dropped = r.droppedTables ? ` ${r.droppedTables} table${r.droppedTables === 1 ? " was" : "s were"} left out: no longer visible to Super Users.` : "";
       setStatus(r.changed ? `${label} is now ${what}. Takes effect within five minutes.${dropped}` : `${label}'s role is unchanged.${dropped}`, "success");
     } catch (err) {
       control.setEnabled(true);
@@ -550,7 +550,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       licensed = rows;
       scope = scopeKeys;
       templates = tpls;
-      // The tables a Supervisor may be given — only reachable when the page
+      // The tables a Super User may be given — only reachable when the page
       // is in the scope. A failed read is said under the page, not fatal.
       tables = []; tablesError = "";
       if (scope.includes(SUPERVISOR_TABLES_PAGE)) {
@@ -641,7 +641,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       $selected.appendChild(chip);
     }
     const n = selected.size;
-    // On a customer org the role (and a Supervisor's pages) must be chosen too.
+    // On a customer org the role (and a Super User's pages) must be chosen too.
     $addBtn.disabled = n === 0 || (addRole ? !addRole.valid() : false);
     $addBtn.textContent = n === 0 ? "Add users" : n === 1 ? "Add 1 user" : `Add ${n} users`;
   }
@@ -724,7 +724,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     const ok = window.confirm(
       `Remove ${label}'s access to the Admin Tool for ${currentOrg.name}?\n\n` +
       (isInternal()
-        ? `They will be signed out within five minutes and see a message to ask a superuser.`
+        ? `They will be signed out within five minutes and see a message to ask a Super Master Admin.`
         : `They will be signed out within five minutes and see a message to contact their administrator.`)
     );
     if (!ok) return;
@@ -769,7 +769,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       return `${org.name} is not set up as a customer yet: it has no registry entry, so nobody can sign in to it as a customer. Add the registry entry first (see the onboarding runbook), then name its users here.`;
     }
     if (orgContext.isInternalOrg(org.id) && !isSuperuser) {
-      return `${org.name} is the internal organisation. Only a superuser can change who has access to it.`;
+      return `${org.name} is the internal organisation. Only a Super Master Admin can change who has access to it.`;
     }
     return null;
   }
@@ -778,22 +778,22 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
   function renderIntro() {
     if (customerMode) {
       $intro.textContent = "The users in your organisation who may use this app, and what each may see. "
-        + "Edit a user to make them an Administrator or a Supervisor, and to choose a Supervisor's pages "
-        + "from the Supervisor scope. Adding and removing users is done by Netdesign — contact them to "
+        + "Edit a user to make them a Master Admin or a Super User, and to choose a Super User's pages "
+        + "from the Super User scope. Adding and removing users is done by Netdesign — contact them to "
         + "change who is on the list.";
       return;
     }
     $intro.textContent = isInternal()
       ? "The colleagues in the internal organisation who may use this app. Only the people listed "
         + "here can sign in; everyone else in the org sees a message asking them to contact a "
-        + "superuser. Nothing here is billed. Every colleague is an Administrator (every page) or a "
-        + "Supervisor (chosen pages from the internal Supervisor scope). Tick \"Manages customer "
+        + "Super Master Admin. Nothing here is billed. Every colleague is a Master Admin (every page) or a "
+        + "Super User (chosen pages from the internal Super User scope). Tick \"Manages customer "
         + "access\" to let a colleague add and remove users for customer organisations, whatever "
         + "their role."
       : "The users in the selected customer's organisation who may use this app. Only the people "
         + "listed here can sign in; everyone else in the org sees a message asking them to contact "
         + "their administrator. Adding a name is what the customer is billed for. Every user is an "
-        + "Administrator (everything) or a Supervisor (chosen pages from the org's Supervisor scope).";
+        + "Master Admin (everything) or a Super User (chosen pages from the org's Super User scope).";
   }
 
   function setOrg(org) {

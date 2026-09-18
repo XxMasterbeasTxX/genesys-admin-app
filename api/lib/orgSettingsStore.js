@@ -1,17 +1,17 @@
 /**
  * Per-org settings the app owns.
  *
- * The Supervisor scope: the set of pages a Supervisor in that org may have
- * AT ALL (docs/customer-roles-design.md §2). A Supervisor's own pages are a
+ * The Super User scope: the set of pages a Super User in that org may have
+ * AT ALL (docs/customer-roles-design.md §2). A Super User's own pages are a
  * subset of it, and the intersection is computed at sign-in, so editing
- * the scope reaches every Supervisor without touching their rows.
+ * the scope reaches every Super User without touching their rows.
  *
  *   partitionKey  customer slug
  *   rowKey        "supervisorScope"
  *   features      JSON array of page access keys
  *   setBy, setByEmail, setAt
  *
- * Data table rules: what a Supervisor may write into one table
+ * Data table rules: what a Super User may write into one table
  * (docs/data-table-rules-design.md §4).
  *
  *   partitionKey  customer slug
@@ -53,7 +53,7 @@ function safeKey(s) {
   return String(s || "").replace(/[/\\#?]/g, "_");
 }
 
-/** The org's Supervisor scope: page keys, sorted; [] when none set. */
+/** The org's Super User scope: page keys, sorted; [] when none set. */
 async function getSupervisorScope(orgId) {
   await ensureTable();
   try {
@@ -67,7 +67,7 @@ async function getSupervisorScope(orgId) {
 }
 
 /**
- * Overwrite the org's Supervisor scope. The caller has already validated the
+ * Overwrite the org's Super User scope. The caller has already validated the
  * keys (pages.js); this stores what it is given.
  * @returns {Promise<{ features: string[], setAt: string }>}
  */
@@ -134,11 +134,11 @@ async function setDataTableRules(orgId, tableId, rules, by) {
   return { rules, setAt };
 }
 
-// ── Supervisor templates ──────────────────────────────────────────────────
-// A named set of pages and data tables a Supervisor can be put on
+// ── Super User templates ──────────────────────────────────────────────────
+// A named set of pages and data tables a Super User can be put on
 // (docs/supervisor-templates-design.md). Row key "supervisorTemplate|<id>";
 // the id is minted here. Pages and tables are stored as validated by the
-// endpoint — subsets of the scope and of the tables open to Supervisors.
+// endpoint — subsets of the scope and of the tables open to Super Users.
 
 const TEMPLATE_PREFIX = "supervisorTemplate|";
 const crypto = require("crypto");

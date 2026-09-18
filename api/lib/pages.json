@@ -81,7 +81,7 @@
     },
     {
       "key": "data-tables.supervisor",
-      "label": "Supervisor",
+      "label": "Super User",
       "section": "Data Tables",
       "customer": true
     },

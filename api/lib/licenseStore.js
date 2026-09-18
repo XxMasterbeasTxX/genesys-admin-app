@@ -17,14 +17,14 @@
  *                 kinds of org (docs/customer-roles-design.md §4,
  *                 docs/internal-roles-design.md §3).
  *   dataTables    JSON array of data table ids — a supervisor's own tables,
- *                 chosen with the Data Tables › Supervisor page; a subset of
- *                 the tables the org has made visible to Supervisors
+ *                 chosen with the Data Tables › Super User page; a subset of
+ *                 the tables the org has made visible to Super Users
  *                 (docs/data-table-rules-design.md §11). Absent = none.
- *   templateId    the Supervisor template the row is on, or "" — its pages
+ *   templateId    the Super User template the row is on, or "" — its pages
  *                 and tables come first, the row's own are extras
  *                 (docs/supervisor-templates-design.md)
  *   features      JSON array of page access keys — a supervisor's own pages,
- *                 a subset of the org's Supervisor scope. [] otherwise.
+ *                 a subset of the org's Super User scope. [] otherwise.
  *   managesCustomers
  *                 "true" on an INTERNAL row lets that colleague name users
  *                 for customer orgs (docs/internal-user-access-design.md §5).

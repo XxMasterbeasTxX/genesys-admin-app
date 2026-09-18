@@ -1,15 +1,15 @@
 /**
- * Data table rules — what a Supervisor may write into a data table.
+ * Data table rules — what a Super User may write into a data table.
  *
- * An Administrator sets, per column, a lookup (the value must be the name
+ * A Master Admin sets, per column, a lookup (the value must be the name
  * of a queue, skill, schedule group, schedule or group in the org, a key
- * of another data table, or one of a list the Administrator typed), Protected (cannot change), Mandatory (cannot
+ * of another data table, or one of a list the Master Admin typed), Protected (cannot change), Mandatory (cannot
  * be empty) and Hidden (not shown — and so not changeable either); per
- * table, whether it is open to Supervisors at all, and whether they may add
- * rows. Supervisors never delete rows. A table nobody has opened is closed:
- * the Supervisor page does not list it, and a write to it is refused.
+ * table, whether it is open to Super Users at all, and whether they may add
+ * rows. Super Users never delete rows. A table nobody has opened is closed:
+ * the Super User page does not list it, and a write to it is refused.
  * (docs/data-table-rules-design.md §2). The browser guides; this holds the
- * line for a Supervisor who calls the proxy directly (§7).
+ * line for a Super User who calls the proxy directly (§7).
  *
  * The check costs one read of the current row per row write (Protected,
  * and to know which cells changed), and one by-name or by-key read per
@@ -17,7 +17,7 @@
  */
 
 const LOOKUPS = new Set(["dataTable", "queue", "skill", "scheduleGroup", "schedule", "group", "list"]);
-/** A typed list's values: strings, trimmed, non-empty, unique, in the Administrator's order. */
+/** A typed list's values: strings, trimmed, non-empty, unique, in the Master Admin's order. */
 function listValues(raw) {
   const out = [];
   for (const v of Array.isArray(raw) ? raw : []) {
@@ -130,13 +130,13 @@ async function checkRowWrite(write, rules, read, tableId) {
   const { verb } = write;
 
   if (verb === "DELETE") {
-    return refuse("Supervisors cannot delete rows.");
+    return refuse("Super Users cannot delete rows.");
   }
   if (!rules.visibleToSupervisors) {
-    return refuse("This table is not open to Supervisors.");
+    return refuse("This table is not open to Super Users.");
   }
   if (verb === "POST" && !rules.mayAddRows) {
-    return refuse("Supervisors may not add rows to this table.");
+    return refuse("Super Users may not add rows to this table.");
   }
 
   const body = write.body && typeof write.body === "object" ? write.body : {};
@@ -158,11 +158,11 @@ async function checkRowWrite(write, rules, read, tableId) {
     const changed = current ? (has && !same(next, current[name])) : has;
 
     if ((rule.protected || rule.hidden) && current && changed) {
-      return refuse(`"${name}" is ${rule.hidden ? "hidden from Supervisors" : "protected"} and cannot be changed.`, name);
+      return refuse(`"${name}" is ${rule.hidden ? "hidden from Super Users" : "protected"} and cannot be changed.`, name);
     }
     if (rule.hidden && !current && has && !isEmpty(next)) {
       // A new row: a hidden column takes the table's default, never a value.
-      return refuse(`"${name}" is hidden from Supervisors and cannot be set.`, name);
+      return refuse(`"${name}" is hidden from Super Users and cannot be set.`, name);
     }
     if (rule.mandatory && isEmpty(next)) {
       return refuse(`"${name}" is mandatory and cannot be empty.`, name);
@@ -176,25 +176,25 @@ async function checkRowWrite(write, rules, read, tableId) {
   return { ok: true };
 }
 
-// ── A Supervisor's own tables ─────────────────────────────────────────────
-// A Supervisor with the Supervisor page carries a list of data tables
+// ── A Super User's own tables ─────────────────────────────────────────────
+// A Super User with the Super User page carries a list of data tables
 // (docs/data-table-rules-design.md §11). A call on one table — its schema,
 // its rows — is theirs to make only for a table in the list, with one
 // exception: reading a table one of THEIR tables looks keys up in, since
 // the dropdown values come from there. The list itself (`GET
 // /flows/datatables`) is not touched: it is what other pages use, and the
-// Supervisor page narrows it to the list on its own.
+// Super User page narrows it to the list on its own.
 
 const TABLE_PATH = /^\/api\/v2\/flows\/datatables\/([^/?]+)(?:\/.*)?$/i;
 
 /**
- * May this Supervisor make this call?
+ * May this Super User make this call?
  * @param {{ method: string, path: string, dataTables: string[]|null, rulesOf: (tableId: string) => Promise<object> }} args
  *        `rulesOf` reads a table's normalized rules (the proxy's cached read).
  * @returns {Promise<{ ok: true } | { ok: false, error: string, detail: string }>}
  */
 async function checkTableAccess({ method, path, dataTables, rulesOf }) {
-  if (!Array.isArray(dataTables)) return { ok: true };        // not a Supervisor with a list
+  if (!Array.isArray(dataTables)) return { ok: true };        // not a Super User with a list
   const m = TABLE_PATH.exec(String(path || ""));
   if (!m) return { ok: true };                                // not one table
   let tableId = m[1];
@@ -210,7 +210,7 @@ async function checkTableAccess({ method, path, dataTables, rulesOf }) {
   }
   return {
     ok: false, error: "table_not_assigned",
-    detail: "This data table is not one of yours. An Administrator chooses which data tables a Supervisor may open, on the users list.",
+    detail: "This data table is not one of yours. A Master Admin chooses which data tables a Super User may open, on the users list.",
   };
 }
 

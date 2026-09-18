@@ -437,11 +437,11 @@ async function resolveOrgConfig(context, req) {
         // A supervisor's entitlements ARE their effective pages — the sidebar
         // hides everything else, exactly as it hides internal-only pages
         // (docs/customer-roles-design.md §7). An administrator keeps the
-        // org's entitlements; the role opens the Administrator section.
+        // org's entitlements; the role opens the Master Admin section.
         entitlements: licence.features || classification.entitlements,
         role: licence.role || "",
         // A supervisor's data tables (null for an administrator): the
-        // Supervisor page offers only these.
+        // Super User page offers only these.
         dataTables: licence.dataTables || null,
       },
     };

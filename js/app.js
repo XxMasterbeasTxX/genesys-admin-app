@@ -132,7 +132,7 @@ function renderNotLicensed(customer, reason, { internal = false } = {}) {
   // An internal colleague who has not been named: same gate, same screen,
   // different sentence — a superuser adds them, not "your administrator".
   const title = internal ? "You have not been given access to this app yet" : "No licence for this app is assigned to you";
-  const ask   = internal ? "Ask a superuser to add you." : "Ask your administrator to have access added for your user.";
+  const ask   = internal ? "Ask a Super Master Admin to add you." : "Ask your administrator to have access added for your user.";
   document.getElementById("appMain").innerHTML = `
     <section class="card">
       <h1 class="h1">${escapeHtml(title)}</h1>
@@ -256,8 +256,8 @@ function renderSignInGate() {
     if (orgCfg.mode === "customer" && orgCfg.customer) {
       // Entitlements shape the menu; the user's own permissions, read on THEIR
       // region, grey the actions they cannot take. Same refinement as internal.
-      // The key set is the role's: everything for an Administrator, a
-      // Supervisor's effective pages otherwise (docs/customer-roles-design.md §7).
+      // The key set is the role's: everything for a Master Admin, a
+      // Super User's effective pages otherwise (docs/customer-roles-design.md §7).
       access = await resolveCustomerAccess(orgCfg.entitlements, res.accessToken, getSessionApiBase(), { role: orgCfg.role, dataTables: orgCfg.dataTables });
       isInternalMode = false;
 
@@ -272,7 +272,7 @@ function renderSignInGate() {
       orgContext.set(customer.id);
     } else {
       // Named (or a superuser) — the server said so. Their role decides the
-      // pages (a Supervisor's effective pages arrive as `features`); what they
+      // pages (a Super User's effective pages arrive as `features`); what they
       // may do within them is their own Genesys permissions; the two things a
       // permission cannot express come from the row too.
       access = await resolveAccess(res.accessToken, {

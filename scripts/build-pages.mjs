@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * build-pages — the server's list of every page a Supervisor scope may hold.
+ * build-pages — the server's list of every page a Super User scope may hold.
  *
- * The Supervisor scope and a Supervisor's own pages are stored as page access
+ * The Super User scope and a Super User's own pages are stored as page access
  * keys (docs/customer-roles-design.md §2, docs/internal-roles-design.md §6)
  * and validated server-side. The API is deployed on its own and cannot read
  * js/navConfig.js at runtime, so the list is generated from the nav and
@@ -15,7 +15,7 @@
  *
  * The --check form runs in CI ahead of the deploy, so a page added to the nav
  * without regenerating the list fails the build rather than becoming a page
- * no Supervisor can ever be given.
+ * no Super User can ever be given.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

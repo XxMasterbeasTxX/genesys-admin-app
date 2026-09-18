@@ -1,32 +1,32 @@
 /**
- * Supervisor Access — the org's Supervisor scope, and its Supervisor templates.
+ * Super User Access — the org's Super User scope, and its Super User templates.
  *
  * Two routes, one module (docs/customer-roles-design.md §8):
  *
- *   Customers › Supervisor Access       internal — superusers and customer-
+ *   Customers › Super User Access       internal — superusers and customer-
  *                                       managers, for the org in the header;
  *                                       with the internal org selected, its
  *                                       own scope, superusers only
  *                                       (docs/internal-roles-design.md §4)
- *   Administrator › Supervisor Access   a customer Administrator, for their
+ *   Master Admin › Super User Access   a customer Master Admin, for their
  *                                       own org; the server ignores any other
  *
  * The dropdown above the tree says what is being edited:
  *
- *   Default — the Supervisor scope      what a Supervisor in the org may have
+ *   Default — the Super User scope      what a Super User in the org may have
  *                                       AT ALL: every page the org offers,
  *                                       drawn as the sidebar draws them, and
- *                                       under Data Tables › Supervisor the
- *                                       tables open to Supervisors — a list,
+ *                                       under Data Tables › Super User the
+ *                                       tables open to Super Users — a list,
  *                                       read-only: the switch is "Visible to
- *                                       Supervisors" on Data Tables › Edit
+ *                                       Super Users" on Data Tables › Edit
  *   a template                          a named subset of the scope, plus the
  *                                       data tables under Data Tables ›
- *                                       Supervisor, that a Supervisor can be
+ *                                       Super User, that a Super User can be
  *                                       put on (docs/supervisor-templates-design.md)
  *
- * A Supervisor's effective pages are the scope ∩ (their template ∪ their own
- * ticks), computed at sign-in, so a change here reaches every Supervisor
+ * A Super User's effective pages are the scope ∩ (their template ∪ their own
+ * ticks), computed at sign-in, so a change here reaches every Super User
  * within the gate's five-minute cache, with nobody editing rows.
  *
  * Save overwrites. The server validates every key against the pages a
@@ -70,15 +70,15 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
       .sa-editing-hint { color:var(--muted); font-size:12px; flex-basis:100%; }
     </style>
     <div class="sa-wrap">
-      <h1 class="h1">${customerMode ? "Administrator — Supervisor Access" : "Customers — Supervisor Access"}</h1>
+      <h1 class="h1">${customerMode ? "Master Admin — Super User Access" : "Customers — Super User Access"}</h1>
       <hr class="hr">
       <p class="page-desc">
-        The pages a Supervisor in this organisation may be given. Tick a section to include every page
-        under it. When a Supervisor is added or edited, only the pages ticked here can be chosen for
-        them; unticking a page here takes it from every Supervisor who had it. Administrators always
+        The pages a Super User in this organisation may be given. Tick a section to include every page
+        under it. When a Super User is added or edited, only the pages ticked here can be chosen for
+        them; unticking a page here takes it from every Super User who had it. Master Admins always
         see everything the organisation offers. A <strong>template</strong> is a named set of pages and
-        data tables from the scope that a Supervisor can be put on: change the template and every
-        Supervisor on it follows, their own extra pages untouched.
+        data tables from the scope that a Super User can be put on: change the template and every
+        Super User on it follows, their own extra pages untouched.
       </p>
 
       <div class="sa-org" ${customerMode ? "hidden" : ""}>
@@ -102,7 +102,7 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
           <button type="button" class="btn" id="saSave" disabled>Save</button>
         </div>
         <div class="sa-panel" id="saTree"></div>
-        <div class="sa-note">A saved change reaches signed-in Supervisors within five minutes, or on their next sign-in.</div>
+        <div class="sa-note">A saved change reaches signed-in Super Users within five minutes, or on their next sign-in.</div>
       </div>
 
       <div id="saStatus" class="cs-status"></div>
@@ -126,12 +126,12 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
   let currentOrg = null;
   let scope = [];            // the org's scope as the server holds it, sorted
   let templates = [];        // the org's templates, by name
-  let tables = [];           // [{ id, name }] visible to Supervisors, by name
+  let tables = [];           // [{ id, name }] visible to Super Users, by name
   let tablesError = "";
   let current = null;        // null = the scope; else the template being edited
   let loadSeq = 0;
   let tree = null;
-  let picker = null;         // the tables picker under the Supervisor page (templates only)
+  let picker = null;         // the tables picker under the Super User page (templates only)
   let treeMode = null;       // "scope:<kind>" or "template" — rebuilt when it changes
 
   const internal = () => !customerMode && orgContext.isInternalOrg(currentOrg.id);
@@ -146,14 +146,14 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
     picker = null;
     const extras = {};
     if (current) {
-      picker = createTablesPicker({ tables, error: tablesError, onChange: onEdit, emptyNote: "No data table has been made visible to Supervisors yet: this page carries no tables until one is (Data Tables › Edit, \"Visible to Supervisors\")." });
+      picker = createTablesPicker({ tables, error: tablesError, onChange: onEdit, emptyNote: "No data table has been made visible to Super Users yet: this page carries no tables until one is (Data Tables › Edit, \"Visible to Super Users\")." });
     } else {
-      // Under the scope: the tables open to Supervisors, shown, not chosen —
+      // Under the scope: the tables open to Super Users, shown, not chosen —
       // the switch is on Data Tables › Edit.
       picker = createTablesPicker({
         tables, error: tablesError, readOnly: true,
-        emptyNote: "No data table has been made visible to Supervisors yet. An Administrator opens one with \"Visible to Supervisors\" on Data Tables › Edit.",
-        countText: (n) => `${n} data table${n === 1 ? "" : "s"} visible to Supervisors — set with \"Visible to Supervisors\" on Data Tables › Edit`,
+        emptyNote: "No data table has been made visible to Super Users yet. A Master Admin opens one with \"Visible to Super Users\" on Data Tables › Edit.",
+        countText: (n) => `${n} data table${n === 1 ? "" : "s"} visible to Super Users — set with \"Visible to Super Users\" on Data Tables › Edit`,
       });
     }
     extras[SUPERVISOR_TABLES_PAGE] = picker.el;
@@ -183,7 +183,7 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
 
   // ── The dropdown ──────────────────────────────────────────────────────
   function renderEditing() {
-    const opts = [`<option value="">Default — the Supervisor scope</option>`]
+    const opts = [`<option value="">Default — the Super User scope</option>`]
       .concat(templates.map((t) => `<option value="${escapeHtml(t.id)}">Template: ${escapeHtml(t.name)}</option>`))
       .concat([`<option value="${NEW_TEMPLATE}">+ New template…</option>`]);
     $editing.innerHTML = opts.join("");
@@ -191,11 +191,11 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
     $rename.hidden = $delete.hidden = !current;
     $hint.textContent = current
       ? (scope.length
-        ? `The template's pages, chosen from the scope. A Supervisor on "${current.name}" has these plus any extra pages ticked for them; change the template and they all follow.`
+        ? `The template's pages, chosen from the scope. A Super User on "${current.name}" has these plus any extra pages ticked for them; change the template and they all follow.`
         : `The scope is empty, so a template has nothing to choose from yet. Save the scope first.`)
       : (templates.length
-        ? `Every page a Supervisor may have at all; under Data Tables › Supervisor, the tables open to them. ${templates.length} template${templates.length === 1 ? "" : "s"} draw from it: unticking a page here takes it from them too.`
-        : "Every page a Supervisor may have at all; under Data Tables › Supervisor, the tables open to them.");
+        ? `Every page a Super User may have at all; under Data Tables › Super User, the tables open to them. ${templates.length} template${templates.length === 1 ? "" : "s"} draw from it: unticking a page here takes it from them too.`
+        : "Every page a Super User may have at all; under Data Tables › Super User, the tables open to them.");
   }
 
   function show(what) {
@@ -248,7 +248,7 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
 
   $delete.addEventListener("click", async () => {
     if (!current) return;
-    if (!window.confirm(`Delete the template "${current.name}"?\n\nOnly possible when no Supervisor is on it.`)) return;
+    if (!window.confirm(`Delete the template "${current.name}"?\n\nOnly possible when no Super User is on it.`)) return;
     setStatus(`Deleting "${current.name}"…`);
     try {
       await deleteSupervisorTemplate(currentOrg.id, current.id);
@@ -259,7 +259,7 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
     } catch (err) {
       const who = Array.isArray(err.names) && err.names.length ? ` (${err.names.join(", ")})` : "";
       setStatus(err.code === "template_in_use"
-        ? `"${current.name}" is used by ${err.users} Supervisor${err.users === 1 ? "" : "s"}${who}. Move them to another template first.`
+        ? `"${current.name}" is used by ${err.users} Super User${err.users === 1 ? "" : "s"}${who}. Move them to another template first.`
         : (err.message || String(err)), "error");
     }
   });
@@ -268,13 +268,13 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
   async function load() {
     const seq = ++loadSeq;
     if (tree) tree.setEnabled(false);
-    setStatus(`Loading the Supervisor scope for ${currentOrg.name}…`);
+    setStatus(`Loading the Super User scope for ${currentOrg.name}…`);
     try {
       const [features, tpls] = await Promise.all([getSupervisorScope(currentOrg.id), listSupervisorTemplates(currentOrg.id)]);
       if (seq !== loadSeq) return;
       scope = [...features].sort();
       templates = tpls;
-      // The tables a template may carry. Read whether or not the Supervisor
+      // The tables a template may carry. Read whether or not the Super User
       // page is in the scope yet: it can be ticked in and saved, and a
       // template made, in the same visit.
       tables = []; tablesError = "";
@@ -290,7 +290,7 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
       }
       treeMode = null;              // the scope may have changed: rebuild
       show(null);
-      setStatus(scope.length ? "" : "Nothing is in the scope yet — no Supervisor can be added until something is.", scope.length ? "" : "warn");
+      setStatus(scope.length ? "" : "Nothing is in the scope yet — no Super User can be added until something is.", scope.length ? "" : "warn");
     } catch (err) {
       if (seq !== loadSeq) return;
       setStatus(err.message || String(err), "error");
@@ -302,18 +302,18 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
     if (current) return saveTemplate(h);
     if (!h.features.length) {
       const ok = window.confirm(
-        `Save an empty Supervisor scope for ${currentOrg.name}?\n\n` +
-        `Every Supervisor in the organisation will lose every page within five minutes, and no Supervisor can be added until something is ticked.`
+        `Save an empty Super User scope for ${currentOrg.name}?\n\n` +
+        `Every Super User in the organisation will lose every page within five minutes, and no Super User can be added until something is ticked.`
       );
       if (!ok) return;
     }
-    setStatus(`Saving the Supervisor scope for ${currentOrg.name}…`);
+    setStatus(`Saving the Super User scope for ${currentOrg.name}…`);
     try {
       const r = await withBusy($save, () => setSupervisorScope(currentOrg.id, h.features));
       scope = [...(r.features || [])].sort();
       show(null);
       const dropped = Array.isArray(r.dropped) && r.dropped.length ? ` ${r.dropped.length} unknown page${r.dropped.length === 1 ? " was" : "s were"} dropped.` : "";
-      setStatus(`Saved: ${scope.length} page${scope.length === 1 ? "" : "s"} in the scope. Supervisors see the change within five minutes.${dropped}`, "success");
+      setStatus(`Saved: ${scope.length} page${scope.length === 1 ? "" : "s"} in the scope. Super Users see the change within five minutes.${dropped}`, "success");
     } catch (err) {
       setStatus(err.message || String(err), "error");
     }
@@ -327,8 +327,8 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
       show(r.template);
       const n = r.template.features.length, t = r.template.dataTables.length;
       const dropped = (r.dropped ? ` ${r.dropped} page${r.dropped === 1 ? " was" : "s were"} outside the scope and dropped.` : "")
-        + (r.droppedTables ? ` ${r.droppedTables} table${r.droppedTables === 1 ? " was" : "s were"} not visible to Supervisors and dropped.` : "");
-      setStatus(`Saved "${r.template.name}": ${n} page${n === 1 ? "" : "s"}${t ? `, ${t} data table${t === 1 ? "" : "s"}` : ""}. Every Supervisor on it follows within five minutes.${dropped}`, "success");
+        + (r.droppedTables ? ` ${r.droppedTables} table${r.droppedTables === 1 ? " was" : "s were"} not visible to Super Users and dropped.` : "");
+      setStatus(`Saved "${r.template.name}": ${n} page${n === 1 ? "" : "s"}${t ? `, ${t} data table${t === 1 ? "" : "s"}` : ""}. Every Super User on it follows within five minutes.${dropped}`, "success");
     } catch (err) {
       setStatus(err.message || String(err), "error");
     }
@@ -345,10 +345,10 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
       // The internal org has no registry entry and needs none: its scope is
       // its own, superusers only.
       return isSuperuser ? null
-        : `${org.name} is the internal organisation. Only a superuser can set what its Supervisors may see.`;
+        : `${org.name} is the internal organisation. Only a Super Master Admin can set what its Super Users may see.`;
     }
     if (org.registered === false) {
-      return `${org.name} is not set up as a customer yet: it has no registry entry. Add the registry entry first (see the onboarding runbook), then set its Supervisor scope here.`;
+      return `${org.name} is not set up as a customer yet: it has no registry entry. Add the registry entry first (see the onboarding runbook), then set its Super User scope here.`;
     }
     return null;
   }
