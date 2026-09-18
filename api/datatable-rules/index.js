@@ -23,6 +23,7 @@ const { getCallerContext } = require("../lib/callerContext");
 const { parseRegistry } = require("../lib/orgConfigResolver");
 const { INTERNAL_ORG_SLUG } = require("../lib/licenseGate");
 const { normalizeRules, EMPTY_RULES } = require("../lib/dataTableRules");
+const RULES_MAX_CHARS = 60000;
 const store = require("../lib/orgSettingsStore");
 const activityLog = require("../lib/activityLogStore");
 const customers = require("../lib/customers.json");
@@ -101,6 +102,9 @@ module.exports = async function (context, req) {
     if (method === "PUT") {
       if (!may.write) return json(context, 403, { error: caller.mode === "customer" ? "administrator_required" : "edit_page_required" });
       const rules  = normalizeRules(body.rules);
+      // One Table Storage property holds the rules; past 64 KB the write
+      // fails. Typed lists are the only thing that can get there.
+      if (JSON.stringify(rules).length > RULES_MAX_CHARS) return json(context, 400, { error: "rules_too_large" });
       const before = await store.getDataTableRules(customerId, tableId);
       const beforeRules = before ? normalizeRules(before.rules) : EMPTY_RULES;
       const result = await store.setDataTableRules(customerId, tableId, rules, { id: caller.userId, email: caller.userEmail });

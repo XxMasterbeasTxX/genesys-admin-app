@@ -10,7 +10,7 @@ Supervisor page as plain row editing with add and delete off.
 ## A. Automated
 
 **Server** — `api/lib/dataTableRules.js`, `api/datatable-rules/index.js`.
-66 checks with the store, identity and Genesys reads stubbed (49 from the first build, 13 for §D below, and 4 who-may cases):
+76 checks with the store, identity and Genesys reads stubbed (49 from the first build, 13 for §D, 10 for §E, and 4 who-may cases):
 
 - `normalizeRules`: junk dropped, a Data Table lookup without a table id
   becomes no lookup, flags coerced to booleans, `hidden` kept.
@@ -133,3 +133,36 @@ and one not (T3), and a Supervisor with the Supervisor page.
 | 22 | Other pages | Give X Divisions › Data Tables too | That page lists every table, as before | |
 | 23 | Customer Administrator | On the customer side, Administrator › Users, Edit a Supervisor | The same control; a table not visible to Supervisors cannot be chosen | |
 | 24 | Internal org | Customers › Access with Demo selected (superuser) | The same control for internal Supervisors | |
+
+## E. A typed list (design §12, added 2026-09-18)
+
+**Automated** — in the rules harness (10): `normalizeRules` trims,
+drops blanks and repeats, keeps order and case, keeps `values` only for a
+list, and turns an empty list into no lookup while keeping its other
+flags; `checkRowWrite` passes a listed value with no read beyond the row,
+refuses a value outside the list naming the column, is exact on case, and
+allows emptying a non-mandatory list column; `/api/datatable-rules`
+refuses a rules document past 60,000 characters (`rules_too_large`) and
+accepts 2,000 values.
+
+Browser (12 DOM checks on the Edit page with the API stubbed): List is a
+lookup option; a loaded list rule shows the button with its count and no
+table dropdown; a queue rule shows no button; an integer column's lookup
+stays disabled; the editor opens under the row holding the values; typing
+"Nike / Puma / (blank) / Nike / Adidas" keeps three on the row and updates
+the count and the button; Done closes it with the values kept; switching a
+column to List with no values shows the warning state; Save Schema sends
+the three values and drops the empty list; switching to (none) closes the
+editor and hides the button; switching back remembers the values.
+
+**By hand** — in dev, then prod.
+
+| # | Case | Steps | Expect | Result |
+|---|---|---|---|---|
+| 25 | Set a list | Data Tables › Edit, Schema mode, a string column: Lookup = List, Edit list, type three brands, Done, Save Schema | Saved: the button reads "Edit list (3 values)" after reload | |
+| 26 | The dropdown | Data Tables › Supervisor, that table | The column is a dropdown of the three, in the typed order; nothing can be typed | |
+| 27 | Old value | A row holding a brand not in the list | Shown marked "(current value, not in the list)"; left alone, saves; changed, only the three offered | |
+| 28 | Direct call | `PUT …/rows/{key}` with a brand outside the list via the proxy | 403 `datatable_rule` naming the column | |
+| 29 | Case | The list holds "Nike"; put "nike" | Refused | |
+| 30 | Empty list | Lookup = List, no values, Save Schema | The button is in warning colour before saving; after saving the column has no lookup | |
+| 31 | Too large | Paste 7,000 values, Save Schema | Schema saved; the rules refused with the "too large" message | |

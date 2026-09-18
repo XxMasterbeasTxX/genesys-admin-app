@@ -27,9 +27,10 @@ export const RELEASE_NOTES = [
     changes: [
       "An Administrator can now set rules on a data table so that a Supervisor editing its rows cannot make a "
         + "mistake. On Data Tables › Edit, in Schema mode, each column has four new controls beside its "
-        + "default: a Lookup (Data Table, Queue, Skill, Schedule Group, Schedule or Group), and Protected, "
+        + "default: a Lookup (Data Table, Queue, Skill, Schedule Group, Schedule, Group or List), and Protected, "
         + "Mandatory and Hidden ticks. A Lookup means the value must be one that exists — the name of a queue in "
-        + "the org, say, or a key of another data table (choose which); Protected means the value cannot be "
+        + "the org, say, a key of another data table (choose which), or one of a List you type yourself, one "
+        + "value per line, for a column like Brand that would otherwise be free text; Protected means the value cannot be "
         + "changed; Mandatory means it cannot be left empty; Hidden means the column is not shown at all. "
         + "Above the columns, two switches: whether the table is visible to Supervisors at all — no table is "
         + "until you tick it — and whether they may add rows; Supervisors never delete rows. The rules are "

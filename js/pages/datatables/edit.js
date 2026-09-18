@@ -51,10 +51,19 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       .dte-group-header .dte-group-label { font-size: 11px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: .06em; padding: 0 2px 4px; border-bottom: 2px solid var(--border); }
       /* The table dropdown sizes to its longest name; every row shares the option
          list, so one measured width (--dte-table-col) keeps the three grids aligned. */
+      #dteSchemaMode .dtc-schema-row .dtc-rule-src,
       #dteSchemaMode .dtc-schema-row .dtc-rule-table,
       #dteSchemaMode .dtc-schema-row .dtc-rule-lookup { width: max-content; max-width: none; justify-self: start; }
-      /* Keep the hidden table dropdown's grid cell, so the ticks stay under their headers. */
-      #dteSchemaMode .dtc-schema-row .dtc-rule-table[hidden] { display: block; visibility: hidden; }
+      /* The source cell: a Data Table lookup's table dropdown, or a List's
+         "Edit list" button; the cell itself stays, so the ticks keep their headers. */
+      #dteSchemaMode .dtc-schema-row .dtc-rule-src { min-height: 1px; }
+      .dtc-rule-list-btn.is-empty { color: var(--warn); border-color: var(--warn); }
+      /* The list editor sits under its row, on the rules side. */
+      .dtc-rule-list-editor { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 0 0 10px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+      .dtc-rule-list-editor .dtc-rule-list-head { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+      .dtc-rule-list-editor .dtc-rule-list-head strong { color: var(--text); }
+      .dtc-rule-list-editor .dtc-rule-list-head .dtc-spacer { flex: 1; }
+      .dtc-rule-list-editor textarea { width: 100%; max-width: 520px; min-height: 120px; box-sizing: border-box; font: inherit; resize: vertical; }
       .dte-rule-tick { display: flex; align-items: center; justify-content: center; }
       .dte-rule-tick input { width: 16px; height: 16px; accent-color: var(--accent-strong); cursor: pointer; margin: 0; }
       .dte-rule-tick input:disabled { cursor: not-allowed; opacity: .4; }
@@ -422,7 +431,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     const table = $schemaRowsContainer.querySelector(".dtc-rule-table");
     if (table) {
       const wasHidden = table.hidden;
-      table.hidden = false;                     // visibility:hidden keeps layout; [hidden] would not
+      table.hidden = false;
       const w = table.getBoundingClientRect().width;
       table.hidden = wasHidden;
       if (w > 0) set("--dte-table-col", Math.max(150, w));
@@ -449,8 +458,12 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       .map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("");
   }
 
-  /** Wire a lookup dropdown and its table dropdown together. */
-  function wireLookupPair($lookup, $table, getType) {
+  /**
+   * Wire a lookup dropdown to its source cell: the table dropdown for a
+   * Data Table lookup, the "Edit list" button for a List. The list's values
+   * live on the row (`row.__listValues`) until Save Schema stores them.
+   */
+  function wireLookupPair($lookup, $table, getType, $listBtn) {
     const sync = () => {
       const type = getType ? getType() : "string";
       const stringy = type === "string";
@@ -459,10 +472,70 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       $lookup.title = stringy ? "" : "Lookups apply to string columns only";
       $table.hidden = $lookup.value !== "dataTable";
       if ($table.hidden) $table.value = "";
+      if ($listBtn) {
+        $listBtn.hidden = $lookup.value !== "list";
+        if ($listBtn.hidden) closeListEditor($listBtn.closest(".dtc-schema-row"));
+        refreshListButton($listBtn);
+      }
     };
     $lookup.addEventListener("change", sync);
     sync();
     return sync;
+  }
+
+  /** The button says how many values the list holds; none is a warning. */
+  function refreshListButton($btn) {
+    const row = $btn.closest(".dtc-schema-row");
+    const n = (row && row.__listValues || []).length;
+    $btn.textContent = `Edit list (${n} value${n === 1 ? "" : "s"})`;
+    $btn.classList.toggle("is-empty", n === 0);
+    $btn.title = n ? "The values Supervisors may choose from" : "No values yet — the list is not a rule until it has some";
+  }
+
+  /** Parse a textarea: one value per line, trimmed, blanks and repeats dropped, order kept. */
+  function parseListText(text) {
+    const out = [];
+    for (const line of String(text || "").split(/\r?\n/)) {
+      const v = line.trim();
+      if (v && !out.includes(v)) out.push(v);
+    }
+    return out;
+  }
+
+  function closeListEditor(row) {
+    const ed = row && row.nextElementSibling;
+    if (ed && ed.classList.contains("dtc-rule-list-editor") && ed.__row === row) ed.remove();
+  }
+
+  /** One editor open at a time, under its row. Every keystroke is kept on the row. */
+  function toggleListEditor(row) {
+    const open = row.nextElementSibling && row.nextElementSibling.classList.contains("dtc-rule-list-editor");
+    $schemaRowsContainer.querySelectorAll(".dtc-rule-list-editor").forEach((e) => e.remove());
+    if (open) return;
+    const name = row.querySelector(".dtc-col-name").value.trim() || "this column";
+    const ed = document.createElement("div");
+    ed.className = "dtc-rule-list-editor";
+    ed.__row = row;
+    ed.innerHTML = `
+      <div class="dtc-rule-list-head">
+        <span>The values Supervisors may choose for <strong>${escapeHtml(name)}</strong> — one per line, in the order the dropdown shows them. Matched exactly.</span>
+        <span class="dtc-spacer"></span>
+        <span class="dtc-rule-list-count"></span>
+        <button type="button" class="btn btn-secondary btn-sm" data-close>Done</button>
+      </div>
+      <textarea class="dt-input" spellcheck="false" placeholder="One value per line"></textarea>`;
+    const $ta = ed.querySelector("textarea"), $n = ed.querySelector(".dtc-rule-list-count");
+    $ta.value = (row.__listValues || []).join("\n");
+    const keep = () => {
+      row.__listValues = parseListText($ta.value);
+      $n.textContent = `${row.__listValues.length} value${row.__listValues.length === 1 ? "" : "s"}`;
+      refreshListButton(row.querySelector(".dtc-rule-list-btn"));
+    };
+    $ta.addEventListener("input", keep);
+    ed.querySelector("[data-close]").addEventListener("click", () => ed.remove());
+    keep();
+    row.after(ed);
+    $ta.focus();
   }
 
   function readRule(row) {
@@ -471,6 +544,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     return {
       lookup,
       tableId: lookup === "dataTable" ? row.querySelector(".dtc-rule-table").value : "",
+      values: lookup === "list" ? [...(row.__listValues || [])] : [],
       protected: row.querySelector(".dtc-rule-protected").checked,
       mandatory: row.querySelector(".dtc-rule-mandatory").checked,
       hidden:    row.querySelector(".dtc-rule-hidden").checked,
@@ -486,8 +560,9 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       const propKey = row.dataset.originalKey || name;
       const r = readRule(row);
       if (r.lookup === "dataTable" && !r.tableId) r.lookup = "";
+      if (r.lookup === "list" && !r.values.length) r.lookup = "";
       if (r.lookup || r.protected || r.mandatory || r.hidden) {
-        columns[propKey] = { lookup: r.lookup, ...(r.tableId ? { tableId: r.tableId } : {}), protected: r.protected, mandatory: r.mandatory, hidden: r.hidden };
+        columns[propKey] = { lookup: r.lookup, ...(r.tableId ? { tableId: r.tableId } : {}), ...(r.lookup === "list" ? { values: r.values } : {}), protected: r.protected, mandatory: r.mandatory, hidden: r.hidden };
       }
     });
     // Orphaned rules (columns no longer in the schema) are kept until removed.
@@ -502,7 +577,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     if (!_orphaned.size) { $orphanRules.hidden = true; $orphanRules.innerHTML = ""; return; }
     $orphanRules.hidden = false;
     $orphanRules.innerHTML = `Rules for columns that are no longer in the schema: ` + [..._orphaned].map((n) =>
-      `<span>"${escapeHtml(n)}" (${escapeHtml(lookupLabel(_rules.columns[n].lookup))}${_rules.columns[n].protected ? ", protected" : ""}${_rules.columns[n].mandatory ? ", mandatory" : ""}${_rules.columns[n].hidden ? ", hidden" : ""})` +
+      `<span>"${escapeHtml(n)}" (${escapeHtml(lookupLabel(_rules.columns[n].lookup))}${_rules.columns[n].lookup === "list" ? ` of ${(_rules.columns[n].values || []).length}` : ""}${_rules.columns[n].protected ? ", protected" : ""}${_rules.columns[n].mandatory ? ", mandatory" : ""}${_rules.columns[n].hidden ? ", hidden" : ""})` +
       `<button type="button" class="btn btn-sm btn-secondary" data-drop-rule="${escapeHtml(n)}">remove</button></span>`).join(" ");
     $orphanRules.querySelectorAll("[data-drop-rule]").forEach((b) => b.addEventListener("click", () => {
       _orphaned.delete(b.getAttribute("data-drop-rule"));
@@ -522,6 +597,8 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       const rule = _rules.columns[propKey];
       const $lookup = row.querySelector(".dtc-rule-lookup"), $table = row.querySelector(".dtc-rule-table");
       $table.innerHTML = lookupTableOptions(_currentTableId);
+      row.__listValues = rule && rule.lookup === "list" && Array.isArray(rule.values) ? [...rule.values] : [];
+      closeListEditor(row);
       $lookup.value = rule ? rule.lookup : "";
       $lookup.dispatchEvent(new Event("change"));
       if (rule && rule.lookup === "dataTable") $table.value = rule.tableId || "";
@@ -666,7 +743,10 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       <div class="dtc-col-default-wrap">${makeDefaultInput(initialType)}</div>
       <span class="dte-rule-divider"></span>
       <select class="dt-select dtc-rule-lookup" title="Supervisors may only choose from these values">${LOOKUP_OPTIONS_HTML}</select>
-      <select class="dt-select dtc-rule-table" hidden>${lookupTableOptions(_currentTableId)}</select>
+      <span class="dtc-rule-src">
+        <select class="dt-select dtc-rule-table" hidden>${lookupTableOptions(_currentTableId)}</select>
+        <button type="button" class="btn btn-secondary btn-sm dtc-rule-list-btn" hidden>Edit list</button>
+      </span>
       <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-protected" title="Supervisors cannot change this column"></span>
       <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-mandatory" title="Supervisors cannot leave this column empty"></span>
       <span class="dte-rule-tick"><input type="checkbox" class="dtc-rule-hidden" title="Supervisors do not see this column"></span>
@@ -679,7 +759,7 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
     if (prefillName) row.querySelector(".dtc-col-name").value = prefillName;
     if (prefillType) row.querySelector(".dtc-col-type").value = prefillType;
 
-    row.querySelector(".dtc-del-btn").addEventListener("click", () => row.remove());
+    row.querySelector(".dtc-del-btn").addEventListener("click", () => { closeListEditor(row); row.remove(); });
 
     wireDefaultHandlers(row);
     if (prefillDefault !== undefined) {
@@ -693,7 +773,11 @@ export default function renderEditDataTable({ me, api, orgContext, access }) {
       }
     }
 
-    const syncRule = wireLookupPair(row.querySelector(".dtc-rule-lookup"), row.querySelector(".dtc-rule-table"), () => row.querySelector(".dtc-col-type").value);
+    row.__listValues = [];
+    const $listBtn = row.querySelector(".dtc-rule-list-btn");
+    $listBtn.addEventListener("click", () => toggleListEditor(row));
+    row.querySelector(".dtc-drag-handle").addEventListener("mousedown", () => closeListEditor(row));
+    const syncRule = wireLookupPair(row.querySelector(".dtc-rule-lookup"), row.querySelector(".dtc-rule-table"), () => row.querySelector(".dtc-col-type").value, $listBtn);
     row.querySelector(".dtc-col-type").addEventListener("change", (e) => {
       row.querySelector(".dtc-col-default-wrap").innerHTML = makeDefaultInput(e.target.value);
       wireDefaultHandlers(row);

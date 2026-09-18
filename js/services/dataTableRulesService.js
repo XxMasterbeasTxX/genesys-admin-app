@@ -18,6 +18,7 @@ export const LOOKUP_TYPES = Object.freeze([
   { id: "scheduleGroup", label: "Schedule Group" },
   { id: "schedule",      label: "Schedule" },
   { id: "group",         label: "Group" },
+  { id: "list",          label: "List" },        // values the Administrator types
 ]);
 
 export const lookupLabel = (id) => (LOOKUP_TYPES.find((t) => t.id === id) || LOOKUP_TYPES[0]).label;
@@ -49,6 +50,7 @@ function message(code, status) {
     case "customerId_required":    return "Select a customer organisation first.";
     case "not_a_customer":         return "This organisation is not set up as a customer.";
     case "identity_unavailable":   return "We could not verify who you are just now. Try again in a moment.";
+    case "rules_too_large":        return "The rules are too large to store — a typed list has too many values. Shorten it and save again.";
     default:                       return `The request failed (${code || status}).`;
   }
 }

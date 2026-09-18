@@ -1,6 +1,6 @@
 # Data Table Rules — guided editing for Supervisors — Design
 
-Status: **Built** — agreed and built 2026-09-17; per-Supervisor tables (§11) added 2026-09-18. Test pass: [`docs/testing/data-table-rules-tests.md`](testing/data-table-rules-tests.md)
+Status: **Built** — agreed and built 2026-09-17; per-Supervisor tables (§11) and typed lists (§12) added 2026-09-18. Test pass: [`docs/testing/data-table-rules-tests.md`](testing/data-table-rules-tests.md)
 Author: Genesys Admin App
 Last updated: 2026-09-18
 
@@ -35,8 +35,9 @@ rules; the rules live in the app, per table, per org.
 Per column of a table:
 
 ```
-lookup      "" | "dataTable" | "queue" | "skill" | "scheduleGroup" | "schedule" | "group"
+lookup      "" | "dataTable" | "queue" | "skill" | "scheduleGroup" | "schedule" | "group" | "list"
 tableId     the referenced table's id, when lookup is "dataTable"
+values      the Administrator's own values, when lookup is "list" (§12)
 protected   true → a Supervisor cannot change the value
 mandatory   true → a Supervisor cannot save the row with it empty
 hidden      true → a Supervisor does not see the column at all (added during the
@@ -64,6 +65,7 @@ Where the allowed values come from:
 | Schedule Group | schedule group names | `GET /architect/schedulegroups` |
 | Schedule | schedule names | `GET /architect/schedules` |
 | Group | group names | `GET /groups` |
+| List | the values the Administrator typed, in their order (§12) | none — the list is the rule |
 
 **Names, not ids.** A data table cell holds whatever the flow reads, and
 flows read queue *names* from data tables (that is what "Queue" in a
@@ -334,3 +336,42 @@ internal org too.
 6. Folded into release note 6.1.
 
 **Test pass:** `docs/testing/data-table-rules-tests.md` §D.
+
+## 12. A typed list as a lookup (added 2026-09-18)
+
+In the user's words: "In a string column, I would like to be able to
+create my own list. […] lets say a column name is brand. this would
+normally be free text. But I want to be able to guide them by only
+letting them choose the correct values." And: "They shouldn't be able to
+type in the cell if possible, but only choose from a dropdown, just like
+with the data table lookup and API's."
+
+A seventh lookup, **List**, whose values come from the Administrator
+instead of Genesys. Everywhere else it is a lookup like the others:
+
+- **On Data Tables › Edit**, choosing List puts an "Edit list (n values)"
+  button where a Data Table lookup's table dropdown sits. It opens an
+  editor under the row — one value per line, in the order the dropdown
+  will show them — with a running count and Done. Every keystroke is kept
+  on the row; Save Schema stores the values with the rule. Blank lines and
+  repeats are dropped, whitespace trimmed, case kept. A List with no
+  values is no rule (the button says so in warning colour), and the rule
+  is dropped on save.
+- **On the Supervisor page** the column is a dropdown of the values —
+  never a text field — with "(empty)" when not Mandatory, and the marked
+  "(current value, not in the list)" entry only while a row still holds a
+  value from before the rule; pick anything else and it is gone.
+- **The server** matches exactly (case and spaces included, as names
+  are): `lookupExists` for a list is `values.includes(v)` — no Genesys
+  read, the cheapest rule there is. Combines with Protected, Mandatory and
+  Hidden as the others do.
+- **Storage:** in the table's rules row with the other rules, so the
+  values are per org and per table and travel with them. One Table Storage
+  property holds the rules and caps at 64 KB; the endpoint refuses a rules
+  document past 60,000 characters (`rules_too_large`) rather than let the
+  store fail — roughly 3,000 short values per table, said plainly to the
+  Administrator.
+- Renaming a value in the list does not touch existing rows; a row holding
+  the old value shows it marked, as with a renamed queue.
+
+**Test pass:** `docs/testing/data-table-rules-tests.md` §E.

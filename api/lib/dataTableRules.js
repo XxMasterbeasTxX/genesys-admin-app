@@ -2,8 +2,8 @@
  * Data table rules — what a Supervisor may write into a data table.
  *
  * An Administrator sets, per column, a lookup (the value must be the name
- * of a queue, skill, schedule group, schedule or group in the org, or a key
- * of another data table), Protected (cannot change), Mandatory (cannot
+ * of a queue, skill, schedule group, schedule or group in the org, a key
+ * of another data table, or one of a list the Administrator typed), Protected (cannot change), Mandatory (cannot
  * be empty) and Hidden (not shown — and so not changeable either); per
  * table, whether it is open to Supervisors at all, and whether they may add
  * rows. Supervisors never delete rows. A table nobody has opened is closed:
@@ -16,7 +16,16 @@
  * changed lookup cell — exact, and cheap enough to be exact.
  */
 
-const LOOKUPS = new Set(["dataTable", "queue", "skill", "scheduleGroup", "schedule", "group"]);
+const LOOKUPS = new Set(["dataTable", "queue", "skill", "scheduleGroup", "schedule", "group", "list"]);
+/** A typed list's values: strings, trimmed, non-empty, unique, in the Administrator's order. */
+function listValues(raw) {
+  const out = [];
+  for (const v of Array.isArray(raw) ? raw : []) {
+    const t = String(v ?? "").trim();
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
 const ROWS_PATH = /^\/api\/v2\/flows\/datatables\/([^/?]+)\/rows(?:\/([^/?]+))?\/?$/i;
 
 /** The stored shape, from whatever a PUT sent. Junk is dropped, never kept. */
@@ -30,9 +39,12 @@ function normalizeRules(input) {
     let lookup = LOOKUPS.has(raw.lookup) ? raw.lookup : "";
     const tableId = lookup === "dataTable" ? String(raw.tableId || "").trim() : "";
     if (lookup === "dataTable" && !tableId) lookup = "";
+    const values = lookup === "list" ? listValues(raw.values) : [];
+    if (lookup === "list" && !values.length) lookup = "";     // an empty list is no rule
     const rule = {
       lookup,
       ...(tableId ? { tableId } : {}),
+      ...(lookup === "list" ? { values } : {}),
       protected: raw.protected === true,
       mandatory: raw.mandatory === true,
       hidden:    raw.hidden === true,
@@ -71,6 +83,8 @@ async function lookupExists(read, rule, value) {
   const v = String(value);
   const exact = (list) => Array.isArray(list) && list.some((e) => e && same(e.name, v));
   switch (rule.lookup) {
+    case "list":                                   // no read: the list is the rule
+      return Array.isArray(rule.values) && rule.values.includes(v);
     case "dataTable": {
       const r = await read("GET", `/api/v2/flows/datatables/${encodeURIComponent(rule.tableId)}/rows/${encodeURIComponent(v)}`);
       return r.status === 200;
@@ -200,4 +214,4 @@ async function checkTableAccess({ method, path, dataTables, rulesOf }) {
   };
 }
 
-module.exports = { LOOKUPS, normalizeRules, EMPTY_RULES, parseRowWrite, checkRowWrite, lookupExists, checkTableAccess };
+module.exports = { LOOKUPS, normalizeRules, EMPTY_RULES, parseRowWrite, checkRowWrite, lookupExists, checkTableAccess, listValues };

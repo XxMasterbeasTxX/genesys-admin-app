@@ -74,11 +74,14 @@ async function fetchTableKeys(api, orgId, tableId) {
 
 /**
  * The allowed values for a rule with a lookup. Sorted, unique, cached.
- * @param {{ lookup: string, tableId?: string }} rule
+ * @param {{ lookup: string, tableId?: string, values?: string[] }} rule
  * @returns {Promise<string[]>}
  */
 export function fetchLookupValues(api, orgId, rule) {
   if (!rule || !rule.lookup) return Promise.resolve([]);
+  // A typed list is the rule itself: nothing to fetch, nothing to cache,
+  // and the Administrator's order is the dropdown's order.
+  if (rule.lookup === "list") return Promise.resolve([...(Array.isArray(rule.values) ? rule.values : [])]);
   const key = cacheKey(orgId, rule);
   if (cache.has(key)) return cache.get(key);
   let p;
