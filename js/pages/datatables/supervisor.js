@@ -59,7 +59,6 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
       .dts-search { min-width: 240px; flex: 0 1 420px; }
       .dts-pager { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
       .dts-pager-info { font-size: 12px; color: var(--muted); }
-      .dts-legend { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
       .dts-not-listed { color: var(--warn); }
     </style>
 
@@ -107,7 +106,6 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
           </div>
         </div>
       </div>
-      <p class="dts-legend" id="dtsLegend"></p>
       <div id="dtsGrid"></div>
       <div class="dts-pager">
         <button class="btn btn-secondary btn-sm" id="dtsPrev" type="button">Prev</button>
@@ -121,7 +119,7 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
   const $ = (id) => el.querySelector("#" + id);
   const $actions = $("dtsActions"), $undoBtn = $("dtsUndoBtn"), $saveBtn = $("dtsSaveBtn");
   const $body = $("dtsBody"), $search = $("dtsSearch"), $addBtn = $("dtsAddBtn");
-  const $pageSize = $("dtsPageSize"), $refreshBtn = $("dtsRefreshBtn"), $legend = $("dtsLegend");
+  const $pageSize = $("dtsPageSize"), $refreshBtn = $("dtsRefreshBtn");
   const $grid = $("dtsGrid"), $prev = $("dtsPrev"), $next = $("dtsNext"), $pagerInfo = $("dtsPagerInfo"), $summary = $("dtsSummary");
   const setStatus = makeStatus($("dtsStatus"), "dt-status");
 
@@ -210,7 +208,6 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
       models = (Array.isArray(rows) ? rows : []).map(toModel);
       $addBtn.hidden = !rules.mayAddRows || !can("rowsAdd");
       $body.hidden = false; $actions.hidden = false;
-      renderLegend();
       render();
       const failed = Object.keys(lookupFailed);
       setStatus(failed.length
@@ -224,20 +221,6 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
   }
 
   const colTitle = (name) => (columns.find((c) => c.name === name) || { title: name }).title;
-
-  function renderLegend() {
-    const bits = [];
-    const ruled = Object.entries(rules.columns).filter(([n]) => columns.some((c) => c.name === n));
-    for (const [n, r] of ruled) {
-      const parts = [];
-      if (r.lookup) parts.push(`${lookupLabel(r.lookup)} (${(lookups[n] || []).length} values)`);
-      if (r.protected) parts.push("protected");
-      if (r.mandatory) parts.push("mandatory");
-      if (r.hidden) parts.push("hidden");
-      bits.push(`<strong>${escapeHtml(colTitle(n))}</strong>: ${parts.join(", ")}`);
-    }
-    $legend.innerHTML = bits.length ? `Rules — ${bits.join(" · ")}` : "This table has no rules: every column can be edited freely.";
-  }
 
   // ── The grid ───────────────────────────────────────────────────────
   function filtered() {
