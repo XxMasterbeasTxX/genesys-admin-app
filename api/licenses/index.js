@@ -53,6 +53,7 @@ const { parseRegistry } = require("../lib/orgConfigResolver");
 const store = require("../lib/licenseStore");
 const orgSettings = require("../lib/orgSettingsStore");
 const { filterPages } = require("../lib/pages");
+const { normalizeRules } = require("../lib/dataTableRules");
 const activityLog = require("../lib/activityLogStore");
 const customers = require("../lib/customers.json");
 
@@ -133,8 +134,8 @@ async function roleAndPages(customerId, body, kind) {
   let dataTables = [], droppedTables = 0;
   if (features.includes(SUPERVISOR_TABLES_PAGE)) {
     const wanted = [...new Set((Array.isArray(body.dataTables) ? body.dataTables : []).map((v) => String(v || "").trim()).filter(Boolean))];
-    const allRules = await orgSettings.listDataTableRules(customerId);
-    dataTables = wanted.filter((id) => allRules[id] && allRules[id].visibleToSupervisors === true);
+    const allRules = await orgSettings.listDataTableRules(customerId);   // { [tableId]: { rules, setAt } }
+    dataTables = wanted.filter((id) => allRules[id] && normalizeRules(allRules[id].rules).visibleToSupervisors);
     droppedTables = wanted.length - dataTables.length;
     if (!dataTables.length) return { ok: false, status: 400, error: "tables_required" };
   }

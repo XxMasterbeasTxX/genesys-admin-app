@@ -34,6 +34,7 @@ const { identifyCaller } = require("./orgConfigResolver");
 const { isSuperuser } = require("./superusers");
 const store = require("./licenseStore");
 const orgSettings = require("./orgSettingsStore");
+const { normalizeRules } = require("./dataTableRules");
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map();
@@ -143,7 +144,8 @@ async function checkLicense(context, token, classification) {
           return { licensed: false, reason: "license_check_failed", userId: user.id };
         }
         const ownTables = Array.isArray(row.dataTables) ? row.dataTables : [];
-        dataTables = ownTables.filter((id) => allRules[id] && allRules[id].visibleToSupervisors === true);
+        // { [tableId]: { rules, setAt } } — the rules as stored, normalized here
+        dataTables = ownTables.filter((id) => allRules[id] && normalizeRules(allRules[id].rules).visibleToSupervisors);
       }
     }
     value = { licensed: true, userId: user.id, role, features, dataTables, superuser: false };
