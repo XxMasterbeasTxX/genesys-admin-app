@@ -198,21 +198,19 @@ function outputRows(key, def, value, compare) {
  * @returns {string|null} null when the action declares no outputs.
  */
 export function outputsTableHtml(contract, finalResult, { compareTo } = {}) {
-  const schema = contract?.output?.successSchema;
-  const props  = extractSchemaProps(schema);
+  const props = extractSchemaProps(contract?.output?.successSchema);
   if (!props || finalResult == null || typeof finalResult !== "object") return null;
 
-  // `extractSchemaProps` reaches a record's fields THROUGH an array root
-  // (`{ type: "array", items: { properties } }`), so the result has to be read
-  // through the same wrapper or every lookup lands on an array and comes back
-  // undefined. The Salesforce integration returns exactly this shape: it wraps
-  // both request and response in a one-element list.
-  const rootIsList = !schema?.properties && !!schema?.items?.properties;
+  // Whether the result is a list of records is decided from the RESULT, not
+  // the schema. A first version inferred it from the contract's shape and was
+  // wrong on a Salesforce action whose result is a one-element list under a
+  // contract that does not declare one — every lookup landed on the array and
+  // came back undefined. The data cannot be wrong about its own shape.
   const asList = (v) => (Array.isArray(v) ? v : v == null ? [] : [v]);
-  const records  = rootIsList ? asList(finalResult) : [finalResult];
-  const compares = rootIsList ? asList(compareTo)   : (compareTo ? [compareTo] : []);
+  const records  = asList(finalResult);
+  const compares = asList(compareTo);
 
-  if (rootIsList && !records.length) {
+  if (!records.length) {
     return `
       <table class="dt-schema-table">
         <thead><tr><th>Output</th><th>Type</th><th>Value</th></tr></thead>
