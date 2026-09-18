@@ -66,9 +66,9 @@ export const RELEASE_NOTES = [
       "Internal colleagues must now be named in the app before they can use it, exactly as customer users "
         + "already had to be. Being in the Genesys group the OAuth integration is restricted to still gets a "
         + "person through the sign-in door; being on the list is what gets them past it. The list is the "
-        + "internal organisation's own row on Customers › Access to Admin Tool, and only a superuser (the "
+        + "internal organisation's own row on Customers › Access to Admin Tool, and only a Super Master Admin (the "
         + "SUPERUSER_IDS app setting) can add to it or remove from it. Nobody was seeded: everyone, including "
-        + "the people who built the app, has to be added by a superuser. Superusers themselves need no row and "
+        + "the people who built the app, has to be added by a Super Master Admin. Super Master Admins themselves need no row and "
         + "can never be locked out by anything editable in the app.",
       "In the internal organisation a colleague now sees and changes only the divisions their own role is "
         + "granted in, as they would in Genesys itself. A Genesys grant is a role in a division: holding queue "
@@ -82,13 +82,13 @@ export const RELEASE_NOTES = [
         + "as before.",
       "Internal colleagues carry the same two roles as customer users, chosen when they are added: "
         + "Master Admin — every page except Onboarding, as everyone had until now — or Super User — only the "
-        + "pages ticked for them from the internal organisation's own Super User scope, which a superuser "
+        + "pages ticked for them from the internal organisation's own Super User scope, which a Super Master Admin "
         + "sets on Customers › Super User Access with the internal org selected. A colleague who should only "
         + "see Export sees only Export: the rest of the menu is absent, not greyed. What they may do on a "
-        + "page is still their own Genesys permissions. Only superusers set the internal scope and the "
+        + "page is still their own Genesys permissions. Only Super Master Admins set the internal scope and the "
         + "roles; an internal Master Admin is a page role, not an administrator of access.",
       "Separate from the role, and independent of it: “Manages customer access”, a tick per row on the "
-        + "internal list that only a superuser can set, lets that colleague add and remove users for customer "
+        + "internal list that only a Super Master Admin can set, lets that colleague add and remove users for customer "
         + "organisations — start charges — and set customer scopes and roles, without being able to touch "
         + "the internal list or grant the same right to anyone else. A Super User can hold it; they then "
         + "see the two Customers pages beside their own. The Master Admin group that used to gate customer "
@@ -104,7 +104,7 @@ export const RELEASE_NOTES = [
         + "they pay per user, not for content — so there is no package to check against, only the role. "
         + "A customer row cannot be added without one.",
       "What a Super User may have at all is the organisation's Super User scope: every customer page as a "
-        + "tree of checkboxes, sections and pages, on the new Super User Access page. Internal superusers and "
+        + "tree of checkboxes, sections and pages, on the new Super User Access page. Internal Super Master Admins and "
         + "customer-managers set it for any org under Customers › Super User Access, so it can be set on the "
         + "day a customer is onboarded; a customer's own Master Admins set it for their org under "
         + "Master Admin › Super User Access. A Super User's own pages are ticked from the scope when they are "
@@ -795,7 +795,7 @@ export const RELEASE_NOTES = [
       "Every run writes one Activity Log entry with the full breakdown — what was deleted, and what was kept and why.",
       "Rows show who created each object where Genesys records it, including when the object was created by an integration rather than a person.",
       "Two things this cannot see, by design: anything referenced only while a call is running (a queue looked up by name, a prompt named in a data table cell), and the contents of data tables — those are never scanned. Published survey forms also cannot be deleted; Genesys does not allow it, and the report says so.",
-      "Available to Master Admins and superusers. Not available to the ordinary Admin group, and never to customer logins.",
+      "Available to Master Admins and Super Master Admins. Not available to the ordinary Admin group, and never to customer logins.",
     ],
   },
   {
@@ -972,7 +972,7 @@ export const RELEASE_NOTES = [
       "Features you can't use appear disabled in the sidebar with a tooltip naming the required permission; opening one directly shows which permission is missing.",
       "Within a page, individual actions and sections you lack the permission for are disabled too — e.g. Delete rows, Publish/Test a data action, backup routing, and per-category template application (roles/skills/languages/queues).",
       "Create/Edit Template now requires the same permissions as Manage Templates.",
-      "Full-access administrators and superusers are unaffected.",
+      "Full-access administrators and Super Master Admins are unaffected.",
     ],
   },
   {

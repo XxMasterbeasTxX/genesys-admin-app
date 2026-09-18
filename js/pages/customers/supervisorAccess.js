@@ -345,7 +345,7 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
       // The internal org has no registry entry and needs none: its scope is
       // its own, superusers only.
       return isSuperuser ? null
-        : `${org.name} is the internal organisation. Only a superuser can set what its Super Users may see.`;
+        : `${org.name} is the internal organisation. Only a Super Master Admin can set what its Super Users may see.`;
     }
     if (org.registered === false) {
       return `${org.name} is not set up as a customer yet: it has no registry entry. Add the registry entry first (see the onboarding runbook), then set its Super User scope here.`;

@@ -32,8 +32,8 @@ async function call(method, path, body) {
 
 function licenseMessage(code, json, status) {
   switch (code) {
-    case "superuser_required":        return "Only a superuser can change who has access to the internal organisation.";
-    case "customer_manager_required": return "You have not been given the right to manage customer access. Ask a superuser.";
+    case "superuser_required":        return "Only a Super Master Admin can change who has access to the internal organisation.";
+    case "customer_manager_required": return "You have not been given the right to manage customer access. Ask a Super Master Admin.";
     case "identity_unavailable":      return "We could not verify who you are just now, so this change was not made. Try again in a moment.";
     case "internal_org_only":         return "Only users of the internal organisation can be given that right.";
     case "internal_org_has_no_scope": return "The internal organisation has no Super User scope.";

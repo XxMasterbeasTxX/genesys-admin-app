@@ -132,7 +132,7 @@ function renderNotLicensed(customer, reason, { internal = false } = {}) {
   // An internal colleague who has not been named: same gate, same screen,
   // different sentence — a superuser adds them, not "your administrator".
   const title = internal ? "You have not been given access to this app yet" : "No licence for this app is assigned to you";
-  const ask   = internal ? "Ask a superuser to add you." : "Ask your administrator to have access added for your user.";
+  const ask   = internal ? "Ask a Super Master Admin to add you." : "Ask your administrator to have access added for your user.";
   document.getElementById("appMain").innerHTML = `
     <section class="card">
       <h1 class="h1">${escapeHtml(title)}</h1>

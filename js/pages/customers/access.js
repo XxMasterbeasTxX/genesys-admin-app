@@ -724,7 +724,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     const ok = window.confirm(
       `Remove ${label}'s access to the Admin Tool for ${currentOrg.name}?\n\n` +
       (isInternal()
-        ? `They will be signed out within five minutes and see a message to ask a superuser.`
+        ? `They will be signed out within five minutes and see a message to ask a Super Master Admin.`
         : `They will be signed out within five minutes and see a message to contact their administrator.`)
     );
     if (!ok) return;
@@ -769,7 +769,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       return `${org.name} is not set up as a customer yet: it has no registry entry, so nobody can sign in to it as a customer. Add the registry entry first (see the onboarding runbook), then name its users here.`;
     }
     if (orgContext.isInternalOrg(org.id) && !isSuperuser) {
-      return `${org.name} is the internal organisation. Only a superuser can change who has access to it.`;
+      return `${org.name} is the internal organisation. Only a Super Master Admin can change who has access to it.`;
     }
     return null;
   }
@@ -786,7 +786,7 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
     $intro.textContent = isInternal()
       ? "The colleagues in the internal organisation who may use this app. Only the people listed "
         + "here can sign in; everyone else in the org sees a message asking them to contact a "
-        + "superuser. Nothing here is billed. Every colleague is a Master Admin (every page) or a "
+        + "Super Master Admin. Nothing here is billed. Every colleague is a Master Admin (every page) or a "
         + "Super User (chosen pages from the internal Super User scope). Tick \"Manages customer "
         + "access\" to let a colleague add and remove users for customer organisations, whatever "
         + "their role."
