@@ -39,8 +39,8 @@ export function createTablesPicker({ tables, initial = [], onChange, error = "",
     <div class="tp-head">
       <span class="tp-count"></span>
       <span class="tp-spacer"></span>
-      <button type="button" class="btn btn-secondary btn-sm" data-all>Tick all</button>
-      <button type="button" class="btn btn-secondary btn-sm" data-none>Untick all</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-all title="Tick every data table in this list">All tables</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-none title="Untick every data table in this list">No tables</button>
     </div>
     <div class="tp-list">
       ${list.map((t, i) => `<label for="${uid}-${i}"><input id="${uid}-${i}" type="checkbox" value="${escapeHtml(t.id)}"> ${escapeHtml(t.name)}</label>`).join("")}
