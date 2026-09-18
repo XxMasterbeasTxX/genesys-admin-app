@@ -86,6 +86,14 @@ An **Editing** dropdown above the tree: "Default — the Supervisor scope"
 selected, ready to tick. With a template selected the tree is pruned to
 the scope, the data tables picker sits under Data Tables › Supervisor
 (the shared `tablesPicker` component), and Rename and Delete appear.
+
+Under **Default**, the same place lists *every* data table of the org,
+ticked when open to Supervisors — the "Visible to Supervisors" switch of
+Data Tables › Edit, shown where the scope is set ("its there when I
+create a template, but not in the default view"). Save writes one rules
+update per table whose tick changed, its column rules kept; a table that
+could not be written is named in the status. A template's picker offers
+whatever is open after that.
 Rename saves the template as held, ticks included. Delete confirms, and
 on refusal names the Supervisors on it. Switching with unsaved changes
 asks first.

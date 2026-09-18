@@ -59,3 +59,4 @@ creates it and selects it.
 | 8 | Customer side | As a customer Administrator: Administrator › Supervisor Access and › Users | The same, for their org only | |
 | 9 | Scope narrows | Untick a page from the scope that Sales holds | Gone from the template's tree and from every Supervisor on it | |
 | 10 | Deleted template | Delete an unused template a row once pointed at (edit the row to "(none)" first, then re-point a row in storage) | The list says "(deleted)"; the row keeps its own pages | |
+| 11 | Default's tables | Editing = Default, open Data Tables › Supervisor | Every table of the org listed, the open ones ticked; tick one more, Save | Status says "1 data table opened to Supervisors"; Data Tables › Edit shows the tick; the template's picker offers it | |

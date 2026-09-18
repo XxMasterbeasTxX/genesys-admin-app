@@ -21,8 +21,9 @@ import { escapeHtml } from "../utils.js";
  * @param {Function} [opts.onChange]    Called after every change.
  * @param {string}   [opts.error]       Why the tables could not be loaded (with tables = null).
  * @param {string}   [opts.emptyNote]   What to say when no table is visible.
+ * @param {Function} [opts.countText]   (n, total) → the count line; default asks for at least one.
  */
-export function createTablesPicker({ tables, initial = [], onChange, error = "", emptyNote = "" }) {
+export function createTablesPicker({ tables, initial = [], onChange, error = "", emptyNote = "", countText = null }) {
   ensureTablesPickerStyles();
   const wrap = document.createElement("div");
   wrap.className = "tp-tables";
@@ -53,7 +54,8 @@ export function createTablesPicker({ tables, initial = [], onChange, error = "",
   const getSelected = () => boxes.filter((b) => b.checked).map((b) => b.value);
   function count() {
     const n = getSelected().length;
-    $count.textContent = `${n} of ${boxes.length} data table${boxes.length === 1 ? "" : "s"} ticked${n ? "" : " — tick at least one"}`;
+    $count.textContent = countText ? countText(n, boxes.length)
+      : `${n} of ${boxes.length} data table${boxes.length === 1 ? "" : "s"} ticked${n ? "" : " — tick at least one"}`;
   }
   function changed() { count(); if (onChange) onChange(); }
   boxes.forEach((b) => b.addEventListener("change", changed));
