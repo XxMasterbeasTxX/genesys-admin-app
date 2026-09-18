@@ -62,7 +62,7 @@ function tokenKey(token) {
  * of org; "superuser" for a superuser, who has no row. `features` is null
  * (an administrator — everything) or the supervisor's effective page keys;
  * `dataTables` is the supervisor's effective data table ids when their pages
- * include Data Tables › Super User, else null — no list, nothing bounded.
+ * include Data Tables › Supervisor, else null — no list, nothing bounded.
  * `managesCustomers` (internal only) is the row's capability to name users
  * for customer orgs; always true for a superuser. `unenforced` marks an
  * internal caller admitted only because INTERNAL_NAMED_USERS_ENFORCED is not

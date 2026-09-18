@@ -3,7 +3,7 @@
  *
  * What a Super User may write into a data table, per column and per table
  * (docs/data-table-rules-design.md). Set by Master Admins on Data Tables ›
- * Edit; read by Data Tables › Super User. Who may set is decided by the
+ * Edit; read by Data Tables › Supervisor. Who may set is decided by the
  * server from the caller's own row; a customer's customerId is ignored in
  * favour of the verified one.
  */

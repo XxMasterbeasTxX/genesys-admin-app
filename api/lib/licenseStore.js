@@ -17,7 +17,7 @@
  *                 kinds of org (docs/customer-roles-design.md §4,
  *                 docs/internal-roles-design.md §3).
  *   dataTables    JSON array of data table ids — a supervisor's own tables,
- *                 chosen with the Data Tables › Super User page; a subset of
+ *                 chosen with the Data Tables › Supervisor page; a subset of
  *                 the tables the org has made visible to Super Users
  *                 (docs/data-table-rules-design.md §11). Absent = none.
  *   templateId    the Super User template the row is on, or "" — its pages

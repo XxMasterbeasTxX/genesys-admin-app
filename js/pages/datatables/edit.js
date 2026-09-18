@@ -6,7 +6,7 @@
  *    Super User rules: a lookup, Protected, Mandatory; per table, whether
  *    Super Users may add or delete rows (docs/data-table-rules-design.md
  *    §5). The rules are the app's, saved with Save Schema, enforced on
- *    Data Tables › Super User and by the server — never here.
+ *    Data Tables › Supervisor and by the server — never here.
  *  - Rows: edit multiple row values in a paged grid with full-table search.
  *    The rules show as hints under the column headers; this page is not
  *    bound by them.

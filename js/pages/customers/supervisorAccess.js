@@ -16,7 +16,7 @@
  *   Default — the Super User scope      what a Super User in the org may have
  *                                       AT ALL: every page the org offers,
  *                                       drawn as the sidebar draws them, and
- *                                       under Data Tables › Super User the
+ *                                       under Data Tables › Supervisor the
  *                                       tables open to Super Users — a list,
  *                                       read-only: the switch is "Visible to
  *                                       Super Users" on Data Tables › Edit
@@ -194,8 +194,8 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
         ? `The template's pages, chosen from the scope. A Super User on "${current.name}" has these plus any extra pages ticked for them; change the template and they all follow.`
         : `The scope is empty, so a template has nothing to choose from yet. Save the scope first.`)
       : (templates.length
-        ? `Every page a Super User may have at all; under Data Tables › Super User, the tables open to them. ${templates.length} template${templates.length === 1 ? "" : "s"} draw from it: unticking a page here takes it from them too.`
-        : "Every page a Super User may have at all; under Data Tables › Super User, the tables open to them.");
+        ? `Every page a Super User may have at all; under Data Tables › Supervisor, the tables open to them. ${templates.length} template${templates.length === 1 ? "" : "s"} draw from it: unticking a page here takes it from them too.`
+        : "Every page a Super User may have at all; under Data Tables › Supervisor, the tables open to them.");
   }
 
   function show(what) {
