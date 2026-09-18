@@ -262,19 +262,19 @@ export default function renderSupervisorAccess({ api, orgContext, access }) {
       if (seq !== loadSeq) return;
       scope = [...features].sort();
       templates = tpls;
-      // The tables a template may carry: only worth reading when the page is in the scope.
+      // The tables a template may carry. Read whether or not the Supervisor
+      // page is in the scope yet: it can be ticked in and saved, and a
+      // template made, in the same visit.
       tables = []; tablesError = "";
-      if (scope.includes(SUPERVISOR_TABLES_PAGE)) {
-        try {
-          const [all, allRules] = await Promise.all([gc.fetchAllDataTables(api, currentOrg.id), listDataTableRules(currentOrg.id)]);
-          if (seq !== loadSeq) return;
-          tables = (all || []).filter((t) => allRules[t.id] && allRules[t.id].visibleToSupervisors)
-            .map((t) => ({ id: t.id, name: t.name }))
-            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-        } catch (err) {
-          if (seq !== loadSeq) return;
-          tables = null; tablesError = err.message || String(err);
-        }
+      try {
+        const [all, allRules] = await Promise.all([gc.fetchAllDataTables(api, currentOrg.id), listDataTableRules(currentOrg.id)]);
+        if (seq !== loadSeq) return;
+        tables = (all || []).filter((t) => allRules[t.id] && allRules[t.id].visibleToSupervisors)
+          .map((t) => ({ id: t.id, name: t.name }))
+          .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      } catch (err) {
+        if (seq !== loadSeq) return;
+        tables = null; tablesError = err.message || String(err);
       }
       treeMode = null;              // the scope may have changed: rebuild
       show(null);
