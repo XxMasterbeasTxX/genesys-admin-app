@@ -154,7 +154,7 @@ function checkCustomerRequest(path, entitlements) {
 }
 
 /**
- * The positive allowlist alone, for an internal Supervisor's pages: no
+ * The positive allowlist alone, for an internal Super User's pages: no
  * customer deny list (an internal session may read billing and trustee
  * endpoints), and only when the flag is on. Same coarseness, same
  * fail-closed rule for an unmapped path.

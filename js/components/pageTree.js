@@ -3,9 +3,9 @@
  * per page, a box per group that ticks and unticks everything under it and
  * shows the mixed state when only some are ticked.
  *
- * Used twice (docs/customer-roles-design.md §8): on Supervisor Access for the
- * org's scope, and on Customers › Access for a Supervisor's own pages, where
- * it is given the scope's pages only — and, under Data Tables › Supervisor,
+ * Used twice (docs/customer-roles-design.md §8): on Super User Access for the
+ * org's scope, and on Customers › Access for a Super User's own pages, where
+ * it is given the scope's pages only — and, under Data Tables › Super User,
  * their data tables (`extras`).
  *
  * Usage:
@@ -24,7 +24,7 @@ import { leavesOf } from "../services/customerPageTree.js";
  * @param {boolean}  [opts.open]      Start with every group expanded (default true).
  * @param {Object<string, HTMLElement>} [opts.extras]
  *        An element to draw under a page, indented, shown only while that
- *        page is ticked — the data tables under Data Tables › Supervisor.
+ *        page is ticked — the data tables under Data Tables › Super User.
  *        Whatever the element contains is the caller's; the tree only shows
  *        and hides it.
  */

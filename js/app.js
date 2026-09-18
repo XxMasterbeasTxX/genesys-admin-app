@@ -256,8 +256,8 @@ function renderSignInGate() {
     if (orgCfg.mode === "customer" && orgCfg.customer) {
       // Entitlements shape the menu; the user's own permissions, read on THEIR
       // region, grey the actions they cannot take. Same refinement as internal.
-      // The key set is the role's: everything for an Administrator, a
-      // Supervisor's effective pages otherwise (docs/customer-roles-design.md §7).
+      // The key set is the role's: everything for a Master Admin, a
+      // Super User's effective pages otherwise (docs/customer-roles-design.md §7).
       access = await resolveCustomerAccess(orgCfg.entitlements, res.accessToken, getSessionApiBase(), { role: orgCfg.role, dataTables: orgCfg.dataTables });
       isInternalMode = false;
 
@@ -272,7 +272,7 @@ function renderSignInGate() {
       orgContext.set(customer.id);
     } else {
       // Named (or a superuser) — the server said so. Their role decides the
-      // pages (a Supervisor's effective pages arrive as `features`); what they
+      // pages (a Super User's effective pages arrive as `features`); what they
       // may do within them is their own Genesys permissions; the two things a
       // permission cannot express come from the row too.
       access = await resolveAccess(res.accessToken, {

@@ -1,9 +1,9 @@
 /**
- * The data tables a Supervisor (or a template) may open — one box per table
- * the org has made visible to Supervisors, drawn under the Data Tables ›
- * Supervisor page in a page tree (`createPageTree`'s `extras`).
+ * The data tables a Super User (or a template) may open — one box per table
+ * the org has made visible to Super Users, drawn under the Data Tables ›
+ * Super User page in a page tree (`createPageTree`'s `extras`).
  *
- * Used on Customers › Access for a Supervisor's own tables and on Supervisor
+ * Used on Customers › Access for a Super User's own tables and on Super User
  * Access for a template's (docs/data-table-rules-design.md §11,
  * docs/supervisor-templates-design.md). Locked tables — a template's, on a
  * user — are ticked and greyed and survive Untick all.
@@ -33,7 +33,7 @@ export function createTablesPicker({ tables, initial = [], onChange, error = "",
   if (!list.length) {
     wrap.innerHTML = `<div class="tp-note">${error
       ? `The data tables could not be loaded: ${escapeHtml(error)}`
-      : escapeHtml(emptyNote || `No data table has been made visible to Supervisors yet, so this page cannot be given. An Administrator opens a table with "Visible to Supervisors" on Data Tables › Edit.`)}</div>`;
+      : escapeHtml(emptyNote || `No data table has been made visible to Super Users yet, so this page cannot be given. A Master Admin opens a table with "Visible to Super Users" on Data Tables › Edit.`)}</div>`;
     return { el: wrap, getSelected: () => [], setSelected() {}, setLocked() {}, setEnabled() {}, size: 0 };
   }
   wrap.innerHTML = `

@@ -23,44 +23,44 @@ export const RELEASE_NOTES = [
   {
     version: "6.1",
     date: "2026-09-17",
-    title: "Data Tables: rules for Supervisors, and a Supervisor page",
+    title: "Data Tables: rules for Super Users, and a Super User page",
     changes: [
-      "An Administrator can now set rules on a data table so that a Supervisor editing its rows cannot make a "
+      "A Master Admin can now set rules on a data table so that a Super User editing its rows cannot make a "
         + "mistake. On Data Tables › Edit, in Schema mode, each column has four new controls beside its "
         + "default: a Lookup (Data Table, Queue, Skill, Schedule Group, Schedule, Group or List), and Protected, "
         + "Mandatory and Hidden ticks. A Lookup means the value must be one that exists — the name of a queue in "
         + "the org, say, a key of another data table (choose which), or one of a List you type yourself, one "
         + "value per line, for a column like Brand that would otherwise be free text; Protected means the value cannot be "
         + "changed; Mandatory means it cannot be left empty; Hidden means the column is not shown at all. "
-        + "Above the columns, two switches: whether the table is visible to Supervisors at all — no table is "
-        + "until you tick it — and whether they may add rows; Supervisors never delete rows. The rules are "
+        + "Above the columns, two switches: whether the table is visible to Super Users at all — no table is "
+        + "until you tick it — and whether they may add rows; Super Users never delete rows. The rules are "
         + "saved with Save Schema.",
-      "Which of those tables each Supervisor may open is chosen per user: on the users list, ticking the "
-        + "Data Tables › Supervisor page for a Supervisor shows the tables visible to Supervisors beneath it, "
-        + "one tick each — so one Supervisor can be given two tables and another five. At least one must be "
-        + "ticked with the page. A table an Administrator later closes to Supervisors leaves every "
-        + "Supervisor's list within five minutes. The Supervisor page offers only the tables the user was "
+      "Which of those tables each Super User may open is chosen per user: on the users list, ticking the "
+        + "Data Tables › Super User page for a Super User shows the tables visible to Super Users beneath it, "
+        + "one tick each — so one Super User can be given two tables and another five. At least one must be "
+        + "ticked with the page. A table a Master Admin later closes to Super Users leaves every "
+        + "Super User's list within five minutes. The Super User page offers only the tables the user was "
         + "given, and the server refuses anything else.",
-      "A new page, Data Tables › Supervisor, is where a Supervisor edits rows. Pick a table and the rules "
+      "A new page, Data Tables › Super User, is where a Super User edits rows. Pick a table and the rules "
         + "apply: a lookup column is a dropdown of the allowed values instead of a text box — no typing, so no "
         + "misspelling and no stray space — a protected column is plain text, a mandatory one blocks saving "
-        + "the row until it is filled, a hidden one is absent. Only tables made visible to Supervisors are "
+        + "the row until it is filled, a hidden one is absent. Only tables made visible to Super Users are "
         + "offered. A value that is already outside the list (a "
         + "queue since renamed, a value typed before the rule) is shown as such and can be left alone; the "
-        + "moment it is changed, only listed values remain. The page is one in the Supervisor scope: tick it "
-        + "for the Supervisors who should have it.",
-      "The rules bind Supervisors, not Administrators: Data Tables › Edit still edits freely and shows the "
+        + "moment it is changed, only listed values remain. The page is one in the Super User scope: tick it "
+        + "for the Super Users who should have it.",
+      "The rules bind Super Users, not Master Admins: Data Tables › Edit still edits freely and shows the "
         + "rules only as hints under the column headers. And they hold on the server, not just on the page — "
-        + "a Supervisor's row write is checked against the table's rules before it reaches Genesys, with the "
+        + "a Super User's row write is checked against the table's rules before it reaches Genesys, with the "
         + "refusal naming the column, so a rule cannot be worked around with a direct call.",
-      "Who sets rules: an Administrator of the organisation; for Netdesign staff, anyone with the Data Tables "
+      "Who sets rules: a Master Admin of the organisation; for Netdesign staff, anyone with the Data Tables "
         + "› Edit page. Every change is in the Activity Log with the rules before and after.",
     ],
   },
   {
     version: "6.0",
     date: "2026-09-16",
-    title: "Who may use the app: named colleagues, and customer Administrators and Supervisors (internal)",
+    title: "Who may use the app: named colleagues, and customer Master Admins and Super Users (internal)",
     internalOnly: true,
     changes: [
       "Internal colleagues must now be named in the app before they can use it, exactly as customer users "
@@ -81,16 +81,16 @@ export const RELEASE_NOTES = [
         + "colleague working on a customer organisation still acts through that organisation's OAuth client, "
         + "as before.",
       "Internal colleagues carry the same two roles as customer users, chosen when they are added: "
-        + "Administrator — every page except Onboarding, as everyone had until now — or Supervisor — only the "
-        + "pages ticked for them from the internal organisation's own Supervisor scope, which a superuser "
-        + "sets on Customers › Supervisor Access with the internal org selected. A colleague who should only "
+        + "Master Admin — every page except Onboarding, as everyone had until now — or Super User — only the "
+        + "pages ticked for them from the internal organisation's own Super User scope, which a superuser "
+        + "sets on Customers › Super User Access with the internal org selected. A colleague who should only "
         + "see Export sees only Export: the rest of the menu is absent, not greyed. What they may do on a "
         + "page is still their own Genesys permissions. Only superusers set the internal scope and the "
-        + "roles; an internal Administrator is a page role, not an administrator of access.",
+        + "roles; an internal Master Admin is a page role, not an administrator of access.",
       "Separate from the role, and independent of it: “Manages customer access”, a tick per row on the "
         + "internal list that only a superuser can set, lets that colleague add and remove users for customer "
         + "organisations — start charges — and set customer scopes and roles, without being able to touch "
-        + "the internal list or grant the same right to anyone else. A Supervisor can hold it; they then "
+        + "the internal list or grant the same right to anyone else. A Super User can hold it; they then "
         + "see the two Customers pages beside their own. The Master Admin group that used to gate customer "
         + "access gates nothing now.",
       "The server enforces all of it. Every Genesys call the app makes for an internal session runs on the "
@@ -99,37 +99,37 @@ export const RELEASE_NOTES = [
         + "on every store endpoint and on every proxied call, and a table of 208 method-and-path rules maps "
         + "each Genesys endpoint to the permission the caller must hold themselves. The proxy check has two "
         + "modes, report and enforce (PROXY_PERMISSION_CHECK); it reports on dev until its log has been read.",
-      "Customer users now carry a role, chosen when they are added: Administrator, who sees everything the "
-        + "app offers customers, or Supervisor, who sees a chosen subset. Every customer gets everything — "
+      "Customer users now carry a role, chosen when they are added: Master Admin, who sees everything the "
+        + "app offers customers, or Super User, who sees a chosen subset. Every customer gets everything — "
         + "they pay per user, not for content — so there is no package to check against, only the role. "
         + "A customer row cannot be added without one.",
-      "What a Supervisor may have at all is the organisation's Supervisor scope: every customer page as a "
-        + "tree of checkboxes, sections and pages, on the new Supervisor Access page. Internal superusers and "
-        + "customer-managers set it for any org under Customers › Supervisor Access, so it can be set on the "
-        + "day a customer is onboarded; a customer's own Administrators set it for their org under "
-        + "Administrator › Supervisor Access. A Supervisor's own pages are ticked from the scope when they are "
+      "What a Super User may have at all is the organisation's Super User scope: every customer page as a "
+        + "tree of checkboxes, sections and pages, on the new Super User Access page. Internal superusers and "
+        + "customer-managers set it for any org under Customers › Super User Access, so it can be set on the "
+        + "day a customer is onboarded; a customer's own Master Admins set it for their org under "
+        + "Master Admin › Super User Access. A Super User's own pages are ticked from the scope when they are "
         + "added or edited, and what they actually see is the two intersected at sign-in — untick a page from "
-        + "the scope and every Supervisor who had it loses it within five minutes, with nobody editing rows. "
-        + "Pages outside a Supervisor's set are absent from their menu, not greyed. An empty scope refuses a "
-        + "Supervisor add and says where to set it.",
-      "Supervisor templates: on Supervisor Access, an Editing dropdown above the tree offers the scope "
+        + "the scope and every Super User who had it loses it within five minutes, with nobody editing rows. "
+        + "Pages outside a Super User's set are absent from their menu, not greyed. An empty scope refuses a "
+        + "Super User add and says where to set it.",
+      "Super User templates: on Super User Access, an Editing dropdown above the tree offers the scope "
         + "(“Default”) and any number of named templates — a set of pages and data tables from the scope "
-        + "that a Supervisor can be put on. When a Supervisor is added or edited, a Template dropdown above "
+        + "that a Super User can be put on. When a Super User is added or edited, a Template dropdown above "
         + "their pages ticks the template's pages and tables and greys them; more can be ticked for that "
-        + "person, not fewer. Change the template and every Supervisor on it follows within five minutes, "
+        + "person, not fewer. Change the template and every Super User on it follows within five minutes, "
         + "their own extra pages untouched; the users list gains a Template column (“Sales + 2”) and a "
         + "Reset to template button, enabled only when the person has a template and extras, that takes "
         + "the extras away. A template in use cannot be deleted; the refusal names who is on it.",
-      "A customer Administrator has a second page, Administrator › Users: their organisation's list, with "
-        + "an Edit per row to promote a Supervisor, demote an Administrator or re-tick a Supervisor's pages. "
+      "A customer Master Admin has a second page, Master Admin › Users: their organisation's list, with "
+        + "an Edit per row to promote a Super User, demote a Master Admin or re-tick a Super User's pages. "
         + "They can never add or remove a name — naming starts a charge and stays Netdesign's — and the "
         + "server refuses add and remove from any customer session regardless of what the page shows. "
         + "Every scope change and every role change is written to the Activity Log under the verified "
         + "identity of whoever made it, and appears in the customer's own log when a customer made it.",
       "The list on Customers › Access shows, per row, who added the user and who last changed their role or "
         + "pages, by name and with the time in your own time zone. A customer's own view of their list "
-        + "(Administrator › Users) reads “TDC Erhverv” for every internal person and names only their own "
-        + "Administrator's edits; no id or e-mail crosses. Design and the reasoning behind each decision: "
+        + "(Master Admin › Users) reads “TDC Erhverv” for every internal person and names only their own "
+        + "Master Admin's edits; no id or e-mail crosses. Design and the reasoning behind each decision: "
         + "docs/internal-user-access-design.md, docs/customer-roles-design.md and "
         + "docs/internal-roles-design.md.",
     ],

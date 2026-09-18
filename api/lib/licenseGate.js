@@ -62,7 +62,7 @@ function tokenKey(token) {
  * of org; "superuser" for a superuser, who has no row. `features` is null
  * (an administrator — everything) or the supervisor's effective page keys;
  * `dataTables` is the supervisor's effective data table ids when their pages
- * include Data Tables › Supervisor, else null — no list, nothing bounded.
+ * include Data Tables › Super User, else null — no list, nothing bounded.
  * `managesCustomers` (internal only) is the row's capability to name users
  * for customer orgs; always true for a superuser. `unenforced` marks an
  * internal caller admitted only because INTERNAL_NAMED_USERS_ENFORCED is not
@@ -107,7 +107,7 @@ async function checkLicense(context, token, classification) {
   if (row) {
     // Their role decides what they may see, for both kinds of org. An
     // administrator sees everything the org offers (features null = no
-    // narrowing); a supervisor sees their own pages ∩ the org's Supervisor
+    // narrowing); a supervisor sees their own pages ∩ the org's Super User
     // scope, computed here so a scope edit reaches every supervisor without
     // touching their rows (docs/customer-roles-design.md §2, §7;
     // docs/internal-roles-design.md §2).
@@ -129,7 +129,7 @@ async function checkLicense(context, token, classification) {
         return { licensed: false, reason: "license_check_failed", userId: user.id };
       }
       // On a template, its pages and tables come first and the row's own are
-      // extras; a template edit reaches every Supervisor on it here, their
+      // extras; a template edit reaches every Super User on it here, their
       // extras untouched (docs/supervisor-templates-design.md §2). A template
       // since deleted contributes nothing.
       let template = null;
@@ -144,9 +144,9 @@ async function checkLicense(context, token, classification) {
       const own = new Set([...(template ? template.features : []), ...(Array.isArray(row.features) ? row.features : [])]);
       features = scope.filter((k) => own.has(k));
       // Their data tables, the same way: the row's list ∩ the tables the org
-      // has made visible to Supervisors now, so an Administrator closing a
-      // table takes it from every Supervisor without touching their rows.
-      // Only when they hold the Supervisor page — the list means nothing
+      // has made visible to Super Users now, so a Master Admin closing a
+      // table takes it from every Super User without touching their rows.
+      // Only when they hold the Super User page — the list means nothing
       // otherwise (docs/data-table-rules-design.md §11).
       if (features.includes(SUPERVISOR_TABLES_PAGE)) {
         let allRules;

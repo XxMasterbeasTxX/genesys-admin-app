@@ -27,8 +27,8 @@ export const NAV_TREE = [
       { label: "Edit",               path: "edit",         enabled: true, access: "data-tables.edit"             },
       { label: "Copy - Between Orgs", path: "copy-between", enabled: true, access: "data-tables.copy.betweenOrgs" },
       { label: "Copy",                path: "copy-single",  enabled: true, access: "data-tables.copy.singleOrg"  },
-      // Row editing under the Administrator's rules (docs/data-table-rules-design.md).
-      { label: "Supervisor",          path: "supervisor",   enabled: true, access: "data-tables.supervisor"      },
+      // Row editing under the Master Admin's rules (docs/data-table-rules-design.md).
+      { label: "Super User",          path: "supervisor",   enabled: true, access: "data-tables.supervisor"      },
     ],
   },
   {
@@ -390,7 +390,7 @@ export const NAV_TREE = [
     enabled: true,
     children: [
       { label: "Access to Admin Tool", path: "access", enabled: true, access: "customers.access" },
-      { label: "Supervisor Access", path: "supervisor-access", enabled: true, access: "customers.supervisorAccess" },
+      { label: "Super User Access", path: "supervisor-access", enabled: true, access: "customers.supervisorAccess" },
     ],
   },
   {
@@ -402,16 +402,16 @@ export const NAV_TREE = [
       { label: "IP Ranges", path: "ip-ranges", enabled: true, access: "utilities.ipRanges" },
     ],
   },
-  // A customer Administrator's own section (accessConfig.CUSTOMER_ADMIN_KEYS):
-  // the Supervisor scope for their org, and their org's users — role and
-  // pages only, never who is named. Absent for Supervisors and for every
+  // A customer Master Admin's own section (accessConfig.CUSTOMER_ADMIN_KEYS):
+  // the Super User scope for their org, and their org's users — role and
+  // pages only, never who is named. Absent for Super Users and for every
   // internal session, who have Customers › … instead.
   {
-    label: "Administrator",
+    label: "Master Admin",
     path: "administrator",
     enabled: true,
     children: [
-      { label: "Supervisor Access", path: "supervisor-access", enabled: true, access: "administrator.supervisorAccess" },
+      { label: "Super User Access", path: "supervisor-access", enabled: true, access: "administrator.supervisorAccess" },
       { label: "Users", path: "users", enabled: true, access: "administrator.users" },
     ],
   },

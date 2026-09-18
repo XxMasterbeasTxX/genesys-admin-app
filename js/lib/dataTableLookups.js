@@ -1,6 +1,6 @@
 /**
  * The allowed values behind a data table rule's lookup — the names a
- * Supervisor may choose from (docs/data-table-rules-design.md §2).
+ * Super User may choose from (docs/data-table-rules-design.md §2).
  *
  *   queue, skill, scheduleGroup, schedule, group   the org's objects, by name
  *   dataTable                                      the KEYS of another table
@@ -80,7 +80,7 @@ async function fetchTableKeys(api, orgId, tableId) {
 export function fetchLookupValues(api, orgId, rule) {
   if (!rule || !rule.lookup) return Promise.resolve([]);
   // A typed list is the rule itself: nothing to fetch, nothing to cache,
-  // and the Administrator's order is the dropdown's order.
+  // and the Master Admin's order is the dropdown's order.
   if (rule.lookup === "list") return Promise.resolve([...(Array.isArray(rule.values) ? rule.values : [])]);
   const key = cacheKey(orgId, rule);
   if (cache.has(key)) return cache.get(key);

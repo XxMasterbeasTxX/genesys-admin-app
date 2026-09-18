@@ -1,25 +1,25 @@
 /**
- * The pages a Supervisor scope may hold, as the tree the sidebar draws them
+ * The pages a Super User scope may hold, as the tree the sidebar draws them
  * in — one builder, two orgs kinds.
  *
  *   customerPageTree()   every page a customer may hold
  *   internalPageTree()   every page an internal colleague may hold
  *
- * One source for three readers: the Supervisor Access page (the scope), the
- * add/edit control on Customers › Access (a Supervisor's own pages), and
+ * One source for three readers: the Super User Access page (the scope), the
+ * add/edit control on Customers › Access (a Super User's own pages), and
  * scripts/build-pages.mjs, which writes the same leaves to api/lib/pages.json
  * for the server to validate against (docs/customer-roles-design.md §2,
  * docs/internal-roles-design.md §6). No browser dependencies — the script
  * imports it under Node.
  *
  * A customer leaf is a nav page with an access key that is not internal-only
- * (CUSTOMER_EXCLUDED_KEYS) and not one of the customer Administrator's own
- * pages (CUSTOMER_ADMIN_KEYS — an Administrator has them by role; a
- * Supervisor never does). An internal leaf is any page except the
+ * (CUSTOMER_EXCLUDED_KEYS) and not one of the customer Master Admin's own
+ * pages (CUSTOMER_ADMIN_KEYS — a Master Admin has them by role; a
+ * Super User never does). An internal leaf is any page except the
  * superuser-only ones (SUPERUSER_ONLY_KEYS — a superuser has them always),
  * the two Customers pages (CUSTOMER_MANAGER_KEYS — they come from the
  * "Manages customer access" tick, not from a scope) and the customer
- * Administrator's section. Groups with no such leaves are dropped.
+ * Master Admin's section. Groups with no such leaves are dropped.
  */
 import { NAV_TREE } from "../navConfig.js";
 import {
@@ -91,7 +91,7 @@ export function customerPageLeaves() {
 
 /**
  * The tree cut down to a set of keys — the scope's pages, in the sidebar's
- * order and grouping, for the per-Supervisor control. Groups left with no
+ * order and grouping, for the per-Super User control. Groups left with no
  * pages are dropped.
  */
 export function pruneTree(tree, keys) {

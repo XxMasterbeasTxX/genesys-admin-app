@@ -1,17 +1,17 @@
 /**
- * Data table rules — what a Supervisor may write into a data table.
+ * Data table rules — what a Super User may write into a data table.
  *
  *   GET /api/datatable-rules?customerId=&tableId=   → { customerId, tableId, rules, setAt }
  *   GET /api/datatable-rules?customerId=            → { customerId, tables: { tableId: rules } }
  *                                                     every table with a rules row — the
- *                                                     Supervisor page lists the open ones
+ *                                                     Super User page lists the open ones
  *   PUT /api/datatable-rules   { customerId, tableId, rules }
  *                                                   → { customerId, tableId, rules, setAt }
  *
  * Who may set (docs/data-table-rules-design.md §3): a customer session
  * whose own row is "administrator", for their own org — the customerId
  * they send is ignored; an internal session that is a superuser, an
- * Administrator, or a Supervisor whose pages include Data Tables › Edit
+ * Master Admin, or a Super User whose pages include Data Tables › Edit
  * (the page the rules are set on), for the org in the header selector.
  * Anyone who may reach either data-table page may read.
  *
@@ -116,8 +116,8 @@ module.exports = async function (context, req) {
             orgId: customerId, orgName: customerName(customerId),
             ownerOrgId: caller.mode === "customer" ? customerId : "internal",
             action: "dataTableRules.set",
-            description: `Set the Supervisor rules for data table ${String(body.tableName || tableId)} in ${customerName(customerId)}: ${n} column rule${n === 1 ? "" : "s"}`
-              + `${rules.visibleToSupervisors ? ", open to Supervisors" : ", closed to Supervisors"}${rules.mayAddRows ? ", may add rows" : ""}`,
+            description: `Set the Super User rules for data table ${String(body.tableName || tableId)} in ${customerName(customerId)}: ${n} column rule${n === 1 ? "" : "s"}`
+              + `${rules.visibleToSupervisors ? ", open to Super Users" : ", closed to Super Users"}${rules.mayAddRows ? ", may add rows" : ""}`,
             details: { customerId, tableId, tableName: body.tableName || "", before: beforeRules, after: rules },
           });
         } catch (err) {

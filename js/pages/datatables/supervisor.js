@@ -1,5 +1,5 @@
 /**
- * Data Tables › Supervisor — row editing under the Administrator's rules.
+ * Data Tables › Super User — row editing under the Master Admin's rules.
  *
  * The Edit page's Rows grid, with the table's rules applied
  * (docs/data-table-rules-design.md §6):
@@ -14,9 +14,9 @@
  *   - the key column is always protected on an existing row;
  *   - Add row appears only when the table's rules allow it; rows are never
  *     deleted here;
- *   - a Supervisor sees only the tables on their own row, chosen with the
- *     page on the users list (§11); an Administrator every table opened to
- *     Supervisors.
+ *   - a Super User sees only the tables on their own row, chosen with the
+ *     page on the users list (§11); a Master Admin every table opened to
+ *     Super Users.
  *
  * A current value that is not in the list (a queue since deleted, a value
  * typed before the rule existed) is shown as an extra option marked so, and
@@ -61,7 +61,7 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
       .dts-not-listed { color: var(--warn); }
     </style>
 
-    <h2>Data Tables — Supervisor</h2>
+    <h2>Data Tables — Super User</h2>
     <p class="page-desc">
       Edit the values of a data table. Where the table has rules, a column offers only the allowed
       values, cannot be changed, or cannot be left empty — so nothing is misspelled and nothing is
@@ -149,8 +149,8 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
     tableSelect.setEnabled(false);
     setStatus("Loading data tables…");
     try {
-      // Only the tables an Administrator has opened to Supervisors — and,
-      // for a Supervisor, only the ones on their own row (§11). The server
+      // Only the tables a Master Admin has opened to Super Users — and,
+      // for a Super User, only the ones on their own row (§11). The server
       // refuses the rest anyway; this keeps the picker honest.
       const [tables, allRules] = await Promise.all([gc.fetchAllDataTables(api, orgId), listDataTableRules(orgId)]);
       const own = access && Array.isArray(access.dataTables) ? new Set(access.dataTables) : null;
@@ -158,8 +158,8 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
       const sorted = open.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
       tableSelect.setItems(sorted.map((t) => ({ id: t.id, label: t.name })));
       setStatus(sorted.length ? "" : (own
-        ? "No data table has been given to you. An Administrator chooses which data tables a Supervisor may open, on the users list."
-        : "No data table has been made visible to Supervisors in this org. An Administrator opens one on Data Tables › Edit."));
+        ? "No data table has been given to you. A Master Admin chooses which data tables a Super User may open, on the users list."
+        : "No data table has been made visible to Super Users in this org. A Master Admin opens one on Data Tables › Edit."));
     } catch (err) {
       setStatus(`Failed to load data tables: ${err.message}`, "error");
       tableSelect.setItems([]);
@@ -418,7 +418,7 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
     }
     render();
     setStatus(fail ? `Saved ${ok} row(s), ${fail} failed.` : `✓ Saved ${ok} row(s).`, fail ? "error" : "success");
-    logAction({ me, orgId, action: "datatable_supervisor", description: `Saved data table rows for '${table?.name || tableId}' (Supervisor). Success: ${ok}, Failed: ${fail}`, result: fail ? "failure" : "success", errorMessage: fail ? `${fail} row(s) failed to save` : undefined });
+    logAction({ me, orgId, action: "datatable_supervisor", description: `Saved data table rows for '${table?.name || tableId}' (Super User). Success: ${ok}, Failed: ${fail}`, result: fail ? "failure" : "success", errorMessage: fail ? `${fail} row(s) failed to save` : undefined });
   }));
 
   loadTables();

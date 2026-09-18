@@ -1,6 +1,6 @@
 /**
- * Who may set what a Supervisor in an org may have — the Supervisor scope
- * and the Supervisor templates share the answer (docs/customer-roles-design.md
+ * Who may set what a Super User in an org may have — the Super User scope
+ * and the Super User templates share the answer (docs/customer-roles-design.md
  * §5, §6; docs/internal-roles-design.md §4; docs/supervisor-templates-design.md §3):
  *
  *   a customer session whose own row is "administrator"   their own org only —
@@ -26,7 +26,7 @@ function resolveScopeOrg(context, caller, requested) {
   const customerId = String(requested || "").trim();
   if (!customerId) return { error: "customerId_required", status: 400 };
   if (customerId === INTERNAL_ORG_SLUG) {
-    // The internal org's own scope: what its Supervisors may see. Superusers
+    // The internal org's own scope: what its Super Users may see. Superusers
     // only, like everything else about the internal list.
     if (!caller.superuser) return { error: "superuser_required", status: 403 };
     return { customerId, kind: "internal" };
