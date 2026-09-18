@@ -36,12 +36,12 @@ export const RELEASE_NOTES = [
         + "until you tick it — and whether they may add rows; Super Users never delete rows. The rules are "
         + "saved with Save Schema.",
       "Which of those tables each Super User may open is chosen per user: on the users list, ticking the "
-        + "Data Tables › Super User page for a Super User shows the tables visible to Super Users beneath it, "
+        + "Data Tables › Supervisor page for a Super User shows the tables visible to Super Users beneath it, "
         + "one tick each — so one Super User can be given two tables and another five. At least one must be "
         + "ticked with the page. A table a Master Admin later closes to Super Users leaves every "
         + "Super User's list within five minutes. The Super User page offers only the tables the user was "
         + "given, and the server refuses anything else.",
-      "A new page, Data Tables › Super User, is where a Super User edits rows. Pick a table and the rules "
+      "A new page, Data Tables › Supervisor, is where a Super User edits rows. Pick a table and the rules "
         + "apply: a lookup column is a dropdown of the allowed values instead of a text box — no typing, so no "
         + "misspelling and no stray space — a protected column is plain text, a mandatory one blocks saving "
         + "the row until it is filled, a hidden one is absent. Only tables made visible to Super Users are "

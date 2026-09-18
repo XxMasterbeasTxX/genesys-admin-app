@@ -259,8 +259,8 @@ export default function renderCustomerAccess({ api, orgContext, access }) {
       if (!tree.getSelected().length) return "Tick at least one page.";
       if (tablesPageTicked() && !tablesCtl.getSelected().length) {
         return tablesCtl.size
-          ? "Data Tables › Super User is ticked: tick at least one data table under it, or untick the page."
-          : "Data Tables › Super User is ticked, but no data table is open to Super Users yet: untick the page, or open a table with \"Visible to Super Users\" on Data Tables › Edit first.";
+          ? "Data Tables › Supervisor is ticked: tick at least one data table under it, or untick the page."
+          : "Data Tables › Supervisor is ticked, but no data table is open to Super Users yet: untick the page, or open a table with \"Visible to Super Users\" on Data Tables › Edit first.";
       }
       return "";
     }

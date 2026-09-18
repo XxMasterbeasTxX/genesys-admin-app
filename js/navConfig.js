@@ -28,7 +28,7 @@ export const NAV_TREE = [
       { label: "Copy - Between Orgs", path: "copy-between", enabled: true, access: "data-tables.copy.betweenOrgs" },
       { label: "Copy",                path: "copy-single",  enabled: true, access: "data-tables.copy.singleOrg"  },
       // Row editing under the Master Admin's rules (docs/data-table-rules-design.md).
-      { label: "Super User",          path: "supervisor",   enabled: true, access: "data-tables.supervisor"      },
+      { label: "Supervisor",          path: "supervisor",   enabled: true, access: "data-tables.supervisor"      },
     ],
   },
   {

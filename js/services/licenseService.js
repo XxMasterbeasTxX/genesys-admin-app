@@ -49,7 +49,7 @@ function licenseMessage(code, json, status) {
     case "name_required":             return "Give the template a name.";
     case "name_taken":                return "A template with that name already exists.";
     case "id_required":               return "Choose a template first.";
-    case "tables_required":           return "With Data Tables › Super User ticked, tick at least one data table. Only tables a Master Admin has made visible to Super Users (Data Tables › Edit) can be chosen.";
+    case "tables_required":           return "With Data Tables › Supervisor ticked, tick at least one data table. Only tables a Master Admin has made visible to Super Users (Data Tables › Edit) can be chosen.";
     case "customerId_required":       return "Select a customer organisation first.";
     case "not_a_customer":   return "This organisation is not set up as a customer yet — it has no registry entry, so nobody can sign in to it as a customer.";
     default:                 return `The request failed (${code || status}).`;
@@ -66,7 +66,7 @@ export async function listLicensedUsers(customerId) {
  * Name a user. Returns { user, created } — created is false if they already
  * had access. `role` ("administrator" | "supervisor") is required for both
  * kinds of org, and a supervisor's `features` (page keys inside the org's
- * scope) must be non-empty; with the Data Tables › Super User page, so must
+ * scope) must be non-empty; with the Data Tables › Supervisor page, so must
  * their `dataTables` (ids of tables the org has opened to Super Users).
  */
 export function assignLicense(customerId, { id, email, name }, { role = "", features = [], dataTables = [], templateId = "" } = {}) {

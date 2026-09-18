@@ -1,5 +1,5 @@
 /**
- * Data Tables › Super User — row editing under the Master Admin's rules.
+ * Data Tables › Supervisor — row editing under the Master Admin's rules.
  *
  * The Edit page's Rows grid, with the table's rules applied
  * (docs/data-table-rules-design.md §6):
@@ -61,7 +61,7 @@ export default function renderSupervisorDataTable({ me, api, orgContext, access 
       .dts-not-listed { color: var(--warn); }
     </style>
 
-    <h2>Data Tables — Super User</h2>
+    <h2>Data Tables — Supervisor</h2>
     <p class="page-desc">
       Edit the values of a data table. Where the table has rules, a column offers only the allowed
       values, cannot be changed, or cannot be left empty — so nothing is misspelled and nothing is
